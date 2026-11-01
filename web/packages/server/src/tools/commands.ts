@@ -57,24 +57,27 @@ const separatorVariants = (name: string): string[] => [...new Set([name.replace(
  * for no client. An expandable prompt built-in is `handler: 'prompt'`: chat start sends the Agent's expansion (TAL-817).
  *
  * TAL-1577: a command `commands.exec` runs also answers to its other `_`/`-` spelling, published in `aliases` (`generated`
- * maps each such alias to its command). Every literal name is reserved first, then explicit aliases, then generated
- * ones, each in registry order, so a registered `plugin_review` stays its own command beside `plugin-review`.
+ * maps each such alias to its command). Names are reserved as the sidecar dispatches them: Agent commands before plugins
+ * (`commands.exec` tries the Agent's own commands and aliases first). Within each tier every literal name comes before
+ * explicit aliases, so a registered `plugin_review` stays its own command beside `plugin-review`; generated aliases come
+ * last, each in registry order. Reservation ignores case, as clients and the sidecar match typed names.
  */
 function buildCatalog(agent: readonly AgentCommand[]): { commands: Command[]; generated: Map<string, string> } {
-  const claimed = new Set(CLIENT_COMMANDS.flatMap((c) => [c.name, ...c.aliases]))
-  const listed = agent.filter((c) => {
-    if (c.gateway_only || claimed.has(c.name)) return false
-    claimed.add(c.name)
+  const claimed = new Set(CLIENT_COMMANDS.flatMap((c) => [c.name, ...c.aliases]).map((n) => n.toLowerCase()))
+  const claim = (names: readonly string[]) => names.filter((n) => {
+    const key = n.toLowerCase()
+    if (claimed.has(key)) return false
+    claimed.add(key)
     return true
   })
-  const claim = (names: readonly string[]) => names.filter((a) => {
-    if (claimed.has(a)) return false
-    claimed.add(a)
-    return true
-  })
-  const rows = listed.map((c): Command => {
+  const aliases = new Map<AgentCommand, string[]>()
+  for (const plugin of [false, true]) {
+    const tier = agent.filter((c) => !c.gateway_only && (c.category === 'Plugin') === plugin && claim([c.name]).length > 0)
+    for (const c of tier) aliases.set(c, claim(c.aliases))
+  }
+  const rows = agent.filter((c) => aliases.has(c)).map((c): Command => {
     const unsupported = c.cli_only ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
-    return { ...c, aliases: claim(c.aliases), exec: c.exec || SESSION_EXEC_COMMANDS.has(c.name), handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }
+    return { ...c, aliases: aliases.get(c) ?? [], exec: c.exec || SESSION_EXEC_COMMANDS.has(c.name), handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }
   })
   const generated = new Map<string, string>()
   for (const row of rows) {

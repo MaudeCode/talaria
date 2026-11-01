@@ -530,6 +530,17 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(aliasesOf(commands, 'loop')).toEqual(['knowledge_loop'])
       expect(aliasesOf(commands, 'a-b_c')).toEqual(['a_b_c', 'a-b-c'])
       expect(aliasesOf(commands, 'a_b-c')).toEqual([])
+      // The sidecar runs an Agent command and its explicit aliases before any plugin, so a plugin named like one is not listed.
+      commands = await catalog([row('reload-skills', { category: 'Tools & Skills', aliases: ['reload_skills'] }), row('reload_skills'), row('reload-mcp', { category: 'Tools & Skills' }), row('reload_mcp')])
+      expect(aliasesOf(commands, 'reload-skills')).toEqual(['reload_skills'])
+      expect(commands.filter((c) => c.name === 'reload_skills')).toEqual([])
+      expect(aliasesOf(commands, 'reload-mcp')).toEqual([])
+      expect(aliasesOf(commands, 'reload_mcp')).toEqual([])
+      // Names are reserved case-insensitively, as clients and the sidecar match them.
+      commands = await catalog([row('knowledge_loop'), row('Knowledge-Loop'), row('KNOWLEDGE_LOOP')])
+      expect(aliasesOf(commands, 'knowledge_loop')).toEqual([])
+      expect(aliasesOf(commands, 'Knowledge-Loop')).toEqual([])
+      expect(commands.filter((c) => c.name === 'KNOWLEDGE_LOOP')).toEqual([])
       // Only commands the server runs get one: CLI-only, unsupported, prompt and chat-turn rows keep their aliases.
       commands = await catalog([
         row('history-log', { cli_only: true, exec: false }), row('blue-print', { prompt: 'unsupported', exec: false }),
@@ -570,6 +581,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(await sent('/reload_skills')).toBe('/reload_skills')
       expect(await sent('/knowledge_ x')).toBe('/knowledge_ x')
       expect(await sent('/history_log')).toBe('/history_log')
+      // A plugin spelled like an Agent command's alias, or a literal differing only in case, is never rewritten onto another command.
+      sidecar.respond('commands.registry', () => ({ commands: [row('reload-skills', { category: 'Tools & Skills', aliases: ['reload_skills'] }), row('reload_skills'), row('knowledge_loop'), row('Knowledge-Loop')] }))
+      expect(await sent('/reload_skills')).toBe('/reload_skills')
+      expect(await sent('/knowledge_loop')).toBe('/knowledge_loop')
+      expect(await sent('/knowledge-loop')).toBe('/knowledge-loop')
       // Without the Agent registry nothing is rewritten.
       sidecar.respond('commands.registry', () => { throw new SidecarError('boom', { condition: 'sidecar_error' }) })
       expect(await sent('/knowledge_loop')).toBe('/knowledge_loop')
