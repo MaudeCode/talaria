@@ -633,9 +633,9 @@ dedicated canonical owner. It requires `local-cli-create-v1` and `safe_mode` /
 `ignore_user_config` in `runtime.describe.session_create.parameters`; otherwise it returns
 `execution_mode_unavailable`. A served profile, a stopped owner and an Agent without native
 sessions keep their existing refusals. The request carries the explicit model, provider,
-that provider's configured endpoint (a named custom provider launches as `custom` at its
-URL, since the bypass owner reads no `custom_providers`), workspace and toolsets; never a
-credential.
+that provider's configured endpoint (a named custom provider, from `custom_providers` or a
+native `providers` mapping key, launches as `custom` at its URL, since the bypass owner reads
+neither), workspace and toolsets; never a credential.
 `probe: true` answers availability without creating a session.
 
 v0.22.1 and v0.22.3 provide this owner path; v0.22.2 has no native sessions, so Web

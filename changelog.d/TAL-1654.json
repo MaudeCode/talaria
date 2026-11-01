@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Custom endpoints defined under providers in config.yaml now show their own name, endpoint, key status, and models in Providers and the model picker.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

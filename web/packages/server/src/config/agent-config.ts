@@ -10,7 +10,7 @@ import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { SidecarResult, DelegationSettings, DelegationWrite } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
-import { LOCAL_RUNTIME_PROVIDER, PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
+import { LOCAL_RUNTIME_PROVIDER, OAUTH_PROVIDERS, PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_ENV_VAR, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
 import { fileStatKey } from '../fs/stat.js'
 
@@ -285,9 +285,120 @@ export function parseProviderQualifiedModel(modelId: unknown): [string, string] 
   return [bareModel, providerHint]
 }
 
-export function customProviderEntries(config: Config): Dict[] {
+const DISABLED_WORDS = new Set(['false', '0', 'no', 'off'])
+
+/** Agent `is_provider_enabled`: a `providers.<key>` block is on unless `enabled` says otherwise. */
+export function providerRecordEnabled(record: unknown): boolean {
+  if (!isDict(record) || !('enabled' in record)) return true
+  const flag = record.enabled
+  if (typeof flag === 'string') return !DISABLED_WORDS.has(flag.trim().toLowerCase())
+  return Boolean(flag)
+}
+
+/** Agent `_pick_provider_base_url`: the first non-empty of `base_url`, `url` and `api`. */
+function recordBaseUrl(record: Dict): string {
+  for (const key of ['base_url', 'url', 'api']) { const v = str(record[key]).trim(); if (v) return v }
+  return ''
+}
+
+/**
+ * Whether `providers.<key>` names a custom endpoint rather than a built-in's or plugin's settings (TAL-1654): every
+ * `custom:` key, and a bare key that is no built-in, alias, local runtime or plugin id and declares its endpoint with
+ * the Agent's v12 custom-endpoint fields (`api`, `url`). A bare `base_url` stays a provider override, because the Agent
+ * ships built-ins (`kilocode`) these tables do not list.
+ */
+export function isNativeCustomProviderKey(key: string, record: unknown, plugins?: ReadonlySet<string>): boolean {
+  const raw = key.trim().toLowerCase()
+  if (!raw || !isDict(record)) return false
+  if (raw.startsWith('custom:')) return true
+  const canonical = canonicaliseProviderId(raw)
+  // A registered alias (`grok`, `local`) names its built-in even when the target has no table row of its own.
+  const builtIn = (id: string): boolean => id === 'custom' || id === LOCAL_RUNTIME_PROVIDER || id in PROVIDER_DISPLAY || id in PROVIDER_MODELS || id in PROVIDER_ENV_VAR || OAUTH_PROVIDERS.has(id)
+  if (raw.replaceAll('_', '-') in PROVIDER_ALIASES || raw in PROVIDER_ALIASES || builtIn(canonical)) return false
+  if (plugins?.has(raw) || plugins?.has(canonical)) return false
+  return Boolean(str(record.api).trim() || str(record.url).trim())
+}
+
+/** One legacy-shaped read of a custom record: `api`/`url`, `default_model` and `api_key_env` under their legacy names. */
+function customEntry(record: Dict, name: string, displayName: string): Dict {
+  const entry: Dict = { ...structuredClone(record), name }
+  if (displayName && displayName !== name) entry.display_name = displayName
+  const baseUrl = recordBaseUrl(record)
+  if (baseUrl) entry.base_url = baseUrl
+  const model = str(record.model).trim() || str(record.default_model).trim()
+  if (model) entry.model = model
+  const keyEnv = str(record.key_env).trim() || str(record.api_key_env).trim()
+  if (keyEnv) entry.key_env = keyEnv
+  return entry
+}
+
+export interface CustomProviderOwner { entry: Dict | null; refused: 'disabled' | 'ambiguous' | null }
+
+/** Native custom keys grouped by the identity they own, in one pass over `providers` (TAL-1654). */
+function nativeCustomIdentities(config: Config, plugins?: ReadonlySet<string>): Map<string, [string, Dict][]> {
+  const providers = dict(config.providers)
+  const groups = new Map<string, [string, Dict][]>()
+  for (const [key, record] of Object.entries(providers)) {
+    if (!isNativeCustomProviderKey(key, record, plugins)) continue
+    const identity = customProviderSlug(key)
+    if (!identity) continue
+    const group = groups.get(identity) ?? []
+    group.push([key, record as Dict])
+    groups.set(identity, group)
+  }
+  return groups
+}
+
+/**
+ * The native record owning `identity`. The exact `custom:<slug>` key outranks aliases, its disable included; without it
+ * one enabled alias owns the identity, several are ambiguous, and only disabled ones refuse it.
+ */
+function nativeCustomOwner(identity: string, group: [string, Dict][] | undefined): CustomProviderOwner {
+  if (!group?.length) return { entry: null, refused: null }
+  // `provider_key`: the mapping key the Agent knows this record by, for its live model catalog.
+  const own = ([key, record]: [string, Dict]): Dict => ({ ...customEntry(record, key.trim().toLowerCase() === identity ? identity : key.trim(), str(record.name).trim() || key.trim()), provider_key: key.trim() })
+  const exact = group.find(([key]) => key.trim().toLowerCase() === identity)
+  if (exact) return providerRecordEnabled(exact[1]) ? { entry: own(exact), refused: null } : { entry: null, refused: 'disabled' }
+  const enabled = group.filter(([, record]) => providerRecordEnabled(record))
+  if (enabled.length > 1) return { entry: null, refused: 'ambiguous' }
+  if (enabled.length === 1) return { entry: own(enabled[0]!), refused: null }
+  return { entry: null, refused: 'disabled' }
+}
+
+function legacyCustomEntries(config: Config): Dict[] {
   const entries = config.custom_providers
-  return Array.isArray(entries) ? entries.filter(isDict) : []
+  return Array.isArray(entries) ? entries.filter(isDict).map((e) => customEntry(e, str(e.name), '')) : []
+}
+
+/**
+ * Read-only, legacy-shaped view of the configured custom providers: `custom_providers` entries, then each native
+ * `providers` identity they do not already own. Native mapping keys are identities and their `name` is a label
+ * (`display_name`). An explicitly empty, null or malformed `custom_providers` suppresses the native entries; disabled
+ * and ambiguous native identities are left out. Never written back into config (TAL-1654).
+ */
+export function customProviderEntries(config: Config, plugins?: ReadonlySet<string>): Dict[] {
+  const entries = legacyCustomEntries(config)
+  if ('custom_providers' in config && !entries.length) return entries
+  const seen = new Set(entries.map((e) => customProviderSlug(e.name)))
+  for (const [identity, group] of nativeCustomIdentities(config, plugins)) {
+    if (seen.has(identity)) continue
+    const { entry } = nativeCustomOwner(identity, group)
+    if (entry) entries.push(entry)
+  }
+  return entries
+}
+
+/**
+ * The record owning one `custom:<slug>` route, for credential, endpoint, context and default lookups: a legacy entry
+ * wins, else the native owner. Unlike `customProviderEntries` it ignores a suppressing `custom_providers` value, so a
+ * selected native owner keeps its key and metadata (TAL-1654).
+ */
+export function customProviderOwner(config: Config, provider: unknown, plugins?: ReadonlySet<string>): CustomProviderOwner {
+  const identity = customProviderSlug(provider)
+  if (!identity) return { entry: null, refused: null }
+  const legacy = legacyCustomEntries(config).find((e) => customProviderSlug(e.name) === identity)
+  if (legacy) return { entry: legacy, refused: null }
+  return nativeCustomOwner(identity, nativeCustomIdentities(config, plugins).get(identity))
 }
 
 export function configuredModelIds(raw: unknown): string[] {
@@ -334,13 +445,13 @@ export function modelSection(config: Config): Dict {
 }
 
 /** Python `_resolve_configured_provider_id` (simplified): heal `local`, keep custom slugs, alias the rest. */
-export function activeProviderFromConfig(config: Config): string | null {
+export function activeProviderFromConfig(config: Config, plugins?: ReadonlySet<string>): string | null {
   const model = modelSection(config)
   let provider = str(model.provider).trim().toLowerCase()
   if (!provider) return null
   if (provider === 'local') provider = 'custom'
   if (provider.startsWith('custom:')) return provider
-  const named = customProviderEntries(config).find((e) => customProviderSlug(e.name) === customProviderSlug(provider) || str(e.name).trim().toLowerCase() === provider)
+  const named = customProviderEntries(config, plugins).find((e) => customProviderSlug(e.name) === customProviderSlug(provider) || str(e.name).trim().toLowerCase() === provider)
   if (named) return customProviderSlug(named.name) || 'custom'
   return canonicaliseProviderId(provider) || provider
 }
@@ -542,12 +653,11 @@ export function modelBaseUrl(config: Config, provider: string): string {
   const pid = canonicaliseProviderId(provider)
   const model = modelSection(config)
   if (canonicaliseProviderId(model.provider) === pid && str(model.base_url).trim()) return str(model.base_url).trim()
+  // The owner lookup keeps the slug as written: canonicalising folds `custom:my_box` into another identity.
+  if (pid.startsWith('custom:')) return str(customProviderOwner(config, provider).entry?.base_url).trim()
   const providers = dict(config.providers)
   const key = Object.keys(providers).find((k) => canonicaliseProviderId(k) === pid)
-  const base = str(dict(key ? providers[key] : null).base_url).trim()
-  if (base) return base
-  const custom = customProviderEntries(config).find((cp) => customProviderSlug(cp.name) === pid)
-  return str(custom?.base_url).trim()
+  return str(dict(key ? providers[key] : null).base_url).trim()
 }
 
 function auxTaskPayload(slot: AuxSlot, entry: unknown, reasoning: AuxReasoning | undefined): Dict {
@@ -764,7 +874,7 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
     if (isCustomProvider(provider)) {
       let base: string | null = null
       if (provider.startsWith('custom:')) {
-        const match = customProviderEntries(config).find((e) => customProviderSlug(e.name) === provider)
+        const match = customProviderOwner(config, provider).entry
         base = match ? str(match.base_url).trim() || null : null
         if (!base) Reflect.deleteProperty(entry, 'base_url')
       }
@@ -809,7 +919,7 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
       resolvedModel = parsed[0]
       resolvedProvider = parsed[1]
       if (resolvedProvider.startsWith('custom:')) {
-        const entry = customProviderEntries(config).find((e) => customProviderSlug(e.name) === resolvedProvider)
+        const entry = customProviderOwner(config, resolvedProvider).entry
         resolvedBase = entry ? str(entry.base_url).trim() || null : providerBaseUrl(resolvedProvider)
       } else {
         resolvedBase = providerBaseUrl(resolvedProvider)
