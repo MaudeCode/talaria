@@ -313,8 +313,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
 
         streamClient.emit(.transportError("The network connection was lost."))
+        // Wait for the applied view-model state; the stub flags flip before the response reaches the view model.
         try await waitUntil {
-            didRequestStatus && didReloadMessages
+            viewModel.activeStreamID == nil && viewModel.messages.map(\.content) == ["Recovered transcript."]
         }
 
         XCTAssertTrue(didRequestStatus)
