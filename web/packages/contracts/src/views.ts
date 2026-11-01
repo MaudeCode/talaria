@@ -483,11 +483,9 @@ export const SessionUsageSchema = z.looseObject({ plan_gauge: PlanGaugeSchema.nu
 
 export const ProjectSchema = z.looseObject({
   project_id: z.string(), name: z.string(), color: z.string().nullable().optional(), profile: NullableString.optional(), created_at: z.number().optional(),
-  workspaces: z.array(z.string()).optional().describe('TAL-1032: canonical trusted workspaces bound to the project.'),
-  default_workspace: NullableString.optional().describe('TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default.'),
-  model: NullableString.optional().describe('TAL-1032: the bare model a new chat in the project starts on; null uses the profile default.'),
-  model_provider: NullableString.optional().describe('TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it.'),
-  model_option_id: NullableString.optional().describe('TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered.'),
+  // TAL-1032 bindings and the catalog entry the bound pair selects; see docs/CONTRACTS.md "Project chat defaults" (no describe: it ships in the client).
+  workspaces: z.array(z.string()).optional(), default_workspace: NullableString.optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
+  model_option_id: NullableString.optional(),
 })
 export const ProjectsSchema = z.looseObject({ projects: z.array(ProjectSchema), active_profile: z.string(), all_profiles: z.boolean(), other_profile_count: z.number().int() })
 export const SessionDeleteResultSchema = z.looseObject({ ok: z.literal(true), state_db_cleanup_failed: z.boolean().optional() })
@@ -661,7 +659,7 @@ export const SourceReferenceSearchSchema = z.object({
 
 export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
-  profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional().describe('TAL-1032: a visible project whose bound default workspace and model fill the choices this request omits; null starts outside any project.'), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
+  profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
   execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal.'),
   request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic or referenced chat. Reuse it only to retry the same creation.'),
   source_references: z.array(SourceReferenceSchema).max(MAX_SOURCE_REFERENCES).optional().describe('Same-profile search pointers. Nonempty selections require request_id; unavailable or changed identities refuse creation.'),

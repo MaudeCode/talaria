@@ -9116,8 +9116,7 @@
                       {
                         "type": "null"
                       }
-                    ],
-                    "description": "TAL-1032: a visible project whose bound default workspace and model fill the choices this request omits; null starts outside any project."
+                    ]
                   },
                   "worktree": {},
                   "enabled_toolsets": {
@@ -44456,8 +44455,7 @@
                             "type": "array",
                             "items": {
                               "type": "string"
-                            },
-                            "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                            }
                           },
                           "default_workspace": {
                             "anyOf": [
@@ -44467,8 +44465,7 @@
                               {
                                 "type": "null"
                               }
-                            ],
-                            "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                            ]
                           },
                           "model": {
                             "anyOf": [
@@ -44478,8 +44475,7 @@
                               {
                                 "type": "null"
                               }
-                            ],
-                            "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                            ]
                           },
                           "model_provider": {
                             "anyOf": [
@@ -44489,8 +44485,7 @@
                               {
                                 "type": "null"
                               }
-                            ],
-                            "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                            ]
                           },
                           "model_option_id": {
                             "anyOf": [
@@ -44500,8 +44495,7 @@
                               {
                                 "type": "null"
                               }
-                            ],
-                            "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
+                            ]
                           }
                         },
                         "required": [
@@ -44628,8 +44622,7 @@
                           "type": "array",
                           "items": {
                             "type": "string"
-                          },
-                          "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                          }
                         },
                         "default_workspace": {
                           "anyOf": [
@@ -44639,8 +44632,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                          ]
                         },
                         "model": {
                           "anyOf": [
@@ -44650,8 +44642,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                          ]
                         },
                         "model_provider": {
                           "anyOf": [
@@ -44661,8 +44652,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                          ]
                         },
                         "model_option_id": {
                           "anyOf": [
@@ -44672,8 +44662,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
+                          ]
                         }
                       },
                       "required": [
@@ -44779,8 +44768,7 @@
                           "type": "array",
                           "items": {
                             "type": "string"
-                          },
-                          "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                          }
                         },
                         "default_workspace": {
                           "anyOf": [
@@ -44790,8 +44778,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                          ]
                         },
                         "model": {
                           "anyOf": [
@@ -44801,8 +44788,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                          ]
                         },
                         "model_provider": {
                           "anyOf": [
@@ -44812,8 +44798,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                          ]
                         },
                         "model_option_id": {
                           "anyOf": [
@@ -44823,8 +44808,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
+                          ]
                         }
                       },
                       "required": [
@@ -44953,8 +44937,7 @@
                           "type": "array",
                           "items": {
                             "type": "string"
-                          },
-                          "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                          }
                         },
                         "default_workspace": {
                           "anyOf": [
@@ -44964,8 +44947,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                          ]
                         },
                         "model": {
                           "anyOf": [
@@ -44975,8 +44957,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                          ]
                         },
                         "model_provider": {
                           "anyOf": [
@@ -44986,8 +44967,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                          ]
                         },
                         "model_option_id": {
                           "anyOf": [
@@ -44997,8 +44977,7 @@
                             {
                               "type": "null"
                             }
-                          ],
-                          "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
+                          ]
                         }
                       },
                       "required": [

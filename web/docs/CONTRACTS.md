@@ -494,8 +494,10 @@ validated before the one write, so a refusal leaves the project unchanged.
 `POST /api/session/new` with a visible `project_id` fills the workspace the request
 omits, or one it inherited from the previous chat, with the project default, and fills
 model and provider when the request names neither. The worktree preflight and the
-created session read the same resolved body. Another profile's project is a 404 and
-a deleted bound default refuses creation rather than starting elsewhere. Web's project
+created session read the same resolved body, resolved only when a chat is created, so a
+referenced creation's retry matches its original request. Another profile's project is a
+404, a deleted bound default refuses creation rather than starting elsewhere, and a Safe
+or Ignore config chat refuses a project: its Agent-owned chat is display-only in Web. Web's project
 New chat sends only the project and the user's picks. The shared fixture is
 `contracts/fixtures/project-bindings.json`.
 

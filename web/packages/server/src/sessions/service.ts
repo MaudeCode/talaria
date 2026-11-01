@@ -1706,7 +1706,8 @@ export class SessionService {
   /**
    * TAL-1032: the new-session choices with the project's bound defaults filling what the request omits. A workspace inherited
    * from the previous chat is not a choice, so the project default replaces it; a named model or provider is, so the project's
-   * pair applies only when the request names neither. Resolved once: the worktree preflight and creation both read the result.
+   * pair applies only when the request names neither. Resolved once per created chat: the worktree preflight and creation both read the
+   * result, while a referenced creation's retry matches its original request.
    */
   async withProjectDefaults(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const id = body.project_id

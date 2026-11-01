@@ -233,17 +233,20 @@ export const sessionsRouter = os.router({
       if (input.execution_mode === 'ignore_config' || input.execution_mode === 'safe') {
         // The owner has no worktree flow; refuse it rather than silently start an ordinary chat.
         if (input.worktree !== undefined && input.worktree !== false) throw new HttpError(400, 'A diagnostic chat cannot start in a new worktree')
+        // TAL-1032: an owner chat is display-only in Talaria, so Web could not file it in the project or keep it there.
+        if (input.project_id) throw new HttpError(400, 'A diagnostic chat cannot start in a project')
         await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
         return { session: (await ctx.deps.sessions.createDiagnostic(input, input.execution_mode)) as { session_id: string; title: string } }
       }
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
-      const body = await ctx.deps.sessions.withProjectDefaults(input)
       // The middleware warms only the cookie profile's config; new-session defaults read the target's synchronously.
       // `profileHome` refuses a profile whose home escapes the profiles root (400) before any warm-up failure is swallowed.
       if (profile) { const home = ctx.deps.profileHome(profile); await ctx.deps.agentConfig.read(home).catch(() => undefined) }
       let worktreeSkipped: string | null = null
-      const s = await ctx.deps.sessions.createWithReferences(body, async (sessionId, validateSources) => {
+      // The durable creation identity is the request itself; the project's mutable defaults resolve only when a chat is created.
+      const s = await ctx.deps.sessions.createWithReferences(input, async (sessionId, validateSources) => {
+        const body = await ctx.deps.sessions.withProjectDefaults(input)
         let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
         const explicit = 'worktree' in input
         let requested = explicit ? input.worktree === true || ['1', 'true', 'yes', 'on'].includes(String(input.worktree).trim().toLowerCase()) : ctx.deps.worktreeDefault(profile)

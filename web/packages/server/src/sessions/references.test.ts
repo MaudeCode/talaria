@@ -88,6 +88,26 @@ describe('new-chat conversation references', () => {
     expect(reloaded.session_id).toBe(sessions[0]!.session_id)
   })
 
+  it('recovers a project creation by its original request after the project defaults change (TAL-1032)', async () => {
+    await seed('first')
+    const [one, two] = ['one', 'two'].map((name) => join(s.state, 'workspace', name))
+    for (const dir of [one!, two!]) mkdirSync(dir, { recursive: true })
+    const setDefault = (dir: string) => s.deps.projects.mutate((rows) => {
+      const row = rows.find((p) => p.project_id === 'refproject1')
+      const path = s.deps.workspaces.resolvePath(dir)
+      if (row) Object.assign(row, { workspaces: [path], default_workspace: path })
+      else rows.push({ project_id: 'refproject1', name: 'Refs', profile: 'default', workspaces: [path], default_workspace: path })
+    })
+    await setDefault(one!)
+    const body = { source_references: [ref('first')], request_id: 'project-retry', project_id: 'refproject1' }
+    const created = SessionEnvelopeSchema.parse(await (await post(s, body)).json()).session
+    expect(created).toMatchObject({ project_id: 'refproject1', workspace: s.deps.workspaces.resolvePath(one!) })
+    await setDefault(two!)
+    const retried = await post(s, body)
+    expect(retried.status, await retried.clone().text()).toBe(200)
+    expect(SessionEnvelopeSchema.parse(await retried.json()).session.session_id).toBe(created.session_id)
+  })
+
   it('requires a creation receipt and refuses diagnostic mode before creating', async () => {
     await seed('first')
     expect((await post(s, { source_references: [ref('first')] })).status).toBe(400)
