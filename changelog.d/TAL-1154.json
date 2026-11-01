@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Right-click or long-press a message in Talaria Web to open its actions, such as Copy, Edit, Branch from here and Regenerate. Links and selected text keep the browser's own menu.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

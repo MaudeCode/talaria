@@ -63,10 +63,16 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
   )
 }
 
+/**
+ * Links nested in a trigger, including Markdown links and code-block controls that Streamdown renders as buttons
+ * (TAL-1154).
+ */
+const NESTED_NATIVE = 'a[href], [data-streamdown="link"], [data-streamdown="code-block-actions"], [data-streamdown="mermaid-block-actions"]'
+
 /** TAL-699: text fields, a selection reaching into the trigger, and links nested in it keep the browser's own menu. */
 function wantsNativeMenu(trigger: Element, target: Element): boolean {
   if (target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
-  const link = target.closest('a[href]')
+  const link = target.closest(NESTED_NATIVE)
   if (link && link !== trigger && trigger.contains(link)) return true
   const selection = trigger.ownerDocument.getSelection()
   return !!selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.getRangeAt(0).intersectsNode(trigger)
@@ -86,7 +92,8 @@ function passThrough(event: BaseUIEvent<SyntheticEvent>) {
 
 /**
  * The same menu opened by right-click or long-press on `trigger`, which keeps its own click behaviour. Base UI's trigger
- * sets `-webkit-touch-callout: none`, so a long-press on a link trigger does not also open the browser's link callout.
+ * sets `-webkit-touch-callout: none`, so a long-press on a link trigger does not also open the browser's link callout;
+ * `data-context-menu` restores the callout on links nested in it, which keep the browser's menu (base.css, TAL-1154).
  */
 export function ContextMenu({ trigger, children, className, label }: Pick<MenuProps, 'trigger' | 'children' | 'className' | 'label'>) {
   // A browser may send a click when the long-press finger lifts; while that menu is open it must not also activate the trigger.
@@ -95,6 +102,7 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
     <BaseContextMenu.Root onOpenChange={(open, details) => { pressed.current = open && details.event.type === 'touchstart' }}>
       <BaseContextMenu.Trigger
         render={trigger}
+        data-context-menu=""
         onContextMenu={passThrough}
         onTouchStart={passThrough}
         onClickCapture={(event) => { if (pressed.current) { pressed.current = false; event.preventDefault(); event.stopPropagation() } }}

@@ -323,3 +323,22 @@ describe('canonical message reactions', () => {
     expect(onReact).toHaveBeenLastCalledWith(row, fixture.message.reaction_view!.actions[2])
   })
 })
+
+describe('message context menu (TAL-1154)', () => {
+  it('jumps from the menu to the question before the answer, and a pending message has no menu', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    const question = { index: 0, key: 'q', message: { role: 'user', content: 'Plan the release' } }
+    const answer = { index: 1, key: 'a', message: { role: 'assistant', content: 'Here is the plan.' } }
+    const view = render(<div>
+      <UserMessageRow row={question} renderMarkdown={false} sessionId={undefined} actions={{}} />
+      <AssistantMessageRow row={answer} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />
+      <UserMessageRow row={{ ...question, key: 'p' }} renderMarkdown={false} sessionId={undefined} actions={{}} pending />
+    </div>)
+    fireEvent.contextMenu(screen.getByText('Here is the plan.'), { clientX: 10, clientY: 10 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Jump to the start of this response' }))
+    expect(scrollIntoView.mock.contexts).toEqual([view.container.querySelector('[data-role="user"]')])
+    const pending = view.container.querySelector('[data-live-user="1"]')!
+    expect(fireEvent.contextMenu(pending, { clientX: 10, clientY: 10 })).toBe(true)
+  })
+})

@@ -1,8 +1,8 @@
 import type { MessageReactionView, TurnUsage } from '@maudecode/talaria-web-contracts'
 import { Popover } from '@base-ui/react/popover'
-import { Menu, MenuItem } from '../../ui/Menu'
-import { memo, useState } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook } from 'lucide-react'
+import { ContextMenu, Menu, MenuItem } from '../../ui/Menu'
+import { memo, useRef, useState, type ReactElement } from 'react'
+import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -31,6 +31,21 @@ export interface RowActions {
   onEdit?: (row: VisibleMessage, text: string) => void
   onRegenerate?: (row: VisibleMessage) => void
   onBranch?: (row: VisibleMessage) => void
+}
+
+const copyText = (text: string) => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }
+
+/** One message action. TAL-1154: the hover bar and the right-click and long-press menu render the same list. */
+interface MessageAction { label: string; Icon: LucideIcon; run: () => void; className?: string }
+
+function ActionButtons({ items }: { items: readonly MessageAction[] }) {
+  return items.map(({ label, Icon, run, className }) => <IconButton key={label} label={label} className={cn('h-6 w-6', className)} onClick={run}><Icon size={12} aria-hidden="true" /></IconButton>)
+}
+
+/** `row` opens `items` on right-click and long-press; links, selections and code-block controls in it keep the browser's menu. */
+function MessageMenu({ items, row }: { items: readonly MessageAction[]; row: ReactElement }) {
+  if (!items.length) return row
+  return <ContextMenu label={m.message_menu()} trigger={row}>{items.map(({ label, run }) => <MenuItem key={label} onClick={run}>{label}</MenuItem>)}</ContextMenu>
 }
 
 /** Extends the existing row footer and Menu; both message roles share these counts and actions. */
@@ -83,7 +98,12 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
 
 export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions, pending = false }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions; pending?: boolean }) {
   const text = messageText(row.message.content)
-  return (
+  const items: MessageAction[] = pending ? [] : [
+    { label: m.copy(), Icon: Copy, run: () => copyText(text) },
+    ...(actions.onEdit ? [{ label: m.edit_message(), Icon: Pencil, run: () => actions.onEdit?.(row, text) }] : []),
+    ...(actions.onBranch ? [{ label: m.branch_from_here(), Icon: GitBranch, run: () => actions.onBranch?.(row) }] : []),
+  ]
+  return <MessageMenu items={items} row={
     <div className="msg-row" data-role="user" data-msg-idx={pending ? undefined : row.index} data-message-key={row.key} data-live-user={pending ? "1" : undefined} aria-busy={pending || undefined}>
       <AttachmentList message={row.message} sessionId={sessionId} />
       <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
@@ -92,12 +112,10 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
       {!pending && <div className="msg-foot">
         <MessageReactions row={row} actions={actions} />
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
-        <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
-        {actions.onEdit && <IconButton label={m.edit_message()} className="h-6 w-6" onClick={() => actions.onEdit?.(row, text)}><Pencil size={12} aria-hidden="true" /></IconButton>}
-        {actions.onBranch && <IconButton label={m.branch_from_here()} className="h-6 w-6" onClick={() => actions.onBranch?.(row)}><GitBranch size={12} aria-hidden="true" /></IconButton>}
+        <ActionButtons items={items} />
       </div>}
     </div>
-  )
+  } />
 })
 
 function reviewLabel(state: NonNullable<BackgroundLine['review_state']>): string {
@@ -150,7 +168,7 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
           </CollapsedBody>
           <div className="msg-foot">
             {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
-            <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
+            <IconButton label={m.copy()} className="h-6 w-6" onClick={() => copyText(text)}><Copy size={12} aria-hidden="true" /></IconButton>
           </div>
         </div>
       </details>
@@ -255,8 +273,20 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
   const parts = row.assistantRows ?? [row]
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
-  return (
-    <div className="msg-row assistant-turn" data-role="assistant" data-member-author={row.author === undefined ? undefined : '1'} data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
+  const ref = useRef<HTMLDivElement>(null)
+  const jumpToQuestion = () => {
+    let prev = ref.current?.previousElementSibling
+    while (prev && !(prev instanceof HTMLElement && prev.dataset.role === 'user')) prev = prev.previousElementSibling
+    prev?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  const items: MessageAction[] = [
+    { label: m.copy(), Icon: Copy, run: () => copyText(content) },
+    ...(tts && content.trim() ? [{ label: m.speak_message(), Icon: Volume2, run: () => { void speak(content) } }] : []),
+    ...(actions.onRegenerate && isLast ? [{ label: m.regenerate_response(), Icon: RotateCcw, run: () => actions.onRegenerate?.(row) }] : []),
+    { label: m.jump_to_question_label(), Icon: ArrowUp, run: jumpToQuestion, className: 'msg-question-jump-btn' },
+  ]
+  return <MessageMenu items={items} row={
+    <div ref={ref} className="msg-row assistant-turn" data-role="assistant" data-member-author={row.author === undefined ? undefined : '1'} data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />
@@ -268,11 +298,8 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
         {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
         {tokenUsage && row.message._turnUsage && <TurnUsageMeta usage={row.message._turnUsage} />}
         <span className="ml-auto" aria-hidden="true" />
-        <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(content).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
-        {tts && content.trim() && <IconButton label={m.speak_message()} className="h-6 w-6" onClick={() => { void speak(content) }}><Volume2 size={12} aria-hidden="true" /></IconButton>}
-        {actions.onRegenerate && isLast && <IconButton label={m.regenerate_response()} className="h-6 w-6" onClick={() => actions.onRegenerate?.(row)}><RotateCcw size={12} aria-hidden="true" /></IconButton>}
-        <IconButton label={m.jump_to_question_label()} className="msg-question-jump-btn h-6 w-6" onClick={(e) => { const rowEl = (e.currentTarget as HTMLElement).closest('.msg-row'); let prev = rowEl?.previousElementSibling; while (prev && !(prev instanceof HTMLElement && prev.dataset.role === 'user')) prev = prev.previousElementSibling; prev?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}><ArrowUp size={12} aria-hidden="true" /></IconButton>
+        <ActionButtons items={items} />
       </div>
     </div>
-  )
+  } />
 })
