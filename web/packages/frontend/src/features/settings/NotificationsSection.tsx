@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
@@ -42,21 +42,31 @@ export function NotificationsSection() {
 
 interface Shown { enabled: boolean; preferences: WebPushPreferences | null }
 
-/** Optimistic: each switch moves at once; a failed write reconciles with the server, else falls back to the last confirmed state. */
+/**
+ * Optimistic: each switch moves at once. Writes run one at a time against the latest confirmed state, so the last
+ * choice wins; a failed write reconciles with the server, else falls back to the last confirmed state.
+ */
 function WebPushSettings() {
   const qc = useQueryClient()
   const status = useQuery({ queryKey: keys.webPush, queryFn: readConfirmed })
   const [overlay, setOverlay] = useState<Shown | null>(null)
+  const queue = useRef({ tail: Promise.resolve(), pending: 0 })
   if (status.isPending) return <LoadingState />
   // A failed reconcile keeps showing the last confirmed state.
   if (!status.data) return <ErrorState error={status.error} onRetry={() => { void status.refetch() }} />
-  const last = status.data
-  const shown: Shown = overlay ?? { enabled: last.endpoint !== null, preferences: last.preferences }
+  const shown: Shown = overlay ?? { enabled: status.data.endpoint !== null, preferences: status.data.preferences }
 
-  const confirm = (next: Confirmed) => { qc.setQueryData(keys.webPush, next); setOverlay(null) }
-  const fail = (e: unknown) => {
+  const latest = (): Confirmed => qc.getQueryData<Confirmed>(keys.webPush) ?? status.data
+  const confirm = (next: Confirmed) => { qc.setQueryData(keys.webPush, next) }
+  const fail = async (e: unknown) => {
     showErrorToast(e)
-    void status.refetch().finally(() => { setOverlay(null) })
+    await status.refetch().catch(() => undefined)
+  }
+  /** The overlay stays until every queued write settles, so an earlier write never flips the switch back. */
+  const run = (write: () => Promise<void>) => {
+    const q = queue.current
+    q.pending += 1
+    q.tail = q.tail.then(write).catch(fail).finally(() => { q.pending -= 1; if (!q.pending) setOverlay(null) })
   }
 
   const enable = async () => {
@@ -64,29 +74,34 @@ function WebPushSettings() {
     const manager = await pushManager()
     // A subscription the server does not know may carry an old application key; replace it.
     await (await manager.getSubscription())?.unsubscribe()
-    const subscription = await manager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(last.publicKey) })
+    const subscription = await manager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(latest().publicKey) })
     const { keys: subscriptionKeys } = subscription.toJSON()
     const saved = await api.subscribeWebPush(subscription.endpoint, { p256dh: subscriptionKeys?.p256dh ?? '', auth: subscriptionKeys?.auth ?? '' })
-    confirm({ ...last, endpoint: subscription.endpoint, preferences: saved.preferences })
+    confirm({ ...latest(), endpoint: subscription.endpoint, preferences: saved.preferences })
   }
 
   const disable = async () => {
     const subscription = await (await pushManager()).getSubscription()
-    if (last.endpoint) await api.unsubscribeWebPush(last.endpoint)
+    const { endpoint } = latest()
+    if (endpoint) await api.unsubscribeWebPush(endpoint)
     await subscription?.unsubscribe()
-    confirm({ ...last, endpoint: null, preferences: null })
+    confirm({ ...latest(), endpoint: null, preferences: null })
   }
 
   const toggle = (enabled: boolean) => {
     setOverlay({ enabled, preferences: enabled ? shown.preferences : null })
-    void (enabled ? enable() : disable()).catch(fail)
+    run(enabled ? enable : disable)
   }
 
   const setKind = (current: WebPushPreferences, key: keyof WebPushPreferences, value: boolean) => {
-    if (!last.endpoint) return
     const preferences = { ...current, [key]: value }
     setOverlay({ enabled: true, preferences })
-    api.updateWebPush(last.endpoint, preferences).then((saved) => { confirm({ ...last, preferences: saved.preferences }) }, fail)
+    run(async () => {
+      const { endpoint } = latest()
+      if (!endpoint) return
+      const saved = await api.updateWebPush(endpoint, preferences)
+      confirm({ ...latest(), preferences: saved.preferences })
+    })
   }
 
   const preferences = shown.enabled ? shown.preferences : null

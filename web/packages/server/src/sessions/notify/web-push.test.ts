@@ -195,4 +195,23 @@ describe('Web Push and login sessions', () => {
     expect(await status(mine)).toBeNull()
     expect(await status(theirs)).not.toBeNull()
   })
+
+  it('stops retrying an alert once its login logs out', async () => {
+    const keys = browserKeys()
+    const cookie = await login()
+    const push = stubPushService(s)
+    const endpoint = 'https://push.example/send/retrying-login'
+    expect((await send(s, 'POST', PUSH_PATH, { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }, { cookie })).status).toBe(200)
+    const sid = String(((await json(await send(s, 'POST', '/api/session/new', {}, { cookie }))).session as Json).session_id)
+    s.deps.registry.activeRuns.set('stream-retry', { stream_id: 'stream-retry', session_id: sid, started_at: 5, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    s.deps.notifications.changed()
+    await s.deps.webPush.idle()
+    push.statuses.push(503)
+    s.deps.pending.submitApproval(sid, { request_id: 'r5', tool: 'shell' })
+    s.deps.notifications.changed()
+    await expect.poll(() => push.pushes.filter((p) => p.url === endpoint).length).toBe(1)
+    expect((await send(s, 'POST', '/api/auth/logout', undefined, { cookie })).status).toBe(200)
+    await s.deps.webPush.idle()
+    expect(push.pushes.filter((p) => p.url === endpoint)).toHaveLength(1)
+  })
 })

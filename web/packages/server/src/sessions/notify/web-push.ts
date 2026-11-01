@@ -201,6 +201,11 @@ export class WebPushChannel implements NotificationChannel {
     return sub.origin.startsWith('https://') ? sub.origin : LOCAL_SUBJECT
   }
 
+  private async stillSubscribed(sub: Subscription): Promise<boolean> {
+    if (sub.login !== null && !this.deps.liveLogins().has(sub.login)) return false
+    return (await this.subscriptions()).some((s) => s.endpoint === sub.endpoint && s.profile === sub.profile && s.login === sub.login)
+  }
+
   private async deliver(sub: Subscription, row: ActivityState, kind: AlertKind): Promise<void> {
     const vapid = VapidSchema.parse((await this.deps.documents.get('web-push', 'vapid'))?.value)
     // The Relay deep link is the app's route; the browser opens the Web chat, resolved against the worker's mount scope.
@@ -213,6 +218,8 @@ export class WebPushChannel implements NotificationChannel {
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms).unref() }))
     let failure = ''
     for (let attempt = 1; attempt <= MAX_TRIES && !this.stopped; attempt++) {
+      // Logout, expiry, unsubscribe or a 410 during a retry delay ends the alert with its subscription.
+      if (!(await this.stillSubscribed(sub))) return
       try {
         const addresses = await vettedAddresses(new URL(sub.endpoint).hostname, isNonGlobalAddress, this.deps.lookup())
         const res = await this.deps.fetch()(sub.endpoint, { method: 'POST', headers, ...(details.body ? { body: details.body } : {}), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }, addresses)
