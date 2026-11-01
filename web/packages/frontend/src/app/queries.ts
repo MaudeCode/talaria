@@ -86,6 +86,10 @@ export function useModelsQuery(opts: Partial<UseQueryOptions<Awaited<ReturnType<
   return useQuery({ queryKey: keys.models, queryFn: () => api.fetchModels(), staleTime: 60_000, ...opts })
 }
 
+export function useProjectsQuery(enabled = true) {
+  return useQuery({ queryKey: keys.projects, queryFn: () => api.fetchProjects(), staleTime: 60_000, enabled })
+}
+
 export function useWorkspacesQuery() {
   return useQuery({ queryKey: keys.workspaces, queryFn: api.fetchWorkspaces, staleTime: 30_000 })
 }

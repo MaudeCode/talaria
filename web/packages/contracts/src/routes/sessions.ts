@@ -197,6 +197,10 @@ export const sessionsContract = {
     list: oc.route({ method: 'GET', path: '/api/projects', tags: ['projects'] }).input(z.object({ all_profiles: z.string().optional() })).output(ProjectsSchema),
     create: oc.route({ method: 'POST', path: '/api/projects/create', tags: ['projects'] }).input(z.object({ name: z.string(), color: z.string().nullable().optional(), profile: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), project: ProjectSchema })),
     rename: oc.route({ method: 'POST', path: '/api/projects/rename', tags: ['projects'] }).input(z.object({ project_id: z.string(), name: z.string(), color: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), project: ProjectSchema })),
+    /** TAL-1032 (`setBindings`: a `bind` key would shadow `Function.prototype.bind` on the client proxy): omitted fields stay; null clears a default and an empty list clears the workspaces. The whole request is validated before anything is saved. */
+    setBindings: oc.route({ method: 'POST', path: '/api/projects/bind', tags: ['projects'] }).input(z.object({
+      project_id: z.string(), workspaces: z.array(z.string()).max(32).optional(), default_workspace: z.string().nullable().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
+    })).output(z.object({ ok: z.literal(true), project: ProjectSchema })),
     delete: oc.route({ method: 'POST', path: '/api/projects/delete', tags: ['projects'] }).input(z.object({ project_id: z.string() })).output(z.object({ ok: z.literal(true) })),
   },
   share: {

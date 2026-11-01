@@ -1791,6 +1791,14 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toEqual([expect.objectContaining({ provider: sent, base_url: url })])
   })
 
+  it('refuses a diagnostic chat in a project, whose owner chat Web could not file there (TAL-1032)', async () => {
+    await s.deps.projects.mutate((rows) => { rows.push({ project_id: 'diagproject1', name: 'Diagnostic', profile: 'default', model: 'fixture', model_provider: 'custom' }) })
+    const response = await post('/api/session/new', { execution_mode: 'safe', project_id: 'diagproject1' })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'A diagnostic chat cannot start in a project' })
+    expect(sidecar.calls.some((c) => c.method === 'gateway.create')).toBe(false)
+  })
+
   it('keeps Web-created diagnostic chats in the sidebar when external Agent sessions are hidden', async () => {
     await s.deps.settings.save({ show_cli_sessions: false })
     const listed = (await (await s.get('/api/sessions')).json() as { sessions: { session_id: string; execution_mode?: string }[] }).sessions

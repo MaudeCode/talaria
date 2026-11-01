@@ -3,8 +3,9 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const clientDir = resolve(import.meta.dirname, '../dist/client')
-// TAL-1403: measured static layout JS + CSS, with 10% headroom. Never includes lazy imports.
-export const layoutBudgetBytes = Math.ceil(1_462_852 * 1.1)
+// Measured static layout JS + CSS, with 10% headroom. Never includes lazy imports. TAL-1032: rebaselined to main's
+// measured layout (22dbb5d) by owner decision, after main had grown to 99.9% of the TAL-1403 budget.
+export const layoutBudgetBytes = Math.ceil(1_607_194 * 1.1)
 
 /** Follow static imports only: deferred routes and renderer plugins are not layout costs. */
 export function layoutFiles(manifest, layout = Object.keys(manifest).find((key) => /^src\/routes\/_app\.tsx\?/.test(key))) {

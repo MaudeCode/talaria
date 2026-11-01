@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useResourceMutation } from './useResourceMutation'
+import { useNewChat } from './useNewChat'
 import { MoreHorizontal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -24,9 +25,16 @@ const PROJECT_COLORS: { hex: string; name: () => string }[] = [
   { hex: '#f472b6', name: m.project_color_pink },
 ]
 
-/** A sidebar project filter chip; right-click, long-press or the selected chip's actions button opens rename, recolor and delete (TAL-565). */
-export function ProjectChip({ project, active, onSelect, onDeleted }: { project: z.infer<typeof ProjectSchema>; active: boolean; onSelect: () => void; onDeleted: () => void }) {
-  const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
+type Project = z.infer<typeof ProjectSchema>
+// The editor loads on first open, keeping the catalog picker out of the sidebar's static bundle.
+const ProjectDefaults = lazy(() => import('./ProjectDefaultsDialog').then((module) => ({ default: module.ProjectDefaults })))
+
+/** A sidebar project filter chip; right-click, long-press or the selected chip's actions button opens new chat, defaults, rename, recolor and delete (TAL-565, TAL-1032). */
+export function ProjectChip({ project, active, onSelect, onDeleted }: { project: Project; active: boolean; onSelect: () => void; onDeleted: () => void }) {
+  const [dialog, setDialog] = useState<'rename' | 'defaults' | 'delete' | null>(null)
+  // Mounted from the first open on, so a save outlives the closed editor and a refusal can reopen it.
+  const [defaultsLoaded, setDefaultsLoaded] = useState(false)
+  const newChat = useNewChat()
   const [name, setName] = useState(project.name)
   const id = project.project_id
   const fail = (e: unknown) => showErrorToast(e)
@@ -36,6 +44,8 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
   const del = useResourceMutation({ resource: () => `project:${id}`, effect: () => ({ remove: true }), mutationFn: () => api.deleteProject(id), onError: fail })
   const items = (
     <>
+      <MenuItem onClick={() => { void newChat(id) }}>{m.project_new_chat()}</MenuItem>
+      <MenuItem onClick={() => { setDefaultsLoaded(true); setDialog('defaults') }}>{m.project_defaults()}</MenuItem>
       <MenuItem onClick={() => { setName(project.name); setDialog('rename') }}>{m.rename()}</MenuItem>
       <MenuRadioGroup value={project.color ?? ''} onValueChange={(hex: string) => recolor.mutate(hex)} aria-label={m.project_color()} className="flex px-1">
         {PROJECT_COLORS.map((c) => (
@@ -76,6 +86,7 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
           </form>
         </Dialog>
       )}
+      {defaultsLoaded && <Suspense fallback={null}><ProjectDefaults project={project} open={dialog === 'defaults'} onOpenChange={(open) => setDialog(open ? 'defaults' : null)} /></Suspense>}
       <ConfirmDialog open={dialog === 'delete'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.project_delete_confirm({ name: project.name })} description={m.project_delete_desc()} confirmLabel={m.project_delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(); onDeleted() }} />
     </>
   )

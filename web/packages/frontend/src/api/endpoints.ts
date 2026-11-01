@@ -142,6 +142,8 @@ export const saveDraft = (body: z.infer<typeof DraftRequestSchema>) => orpc().se
 export const fetchProjects = () => orpc().projects.list({})
 export const createProject = (name: string, color?: string) => orpc().projects.create({ name, color: color ?? null })
 export const renameProject = (project_id: string, name: string, color?: string) => orpc().projects.rename({ project_id, name, ...(color !== undefined ? { color } : {}) })
+/** TAL-1032: omitted fields stay as saved. */
+export const bindProject = (body: { project_id: string; workspaces?: string[]; default_workspace?: string | null; model?: string | null; model_provider?: string | null }) => orpc().projects.setBindings(body)
 export const deleteProject = (project_id: string) => orpc().projects.delete({ project_id })
 
 // Chat

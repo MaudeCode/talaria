@@ -12,6 +12,7 @@ import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { Dialog } from '../../ui/Dialog'
 import { useNewChat } from './useNewChat'
+import { useProjectsQuery } from '../../app/queries'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { ContextMenu } from '../../ui/Menu'
 import { ProjectChip } from './ProjectChip'
@@ -177,10 +178,6 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
     </div>
   )
 })
-
-export function useProjectsQuery() {
-  return useQuery({ queryKey: keys.projects, queryFn: () => api.fetchProjects(), staleTime: 60_000 })
-}
 
 const NO_PROJECT = '__none__'
 

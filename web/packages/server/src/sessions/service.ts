@@ -40,7 +40,7 @@ import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, sha
 import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
 import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
-import type { ProjectStore } from '../projects.js'
+import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
 import type { GatewaySessions } from './gateway-sessions.js'
@@ -1722,6 +1722,31 @@ export class SessionService {
       try { await this.store.save(session) } catch (error) { this.store.sessions.delete(sid); throw error }
       return session
     })
+  }
+
+  /**
+   * TAL-1032: the new-session choices with the project's bound defaults filling what the request omits. A workspace inherited
+   * from the previous chat is not a choice, so the project default replaces it; a named model or provider is, so the project's
+   * pair applies only when the request names neither. Resolved once per created chat: the worktree preflight and creation both read the
+   * result, while a referenced creation's retry matches its original request.
+   */
+  async withProjectDefaults(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const id = body.project_id
+    if (typeof id !== 'string' || !id) return body
+    // The project must belong to the request's active profile; a profile named in the body never authorizes another's project.
+    const active = this.deps.activeProfile()
+    const project = (await this.deps.projects.load()).find((p) => p.project_id === id)
+    const named = typeof body.profile === 'string' && body.profile ? body.profile : null
+    if (!project || !this.deps.profilesMatch(project.profile ?? null, active) || (named && !this.deps.profilesMatch(named, active))) throw new HttpFailure(404, 'Project not found')
+    const bound = projectBindings(project)
+    const out = { ...body }
+    if (bound.default_workspace && (!body.workspace || body.workspace_inherited_from_prev_session === true)) {
+      out.workspace = bound.default_workspace
+      delete out.workspace_inherited_from_prev_session
+    }
+    const picked = (value: unknown): boolean => typeof value === 'string' && !!value.trim()
+    if (bound.model && !picked(body.model) && !picked(body.model_provider)) { out.model = bound.model; out.model_provider = bound.model_provider }
+    return out
   }
 
   async resolveNewSessionWorkspace(body: Record<string, unknown>, visiblePrevSessionId: string | null, profile: string | null): Promise<string | null> {

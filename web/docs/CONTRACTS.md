@@ -475,6 +475,32 @@ replaying, and fence stale responses after a profile switch. Reset All restores
 the native Default backend as well as fixed model overrides. Session overrides
 and delegation execution are separate. This extends sidecar RPC version 63.
 
+## Project chat defaults
+
+A project in `projects.json` can carry `workspaces`, `default_workspace`, `model`
+and `model_provider` (TAL-1032). The keys are additive, so Stable reads the file;
+a row from upstream with only a single `workspace` reads as that one bound default.
+`GET /api/projects` returns the normalized fields plus `model_option_id`, the catalog
+entry the saved pair selects, or null when it is unbound or no longer offered.
+
+`POST /api/projects/bind` changes only the fields it names. Each workspace must pass
+the same trust check as a new chat's workspace and is stored as its canonical path,
+deduplicated. The default must be one of the bound workspaces; null starts new chats
+in the profile default, and an empty list clears every workspace. A model needs its
+provider: a bare id never selects one. A new pair must be one the catalog offers, while
+re-sending the saved pair keeps a choice the catalog dropped. The whole request is
+validated before the one write, so a refusal leaves the project unchanged.
+
+`POST /api/session/new` with a visible `project_id` fills the workspace the request
+omits, or one it inherited from the previous chat, with the project default, and fills
+model and provider when the request names neither. The worktree preflight and the
+created session read the same resolved body, resolved only when a chat is created, so a
+referenced creation's retry matches its original request. A project outside the request's
+active profile is a 404, even when the body names its profile, a deleted bound default refuses creation rather than starting elsewhere, and a Safe
+or Ignore config chat refuses a project: its Agent-owned chat is display-only in Web. Web's project
+New chat sends only the project and the user's picks. The shared fixture is
+`contracts/fixtures/project-bindings.json`.
+
 ## Coding-agent profile import
 
 Owner-only `/api/profile/import` discovers the OS user's default `.claude`,

@@ -32,6 +32,7 @@ import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
 import { ProfileError } from '../profiles/profiles.js'
 import type { Settings } from '../settings.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
+import { projectBindings, type Project } from '../projects.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -68,6 +69,30 @@ function queryPositiveInt(value: string | undefined, fallback: number | null, ma
 }
 
 const sanitizeError = sanitizePaths
+
+/** TAL-1032: project rows with their bindings normalized and the catalog entry each bound model pair selects. */
+async function projectViews(ctx: RequestContext, projects: Project[]): Promise<Project[]> {
+  const resolvers = new Map<string, Promise<(model: string | null, provider: string | null) => string | null>>()
+  return Promise.all(projects.map(async (p) => {
+    const bound = projectBindings(p)
+    let option: string | null = null
+    if (bound.model) {
+      try {
+        const home = ctx.deps.profileHome(p.profile || ctx.deps.activeProfile())
+        if (!resolvers.has(home)) resolvers.set(home, ctx.deps.catalog.modelOptionResolver(home))
+        option = (await resolvers.get(home)!)(bound.model, bound.model_provider)
+      } catch { option = null }
+    }
+    return { ...p, ...bound, model_option_id: option }
+  }))
+}
+
+/** TAL-1032: a bound path passes the same trust check a new chat's workspace does, as its canonical path. */
+async function trustedProjectWorkspace(ctx: RequestContext, raw: string, profile: string): Promise<string> {
+  const path = stripSurroundingQuotes(raw.trim())
+  if (!path) throw new HttpError(400, 'Workspace path is required')
+  try { return await ctx.deps.workspaces.resolveTrusted(path, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+}
 
 /** Python `_guard_request_session_visibility` for a body/query session id. */
 async function guardVisibility(ctx: RequestContext, sid: unknown): Promise<void> {
@@ -208,6 +233,8 @@ export const sessionsRouter = os.router({
       if (input.execution_mode === 'ignore_config' || input.execution_mode === 'safe') {
         // The owner has no worktree flow; refuse it rather than silently start an ordinary chat.
         if (input.worktree !== undefined && input.worktree !== false) throw new HttpError(400, 'A diagnostic chat cannot start in a new worktree')
+        // TAL-1032: an owner chat is display-only in Talaria, so Web could not file it in the project or keep it there.
+        if (input.project_id) throw new HttpError(400, 'A diagnostic chat cannot start in a project')
         await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
         return { session: (await ctx.deps.sessions.createDiagnostic(input, input.execution_mode)) as { session_id: string; title: string } }
       }
@@ -217,7 +244,9 @@ export const sessionsRouter = os.router({
       // `profileHome` refuses a profile whose home escapes the profiles root (400) before any warm-up failure is swallowed.
       if (profile) { const home = ctx.deps.profileHome(profile); await ctx.deps.agentConfig.read(home).catch(() => undefined) }
       let worktreeSkipped: string | null = null
+      // The durable creation identity is the request itself; the project's mutable defaults resolve only when a chat is created.
       const s = await ctx.deps.sessions.createWithReferences(input, async (sessionId, validateSources) => {
+        const body = await ctx.deps.sessions.withProjectDefaults(input)
         let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
         const explicit = 'worktree' in input
         let requested = explicit ? input.worktree === true || ['1', 'true', 'yes', 'on'].includes(String(input.worktree).trim().toLowerCase()) : ctx.deps.worktreeDefault(profile)
@@ -228,7 +257,7 @@ export const sessionsRouter = os.router({
         }
         if (requested) {
           try {
-            let base = input.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile)) : null
+            let base = body.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(body, null, profile)) : null
             base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile))
             const repo = base
             worktree = await ctx.deps.git.holdWrite(repo, async () => {
@@ -248,7 +277,7 @@ export const sessionsRouter = os.router({
           }
         }
         // A worktree has already passed source validation before allocation.
-        return ctx.deps.sessions.create(input, { worktree, ...(sessionId ? { sessionId } : {}), ...(!worktree && validateSources ? { validateSources } : {}) })
+        return ctx.deps.sessions.create(body, { worktree, ...(sessionId ? { sessionId } : {}), ...(!worktree && validateSources ? { validateSources } : {}) })
       })
       const payload: Record<string, unknown> = { session: (await ctx.deps.sessions.publicSession(s)) }
       if (worktreeSkipped) payload.worktree_skipped = worktreeSkipped
@@ -418,7 +447,7 @@ export const sessionsRouter = os.router({
       const all = (await ctx.deps.projects.load())
       const allProfiles = allProfilesEnabled(ctx, input.all_profiles)
       const scoped = allProfiles ? all : all.filter((p) => ctx.deps.profilesMatch(p.profile ?? null, activeProfile))
-      return { projects: scoped, all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || ctx.deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
+      return { projects: await projectViews(ctx, scoped), all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || ctx.deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
     })),
     create: os.projects.create.handler(({ input, context: { ctx } }) => run(async () => {
       const name = input.name.trim().slice(0, 128)
@@ -448,6 +477,53 @@ export const sessionsRouter = os.router({
       })
       ctx.deps.events.publish('project_rename', { profile: activeProfile })
       return { ok: true as const, project: proj }
+    })),
+    setBindings: os.projects.setBindings.handler(({ input, context: { ctx } }) => run(async () => {
+      const activeProfile = ctx.deps.activeProfile()
+      const visible = (p: Project | undefined): p is Project => !!p && ctx.deps.profilesMatch(p.profile ?? null, activeProfile)
+      const current = (await ctx.deps.projects.load()).find((p) => p.project_id === input.project_id)
+      if (!visible(current)) throw new HttpError(404, 'Project not found')
+      // Every field is validated before the one write, so a refused request changes nothing.
+      const before = projectBindings(current)
+      const next = { ...before }
+      if (input.workspaces !== undefined) {
+        const resolved: string[] = []
+        for (const raw of input.workspaces) {
+          const path = await trustedProjectWorkspace(ctx, raw, activeProfile)
+          if (!resolved.includes(path)) resolved.push(path)
+        }
+        next.workspaces = resolved
+        if (next.default_workspace && !resolved.includes(next.default_workspace)) next.default_workspace = null
+      }
+      if (input.default_workspace !== undefined) {
+        const chosen = input.default_workspace?.trim() ? await trustedProjectWorkspace(ctx, input.default_workspace, activeProfile) : null
+        if (chosen && !next.workspaces.includes(chosen)) throw new HttpError(400, "The default workspace must be one of the project's workspaces")
+        next.default_workspace = chosen
+      }
+      if (input.model_provider !== undefined && input.model === undefined) throw new HttpError(400, 'model_provider requires model')
+      if (input.model !== undefined) {
+        const [model, provider] = input.model?.trim() ? ctx.deps.sessions.deps.modelStateFromRequest(input.model, input.model_provider ?? null, null) : [null, null]
+        // A bare id never picks its provider: several providers can serve the same id.
+        if (model && !provider) throw new HttpError(400, 'Choose the provider that serves this model')
+        // A saved pair the catalog no longer offers stays as is; any other pair must be one the catalog offers.
+        if (model && provider && !(model === before.model && provider === before.model_provider)) {
+          const option = (await ctx.deps.catalog.modelOptionResolver(ctx.deps.profileHome(activeProfile)))(model, provider)
+          if (!option) throw new HttpError(400, `${model} is not offered by ${provider}`)
+        }
+        next.model = model
+        next.model_provider = provider
+      }
+      const project = await ctx.deps.projects.mutate((rows) => {
+        const row = rows.find((p) => p.project_id === input.project_id)
+        if (!visible(row)) throw new HttpError(404, 'Project not found')
+        if (JSON.stringify(projectBindings(row)) !== JSON.stringify(before)) throw new HttpError(409, 'The project changed; reopen it and try again')
+        Object.assign(row, next)
+        // Upstream's single-workspace alias follows the default when a row carries it.
+        if ('workspace' in row) row.workspace = next.default_workspace ?? next.workspaces[0] ?? null
+        return row
+      })
+      ctx.deps.events.publish('project_rename', { profile: activeProfile })
+      return { ok: true as const, project: (await projectViews(ctx, [project]))[0]! }
     })),
     delete: os.projects.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const activeProfile = ctx.deps.activeProfile()

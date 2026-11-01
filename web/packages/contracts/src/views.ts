@@ -481,7 +481,12 @@ export const SessionStatusSchema = z.looseObject({
 export type SessionStatus = z.infer<typeof SessionStatusSchema>
 export const SessionUsageSchema = z.looseObject({ plan_gauge: PlanGaugeSchema.nullable().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), model: NullableString.optional() })
 
-export const ProjectSchema = z.looseObject({ project_id: z.string(), name: z.string(), color: z.string().nullable().optional(), profile: NullableString.optional(), created_at: z.number().optional() })
+export const ProjectSchema = z.looseObject({
+  project_id: z.string(), name: z.string(), color: z.string().nullable().optional(), profile: NullableString.optional(), created_at: z.number().optional(),
+  // TAL-1032 bindings and the catalog entry the bound pair selects; see docs/CONTRACTS.md "Project chat defaults" (no describe: it ships in the client).
+  workspaces: z.array(z.string()).optional(), default_workspace: NullableString.optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
+  model_option_id: NullableString.optional(),
+})
 export const ProjectsSchema = z.looseObject({ projects: z.array(ProjectSchema), active_profile: z.string(), all_profiles: z.boolean(), other_profile_count: z.number().int() })
 export const SessionDeleteResultSchema = z.looseObject({ ok: z.literal(true), state_db_cleanup_failed: z.boolean().optional() })
 

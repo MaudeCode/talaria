@@ -1,0 +1,50 @@
+{
+  "list": {
+    "projects": [
+      {
+        "project_id": "a1b2c3d4e5f6",
+        "name": "Synthetic bound",
+        "color": "#7cb9ff",
+        "profile": "default",
+        "created_at": 1760000000,
+        "workspaces": ["/synthetic/home/alpha", "/synthetic/home/beta"],
+        "default_workspace": "/synthetic/home/beta",
+        "model": "gemini-2.5-flash",
+        "model_provider": "gemini",
+        "model_option_id": "@gemini:gemini-2.5-flash"
+      },
+      {
+        "project_id": "b2c3d4e5f6a1",
+        "name": "Synthetic unavailable model",
+        "color": null,
+        "profile": "default",
+        "workspaces": [],
+        "default_workspace": null,
+        "model": "retired-model",
+        "model_provider": "custom:backup",
+        "model_option_id": null
+      },
+      {
+        "project_id": "c3d4e5f6a1b2",
+        "name": "Synthetic unbound",
+        "profile": "default",
+        "workspaces": [],
+        "default_workspace": null,
+        "model": null,
+        "model_provider": null,
+        "model_option_id": null
+      }
+    ],
+    "active_profile": "default",
+    "all_profiles": false,
+    "other_profile_count": 0
+  },
+  "bind_request": {
+    "project_id": "a1b2c3d4e5f6",
+    "workspaces": ["/synthetic/home/alpha", "/synthetic/home/beta"],
+    "default_workspace": "/synthetic/home/beta",
+    "model": "@gemini:gemini-2.5-flash",
+    "model_provider": "gemini"
+  },
+  "clear_request": { "project_id": "a1b2c3d4e5f6", "workspaces": [], "default_workspace": null, "model": null }
+}
