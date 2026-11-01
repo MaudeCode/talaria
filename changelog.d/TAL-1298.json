@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Cancelling dictation after you stop it, by leaving the chat or answering a clarification, no longer uploads the recording for transcription.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

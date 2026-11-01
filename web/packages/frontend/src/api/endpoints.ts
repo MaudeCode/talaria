@@ -162,10 +162,10 @@ export const uploadFile = (session_id: SessionId, file: File) => {
 export const fetchTranscribeCapability = () => orpc().transcribeCapability()
 // TAL-906: what read-aloud speaks for a message, prepared by the server.
 export const prepareSpeech = (text: string) => orpc().speech.prepare({ text })
-export const transcribeRecording = (audio: Blob, filename: string) => {
+export const transcribeRecording = (audio: Blob, filename: string, signal?: AbortSignal) => {
   const form = new FormData()
   form.set('file', audio, filename)
-  return postForm('api/transcribe', form, TranscribeResponseSchema, { timeoutMs: 120_000 })
+  return postForm('api/transcribe', form, TranscribeResponseSchema, { timeoutMs: 120_000, ...(signal ? { signal } : {}) })
 }
 export const rollbackUpload = (session_id: SessionId, rollback_tokens: string[]) => orpc().upload.rollback({ session_id, rollback_tokens })
 export const goalCommand = (session_id: SessionId, args: string) => orpc().goal({ session_id, args })
