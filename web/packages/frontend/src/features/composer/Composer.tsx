@@ -687,8 +687,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     const owner = {}
     dictationOwner.current = owner
     const base = text
-    let dictatedText = false
-    const dictated = (transcript: string) => { if (dictationOwner.current !== owner) return; dictatedText = true; setText(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`) }
+    let written: string | null = null
+    const dictated = (transcript: string) => { if (dictationOwner.current !== owner) return; written = settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`; setText(written) }
     if (liveOffered) {
       const handle = dictateLive(dictated, (error) => {
         if (dictationOwner.current !== owner) return
@@ -696,8 +696,9 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         if (liveDictation.current === handle) { liveDictation.current = null; setDictating(false) }
         if (!error) return
         const kind = liveDictationErrorKind(error)
-        // TAL-1608: the server heard no speech, so partials shown meanwhile give way to the draft dictation started from.
-        if (kind === 'no_speech' && dictatedText) setText(base)
+        // TAL-1608: the server heard no speech, so a partial still showing gives way to the draft dictation started from;
+        // edits made after it stay.
+        if (kind === 'no_speech' && written !== null) { const shown = written; setText((current) => current === shown ? base : current) }
         dictationError(kind, error instanceof Error ? error.message : '')
       })
       liveDictation.current = handle
