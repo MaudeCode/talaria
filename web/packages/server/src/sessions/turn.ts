@@ -1581,7 +1581,8 @@ export class TurnRunner {
     const usage = this.liveUsage.get(streamId)
     if (usage) Object.assign(s, usage)
     const todos = this.liveTodos.get(streamId)
-    if (todos) s.extra[UNSETTLED_TODO_KEY] = todos
+    // TAL-1121: the turn id lets a later history cut tell whether this turn's rows survived it.
+    if (todos) s.extra[UNSETTLED_TODO_KEY] = { ...todos, turn_id: streamId }
   }
 
   private async teardown(sessionId: string, streamId: string): Promise<void> {

@@ -3247,9 +3247,14 @@ function stampIntentionalShrink(session: Session, oldCount: number, newCount: nu
     session.compression_anchor_visible_idx = null
   }
   // TAL-1121: a cut that removed the turn which wrote the kept todo list ends that list, so no later load resurrects it.
-  // A list without its write time cannot prove it predates the cut, so it ends too.
-  const kept = session.extra[UNSETTLED_TODO_KEY], keptAt = tsFloat(isDict(kept) ? kept.ts : 0)
-  if (kept !== undefined && (!keptAt || keptAt > truncationWatermarkFor(session.messages))) Reflect.deleteProperty(session.extra, UNSETTLED_TODO_KEY)
+  // A kept row of its turn proves it stays; otherwise its write time must not postdate the newest kept row, compared in
+  // the whole seconds terminal rows carry. A list without its write time cannot prove it predates the cut, so it ends too.
+  const kept = session.extra[UNSETTLED_TODO_KEY]
+  if (kept !== undefined) {
+    const turn = isDict(kept) ? str(kept.turn_id) : '', keptAt = tsFloat(isDict(kept) ? kept.ts : 0)
+    const retained = (turn && session.messages.some((m) => isDict(m) && m._turn_id === turn)) || (keptAt > 0 && Math.trunc(keptAt) <= truncationWatermarkFor(session.messages))
+    if (!retained) Reflect.deleteProperty(session.extra, UNSETTLED_TODO_KEY)
+  }
   if (newCount >= oldCount) return false
   session.intentional_shrink_generation = randomUUID().replace(/-/g, '')
   return true

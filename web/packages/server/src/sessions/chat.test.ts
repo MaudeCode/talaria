@@ -4387,6 +4387,11 @@ describe('live metering and todo_state (TAL-397)', () => {
       expect(session).toMatchObject({ input_tokens: 300, output_tokens: 40, estimated_cost: 0.02 })
       expect(session.todo_state).toMatchObject({ todos })
     }
+    // TAL-1121: the kept list names its turn, and the turn's terminal row carries the same id for a later cut to find.
+    const stored = (await s.deps.sessionStore.load(sid))!
+    const turnId = str((stored.extra[UNSETTLED_TODO_KEY] as Json).turn_id)
+    expect(turnId).toMatch(/\S/)
+    expect(stored.messages.some((m) => m._turn_id === turnId && m._error === true)).toBe(true)
   })
 
   it('keeps an unsettled todo list only until the transcript holds a newer todo write', () => {
@@ -4416,6 +4421,19 @@ describe('live metering and todo_state (TAL-397)', () => {
     await cut(sid)
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     expect(((detail.todo_state as Json | undefined)?.todos as Json[] | undefined)?.[0]?.content).toBe(expected)
+  })
+
+  // Codex review on #1189: a failed turn's terminal row is stamped in whole seconds; its fractional todo write still belongs to it.
+  it.each([['its turn id', { turn_id: 'turn-a' }], ['a whole-second terminal row', {}]] as const)('keeps a retained failed turn\'s list across an undo by %s', async (label, identity) => {
+    const sid = `kept-todo-retained-${label.replace(/\W/g, '-')}`
+    await s.deps.sessionStore.save(new Session({ session_id: sid, messages: [
+      { role: 'user', content: 'then fail', timestamp: 12 }, { role: 'assistant', content: '', _error: true, timestamp: 12, _turn_id: 'turn-a' },
+      { role: 'user', content: 'again', timestamp: 31 }, { role: 'assistant', content: 'later', timestamp: 32 },
+    ], [UNSETTLED_TODO_KEY]: { todos: [{ id: '1', content: 'kept', status: 'in_progress' }], summary: {}, version: 1, ts: 12.4, ...identity } }, { workspace: s.state, model: null }))
+    await s.deps.sessions.undo(sid)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(((detail.todo_state as Json | undefined)?.todos as Json[] | undefined)?.[0]?.content).toBe('kept')
+    expect(detail.todo_state).not.toHaveProperty('turn_id')
   })
 
   it('serves the running turn\'s live todo list in session detail before it settles', async () => {
