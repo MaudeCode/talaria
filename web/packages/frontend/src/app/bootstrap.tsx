@@ -29,7 +29,7 @@ export async function loadBootstrap(): Promise<Bootstrap> {
     try {
       const data = await fetchBootstrap()
       configureClient({ csrfToken: data.csrf_token, authEnabled: data.auth.auth_enabled, onUnauthorized: handleAuthExpired })
-      await bootLocale(data.language)
+      await bootLocale(data.language, data.browser_language)
       current = { state: 'ready', data }
       return data
     } catch (error) {

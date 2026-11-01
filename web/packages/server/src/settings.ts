@@ -19,6 +19,11 @@ export const SETTINGS_SPEECH_KEYS = new Set([
   'voice_mode_button', 'voice_continuous', 'voice_silence_ms', 'raw_audio_mode',
 ])
 const PERSISTED_SPEECH_KEYS_FIELD = 'persisted_speech_keys'
+/**
+ * Keys written to `settings.json` only once stored or chosen, so their merged default never becomes a saved
+ * choice: the speech keys, and `language` (TAL-1031: absent means the browser language applies).
+ */
+const CHOSEN_ONLY_KEYS = new Set([...SETTINGS_SPEECH_KEYS, 'language'])
 const LEGACY_DROP_KEYS = new Set(['assistant_language', 'bubble_layout', 'default_model', 'activity_feed_expanded_default', 'simplified_tool_calling'])
 export const SETTINGS_THEME_VALUES = new Set(['light', 'dark', 'system'])
 export const SETTINGS_SKIN_VALUES = new Set([
@@ -333,14 +338,14 @@ export class SettingsStore {
     return settings
   }
 
-  private persistedSpeechKeys(stored: Settings): Set<string> {
-    return new Set([...SETTINGS_SPEECH_KEYS].filter((k) => k in stored))
+  private storedChosenKeys(stored: Settings): Set<string> {
+    return new Set([...CHOSEN_ONLY_KEYS].filter((k) => k in stored))
   }
 
-  private payloadForWrite(settings: Settings, persistedSpeechKeys: Set<string>): Settings {
+  private payloadForWrite(settings: Settings, chosenKeys: Set<string>): Settings {
     const persisted: Settings = {}
     for (const [k, v] of Object.entries(settings)) if (k !== 'default_model' && k !== PERSISTED_SPEECH_KEYS_FIELD) persisted[k] = v
-    for (const key of SETTINGS_SPEECH_KEYS) if (!persistedSpeechKeys.has(key)) Reflect.deleteProperty(persisted, key)
+    for (const key of CHOSEN_ONLY_KEYS) if (!chosenKeys.has(key)) Reflect.deleteProperty(persisted, key)
     return persisted
   }
 
@@ -368,9 +373,9 @@ export class SettingsStore {
       try { record = await this.documents.get('settings', 'settings') }
       catch (error) { if (!(error instanceof InvalidDocument)) throw error; record = { value: {}, revision: error.revision } }
       const raw = record?.value && typeof record.value === 'object' && !Array.isArray(record.value) ? record.value as Settings : {}
-      const persistedSpeechKeys = this.persistedSpeechKeys(raw)
+      const storedChosenKeys = this.storedChosenKeys(raw)
       const current = this.fromRaw(raw)
-      const appliedSpeechKeys = new Set<string>()
+      const appliedChosenKeys = new Set<string>()
       const allowed = new Set(Object.keys(this.defaults()))
       for (const k of ['password_hash', 'default_model', 'simplified_tool_calling']) allowed.delete(k)
       const composerKeys = new Set([...allowed].filter((k) => k.startsWith('hide_composer_')))
@@ -471,7 +476,7 @@ export class SettingsStore {
         }
         if (typeof this.defaults()[k] === 'boolean') v = pyBool(v)
         current[k] = v
-        if (SETTINGS_SPEECH_KEYS.has(k)) appliedSpeechKeys.add(k)
+        if (CHOSEN_ONLY_KEYS.has(k)) appliedChosenKeys.add(k)
       }
       // An explicit toggle records the opt-in marker so `fromRaw` keeps it on after a reload.
       if ('virtualize_transcript' in settings) current.virtualize_transcript_optin = current.virtualize_transcript
@@ -482,8 +487,8 @@ export class SettingsStore {
       }
       ;[current.theme, current.skin] = normalizeAppearance(pendingTheme, skinValue)
       current.default_workspace = resolveDefaultWorkspace(typeof current.default_workspace === 'string' ? current.default_workspace : null, { env: this.env, stateDir: this.stateDir })
-      const effectiveSpeech = new Set([...persistedSpeechKeys, ...appliedSpeechKeys])
-      try { await this.writeSettings(this.payloadForWrite(current, effectiveSpeech), record?.revision ?? null) }
+      const chosenKeys = new Set([...storedChosenKeys, ...appliedChosenKeys])
+      try { await this.writeSettings(this.payloadForWrite(current, chosenKeys), record?.revision ?? null) }
       catch (error) { if (error instanceof RevisionConflict && attempt < 1) continue; throw error }
       if (passwordChanged) this.hooks.onPasswordChanged?.()
       this.defaultWorkspace = current.default_workspace as string
@@ -508,7 +513,7 @@ export class SettingsStore {
     if (startup.default_workspace !== this.defaultWorkspace) {
       startup.default_workspace = this.defaultWorkspace
       try {
-        await this.writeSettings(this.payloadForWrite(startup, this.persistedSpeechKeys(await this.readRaw())), record.revision)
+        await this.writeSettings(this.payloadForWrite(startup, this.storedChosenKeys(await this.readRaw())), record.revision)
       } catch {
         /* best effort, matches Python */
       }

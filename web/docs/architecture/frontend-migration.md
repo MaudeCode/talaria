@@ -221,7 +221,9 @@ reconciliation finishes. Failed reconciliation retains the intent and offers a r
 
 `GET /api/bootstrap` returns public runtime configuration and initial state in
 one validated payload: `webuiVersion`, `maxUploadBytes`, `csrfToken` (empty
-when unauthenticated or auth disabled), `language`, `auth` (the
+when unauthenticated or auth disabled), `language` (the explicitly saved
+setting, empty when none is saved or unauthenticated), `browser_language` (the
+request's negotiated `Accept-Language` locale, or `en`), `auth` (the
 `/api/auth/status` payload), `onboarding` (`needs_onboarding`), `profile`
 (active profile summary), `features` (dashboard link availability, terminal
 remote backend, extension platform enabled). It replaces the inline
@@ -301,9 +303,12 @@ This cache is process-local and does not survive a reload.
 ## 10. Localisation
 
 Paraglide JS compiles `packages/frontend/messages/<locale>.json` into tree-shakeable
-message functions with per-locale chunks. The runtime strategy is
-`localStorage` (`hermes-lang`) then the server `language` setting from
-bootstrap then `en`. No locale path segments. `scripts/i18n-gate.mjs`
+message functions with per-locale chunks. Boot precedence (`i18n/runtime.ts`) is
+the explicitly saved server `language` setting from bootstrap, then
+`localStorage` (`hermes-lang`), then bootstrap's `browser_language` (the server's
+`Accept-Language` negotiation over the shared catalog in
+`packages/contracts/src/locales.ts`), then `en`. The negotiated language is never
+persisted as a choice. No locale path segments. `scripts/i18n-gate.mjs`
 fails the build when English is missing a key any locale defines, when
 placeholders differ between English and a translation, or when a locale has a
 key English lacks. Plural forms for tool summaries are message variants.

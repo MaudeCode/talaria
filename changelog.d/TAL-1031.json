@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web opens in your browser's preferred language on a first visit, including the sign-in page, until you pick one in Settings.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -4,7 +4,7 @@
  * `{"error": ...}` body, or `RawResponse` to emit an arbitrary payload/status.
  */
 import { implement, ORPCError } from '@orpc/server'
-import { coreContract, type AuthStatus, type Bootstrap, type Health, type PasskeysList } from '@maudecode/talaria-web-contracts'
+import { coreContract, negotiateLocale, type AuthStatus, type Bootstrap, type Health, type PasskeysList } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, loginRedirectPath, sessionCanManageServer } from '../auth/gate.js'
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
@@ -97,6 +97,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     max_upload_bytes: deps.config.maxUploadBytes,
     csrf_token: csrfToken,
     language: authenticated ? (await shellLanguage(ctx)) : '',
+    browser_language: negotiateLocale(ctx.header('accept-language')),
     bot_name: displayBotName(authenticated ? settings.bot_name : null),
     assistant_name: authenticated ? deps.assistantName(activeProfileName(ctx)) : 'Hermes',
     auth,
@@ -109,11 +110,11 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
 /** Python `_SHELL_LANG_RE`. */
 const SHELL_LANG_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/
 
-/** The `language` setting as a BCP 47 tag for the shell `lang` attribute, or ``. */
+/** The explicitly saved `language` setting as a BCP 47 tag for the shell `lang` attribute, or `` (never the merged default). */
 export async function shellLanguage(ctx: RequestContext): Promise<string> {
   let lang = ''
   try {
-    const raw = (await ctx.deps.settings.load()).language
+    const raw = (await ctx.deps.settings.readRaw()).language
     lang = typeof raw === 'string' ? raw.trim() : ''
   } catch {
     return ''

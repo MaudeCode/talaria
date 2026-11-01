@@ -1,13 +1,13 @@
 /**
- * Paraglide runtime glue. Locale precedence (legacy HWEB-65 order): the server
- * `language` setting delivered by /api/bootstrap, then the persisted
- * `hermes-lang` choice, then English. No locale path segments.
+ * Paraglide runtime glue. Locale precedence (legacy HWEB-65 order, TAL-1031): the saved
+ * server `language` setting delivered by /api/bootstrap, then the persisted `hermes-lang`
+ * choice, then the server-negotiated `browser_language`, then English. No locale path segments.
  *
  * Paraglide's `globalVariable` strategy holds the active locale in memory; this
  * module owns persistence and the <html lang>/dir attributes.
  */
 import { getLocale as paraglideGetLocale, setLocale as paraglideSetLocale, isLocale, baseLocale } from '../paraglide/runtime.js'
-import { LOCALE_CODES, localeInfo, resolveLocale } from './locales'
+import { LOCALE_CODES, localeInfo, resolveLocale } from '@maudecode/talaria-web-contracts'
 import { readPersisted, writePersisted } from '../lib/persisted'
 import { loadLocaleMessages } from 'virtual:talaria-locales'
 import { cacheLocaleChunk } from '../app/pwa'
@@ -45,11 +45,14 @@ export async function applyLocale(code: string, opts: { persist?: boolean } = {}
   return resolved
 }
 
-/** Boot resolution: server language (authoritative) then persisted choice then English. */
-export function bootLocale(serverLanguage: string | null | undefined): Promise<string> {
+/**
+ * Boot resolution: saved server language (authoritative), persisted device choice, negotiated browser
+ * language, then English. Only a saved server language is persisted; the browser fallback never becomes a choice.
+ */
+export function bootLocale(serverLanguage: string | null | undefined, browserLanguage: string | null | undefined): Promise<string> {
   const fromServer = resolveLocale(serverLanguage)
   const fromStorage = resolveLocale(readPersisted('hermes-lang'))
-  return applyLocale(fromServer ?? fromStorage ?? baseLocale, { persist: fromServer !== null })
+  return applyLocale(fromServer ?? fromStorage ?? resolveLocale(browserLanguage) ?? baseLocale, { persist: fromServer !== null })
 }
 
 export function subscribeLocale(listener: () => void): () => void {

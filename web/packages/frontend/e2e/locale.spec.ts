@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+import { E2E_PASSWORD } from './global-setup'
 
 /**
  * TAL-1403: non-English strings arrive as one lazily loaded chunk per locale. The UI waits for the
@@ -72,4 +73,26 @@ test('switching locale updates strings without a reload', async ({ page }) => {
   } finally {
     await page.request.post('/api/settings', { data: { language: 'en' } })
   }
+})
+
+/** TAL-1031: with no saved language, the first visit and the sign-in page follow the browser's Accept-Language. */
+test.describe('browser language on a first visit', () => {
+  test.use({ locale: 'fr-CA' })
+
+  test('the sign-in page paints French and signing in keeps it without saving a choice', async ({ page }) => {
+    const auth = process.env.HERMES_E2E_AUTH_BASE_URL!
+    await page.goto(`${auth}/login`)
+    await settle(page)
+    await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible()
+    await expect(page.locator('html')).toHaveAttribute('lang', 'fr-FR')
+    await page.locator('#pw').fill(E2E_PASSWORD)
+    await page.getByRole('button', { name: 'Se connecter' }).click()
+    await expect(page).not.toHaveURL(/\/login/)
+    await settle(page)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'fr-FR')
+    expect(await page.evaluate(() => window.localStorage.getItem('hermes-lang'))).toBeNull()
+    // The browser's own fetch carries its Accept-Language; Playwright's request context does not.
+    const boot = await page.evaluate(async () => (await fetch('api/bootstrap')).json() as Promise<{ language: string; browser_language?: string }>)
+    expect(boot).toMatchObject({ language: '', browser_language: 'fr' })
+  })
 })
