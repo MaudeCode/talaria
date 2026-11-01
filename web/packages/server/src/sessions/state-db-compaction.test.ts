@@ -10,6 +10,7 @@ import { Session } from './session.js'
 import { markerKind, mergeSessionMessagesAppendOnly, stateDbSeenId } from './merge.js'
 import { stateDbSessionRead, stateDbSessionTailRead } from './state-db.js'
 import { stripPublicInternalFields } from '../redact.js'
+import { truncateContextForDisplayKeep } from './service.js'
 
 describe('released Agent compaction replay identity (TAL-783)', () => {
   let dir: string
@@ -266,4 +267,86 @@ describe('released Agent kept-message compaction carrier', () => {
     expect(rows.find((m) => markerKind(m))?.content).toBe(carrier.summary)
   })
 
+})
+
+describe('micro-compacted user turns read as the originals the Agent displays (TAL-825)', () => {
+  const sid = 'micro-cli'
+  const columns = 'id, session_id, role, content, timestamp, active, compacted, display_order, display_identity, display_metadata, message_uid, absorbed_message_uids'
+  // Agent v0.21.6 `messages` columns. A micro-compaction joined q0 and q1 into one live model-only row; the originals stay
+  // as display history (`compacted = 1`), and the carried tail keeps its archived copy's display slot.
+  const seed = (db: DatabaseSync, opts: { modelOnly?: boolean } = {}): void => {
+    db.exec([...fixture.schema, `INSERT INTO sessions (id, source, started_at, title) VALUES ('${sid}', 'cli', 1000, 'Micro')`].join('\n'))
+    const insert = db.prepare(`INSERT INTO messages (${columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    insert.run(1, sid, 'user', 'q0', 1000, 0, 1, 1, Buffer.from('q0'), null, 'uid-q0', null)
+    insert.run(2, sid, 'user', 'q1', 1001, 0, 1, 2, Buffer.from('q1'), null, 'uid-q1', null)
+    insert.run(3, sid, 'assistant', 'answer', 1002, 0, 1, 3, Buffer.from('answer'), null, 'uid-a', null)
+    insert.run(4, sid, 'user', 'q0\n\nq1', 1000, 1, 0, 4, Buffer.from('q0\n\nq1'), opts.modelOnly === false ? null : JSON.stringify({ model_only: true }), 'uid-q0', JSON.stringify(['uid-q1']))
+    insert.run(5, sid, 'assistant', 'answer', 1002, 1, 0, 3, Buffer.from('answer'), null, 'uid-a', null)
+  }
+  let dir: string, path: string, db: DatabaseSync
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'micro-compaction-')); path = join(dir, 'state.db'); db = openStateDb(path) })
+  afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }) })
+  const contents = (rows: Record<string, unknown>[]): unknown[] => rows.map((m) => m.content)
+
+  it('shows q0 and q1 as separate user rows, no merged row, and the carried tail once', () => {
+    seed(db)
+    const display = stateDbSessionRead(path, sid, { display: true })
+    expect(contents(display.rows)).toEqual(['q0', 'q1', 'answer'])
+    const live = stateDbSessionRead(path, sid)
+    // The default read (model context, merges) is unchanged: the tip's live rows.
+    expect(contents(live.rows)).toEqual(['q0\n\nq1', 'answer'])
+    // The tail's representative is its live copy, with the identity the default read gives it.
+    expect(display.rows.at(-1)?._state_db_row_id).toBe(live.rows.at(-1)?._state_db_row_id)
+    expect(display.model).toEqual(live.rows)
+  })
+
+  it('reads one row per display group when no row is model-only (Agent v0.21.4)', () => {
+    seed(db, { modelOnly: false })
+    expect(contents(stateDbSessionRead(path, sid, { display: true }).rows)).toEqual(['q0', 'q1', 'answer', 'q0\n\nq1'])
+  })
+
+  it('falls back to the active rows while a visible row is unindexed', () => {
+    seed(db)
+    db.exec('UPDATE messages SET display_order = NULL WHERE id = 2')
+    const display = stateDbSessionRead(path, sid, { display: true })
+    expect(display.rows).toEqual(stateDbSessionRead(path, sid).rows)
+    expect(display.model).toBeUndefined()
+  })
+
+  it('falls back to the active rows without the display columns', () => {
+    db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, active INTEGER DEFAULT 1, compacted INTEGER DEFAULT 0, tool_call_id TEXT)")
+    db.exec(`INSERT INTO sessions VALUES ('${sid}', 'cli', 1000); INSERT INTO messages (session_id, role, content, timestamp, active, compacted) VALUES ('${sid}', 'user', 'q0', 1000, 0, 1), ('${sid}', 'user', 'q0 q1', 1000, 1, 0)`)
+    const display = stateDbSessionRead(path, sid, { display: true })
+    expect(contents(display.rows)).toEqual(['q0 q1'])
+    expect(display.rows).toEqual(stateDbSessionRead(path, sid).rows)
+  })
+
+  it.each([[1, ['q0']], [2, ['q0\n\nq1']], [3, ['q0\n\nq1', 'answer']]] as const)('cuts the model context inside a merged prompt when keeping %i display rows', (keep, expected) => {
+    seed(db)
+    const display = stateDbSessionRead(path, sid, { display: true })
+    for (const failClosed of [false, true]) {
+      const context = truncateContextForDisplayKeep(display.model, display.rows, keep, { failClosed })
+      expect(contents(context)).toEqual(expected)
+      // The rebuilt prompt keeps the live row's identity, so the next state.db merge does not restore the cut text.
+      expect(context[0]?._state_db_row_id).toBe(4)
+      expect(context[0]?._absorbed_message_uids ?? []).toEqual(keep === 1 ? [] : ['uid-q1'])
+    }
+  })
+
+  it('serves the originals for a CLI session without a sidecar and keeps the claim on the model rows', async () => {
+    const server = await bootTestServer()
+    const store = openStateDb(join(server.state, 'state.db'))
+    try {
+      seed(store)
+      const res = await server.get(`/api/session?session_id=${sid}`)
+      expect(res.status).toBe(200)
+      const messages = ((await res.json()) as { session: { messages: Record<string, unknown>[] } }).session.messages
+      expect(contents(messages)).toEqual(['q0', 'q1', 'answer'])
+      const { session, reason } = await server.deps.sessions.claimOrSynthesizeCliSession(sid)
+      expect(reason).toBe('materialized')
+      expect(contents(session!.messages)).toEqual(['q0', 'q1', 'answer'])
+      expect(session!.context_messages).toEqual(stateDbSessionRead(join(server.state, 'state.db'), sid).rows)
+      expect(contents(session!.context_messages)).toContain('q0\n\nq1')
+    } finally { store.close(); await server.close() }
+  })
 })

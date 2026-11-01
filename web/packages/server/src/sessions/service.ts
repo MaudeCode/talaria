@@ -104,8 +104,12 @@ interface SessionGateReads {
   owners: (profile?: string) => Promise<Map<string, StateDbSessionSource> | null>
   row: () => Promise<ReturnType<typeof stateDbSessionRow>>
   meta: () => Promise<Row | null>
-  messages: (stitch: boolean) => Promise<Message[]>
-  /** The stitched transcript read behind `messages(true)`, with whether it succeeded. */
+  /** The tip segment's active rows (a local lineage's model context). */
+  context: () => Promise<Message[]>
+  /**
+   * The stitched transcript, with whether it succeeded: the Agent's display rows (TAL-825), and in `model` its active rows
+   * when the two can differ.
+   */
   transcript: () => Promise<StateDbRead>
   /** Its size and recency without loading it (TAL-1249). */
   summary: () => Promise<StateDbMessageSummary>
@@ -717,7 +721,7 @@ export class SessionService {
     const claudeCode = isClaudeCodeSessionId(sid)
     const read = (): Promise<StateDbRead> => transcript ??= claudeCode
       ? Promise.resolve({ ...failedStateDbRead(), ok: true, rows: this.deps.claudeCode?.messages(sid) ?? [] })
-      : stateDbSessionReadAsync({ ...failedStateDbRead(), reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionRead', dbPath, sid, { stitch: true })
+      : stateDbSessionReadAsync({ ...failedStateDbRead(), reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionRead', dbPath, sid, { stitch: true, display: true })
     return {
       sid,
       owners: (ownerProfile = profile) => {
@@ -727,7 +731,7 @@ export class SessionService {
       },
       row: () => row ??= stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, sid),
       meta: () => meta ??= this.lookupCliMeta(sid),
-      messages: (stitch) => stitch ? read().then((r) => r.rows) : context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
+      context: () => context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
       transcript: read,
       // A Claude Code transcript is a local file, not state.db: its size comes from the one read of it.
       summary: () => summary ??= claudeCode
@@ -790,7 +794,8 @@ export class SessionService {
     // failed read is unknown, never an empty session.
     const summary = opts.transcript === false ? await reads.summary() : undefined
     if (summary?.reason) throw new HttpFailure(503, summary.reason)
-    const msgs = summary ? [] : await reads.messages(true)
+    const transcript = summary ? null : await reads.transcript()
+    const msgs = transcript?.rows ?? []
     const meta: Row = { ...(metaIn ?? (await reads.meta()) ?? {}) }
     // An owner receipt proves a session before its first turn (a fresh diagnostic chat, TAL-1040); a bare row does not.
     if (!(summary ? summary.count : msgs.length) && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
@@ -807,7 +812,10 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || (await this.deps.workspaces.lastWorkspace(profile))
     const defaults = (await this.store.deps.defaults(profile))
-    const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.messages(false) : null
+    // TAL-825: the transcript shows the Agent's display rows; the model keeps its active rows (the Agent's resume model
+    // history), never a micro-compaction's archived originals.
+    const model = transcript?.model && JSON.stringify(transcript.model) !== JSON.stringify(msgs) ? transcript.model : null
+    const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.context() : model
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
@@ -3359,9 +3367,41 @@ function alignDisplayToContext(ctx: unknown[], full: unknown[]): { matches: (num
  * `failClosed` (Retry/Undo, TAL-1027): the unkept row `full[keep]` must be proved present in the context, or the context
  * clears rather than guessing a cut that could keep the removed turn (the model then reads the kept display rows).
  */
-export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number, { failClosed = false } = {}): Message[] {
+/**
+ * TAL-825: a micro-compaction's merged prompt (`model_only`) stands in the model context for display originals: its own
+ * message UID plus `_absorbed_message_uids`. Expand it into those originals so a cut can fall between them, cut, then join
+ * the kept originals back the way the Agent joined them, under the merged row's identity.
+ */
+export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number, opts: { failClosed?: boolean } = {}): Message[] {
+  const parts = new Map<unknown, Message>()
+  const uidRows = new Map(full.filter(isDict).filter((m) => typeof m._state_db_message_uid === 'string').map((m) => [m._state_db_message_uid, m as Message]))
+  const expanded = (context ?? []).flatMap((row) => {
+    const meta = row.display_metadata
+    const uids: unknown[] = [row._state_db_message_uid, ...(Array.isArray(row._absorbed_message_uids) ? row._absorbed_message_uids as unknown[] : [])]
+    const originals = uids.map((uid) => uidRows.get(uid))
+    if (row.role !== 'user' || uids.length < 2 || !isDict(meta) || meta.model_only !== true || !originals.every((m) => m?.role === 'user' && typeof m.content === 'string')) return [row]
+    return originals.map((m) => { const part = { ...m! }; parts.set(part, row); return part })
+  })
+  const cut = cutContextAtDisplayKeep(expanded, full, keep, opts)
+  const joined: Message[] = []
+  for (let i = 0; i < cut.length; i += 1) {
+    const merged = parts.get(cut[i])
+    if (!merged) { joined.push(cut[i]!); continue }
+    const kept: Message[] = []
+    while (i < cut.length && parts.get(cut[i]) === merged) kept.push(cut[i++]!)
+    i -= 1
+    const absorbed = Array.isArray(merged._absorbed_message_uids) ? merged._absorbed_message_uids : []
+    if (kept.length === absorbed.length + 1) { joined.push(merged); continue }
+    const rebuilt: Message = { ...merged, content: kept.map((m) => m.content).join('\n\n'), _absorbed_message_uids: kept.slice(1).map((m) => m._state_db_message_uid) }
+    if (kept.length === 1) delete rebuilt._absorbed_message_uids
+    joined.push(rebuilt)
+  }
+  return joined
+}
+
+function cutContextAtDisplayKeep(context: Message[], full: unknown[], keep: number, { failClosed = false } = {}): Message[] {
   if (keep <= 0) return []
-  const ctx = context ?? []
+  const ctx = context
   if (!ctx.length || !full.length) return []
   if (keep < full.length) {
     const { matches, ambiguous } = alignDisplayToContext(ctx, full)
