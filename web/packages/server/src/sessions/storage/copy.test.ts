@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -114,6 +114,18 @@ it('mirrors the source: verification reports destination-only items and the copy
   expect(await sqlite.journals.streams('stale')).toEqual([])
   expect(await contents(sqlite)).toEqual(await contents(json))
   expect((await copyStorage(json, sqlite)).copied).toBe(0)
+})
+
+it('refuses to approve a copy while the source holds a backup without its session', async () => {
+  const state = tempDir()
+  const json = jsonStore(state)
+  await seed(json)
+  // beta's live file is lost and only its pre-shrink backup remains: recovery can still restore it.
+  unlinkSync(join(state, 'sessions', 'beta.json'))
+  const sqlite = sqliteStore(tempDir())
+  const report = await copyStorage(json, sqlite)
+  expect(report.failures).toEqual(['backup beta: its session is missing; restore it with session recovery or remove the backup before copying'])
+  expect(await verifyStorage(json, sqlite)).toContain('backup beta: its session is missing; restore it with session recovery or remove the backup before copying')
 })
 
 it('copies a SQLite store back to JSON', async () => {

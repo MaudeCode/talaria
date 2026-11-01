@@ -67,13 +67,22 @@ async function extras(source: Inventory, destination: StorageBackend) {
 }
 
 /**
+ * Source state no destination can hold: a backup whose session is gone (`orphan_backup`). Recovery can still restore
+ * it, so the copy refuses to approve the move until it is resolved.
+ */
+async function unresolved(source: StorageBackend): Promise<string[]> {
+  return (await source.sessions.diagnose()).filter((issue) => issue.kind === 'orphan_backup' || issue.kind === 'malformed_orphan_backup')
+    .map((issue) => `backup ${issue.session_id}: its session is missing; restore it with session recovery or remove the backup before copying`)
+}
+
+/**
  * Copies every session (document and messages), shrink backup, tombstone, the session index, every document and every
  * journal stream and summary from `source` to `destination`, and removes what only the destination holds, so the
  * destination mirrors the source. Items whose fingerprint already matches are skipped, so a re-run changes only what is
  * missing or different. The source is only read.
  */
 export async function copyStorage(source: StorageBackend, destination: StorageBackend): Promise<CopyReport> {
-  const report: CopyReport = { copied: 0, unchanged: 0, failures: [] }
+  const report: CopyReport = { copied: 0, unchanged: 0, failures: await unresolved(source) }
   const items = await inventory(source)
   const step = async (label: string, same: () => Promise<boolean>, copy: () => Promise<unknown>): Promise<void> => {
     try {
@@ -126,7 +135,7 @@ export async function copyStorage(source: StorageBackend, destination: StorageBa
 
 /** Re-reads every source item from both stores; each entry names an item whose destination copy differs, or one only the destination holds. */
 export async function verifyStorage(source: StorageBackend, destination: StorageBackend): Promise<string[]> {
-  const mismatches: string[] = []
+  const mismatches = await unresolved(source)
   const items = await inventory(source)
   const compare = async (label: string, read: (storage: StorageBackend) => Promise<unknown>): Promise<void> => {
     try { if (canonical(await read(source)) !== canonical(await read(destination))) mismatches.push(label) } catch (error) { mismatches.push(`${label}: ${(error as Error).message}`) }

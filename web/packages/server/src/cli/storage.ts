@@ -79,7 +79,7 @@ async function copyStore(ctx: StorageCliContext, from: string, to: string): Prom
       ctx.log(`[storage] Copying ${from} storage to ${to}`)
       const report = await copyStorage(source, destination)
       ctx.log(`[storage] Copied or removed ${String(report.copied)} items; ${String(report.unchanged)} already matched`)
-      const mismatches = [...report.failures, ...await verifyStorage(source, destination)]
+      const mismatches = [...new Set([...report.failures, ...await verifyStorage(source, destination)])]
       if (mismatches.length) {
         for (const line of mismatches) ctx.warn(`[storage] Mismatch: ${line}`)
         ctx.warn(`[storage] Verification failed for ${String(mismatches.length)} items; keep TALARIA_STORAGE=${from}. The ${from} store is unchanged.`)
