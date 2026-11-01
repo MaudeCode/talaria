@@ -1110,6 +1110,8 @@ describe('Agent checkout updates', () => {
     writeFileSync(join(a.agent, 'README'), 'retained local work\n')
     git(a.agent, 'stash', 'push', '-m', 'synthetic retained changes')
     const stashes = git(a.agent, 'stash', 'list', '--format=%H')
+    // TAL-1107: an intact local edit present before the request rides through refresh and update.
+    writeFileSync(join(a.agent, 'README'), 'intact local edit\n')
     const sidecar = new FakeSidecar()
     sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
     const refreshToken = 'c'.repeat(32)
@@ -1155,6 +1157,9 @@ describe('Agent checkout updates', () => {
       expect(result).toMatchObject({ ok: true, verified_revision: a.v2, gateway_restart: 'resumed' })
       expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
       expect(git(a.agent, 'stash', 'list', '--format=%H')).toBe(stashes)
+      // Normal updates restore the edit's bytes; force discards local edits by its existing contract.
+      expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe(action === 'apply' ? 'intact local edit\n' : 'agent\n')
+      expect(git(a.agent, 'for-each-ref', 'refs/talaria/autostash/')).toBe('')
       expect(events).toEqual(['confirm', 'refresh', 'sync', 'finish', 'restart'])
       const completed = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
       const notice = completed.notifications.find((row) => row.id === result.notification_id)

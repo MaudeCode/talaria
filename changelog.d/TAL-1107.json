@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Fixed",
+    "summary": "Agent updates can refresh a legacy dashboard and finish when the Agent checkout has local edits, keeping those edits.",
+    "highlight": false,
+    "components": ["web"]
+  }]
+}

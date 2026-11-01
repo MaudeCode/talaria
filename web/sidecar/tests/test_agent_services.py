@@ -2788,13 +2788,15 @@ def mutation_worker(backend_stop, monkeypatch):
     recovery, entry, stopped, parents, modules, events, pause = backend_stop
     root, home, model = recovery.root, Path(entry['home']), pause.model
     recovery.path.unlink()
-    model.update(head='a' * 40, target='b' * 40, dirty=[], fail_sync=False, commands=[])
+    model.update(head='a' * 40, target='b' * 40, dirty=[], digests={}, stashed=None, conflict=False, fail_sync=False, commands=[])
     monkeypatch.setenv('HERMES_HOME', str(home))
     monkeypatch.setattr(sys, 'path', list(sys.path))
     records = recovery.records
     records.UNOWNED = 'unowned'
     journal = home / 'native-journal.json'
-    records.tree_state = lambda root: {'pre_sha': model['head'], 'dirty_at_pause': list(model['dirty'])}
+    # Native digests are the bytes of each local edit; a test changes them through model['digests'].
+    records.tree_state = lambda root: {'pre_sha': model['head'], 'dirty_at_pause': list(model['dirty']),
+                                       'dirty_digests': {path: model['digests'].get(path, 'sha256:' + path) for path in model['dirty']}}
     records.adopt_orphans = lambda: (None, [])
     records.write = lambda token, **kwargs: journal.write_text(json.dumps(token))
     records.discharge = lambda token: journal.unlink(missing_ok=True)
@@ -2838,8 +2840,25 @@ def mutation_worker(backend_stop, monkeypatch):
         if 'hermes_cli.venv_sync' in argv:
             return {'ok': True, 'detail': json.dumps({'ok': not model['fail_sync'], 'detail': 'synthetic dependency result'})}
         args = argv[1:]
-        assert args[0] in {'rev-parse', 'show', 'ls-tree', 'merge', 'reset', 'for-each-ref'}, argv
+        assert args[0] in {'rev-parse', 'show', 'ls-tree', 'merge', 'reset', 'for-each-ref', 'stash', 'apply', 'checkout'}, argv
+        if args[0] in {'stash', 'apply', 'checkout'}:
+            assert not pause.ledger(), 'a writer reached the local-edit mutation boundary'
         if args[0] == 'rev-parse': detail = model['head']
+        elif args[0] == 'stash':
+            # The updater's private autostash: local edits leave the tree with their exact bytes.
+            model['stashed'] = (model['dirty'], model['digests'])
+            model.update(dirty=[], digests={})
+            detail = 'c' * 40
+        elif args[0] == 'apply' and '--numstat' in args:
+            detail = ''.join(f'1\t1\t{path}\0' for path in model['stashed'][0])
+        elif args[0] == 'apply':
+            if model['conflict']:
+                return {'ok': False, 'detail': 'synthetic restore conflict'}
+            (model['dirty'], model['digests']), model['stashed'] = model['stashed'], None
+            detail = ''
+        elif args[0] == 'checkout':
+            model.update(dirty=[], digests={})  # Force discards local edits by contract.
+            detail = ''
         elif args[0] == 'show': detail = '\n'.join('def ' + name + '(): pass' for name in ('recover', 'tree_is_whole', 'adopt_orphans'))
         elif args[0] == 'ls-tree': detail = '\n'.join('hermes_cli/' + name + '.py' for name in [*native, 'venv_sync'])
         else:
@@ -2991,11 +3010,12 @@ def test_worker_lets_an_acknowledged_gateway_finish_past_the_former_cutoff(mutat
     assert pause.model['start_attempts'] == 1 and pause.ledger(), 'the stopped dashboard was not resumed'
 
 
-@pytest.mark.parametrize('changed', ['revision', 'homes', 'config', 'endpoint', 'profile', 'birth', 'source'])
+@pytest.mark.parametrize('changed', ['revision', 'homes', 'config', 'endpoint', 'profile', 'birth', 'source', 'bytes'])
 def test_worker_binds_legacy_refresh_to_the_complete_current_identity(mutation_worker, monkeypatch, changed):
     from talaria_sidecar import agent_services as services
     run, model, recovery, entry, parents, events, pause = mutation_worker
     model['supported'] = False
+    if changed == 'bytes': model['dirty'] = ['local.txt']
     monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
     pending = run()
     binding = pending[0]['refresh_confirmation']['binding']
@@ -3003,6 +3023,7 @@ def test_worker_binds_legacy_refresh_to_the_complete_current_identity(mutation_w
     assert 'disarm' not in events and not recovery.path.exists()
     if changed == 'revision': model['target'] = 'c' * 40
     elif changed == 'source': model['dirty'].append('local.txt')
+    elif changed == 'bytes': model['digests']['local.txt'] = 'edited after confirmation'
     elif changed == 'config': Path(entry['plist']).write_text('changed configuration')
     elif changed == 'endpoint':
         ledger = pause.ledger
@@ -3052,19 +3073,124 @@ def test_worker_refreshes_only_the_consented_incarnation_before_the_original_upd
     assert not recovery.path.exists()
 
 
-@pytest.mark.parametrize('unsafe', ['source', 'dependencies'])
+CONTRIBUTOR = 'contributors/emails/synthetic@example.invalid'
+
+
+def _consented_refresh(mutation_worker, monkeypatch):
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    model['supported'] = False
+    monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
+    signals = []
+
+    def retire(pid, sig):
+        assert json.loads(recovery.path.read_text())['entries'][0]['legacy_refresh'] and model['head'] == 'a' * 40
+        signals.append(pid)
+        parents.pop(41003); parents.pop(41004)
+        model['supported'] = True
+        pause.spawn()
+
+    monkeypatch.setattr(services.os, 'kill', retire)
+    return signals
+
+
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('edits', [[], [CONTRIBUTOR], [CONTRIBUTOR, 'docs/local-notes.md', 'VERSION']], ids=['clean', 'one', 'many'])
+def test_worker_refreshes_a_whole_dirty_baseline_and_continues_the_original_update(mutation_worker, monkeypatch, mode, edits):
+    """TAL-1107: intact local edits are byte-verified custody, not unsafe source."""
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    signals = _consented_refresh(mutation_worker, monkeypatch)
+    model.update(dirty=list(edits), digests={path: 'local:' + path for path in edits})
+    binding = run()[0]['refresh_confirmation']['binding']
+    restore = [{'action': 'git', 'args': ['stash', 'create']}, {'action': 'git', 'args': ['merge', '--ff-only', model['target']]},
+               {'action': 'git', 'args': ['apply', 'autostash.patch']}]
+    force = [{'action': 'git', 'args': ['checkout', '.']}, {'action': 'git', 'args': ['reset', '--hard', model['target']]}]
+    replies = run([*(restore if mode == 'normal' else force), {'action': 'sync'}], binding)
+    assert all(reply['ok'] for reply in replies), replies
+    assert model['head'] == model['target'] and signals == [41004]
+    assert model['start_attempts'] == 2 and pause.ledger(), 'the refreshed and stopped services were not restored'
+    assert any('hermes_cli.venv_sync' in argv for argv in model['commands'])
+    # Normal updates restore every edit byte for byte; force discards them by its existing contract.
+    expected = edits if mode == 'normal' else []
+    assert (model['dirty'], model['digests']) == (expected, {path: 'local:' + path for path in expected})
+    assert not recovery.path.exists()
+
+
+def test_worker_retains_a_conflicting_local_edit_after_a_legacy_refresh(mutation_worker, monkeypatch):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    signals = _consented_refresh(mutation_worker, monkeypatch)
+    model.update(dirty=['VERSION'], digests={'VERSION': 'local:VERSION'})
+    binding = run()[0]['refresh_confirmation']['binding']
+    model['conflict'] = True
+    replies = run([{'action': 'git', 'args': ['stash', 'create']}, {'action': 'git', 'args': ['merge', '--ff-only', model['target']]},
+                   {'action': 'git', 'args': ['apply', 'autostash.patch']}, {'action': 'sync'}], binding)
+    assert [reply['ok'] for reply in replies] == [True, True, True, False, True, True], replies
+    assert replies[3]['detail'] == 'synthetic restore conflict'
+    # The edit stays in the updater's stash for its conflict receipt; it is never discarded or reported installed.
+    assert model['stashed'] == (['VERSION'], {'VERSION': 'local:VERSION'}) and model['dirty'] == []
+    assert model['head'] == model['target'] and signals == [41004] and pause.ledger()
+
+
+def test_worker_retry_adopts_the_refreshed_successor_and_keeps_local_edits(mutation_worker, monkeypatch):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    signals = _consented_refresh(mutation_worker, monkeypatch)
+    model.update(dirty=[CONTRIBUTOR], digests={CONTRIBUTOR: 'local'})
+    binding = run()[0]['refresh_confirmation']['binding']
+    # The lease ends after the refresh, before any source or stash mutation.
+    assert run(binding=binding)[-1]['ok']
+    assert model['head'] == 'a' * 40 and model['dirty'] == [CONTRIBUTOR] and model['digests'] == {CONTRIBUTOR: 'local'}
+    attempts = model['start_attempts']
+    # The capable successor needs no new consent and is never signalled again.
+    replies = run([{'action': 'git', 'args': ['stash', 'create']}, {'action': 'git', 'args': ['merge', '--ff-only', model['target']]},
+                   {'action': 'git', 'args': ['apply', 'autostash.patch']}, {'action': 'sync'}])
+    assert all(reply['ok'] for reply in replies), replies
+    assert signals == [41004] and model['start_attempts'] == attempts + 1
+    assert model['head'] == model['target'] and model['dirty'] == [CONTRIBUTOR] and model['digests'] == {CONTRIBUTOR: 'local'}
+
+
+@pytest.mark.parametrize('unsafe', ['torn', 'unknown-digest', 'changed-bytes', 'changed-head', 'interrupted', 'sync-failed', 'unverified-dependencies'])
 def test_worker_never_refreshes_an_unsafe_baseline(mutation_worker, monkeypatch, unsafe):
     from talaria_sidecar import agent_services as services
     run, model, recovery, entry, parents, events, pause = mutation_worker
     model['supported'] = False
     monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
-    if unsafe == 'source': model['dirty'] = ['local.txt']
-    else: (recovery.root / '.interrupted').touch()
+    model.update(dirty=[CONTRIBUTOR], digests={CONTRIBUTOR: 'local'})
+    if unsafe == 'torn': recovery.records.tree_is_whole = lambda *args: (False, 'synthetic torn source')
+    elif unsafe == 'unknown-digest':
+        (recovery.root / CONTRIBUTOR).parent.mkdir(parents=True)
+        (recovery.root / CONTRIBUTOR).write_text('unreadable at pause')
+        model['digests'][CONTRIBUTOR] = None
+    elif unsafe == 'interrupted': (recovery.root / '.interrupted').touch()
     binding = run()[0]['refresh_confirmation']['binding']
+    debt = None
+    if unsafe in {'sync-failed', 'unverified-dependencies'}:
+        # The native at-HEAD whole-tree verdict returns before dependency currency; recorded debt still refuses.
+        debt = {'schema': 1, 'root': str(recovery.root), 'entries': [], 'tree': {}, 'sync_failed': unsafe == 'sync-failed'}
+        if unsafe == 'unverified-dependencies':
+            debt['transaction'] = {'revision': model['target'], 'homes': [str(entry['home'])], 'dependencies_verified': False}
+        recovery.path.parent.mkdir(parents=True, exist_ok=True)
+        recovery.path.write_text(json.dumps(debt))
+    if unsafe in {'changed-bytes', 'changed-head'}:
+        # Consent binds the confirmed bytes and HEAD; a change after binding is caught before any signal.
+        record = recovery.records.record_pause
+        def changed(token, adopted, claims):
+            record(token, adopted, claims)
+            if unsafe == 'changed-bytes': model['digests'][CONTRIBUTOR] = 'edited after confirmation'
+            else: model['head'] = 'e' * 40
+        recovery.records.record_pause = changed
     replies = run(binding=binding)
-    assert not replies[-1]['ok'] and 'not safe for a legacy refresh' in replies[-1]['detail']
-    assert 'disarm' not in events and not recovery.path.exists()
-    assert model['head'] == 'a' * 40
+    assert not replies[-1]['ok'], replies
+    reasons = {'torn': 'synthetic torn source', 'unknown-digest': 'local edits have unknown bytes',
+               'changed-bytes': 'changed after confirmation', 'changed-head': 'changed after confirmation'}
+    assert 'not safe for a legacy refresh' in replies[-1]['detail'], replies
+    assert reasons.get(unsafe, 'repair remains owed') in replies[-1]['detail'], replies
+    assert 'disarm' not in events and 41004 in parents
+    assert model['dirty'] == [CONTRIBUTOR] and not any(argv[1:2] in (['stash'], ['merge'], ['reset']) for argv in model['commands'])
+    if debt is not None:
+        saved = json.loads(recovery.path.read_text())
+        assert saved['sync_failed'] == debt['sync_failed'] and saved.get('transaction', {}).get('dependencies_verified') is (False if 'transaction' in debt else None)
+    elif unsafe not in {'changed-bytes', 'changed-head'}:
+        assert not recovery.path.exists()
 
 
 def test_worker_attempts_a_failed_legacy_successor_start_once_and_preserves_debt(mutation_worker, monkeypatch):
