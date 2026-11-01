@@ -48,6 +48,9 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     }
     expect(rows.some((r) => r.id === 'omni')).toBe(false)
     expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', api_key: 'sk-synthetic-demo', config_context_length: 777777 })
+    const quota = await catalog.quota(home, 'custom:demo')
+    expect(quota.display_name).toBe('Friendly Demo')
+    expect(String(quota.message)).toContain('Friendly Demo')
     expect(sidecar.calls.some((c) => c.method === 'providers.auth_status' && String((c.params as { provider?: string }).provider).includes('omni'))).toBe(false)
   })
 

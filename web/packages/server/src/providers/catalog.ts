@@ -1486,7 +1486,9 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const provider = (providerRaw ?? activeProviderFromConfig(config) ?? '').trim().toLowerCase()
     if (!provider) return { computed_at, ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
-    const name = displayName(provider)
+    // A custom identity is named by its own record's label, as on its card (TAL-1654).
+    const owner = provider.startsWith('custom:') ? customProviderOwner(config, provider).entry : null
+    const name = owner ? str(owner.display_name).trim() || str(owner.name).trim() || displayName(provider) : displayName(provider)
     const credential = opts.credential ?? null
     const answer = (ok: boolean, status: string, message: string, extra: Dict = {}): Dict => ({ computed_at, ok, provider, display_name: name, supported: true, status, quota: null, ...extra, message })
     if (credential && credential.status !== 'available') {
