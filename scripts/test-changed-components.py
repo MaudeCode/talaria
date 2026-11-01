@@ -4,6 +4,7 @@
 import importlib.util
 from copy import deepcopy
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
 ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
+FIXTURE_SUITES = {"web_server", "web_frontend", "web_sidecar", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
@@ -89,6 +91,11 @@ class RoutingTests(unittest.TestCase):
             (["relay/package.json", "relay/pnpm-lock.yaml"], {"relay"}),
             (["relay/convex/releaseInfo.json"], CONSUMERS),
             (["contracts/versions.json"], CONSUMERS),
+            # Only Web's drift check reads the OpenAPI document (TAL-1674).
+            (["contracts/web-api.openapi.json"], {"web_server", "contracts"}),
+            (["contracts/fixtures/web-session.json"], FIXTURE_SUITES),
+            (["contracts/fixtures/vault-prompts.json"], FIXTURE_SUITES | {"app"}),
+            (["contracts/fixtures/feedback-report.json"], FIXTURE_SUITES | {"relay"}),
             (["contracts/whats-new.schema.json"], CONSUMERS | {"tooling"}),
             (["contracts/fixtures/whats-new.json"], CONSUMERS | {"tooling"}),
             (["web/contract_versions.json"], CONSUMERS),
@@ -132,6 +139,27 @@ class RoutingTests(unittest.TestCase):
         for paths, expected in cases:
             with self.subTest(paths=paths):
                 self.assertEqual(routing.affected(paths), expected)
+
+    def test_fixture_readers_are_routed(self):
+        root = SCRIPT.resolve().parent.parent
+        tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode().split("\0")
+        # The App's hosted tests compile every App-project Swift file outside the package, plus the TalariaKit test
+        # files the Xcode project lists by path; the package's own tests run in the contracts job.
+        project = (root / "app/Talaria.xcodeproj/project.pbxproj").read_text()
+        readers = {
+            "app": [path for path in tracked if path.startswith("app/") and not path.startswith("app/TalariaKit/")
+                    and path.endswith(".swift")]
+                   + ["app/" + path for path in re.findall(r'path = "?\.\./(TalariaKit/[^";]+\.swift)', project)],
+            "relay": [path for path in tracked if path.startswith("relay/") and path.endswith(".ts")],
+        }
+        for suite, paths in readers.items():
+            read = set()
+            for path in paths:
+                text = (root / path).read_text()
+                read |= set(re.findall(r"contracts/fixtures/([\w.-]+\.json)", text))
+                read |= {f"{name}.json" for name in re.findall(r"\b(?:sharedContractF|f)ixture\(\"([\w.-]+)\"\)", text)}
+            with self.subTest(suite=suite):
+                self.assertEqual(read, routing.FIXTURE_READERS[suite])
 
     def test_tracked_paths_have_explicit_routes(self):
         root = SCRIPT.resolve().parent.parent

@@ -20,7 +20,7 @@ of truth for:
 | `packages/server` | implements the route contract; handlers are type-checked against it; the sidecar client is typed by the RPC schemas |
 | `packages/frontend` | the generated oRPC client with TanStack Query bindings; SSE consumers parse with the stream unions |
 | `sidecar/` (Python) | JSON fixtures exported from the RPC schemas; the pytest suite asserts each method against them |
-| iOS app | `contracts/web-api.openapi.json` via `app/scripts/validate-upstream-contract`, in addition to the Swift decoders and live fixtures |
+| iOS app | the Swift decoders, checked against live server responses by `app/scripts/validate-upstream-contract` and against `contracts/fixtures/` |
 | MCP bin | the route contract client |
 
 ## Rules
