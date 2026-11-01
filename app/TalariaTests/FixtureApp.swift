@@ -295,12 +295,18 @@ extension XCTestCase {
         return HostedAccessibility.element(in: window, label: "Message") == nil ? nil : ""
     }
 
-    /// The chat composer's text view, once the chat has one.
+    /// The chat composer's text view, once the chat has one. `timeout` counts the helper's own 50 ms polls, not
+    /// wall-clock time: a loaded CI runner can keep the main actor on the screen's other work past any deadline, and the
+    /// composer then mounts just after a wall-clock wait has given up on it (TAL-1665). `eachPoll` runs after each miss.
     @MainActor
-    func composerTextView(in window: UIWindow, timeout: TimeInterval = 10) async -> UITextView? {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+    func composerTextView(
+        in window: UIWindow,
+        timeout: TimeInterval = 10,
+        eachPoll: @escaping () -> Void = {}
+    ) async -> UITextView? {
+        for _ in 0..<Int(timeout / 0.05) {
             if let text = window.firstView(ofType: UITextView.self, where: \.isEditable) { return text }
+            eachPoll()
             try? await Task.sleep(for: .milliseconds(50))
         }
         return window.firstView(ofType: UITextView.self, where: \.isEditable)
@@ -311,19 +317,12 @@ extension XCTestCase {
     @MainActor
     func typeIntoComposer(_ text: String, in window: UIWindow) async throws {
         // A delayed expanded editor can mount without ever showing a collapsed shell.
-        var found: UITextView?
-        var expandedShell = false
-        let deadline = Date().addingTimeInterval(10)
-        while found == nil && Date() < deadline {
-            found = await composerTextView(in: window, timeout: 0)
-            if found != nil { break }
-            if !expandedShell, let shell = HostedAccessibility.element(in: window, label: "Message") {
-                HostedAccessibility.activate(shell)
-                expandedShell = true
-            }
-            try await Task.sleep(for: .milliseconds(50))
+        var activatedShell = false
+        let found = await composerTextView(in: window) {
+            guard !activatedShell, let shell = HostedAccessibility.element(in: window, label: "Message") else { return }
+            HostedAccessibility.activate(shell)
+            activatedShell = true
         }
-        if found == nil { found = await composerTextView(in: window, timeout: 0) }
         let input = try XCTUnwrap(found, "The chat has no composer text view")
         input.becomeFirstResponder()
         input.insertText(text)
