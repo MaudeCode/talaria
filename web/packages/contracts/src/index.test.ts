@@ -217,11 +217,14 @@ describe('contracts package', () => {
     expect(TranscribeStreamEventSchema.parse(fixture.unavailable).type).toBe('error')
     expect(TranscribeStreamStartSchema.safeParse({ sample_rate: 96000 }).success).toBe(false)
   })
-  it('parses the shared dictation transcripts, filtered and heard (TAL-917)', () => {
+  it('parses the shared dictation transcripts, filtered, heard and no speech (TAL-917, TAL-1608)', () => {
     const fixture = shared('fixtures/transcribe.json') as Record<string, unknown>
     expect(Object.values(fixture).map((body) => TranscribeResponseSchema.parse(body))).toEqual([
-      { ok: true, transcript: 'Ship the release notes.', filtered: false }, { ok: true, transcript: '', filtered: true },
+      { ok: true, transcript: 'Ship the release notes.', filtered: false, no_speech: false }, { ok: true, transcript: '', filtered: true, no_speech: false },
+      { ok: true, transcript: '', filtered: false, no_speech: true },
     ])
+    // An older server omits no_speech: an ordinary transcript.
+    expect(TranscribeResponseSchema.parse({ ok: true, transcript: 'hi', filtered: false }).no_speech).toBe(false)
   })
   it('parses prompt-reading progress, unknown progress, explicit clears, and current-session state (TAL-1058)', () => {
     const fixture = shared('fixtures/prompt-reading.json') as { progress: unknown; unknown: unknown; cleared: unknown; session: unknown }

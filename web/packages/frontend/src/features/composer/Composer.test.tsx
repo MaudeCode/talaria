@@ -45,7 +45,7 @@ vi.mock('./ComposerNotices', async (original) => {
 })
 import { Composer, type ComposerProps } from './Composer'
 import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
-import { dictateLive } from '../voice/liveDictation'
+import { dictateLive, NoSpeechError } from '../voice/liveDictation'
 import * as browserDictation from '../voice/dictation'
 
 const noop = (): void => undefined
@@ -520,6 +520,72 @@ describe('Composer', () => {
     act(() => { onText('Ship the release notes.'); onEnd(null) })
     expect(box).toHaveValue('Note: Ship the release notes.')
     expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it.each([true, false])('a no-speech recording restores the starting draft and says so, append: %s (TAL-1608)', async (append) => {
+    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
+    let onText: (text: string) => void = noop
+    let onEnd: (error: unknown) => void = noop
+    vi.mocked(dictateLive).mockImplementation((text, end) => { onText = text; onEnd = end; return { stop: vi.fn(), cancel: vi.fn() } })
+    vi.mocked(showToast).mockClear()
+    renderComposer({ ...writable, is_streaming: false }, null, noop, { dictation_append: append })
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Note:' } })
+    await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+    act(() => { onText('Ship the') })
+    await userEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    act(() => { onEnd(new NoSpeechError()) })
+    expect(box).toHaveValue('Note:')
+    expect(showToast).toHaveBeenCalledWith('No speech detected. Try again.', 3000, 'error')
+    expect(api.startChat).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('a no-speech result before any partial leaves text typed during the recording alone (TAL-1608)', async () => {
+    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
+    let onEnd: (error: unknown) => void = noop
+    vi.mocked(dictateLive).mockImplementation((_text, end) => { onEnd = end; return { stop: vi.fn(), cancel: vi.fn() } })
+    vi.mocked(showToast).mockClear()
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+    fireEvent.change(box, { target: { value: 'typed meanwhile' } })
+    act(() => { onEnd(new NoSpeechError()) })
+    expect(box).toHaveValue('typed meanwhile')
+    expect(showToast).toHaveBeenCalledWith('No speech detected. Try again.', 3000, 'error')
+  })
+
+  it('a no-speech result keeps edits made after a partial (TAL-1608)', async () => {
+    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
+    let onText: (text: string) => void = noop
+    let onEnd: (error: unknown) => void = noop
+    vi.mocked(dictateLive).mockImplementation((text, end) => { onText = text; onEnd = end; return { stop: vi.fn(), cancel: vi.fn() } })
+    vi.mocked(showToast).mockClear()
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Note:' } })
+    await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+    act(() => { onText('Ship the') })
+    await userEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    fireEvent.change(box, { target: { value: 'Note: Ship the docs' } })
+    act(() => { onEnd(new NoSpeechError()) })
+    expect(box).toHaveValue('Note: Ship the docs')
+    expect(showToast).toHaveBeenCalledWith('No speech detected. Try again.', 3000, 'error')
+  })
+
+  it('a genuine dictation failure stays a visible error and keeps the partial text (TAL-1608)', async () => {
+    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
+    let onText: (text: string) => void = noop
+    let onEnd: (error: unknown) => void = noop
+    vi.mocked(dictateLive).mockImplementation((text, end) => { onText = text; onEnd = end; return { stop: vi.fn(), cancel: vi.fn() } })
+    vi.mocked(showToast).mockClear()
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+    act(() => { onText('Ship the') })
+    act(() => { onEnd(new Error("STT command provider 'x' exited with code 3")) })
+    expect(box).toHaveValue('Ship the')
+    expect(showToast).toHaveBeenCalledWith("Voice input error: STT command provider 'x' exited with code 3", 3000, 'error')
   })
 
   it.each([

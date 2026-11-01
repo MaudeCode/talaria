@@ -104054,7 +104054,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "`{ok, transcript, filtered}`; `filtered` when a phrase Whisper invents on silent audio was emptied.",
+            "description": "`{ok, transcript, filtered, no_speech}`; `filtered` when a phrase Whisper invents on silent audio was emptied; `no_speech` when the provider ran cleanly and produced no transcript (absent from older servers: false).",
             "content": {
               "application/json": {}
             }

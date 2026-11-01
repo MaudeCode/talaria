@@ -5404,6 +5404,9 @@
       },
       "filtered": {
         "type": "boolean"
+      },
+      "no_speech": {
+        "type": "boolean"
       }
     },
     "required": [

@@ -23,4 +23,6 @@ test('a sidebar row is a link named by its conversation, not its action buttons'
   await expect(link).toHaveAttribute('href', `/session/${sid}`)
   await expect(link).toHaveAttribute('aria-current', 'page')
   await expect(link).not.toHaveAccessibleName(/Archive|Conversation actions/)
+  // A background sidebar refetch can still be inside route.fetch when the test ends; drop it instead of failing.
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
 })

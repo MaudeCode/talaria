@@ -2336,6 +2336,13 @@
         ""
       ]
     },
+    "tests/test_stt_transcribe.py::test_transcribe_reports_a_clean_empty_command_provider_run_as_no_speech": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real command STT provider's clean-empty diagnostic becomes no_speech while a nonzero exit stays stt_failed. The exact message is the installed release's, not a fabricated one.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_suite_runner.py::test_policy_rejects_an_unclassified_process_launch": {
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",

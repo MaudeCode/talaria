@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Dictating a silent recording through a command speech-to-text provider now says no speech was detected and keeps your draft, instead of reporting a failure.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

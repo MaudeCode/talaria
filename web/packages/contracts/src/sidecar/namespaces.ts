@@ -402,7 +402,7 @@ export const STT_METHODS = {
    * without the warmer.
    */
   'stt.warm': { params: ProfileHomeParams, result: z.object({ provider: z.string(), warmed: z.boolean(), action: z.string(), error: z.string().optional() }) },
-  'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string(), filtered: z.boolean() }) },
+  'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string(), filtered: z.boolean(), no_speech: z.boolean().optional() }) },
   /**
    * TAL-802: one live dictation. Opens the profile's streaming session for s16le mono PCM at `sample_rate` (the sidecar
    * resamples), emits `ready` with the `stream_id` that `stt.stream_audio` feeds, then `partial` text as the provider
