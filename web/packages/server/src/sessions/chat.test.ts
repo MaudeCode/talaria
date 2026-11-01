@@ -10,7 +10,8 @@ import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
-import { attachTodoState } from './todo.js'
+import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
+import { Session } from './session.js'
 
 type ChatResult = SidecarResult<'chat.start'>
 
@@ -4395,6 +4396,46 @@ describe('live metering and todo_state (TAL-397)', () => {
     expect(pick([row('older', 100)])).toBe('kept')
     expect(pick([])).toBe('kept')
     expect(pick([row('older', 100), row('newer', 300)])).toBe('newer')
+  })
+
+  // TAL-1121: a history cut that removes the turn which wrote the kept list ends that list; an older kept turn survives.
+  it.each([
+    ['clear', 5, (sid: string) => s.deps.sessions.clear(sid), undefined, 20],
+    ['undo of the failed turn', 3, (sid: string) => s.deps.sessions.undo(sid), undefined, 20],
+    ['undo of a later turn', 5, (sid: string) => s.deps.sessions.undo(sid), 'kept', 20],
+    ['truncate before the write', 5, (sid: string) => s.deps.sessions.truncate(sid, 2), undefined, 20],
+    ['truncate after the write', 5, (sid: string) => s.deps.sessions.truncate(sid, 4), 'kept', 20],
+    ['truncate of an undated list', 5, (sid: string) => s.deps.sessions.truncate(sid, 4), undefined, 0],
+  ] as const)('drops a kept todo list on %s only when the cut removes its turn', async (label, rows, cut, expected, keptAt) => {
+    const sid = `kept-todo-${label.replace(/\W/g, '-')}`
+    await s.deps.sessionStore.save(new Session({ session_id: sid, messages: [
+      { role: 'user', content: 'plan', timestamp: 10 }, { role: 'assistant', content: 'ok', timestamp: 11 },
+      { role: 'user', content: 'then fail', timestamp: 12 }, { role: 'assistant', content: 'later', timestamp: 30 },
+      { role: 'user', content: 'again', timestamp: 31 },
+    ].slice(0, rows), [UNSETTLED_TODO_KEY]: { todos: [{ id: '1', content: 'kept', status: 'in_progress' }], summary: {}, version: 1, ts: keptAt } }, { workspace: s.state, model: null }))
+    await cut(sid)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(((detail.todo_state as Json | undefined)?.todos as Json[] | undefined)?.[0]?.content).toBe(expected)
+  })
+
+  it('serves the running turn\'s live todo list in session detail before it settles', async () => {
+    const sid = await newSession(s)
+    const todos = [{ id: '1', content: 'Live task', status: 'in_progress' }]
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'todo', args: {}, tid: 'call_todo' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'todo', preview: 'x', args: {}, tid: 'call_todo', raw_result: {}, todo_result: JSON.stringify({ todos }) } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'plan it' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'todo_state')
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+    expect(detail.active_stream_id).toBe(streamId)
+    expect(detail.todo_state).toMatchObject({ todos, display_items: [{ id: '1', text: 'Live task', state: 'in_progress' }] })
   })
 
   it('throttles delta metering to once a second and reports the delta rate', async () => {

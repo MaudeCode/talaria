@@ -2149,6 +2149,11 @@ export class TurnRunner {
     return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, actions: { edit: open, cancel: open, send_now: open && r.can_redirect } }
   }
 
+  /** TAL-397: the todo list the running turn last wrote, before its tool row settles; a cancelled turn keeps it too. */
+  liveTodoState(streamId: string): Record<string, unknown> | null {
+    return this.liveTodos.get(streamId) ?? null
+  }
+
   liveToolProgress(streamId: string): Record<string, unknown>[] {
     if (this.registry.cancelled.has(streamId)) return []
     return (this.registry.liveToolCalls.get(streamId) ?? []).filter((call) => !call.done && call.progress).map((call) => ({ ...call, id: str(call.tid) }))

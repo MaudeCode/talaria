@@ -66,6 +66,29 @@ describe('turn boundary cache invalidation (TAL-1210)', () => {
     expect(qc.getQueryData<{ session: typeof initial }>(keys.sessions.detail('other'))?.session).toBeUndefined()
   })
 
+  it('keeps a live todo list when a detail read started before it answers later, then rereads', async () => {
+    const stale = sessionFixture({ session_id: SID, todo_state: { display_items: [{ text: 'Old task', state: 'pending' }], total_count: 1 } })
+    qc.setQueryData(keys.sessions.detail(SID), { session: stale })
+    const late = deferred<{ session: typeof stale }>()
+    const reads = [late.promise, Promise.resolve({ session: sessionFixture({ session_id: SID, todo_state: { display_items: [{ text: 'Owner task', state: 'pending' }], total_count: 1 } }) })]
+    const observer = new QueryObserver(qc, { queryKey: keys.sessions.detail(SID), queryFn: () => reads.shift()!, staleTime: Infinity })
+    const unsubscribe = observer.subscribe(() => undefined)
+    void observer.refetch()
+    await attachToStream(SID, 'run-a')
+    const plan = { display_items: [{ text: 'Owner task', state: 'pending' }], total_count: 1 }
+    opened[0]!.onEvent(parseChatEvent('todo_state', JSON.stringify(plan))!, 'run-a:1')
+    late.resolve({ session: stale })
+    const settled = async () => {
+      await vi.waitFor(() => expect(qc.isFetching({ queryKey: keys.sessions.detail(SID) })).toBe(0))
+      expect(qc.getQueryData<{ session: typeof stale }>(keys.sessions.detail(SID))?.session.todo_state).toMatchObject(plan)
+    }
+    await settled()
+    // The cancelled read's other fields converge on a reread the server answers after the live write.
+    await vi.waitFor(() => expect(reads).toHaveLength(0))
+    await settled()
+    unsubscribe()
+  })
+
   it.each(['done', 'apperror', 'error', 'cancel'] as const)('%s keeps the embedded session fresh and refreshes only its metadata and lists', async (event) => {
     await attachToStream(SID, 'run-a')
     const session = sessionFixture({ session_id: SID, messages: [{ role: 'assistant', id: 2, content: 'Settled reply' }] })

@@ -22,7 +22,7 @@ import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLo
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionStore } from './store.js'
-import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
+import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState, tsFloat } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
 import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbMessageSummary, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
@@ -151,6 +151,7 @@ export interface SessionServiceDeps {
     /** The live stream's server-selected presentation, else null. */
     runStatus?: (streamId: string) => RunStatus | null
     liveToolProgress?: (streamId: string) => Record<string, unknown>[]
+    liveTodoState?: (streamId: string) => Record<string, unknown> | null
     /** TAL-1006: the live stream's open compression span start (epoch seconds), else null. */
     compressionStartedAt?: (streamId: string) => number | null
     /** TAL-899: whether a Stop holds the session's automatic turns until the user's next turn. */
@@ -1169,8 +1170,10 @@ export class SessionService {
       last_prompt_tokens: Number(s.last_prompt_tokens ?? 0) || 0,
     }
     if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
-    if (limited) attachTodoSnapshot(raw, limited.todo, s.extra[UNSETTLED_TODO_KEY])
-    else if (loadMessages) attachTodoState(raw, all, s.extra[UNSETTLED_TODO_KEY])
+    // TAL-1121: the running turn's live list outranks the settled one, so a read during the turn never shows an older plan.
+    const unsettled = (s.active_stream_id ? this.deps.runtime.liveTodoState?.(s.active_stream_id) : null) ?? s.extra[UNSETTLED_TODO_KEY]
+    if (limited) attachTodoSnapshot(raw, limited.todo, unsettled)
+    else if (loadMessages) attachTodoState(raw, all, unsettled)
     if (mergedLast) {
       raw.last_message_at = Math.max(Number(raw.last_message_at ?? 0) || 0, mergedLast)
       raw.updated_at = Math.max(Number(raw.updated_at ?? 0) || 0, mergedLast)
@@ -3243,6 +3246,10 @@ function stampIntentionalShrink(session: Session, oldCount: number, newCount: nu
     session.compression_anchor_message_key = null
     session.compression_anchor_visible_idx = null
   }
+  // TAL-1121: a cut that removed the turn which wrote the kept todo list ends that list, so no later load resurrects it.
+  // A list without its write time cannot prove it predates the cut, so it ends too.
+  const kept = session.extra[UNSETTLED_TODO_KEY], keptAt = tsFloat(isDict(kept) ? kept.ts : 0)
+  if (kept !== undefined && (!keptAt || keptAt > truncationWatermarkFor(session.messages))) Reflect.deleteProperty(session.extra, UNSETTLED_TODO_KEY)
   if (newCount >= oldCount) return false
   session.intentional_shrink_generation = randomUUID().replace(/-/g, '')
   return true

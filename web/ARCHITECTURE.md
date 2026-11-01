@@ -304,6 +304,9 @@ Owner null and empty plans clear stale lists; omitted fields use the full transc
 Execution/owner epochs, todo revisions and replay sequences fence updates. Idle viewers
 refresh through `session-updated`; the existing Todos page uses the session query cache
 and `useTranscript` observation lifecycle, with no separate task cache or Agent admission.
+Direct chats ship the running turn's live list in session detail ahead of the settled one; a
+history cut (clear, truncate, retry, undo) that removes the turn behind a kept failed-turn list
+ends that list. A live `todo_state` cancels and rereads any detail read already in flight.
 Unknown admissions require an explicit recovery decision. On Agents with `clarify.lock` (v0.22.3+), the
 owner's native CLI clarify batch reaches the attached watch once, as a `clarify_batch` stream event; the
 server shows it as one clarify card, locks each answer, and clears it on the owner's `request.cancel`.

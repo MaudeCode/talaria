@@ -74,9 +74,14 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     case 'session_snapshot':
       queryClient?.setQueryData(keys.sessions.detail(sessionId), { session: event.data.session })
       break
-    case 'todo_state':
-      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => old ? { ...old, session: { ...old.session, todo_state: event.data } } : old)
+    case 'todo_state': {
+      if (!queryClient) break
+      // TAL-1121: a read started before this write must not answer later with the older list; reread the rest instead.
+      const qc = queryClient, filter = { queryKey: keys.sessions.detail(sessionId), exact: true }
+      if (qc.isFetching(filter)) void qc.cancelQueries(filter).then(() => qc.invalidateQueries(filter))
+      qc.setQueryData<{ session: Session }>(filter.queryKey, (old) => old ? { ...old, session: { ...old.session, todo_state: event.data } } : old)
       break
+    }
     // TAL-425: a Stop gives a pending steer's text back to the tab that sent it.
     case 'steer_withdrawn':
       if (event.data.reason === 'stopped') returnStoppedSteer(sessionId, event.data.steer_id, event.data.text)
