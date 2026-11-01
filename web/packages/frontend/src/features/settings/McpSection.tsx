@@ -114,7 +114,7 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, eventsEffec
 }) {
   const health = HEALTH[s.health ?? '']
   const events = s.events
-  const eventState = events?.enabled ? EVENT_STATE[events.state] : undefined
+  const eventState = events?.show_state ? EVENT_STATE[events.state] : undefined
   return (
     <li className="py-2" data-mcp-server={s.name}>
       <div className="flex items-center gap-3">
@@ -132,7 +132,7 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, eventsEffec
           <ResourceSwitch effect={effect} checked={s.enabled !== false} onCheckedChange={(enabled) => onToggle({ name: s.name, enabled })} aria-label={s.name} />
         )}
       </div>
-      {events && (events.can_edit || events.enabled) && <McpEventsPanel name={s.name} events={events} effect={eventsEffect} onChange={onEvents} />}
+      {events?.show_panel && <McpEventsPanel name={s.name} events={events} effect={eventsEffect} onChange={onEvents} />}
       {s.cost_policy && <details className="mt-2 text-sm"><summary className="cursor-pointer text-muted">{m.mcp_cost_title()}</summary><McpCostEditor key={s.cost_policy.revision} policy={s.cost_policy} /></details>}
     </li>
   )
@@ -140,7 +140,6 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, eventsEffec
 
 /** TAL-1510: the experimental events opt-in and the server's native subscription status for one row. */
 function McpEventsPanel({ name, events, effect, onChange }: { name: string; events: McpEvents; effect: ResourceEffect<boolean> | undefined; onChange: (value: { name: string; events: boolean }) => void }) {
-  const counts = (Object.keys(EVENT_COUNTS) as (keyof McpEvents['subscriptions'])[]).filter((key) => events.subscriptions[key] > 0)
   return <details className="mt-2 text-sm" data-mcp-events={name}>
     <summary className="cursor-pointer text-muted">{m.mcp_events_title()}</summary>
     <div className="mt-2 flex min-w-0 flex-col gap-1">
@@ -149,8 +148,8 @@ function McpEventsPanel({ name, events, effect, onChange }: { name: string; even
         <HelpTip label={m.field_help_about({ label: m.mcp_events_switch() })}>{m.mcp_events_help()}</HelpTip>
         <ResourceSwitch effect={effect} checked={events.enabled} disabled={!events.can_edit} onCheckedChange={(on) => onChange({ name, events: on })} aria-label={m.mcp_events_switch_label({ name })} />
       </div>
-      {counts.length > 0 && <p className="text-xs text-muted">{counts.map((key) => EVENT_COUNTS[key]({ n: events.subscriptions[key].toLocaleString() })).join(' · ')}</p>}
-      {events.enabled && events.detail && <p className="text-xs break-words text-muted">{events.detail}</p>}
+      {events.counts.length > 0 && <p className="text-xs text-muted">{events.counts.map(({ state, count }) => EVENT_COUNTS[state]({ n: count.toLocaleString() })).join(' · ')}</p>}
+      {events.detail && <p className="text-xs break-words text-muted">{events.detail}</p>}
     </div>
   </details>
 }

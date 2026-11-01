@@ -29,7 +29,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": false,
+        "show_panel": false
       }
     },
     {
@@ -61,7 +64,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -104,7 +110,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": false,
+        "show_panel": true
       }
     },
     {
@@ -148,7 +157,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -192,7 +204,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -236,7 +251,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -280,7 +298,19 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 1
-        }
+        },
+        "counts": [
+          {
+            "state": "active",
+            "count": 1
+          },
+          {
+            "state": "paused",
+            "count": 1
+          }
+        ],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -324,7 +354,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -368,7 +401,19 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [
+          {
+            "state": "active",
+            "count": 1
+          },
+          {
+            "state": "refresh_overdue",
+            "count": 1
+          }
+        ],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -412,7 +457,23 @@
           "lapsed": 1,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [
+          {
+            "state": "active",
+            "count": 1
+          },
+          {
+            "state": "refresh_overdue",
+            "count": 1
+          },
+          {
+            "state": "lapsed",
+            "count": 1
+          }
+        ],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -456,7 +517,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -500,7 +564,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -528,7 +595,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
       }
     },
     {
@@ -555,7 +625,10 @@
           "lapsed": 0,
           "pending": 0,
           "paused": 0
-        }
+        },
+        "counts": [],
+        "show_state": false,
+        "show_panel": false
       }
     }
   ]

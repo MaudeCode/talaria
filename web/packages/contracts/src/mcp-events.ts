@@ -33,4 +33,7 @@ export const McpEventsSchema = z.object({
   detail: z.string().describe('Redacted native reason for `unavailable` or `error`; empty otherwise.'),
   utilities: Count.describe('Event utility tools (`list_event_types`, `subscribe_event`, `unsubscribe_event`) this runtime registered.'),
   subscriptions: McpEventSubscriptionsSchema,
+  counts: z.array(z.object({ state: McpEventSubscriptionsSchema.keyof(), count: Count.positive() })).describe('The non-zero subscription counts in display order.'),
+  show_state: z.boolean().describe('The row shows `state` beside the server status: only once opted in.'),
+  show_panel: z.boolean().describe('The row offers the events disclosure: editable, or already opted in.'),
 })

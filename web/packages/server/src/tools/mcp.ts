@@ -52,6 +52,7 @@ export function parseEnabled(value: unknown, fallback = true): boolean {
 type McpEvents = z.infer<typeof McpEventsSchema>
 type McpEventsData = SidecarResult<'mcp.events'>
 const NO_SUBSCRIPTIONS = { active: 0, refresh_overdue: 0, lapsed: 0, pending: 0, paused: 0 }
+const SUBSCRIPTION_ORDER = ['active', 'refresh_overdue', 'lapsed', 'pending', 'paused'] as const
 
 /**
  * TAL-1510: one server's events opt-in and native subscription health, by `McpEventsStateSchema` precedence. `data` is
@@ -66,8 +67,10 @@ export function eventsView(cfg: unknown, summary: Dict, runtime: Dict | null, da
     : data.callback === 'missing' ? 'needs_public_url' : data.callback === 'not_https' ? 'invalid_public_url'
       : subscriptions.lapsed ? 'lapsed' : subscriptions.refresh_overdue ? 'refresh_overdue' : subscriptions.active ? 'subscribed'
         : summary.active === true ? 'ready' : 'unavailable'
-  return { supported, enabled, can_edit: summary.can_toggle === true && (supported || enabled), state,
-    detail: state === 'unavailable' ? safeText(runtime?.error, 300) : '', utilities: row?.utilities ?? 0, subscriptions }
+  const can_edit = summary.can_toggle === true && (supported || enabled)
+  const counts = SUBSCRIPTION_ORDER.filter((key) => subscriptions[key] > 0).map((key) => ({ state: key, count: subscriptions[key] }))
+  return { supported, enabled, can_edit, state, detail: state === 'unavailable' ? safeText(runtime?.error, 300) : '', utilities: row?.utilities ?? 0,
+    subscriptions, counts, show_state: enabled, show_panel: can_edit || enabled }
 }
 
 /** Python `_server_summary`. */
