@@ -83,7 +83,8 @@ export class JsonJournal implements JournalBackend {
   async writer(sessionId: string, runId: string): Promise<JsonJournalWriter> { return (await this.open(sessionId, runId, { durability: this.fsyncMode() })) }
 
   private readonly writers = new Set<JsonJournalWriter>()
-  register(writer: JsonJournalWriter): void { this.writers.add(writer) }
+  /** A run's owner is known from its first writer, so its first lookup skips the cross-session scan. */
+  register(writer: JsonJournalWriter): void { this.writers.add(writer); this.rememberOwner(writer.runId, writer.sessionId) }
   release(writer: JsonJournalWriter): void { this.writers.delete(writer) }
 
   async open(sessionId: string, runId: string, opts: { durability: 'eager' | 'terminal-only' }): Promise<JsonJournalWriter> {
@@ -374,13 +375,17 @@ export class JsonJournal implements JournalBackend {
     if (!existsSync(path)) return null
     const summary = pruned ? this.loadPrunedSummary(journalPath) : this.latestRunSummaryNow(sessionId, runId)
     if (!summary) return null
-    // Cache ownership only; appends and retention summaries must always be read fresh.
-    if (!this.closed) {
-      this.runOwners.set(runId, sessionId)
-      if (this.runOwners.size > RUN_OWNER_CACHE_MAX) this.runOwners.delete(this.runOwners.keys().next().value!)
-    }
+    this.rememberOwner(runId, sessionId)
     summary.path = path
     return summary
+  }
+
+  /** Cache ownership only; appends and retention summaries must always be read fresh. */
+  private rememberOwner(runId: string, sessionId: string): void {
+    if (this.closed) return
+    this.runOwners.delete(runId)
+    this.runOwners.set(runId, sessionId)
+    if (this.runOwners.size > RUN_OWNER_CACHE_MAX) this.runOwners.delete(this.runOwners.keys().next().value!)
   }
 
   sessionJournalFingerprintNow(sessionId: string): string {

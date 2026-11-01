@@ -5,7 +5,7 @@ import { implement } from '@orpc/server'
 import { chatContract, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
-import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
+import { requestSessionIdGuard, resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -143,19 +143,21 @@ export const chatRouter = os.router({
     cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')
-      if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
-      const sid = await streamOwnerSessionId(ctx, streamId)
+      const resolved = await resolveStreamOwner(ctx, streamId)
+      if (!(await streamVisibleToRequest(ctx, streamId, resolved))) throw new HttpError(404, 'Session not found')
+      const sid = resolved.owner
       const { cancelled, withdrawn } = await ctx.deps.turns.cancel(streamId)
       const activity_phase = sid ? await ctx.deps.background.activityPhase(sid, ctx.deps.activeProfile(), cancelled ? { excludeStreamId: streamId, terminalPhase: 'cancelled' } : {}) : undefined
       return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn, ...(activity_phase ? { activity_phase } : {}) }
     })),
     streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
-      if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
+      const resolved = await resolveStreamOwner(ctx, streamId)
+      if (!(await streamVisibleToRequest(ctx, streamId, resolved))) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.liveIds.has(streamId)
-      const owner = (await streamOwnerSessionId(ctx, streamId))
+      const { owner } = resolved
       const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; activity_phase?: string | undefined; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? (await ctx.deps.sessions.activeRunBlocking(owner)) : null }
-      const summary = streamId ? (await ctx.deps.journal.findRunSummary(streamId)) : null
+      const summary = await streamRunSummary(ctx, streamId, resolved)
       if (summary) {
         payload.replay_available = true
         const terminal = summary.terminal
