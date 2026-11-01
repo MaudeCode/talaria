@@ -1,9 +1,12 @@
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
+
+/** A row's accessible name is its file name, then its kind and size (TAL-1606). */
+const row = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`)
 
 /** TAL-519: the Files page creates, renames, moves and deletes entries in a real synthetic workspace and shows the server's refusals. */
 test('the Files page creates, renames, moves and deletes workspace entries', async ({ page, errors }, testInfo) => {
@@ -29,7 +32,7 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   else await page.getByRole('button', { name: 'Show workspace panel' }).click()
   await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
   const tree = page.getByRole('tree', { name: 'Files' })
-  const item = (name: string) => tree.getByRole('treeitem', { name, exact: true })
+  const item = (name: string) => tree.getByRole('treeitem', { name: row(name) })
   const actions = async (name: string, action: string) => {
     await item(name).click({ button: 'right' })
     await page.getByRole('menu').getByRole('menuitem', { name: action }).click()
@@ -128,8 +131,53 @@ test('the Files page waits for the session record instead of showing the default
 
   release(undefined)
   await expect(page.locator('[data-files-toolbar]')).toContainText(workspace)
-  await page.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: 'seed.txt', exact: true }).click()
+  await page.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: row('seed.txt') }).click()
   await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('seed text')
+
+  await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
+  rmSync(workspace, { recursive: true, force: true })
+})
+
+/** TAL-1606: the tree is one tab stop; arrow keys, Home and End move among rows; names carry kind and size. */
+test('the Files tree moves focus with the keyboard and names rows with their kind and size', async ({ page }, testInfo) => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal1606-')))
+  mkdirSync(join(workspace, 'docs'))
+  writeFileSync(join(workspace, 'docs', 'inner.txt'), 'inner')
+  writeFileSync(join(workspace, 'a.txt'), 'abc')
+  writeFileSync(join(workspace, 'b.txt'), 'b'.repeat(2048))
+  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
+  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
+
+  await page.goto(`/session/${created.session.session_id}`)
+  if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
+  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
+  await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
+  const tree = page.getByRole('tree', { name: 'Files' })
+  const docs = tree.getByRole('treeitem', { name: 'docs, folder', exact: true })
+  const a = tree.getByRole('treeitem', { name: 'a.txt, file, 3 B', exact: true })
+  const b = tree.getByRole('treeitem', { name: 'b.txt, file, 2.0 KB', exact: true })
+  await expect(a).toContainText('3 B')
+  await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1)
+
+  await docs.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(a).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(b).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(a).toBeFocused()
+  if (process.env.TAL1606_SHOTS) await page.screenshot({ path: `${process.env.TAL1606_SHOTS}/keyboard-${testInfo.project.name}.png` })
+  // Tab leaves the rows after the focused row's More actions; Shift+Tab comes back to the same row.
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'More actions' }).and(page.locator(':focus'))).toHaveCount(1)
+  await page.keyboard.press('Shift+Tab')
+  await expect(a).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(docs).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(tree.getByRole('treeitem', { name: 'inner.txt, file, 5 B', exact: true })).toBeFocused()
+  await page.getByRole('button', { name: 'Up one level' }).click()
+  await expect(docs).toHaveAttribute('tabindex', '0')
 
   await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
   rmSync(workspace, { recursive: true, force: true })

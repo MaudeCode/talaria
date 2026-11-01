@@ -65,7 +65,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   const tree = page.getByRole('tree', { name: 'Files' })
   const shot = async (name: string) => { if (process.env.TAL566_SHOTS) await page.screenshot({ path: `${process.env.TAL566_SHOTS}/${name}-${testInfo.project.name}.png` }) }
   const open = async (name: string) => {
-    await tree.getByRole('treeitem', { name, exact: true }).click()
+    await tree.getByRole('treeitem', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`) }).click()
     await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
   }
   const back = () => page.getByRole('button', { name: 'Back' }).click()

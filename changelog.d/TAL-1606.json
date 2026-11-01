@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Files panel can be browsed with the arrow, Home and End keys, and screen readers announce each entry's kind and size.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

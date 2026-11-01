@@ -15,15 +15,17 @@ import { FilesPage } from './FilesPage'
 
 const tree = { entries: [{ name: 'docs', path: 'docs', is_dir: true }, { name: 'a.txt', path: 'a.txt', is_dir: false, size: 3 }, { name: 'b.txt', path: 'b.txt', is_dir: false, size: 3 }] }
 const held = () => new Promise<never>(() => undefined)
-const names = () => screen.getAllByRole('treeitem').map((item) => item.getAttribute('aria-label'))
+/** A row's accessible name starts with its file name; kind and size follow (TAL-1606). */
+const row = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(,|$)`)
+const names = () => screen.getAllByRole('treeitem').map((item) => item.getAttribute('aria-label')?.split(', ')[0])
 function renderFiles() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={qc}><FilesPage workspace="/w" sessionId="s1" active /></QueryClientProvider>)
   return qc
 }
 async function menu(name: string, item: string) {
-  const row = (await screen.findByRole('treeitem', { name })).parentElement!
-  await userEvent.click(within(row).getByRole('button', { name: 'More actions' }))
+  const line = (await screen.findByRole('treeitem', { name: row(name) })).parentElement!
+  await userEvent.click(within(line).getByRole('button', { name: 'More actions' }))
   await userEvent.click(await screen.findByRole('menuitem', { name: item }))
 }
 
@@ -77,7 +79,7 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
   it('shows a new file at once', async () => {
     vi.mocked(api.createFile).mockReturnValue(held())
     renderFiles()
-    await screen.findByRole('treeitem', { name: 'a.txt' })
+    await screen.findByRole('treeitem', { name: row('a.txt') })
     await userEvent.click(screen.getByRole('button', { name: 'New File' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }), 'notes.md{Enter}')
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -88,7 +90,7 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
   it('moves a dropped entry out of the folder at once', async () => {
     vi.mocked(api.moveEntry).mockReturnValue(held())
     renderFiles()
-    const folder = (await screen.findByRole('treeitem', { name: 'docs' })).parentElement!
+    const folder = (await screen.findByRole('treeitem', { name: row('docs') })).parentElement!
     const dataTransfer = { types: ['application/x-talaria-workspace-path'], getData: () => 'a.txt', dropEffect: 'move' }
     fireEvent.dragOver(folder, { dataTransfer })
     fireEvent.drop(folder, { dataTransfer })
@@ -114,7 +116,7 @@ describe('file tree writes roll back only themselves on refusal (TAL-1384)', () 
   it('drops a refused new file with the error inline', async () => {
     vi.mocked(api.createFile).mockRejectedValue(refusal('File already exists'))
     renderFiles()
-    await screen.findByRole('treeitem', { name: 'a.txt' })
+    await screen.findByRole('treeitem', { name: row('a.txt') })
     await userEvent.click(screen.getByRole('button', { name: 'New File' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }), 'notes.md{Enter}')
     await waitFor(() => expect(names()).toEqual(['docs', 'a.txt', 'b.txt']))
@@ -124,7 +126,7 @@ describe('file tree writes roll back only themselves on refusal (TAL-1384)', () 
   it('puts a refused move back with the error inline', async () => {
     vi.mocked(api.moveEntry).mockRejectedValue(refusal('Target is read-only'))
     renderFiles()
-    const folder = (await screen.findByRole('treeitem', { name: 'docs' })).parentElement!
+    const folder = (await screen.findByRole('treeitem', { name: row('docs') })).parentElement!
     const dataTransfer = { types: ['application/x-talaria-workspace-path'], getData: () => 'a.txt', dropEffect: 'move' }
     fireEvent.dragOver(folder, { dataTransfer })
     fireEvent.drop(folder, { dataTransfer })
@@ -135,7 +137,7 @@ describe('file tree writes roll back only themselves on refusal (TAL-1384)', () 
 
 describe('file save keeps the user\'s edits (TAL-1384)', () => {
   async function openFile(name: string) {
-    await userEvent.click(await screen.findByRole('treeitem', { name }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row(name) }))
     return screen.findByRole('textbox', { name: 'Preview' })
   }
 
@@ -219,7 +221,7 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={qc}><FilesPage workspace={null} sessionId="s1" active /></QueryClientProvider>)
     await selectManaged()
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'draft.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('draft.txt') }))
     const editor = await screen.findByRole('textbox', { name: 'Preview' })
     expect(editor).toHaveValue('original')
     await userEvent.type(editor, ' edited')
@@ -235,7 +237,7 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     vi.mocked(api.saveFile).mockRejectedValue(new ApiError({ kind: 'http', status, path: '/x', message: 'Save could not be confirmed' }))
     renderFiles()
     await selectManaged()
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'draft.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('draft.txt') }))
     const editor = await screen.findByRole('textbox', { name: 'Preview' })
     await userEvent.type(editor, ' unsaved')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -249,7 +251,7 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     vi.mocked(api.readFile).mockResolvedValue({ content: 'deleted session', size: 15, preview: 'text', read_only: true, write_semantics: 'unconditional' })
     renderFiles()
     await selectManaged()
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'draft.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('draft.txt') }))
     expect(await screen.findByRole('textbox', { name: 'Preview' })).toHaveAttribute('readonly')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Back' }))
@@ -264,10 +266,10 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     vi.mocked(api.readFile).mockImplementation((_sid, path) => path === 'one' ? new Promise((resolve) => { finish = resolve }) : Promise.resolve({ content: 'second', size: 6, preview: 'text', read_only: false }))
     renderFiles()
     await selectManaged()
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'a.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('a.txt') }))
     await waitFor(() => expect(finish).toBeTypeOf('function'))
     await userEvent.click(screen.getByRole('button', { name: 'Back' }))
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'b.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('b.txt') }))
     const editor = await screen.findByRole('textbox', { name: 'Preview' })
     await userEvent.type(editor, ' draft')
     await act(async () => { finish({ content: 'late first', size: 10, preview: 'text', read_only: false }); await Promise.resolve() })
@@ -282,7 +284,7 @@ describe('file tree keeps the server order (TAL-1303)', () => {
   it('lists a server directory before the files it precedes', async () => {
     vi.mocked(api.listDir).mockResolvedValue({ entries: [dir('z-folder'), file('a.txt'), file('b.txt')] })
     renderFiles()
-    await screen.findByRole('treeitem', { name: 'z-folder' })
+    await screen.findByRole('treeitem', { name: row('z-folder') })
     expect(names()).toEqual(['z-folder', 'a.txt', 'b.txt'])
   })
 
@@ -291,18 +293,18 @@ describe('file tree keeps the server order (TAL-1303)', () => {
     const order = [link, dir('beta'), dir('Alpha'), file('b.TXT'), file('A.txt'), file('.hidden')]
     vi.mocked(api.listDir).mockResolvedValue({ entries: order })
     renderFiles()
-    await screen.findByRole('treeitem', { name: 'beta' })
+    await screen.findByRole('treeitem', { name: row('beta') })
     expect(names()).toEqual(['Zlink', 'beta', 'Alpha', 'b.TXT', 'A.txt', '.hidden'])
   })
 
   it('still opens a server directory, previews a file and asks for hidden files', async () => {
     vi.mocked(api.listDir).mockImplementation((_sid, path) => Promise.resolve({ entries: path === 'z-folder' ? [{ ...file('inner.txt'), path: 'z-folder/inner.txt' }] : [dir('z-folder'), file('a.txt')] } as never))
     renderFiles()
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'z-folder' }))
-    await screen.findByRole('treeitem', { name: 'inner.txt' })
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('z-folder') }))
+    await screen.findByRole('treeitem', { name: row('inner.txt') })
     expect(api.listDir).toHaveBeenLastCalledWith('s1', 'z-folder', false)
     await userEvent.click(screen.getByRole('button', { name: 'Up one level' }))
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'a.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('a.txt') }))
     expect(await screen.findByRole('textbox', { name: 'Preview' })).toHaveValue('Original A')
     await userEvent.click(screen.getByRole('button', { name: 'Back' }))
     await userEvent.click(screen.getByRole('button', { name: 'Show hidden files' }))
@@ -319,7 +321,7 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     return (props: Props) => view.rerender(page({ ...initial, ...props }))
   }
   async function openFile(name: string) {
-    await userEvent.click(await screen.findByRole('treeitem', { name }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row(name) }))
     return screen.findByRole('textbox', { name: 'Preview' })
   }
   const back = () => userEvent.click(screen.getByRole('button', { name: 'Back' }))
@@ -336,7 +338,7 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     await userEvent.clear(editor)
     await userEvent.type(editor, 'Unsaved A')
     rerender({ workspace: '/b' })
-    await screen.findByRole('treeitem', { name: 'a.txt' })
+    await screen.findByRole('treeitem', { name: row('a.txt') })
     rerender({ workspace: '/a' })
     expect(await openFile('a.txt')).toHaveValue('Unsaved A')
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
@@ -397,7 +399,7 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await userEvent.type(editor, ' newer')
     rerender({ workspace: '/b' })
-    await screen.findByRole('treeitem', { name: 'a.txt' })
+    await screen.findByRole('treeitem', { name: row('a.txt') })
     await act(async () => { answer({ ok: true }); await Promise.resolve() })
     await waitFor(() => expect(toast).toHaveBeenCalledWith('File saved'))
     rerender({ workspace: '/a' })
@@ -484,12 +486,12 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     await back()
     expect(await openFile('b.txt')).toHaveValue('Original b.txt')
     await back()
-    const folder = (await screen.findByRole('treeitem', { name: 'docs' })).parentElement!
+    const folder = (await screen.findByRole('treeitem', { name: row('docs') })).parentElement!
     const dataTransfer = { types: ['application/x-talaria-workspace-path'], getData: () => 'a.txt', dropEffect: 'move' }
     fireEvent.dragOver(folder, { dataTransfer })
     fireEvent.drop(folder, { dataTransfer })
     await waitFor(() => expect(api.moveEntry).toHaveBeenCalledWith('s1', 'a.txt', 'docs'))
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'docs' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('docs') }))
     await waitFor(async () => expect(await openFile('a.txt')).toHaveValue('Original a.txt draft'))
     await back()
     await userEvent.click(screen.getByRole('button', { name: 'Up one level' }))
@@ -498,5 +500,106 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     await waitFor(() => expect(api.deleteEntry).toHaveBeenCalledWith('s1', 'c.txt', false))
     expect(await openFile('c.txt')).toHaveValue('Original c.txt')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+})
+
+describe('file tree keyboard navigation and row names (TAL-1606)', () => {
+  const focused = () => document.activeElement?.getAttribute('aria-label')
+  const tabStops = () => screen.getAllByRole('treeitem').filter((item) => item.tabIndex === 0).map((item) => item.getAttribute('aria-label'))
+  async function focusRow(name: string) {
+    const item = await screen.findByRole('treeitem', { name: row(name) })
+    act(() => item.focus())
+    return item
+  }
+
+  it('names each row by file name first, then its kind and visible size', async () => {
+    renderFiles()
+    expect(await screen.findByRole('treeitem', { name: 'a.txt, file, 3 B' })).toHaveTextContent('3 B')
+    expect(screen.getByRole('treeitem', { name: 'docs, folder' })).toBeInTheDocument()
+  })
+
+  it('moves focus among rows with ArrowUp, ArrowDown, Home and End, keeping one tab stop', async () => {
+    renderFiles()
+    await focusRow('docs')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(focused()).toBe('a.txt, file, 3 B')
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
+    expect(focused()).toBe('b.txt, file, 3 B')
+    await userEvent.keyboard('{ArrowUp}')
+    expect(focused()).toBe('a.txt, file, 3 B')
+    expect(tabStops()).toEqual(['a.txt, file, 3 B'])
+    await userEvent.keyboard('{End}')
+    expect(focused()).toBe('b.txt, file, 3 B')
+    await userEvent.keyboard('{Home}')
+    expect(focused()).toBe('docs, folder')
+  })
+
+  it('keeps More actions reachable from the focused row only', async () => {
+    renderFiles()
+    const item = await focusRow('a.txt')
+    await userEvent.tab()
+    expect(document.activeElement).toBe(within(item.parentElement!).getByRole('button', { name: 'More actions' }))
+    const others = screen.getAllByRole('button', { name: 'More actions' }).filter((button) => button !== document.activeElement)
+    expect(others.map((button) => button.tabIndex)).toEqual([-1, -1])
+  })
+
+  it('opens a folder with Enter, focuses its first row, and returns focus to that folder on Up', async () => {
+    vi.mocked(api.listDir).mockImplementation((_sid, path) => Promise.resolve(path === 'docs' ? { entries: [{ name: 'inner.txt', path: 'docs/inner.txt', size: 2048 }] } : tree))
+    renderFiles()
+    await focusRow('docs')
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(focused()).toBe('inner.txt, file, 2.0 KB'))
+    await userEvent.click(screen.getByRole('button', { name: 'Up one level' }))
+    await screen.findByRole('treeitem', { name: row('docs') })
+    expect(tabStops()).toEqual(['docs, folder'])
+  })
+
+  it('keeps focus on a surviving row through a refresh and moves it to the neighbor when the row goes', async () => {
+    const qc = renderFiles()
+    await focusRow('b.txt')
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [{ name: 'new.txt', path: 'new.txt', size: 1 }, ...tree.entries] })
+    await act(() => qc.invalidateQueries())
+    await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'a.txt', 'b.txt']))
+    expect(focused()).toBe('b.txt, file, 3 B')
+    await userEvent.keyboard('{ArrowUp}')
+    vi.mocked(api.listDir).mockResolvedValue({ entries: tree.entries.filter((e) => e.name !== 'a.txt') })
+    await act(() => qc.invalidateQueries())
+    await waitFor(() => expect(names()).toEqual(['docs', 'b.txt']))
+    expect(focused()).toBe('b.txt, file, 3 B')
+    expect(tabStops()).toEqual(['b.txt, file, 3 B'])
+  })
+
+  it('hands focus to the row now at a removed row\'s index after an earlier refresh moved it', async () => {
+    const qc = renderFiles()
+    await focusRow('a.txt')
+    const added = { name: 'new.txt', path: 'new.txt', size: 1 }
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [added, ...tree.entries] })
+    await act(() => qc.invalidateQueries())
+    await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'a.txt', 'b.txt']))
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [added, ...tree.entries.filter((e) => e.name !== 'a.txt')] })
+    await act(() => qc.invalidateQueries())
+    await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'b.txt']))
+    expect(focused()).toBe('b.txt, file, 3 B')
+  })
+
+  it('never takes focus back from a control the user moved to', async () => {
+    renderFiles()
+    await focusRow('a.txt')
+    vi.mocked(api.listDir).mockResolvedValue({ entries: tree.entries.filter((e) => e.name !== 'a.txt') })
+    const refresh = screen.getByRole('button', { name: 'Refresh' })
+    await userEvent.click(refresh)
+    await waitFor(() => expect(names()).toEqual(['docs', 'b.txt']))
+    expect(document.activeElement).toBe(refresh)
+    expect(tabStops()).toEqual(['b.txt, file, 3 B'])
+  })
+
+  it('navigates managed session buffers the same way', async () => {
+    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { entries: [{ name: 'one.txt', path: 'buffer-one', size: 8 }, { name: 'two.txt', path: 'buffer-two', size: 9 }] } : tree))
+    renderFiles()
+    await userEvent.click(screen.getByRole('combobox', { name: 'File source' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Session buffers' }))
+    await focusRow('one.txt')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(focused()).toBe('two.txt, file, 9 B')
   })
 })
