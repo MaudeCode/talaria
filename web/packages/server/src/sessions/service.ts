@@ -13,7 +13,8 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
-import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
+import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionSkills } from '@maudecode/talaria-web-contracts'
+import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
@@ -1720,6 +1721,58 @@ export class SessionService {
     return { plan_gauge: view.plan_gauge ?? null, input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: s.estimated_cost, model: s.model }
   }
 
+  /**
+   * TAL-1649: the skills this conversation loaded, in the server's order. `library` is the active profile's catalog; a
+   * skill it no longer resolves (or a catalog that cannot be read) keeps its count without detail.
+   */
+  async sessionSkills(sid: string, library: () => Promise<{ name: string; description?: string | null; load_name?: string | undefined }[]>): Promise<SessionSkills> {
+    const s = (await this.get404(sid))
+    const used = orderedSkillCounts(s)
+    let catalog: Awaited<ReturnType<typeof library>> = []
+    if (used.length) { try { catalog = await library() } catch { catalog = [] } }
+    const find = (name: string) => catalog.find((skill) => skill.name === name) ?? catalog.find((skill) => skill.load_name === name)
+    return { session_id: s.session_id, skills: used.map(({ name, count }) => { const skill = find(name); return { name, count, description: skill?.description || null, detail_available: Boolean(skill) } }) }
+  }
+
+  /**
+   * TAL-1649: the clear generation an explicit skill or bundle load captures before it resolves, or null when the session
+   * is not this profile's writable, direct conversation (unknown, read-only, canonically owned or a subagent view).
+   */
+  async skillUseFence(sid: string): Promise<number | null> {
+    if (!isSafeSessionId(sid)) return null
+    try {
+      return await this.store.withLock(sid, async () => {
+        const s = (await this.store.get(sid, { cacheOnMiss: false, promote: false }))
+        if (s.session_id !== sid || s.read_only || !this.visibleToActiveProfile(s.profile)) return null
+        if ((await this.isReadOnly(s)) || (await this.isSubagentViewOnly(sid))) return null
+        return skillGeneration(s)
+      })
+    } catch { return null }
+  }
+
+  /**
+   * TAL-1649: one use per successfully resolved skill name, under the session lock. The load's captured clear
+   * generation must still hold; a run's completion must also still own the session (`streamId`). A deleted session
+   * stays deleted, and a failed write never fails the load that triggered it.
+   */
+  async recordSkillUse(sid: string, names: readonly unknown[], fence: { generation: number; streamId?: string }): Promise<boolean> {
+    if (!isSafeSessionId(sid) || !names.some((name) => typeof name === 'string' && name.trim())) return false
+    try {
+      return await this.store.withLock(sid, async () => {
+        let s: Session
+        try { s = (await this.store.get(sid)) } catch { return false }
+        if (s.session_id !== sid || s.read_only || skillGeneration(s) !== fence.generation) return false
+        if (fence.streamId !== undefined ? s.active_stream_id !== fence.streamId : !this.visibleToActiveProfile(s.profile) || (await this.isReadOnly(s))) return false
+        if (!addSkillUses(s, names)) return false
+        await this.store.save(s, { touchUpdatedAt: false, skipIndex: true })
+        return true
+      })
+    } catch (error) {
+      this.deps.log(`[webui] WARNING: failed to record skill use for ${sid}: ${(error as Error).message}`)
+      return false
+    }
+  }
+
   // ── creation ─────────────────────────────────────────────────────────────
 
   /** Only retained, readable identities in the request profile can become search pointers. */
@@ -2705,6 +2758,7 @@ export class SessionService {
       s.pending_started_at = null
       s.pending_user_source = null
       s.clear_generation = hadMessages ? randomUUID().replace(/-/g, '') : null
+      resetSkillUses(s)
       applySessionTitleRename(s, 'Untitled')
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
@@ -2773,7 +2827,7 @@ export class SessionService {
         ...watermark, context_messages: copyJson(session.context_messages),
         gateway_routing: copyJson(session.gateway_routing), gateway_routing_history: copyJson(session.gateway_routing_history), llm_title_generated: session.llm_title_generated,
         manual_title: session.manual_title, composer_draft: copyJson(session.composer_draft), context_engine: session.context_engine, context_engine_state: copyJson(session.context_engine_state),
-        created_at: now, updated_at: now,
+        ...inheritedSkillUses(session, true), created_at: now, updated_at: now,
       },
       { workspace: session.workspace, model: session.model },
     )
@@ -2815,6 +2869,9 @@ export class SessionService {
         personality: source.personality, enabled_toolsets: source.enabled_toolsets, context_length: source.context_length, threshold_tokens: source.threshold_tokens,
         context_messages: forkedContext, gateway_routing: copyJson(source.gateway_routing), context_engine: source.context_engine, context_engine_state: copyJson(source.context_engine_state),
         parent_session_id: source.session_id, session_source: 'fork',
+        // TAL-1649: only a fork of the whole history carries the conversation's skill counts; a partial one cannot tell
+        // which of them its retained rows made.
+        ...inheritedSkillUses(source, forked.length > 0 && forked.length >= sourceMessages.length),
       },
       { workspace: source.workspace, model: source.model },
     )

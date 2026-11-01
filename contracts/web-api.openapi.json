@@ -9131,6 +9131,85 @@
         }
       }
     },
+    "/api/session/skills": {
+      "get": {
+        "operationId": "session.skills",
+        "summary": "TAL-1649: the skills this conversation loaded and how often, counted by the server from successful loads only. Never inferred from transcript text; a session without recorded loads answers an empty list.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "detail_available": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "description",
+                          "count",
+                          "detail_available"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "skills"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/new": {
       "post": {
         "operationId": "session.new",
@@ -82489,7 +82568,7 @@
     "/api/skills/content": {
       "get": {
         "operationId": "skills.content",
-        "summary": "Skill view, or one linked file when `file` is given.",
+        "summary": "Skill view, or one linked file when `file` is given. With `session_id`, a successful skill view counts as a load in that conversation (TAL-1649); a library preview passes none and counts nothing.",
         "tags": [
           "tools"
         ],
@@ -82505,6 +82584,15 @@
           },
           {
             "name": "file",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "session_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -84662,7 +84750,7 @@
     "/api/commands/bundles/resolve": {
       "post": {
         "operationId": "commands.resolveBundle",
-        "summary": "Expands `/<bundle> [instruction]` into the user message that loads its skills. 404 for an unknown bundle.",
+        "summary": "Expands `/<bundle> [instruction]` into the user message that loads its skills. 404 for an unknown bundle. With `session_id`, its `loaded_skills` count as loads in that conversation (TAL-1649).",
         "tags": [
           "tools"
         ],
@@ -84674,6 +84762,9 @@
                 "type": "object",
                 "properties": {
                   "command": {
+                    "type": "string"
+                  },
+                  "session_id": {
                     "type": "string"
                   }
                 }
