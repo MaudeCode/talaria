@@ -49,16 +49,33 @@ class FakeTap {
 }
 
 class FakeRecorder {
+  /** Hold `stop` until `finish()`, as a browser does while it encodes the last chunk. */
+  static deferStop = false
+  static pending: (() => void)[] = []
+  static finish() { for (const fire of FakeRecorder.pending.splice(0)) fire() }
   state = 'inactive'
   mimeType = 'audio/webm;codecs=opus'
   private listeners: Record<string, ((event: { data: Blob }) => void)[]> = {}
   addEventListener(name: string, listener: (event: { data: Blob }) => void) { (this.listeners[name] ??= []).push(listener) }
   start() { this.state = 'recording' }
   stop() {
-    this.state = 'inactive'
-    for (const listener of this.listeners.dataavailable ?? []) listener({ data: new Blob(['opus-bytes']) })
-    for (const listener of this.listeners.stop ?? []) listener({ data: new Blob() })
+    const fire = () => {
+      this.state = 'inactive'
+      for (const listener of this.listeners.dataavailable ?? []) listener({ data: new Blob(['opus-bytes']) })
+      for (const listener of this.listeners.stop ?? []) listener({ data: new Blob() })
+    }
+    if (FakeRecorder.deferStop) FakeRecorder.pending.push(fire)
+    else fire()
   }
+}
+
+class FakeAudioContext {
+  static closes = 0
+  sampleRate = exchange.start.sample_rate
+  destination = {}
+  audioWorklet = { addModule: vi.fn(() => Promise.resolve()) }
+  createMediaStreamSource() { return { connect: vi.fn(), disconnect: vi.fn() } }
+  close() { FakeAudioContext.closes += 1; return Promise.resolve() }
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
@@ -81,19 +98,19 @@ describe('live dictation (TAL-802)', () => {
     getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [track] })
     vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ', filtered: false })
     track.stop.mockReset()
+    FakeRecorder.deferStop = false
+    FakeRecorder.pending = []
+    FakeAudioContext.closes = 0
     vi.stubGlobal('WebSocket', FakeSocket)
     vi.stubGlobal('MediaRecorder', FakeRecorder)
     vi.stubGlobal('AudioWorkletNode', FakeTap)
-    vi.stubGlobal('AudioContext', class {
-      sampleRate = exchange.start.sample_rate
-      destination = {}
-      audioWorklet = { addModule: vi.fn(() => Promise.resolve()) }
-      createMediaStreamSource() { return { connect: vi.fn(), disconnect: vi.fn() } }
-      close() { return Promise.resolve() }
-    })
+    vi.stubGlobal('AudioContext', FakeAudioContext)
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
 
   it('streams PCM, shows partials while recording, and ends on the final without uploading', async () => {
     const { handle, texts, ends, ws } = await start()
@@ -124,6 +141,7 @@ describe('live dictation (TAL-802)', () => {
     handle.stop()
     await vi.waitFor(() => { expect(ends).toEqual([null]) })
     expect(texts).toEqual(['from the recording'])
+    expect(api.transcribeRecording).toHaveBeenCalledTimes(1)
     expect(vi.mocked(api.transcribeRecording).mock.calls[0]?.[1]).toBe('dictation.webm')
     expect(ws.text()).toEqual([exchange.start])
   })
@@ -157,6 +175,79 @@ describe('live dictation (TAL-802)', () => {
     expect(texts).toEqual([])
     expect(ends).toEqual([])
     expect(api.transcribeRecording).not.toHaveBeenCalled()
+  })
+
+  it('a stream final clears the final-wait timer (TAL-1298)', async () => {
+    const { handle, ends, ws } = await start()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    handle.stop()
+    await vi.advanceTimersByTimeAsync(0)
+    ws.receive(exchange.events[2])
+    await vi.waitFor(() => { expect(ends).toEqual([null]) })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('cancel after Stop, before the final, uploads nothing and calls back nothing (TAL-1298)', async () => {
+    const { handle, texts, ends, ws } = await start()
+    handle.stop()
+    await flush()
+    handle.cancel()
+    await flush()
+    await flush()
+    expect(api.transcribeRecording).not.toHaveBeenCalled()
+    expect(ws.readyState).toBe(FakeSocket.CLOSED)
+    expect(texts).toEqual([])
+    expect(ends).toEqual([])
+  })
+
+  it('cancel while the recorder is still finalizing ignores its late data (TAL-1298)', async () => {
+    FakeRecorder.deferStop = true
+    const { handle, texts, ends, ws } = await start()
+    ws.close()
+    handle.stop()
+    await flush()
+    handle.cancel()
+    FakeRecorder.finish()
+    await flush()
+    await flush()
+    expect(api.transcribeRecording).not.toHaveBeenCalled()
+    expect(texts).toEqual([])
+    expect(ends).toEqual([])
+  })
+
+  it('cancel aborts a fallback upload already in flight and ignores its late answer (TAL-1298)', async () => {
+    let answer: (value: { ok: true; transcript: string; filtered: boolean }) => void = () => undefined
+    vi.mocked(api.transcribeRecording).mockImplementation(() => new Promise((resolve) => { answer = resolve }))
+    const { handle, texts, ends, ws } = await start()
+    ws.close()
+    handle.stop()
+    await vi.waitFor(() => { expect(api.transcribeRecording).toHaveBeenCalledTimes(1) })
+    const signal = vi.mocked(api.transcribeRecording).mock.calls[0]?.[2]
+    expect(signal?.aborted).toBe(false)
+    handle.cancel()
+    expect(signal?.aborted).toBe(true)
+    answer({ ok: true, transcript: 'too late', filtered: false })
+    await flush()
+    expect(texts).toEqual([])
+    expect(ends).toEqual([])
+  })
+
+  it.each([
+    ['cancel, stop, cancel', (handle: { stop: () => void; cancel: () => void }) => { handle.cancel(); handle.stop(); handle.cancel() }],
+    ['stop, cancel, cancel', (handle: { stop: () => void; cancel: () => void }) => { handle.stop(); handle.cancel(); handle.cancel() }],
+  ])('releases the microphone, audio graph and socket once (%s, TAL-1298)', async (_order, run) => {
+    const { handle, texts, ends, ws } = await start()
+    const tap = FakeTap.last
+    run(handle)
+    await flush()
+    await flush()
+    expect(track.stop).toHaveBeenCalledTimes(1)
+    expect(tap?.disconnect).toHaveBeenCalledTimes(1)
+    expect(FakeAudioContext.closes).toBe(1)
+    expect(ws.readyState).toBe(FakeSocket.CLOSED)
+    expect(api.transcribeRecording).not.toHaveBeenCalled()
+    expect(texts).toEqual([])
+    expect(ends).toEqual([])
   })
 
   it.each(['MediaRecorder', 'AudioContext'])('releases the microphone when %s setup throws after it is acquired', async (failing) => {

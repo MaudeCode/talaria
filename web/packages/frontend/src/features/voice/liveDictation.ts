@@ -12,7 +12,7 @@ import pcmTapUrl from './pcmTap.worklet.ts?worker&url'
 export interface LiveDictation {
   /** End the recording: the stream's final transcript, else the recording's. Rejects when neither is available. */
   stop: () => Promise<string>
-  /** Drop the recording and close the stream without a transcript. */
+  /** Drop the recording and close the stream without a transcript; a pending `stop` uploads nothing and rejects. */
   cancel: () => void
 }
 
@@ -32,6 +32,9 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   let final: string | null = null
   let failed = false
   let ended = false
+  let cancelled = false
+  /** TAL-1298: cancel aborts a fallback upload already in flight. */
+  const upload = new AbortController()
   let settle: () => void = () => undefined
   const settled = new Promise<void>((resolve) => { settle = resolve })
   const fail = () => { failed = true; settle() }
@@ -70,44 +73,63 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   tap.connect(audio.destination)
 
   const release = () => {
+    if (ended) return
     ended = true
     tap.port.onmessage = null
     tap.disconnect()
     source.disconnect()
     void audio.close()
   }
-  const recording = () => new Promise<Blob | null>((resolve) => {
-    const done = () => { resolve(recorded.length ? new Blob(recorded, { type: recorder?.mimeType || 'audio/webm' }) : null) }
+  const dropBuffers = () => { recorded.length = 0; early.length = 0 }
+  // Stop and Cancel share one finalization, so the recorder and microphone stop once.
+  let finalized: Promise<Blob | null> | null = null
+  const recording = () => finalized ??= new Promise<Blob | null>((resolve) => {
+    const done = () => {
+      if (cancelled) dropBuffers()
+      resolve(recorded.length ? new Blob(recorded, { type: recorder?.mimeType || 'audio/webm' }) : null)
+    }
     if (!recorder || recorder.state === 'inactive') done()
     else {
       recorder.addEventListener('stop', done, { once: true })
       recorder.stop()
     }
-  })
-  const stopTracks = () => { for (const track of media.getTracks()) track.stop() }
+  }).finally(() => { for (const track of media.getTracks()) track.stop() })
+  /** Every await in `stop` ends here: nothing after a cancel reaches the fallback upload or the caller. */
+  const live = () => { if (cancelled) throw new DOMException('Dictation cancelled', 'AbortError') }
 
   let stopping: Promise<string> | null = null
   return {
     stop: () => {
       stopping ??= (async () => {
         release()
-        const blob = recording().finally(stopTracks)
+        const blob = recording()
         if (ws.readyState === WebSocket.OPEN && !failed) ws.send(JSON.stringify({ eos: true }))
         else fail()
-        await Promise.race([settled, new Promise((resolve) => setTimeout(resolve, FINAL_TIMEOUT_MS))])
+        let timer: ReturnType<typeof setTimeout> | undefined
+        await Promise.race([settled, new Promise((resolve) => { timer = setTimeout(resolve, FINAL_TIMEOUT_MS) })])
+        clearTimeout(timer)
         ws.close()
+        live()
         if (final !== null) return final
         const file = await blob
+        live()
         if (!file) throw new Error('nothing was recorded')
-        return (await transcribeRecording(file, `dictation.${extension(file.type)}`)).transcript.trim()
+        const { transcript } = await transcribeRecording(file, `dictation.${extension(file.type)}`, upload.signal)
+        live()
+        return transcript.trim()
       })()
       return stopping
     },
     cancel: () => {
+      if (cancelled) return
+      cancelled = true
       failed = true
+      upload.abort()
       release()
-      void recording().finally(stopTracks)
+      dropBuffers()
+      void recording()
       ws.close()
+      settle()
     },
   }
 }
