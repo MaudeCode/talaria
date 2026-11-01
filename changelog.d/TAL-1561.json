@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reconnecting to a chat no longer shows an approval or question that was already answered or ended with the run.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

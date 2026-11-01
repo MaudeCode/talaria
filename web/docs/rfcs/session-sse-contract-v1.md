@@ -231,6 +231,29 @@ Settled journals older than `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) are
 compacted to summaries, keeping the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3)
 newest per session; a cursor into a compacted run falls back to a snapshot.
 
+### Settled prompts
+
+A replay never re-opens a prompt that its run already settled. This covers
+chat replay, per-session journal replay, backfill of frames dropped for a slow
+reader, and the buffered frames a new subscriber receives from the channel. The
+server omits an `approval` or `clarify` frame when later rows of the same run
+prove it settled:
+
+- a terminal row (`done`, `cancel`, `apperror`, `error`, `stream_end`)
+  settles every prompt before it;
+- a `tool_complete` named `clarify` settles every question before it. The Agent
+  never runs `clarify` in parallel. This evidence never settles an approval,
+  because the approval queue writes no per-entry settlement row.
+
+Rows from another run never count as evidence. Pending prompts stay visible, and
+so do rows with no positive seq or run, and prompts whose only evidence is
+unreadable. A `clarify` frame with `status: "resolved"` is a notice, not a
+prompt, and is always sent. Every other frame keeps its original `id`, so
+cursors, `maxSeq` cut-offs and gap checks still use journal seqs. The server
+looks for evidence only inside the replay's own window: the paged journal range
+it is already reading, or the rows already loaded for a session replay. Clients
+receive the existing events, minus the settled prompts, and need no new field.
+
 ## Snapshot fallback
 
 When the resume cursor is unknown, evicted, or refers to a run that is no
