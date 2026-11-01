@@ -135,6 +135,16 @@ export interface GitSpawn { status: number | null; stdout: string; stderr: strin
  * plus the `error` that prevented a normal run (`ETIMEDOUT` when the timeout killed it). Without `env` the child
  * inherits the server's environment.
  */
+/** The subcommand after Git's global options; `-c` and `-C` take their value as the next argument. */
+function gitSubcommand(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] ?? ''
+    if (arg === '-c' || arg === '-C') i++
+    else if (!arg.startsWith('-')) return arg
+  }
+  return undefined
+}
+
 export function spawnGit(cwd: string, argv: string[], timeoutMs: number, env?: Record<string, string>): Promise<GitSpawn> {
   return new Promise((done) => {
     execFile('git', argv, { cwd, ...(env ? { env } : {}), encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
@@ -546,6 +556,8 @@ export class GitRunner {
     const cwd = typeof ctxOrCwd === 'string' ? ctxOrCwd : ctxOrCwd.repoRoot
     const runEnv = this.cleanEnv(opts.env)
     if (opts.commonDir) runEnv.GIT_COMMON_DIR = opts.commonDir
+    // A read-only status must not refresh .git/index behind a concurrent writer's back, whatever the caller inherited.
+    if (gitSubcommand(args) === 'status') runEnv.GIT_OPTIONAL_LOCKS = '0'
     const effectiveDestructive = Boolean(opts.destructive) && this.destructiveEnabled()
     const hardenedDestructive = effectiveDestructive || Boolean(opts.forceDestructiveHardening)
     let attributesFile: string | null = null
