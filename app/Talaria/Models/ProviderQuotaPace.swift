@@ -8,6 +8,15 @@ enum ProviderQuotaForecastOutcome: Equatable {
     case unavailable
     case safe
     case warning
+
+    /// The one colour a forecast wears, on widgets and in Insights.
+    var tint: Color {
+        switch self {
+        case .unavailable: .secondary
+        case .safe: .green
+        case .warning: .orange
+        }
+    }
 }
 
 struct ProviderQuotaForecastSummary {

@@ -85314,6 +85314,10 @@
                           "output_tokens": {
                             "type": "number"
                           },
+                          "total_tokens": {
+                            "type": "number",
+                            "description": "TAL-1750: input plus output for the day."
+                          },
                           "cache_read_tokens": {
                             "type": "number"
                           },
@@ -85373,6 +85377,9 @@
                             "type": "number"
                           },
                           "cost_share": {
+                            "type": "number"
+                          },
+                          "display_share": {
                             "type": "number"
                           }
                         },

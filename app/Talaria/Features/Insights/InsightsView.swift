@@ -285,17 +285,27 @@ struct InsightsView: View {
 
             if !viewModel.activityByDay.isEmpty {
                 Section {
-                    InsightsWeekdayChart(days: viewModel.activityByDay)
+                    InsightsActivityChart(
+                        categories: InsightsActivityChart.weekdays(viewModel.activityByDay),
+                        accessibilityLabel: "Sessions by weekday",
+                        summary: InsightsActivitySummary.weekday(viewModel.peakDay),
+                        identifier: "insights-weekday-chart"
+                    )
                 } header: {
-                    activityHeader("By weekday", summary: InsightsActivitySummary.weekday(viewModel.activityByDay))
+                    activityHeader("By weekday", summary: InsightsActivitySummary.weekday(viewModel.peakDay))
                 }
             }
 
             if !viewModel.activityByHour.isEmpty {
                 Section {
-                    InsightsHourChart(hours: viewModel.activityByHour)
+                    InsightsActivityChart(
+                        categories: InsightsActivityChart.hours(viewModel.activityByHour),
+                        accessibilityLabel: "Sessions by hour",
+                        summary: InsightsActivitySummary.hour(viewModel.peakHour),
+                        identifier: "insights-hour-chart"
+                    )
                 } header: {
-                    activityHeader("By hour", summary: InsightsActivitySummary.hour(viewModel.activityByHour))
+                    activityHeader("By hour", summary: InsightsActivitySummary.hour(viewModel.peakHour))
                 }
             }
 

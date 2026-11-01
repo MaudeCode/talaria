@@ -26,6 +26,9 @@ final class InsightsViewModelTests: XCTestCase {
         """)
 
         XCTAssertEqual(insights.models?.first?.displayShare, 26)
+
+        let served = try decodeInsights(#"{"models": [{"model": "m", "cost_share": 0, "token_share": 26, "display_share": 7}]}"#)
+        XCTAssertEqual(served.models?.first?.displayShare, 7, "The server's display share outranks the client fallback")
     }
 
     @MainActor

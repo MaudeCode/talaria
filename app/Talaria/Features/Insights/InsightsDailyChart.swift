@@ -20,7 +20,7 @@ enum InsightsDailyMetric: String, CaseIterable, Identifiable {
 
     func value(_ day: InsightsDailyToken) -> Double {
         switch self {
-        case .tokens: Double((day.inputTokens ?? 0) + (day.outputTokens ?? 0))
+        case .tokens: Double(day.totalTokens)
         case .cost: day.cost ?? 0
         case .sessions: Double(day.sessions ?? 0)
         }

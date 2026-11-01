@@ -39,7 +39,7 @@ struct ProviderQuotaForecastView: View {
 
             Label(forecastLabel, systemImage: forecastSystemImage)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(forecastTint)
+                .foregroundStyle(forecast.outcome.tint)
                 .lineLimit(2)
 
             HStack(spacing: 5) {
@@ -96,13 +96,5 @@ struct ProviderQuotaForecastView: View {
 
     private var forecastSystemImage: String {
         forecast.systemImage
-    }
-
-    private var forecastTint: Color {
-        switch forecast.outcome {
-        case .unavailable: .secondary
-        case .safe: .green
-        case .warning: .orange
-        }
     }
 }

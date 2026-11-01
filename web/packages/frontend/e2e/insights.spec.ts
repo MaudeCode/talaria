@@ -34,8 +34,8 @@ const insights = {
   total_input_tokens: sum('input_tokens'), total_output_tokens: sum('output_tokens'), total_tokens: sum('input_tokens') + sum('output_tokens'),
   total_cache_read_tokens: sum('input_tokens') / 2, total_cache_hit_percent: 50, total_cost: sum('cost'),
   models: [
-    { model: 'claude-fable-5-1', sessions: sum('sessions') - 3, input_tokens: 1_200_000, output_tokens: 300_000, total_tokens: 1_500_000, cache_read_tokens: 600_000, cache_hit_percent: 52.5, cost: 12.5, session_share: 80, token_share: 84, cost_share: 80 },
-    { model: 'claude-haiku-5-5', sessions: 3, input_tokens: 40_000, output_tokens: 9_000, total_tokens: 49_000, cache_read_tokens: 0, cache_hit_percent: 0, cost: 0.3, session_share: 20, token_share: 16, cost_share: 20 },
+    { model: 'claude-fable-5-1', sessions: sum('sessions') - 3, input_tokens: 1_200_000, output_tokens: 300_000, total_tokens: 1_500_000, cache_read_tokens: 600_000, cache_hit_percent: 52.5, cost: 12.5, session_share: 80, token_share: 84, cost_share: 80, display_share: 80 },
+    { model: 'claude-haiku-5-5', sessions: 3, input_tokens: 40_000, output_tokens: 9_000, total_tokens: 49_000, cache_read_tokens: 0, cache_hit_percent: 0, cost: 0.3, session_share: 20, token_share: 16, cost_share: 20, display_share: 20 },
   ],
   daily_tokens: daily,
   activity_by_day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => ({ day, sessions: [4, 9, 6, 7, 5, 2, 1][i] })),

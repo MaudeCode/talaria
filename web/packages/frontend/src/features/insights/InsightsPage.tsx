@@ -4,10 +4,11 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useLocale } from '../../i18n/useLocale'
+import { formatCompact, formatPercent } from '../../i18n/units'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { HubPage } from '../../shell/AppShell'
 import { Select } from '../../ui/Select'
-import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
 import { BarChart } from './BarChart'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
 
@@ -30,13 +31,13 @@ export function InsightsPage() {
   const d = insights.data
 
   const integer = new Intl.NumberFormat(locale)
-  const compact = (n: number) => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
-  const usd = (n: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', maximumFractionDigits: n < 1 && n > 0 ? 4 : 2 }).format(n)
-  const percent = (n: number) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(n / 100)
+  const compact = (n: number) => formatCompact(locale, n)
+  const usd = (n: number) => formatUsd(n, locale)
+  const percent = (n: number) => formatPercent(locale, n)
   const dayLabel = (date: string) => localDay(date)?.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) ?? date
   const metricLabel: Record<Metric, string> = { tokens: m.insights_tokens(), cost: m.insights_cost(), sessions: m.insights_sessions() }
   const metricValue: Record<Metric, (r: NonNullable<typeof d>['daily_tokens'] extends (infer R)[] | undefined ? R : never) => number> = {
-    tokens: (r) => (r.input_tokens ?? 0) + (r.output_tokens ?? 0), cost: (r) => r.cost ?? 0, sessions: (r) => r.sessions ?? 0,
+    tokens: (r) => r.total_tokens ?? (r.input_tokens ?? 0) + (r.output_tokens ?? 0), cost: (r) => r.cost ?? 0, sessions: (r) => r.sessions ?? 0,
   }
   const metricFormat: Record<Metric, (n: number) => string> = { tokens: compact, cost: usd, sessions: (n) => integer.format(n) }
 
@@ -68,7 +69,7 @@ export function InsightsPage() {
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4" data-testid="insights-stats">
                 {stats.map((s) => (
                   <div key={s.label} className="min-w-0">
-                    <dt className="text-[11px] uppercase tracking-wider text-muted">{s.label}</dt>
+                    <dt className="text-xs uppercase tracking-wider text-muted">{s.label}</dt>
                     <dd className="truncate text-lg font-semibold text-strong" title={s.title}>{s.value}</dd>
                   </div>
                 ))}
@@ -105,7 +106,7 @@ export function InsightsPage() {
                     </thead>
                     <tbody>
                       {d.models.map((r, i) => {
-                        const share = [r.cost_share, r.token_share, r.session_share].find((s) => s !== undefined && s > 0) ?? r.cost_share ?? r.token_share ?? r.session_share
+                        const share = r.display_share
                         return (
                           <tr key={`${r.model ?? ''}-${String(i)}`} className="border-t border-border-subtle">
                             <td className="py-1 pr-3 font-mono text-xs text-text">{r.model ?? '—'}</td>

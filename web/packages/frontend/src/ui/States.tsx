@@ -38,9 +38,9 @@ export function formatDate(ts: number | string | null | undefined): string {
   return new Date(n).toLocaleString()
 }
 
-/** US dollars at the precision small model costs need. */
-export function formatUsd(n: number): string {
-  return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
+/** US dollars at the precision small model costs need; `locale` defaults to the browser's. */
+export function formatUsd(n: number, locale?: string): string {
+  return n.toLocaleString(locale, { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
 }
 
 export function formatBytes(n: number | null | undefined): string {

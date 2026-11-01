@@ -38,7 +38,14 @@ struct ProviderQuotaRow: View {
     private func content(at now: Date) -> some View {
         let widgetSource = ProviderQuotaWidgetSource(source, scopeID: scopeID, scopeLabel: "")
         let settings = evaluationSettings
-        let periods = ProviderQuotaPresentation.periods(for: widgetSource, settings: settings, at: now)
+        // Every server window in server order; the widgets' `periods` keeps only the three a widget can fit.
+        let periods = source.windows.enumerated().map { index, window in
+            ProviderQuotaPeriodPresentation(
+                id: index,
+                shortLabel: ProviderQuotaPresentation.shortLabel(for: window),
+                state: ProviderQuotaPresentation.state(for: widgetSource, settings: settings, at: now, windowOverride: window)
+            )
+        }
         let sourceState = ProviderQuotaPresentation.state(for: widgetSource, settings: settings, at: now)
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -169,7 +176,7 @@ struct ProviderQuotaRow: View {
                     .font(.subheadline.weight(.medium))
                 Spacer(minLength: 8)
                 if let percent = state.percent {
-                    Text("\(percent.formatted(.percent.scale(1).precision(.fractionLength(0...1)))) \(state.modeLabel)")
+                    Text("\(insightsFormattedPercent(percent)) \(state.modeLabel)")
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
                 } else if let detail = state.window?.detail, !detail.isEmpty {
@@ -204,19 +211,25 @@ struct ProviderQuotaRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            if state.pace != nil {
+            if let pace = state.pace {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Label(forecast.forecastLabel, systemImage: forecast.systemImage)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(forecastTint(forecast.outcome))
-                    Spacer(minLength: 8)
-                    Text(forecast.budgetLabel == "—"
-                        ? String(localized: "\(forecast.burnRateLabel) burn")
-                        : String(localized: "\(forecast.burnRateLabel) burn · \(forecast.budgetLabel)\(forecast.budgetUnitSuffix) budget"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
+                    if let serverForecast = state.forecast {
+                        Label(forecast.forecastLabel, systemImage: forecast.systemImage)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(forecast.outcome.tint)
+                        Spacer(minLength: 8)
+                        Text(serverForecast.budgetPercent == nil
+                            ? String(localized: "\(forecast.burnRateLabel) burn")
+                            : String(localized: "\(forecast.burnRateLabel) burn · \(forecast.budgetLabel)\(forecast.budgetUnitSuffix) budget"))
+                            .multilineTextAlignment(.trailing)
+                    } else {
+                        // A pace without a forecast still names its burn; the summary's placeholder wording is for widgets.
+                        Spacer(minLength: 8)
+                        Text("\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))× burn")
+                    }
                 }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .padding(.top, isFirst ? 0 : 2)
@@ -224,7 +237,11 @@ struct ProviderQuotaRow: View {
     }
 
     private func resetLabel(_ resetAt: Date, period: ProviderQuotaPeriodPresentation) -> String {
-        let exact = resetAt.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        // A weekday names a reset within the week; a monthly window's reset needs its date.
+        let withinWeek = resetAt.timeIntervalSince(period.state.referenceDate) < 6 * 86_400
+        let exact = withinWeek
+            ? resetAt.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+            : resetAt.formatted(.dateTime.month(.abbreviated).day().hour().minute())
         guard let countdown = period.resetLabel(display: .compact) else {
             return String(localized: "Resets \(exact)")
         }
@@ -241,7 +258,7 @@ struct ProviderQuotaRow: View {
                     Text("Credits")
                         .font(.subheadline.weight(.medium))
                     Spacer(minLength: 8)
-                    Text("\(percent.formatted(.percent.scale(1).precision(.fractionLength(0...1)))) \(state.modeLabel)")
+                    Text("\(insightsFormattedPercent(percent)) \(state.modeLabel)")
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
@@ -323,14 +340,6 @@ struct ProviderQuotaRow: View {
             urgency: state.urgency,
             profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil)
         )
-    }
-
-    private func forecastTint(_ outcome: ProviderQuotaForecastOutcome) -> Color {
-        switch outcome {
-        case .unavailable: .secondary
-        case .safe: .green
-        case .warning: .orange
-        }
     }
 
     private var statusColor: Color {

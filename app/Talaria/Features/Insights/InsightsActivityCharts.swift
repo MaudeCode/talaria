@@ -2,73 +2,76 @@ import Charts
 import SwiftUI
 import TalariaKit
 
-/// Sessions per weekday, in the server's order and labels.
-struct InsightsWeekdayChart: View {
-    let days: [InsightsActivityByDay]
-
-    var body: some View {
-        Chart(Array(days.enumerated()), id: \.offset) { index, day in
-            BarMark(
-                x: .value("Day", day.day ?? "\(index)"),
-                y: .value("Sessions", day.sessions ?? 0)
-            )
-            .foregroundStyle(Color.accentColor)
-            .clipShape(RoundedRectangle(cornerRadius: 2))
-        }
-        .chartXScale(domain: days.enumerated().map { $0.element.day ?? "\($0.offset)" })
-        .chartXAxis { AxisMarks { AxisValueLabel() } }
-        .chartYAxis { InsightsChartAxis.yAxis }
-        .frame(height: 120)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Sessions by weekday")
-        .accessibilityValue(Text(InsightsActivitySummary.weekday(days) ?? String(localized: "No data")))
-        .accessibilityIdentifier("insights-weekday-chart")
-    }
+/// One category of an activity series: a weekday or an hour.
+struct InsightsActivityCategory: Identifiable {
+    let id: String
+    /// The axis label; nil leaves the slot unlabeled so dense axes label every nth category.
+    let label: String?
+    let sessions: Int
 }
 
-/// Sessions per hour of the day, 0 to 23.
-struct InsightsHourChart: View {
-    let hours: [InsightsActivityByHour]
+/// Sessions per category (weekday or hour) in the server's order, as one accessibility element.
+struct InsightsActivityChart: View {
+    let categories: [InsightsActivityCategory]
+    let accessibilityLabel: LocalizedStringKey
+    let summary: String?
+    let identifier: String
 
     var body: some View {
-        // Hours are categories like weekdays: a continuous axis draws 24 one-unit bars at no width.
-        Chart(Array(hours.enumerated()), id: \.offset) { index, hour in
+        Chart(categories) { category in
             BarMark(
-                x: .value("Hour", String(hour.hour ?? index)),
-                y: .value("Sessions", hour.sessions ?? 0)
+                x: .value("Category", category.id),
+                y: .value("Sessions", category.sessions)
             )
             .foregroundStyle(Color.accentColor)
             .clipShape(RoundedRectangle(cornerRadius: 2))
         }
-        .chartXScale(domain: hours.enumerated().map { String($0.element.hour ?? $0.offset) })
+        .chartXScale(domain: categories.map(\.id))
         .chartXAxis {
-            AxisMarks(values: ["0", "6", "12", "18"]) { value in
-                AxisGridLine(stroke: InsightsChartAxis.gridStroke)
-                AxisValueLabel {
-                    if let hour = value.as(String.self).flatMap(Int.init) {
-                        Text(InsightsActivitySummary.hourLabel(hour))
-                    }
+            // A category axis marks every value; only labeled categories get a line and a label.
+            AxisMarks { value in
+                if let id = value.as(String.self), let label = categories.first(where: { $0.id == id })?.label {
+                    if categories.count > 12 { AxisGridLine(stroke: InsightsChartAxis.gridStroke) }
+                    AxisValueLabel { Text(label) }
                 }
             }
         }
         .chartYAxis { InsightsChartAxis.yAxis }
         .frame(height: 120)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Sessions by hour")
-        .accessibilityValue(Text(InsightsActivitySummary.hour(hours) ?? String(localized: "No data")))
-        .accessibilityIdentifier("insights-hour-chart")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(Text(summary ?? String(localized: "No data")))
+        .accessibilityIdentifier(identifier)
+    }
+
+    static func weekdays(_ days: [InsightsActivityByDay]) -> [InsightsActivityCategory] {
+        days.enumerated().map { index, day in
+            InsightsActivityCategory(id: day.day ?? "\(index)", label: day.day ?? "\(index)", sessions: day.sessions ?? 0)
+        }
+    }
+
+    /// Hours 0 to 23, labeled every six hours.
+    static func hours(_ hours: [InsightsActivityByHour]) -> [InsightsActivityCategory] {
+        hours.enumerated().map { index, hour in
+            let value = hour.hour ?? index
+            return InsightsActivityCategory(
+                id: String(value),
+                label: value % 6 == 0 ? InsightsActivitySummary.hourLabel(value) : nil,
+                sessions: hour.sessions ?? 0
+            )
+        }
     }
 }
 
-/// Wording shared by the Activity section header and the charts' accessibility values.
+/// Wording for the view model's `peakDay` / `peakHour`, shared by the section headers and the charts' accessibility values.
 enum InsightsActivitySummary {
-    static func weekday(_ days: [InsightsActivityByDay]) -> String? {
-        guard let peak = days.max(by: { ($0.sessions ?? 0) < ($1.sessions ?? 0) }), (peak.sessions ?? 0) > 0 else { return nil }
+    static func weekday(_ peak: InsightsActivityByDay?) -> String? {
+        guard let peak, (peak.sessions ?? 0) > 0 else { return nil }
         return String(localized: "Peak \(peak.day ?? String(localized: "Unknown")) · \(peak.sessions ?? 0) sessions")
     }
 
-    static func hour(_ hours: [InsightsActivityByHour]) -> String? {
-        guard let peak = hours.max(by: { ($0.sessions ?? 0) < ($1.sessions ?? 0) }), (peak.sessions ?? 0) > 0 else { return nil }
+    static func hour(_ peak: InsightsActivityByHour?) -> String? {
+        guard let peak, (peak.sessions ?? 0) > 0 else { return nil }
         return String(localized: "Peak \(hourLabel(peak.hour ?? 0)) · \(peak.sessions ?? 0) sessions")
     }
 

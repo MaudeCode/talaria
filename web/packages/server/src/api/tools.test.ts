@@ -1016,6 +1016,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     let body = await json(res)
     expect(body.period_days).toBe(7)
     expect((body.daily_tokens as Json[]).length).toBe(7)
+    expect((body.daily_tokens as Record<string, unknown>[])[0]).toMatchObject({ total_tokens: 0 })
+    for (const row of body.models as Record<string, unknown>[]) expect(row).toHaveProperty('display_share')
     expect((body.activity_by_day as Json[]).length).toBe(7)
     res = await s.get('/api/logs?file=agent&tail=100')
     body = await json(res)

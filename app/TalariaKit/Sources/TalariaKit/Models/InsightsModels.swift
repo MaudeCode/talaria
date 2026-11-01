@@ -60,6 +60,8 @@ public struct InsightsModelBreakdown: Codable, Equatable {
     let sessionShare: Int?
     let tokenShare: Int?
     let costShare: Int?
+    /// The server's choice of share to show (TAL-1750); nil from a server that predates it.
+    let serverDisplayShare: Int?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -72,6 +74,7 @@ public struct InsightsModelBreakdown: Codable, Equatable {
         case sessionShare
         case tokenShare
         case costShare
+        case serverDisplayShare = "displayShare"
     }
 
     public init(from decoder: Decoder) throws {
@@ -86,9 +89,12 @@ public struct InsightsModelBreakdown: Codable, Equatable {
         sessionShare = container.decodeLossyIntIfPresent(forKey: .sessionShare)
         tokenShare = container.decodeLossyIntIfPresent(forKey: .tokenShare)
         costShare = container.decodeLossyIntIfPresent(forKey: .costShare)
+        serverDisplayShare = container.decodeLossyIntIfPresent(forKey: .serverDisplayShare)
     }
 
+    /// The server's `display_share`; an older server leaves the client to pick cost, then tokens, then sessions.
     public var displayShare: Int? {
+        if let serverDisplayShare { return serverDisplayShare }
         let shares = [costShare, tokenShare, sessionShare].compactMap { $0 }
         return shares.first { $0 > 0 } ?? shares.first
     }
@@ -98,6 +104,8 @@ public struct InsightsDailyToken: Codable, Equatable {
     public let date: String?
     public let inputTokens: Int?
     public let outputTokens: Int?
+    /// The server's day total (TAL-1750); a server that predates it leaves it nil and `totalTokens` sums the split.
+    public let serverTotalTokens: Int?
     public let sessions: Int?
     public let cost: Double?
 
@@ -105,6 +113,7 @@ public struct InsightsDailyToken: Codable, Equatable {
         case date
         case inputTokens
         case outputTokens
+        case serverTotalTokens = "totalTokens"
         case sessions
         case cost
     }
@@ -114,8 +123,13 @@ public struct InsightsDailyToken: Codable, Equatable {
         date = container.decodeLossyStringIfPresent(forKey: .date)
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
+        serverTotalTokens = container.decodeLossyIntIfPresent(forKey: .serverTotalTokens)
         sessions = container.decodeLossyIntIfPresent(forKey: .sessions)
         cost = container.decodeLossyCurrencyDoubleIfPresent(forKey: .cost)
+    }
+
+    public var totalTokens: Int {
+        serverTotalTokens ?? (inputTokens ?? 0) + (outputTokens ?? 0)
     }
 
     /// The server's `YYYY-MM-DD` bucket as a local calendar day, for charting; nil for any other text.

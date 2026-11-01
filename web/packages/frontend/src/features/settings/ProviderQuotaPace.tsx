@@ -2,11 +2,38 @@ import type { PlanGauge, PlanUsage } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
-import { formatMinutes, resetTime } from '../../i18n/units'
+import { formatMinutes, formatPercent, resetTime } from '../../i18n/units'
 import type { ProviderQuotaSourceSchema } from '../../contracts'
 import { QuotaUrgency } from './QuotaThresholds'
 
 type QuotaSource = z.infer<typeof ProviderQuotaSourceSchema>
+type QuotaWindow = NonNullable<QuotaSource['windows']>[number]
+
+/**
+ * A window's server pace and forecast as inline spans: pace status, burn, budget and the depletion forecast
+ * (`forecastClassName` colours only that span). Settings and Insights both render it.
+ */
+export function QuotaPaceSummary({ pace, forecast, locale, forecastClassName }: { pace: QuotaWindow['pace']; forecast: QuotaWindow['forecast']; locale: string; forecastClassName?: (outcome: 'safe' | 'warning') => string }) {
+  const percent = (value: number) => formatPercent(locale, value)
+  return (
+    <>
+      {pace ? (
+        <>
+          <span>{pace.status === 'over' ? m.provider_quota_over_pace({ percent: percent(-pace.pace_delta_percent) }) : pace.status === 'under' ? m.provider_quota_under_pace({ percent: percent(pace.pace_delta_percent) }) : m.provider_quota_on_pace()}</span>
+          <span>{m.provider_quota_burn({ rate: `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pace.burn_rate)}×` })}</span>
+        </>
+      ) : <span>{m.provider_quota_pace_unavailable()}</span>}
+      {forecast ? (
+        <>
+          {forecast.budget_percent !== null && <span>{(forecast.budget_unit === 'day' ? m.provider_quota_budget_day : m.provider_quota_budget_hour)({ percent: percent(forecast.budget_percent) })}</span>}
+          <span className={forecastClassName?.(forecast.outcome)} data-forecast={forecast.outcome}>
+            {forecast.outcome === 'warning' && forecast.depletion_margin_minutes !== null ? m.provider_quota_empty_early({ duration: formatMinutes(locale, forecast.depletion_margin_minutes) }) : m.provider_quota_lasts_through_reset()}
+          </span>
+        </>
+      ) : <span>{m.provider_quota_forecast_unavailable()}</span>}
+    </>
+  )
+}
 
 /** The server-selected pace window (`pace_window_index`) of a quota source and the source's urgency; every value is a TAL-409/TAL-411 contract field. */
 export function ProviderQuotaPace({ source, showAccount = false, plan, planStale = false, gauge, compact = false }: { source?: QuotaSource; showAccount?: boolean; plan?: PlanUsage | null | undefined; planStale?: boolean | undefined; gauge?: PlanGauge | null | undefined; compact?: boolean }) {
@@ -33,29 +60,16 @@ export function ProviderQuotaPace({ source, showAccount = false, plan, planStale
       </div>
     )
   }
-  const { pace, forecast } = w
-  const percent = (value: number) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(value / 100)
   return (
     <div className="mt-2 flex flex-col gap-0.5 border-t border-border pt-2 text-[11px] text-muted" data-testid="provider-quota-pace">
       <QuotaUrgency urgency={source.urgency} />
       <div className="flex flex-wrap gap-x-3">
         <span className="font-medium text-text">{showAccount && source.account_label ? `${source.account_label} · ${w.label}` : w.label}</span>
-        {w.remaining_percent !== null && <span>{m.provider_quota_remaining({ percent: percent(w.remaining_percent) })}</span>}
+        {w.remaining_percent !== null && <span>{m.provider_quota_remaining({ percent: formatPercent(locale, w.remaining_percent) })}</span>}
         {w.reset_at !== null && <span>{m.provider_quota_resets({ time: new Date(w.reset_at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' }) })}</span>}
       </div>
       <div className="flex flex-wrap gap-x-3">
-        {pace ? (
-          <>
-            <span>{pace.status === 'over' ? m.provider_quota_over_pace({ percent: percent(-pace.pace_delta_percent) }) : pace.status === 'under' ? m.provider_quota_under_pace({ percent: percent(pace.pace_delta_percent) }) : m.provider_quota_on_pace()}</span>
-            <span>{m.provider_quota_burn({ rate: `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pace.burn_rate)}×` })}</span>
-          </>
-        ) : <span>{m.provider_quota_pace_unavailable()}</span>}
-        {forecast ? (
-          <>
-            {forecast.budget_percent !== null && <span>{(forecast.budget_unit === 'day' ? m.provider_quota_budget_day : m.provider_quota_budget_hour)({ percent: percent(forecast.budget_percent) })}</span>}
-            <span>{forecast.outcome === 'warning' && forecast.depletion_margin_minutes !== null ? m.provider_quota_empty_early({ duration: formatMinutes(locale, forecast.depletion_margin_minutes) }) : m.provider_quota_lasts_through_reset()}</span>
-          </>
-        ) : <span>{m.provider_quota_forecast_unavailable()}</span>}
+        <QuotaPaceSummary pace={w.pace} forecast={w.forecast} locale={locale} />
       </div>
     </div>
   )

@@ -92,17 +92,22 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
   const breakdown = [...models.entries()].map(([model, stats]) => {
     const rowTotal = stats.input_tokens + stats.output_tokens
     const rowCost = Math.round(stats.cost * 1e6) / 1e6
+    const shares = {
+      session_share: totalSessions ? Math.round((stats.sessions / totalSessions) * 100) : 0, token_share: totalTokens ? Math.round((rowTotal / totalTokens) * 100) : 0, cost_share: totalCost ? Math.round((rowCost / totalCost) * 100) : 0,
+    }
     return {
       model, sessions: stats.sessions, input_tokens: stats.input_tokens, output_tokens: stats.output_tokens, cache_read_tokens: stats.cache_read_tokens,
       cache_hit_percent: promptCacheHitPercent(stats.cache_read_tokens, stats.input_tokens), total_tokens: rowTotal, cost: rowCost,
-      session_share: totalSessions ? Math.round((stats.sessions / totalSessions) * 100) : 0, token_share: totalTokens ? Math.round((rowTotal / totalTokens) * 100) : 0, cost_share: totalCost ? Math.round((rowCost / totalCost) * 100) : 0,
+      ...shares,
+      // TAL-1750: the one share a row displays: cost when there is any, else tokens, else sessions.
+      display_share: [shares.cost_share, shares.token_share, shares.session_share].find((share) => share > 0) ?? shares.cost_share,
     }
   // Python: `(-cost, -sessions, model)`.
   }).sort((a, b) => b.cost - a.cost || b.sessions - a.sessions || (a.model < b.model ? -1 : a.model > b.model ? 1 : 0))
   const series: Dict[] = windowDays.map((d) => {
     const key = dayKey(d)
     const b = daily.get(key) ?? { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, sessions: 0, cost: 0 }
-    return { date: key, input_tokens: b.input_tokens, output_tokens: b.output_tokens, cache_read_tokens: b.cache_read_tokens, sessions: b.sessions, cost: Math.round(b.cost * 1e6) / 1e6 }
+    return { date: key, input_tokens: b.input_tokens, output_tokens: b.output_tokens, total_tokens: b.input_tokens + b.output_tokens, cache_read_tokens: b.cache_read_tokens, sessions: b.sessions, cost: Math.round(b.cost * 1e6) / 1e6 }
   })
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   return {

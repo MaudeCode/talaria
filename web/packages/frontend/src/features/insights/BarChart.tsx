@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { m } from '../../paraglide/messages.js'
 
 export interface BarChartRow { label: string; value: number; /** Longer label for the hover title and the table; defaults to `label`. */ title?: string }
@@ -9,6 +9,8 @@ export interface BarChartRow { label: string; value: number; /** Longer label fo
  */
 export function BarChart({ title, rows, format, controls, id }: { title: string; rows: BarChartRow[]; format: (value: number) => string; controls?: ReactNode; id: string }) {
   const tableId = useId()
+  // The table twin is always in the tree for assistive technology; the toggle only reveals it to sighted readers.
+  const [showsTable, setShowsTable] = useState(false)
   const max = Math.max(0, ...rows.map((r) => r.value))
   const peak = rows.reduce<BarChartRow | null>((best, r) => (best === null || r.value > best.value ? r : best), null)
   const labelEvery = rows.length <= 12
@@ -33,18 +35,16 @@ export function BarChart({ title, rows, format, controls, id }: { title: string;
           ))}
         </div>
       </div>
-      <div aria-hidden="true" className="flex gap-px text-[11px] text-muted">
+      <div aria-hidden="true" className="flex gap-px text-xs text-muted">
         {labelEvery
           ? rows.map((r) => <span key={r.label} className="min-w-0 flex-1 truncate text-center">{r.label}</span>)
           : <><span className="flex-1">{first?.label}</span><span className="flex-1 text-right">{last?.label}</span></>}
       </div>
-      <details>
-        <summary className="cursor-pointer text-[11px] text-muted">{m.insights_chart_table()}</summary>
-        <table id={tableId} className="mt-1 w-full text-xs tabular-nums">
-          <caption className="sr-only">{title}</caption>
-          <tbody>{rows.map((r) => <tr key={r.label} className="border-t border-border-subtle"><th scope="row" className="py-0.5 text-left font-normal text-muted">{r.title ?? r.label}</th><td className="py-0.5 text-right text-text">{format(r.value)}</td></tr>)}</tbody>
-        </table>
-      </details>
+      <button type="button" aria-expanded={showsTable} aria-controls={tableId} onClick={() => setShowsTable((v) => !v)} className="self-start text-xs text-muted hover:text-text">{m.insights_chart_table()}</button>
+      <table id={tableId} className={showsTable ? 'mt-1 w-full text-xs tabular-nums' : 'sr-only'}>
+        <caption className="sr-only">{title}</caption>
+        <tbody>{rows.map((r) => <tr key={r.label} className="border-t border-border-subtle"><th scope="row" className="py-0.5 text-left font-normal text-muted">{r.title ?? r.label}</th><td className="py-0.5 text-right text-text">{format(r.value)}</td></tr>)}</tbody>
+      </table>
     </figure>
   )
 }
