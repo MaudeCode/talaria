@@ -224,7 +224,7 @@ export interface RelayPublisherDeps {
 /** Per relay profile scope: sessions started before `floor` (first tracking) are never announced. */
 type StartedLedger = Map<string, { floor: number; sessions: Map<string, { startedAt: number; sent: boolean }> }>
 
-export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; updatedAt: number; deepLink: string; alertEligible?: false }
+export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; deepLink: string; alertEligible?: false }
 
 /** Python `TalariaRelayPublisher`: coalesces changes into signed complete snapshots with capped backoff. */
 export class RelayPublisher {
@@ -426,7 +426,7 @@ export class RelayPublisher {
       if (run.phase === 'settled' && !run.stream_id) phase = snapshot?.activity_phase ?? 'stale'
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
-      const state: RelayState = { sessionId: sid, streamId: run.stream_id || null, eventId: `snapshot:${String(revision)}:${sid}`, revision, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}` }
+      const state: RelayState = { sessionId: sid, streamId: run.stream_id || null, eventId: `snapshot:${String(revision)}:${sid}`, revision, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}` }
       if (!alertEligible) state.alertEligible = false
       states.push(state)
     }

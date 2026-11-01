@@ -25,6 +25,7 @@ export interface SessionState {
   title: string;
   phase: SessionPhase;
   activityPhase?: SessionPhase;
+  startedAt?: number;
   updatedAt: number;
   deepLink: string;
   expiresAt: number;
@@ -41,6 +42,7 @@ export interface PublishedSessionState {
   title: string;
   phase: SessionPhase;
   activityPhase?: SessionPhase;
+  startedAt?: number;
   updatedAt: number;
   deepLink: string;
   alertEligible?: boolean;
@@ -55,6 +57,7 @@ export interface AggregateRow {
   title: string;
   phase: SessionPhase;
   status: string;
+  startedAt?: number;
   updatedAt: number;
   deepLink: string;
 }

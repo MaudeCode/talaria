@@ -14,7 +14,8 @@ export interface ApnsRequest {
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 
-export function nativeSessionRequest(request: ApnsRequest, startedAt: number): ApnsRequest {
+// `registeredAt` times an activity only for older publishers that do not send the run's start.
+export function nativeSessionRequest(request: ApnsRequest, registeredAt: number): ApnsRequest {
   const aps = request.payload.aps as Record<string, unknown>;
   const aggregate = aps["content-state"] as ActivityAggregate | undefined;
   const row = aggregate?.rows[0];
@@ -29,7 +30,7 @@ export function nativeSessionRequest(request: ApnsRequest, startedAt: number): A
   const swiftDate = (milliseconds: number) => milliseconds / 1_000 - 978_307_200;
   return { ...request, payload: { aps: { ...aps, "content-state": {
     sessionID: row.sessionId, sessionTitle: row.title, status: statuses[row.phase],
-    currentActivity: row.status, responseExcerpt: "", startedAt: swiftDate(startedAt),
+    currentActivity: row.status, responseExcerpt: "", startedAt: swiftDate(row.startedAt ?? registeredAt),
     updatedAt: swiftDate(row.updatedAt), isStale: row.phase === "stale", isFinal: terminal,
   } } } };
 }

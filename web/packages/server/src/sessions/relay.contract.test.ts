@@ -13,14 +13,14 @@ vi.mock(import('node:crypto'), async (original) => ({ ...(await original()), ran
 
 // The Relay gate accepts this fixture as the Web publisher's body (relay/tests/sharedContracts.test.ts), so the real publisher must produce it.
 it('publishes exactly the shared publisher-snapshot fixture', async () => {
-  const expected = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/publisher-snapshot.json'), 'utf8')) as { states: { updatedAt: number }[] }
+  const expected = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/publisher-snapshot.json'), 'utf8')) as { states: { startedAt: number; updatedAt: number }[] }
   const now = expected.states[0]!.updatedAt / 1000
   const home = mkdtempSync(join(tmpdir(), 'talaria-relay-contract-'))
   try {
     const keyPath = join(home, 'publisher.pem')
     writeFileSync(keyPath, generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }))
     const registry = new StreamRegistry()
-    registry.activeRuns.set('contract-stream', { stream_id: 'contract-stream', session_id: 'contract-session', started_at: 1, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
+    registry.activeRuns.set('contract-stream', { stream_id: 'contract-stream', session_id: 'contract-session', started_at: expected.states[0]!.startedAt / 1000, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
     const presence = new PresenceLeases(() => now)
     presence.renew('default', 'tab_contract')
     const requests: { url: string; body: string }[] = []

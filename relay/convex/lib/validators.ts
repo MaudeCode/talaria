@@ -39,6 +39,7 @@ export const aggregateRowValidator = v.object({
   title: v.string(),
   phase: sessionPhaseValidator,
   status: v.string(),
+  startedAt: v.optional(v.number()),
   updatedAt: v.number(),
   deepLink: v.string(),
 });
@@ -62,6 +63,7 @@ export const sessionStateContentValidator = v.object({
   title: v.string(),
   phase: sessionPhaseValidator,
   activityPhase: v.optional(sessionPhaseValidator),
+  startedAt: v.optional(v.number()),
   updatedAt: v.number(),
   deepLink: v.string(),
   alertEligible: v.optional(v.boolean()),
@@ -85,6 +87,7 @@ export const storedSessionStateValidator = v.object({
   title: v.string(),
   phase: sessionPhaseValidator,
   activityPhase: v.optional(sessionPhaseValidator),
+  startedAt: v.optional(v.number()),
   updatedAt: v.number(),
   deepLink: v.string(),
   expiresAt: v.number(),
