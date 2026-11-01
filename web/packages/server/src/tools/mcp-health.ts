@@ -114,7 +114,7 @@ async function probeHttp(url: string, cfg: Dict, fetchImpl: typeof fetch): Promi
   try { scheme = new URL(url).protocol } catch { return ['unhealthy', 'unsupported url scheme'] }
   if (scheme !== 'http:' && scheme !== 'https:') return ['unhealthy', 'unsupported url scheme']
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...configured }
-  // Transport errors can quote a header value or the url, which may hold a resolved credential.
+  // A transport error or initialize rejection can quote a header value or the url, which may hold a resolved credential.
   const scrub = (text: string) => [url, ...Object.values(configured)].filter((v) => v.length >= 4).reduce((t, v) => t.split(v).join('[REDACTED]'), text)
   const deadline = Date.now() + PROBE_TIMEOUT_MS
   let sessionId: string | null = null
@@ -129,7 +129,8 @@ async function probeHttp(url: string, cfg: Dict, fetchImpl: typeof fetch): Promi
     } else {
       res.body?.cancel().catch(() => undefined)
     }
-    return statusResult(res.status, payload)
+    const [health, detail] = statusResult(res.status, payload)
+    return [health, scrub(detail)]
   } catch (error) {
     return ['unhealthy', (error as Error).name === 'TimeoutError' ? 'timeout' : scrub((error as Error).message || 'transport error')]
   } finally {

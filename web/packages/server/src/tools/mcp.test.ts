@@ -250,4 +250,12 @@ describe('MCP health probe credentials (TAL-1565)', () => {
     expect(result.kanvil).toMatchObject({ health: 'unhealthy', headers: { Authorization: '••••••' } })
     expect(JSON.stringify(result)).not.toContain('synthetic-secret-c')
   })
+
+  it('never returns a resolved credential that a JSON-RPC initialize rejection quotes', async () => {
+    const rejecting = ((_url: string, init: RequestInit) => Promise.resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: 'hermes-webui-health', error: { code: -32001, message: `Rejected key ${new Headers(init.headers).get('authorization') ?? ''}` } }), { status: 200, headers: { 'content-type': 'application/json' } }))) as typeof fetch
+    const { rows } = setup(rejecting, { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-secret-d' } })
+    const result = await rows('/profiles/a')
+    expect(result.kanvil).toMatchObject({ health: 'unhealthy', health_detail: 'initialize rejected: Rejected key [REDACTED]' })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret-d')
+  })
 })
