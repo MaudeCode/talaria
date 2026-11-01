@@ -127,4 +127,3 @@ def test_listener_state_reads_the_darwin_socket_inventory(monkeypatch: pytest.Mo
             services.verify_listener({"pid": 4242, "port": 8642, "host": "127.0.0.1", "label": "svc"})
     else:
         services.verify_listener({"pid": 4242, "port": 8642, "host": "127.0.0.1", "label": "svc"})
-
