@@ -151,6 +151,15 @@ def _restore_and_sweep_completions(registry) -> None:
             log.debug("Failed to restore or sweep delegation completions for %s", home, exc_info=True)
 
 
+def _open_ledger(home: Path):
+    """A read-only connection to the profile's ``state.db``, or None when it does not exist: a read never creates it.
+    ``as_uri`` percent-encodes the path, so a ``%`` or ``#`` in a profile home cannot re-address the read."""
+    db_path = home / "state.db"
+    if not db_path.exists():
+        return None
+    return closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5))
+
+
 _DELIVERY_RECONCILE_INTERVAL_S = 30
 _LAST_DELIVERY_RECONCILE: dict[Path, float] = {}
 _DELIVERY_RECONCILE_CURSOR: dict[Path, str] = {}
@@ -159,10 +168,10 @@ _DELIVERY_RECONCILE_PAGE_SIZE = 200
 
 def _delivered_notifications(home: Path, delegation_id: str | None = None, after: str = "") -> tuple[list[dict], str]:
     """Only typed transcript deliveries, never every delivered ledger row. No Agent state is changed."""
-    db_path = home / "state.db"
-    if not db_path.exists():
+    ledger = _open_ledger(home)
+    if ledger is None:
         return [], ""
-    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+    with ledger as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"async_delegations", "messages", "sessions"} <= tables:
             return [], ""
@@ -424,11 +433,11 @@ def _child_statuses(result: dict) -> list[str]:
 
 
 def _ledger_rows(home: Path, session_ids: list[str]) -> list[dict]:
-    db_path = home / "state.db"
-    if not db_path.exists() or not session_ids:
+    ledger = _open_ledger(home) if session_ids else None
+    if ledger is None:
         return []
     marks = ",".join("?" * len(session_ids))
-    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+    with ledger as conn:
         try:
             rows = conn.execute(f"SELECT {_LEDGER_COLUMNS} FROM async_delegations WHERE origin_ui_session_id IN ({marks}) ORDER BY dispatched_at DESC LIMIT ?", [*session_ids, _LEDGER_LIMIT]).fetchall()
         except sqlite3.OperationalError:  # an Agent that never delegated has no ledger table yet
@@ -504,11 +513,11 @@ def _live_children() -> list[dict]:
 def _ledger_children(home: Path, owners: list[str], dispatched_at: float) -> list[dict]:
     """Finished subagents' own sessions in state.db: ``source = subagent`` rows tagged ``_delegate_from`` with their
     parent's session, each with its start time and first user message (the child's goal, sent verbatim)."""
-    db_path = home / "state.db"
-    if not db_path.exists() or not owners:
+    ledger = _open_ledger(home) if owners else None
+    if ledger is None:
         return []
     marks = ",".join("?" * len(owners))
-    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+    with ledger as conn:
         try:
             # Bound history before parsing owner JSON; allow 60 seconds of dispatch/start clock skew.
             rows = conn.execute(
@@ -596,16 +605,70 @@ def background_list(home: Path, session_ids: list[str]) -> dict:
 
 def delegation_result(home: Path, session_id: str, delegation_id: str) -> str:
     """The full result of a finished delegation unit, as the Agent words it for its own notification."""
-    db_path = home / "state.db"
-    if not db_path.exists():
+    ledger = _open_ledger(home)
+    if ledger is None:
         return ""
-    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+    with ledger as conn:
         try:
             row = conn.execute("SELECT event_json FROM async_delegations WHERE delegation_id = ? AND origin_ui_session_id = ?", (delegation_id, session_id)).fetchone()
         except sqlite3.OperationalError:
             return ""
     event = _json(row[0]) if row else {}
     return format_notification(event) if event else ""
+
+
+_DELEGATION_LIVE = ("running", "stalling", "finalizing")
+# Every state the Agent finalizes a unit into; each keeps delivery_state='pending' until its completion is delivered.
+_DELEGATION_TERMINAL = ("completed", "error", "interrupted", "cancelled", "stalled", "unknown")
+
+
+def _delegation_counts(home: Path, session_id: str) -> tuple[int, int] | None:
+    """``(running, awaiting_delivery)`` over every ledger row of this WebUI session, independent of the listed-row cap.
+    None when the ledger cannot be read (unreadable, corrupt, no ledger table): unknown, never zero. No state.db at all
+    is a truthful zero: this profile never recorded a delegation."""
+    try:
+        # Path.exists() also hides a permission error; only a definitely absent file is a zero.
+        (home / "state.db").stat()
+    except FileNotFoundError:
+        return 0, 0
+    except OSError:
+        log.debug("Delegation ledger inaccessible for %s", home, exc_info=True)
+        return None
+    try:
+        ledger = _open_ledger(home)
+        if ledger is None:  # removed since the stat: unknown rather than a guess
+            return None
+        with ledger as conn:
+            live, terminal = ",".join("?" * len(_DELEGATION_LIVE)), ",".join("?" * len(_DELEGATION_TERMINAL))
+            running, awaiting = conn.execute(
+                f"SELECT count(*) FILTER (WHERE state IN ({live})), count(*) FILTER (WHERE state IN ({terminal}) AND delivery_state = 'pending')"
+                " FROM async_delegations WHERE origin_ui_session_id = ?", [*_DELEGATION_LIVE, *_DELEGATION_TERMINAL, session_id]).fetchone()
+    except (OSError, sqlite3.Error):
+        log.debug("Delegation ledger unreadable for %s", home, exc_info=True)
+        return None
+    return int(running), int(awaiting)
+
+
+def _memory_live(session_id: str) -> bool | None:
+    """Whether this process's live delegation registry holds running work for the session; None when it cannot say."""
+    try:
+        from tools.async_delegation import has_live_for_session
+        return bool(has_live_for_session(origin_ui_session_id=session_id))
+    except Exception:  # noqa: BLE001 - an absent or failing registry is unknown, never "nothing running"
+        log.debug("Live delegation probe failed", exc_info=True)
+        return None
+
+
+def delegation_status(home: Path, session_id: str) -> dict:
+    """TAL-1579: counts only (no goals, results or events) of one WebUI session's delegations: still running, and finished
+    with a completion not yet delivered. Read-only: nothing is claimed, consumed or acknowledged."""
+    counts = _delegation_counts(home, session_id)
+    return {
+        "ledger": "unknown" if counts is None else "available",
+        "running_count": None if counts is None else counts[0],
+        "awaiting_delivery_count": None if counts is None else counts[1],
+        "memory_live": _memory_live(session_id),
+    }
 
 
 def recover(base_home: Path) -> int:
@@ -785,6 +848,15 @@ def register(registry_) -> None:
             raise InvalidParams("session_id and delegation_id are required")
         with scoped_home(profile_home_param(params)) as home:
             return {"text": delegation_result(home, sid, did)}
+
+    @registry_.method("process.delegation_status")
+    def delegation_status_(ctx: CallContext, params: dict) -> dict:
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid.strip():
+            raise InvalidParams("session_id is required")
+        # Read-only binding: no credential hydration, terminal defaults or process recovery for a status read.
+        with scoped_home(profile_home_param(params), read_only=True) as home:
+            return delegation_status(home, sid)
 
     @registry_.method("process.stop")
     def stop_(ctx: CallContext, params: dict) -> dict:

@@ -619,6 +619,15 @@ export const PROCESS_METHODS = {
     }),
   },
   'process.delegation_result': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), delegation_id: z.string().min(1) }), result: z.object({ text: z.string() }) },
+  /**
+   * TAL-1579: counts only, over every ledger row of one WebUI session: delegations still running, and finished ones whose
+   * completion is not yet delivered. `ledger: 'unknown'` (unreadable ledger) leaves both counts null, never zero.
+   * `memory_live` is this process's live-registry probe, null when it cannot answer. Read-only.
+   */
+  'process.delegation_status': {
+    params: ProfileHomeParams.extend({ session_id: z.string().min(1) }),
+    result: z.object({ ledger: z.enum(['available', 'unknown']), running_count: z.number().int().nonnegative().nullable(), awaiting_delivery_count: z.number().int().nonnegative().nullable(), memory_live: z.boolean().nullable() }),
+  },
 } as const
 export const AccountUsageSnapshotSchema = z.object({ provider: z.string().nullable(), available: z.boolean(), unavailable_reason: z.string().nullable().optional(), windows: z.array(Loose), details: z.array(Json) }).catchall(Json)
 /**

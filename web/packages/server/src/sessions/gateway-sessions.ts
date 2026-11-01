@@ -302,6 +302,14 @@ export class GatewaySessions {
   }
 
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
+  /**
+   * TAL-1579: whether a native owner holds the session in `profile`: any canonical source, usable here or not, since its
+   * work never runs in this server's Agent. null when ownership could not be read, which `isOwned` reports as false.
+   */
+  async ownership(sid: string, profile?: string): Promise<boolean | null> {
+    const sources = await this.deps.service.stateDbSources([sid], profile)
+    return sources ? typeof sources.get(sid) === 'object' : null
+  }
 
   /** Exact native receipt lookup for a durable queue step, never another submit. */
   async queueReceipt(sid: string, admissionId?: string): Promise<GatewaySessionResult | null> {

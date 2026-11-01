@@ -8278,6 +8278,56 @@
     ],
     "additionalProperties": false
   },
+  "process.delegation_status": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ledger": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unknown"
+        ]
+      },
+      "running_count": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "awaiting_delivery_count": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "memory_live": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "ledger",
+      "running_count",
+      "awaiting_delivery_count",
+      "memory_live"
+    ],
+    "additionalProperties": false
+  },
   "usage.account": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

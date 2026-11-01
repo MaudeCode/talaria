@@ -3,7 +3,7 @@ import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
-import { ConnectorsPageSchema, ChatStartResponseSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
+import { BackgroundTasksResponseSchema, ConnectorsPageSchema, ChatStartResponseSchema, DelegationStatusSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
 import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -174,6 +174,15 @@ describe('contracts package', () => {
     const messages = fixture.messages.map((m) => MessageSchema.parse(m))
     expect(messages.map((m) => m._background_update?.lines[0]?.review_state)).toEqual(['waiting', 'reviewing', 'reviewed', 'failed', 'unknown'])
     expect(MessageSchema.parse({ role: 'user', _background_update: { kind: 'other', attention: false, count: 1, summary: '', lines: [] } })._background_update?.review_state).toBeUndefined()
+  })
+
+  it('carries every delegation summary state, and an older server sends none (TAL-1579)', () => {
+    const fixture = shared('fixtures/delegation-status.json') as Record<string, unknown>
+    const states = Object.fromEntries(Object.entries(fixture).map(([name, body]) => [name, DelegationStatusSchema.parse(body)]))
+    expect(Object.values(states).map((s) => s.availability).sort()).toEqual(['available', 'available', 'available', 'available', 'available', 'unknown', 'unsupported'])
+    for (const name of ['unknown', 'unsupported']) expect(states[name]).toMatchObject({ running_count: null, awaiting_delivery_count: null, memory_live: null })
+    expect(DelegationStatusSchema.safeParse({ ...states.available_zero, running_count: -1 }).success).toBe(false)
+    expect(BackgroundTasksResponseSchema.parse({ session_id: 's', tasks: [], agent_available: true }).delegation_status).toBeUndefined()
   })
 
   it('preserves every shared Send now outcome and the legacy delivery boolean', () => {

@@ -114,6 +114,7 @@
           "process.consumed",
           "process.defer_delivery",
           "process.delegation_result",
+          "process.delegation_status",
           "process.drain",
           "process.format_notification",
           "process.list",

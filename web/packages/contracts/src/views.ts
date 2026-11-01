@@ -634,11 +634,30 @@ export const BackgroundTaskSchema = z.object({
 })
 export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
 /**
+ * TAL-1579: an advisory summary of the session's delegations, never a guarantee that nothing arrives later.
+ * - `availability`: `available` (counts are exact, zero included), `unknown` (the ledger could not be read; counts null),
+ *   or `unsupported` (a native-owner session, whose owner does not report delivery; counts null).
+ * - `running_count`: delegations still running; `awaiting_delivery_count`: finished ones whose completion has not reached the
+ *   session yet. Both count every ledger row, beyond the listed tasks.
+ * - `memory_live`: the Agent's live registry holds running work for the session (null when it cannot say); never added to the counts.
+ * - `visible`: clients show the summary; `refresh`: clients keep refreshing while it is true.
+ */
+export const DelegationStatusSchema = z.object({
+  availability: z.enum(['available', 'unknown', 'unsupported']),
+  running_count: z.number().int().nonnegative().nullable(),
+  awaiting_delivery_count: z.number().int().nonnegative().nullable(),
+  memory_live: z.boolean().nullable(),
+  visible: z.boolean(),
+  refresh: z.boolean(),
+})
+export type DelegationStatus = z.infer<typeof DelegationStatusSchema>
+/**
  * `agent_available: false` when the Agent could not be asked: running work then shows `unknown`. Reading never consumes a
  * result. `agents_working` (TAL-373): a delegation is running or needs attention, whatever `kind` the list is narrowed to;
- * the chat's side panel opens on Agents for it. Absent from servers before TAL-373.
+ * the chat's side panel opens on Agents for it. Absent from servers before TAL-373. `delegation_status` (TAL-1579) is
+ * absent from servers before TAL-1579.
  */
-export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional() })
+export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
 export const BackgroundStopResponseSchema = z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) })
