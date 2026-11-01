@@ -593,6 +593,63 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, useCall, useResult, { role: 'assistant', content: 'Operation interrupted.' }])
   })
 
+  /** TAL-739: the Agent's max-iterations summary request, the user row it appends before its summary call. */
+  const REQUEST = 'You have reached the maximum number of tool-calling iterations. Summarize what you did without calling tools.'
+  const hasRequest = (rows: Json[]): boolean => rows.some((m) => JSON.stringify(m.content ?? '').includes(REQUEST))
+
+  it('Stop during the max-iterations summary keeps the tool work and drops the summary request (TAL-739)', async () => {
+    for (const prose of ['', 'Pods checked; worker-2 is crash looping.']) {
+      const sid = await newSession(s)
+      const earlier = await earlierTurn(sid)
+      let prompt = ''
+      sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'user', content: REQUEST }], max_iterations_summary_request: REQUEST }))
+      const started = blockingTurn([...toolFrames, ...(prose ? [{ event: 'token', data: { text: prose } }] : [])])
+      const streamId = await start(sid, 'Check the rollout')
+      prompt = await started
+      await frames(streamId, (f) => f.event === (prose ? 'token' : 'tool_complete'))
+      expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+      const cancel = (await frames(streamId, (f) => f.event === 'cancel')).find((f) => f.event === 'cancel')?.data as Json
+      for (const rows of [(cancel.session as Json).messages as Json[], await messagesOf(s, sid)]) expect(hasRequest(rows)).toBe(false)
+      expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: prose || 'Operation interrupted.' }])
+    }
+  })
+
+  it('Stop keeps a prompt whose own text equals the summary request (TAL-739)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, toolCall, toolResult], max_iterations_summary_request: REQUEST }))
+    const started = blockingTurn(toolFrames)
+    const streamId = await start(sid, REQUEST)
+    prompt = await started
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    expect((await messagesOf(s, sid)).filter((m) => m.role === 'user' && m.content === REQUEST)).toHaveLength(1)
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
+  it('a cancelled result without an interrupt checkpoint drops the summary request too (TAL-739)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    const started = new Promise<string>((received) => {
+      sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+        for (const e of toolFrames) emit(e)
+        const prompt = str(params.user_message)
+        received(prompt)
+        opts.signal?.addEventListener('abort', () => { resolve({ ...completed([...params.conversation_history, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'user', content: REQUEST }]), status: 'cancelled', max_iterations_summary_request: REQUEST }) })
+      }))
+    })
+    const streamId = await start(sid, 'Check the rollout')
+    const prompt = await started
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await s.deps.turns.finished(streamId)
+    expect(hasRequest(await messagesOf(s, sid))).toBe(false)
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
   it('Stop keeps a checkpoint that ends on a steer the Agent applied (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)

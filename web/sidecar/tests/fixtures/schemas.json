@@ -10822,6 +10822,9 @@
           },
           "additionalProperties": {}
         }
+      },
+      "max_iterations_summary_request": {
+        "type": "string"
       }
     },
     "required": [

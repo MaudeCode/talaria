@@ -650,11 +650,11 @@ export class SessionService {
    * Stop's: the Agent's rows when they hold the turn's prompt, else its own rows among `stateRows` (the state.db rows
    * committed after it started), then the prose that streamed past them. Null when it captured nothing the model can use.
    */
-  unsettledTurnContext(turn: { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; streamedText: string; historyLength: number; agentRows?: Message[] | null; stateRows: Message[] }): Message[] | null {
+  unsettledTurnContext(turn: { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; streamedText: string; historyLength: number; agentRows?: Message[] | null; stateRows: Message[]; summaryRequest?: string }): Message[] | null {
     const reported = turn.agentRows && checkpointTurnStart(turn.agentRows, turn.msgText, turn.historyLength) !== null ? turn.agentRows : null
     const own = reported ? null : runStateDbRows(turn.stateRows, turn.msgText)
     const checkpoint = reported ?? (own && [...turn.previousContext, ...own])
-    const context = stoppedTurnContext(turn.previousContext, checkpoint, turn.prompt, turn.msgText, turn.streamedText, turn.historyLength)
+    const context = stoppedTurnContext(turn.previousContext, checkpoint, turn.prompt, turn.msgText, turn.streamedText, turn.historyLength, turn.summaryRequest)
     if (!context) return null
     if (!own || !checkpoint || checkpointTurnStart(checkpoint, turn.msgText, turn.historyLength) === null) return dedupeContext(context)
     // The context holds the turn's own state.db rows from its prompt on. The Agent persisted the prompt's text only, so the

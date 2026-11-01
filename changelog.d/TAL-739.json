@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Stopping a reply while it summarizes after reaching the tool limit keeps the stopped turn's tool work for your next message.", "highlight": false, "components": ["web"]}]
+}

@@ -328,12 +328,15 @@ export function withFinalAssistantAnswer(messages: Message[], finalResponse: str
 
 /**
  * TAL-537: the user row the Agent appends to ask for that summary is its own prompt, neither shown nor sent back. It is
- * the exhausted turn's last user row; any other row with the same text (one the user typed) stays.
+ * the exhausted turn's last user row; any other row with the same text (one the user typed) stays. TAL-739: a Stop's
+ * checkpoint has no `tool_limit_reached`, so `after` (the index of the turn's prompt) places the row instead: only one
+ * after the prompt can be the request.
  */
-export function withoutMaxIterationSummaryRequest(messages: Message[], request: string, msgText: string): Message[] {
+export function withoutMaxIterationSummaryRequest(messages: Message[], request: string, msgText: string, after?: number): Message[] {
   const at = messages.findLastIndex((m) => m.role === 'user')
   const row = messages[at]
-  if (!request || row?.content !== request || looksLikeCurrentUserTurn(row, msgText)) return messages
+  if (!request || row?.content !== request || agentSteerText(row) !== null) return messages
+  if (after === undefined ? looksLikeCurrentUserTurn(row, msgText) : at <= after) return messages
   return messages.filter((_, i) => i !== at)
 }
 
@@ -1292,12 +1295,14 @@ export function checkpointTurnStart(checkpoint: unknown[], msgText: string, hist
  * boundary) when it holds this turn's prompt, else the turn's starting context plus that prompt; then the prose that
  * streamed past the last assistant row the Agent committed. A completed tool result gets the Agent's own closing row, so
  * the next prompt never follows a tool row. Reasoning never enters. Null when nothing the model can use was captured:
- * the prompt then stays a recovered row the next request does not replay.
+ * the prompt then stays a recovered row the next request does not replay. `summaryRequest` is the Agent's max-iterations
+ * summary request, which never enters.
  */
-export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string | Record<string, unknown>[], msgText: string, streamedText: string, historyLength: number): Message[] | null {
+export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string | Record<string, unknown>[], msgText: string, streamedText: string, historyLength: number, summaryRequest = ''): Message[] | null {
   const agentRows = (checkpoint ?? []).filter((m): m is Message => isDict(m))
   const at = checkpointTurnStart(agentRows, msgText, historyLength)
-  const rows: Message[] = at === null ? [...structuredClone(previousContext), { role: 'user', content: prompt }] : structuredClone(agentRows)
+  // TAL-739: a Stop during the Agent's max-iterations summary leaves its request at the checkpoint's tail.
+  const rows: Message[] = at === null ? [...structuredClone(previousContext), { role: 'user', content: prompt }] : withoutMaxIterationSummaryRequest(structuredClone(agentRows), summaryRequest, msgText, at)
   let unsettled = messageText(buildPartialMessage(streamedText, '', [])?.content)
   for (const m of rows.slice((at ?? previousContext.length) + 1)) {
     const text = m.role === 'assistant' ? messageText(m.content).trim() : ''

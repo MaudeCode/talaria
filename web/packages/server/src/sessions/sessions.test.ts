@@ -1610,6 +1610,31 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(await turn(sid, 'next')).not.toContain(request)
   })
 
+  it('a Stop during the max-iterations summary keeps the Agent\'s state.db copy of its request out of the transcript and the next turn (TAL-739)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    const request = 'Summarize; no more tools.'
+    let checkpoint: Json[] = []
+    sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint, max_iterations_summary_request: request }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      checkpoint = [...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Checked the pods.' }, { role: 'user', content: request }]
+      emit({ event: 'token', data: { text: 'Checked the pods.' } })
+      opts.signal?.addEventListener('abort', () => {
+        commit(sid, [['user', 'loop', 300], ['assistant', 'Checked the pods.', 301], ['user', request, 302]])
+        resolve({ ...completedTurn(checkpoint), status: 'cancelled', max_iterations_summary_request: request })
+      })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'loop' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await s.deps.turns.finished(streamId)
+    expect(await served(sid)).not.toContain(request)
+    expect(await sent(sid)).not.toContain(request)
+    const history = await turn(sid, 'next')
+    expect(history.slice(-2)).toEqual(['loop', 'Checked the pods.'])
+    expect(history).not.toContain(request)
+  })
+
   it('a concurrent row that repeats a row of the current turn stays when the turn\'s own row is already local', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')

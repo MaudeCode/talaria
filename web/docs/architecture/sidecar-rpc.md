@@ -21,6 +21,12 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v69 adds `max_iterations_summary_request` to the `chat.interrupt` reply
+(TAL-739), as `chat.start`'s result carries it. A Stop while the Agent generates
+its max-iterations summary leaves that request at the checkpoint's tail; the
+server drops it from the stopped turn's model context, so the turn keeps its
+completed tool work.
+
 RPC v68 adds the toolset's queue tools (TAL-1167), each a `server.*` method that
 calls the service behind a route: `queue_list` (`server.queue_list`) returns a
 target session's `is_streaming` and its detail's `pending_steers`, oldest first;
