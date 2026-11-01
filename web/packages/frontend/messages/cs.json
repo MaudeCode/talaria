@@ -579,6 +579,7 @@
 	"session_title_regenerated": "Název byl přegenerován: {title}",
 	"session_title_regenerate_failed": "Obnovení názvu se nezdařilo:",
 	"session_copy_link": "Kopírovat odkaz na konverzaci",
+	"session_open_new_tab": "Otevřít v nové kartě",
 	"session_copy_link_desc": "Zkopírujte přímý odkaz na tuto konverzaci",
 	"session_link_copied": "Odkaz na konverzaci zkopírován do schránky",
 	"session_link_copy_failed": "Kopírování odkazu na konverzaci selhalo: ",

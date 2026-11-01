@@ -560,6 +560,7 @@
 	"session_title_regenerated": "Название сгенерировано заново: {title}",
 	"session_title_regenerate_failed": "Не удалось сгенерировать название заново: ",
 	"session_copy_link": "Скопировать ссылку на беседу",
+	"session_open_new_tab": "Открыть в новой вкладке",
 	"session_copy_link_desc": "Скопировать прямую ссылку на эту беседу",
 	"session_link_copied": "Ссылка на беседу скопирована в буфер обмена",
 	"session_link_copy_failed": "Не удалось скопировать ссылку на беседу: ",

@@ -69,6 +69,8 @@ Follow that checklist's safety rules:
   testing guidance, or user-facing workflows.
 - Put UI explanations in a `HelpTip`, not visible sub-text; see "Typography and content" in
   `docs/UIUX-GUIDE.md`.
+- New UI with item actions (rows, cards, chips, tiles, messages, file entries) must ship a
+  right-click and long-press menu through `ContextMenu`; see "Context menus" in `docs/UIUX-GUIDE.md`.
 - For UI or UX changes, include before/after evidence in the PR description
   (uploaded attachments, never committed files) and test relevant desktop,
   narrow, and mobile states.

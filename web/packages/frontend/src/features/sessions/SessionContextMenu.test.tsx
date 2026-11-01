@@ -43,6 +43,13 @@ describe('SessionContextMenu', () => {
   it('offers Refresh snapshot on a shared row the server allows sharing (TAL-732)', async () => {
     expect(await menuItems({ ...writable, session_id: 'shared', share_url: '/share/old' })).toContain('Refresh snapshot')
   })
+
+  it('starts with Open in new tab, which opens the conversation without an opener (TAL-699)', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    expect((await menuItems({ ...writable, session_id: 'a b' }))[0]).toBe('Open in new tab')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Open in new tab' }))
+    expect(open).toHaveBeenCalledWith(new URL('session/a%20b', document.baseURI).href, '_blank', 'noopener')
+  })
 })
 
 

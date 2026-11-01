@@ -12,7 +12,8 @@ import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { Dialog } from '../../ui/Dialog'
 import { useNewChat } from './useNewChat'
-import { SessionActions, SessionContextMenu } from './SessionContextMenu'
+import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
+import { ContextMenu } from '../../ui/Menu'
 import { ProjectChip } from './ProjectChip'
 import { closeMobileSidebar } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
@@ -110,6 +111,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
 }) {
   useLocale()
   const id = useId()
+  const item = useRef<HTMLDivElement>(null)
   const displayTitle = row.title || m.untitled()
   const content = (<>
       <div className="session-text" id={`${id}-text`}>
@@ -126,9 +128,10 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
     {content}<span aria-hidden="true">{selection.selected ? '✓' : ''}</span>
   </button>
   // TAL-1120: the wrapper is the list item, so the anchor keeps its link role; its name skips the nested action buttons.
+  // TAL-699: right-click or long-press on the row opens the kebab's items; a click still navigates.
   return (
-    <div role="listitem">
-      <Link
+    <div role="listitem" ref={item}>
+      <ContextMenu label={m.session_menu()} trigger={<Link
         to="/session/$sessionId"
         params={{ sessionId: row.session_id }}
         onClick={closeMobileSidebar}
@@ -150,7 +153,9 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
           </button>}
           <SessionContextMenu row={row} active={active} />
         </div>
-      </Link>
+      </Link>}>
+        <SessionMenuItems row={row} active={active} anchor={item} />
+      </ContextMenu>
     </div>
   )
 })

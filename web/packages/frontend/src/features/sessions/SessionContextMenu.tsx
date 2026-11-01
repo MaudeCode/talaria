@@ -2,7 +2,7 @@ import { useResourceMutation } from './useResourceMutation'
 import { useSessionPin } from './useSessionPin'
 import { discardSession } from '../../stream/connection'
 import { discardStagedFiles } from '../composer/useDraft'
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { MoreHorizontal } from 'lucide-react'
@@ -115,20 +115,39 @@ function SessionActionDialogs({ pending, row, onChange }: { pending: PendingActi
   return <ConfirmDialog open onOpenChange={dismiss} finalFocus={finalFocus} title={m.session_delete_confirm()} description={row.worktree_branch ? m.session_delete_worktree_desc() : m.session_delete_desc()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(sid); if (pending.active) void navigate({ to: '/', search: { action: 'new-chat' } }) }} />
 }
 
-/** Per-row conversation actions (legacy long-press / kebab menu). Every mutation invalidates the session list family. */
+/** A row's kebab menu. The row's right-click and long-press menu shows the same `SessionMenuItems` (TAL-699). */
 export function SessionContextMenu({ row, active }: { row: SessionRow; active: boolean }) {
   const open = useContext(OpenAction)
+  const ref = useRef<HTMLSpanElement>(null)
   // Outside a list, the menu owns its dialogs.
   if (!open) return <SessionActions rows={[row]}><SessionContextMenu row={row} active={active} /></SessionActions>
-  return <SessionMenu row={row} active={active} open={open} />
+  return (
+    <span ref={ref} className="contents" onClick={(e) => e.stopPropagation()}>
+      <Menu
+        label={m.session_menu()}
+        align="end"
+        trigger={
+          <IconButton label={m.session_menu()} className="session-actions-trigger" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </IconButton>
+        }
+      >
+        <SessionMenuItems row={row} active={active} anchor={ref} />
+      </Menu>
+    </span>
+  )
 }
 
-function SessionMenu({ row, active, open }: { row: SessionRow; active: boolean; open: (action: PendingAction) => void }) {
+/**
+ * The conversation's actions, mounted only while a menu shows them; every mutation invalidates the session list family.
+ * `anchor` sits inside the row, so a dialog returns focus to the row's list. Render inside `SessionActions`.
+ */
+export function SessionMenuItems({ row, active, anchor }: { row: SessionRow; active: boolean; anchor: RefObject<Element | null> }) {
+  const open = useContext(OpenAction)
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const ref = useRef<HTMLSpanElement>(null)
   const sid = row.session_id
-  const openAction = (kind: ActionKind) => open({ sid, kind, active, list: ref.current?.closest('[role="list"]') ?? null, title: row.title, projectId: row.project_id ?? '' })
+  const openAction = (kind: ActionKind) => open?.({ sid, kind, active, list: anchor.current?.closest('[role="list"]') ?? null, title: row.title, projectId: row.project_id ?? '' })
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.sessions.all }) }
   // `row` is the displayed row, so a repeated toggle targets the state the user sees.
   const pin = useSessionPin()
@@ -147,8 +166,9 @@ function SessionMenu({ row, active, open }: { row: SessionRow; active: boolean; 
     onSuccess: async (r) => { await copyShareLink(r.share.url); invalidate() },
     onError: (e) => showToast(m.share_session_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
   })
+  const sessionUrl = () => appUrl(`session/${encodeURIComponent(sid)}`).href
   const copyLink = () => {
-    void navigator.clipboard.writeText(appUrl(`session/${encodeURIComponent(sid)}`).href).then(() => showToast(m.copied()), () => showToast(m.session_link_copy_failed(), 3000, 'error'))
+    void navigator.clipboard.writeText(sessionUrl()).then(() => showToast(m.copied()), () => showToast(m.session_link_copy_failed(), 3000, 'error'))
   }
   const exportAs = (format: 'json' | 'markdown' | 'html') => {
     const a = document.createElement('a')
@@ -158,38 +178,31 @@ function SessionMenu({ row, active, open }: { row: SessionRow; active: boolean; 
     a.click()
   }
   return (
-    <span ref={ref} className="contents" onClick={(e) => e.stopPropagation()}>
-      <Menu
-        label={m.session_menu()}
-        align="end"
-        trigger={
-          <IconButton label={m.session_menu()} className="session-actions-trigger" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
-            <MoreHorizontal size={16} aria-hidden="true" />
-          </IconButton>
-        }
-      >
-        {allowed.rename(row) && <MenuItem onClick={() => openAction('rename')}>{m.session_rename()}</MenuItem>}
-        {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
-        {row.can_pin && <MenuItem onClick={() => pin.mutate({ id: sid, pinned: !row.pinned, group: row.sidebar_group })}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
-        {allowed.move(row) && <MenuItem onClick={() => openAction('move')}>{m.session_move_project()}</MenuItem>}
-        <MenuSeparator />
-        <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
-        {shareUrl
-          ? <>
-              <MenuItem onClick={() => { void copyShareLink(shareUrl) }}>{m.session_share_copy_link()}</MenuItem>
-              {row.can_share && <MenuItem onClick={() => share.mutate()}>{m.share_session_refresh_snapshot()}</MenuItem>}
-              <MenuItem className="text-error" onClick={() => openAction('revoke')}>{m.session_share_revoke()}</MenuItem>
-            </>
-          : row.can_share && <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
-        {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
-        <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
-        <MenuItem onClick={() => exportAs('markdown')}>{m.session_export_markdown()}</MenuItem>
-        <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
-        <MenuSeparator />
-        {allowed.worktree(row) && <MenuItem className="text-error" onClick={() => openAction('worktree')}>{m.session_worktree_remove()}</MenuItem>}
-        {row.can_archive && <MenuItem onClick={() => archive.mutate(!row.archived)}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>}
-        {allowed.delete(row) && <MenuItem className="text-error" onClick={() => openAction('delete')}>{m.session_delete()}</MenuItem>}
-      </Menu>
-    </span>
+    <>
+      {/* The row's menu replaces the browser's link menu, so it carries Open in new tab. */}
+      <MenuItem onClick={() => window.open(sessionUrl(), '_blank', 'noopener')}>{m.session_open_new_tab()}</MenuItem>
+      <MenuSeparator />
+      {allowed.rename(row) && <MenuItem onClick={() => openAction('rename')}>{m.session_rename()}</MenuItem>}
+      {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
+      {row.can_pin && <MenuItem onClick={() => pin.mutate({ id: sid, pinned: !row.pinned, group: row.sidebar_group })}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
+      {allowed.move(row) && <MenuItem onClick={() => openAction('move')}>{m.session_move_project()}</MenuItem>}
+      <MenuSeparator />
+      <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
+      {shareUrl
+        ? <>
+            <MenuItem onClick={() => { void copyShareLink(shareUrl) }}>{m.session_share_copy_link()}</MenuItem>
+            {row.can_share && <MenuItem onClick={() => share.mutate()}>{m.share_session_refresh_snapshot()}</MenuItem>}
+            <MenuItem className="text-error" onClick={() => openAction('revoke')}>{m.session_share_revoke()}</MenuItem>
+          </>
+        : row.can_share && <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
+      {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
+      <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
+      <MenuItem onClick={() => exportAs('markdown')}>{m.session_export_markdown()}</MenuItem>
+      <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
+      <MenuSeparator />
+      {allowed.worktree(row) && <MenuItem className="text-error" onClick={() => openAction('worktree')}>{m.session_worktree_remove()}</MenuItem>}
+      {row.can_archive && <MenuItem onClick={() => archive.mutate(!row.archived)}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>}
+      {allowed.delete(row) && <MenuItem className="text-error" onClick={() => openAction('delete')}>{m.session_delete()}</MenuItem>}
+    </>
   )
 }

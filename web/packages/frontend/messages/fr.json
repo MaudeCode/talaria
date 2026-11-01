@@ -560,6 +560,7 @@
 	"session_title_regenerated": "Titre régénéré : {title}",
 	"session_title_regenerate_failed": "Échec de la régénération du titre : ",
 	"session_copy_link": "Copier le lien de la conversation",
+	"session_open_new_tab": "Ouvrir dans un nouvel onglet",
 	"session_copy_link_desc": "Copier un lien direct vers cette conversation",
 	"session_link_copied": "Lien de la conversation copié dans le presse-papiers",
 	"session_link_copy_failed": "Échec de la copie du lien de la conversation : ",

@@ -457,6 +457,7 @@
 	"session_title_regenerated": "Título regenerado: {title}",
 	"session_title_regenerate_failed": "Falha ao regenerar o título: ",
 	"session_copy_link": "Copiar link da conversa",
+	"session_open_new_tab": "Abrir em nova aba",
 	"session_copy_link_desc": "Copia um link direto para esta conversa",
 	"session_link_copied": "Link da conversa copiado para a área de transferência",
 	"session_link_copy_failed": "Falha ao copiar link da conversa: ",

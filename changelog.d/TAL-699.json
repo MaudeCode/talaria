@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Right-click or long-press a conversation in the Talaria Web sidebar to open its actions, now including Open in new tab. Phones and tablets can reach every conversation action this way.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

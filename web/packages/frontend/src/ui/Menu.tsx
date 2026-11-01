@@ -1,6 +1,7 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
-import type { ComponentProps, ReactElement, ReactNode, RefObject } from 'react'
+import { useRef, type ComponentProps, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
+import type { BaseUIEvent } from '@base-ui/react/types'
 import { cn } from './cn'
 
 export interface MenuProps {
@@ -62,11 +63,42 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
   )
 }
 
-/** The same menu opened by right-click or long-press on `trigger`, which keeps its own click behaviour. */
+/** TAL-699: text fields, a selection reaching into the trigger, and links nested in it keep the browser's own menu. */
+function wantsNativeMenu(trigger: Element, target: Element): boolean {
+  if (target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
+  const link = target.closest('a[href]')
+  if (link && link !== trigger && trigger.contains(link)) return true
+  const selection = trigger.ownerDocument.getSelection()
+  return !!selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.getRangeAt(0).intersectsNode(trigger)
+}
+
+/** Runs before Base UI's trigger handlers and skips them when the event belongs to the browser or to another surface. */
+function passThrough(event: BaseUIEvent<SyntheticEvent>) {
+  const trigger = event.currentTarget
+  const target = event.target
+  // A portalled popup inside the trigger's React tree, such as a nested kebab menu, bubbles here without being inside it.
+  if (!(target instanceof Element) || !trigger.contains(target)) { event.preventBaseUIHandler(); return }
+  if (!wantsNativeMenu(trigger, target)) return
+  event.preventBaseUIHandler()
+  // Base UI also cancels the native menu from a document listener; stop the event before it gets there.
+  if (event.type === 'contextmenu') event.nativeEvent.stopPropagation()
+}
+
+/**
+ * The same menu opened by right-click or long-press on `trigger`, which keeps its own click behaviour. Base UI's trigger
+ * sets `-webkit-touch-callout: none`, so a long-press on a link trigger does not also open the browser's link callout.
+ */
 export function ContextMenu({ trigger, children, className, label }: Pick<MenuProps, 'trigger' | 'children' | 'className' | 'label'>) {
+  // A browser may send a click when the long-press finger lifts; while that menu is open it must not also activate the trigger.
+  const pressed = useRef(false)
   return (
-    <BaseContextMenu.Root>
-      <BaseContextMenu.Trigger render={trigger} />
+    <BaseContextMenu.Root onOpenChange={(open, details) => { pressed.current = open && details.event.type === 'touchstart' }}>
+      <BaseContextMenu.Trigger
+        render={trigger}
+        onContextMenu={passThrough}
+        onTouchStart={passThrough}
+        onClickCapture={(event) => { if (pressed.current) { pressed.current = false; event.preventDefault(); event.stopPropagation() } }}
+      />
       <BaseContextMenu.Portal>
         <BaseContextMenu.Positioner className={POSITIONER}>
           <BaseContextMenu.Popup aria-label={label} className={cn(POPUP, 'overflow-y-auto', className)}>

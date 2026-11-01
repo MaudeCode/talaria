@@ -13,7 +13,7 @@ const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; d
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 const rowRender = vi.hoisted(() => vi.fn())
-vi.mock('./SessionContextMenu', () => ({ SessionActions: ({ children }: { children: ReactNode }) => children, SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null } }))
+vi.mock('./SessionContextMenu', () => ({ SessionActions: ({ children }: { children: ReactNode }) => children, SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null }, SessionMenuItems: () => null }))
 const navigate = vi.hoisted(() => vi.fn())
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))

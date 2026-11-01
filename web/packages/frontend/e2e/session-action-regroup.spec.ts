@@ -30,7 +30,7 @@ test('Move to project stays open with its choice when the row moves from Older t
     await settle(page)
     const hamburger = page.locator('#btnHamburger')
     if (await hamburger.isVisible()) await hamburger.click()
-    // Phones hide the row's actions column until TAL-699 adds the row's long-press entry; reveal it to reach the same menu.
+    // Phones hide the row's kebab (long-press opens the row's menu, TAL-699); reveal it to drive the kebab's own menu.
     if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await page.addStyleTag({ content: '.session-actions{display:flex !important;opacity:1 !important}' })
     const item = page.locator('#sessionList .session-item[data-sid="regroup-old"]')
     const group = page.locator('#sessionList .session-date-group', { has: page.locator('.session-item[data-sid="regroup-old"]') }).locator('.session-date-header')

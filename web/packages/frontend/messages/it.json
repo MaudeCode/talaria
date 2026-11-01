@@ -573,6 +573,7 @@
 	"session_title_regenerated": "Titolo rigenerato: {title}",
 	"session_title_regenerate_failed": "Rigenerazione del titolo non riuscita: ",
 	"session_copy_link": "Copia link conversazione",
+	"session_open_new_tab": "Apri in una nuova scheda",
 	"session_copy_link_desc": "Copia un link diretto a questa conversazione",
 	"session_link_copied": "Link conversazione copiato negli appunti",
 	"session_link_copy_failed": "Impossibile copiare il link della conversazione: ",

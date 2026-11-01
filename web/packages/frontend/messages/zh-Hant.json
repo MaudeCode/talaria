@@ -560,6 +560,7 @@
 	"session_title_regenerated": "標題已重新產生：{title}",
 	"session_title_regenerate_failed": "重新產生標題失敗：",
 	"session_copy_link": "複製對話連結",
+	"session_open_new_tab": "在新分頁中開啟",
 	"session_copy_link_desc": "複製此對話的直接連結",
 	"session_link_copied": "對話連結已複製到剪貼簿",
 	"session_link_copy_failed": "無法複製對話連結：",
