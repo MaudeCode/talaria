@@ -50,7 +50,7 @@ export const keys = {
     list: (sessionId: string, workspace: string) => [...checkpointTargetKey(sessionId, workspace), 'list'] as const,
     diff: (sessionId: string, workspace: string, id: string) => [...checkpointTargetKey(sessionId, workspace), 'diff', id] as const,
   },
-  skills: { all: ['skills'] as const, content: (name: string, file?: string) => ['skills', 'content', name, file ?? null] as const, revisions: (name: string, revision?: string, compareTo?: string) => ['skills', 'revisions', name, revision ?? null, compareTo ?? null] as const, usage: ['skills', 'usage'] as const },
+  skills: { all: ['skills'] as const, content: (name: string, file?: string) => ['skills', 'content', name, file ?? null] as const, revisions: (name: string, revision?: string, compareTo?: string) => ['skills', 'revisions', name, revision ?? null, compareTo ?? null] as const, replays: (name: string) => ['skills', 'replays', name] as const, usage: ['skills', 'usage'] as const },
   memory: ['memory'] as const,
   pendingWrites: (kind: 'skills' | 'memory') => ['pending-writes', kind] as const,
   crons: { blueprints: ['crons', 'blueprints'] as const, contextSources: (profile: string, editingId: string, excludeId: string, refs: string[]) => ['crons', 'context-sources', profile, editingId, excludeId, refs] as const, all: ['crons'] as const, list: (allProfiles: boolean) => ['crons', 'list', allProfiles] as const, status: ['crons', 'status'] as const, history: (id: string) => ['crons', 'history', id] as const, run: (id: string, filename: string) => ['crons', 'history', id, filename] as const, output: (id: string) => ['crons', 'output', id] as const, deliveryOptions: ['crons', 'delivery-options'] as const },

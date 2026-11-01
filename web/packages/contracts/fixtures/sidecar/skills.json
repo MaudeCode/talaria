@@ -746,5 +746,24 @@
         "replay_available": false
       }
     }
+  ],
+  "skills.replay_plan": [
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "apple-notes",
+        "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidate": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "result": {
+        "state": "unavailable",
+        "reason": "backend_unavailable",
+        "revisions": [],
+        "cases": [],
+        "unavailable_cases": 0,
+        "route": null,
+        "max_output_tokens": 1500
+      }
+    }
   ]
 }

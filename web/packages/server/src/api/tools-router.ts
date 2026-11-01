@@ -229,6 +229,12 @@ async function runGatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 
 
 const principalHash = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex')
 
+/** TAL-1563: a replay belongs to the authenticated owner and the profile that admitted it. */
+async function replayScope(ctx: RequestContext): Promise<{ owner: string; profile: string }> {
+  return { owner: updateNotificationOwner(await ensureTrustedAuthSession(ctx)), profile: activeProfileName(ctx) }
+}
+const replayRedact = (ctx: RequestContext) => (text: string): string => redactString(text, ctx.deps.sessions.deps.redactEnabled())
+
 async function updateNotificationScope(ctx: RequestContext, tab?: string): Promise<UpdateNotificationScope> {
   const session = await ensureTrustedAuthSession(ctx)
   const profile = activeProfileName(ctx)
@@ -437,6 +443,10 @@ export const toolsRouter = os.router({
         selected: history.selected && { ...history.selected, content: redact(history.selected.content) },
         comparison: history.comparison && { ...history.comparison, diff: redact(history.comparison.diff) } }
     })),
+    replayPlan: os.skills.replayPlan.handler(({ input, context: { ctx } }) => run(() => ctx.deps.skillReplays.plan(home(ctx), input, replayRedact(ctx)))),
+    replays: os.skills.replays.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.list(await replayScope(ctx), input.name, replayRedact(ctx)))),
+    replayStart: os.skills.replayStart.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.start(await replayScope(ctx), home(ctx), input, replayRedact(ctx)))),
+    replayCancel: os.skills.replayCancel.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.cancel(await replayScope(ctx), input.id, replayRedact(ctx)))),
     list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => ({ skills: await ctx.deps.skills.list(home(ctx), str(input.category).trim() || null) }))),
     usage: os.skills.usage.handler(({ context: { ctx } }) => run(() => ctx.deps.skills.usage(home(ctx)) as Promise<never>)),
     content: os.skills.content.handler(({ input, context: { ctx } }) => run(async () => {

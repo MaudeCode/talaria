@@ -1,5 +1,6 @@
 import { memo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import type { SkillReplayJob, SkillReplayPlan } from '@maudecode/talaria-web-contracts'
 import { ChevronLeft, Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -8,7 +9,7 @@ import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
-import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate, formatUsd } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
@@ -188,7 +189,95 @@ function SkillRevisionHistory({ name }: { name: string }) {
       </label>}
       {data.comparison && <TextDiffReview summary={m.skill_revisions_comparison()} target="" diff={data.comparison.diff} open />}
     </>}
+    {data && <SkillReplays name={name} comparison={data.replay_available ? data.comparison : null} />}
   </section>
+}
+
+type ReplayJob = SkillReplayJob
+type ReplayRun = ReplayJob['cases'][number]['baseline']
+const replayState: Record<ReplayJob['state'], () => string> = {
+  queued: m.skill_replay_state_queued, running: m.skill_replay_state_running, cancelling: m.skill_replay_state_cancelling, completed: m.skill_replay_state_completed,
+  cancelled: m.skill_replay_state_cancelled, interrupted: m.skill_replay_state_interrupted, failed: m.skill_replay_state_failed,
+}
+const runStatus = (run: ReplayRun): string => run.status === 'completed' ? (run.result?.passed ? m.skill_replay_run_passed() : m.skill_replay_run_failed())
+  : { pending: m.skill_replay_run_pending, dispatched: m.skill_replay_run_dispatched, error: m.skill_replay_run_error, refused: m.skill_replay_run_refused, unknown: m.skill_replay_run_unknown, skipped: m.skill_replay_run_skipped }[run.status]()
+const replayUnavailable = (reason: SkillReplayPlan['reason']): string => reason === 'route_unsupported' ? m.skill_replay_route_unsupported()
+  : reason === 'no_cases' ? m.skill_replay_no_cases() : reason === 'history_unavailable' ? m.skill_revisions_missing()
+  : reason === 'identity_unavailable' ? m.skill_revisions_identity_unavailable() : reason === 'invalid_history' ? m.skill_revisions_invalid() : m.skill_revisions_backend_unavailable()
+
+type ReplayRevision = SkillReplayPlan['revisions'][number]
+interface ReplayConsent { requestId: string; plan: SkillReplayPlan; baseline: ReplayRevision; candidate: ReplayRevision; route: NonNullable<SkillReplayPlan['route']>; budget: NonNullable<SkillReplayPlan['budget']> }
+function replayConsent(plan: SkillReplayPlan, requestId: string): ReplayConsent | null {
+  const [baseline, candidate] = plan.revisions
+  return plan.state === 'ready' && baseline && candidate && plan.route && plan.budget ? { requestId, plan, baseline, candidate, route: plan.route, budget: plan.budget } : null
+}
+
+/** TAL-1563: consent to one exact bounded replay, follow its server-projected status, cancel it, and read retained results. */
+function SkillReplays({ name, comparison }: { name: string; comparison: { from_revision: string; to_revision: string } | null }) {
+  const [consent, setConsent] = useState<ReplayConsent | null>(null)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  const effects = useResourceEffects()
+  const replays = useQuery({ queryKey: keys.skills.replays(name), queryFn: () => api.fetchSkillReplays(name), refetchInterval: (query) => query.state.data?.jobs.some((job) => job.active) ? 1500 : false })
+  const jobs = withEffects(replays.data?.jobs ?? [], (job) => `skill-replay:${job.id}`, effects)
+  const plan = useMutation({
+    mutationFn: (selection: { from_revision: string; to_revision: string }) => api.fetchSkillReplayPlan(name, selection.from_revision, selection.to_revision),
+    onSuccess: (result) => { const next = replayConsent(result, requestId); setConsent(next); setRefusal(next ? null : replayUnavailable(result.reason)) },
+    onError: (error) => showErrorToast(error),
+  })
+  const start = useMutation({
+    mutationFn: (selected: ReplayConsent) => api.startSkillReplay({ request_id: selected.requestId, name, baseline: selected.baseline.id, candidate: selected.candidate.id,
+      case_ids: selected.plan.cases.map((row) => row.id), route: selected.route, max_cost_usd: selected.budget.max_cost_usd }),
+    // A definite answer retires the request id; an uncertain one keeps it, so a retry returns the admitted job.
+    onSettled: (_result, error) => { if (!error || ((error as { status?: number }).status ?? 500) < 500) setRequestId(crypto.randomUUID()); void replays.refetch() },
+    onError: (error) => showErrorToast(error),
+  })
+  const cancel = useResourceMutation({ resource: (id: string) => `skill-replay:${id}`, effect: () => ({ fields: { state: 'cancelling', can_cancel: false } }), queryKey: keys.skills.replays(name), mutationFn: (id: string) => api.cancelSkillReplay(id), onError: (e) => showErrorToast(e) })
+  const busy = plan.isPending || start.isPending || jobs.some((job) => job.active)
+  return <div className="flex min-w-0 flex-col gap-3">
+    {comparison && <div><Button onClick={() => plan.mutate(comparison)} disabled={busy} aria-busy={plan.isPending || start.isPending}>{m.skill_replay_start()}</Button></div>}
+    {refusal && <p role="status" className="text-sm text-muted">{refusal}</p>}
+    {consent && <ConfirmDialog open onOpenChange={(open) => { if (!open) setConsent(null) }} title={m.skill_replay_confirm_title()} confirmLabel={m.skill_replay_confirm()} cancelLabel={m.cancel()}
+      onConfirm={() => { start.mutate(consent) }}>
+      <div className="mt-3 flex flex-col gap-2 text-sm [overflow-wrap:anywhere]">
+        <p className="font-mono text-xs">{m.skill_replay_revisions({ baseline: consent.baseline.label, candidate: consent.candidate.label })}</p>
+        <div>
+          <p>{m.skill_replay_cases({ count: String(consent.plan.cases.length) })}</p>
+          <ul className="list-disc pl-5 text-muted">{consent.plan.cases.map((row) => <li key={row.id}>{row.title}</li>)}</ul>
+          {consent.plan.unavailable_cases > 0 && <p className="text-muted">{m.skill_replay_unavailable_cases({ count: String(consent.plan.unavailable_cases) })}</p>}
+        </div>
+        <p>{m.skill_replay_route({ provider: consent.route.provider, model: consent.route.model })}</p>
+        <p>{m.skill_replay_budget({ cost: formatUsd(consent.budget.max_cost_usd), calls: String(consent.budget.max_calls), output: String(consent.budget.max_output_tokens), price: formatUsd(consent.budget.max_price_per_million) })}</p>
+      </div>
+    </ConfirmDialog>}
+    {jobs.length > 0 && <section aria-label={m.skill_replay_results()} className="flex min-w-0 flex-col gap-4">
+      {jobs.map((job) => <article key={job.id} className="flex min-w-0 flex-col gap-2 border-t border-border-subtle pt-3 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span role="status" className="font-medium text-text">{replayState[job.state]()}</span>
+          <time dateTime={job.created_at} className="text-muted">{formatDate(job.created_at)}</time>
+          <span className="font-mono text-muted">{m.skill_replay_revisions({ baseline: job.revisions[0].label, candidate: job.revisions[1].label })}</span>
+          <span className="text-muted">{m.skill_replay_route({ provider: job.route.provider, model: job.route.model })}</span>
+          {job.can_cancel && <Button variant="ghost" onClick={() => cancel.mutate(job.id)}>{m.skill_replay_cancel()}</Button>}
+        </div>
+        <p className="text-muted">{m.skill_replay_cost({ spent: formatUsd(job.reported_cost_usd), budget: formatUsd(job.budget.max_cost_usd) })}{job.unreported_calls > 0 && ` · ${m.skill_replay_unreported({ count: String(job.unreported_calls) })}`}</p>
+        {job.summary.map((row) => <p key={row.role}>{m.skill_replay_summary({ role: row.role === 'baseline' ? m.skill_replay_baseline() : m.skill_replay_candidate(), passed: String(row.passed), failed: String(row.failed), error: String(row.error), unknown: String(row.unknown), refused: String(row.refused), skipped: String(row.skipped) })}</p>)}
+        <ul className="divide-y divide-border-subtle">
+          {job.cases.map((row) => <li key={row.id} className="flex min-w-0 flex-col gap-1 py-2">
+            <span className="text-text">{row.title}</span>
+            {(['baseline', 'candidate'] as const).map((role) => <ReplayRunRow key={role} label={role === 'baseline' ? m.skill_replay_baseline() : m.skill_replay_candidate()} run={row[role]} />)}
+          </li>)}
+        </ul>
+      </article>)}
+    </section>}
+  </div>
+}
+
+function ReplayRunRow({ label, run }: { label: string; run: ReplayRun }) {
+  const calls = run.result?.tool_calls.map((call) => call.name).join(', ')
+  return <div className="flex min-w-0 flex-col gap-1">
+    <div className="flex flex-wrap gap-x-2"><span className="text-muted">{label}</span><span className="text-text">{runStatus(run)}</span>{calls && <span className="font-mono text-muted">{calls}</span>}{run.detail && <span className="text-muted">{run.detail}</span>}</div>
+    {run.result?.content && <details><summary className="cursor-pointer text-muted hover:text-text">{m.skill_replay_answer()}</summary><pre className="mt-1 whitespace-pre-wrap rounded-md bg-code-bg p-2 font-mono text-pre-text">{run.result.content}</pre></details>}
+  </div>
 }
 
 function SkillFile({ name, file, onBack }: { name: string; file: string; onBack: () => void }) {

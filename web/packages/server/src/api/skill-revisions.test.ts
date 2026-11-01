@@ -27,7 +27,7 @@ it('passes exact selections and profile scope to the backend and redacts display
   const response = await server.get(`/api/skills/revisions?name=demo&${selection}`, { headers: { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })
   expect(response.status).toBe(200)
   const result = await response.json()
-  expect(result).toMatchObject({ revisions: fixture.revisions, replay_available: false })
+  expect(result).toMatchObject({ revisions: fixture.revisions, replay_available: true })
   expect(JSON.stringify(result)).not.toContain('synthetic-private-key-value')
   expect(sidecar.calls.filter((c) => c.method === 'skills.revisions')).toEqual([{ method: 'skills.revisions', params: { profile_home: server.deps.profileHome('work'), name: 'demo', revision: fixture.selected!.revision, compare_to: fixture.comparison!.from_revision } }])
   expect(sidecar.calls.some((c) => c.method === 'aux.complete' || c.method === 'plugins.dashboard_request')).toBe(false)

@@ -44,6 +44,8 @@ export interface ConfirmDialogProps {
   /** A second, destructive way to confirm, beside the main one (TAL-1260: Restore everything). */
   alternate?: { label: string; onConfirm: () => void | Promise<void> } | undefined
   finalFocus?: DialogProps['finalFocus']
+  /** Structured detail the confirmation binds (TAL-1563: the exact replay a user consents to). */
+  children?: ReactNode
 }
 
 // The confirmed change shows at once (optimistic writes); the dialog never waits for the server.
@@ -53,7 +55,7 @@ function confirmThenClose(confirm: () => void | Promise<void>, close: () => void
 }
 
 /** Destructive confirmation (alert dialog semantics: no outside-click dismissal). */
-export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm, alternate, finalFocus }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm, alternate, finalFocus, children }: ConfirmDialogProps) {
   const action = (label: string, destructive: boolean | undefined, confirm: () => void | Promise<void>) => (
     <button
       type="button"
@@ -70,6 +72,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
         <BaseAlertDialog.Popup finalFocus={finalFocus} className="fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
           <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
           {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
+          {children}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <BaseAlertDialog.Close className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm hover:bg-hover">{cancelLabel}</BaseAlertDialog.Close>
             {alternate && action(alternate.label, true, alternate.onConfirm)}

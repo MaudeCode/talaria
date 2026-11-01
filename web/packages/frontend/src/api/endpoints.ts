@@ -223,6 +223,10 @@ export const fetchSkills = (category?: string) => orpc().skills.list(category ? 
 /** With `file`, one of the skill's `linked_files` instead of its SKILL.md. */
 export const fetchSkillContent = (name: string, file?: string) => orpc().skills.content(file ? { name, file } : { name })
 export const fetchSkillRevisions = (name: string, selection?: { revision?: string; compare_to?: string }, signal?: AbortSignal) => orpc().skills.revisions({ name, ...(selection?.revision ? { revision: selection.revision } : {}), ...(selection?.compare_to ? { compare_to: selection.compare_to } : {}) }, signal ? { signal } : {})
+export const fetchSkillReplayPlan = (name: string, baseline: string, candidate: string) => orpc().skills.replayPlan({ name, baseline, candidate })
+export const fetchSkillReplays = (name: string) => orpc().skills.replays({ name })
+export const startSkillReplay = (input: Parameters<ReturnType<typeof orpc>['skills']['replayStart']>[0]) => orpc().skills.replayStart(input)
+export const cancelSkillReplay = (id: string) => orpc().skills.replayCancel({ id })
 export const saveSkill = (name: string, content: string) => orpc().skills.save({ name, content })
 export const deleteSkill = (name: string) => orpc().skills.delete({ name })
 export const toggleSkill = (name: string, enabled: boolean) => orpc().skills.toggle({ name, enabled })

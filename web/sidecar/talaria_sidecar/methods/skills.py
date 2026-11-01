@@ -310,6 +310,21 @@ def register(registry) -> None:
         ctx.check_cancelled()
         return result
 
+    @registry.method("skills.replay_plan")
+    def replay_plan(ctx: CallContext, params: dict) -> dict:
+        from .skill_replay import plan
+        home = profile_home_param(params)
+        with scoped_home(home, load_plugins=False, recover_processes=False):
+            return plan(home, params.get('name'), params.get('baseline'), params.get('candidate'))
+
+    @registry.method("skills.replay_case")
+    def replay_case(ctx: CallContext, params: dict) -> dict:
+        from .skill_replay import dispatch
+        home = profile_home_param(params)
+        ctx.check_cancelled()
+        with scoped_home(home, load_plugins=False, recover_processes=False):
+            return dispatch(home, params.get('name'), params)
+
     @registry.method("skills.list")
     def list_(ctx: CallContext, params: dict) -> dict:
         home = profile_home_param(params)

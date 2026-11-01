@@ -48,6 +48,7 @@ import type { ProviderCatalog } from '../providers/catalog.js'
 import type { ProfileService } from '../profiles/profiles.js'
 import type { Onboarding } from '../onboarding.js'
 import type { SkillsService } from '../tools/skills.js'
+import type { SkillReplayService } from '../tools/skill-replay.js'
 import type { McpService } from '../tools/mcp.js'
 import type { WindowLimiter } from '../api/tools-router.js'
 import type { CronService } from '../tools/crons.js'
@@ -170,6 +171,8 @@ export interface AppDeps {
   clearPasskeys: () => void | Promise<void>
   // ── tools (checkpoint 7b) ──
   skills: SkillsService
+  /** TAL-1563: bounded saved-check replay jobs. */
+  skillReplays: SkillReplayService
   mcp: McpService
   nowSeconds: () => number
   /** `/api/system/health` `webui_runtime` block (process counters). */

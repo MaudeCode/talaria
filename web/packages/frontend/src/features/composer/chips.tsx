@@ -6,6 +6,7 @@ import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { MENU_ROW, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
+import { formatUsd } from '../../ui/States'
 import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { resetTime } from '../../i18n/units'
@@ -236,7 +237,7 @@ function contextStats({ percent, used, window, thresholdPercent, input, output, 
     threshold,
     input != null ? `${m.usage_input_tokens()}: ${input.toLocaleString()}` : null,
     output != null ? `${m.usage_output_tokens()}: ${output.toLocaleString()}` : null,
-    cost != null ? `${m.usage_estimated_cost()}: ${cost.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })}` : null,
+    cost != null ? `${m.usage_estimated_cost()}: ${formatUsd(cost)}` : null,
     cacheHitPercent != null ? m.usage_cache_hit_detail({ a0: cacheHitPercent, a1: (cacheRead ?? 0).toLocaleString(), a2: (cacheWrite ?? 0).toLocaleString() }) : null,
   ].filter((d) => d !== null)
   return { pct: percent, tone, title, usage: `${m.composer_context_usage()}: ${percent}%`, details }

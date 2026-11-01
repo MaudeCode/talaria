@@ -397,11 +397,57 @@ foreign selections are refused. Clients render the sidecar's ordering, current
 markers, selected content and comparison. The HTTP projection redacts display
 text and actors, retaining raw content hashes only as provenance.
 
-`replay_available` is always false. Revision availability never grants execution,
-provider use, a judge, skill edits or tool effects. Bounded replay is tracked
-separately. The shared synthetic fixture is
+`replay_available` is true when two saved revisions exist to compare. It only offers
+the replay plan below; inspection itself never grants execution, provider use, a
+judge, skill edits or tool effects. The shared synthetic fixture is
 `contracts/fixtures/skill-revisions.json` at the repository root. Existing skill
 content/edit/delete/toggle/linked-file endpoints retain their contracts.
+
+## Saved-check replay
+
+`GET /api/skills/replays/plan` is the consent summary for replaying the skill's
+saved Hermetic cases against two exact revisions (`baseline`, `candidate`). The
+sidecar (`skills.replay_plan`) reads the revisions through the inspection adapter
+above and the cases from `hermetic/cases.jsonl` with Hermetic's update/delete
+semantics; a malformed row fails closed. Each case's fixture is the recorded turn
+from the session store up to its user message: recorded tool results only, the
+newest 120 KB, and minimal definitions for the recorded tool names. Its ID binds
+profile home, skill and the exact fixture. Cases without a recorded turn are
+counted in `unavailable_cases`, never invented. At most 12 cases are planned.
+
+Only the OpenRouter route executes: its exact HTTPS API honors a per-request
+`provider.max_price`. Any other main-model provider or base URL is
+`route_unsupported` before a call. The server reserves a finite budget
+(`SkillReplayBudgetSchema`): 2 calls per case, 1,500 output tokens per call, each
+case's prompt bound (UTF-8 bytes plus template overhead, which byte-level
+tokenizers cannot undercut) and one price ceiling chosen so the sum of every
+call's reservation stays within `max_cost_usd` (default $0.50, at most $5).
+
+`POST /api/skills/replays` admits one confirmed request bound to the
+authenticated owner, active profile, skill, both revisions, the exact case
+fixture IDs, route and budget. The server re-plans and refuses any drift (409
+`replay_drift`) before a call. `request_id` makes admission idempotent: a retry
+after an uncertain acknowledgement returns the admitted job; reuse for a
+different replay is 409 `replay_request_reused`. One replay runs per owner and
+profile (409 `replay_busy`). Each owner and profile keeps its 20 newest finished
+jobs; an older job leaves an admission receipt in `skill-replay-receipts`, so
+retrying its `request_id` is 409 `replay_pruned` and never runs again.
+
+Jobs are private documents in the `skill-replays` namespace. Runs execute in
+order; each is persisted `dispatched` before `skills.replay_case` sends exactly
+one request (no retry, no redirect). The sidecar re-derives the revision bytes,
+fixture, prompt bound and route and refuses drift before sending. Planned tool
+calls are recorded and scored with Hermetic's code checks; nothing runs a tool,
+judge, skill write or background job. A provider HTTP failure is `error`; a lost
+transport or sidecar failure after dispatch is `unknown` and never resent. A
+reported cost, prompt or output beyond the call's reservation fails the job
+(`budget_exceeded`) and skips its successors. Cancellation skips every unsent
+call and keeps the dispatched call's actual outcome. A restart turns active jobs
+`interrupted`: dispatched calls become `unknown`, unsent calls `skipped`.
+`GET /api/skills/replays` and cancel see only the admitting owner's jobs in the
+active profile; a foreign job is 404. The server projects state, per-case runs,
+summaries and reported cost; clients render them. Shared fixtures are
+`contracts/fixtures/skill-replay-plan.json` and `skill-replay-job.json`.
 
 ## Persistent delegation settings
 

@@ -170,7 +170,7 @@ def inspect_revisions(home, name, revision=None, compare_to=None):
             return _result('unavailable', 'identity_unavailable')
         return dict(state='available', reason=None, backend_revision=_PIN,
                     revisions=[{k: v for k, v in row.items() if k != 'content'} for row in rows],
-                    selected=dict(revision=target['id'], content=target['content']), comparison=comparison, replay_available=False)
+                    selected=dict(revision=target['id'], content=target['content']), comparison=comparison, replay_available=comparison is not None)
     except InvalidParams:
         raise
     except (ImportError, AttributeError, OSError, ValueError, TypeError, KeyError):
