@@ -114,9 +114,11 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
       return true
     }
     // A `?v=<version>` fingerprint makes the URL immutable; `unknown` and a digest-less `-dirty` are not fingerprints.
+    // From update start through the pending restart the files under this process's old version can change, so revalidate.
     const token = ctx.query.get('v') ?? ''
     const fingerprinted = token !== '' && token !== 'unknown' && !token.endsWith('-dirty')
-    await sendBytes(ctx, asset.body, asset.contentType, { cacheControl: fingerprinted ? 'public, max-age=31536000, immutable' : 'public, max-age=300', gz: asset.gz, etag: asset.etag })
+    const cacheControl = ctx.deps.updates.blocksNewWork() ? 'no-cache' : fingerprinted ? 'public, max-age=31536000, immutable' : 'public, max-age=300'
+    await sendBytes(ctx, asset.body, asset.contentType, { cacheControl, gz: asset.gz, etag: asset.etag })
     return true
   }
   if (isSpaPath(path)) {

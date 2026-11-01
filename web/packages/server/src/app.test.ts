@@ -259,6 +259,42 @@ describe('open server (no auth)', () => {
         rmSync(root, { recursive: true, force: true })
       }
     })
+
+    it('never marks fingerprinted static files immutable while an update applies or awaits its restart', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'talaria-static-update-'))
+      writeFileSync(join(root, 'brand.svg'), 'first')
+      const synthetic = await bootTestServer({ deps: (deps) => { deps.staticFiles = new AssetCache(root) } })
+      const lifecycle = synthetic.deps.updates as unknown as { applying: boolean; autoRestartScheduled: boolean }
+      const IMMUTABLE = 'public, max-age=31536000, immutable'
+      const url = (prefix: string) => `${prefix}/brand.svg?v=web-v0.0.0-test`
+      try {
+        expect((await synthetic.get(url('/static'))).headers.get('cache-control')).toBe(IMMUTABLE)
+        let body = 'first'
+        for (const state of [{ applying: true, autoRestartScheduled: false }, { applying: false, autoRestartScheduled: true }]) {
+          Object.assign(lifecycle, state)
+          for (const prefix of ['/static', '/session/static']) {
+            const res = await synthetic.get(url(prefix))
+            expect(await res.text(), `${JSON.stringify(state)} ${prefix}`).toBe(body)
+            expect(res.headers.get('cache-control'), `${JSON.stringify(state)} ${prefix}`).toBe('no-cache')
+            const revalidated = await synthetic.get(url(prefix), { headers: { 'if-none-match': res.headers.get('etag')! } })
+            expect(revalidated.status).toBe(304)
+            expect(revalidated.headers.get('cache-control'), `${JSON.stringify(state)} ${prefix} 304`).toBe('no-cache')
+          }
+          body = 'replacement-longer'
+          writeFileSync(join(root, 'brand.svg'), body)
+        }
+        // A refused or cleared update returns the same URL to the steady-state fingerprint policy.
+        Object.assign(lifecycle, { applying: false, autoRestartScheduled: false })
+        const steady = await synthetic.get(url('/session/static'))
+        expect(steady.headers.get('cache-control')).toBe(IMMUTABLE)
+        expect((await synthetic.get(url('/static'), { headers: { 'if-none-match': steady.headers.get('etag')! } })).headers.get('cache-control')).toBe(IMMUTABLE)
+        expect((await synthetic.get('/static/brand.svg?v=web-v1.2.3-dirty')).headers.get('cache-control')).toBe('public, max-age=300')
+      } finally {
+        Object.assign(lifecycle, { applying: false, autoRestartScheduled: false })
+        await synthetic.close()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
   })
 })
 
