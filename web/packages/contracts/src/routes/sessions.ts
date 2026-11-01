@@ -136,6 +136,11 @@ export type RecoveryAuditItem = z.infer<typeof RecoveryAuditItemSchema>
 export type RecoveryAudit = z.infer<typeof RecoveryAuditSchema>
 export type RecoveryRepair = z.infer<typeof RecoveryRepairSchema>
 
+const WEB_PUSH_ENDPOINT_MAX = 2048
+/** The four alert kinds a browser push subscription can turn off; all default on. */
+export const WebPushPreferencesSchema = z.object({ notify_on_approval: z.boolean(), notify_on_input: z.boolean(), notify_on_completion: z.boolean(), notify_on_failure: z.boolean() })
+export type WebPushPreferences = z.infer<typeof WebPushPreferencesSchema>
+
 export const sessionsContract = {
   sessions: {
     references: oc.route({ method: 'GET', path: '/api/sessions/references', tags, summary: 'Bounded same-profile title search for new-chat references; no transcript snippets.' }).input(z.object({ q: z.string().max(200).optional() })).output(SourceReferenceSearchSchema),
@@ -208,6 +213,20 @@ export const sessionsContract = {
       .output(z.object({ ok: z.literal(true), lease_seconds: z.number().int() })),
     viewed: oc.route({ method: 'POST', path: '/api/talaria/viewed', tags: ['talaria'], summary: 'Report a session as viewed through now so the relay clears its finished runs from Live Activities; a no-op without a relay.' })
       .input(z.object({ session_id: z.string() }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  webPush: {
+    status: oc.route({ method: 'GET', path: '/api/notifications/web-push', tags: ['notifications'], summary: 'The VAPID public key and, for this browser\'s endpoint in the active profile, its alert preferences.' })
+      .input(z.object({ endpoint: z.string().max(WEB_PUSH_ENDPOINT_MAX).optional() }))
+      .output(z.object({ public_key: z.string(), subscription: z.object({ preferences: WebPushPreferencesSchema }).nullable() })),
+    subscribe: oc.route({ method: 'POST', path: '/api/notifications/web-push/subscriptions', tags: ['notifications'], summary: 'Save or update this browser\'s push subscription; a non-HTTPS endpoint or one on a private address is refused with 400.' })
+      .input(z.object({ endpoint: z.string().max(WEB_PUSH_ENDPOINT_MAX), keys: z.object({ p256dh: z.string().max(256), auth: z.string().max(64) }), preferences: WebPushPreferencesSchema.optional() }))
+      .output(z.object({ ok: z.literal(true), preferences: WebPushPreferencesSchema })),
+    update: oc.route({ method: 'PATCH', path: '/api/notifications/web-push/subscriptions', tags: ['notifications'], summary: 'Update the alert preferences of this browser\'s push subscription.' })
+      .input(z.object({ endpoint: z.string().max(WEB_PUSH_ENDPOINT_MAX), preferences: WebPushPreferencesSchema }))
+      .output(z.object({ ok: z.literal(true), preferences: WebPushPreferencesSchema })),
+    unsubscribe: oc.route({ method: 'DELETE', path: '/api/notifications/web-push/subscriptions', tags: ['notifications'], summary: 'Remove this browser\'s push subscription.' })
+      .input(z.object({ endpoint: z.string().max(WEB_PUSH_ENDPOINT_MAX) }))
       .output(z.object({ ok: z.literal(true) })),
   },
 }

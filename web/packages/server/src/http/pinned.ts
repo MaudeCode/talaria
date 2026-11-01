@@ -32,7 +32,7 @@ export async function vettedAddresses(hostname: string, blocked: (address: strin
   return answers.map((a) => a.address)
 }
 
-export interface PinnedInit { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }
+export interface PinnedInit { method?: string; headers?: Record<string, string>; body?: string | Uint8Array; signal?: AbortSignal }
 export type PinnedFetch = (url: string, init: PinnedInit, addresses: string[]) => Promise<Response>
 
 type LookupCallback = ((err: NodeJS.ErrnoException | null, address: string, family: number) => void) & ((err: NodeJS.ErrnoException | null, addresses: { address: string; family: number }[]) => void)

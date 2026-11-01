@@ -5,6 +5,7 @@ import { AppearanceSection } from './AppearanceSection'
 import { PreferencesSection } from './PreferencesSection'
 import { ConversationSection } from './ConversationSection'
 import { SpeechSection } from './SpeechSection'
+import { NotificationsSection } from './NotificationsSection'
 import { ProvidersSection } from './ProvidersSection'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
@@ -20,6 +21,7 @@ const SECTIONS: Partial<Record<Section, () => ReactNode>> = {
   preferences: () => <PreferencesSection />,
   conversation: () => <ConversationSection />,
   speech: () => <SpeechSection />,
+  notifications: () => <NotificationsSection />,
   providers: () => <ProvidersSection />,
   auxiliary: () => <AuxiliaryModelsSection />,
   connectors: () => <ConnectorsSection />,

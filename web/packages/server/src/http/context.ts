@@ -58,6 +58,8 @@ import type { ExtensionService } from '../tools/extensions.js'
 import type { TerminalRegistry } from '../tools/terminal.js'
 import type { OidcService } from '../auth/oidc.js'
 import type { RelayService } from '../sessions/relay.js'
+import type { NotificationHub } from '../sessions/notify/channel.js'
+import type { WebPushChannel } from '../sessions/notify/web-push.js'
 import type { CliSessionSource } from '../sessions/cli-sessions.js'
 import type { CompletionDrain } from '../sessions/completions.js'
 import type { HygieneTicker } from '../tools/hygiene.js'
@@ -207,6 +209,8 @@ export interface AppDeps {
   gatewayWatchers: GatewayWatcherRegistry
   // ── Talaria Relay (checkpoint 7e) ──
   relay: RelayService
+  webPush: WebPushChannel
+  notifications: NotificationHub
   // ── OIDC and passkeys (checkpoint 7d) ──
   oidc: OidcService
   passkeys: PasskeyStore

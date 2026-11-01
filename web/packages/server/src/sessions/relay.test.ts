@@ -19,12 +19,12 @@ it('projects a live Web completion without pairing and keeps terminal failures q
     const session = await server.deps.sessionStore.newSession()
     server.deps.registry.registerActiveRun({ stream_id: 'audio-run', session_id: session.session_id, started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
     const sub = server.deps.events.subscribe()
-    server.deps.relay.noteTerminal('audio-run', 'completed')
+    server.deps.notifications.noteTerminal('audio-run', 'completed')
     const event = await sub.next(AbortSignal.timeout(1500))
     expect(event).toMatchObject({ reason: 'web_completion', web_audio: [{ eligible: true, profile: 'default', identity: expect.any(String) as string, scope: expect.any(String) as string }] })
     sub.close()
     const failed = server.deps.events.subscribe()
-    server.deps.relay.noteTerminal('audio-run', 'failed')
+    server.deps.notifications.noteTerminal('audio-run', 'failed')
     expect(await failed.next(AbortSignal.timeout(30))).toBeNull()
     failed.close()
   } finally { await server.close() }
@@ -143,7 +143,7 @@ describe('Talaria relay pairing and publishing', () => {
     expect(await json(await post(s, '/api/talaria/presence', { tab_id: 'tab_00000001', active: false, seq: 2 }))).toEqual({ ok: true, lease_seconds: 0 })
 
     // Terminal state outlives the active-run teardown.
-    s.deps.relay.noteTerminal('stream-a', 'completed')
+    s.deps.notifications.noteTerminal('stream-a', 'completed')
     s.deps.registry.activeRuns.delete('stream-a')
     await publisher.publishSnapshot()
     states = relay.snapshots().at(-1)!.body.states as Json[]
@@ -161,7 +161,7 @@ describe('Talaria relay pairing and publishing', () => {
     try {
       await s.deps.background.trackCommand(sid, 'bg-command', 'Check synthetic data')
       await s.deps.background.setCommandStream(sid, 'bg-command', 'command-bg')
-      s.deps.relay.noteTerminal('parent-bg', 'completed')
+      s.deps.notifications.noteTerminal('parent-bg', 'completed')
       s.deps.registry.activeRuns.delete('parent-bg')
       const state = (await publisher.buildStates('default')).find((state) => state.sessionId === sid)
       expect(state).toMatchObject({ phase: 'completed', activityPhase: 'running', streamId: 'parent-bg' })
@@ -175,7 +175,7 @@ describe('Talaria relay pairing and publishing', () => {
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Viewed run' }))).session as Json).session_id)
     const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
     s.deps.registry.activeRuns.set('stream-v', { stream_id: 'stream-v', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
-    s.deps.relay.noteTerminal('stream-v', 'completed')
+    s.deps.notifications.noteTerminal('stream-v', 'completed')
     s.deps.registry.activeRuns.delete('stream-v')
     const before = relay.calls.length
     const res = await post(s, '/api/talaria/viewed', { session_id: sid })
@@ -201,7 +201,7 @@ describe('Talaria relay pairing and publishing', () => {
     const finishedSession = async (title: string, stream: string): Promise<string> => {
       const sid = String(((await json(await post(s, '/api/session/new', { title }))).session as Json).session_id)
       s.deps.registry.activeRuns.set(stream, { stream_id: stream, session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
-      s.deps.relay.noteTerminal(stream, 'completed')
+      s.deps.notifications.noteTerminal(stream, 'completed')
       s.deps.registry.activeRuns.delete(stream)
       await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
       return sid
@@ -427,7 +427,7 @@ describe('relay publisher failure handling', () => {
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Deleted during outage' }))).session as Json).session_id)
       const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
       s.deps.registry.activeRuns.set('deleted-run', { stream_id: 'deleted-run', session_id: sid, started_at: clock, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
-      s.deps.relay.noteTerminal('deleted-run', 'completed')
+      s.deps.notifications.noteTerminal('deleted-run', 'completed')
       s.deps.registry.activeRuns.delete('deleted-run')
       await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
       relay.viewedStatus = 503
@@ -837,7 +837,7 @@ describe('session activity lifecycle (TAL-1520)', () => {
       const session = await server.deps.sessionStore.newSession()
       await server.deps.sessionStore.save(session)
       server.deps.registry.activeRuns.set('deleted-parent', { stream_id: 'deleted-parent', session_id: session.session_id, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
-      server.deps.relay.noteTerminal('deleted-parent', 'completed')
+      server.deps.notifications.noteTerminal('deleted-parent', 'completed')
       server.deps.registry.activeRuns.delete('deleted-parent')
       await server.deps.relay.current()!.publishSnapshot()
       expect((await post(server, '/api/session/delete', { session_id: session.session_id })).status).toBe(200)
@@ -911,7 +911,7 @@ describe('session activity lifecycle (TAL-1520)', () => {
         server.deps.registry.liveIds.add('background-stream')
       }
       server.deps.registry.activeRuns.set('parent', { stream_id: 'parent', session_id: sid, started_at: clock, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
-      server.deps.relay.noteTerminal('parent', 'completed')
+      server.deps.notifications.noteTerminal('parent', 'completed')
       server.deps.registry.activeRuns.delete('parent')
       const read = async () => (await server.deps.relay.current()!.buildStates('default')).find((row) => row.sessionId === sid)
       expect(await read()).toMatchObject({ phase: 'completed', activityPhase: 'running', streamId: 'parent' })
@@ -939,7 +939,7 @@ describe('session activity lifecycle (TAL-1520)', () => {
       running = false
       if (kind === 'background_command') await server.deps.background.settleCommand(sid, 'command', 'completed', 'Done')
       expect(await read()).toMatchObject({ activityPhase: 'running', streamId: 'wake' })
-      server.deps.relay.noteTerminal('wake', 'completed')
+      server.deps.notifications.noteTerminal('wake', 'completed')
       server.deps.registry.activeRuns.delete('wake')
       expect(await read()).toMatchObject({ activityPhase: 'completed', streamId: 'wake' })
       session.profile = 'other'

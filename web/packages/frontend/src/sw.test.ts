@@ -61,3 +61,58 @@ describe('service worker locale cache', () => {
     expect([...entries.keys()]).toEqual(['http://x/assets/locale-ja-new.js'])
   })
 })
+
+describe('service worker push alerts', () => {
+  async function boot(windows: { url: string; focus: ReturnType<typeof vi.fn>; navigate: ReturnType<typeof vi.fn> }[] = []) {
+    vi.resetModules()
+    const listeners: Record<string, (ev: unknown) => void> = {}
+    const shown: { title: string; options: NotificationOptions }[] = []
+    const openWindow = vi.fn(() => Promise.resolve(null))
+    vi.stubGlobal('self', {
+      addEventListener: (name: string, fn: (ev: unknown) => void) => { listeners[name] = fn },
+      registration: { scope: 'http://x/mount/', showNotification: (title: string, options: NotificationOptions) => { shown.push({ title, options }); return Promise.resolve() } },
+      clients: { matchAll: vi.fn(() => Promise.resolve(windows)), openWindow },
+      location: { origin: 'http://x' },
+      __WB_MANIFEST: [],
+    })
+    await import('./sw')
+    const dispatch = async (name: string, event: object) => {
+      const waits: Promise<unknown>[] = []
+      listeners[name]?.({ ...event, waitUntil: (p: Promise<unknown>) => { waits.push(p) } })
+      await Promise.all(waits)
+    }
+    return { dispatch, shown, openWindow }
+  }
+  const click = (url: unknown) => ({ notification: { data: { url }, close: vi.fn() } })
+
+  it('shows the server payload exactly as sent, tagged per chat', async () => {
+    const { dispatch, shown } = await boot()
+    await dispatch('push', { data: { json: () => ({ title: 'Deploy review', body: 'Approval needed', tag: 's1', url: '/session/s1' }) } })
+    expect(shown).toEqual([{ title: 'Deploy review', options: { body: 'Approval needed', tag: 's1', data: { url: '/session/s1' } } }])
+    await dispatch('push', { data: { json: () => { throw new SyntaxError('not json') } } })
+    await dispatch('push', { data: null })
+    expect(shown).toHaveLength(1)
+  })
+
+  it('focuses an open Talaria window and moves it to the chat under the mount root', async () => {
+    const win = { url: 'http://x/mount/session/other', focus: vi.fn(() => Promise.resolve()), navigate: vi.fn(() => Promise.resolve({})) }
+    const { dispatch, openWindow } = await boot([win])
+    const event = click('/session/s1')
+    await dispatch('notificationclick', event)
+    expect(event.notification.close).toHaveBeenCalled()
+    expect(win.focus).toHaveBeenCalled()
+    expect(win.navigate).toHaveBeenCalledWith('http://x/mount/session/s1')
+    expect(openWindow).not.toHaveBeenCalled()
+  })
+
+  it('opens a new window when no Talaria window is open, and never leaves the origin', async () => {
+    const { dispatch, openWindow } = await boot()
+    await dispatch('notificationclick', click('/session/s1'))
+    expect(openWindow).toHaveBeenCalledWith('http://x/mount/session/s1')
+    openWindow.mockClear()
+    await dispatch('notificationclick', click('https://evil.example/x'))
+    expect(openWindow).not.toHaveBeenCalled()
+    await dispatch('notificationclick', click('//evil.example/x'))
+    expect(openWindow).toHaveBeenCalledWith('http://x/mount/evil.example/x')
+  })
+})

@@ -78,6 +78,38 @@ self.addEventListener('activate', (event) => {
   })())
 })
 
+// Web Push (TAL-1070): the server decides when to alert and what it says; the worker shows the payload as sent.
+function pushPayload(event: PushEvent): { title?: unknown; body?: unknown; tag?: unknown; url?: unknown } | null {
+  try { return (event.data?.json() ?? null) as { title?: unknown } | null } catch { return null }
+}
+
+self.addEventListener('push', (event: PushEvent) => {
+  const payload = pushPayload(event)
+  if (!payload || typeof payload.title !== 'string') return
+  event.waitUntil(self.registration.showNotification(payload.title, {
+    body: typeof payload.body === 'string' ? payload.body : '',
+    ...(typeof payload.tag === 'string' ? { tag: payload.tag } : {}),
+    data: { url: typeof payload.url === 'string' ? payload.url : '' },
+  }))
+})
+
+// Opening an alert focuses a Talaria window and moves it to the chat, or opens one; the path resolves under the mount root.
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
+  event.notification.close()
+  const raw = (event.notification.data as { url?: unknown } | null)?.url
+  const target = new URL(typeof raw === 'string' ? raw.replace(/^\/+/, '') : '', self.registration.scope)
+  if (target.origin !== self.location.origin) return
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const client = windows.find((c) => c.url.startsWith(self.registration.scope))
+    if (client) {
+      await client.focus()
+      if (await client.navigate(target.href).catch(() => null)) return
+    }
+    await self.clients.openWindow(target.href)
+  })())
+})
+
 function isServerOwned(url: URL, scope: URL): boolean {
   const rel = url.pathname.startsWith(scope.pathname) ? url.pathname.slice(scope.pathname.length) : url.pathname
   return rel.startsWith('api/') || rel === 'health' || rel.startsWith('extensions/') || rel.startsWith('workspace-preview/') || rel.startsWith('plugins/') || rel.startsWith('dashboard-plugins/') || rel === 'sw.js' || (!rel.startsWith('static/') && rel.includes('/static/'))

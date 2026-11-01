@@ -26,6 +26,8 @@ import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
+import { loginHash, WebPushRequestError, type WebPushRequester } from '../sessions/notify/web-push.js'
+import { requestBaseUrl } from './auth-raw.js'
 import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
 import { ProfileError } from '../profiles/profiles.js'
 import type { Settings } from '../settings.js'
@@ -182,7 +184,7 @@ export const sessionsRouter = os.router({
       } catch (error) {
         // Runs left on the relay by a deletion that predates `clearRelayCompletions` clear when the id is next requested.
         const sid = input.session_id.trim()
-        if (error instanceof HttpFailure && error.status === 404 && (await ctx.deps.sessionStore.wasDeleted(sid))) (await ctx.deps.relay.clearDeleted(sid, ctx.deps.activeProfile()))
+        if (error instanceof HttpFailure && error.status === 404 && (await ctx.deps.sessionStore.wasDeleted(sid))) (await ctx.deps.notifications.clearDeleted(sid, ctx.deps.activeProfile()))
         throw error
       }
     })),
@@ -471,14 +473,18 @@ export const sessionsRouter = os.router({
     }),
     presence: os.talaria.presence.handler(async ({ input, context }) => {
       const { ctx } = context
-      const session = await ensureTrustedAuthSession(ctx)
-      const bound = str(session?.bound_profile).trim() || null
-      return relayCall(() => Promise.resolve(ctx.deps.relay.presence.update(input, ctx.deps.isRootProfile(bound ?? ctx.deps.activeProfile()) ? 'default' : (bound ?? ctx.deps.activeProfile()))))
+      return relayCall(async () => ctx.deps.relay.presence.update(input, (await notificationRequester(ctx)).profile))
     }),
     viewed: os.talaria.viewed.handler(({ input, context: { ctx } }) => run(async () => {
-      await ctx.deps.relay.markViewed(input.session_id.trim())
+      await ctx.deps.notifications.markViewed(input.session_id.trim())
       return { ok: true as const }
     })),
+  },
+  webPush: {
+    status: os.webPush.status.handler(async ({ input, context: { ctx } }) => webPushCall(async () => ctx.deps.webPush.status(input.endpoint, await notificationRequester(ctx)))),
+    subscribe: os.webPush.subscribe.handler(async ({ input, context: { ctx } }) => webPushCall(async () => ({ ok: true as const, ...(await ctx.deps.webPush.subscribe(input, await notificationRequester(ctx))) }))),
+    update: os.webPush.update.handler(async ({ input, context: { ctx } }) => webPushCall(async () => ({ ok: true as const, ...(await ctx.deps.webPush.update(input.endpoint, input.preferences, await notificationRequester(ctx))) }))),
+    unsubscribe: os.webPush.unsubscribe.handler(async ({ input, context: { ctx } }) => webPushCall(async () => { await ctx.deps.webPush.unsubscribe(input.endpoint, await notificationRequester(ctx)); return { ok: true as const } })),
   },
   share: {
     create: os.share.create.handler(({ input, context: { ctx } }) => run(async () => {
@@ -868,6 +874,23 @@ function spawnDetached(cmd: string[]): Promise<void> {
     child.once('error', (error: NodeJS.ErrnoException) => { reject(new HttpError(400, error.code ? pyOsError(error, file) : sanitizeError(error))) })
     child.once('spawn', () => { child.unref(); resolve() })
   })
+}
+
+/** Alerts are scoped like presence leases: the login's bound profile, else the active one, with root as `default`. */
+async function notificationRequester(ctx: RequestContext): Promise<WebPushRequester> {
+  const session = await ensureTrustedAuthSession(ctx)
+  const bound = str(session?.bound_profile).trim() || null
+  const name = bound ?? ctx.deps.activeProfile()
+  return { profile: ctx.deps.isRootProfile(name) ? 'default' : name, login: session?.token ? loginHash(session.token) : null, origin: new URL(await requestBaseUrl(ctx)).origin }
+}
+
+async function webPushCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    if (error instanceof WebPushRequestError) throw new HttpError(error.status, error.message)
+    throw error
+  }
 }
 
 async function relayCall<T>(fn: () => Promise<T>): Promise<T> {

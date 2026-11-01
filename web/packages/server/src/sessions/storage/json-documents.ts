@@ -30,6 +30,8 @@ const formats: Record<string, Format> = {
   'relay-keys': { text: true, secret: true },
   'relay-identities': { text: true, secret: true },
   recovery: { files: { 'stamping-since': 'recovery_stamping_since' }, text: true },
+  'web-push': { files: { vapid: 'web-push-vapid.json' }, secret: true },
+  'web-push-subscriptions': { files: { subscriptions: 'web-push-subscriptions.json' }, secret: true },
 }
 const sortedReplacer = (_key: string, value: unknown): unknown => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, (value as Record<string, unknown>)[key]])) : value
