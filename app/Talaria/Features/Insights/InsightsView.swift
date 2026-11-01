@@ -166,43 +166,40 @@ struct InsightsView: View {
         if visibleQuotaSources.isEmpty {
             foldAvoiding(quotaStatus)
         } else {
-            // One clock for every row; the countdowns move together once a minute.
+            // One clock for every row; the countdowns move together once a minute. Rows fill a grid, so an iPad or an
+            // open Duo shows accounts side by side instead of one card stretched across the width.
             TimelineView(.everyMinute) { context in
-                List {
-                    ForEach(visibleQuotaSources) { source in
-                        ProviderQuotaAccountRow(
-                            source: source,
-                            scopeID: quotaViewModel.quotaScopeID ?? "",
-                            displayName: providerDisplayName(source),
-                            percentageMode: ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue,
-                            isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
-                            referenceDate: context.date,
-                            open: { selection = .quotaSource(id: source.id) }
-                        )
-                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                        .swipeActions(edge: .trailing) {
-                            Button {
-                                hideProvider(source.providerID)
-                            } label: {
-                                Label("Hide", systemImage: "eye.slash")
-                            }
-                            .tint(.orange)
-                        }
-                        .contextMenu {
-                            Button {
-                                Task { await refreshQuotaSource(source.id) }
-                            } label: {
-                                Label("Refresh", systemImage: "arrow.clockwise")
-                            }
-                            Button {
-                                hideProvider(source.providerID)
-                            } label: {
-                                Label("Hide from Insights", systemImage: "eye.slash")
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 340, maximum: 600), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
+                        ForEach(visibleQuotaSources) { source in
+                            ProviderQuotaAccountRow(
+                                source: source,
+                                scopeID: quotaViewModel.quotaScopeID ?? "",
+                                displayName: providerDisplayName(source),
+                                percentageMode: ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue,
+                                isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
+                                referenceDate: context.date,
+                                open: { selection = .quotaSource(id: source.id) }
+                            )
+                            .padding(14)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .contextMenu {
+                                Button {
+                                    Task { await refreshQuotaSource(source.id) }
+                                } label: {
+                                    Label("Refresh", systemImage: "arrow.clockwise")
+                                }
+                                Button {
+                                    hideProvider(source.providerID)
+                                } label: {
+                                    Label("Hide from Insights", systemImage: "eye.slash")
+                                }
                             }
                         }
                     }
+                    .padding(.horizontal)
+                    .padding(.bottom)
                 }
-                .listStyle(.insetGrouped)
             }
             .accessibilityIdentifier("provider-quota-section")
             .refreshable {

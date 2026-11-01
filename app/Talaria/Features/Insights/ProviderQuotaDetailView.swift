@@ -183,7 +183,7 @@ struct ProviderQuotaWindowsView: View {
         let periods = Self.periods(for: widgetSource, settings: settings, at: referenceDate)
         let sourceState = ProviderQuotaPresentation.state(for: widgetSource, settings: settings, at: referenceDate)
 
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(periods) { period in
                 window(period)
             }
@@ -242,18 +242,20 @@ struct ProviderQuotaWindowsView: View {
 
     // MARK: Windows
 
+    /// The Web row's shape: label and percent, the meter, then one wrapping line of reset, pace, burn, budget and
+    /// forecast in small type.
     private func window(_ period: ProviderQuotaPeriodPresentation) -> some View {
         let state = period.state
         let forecast = ProviderQuotaForecastSummary(state: state)
 
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 Text(state.window?.label ?? period.shortLabel)
-                    .font(.subheadline.weight(.medium))
+                    .font(.footnote.weight(.medium))
                 Spacer(minLength: 8)
                 if let percent = state.percent {
                     Text("\(insightsFormattedPercent(percent)) \(state.modeLabel)")
-                        .font(.subheadline.monospacedDigit())
+                        .font(.footnote.monospacedDigit())
                         .foregroundStyle(.secondary)
                 } else if let detail = state.window?.detail, !detail.isEmpty {
                     Text(detail)
@@ -271,48 +273,39 @@ struct ProviderQuotaWindowsView: View {
                 )
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if let resetAt = state.resetAt {
-                    Text(resetLabel(resetAt, period: period))
-                } else if let detail = state.window?.detail, !detail.isEmpty, state.percent != nil {
-                    Text(detail)
-                }
-                Spacer(minLength: 8)
-                if let paceLabel = state.paceLabel {
-                    Text(paceLabel)
-                } else if state.paceNeedsRefresh {
-                    Text("Refresh needed")
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            if let pace = state.pace {
-                if let serverForecast = state.forecast {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        // The forecast keeps one line; the figures wrap between units, never inside one.
-                        Label(forecast.forecastLabel, systemImage: forecast.systemImage)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(forecast.outcome.tint)
-                            .layoutPriority(1)
-                        Spacer(minLength: 8)
-                        Text(serverForecast.budgetPercent == nil
-                            ? String(localized: "\(forecast.burnRateLabel)\u{00A0}burn")
-                            : String(localized: "\(forecast.burnRateLabel)\u{00A0}burn · \(forecast.budgetLabel)\(Self.unbreakable(forecast.budgetUnitSuffix))\u{00A0}budget"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                    }
-                } else {
-                    // A pace without a forecast still names its burn; the summary's placeholder wording is for widgets.
-                    Text("\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))× burn")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-            }
+            metadata(period, forecast: forecast)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// One text that wraps between items, like the Web's row: the forecast item carries its tint.
+    private func metadata(_ period: ProviderQuotaPeriodPresentation, forecast: ProviderQuotaForecastSummary) -> Text {
+        let state = period.state
+        var items: [Text] = []
+        if let resetAt = state.resetAt {
+            items.append(Text(resetLabel(resetAt, period: period)))
+        } else if let detail = state.window?.detail, !detail.isEmpty, state.percent != nil {
+            items.append(Text(detail))
+        }
+        if let paceLabel = state.paceLabel {
+            items.append(Text(paceLabel))
+        } else if state.paceNeedsRefresh {
+            items.append(Text("Refresh needed"))
+        }
+        if let pace = state.pace {
+            items.append(Text("Burn \(pace.burnRate.formatted(.number.precision(.fractionLength(2))))×"))
+            if let serverForecast = state.forecast {
+                if serverForecast.budgetPercent != nil {
+                    items.append(Text("\(forecast.budgetLabel)\(forecast.budgetUnitSuffix) budget"))
+                }
+                items.append(Text(forecast.forecastLabel).foregroundStyle(forecast.outcome.tint))
+            }
+        }
+        guard let first = items.first else { return Text("") }
+        return items.dropFirst().reduce(first) { $0 + Text("   ") + $1 }
     }
 
     private func resetLabel(_ resetAt: Date, period: ProviderQuotaPeriodPresentation) -> String {
@@ -384,7 +377,7 @@ struct ProviderQuotaWindowsView: View {
                 }
                 if let fetchedAt {
                     if state.computedAt != nil { Text("·") }
-                    Text("Updated \(Self.relativeFormatter.localizedString(for: fetchedAt, relativeTo: referenceDate))")
+                    Text("Updated \(Self.relativeFormatter.localizedString(for: min(fetchedAt, referenceDate), relativeTo: referenceDate))")
                 }
                 if state.isStale {
                     Text("· Stale")
@@ -397,11 +390,6 @@ struct ProviderQuotaWindowsView: View {
     }
 
     // MARK: Helpers
-
-    /// "/hr" with a word joiner after the slash, so "25%/hr" never breaks into "25%/" and "hr".
-    private static func unbreakable(_ unitSuffix: String) -> String {
-        unitSuffix.replacingOccurrences(of: "/", with: "/\u{2060}")
-    }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()

@@ -16,7 +16,7 @@ struct ProviderQuotaAccountRow: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 header
                 ProviderQuotaWindowsView(
                     source: source,
@@ -35,9 +35,9 @@ struct ProviderQuotaAccountRow: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
-            ProviderIconView(providerID: source.providerID, label: displayName, size: 20)
+            ProviderIconView(providerID: source.providerID, label: displayName, size: 18)
             Text(displayName)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             if let plan = source.plan, !plan.isEmpty {
                 Text(plan)

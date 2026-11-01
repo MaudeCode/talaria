@@ -138,8 +138,8 @@ final class InsightsHostedTests: XCTestCase {
         }
         let labels = seen.joined(separator: "\n")
         for expected in [
-            "15% under pace", "Lasts through reset", "0.62×\u{00A0}burn · 25%/\u{2060}hr\u{00A0}budget",
-            "Weekly, 30% remaining", "6% over pace", "Empty 5h early", "1.10×\u{00A0}burn · 12%/\u{2060}day\u{00A0}budget",
+            "15% under pace", "Lasts through reset", "Burn 0.62×", "25%/hr budget",
+            "Weekly, 30% remaining", "6% over pace", "Empty 5h early", "Burn 1.10×", "12%/day budget",
             // Clock times end in a narrow no-break space before AM/PM, so the expectations stop at the minutes.
             "Monthly, 90% remaining", "Resets Jan 20 at 12:00", "Session, 75% remaining, Resets Tue 3:00", "As of Tue 12:00", "Updated 12 min. ago", "Last checked",
         ] {
@@ -155,7 +155,7 @@ final class InsightsHostedTests: XCTestCase {
         let labels = HostedAccessibility.labels(in: window).joined(separator: "\n")
         XCTAssertTrue(labels.contains("60% remaining"), labels)
         XCTAssertTrue(labels.contains("Resets"), labels)
-        for absent in ["burn", "pace", "Lasts through reset", "budget", "Refresh needed"] {
+        for absent in ["Burn", "pace", "Lasts through reset", "budget", "Refresh needed"] {
             XCTAssertFalse(labels.contains(absent), "\(absent) shown without a server pace:\n\(labels)")
         }
     }
