@@ -545,3 +545,29 @@ describe('git helpers', () => {
     expect(cleanGeneratedCommitMessage(null)).toBe('')
   })
 })
+
+describe('status subprocesses leave the index alone (TAL-1559)', () => {
+  it.each([[[] as string[]], [['-c', 'core.quotePath=false']]])('a stat-only change under caller GIT_OPTIONAL_LOCKS=1 does not rewrite .git/index (global options %j)', async (globals) => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'tal-1559-')))
+    try {
+      git(repo, 'init', '-q', '-b', 'main')
+      writeFileSync(join(repo, 'kept.txt'), 'same\n')
+      writeFileSync(join(repo, 'edited.txt'), 'before\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-q', '-m', 'init')
+      utimesSync(join(repo, 'kept.txt'), new Date('2001-01-01T00:00:00Z'), new Date('2001-01-01T00:00:00Z'))
+      writeFileSync(join(repo, 'edited.txt'), 'after\n')
+      writeFileSync(join(repo, 'fresh.txt'), 'new\n')
+      const index = join(repo, '.git', 'index')
+      const bytes = readFileSync(index)
+      const mtime = statSync(index).mtimeMs
+      const runner = new GitRunner({ env: { PATH: process.env.PATH ?? '', HOME: repo, XDG_CONFIG_HOME: repo, GIT_CONFIG_NOSYSTEM: '1' } })
+      const result = await runner.run(repo, [...globals, 'status', '--porcelain=v2', '--untracked-files=all'], { check: true, env: { GIT_OPTIONAL_LOCKS: '1' } })
+      expect(result.stdout).toMatch(/^1 \.M .* edited\.txt$/m)
+      expect(result.stdout).toMatch(/^\? fresh\.txt$/m)
+      expect(result.stdout).not.toContain('kept.txt')
+      expect(readFileSync(index).equals(bytes)).toBe(true)
+      expect(statSync(index).mtimeMs).toBe(mtime)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+})

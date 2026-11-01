@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer rewrites a project's Git index when it checks the workspace's Git status, so its status checks cannot collide with Git commands you run yourself.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
