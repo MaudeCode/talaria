@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats using a context-engine plugin keep its tool results and reference markers intact after automatic compression.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
