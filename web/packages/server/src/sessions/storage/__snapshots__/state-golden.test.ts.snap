@@ -108,7 +108,6 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "hidden_tabs": [],
   "tab_order": [],
   "composer_control_order": [],
-  "language": "en",
   "bot_name": "Hermes",
   "sound_enabled": false,
   "rtl": false,
