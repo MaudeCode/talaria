@@ -94,7 +94,6 @@
 		C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */; };
 		C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */; };
 		C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */; };
-		C107M0000000000000000093 /* ProviderQuotaWidgetSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */; };
 		C107M0000000000000000014 /* ProviderQuotaAccessoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */; };
 		C107M0000000000000000015 /* ProviderQuotaWidgetPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */; };
 		C107M0000000000000000016 /* TalariaAggregateHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000211 /* TalariaAggregateHeader.swift */; };
@@ -315,7 +314,7 @@
 		C107L0000000000000000002 /* InsightsDailyChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* InsightsDailyChart.swift */; };
 		C107L0000000000000000003 /* InsightsActivityCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* InsightsActivityCharts.swift */; };
 		C107L0000000000000000004 /* ProviderQuotaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000104 /* ProviderQuotaDetailView.swift */; };
-		C107L0000000000000000191 /* ProviderQuotaTileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000291 /* ProviderQuotaTileView.swift */; };
+		C107L0000000000000000191 /* ProviderQuotaAccountRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000291 /* ProviderQuotaAccountRow.swift */; };
 		C107L0000000000000000005 /* InsightsStatGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000105 /* InsightsStatGrid.swift */; };
 		C107L0000000000000000006 /* CronJobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000106 /* CronJobRowView.swift */; };
 		C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000107 /* CronJobEditorSheet.swift */; };
@@ -750,7 +749,7 @@
 		C107L0000000000000000102 /* InsightsDailyChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDailyChart.swift; sourceTree = "<group>"; };
 		C107L0000000000000000103 /* InsightsActivityCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsActivityCharts.swift; sourceTree = "<group>"; };
 		C107L0000000000000000104 /* ProviderQuotaDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaDetailView.swift; sourceTree = "<group>"; };
-		C107L0000000000000000291 /* ProviderQuotaTileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaTileView.swift; sourceTree = "<group>"; };
+		C107L0000000000000000291 /* ProviderQuotaAccountRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaAccountRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000105 /* InsightsStatGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsStatGrid.swift; sourceTree = "<group>"; };
 		C107L0000000000000000106 /* CronJobRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobRowView.swift; sourceTree = "<group>"; };
 		C107L0000000000000000107 /* CronJobEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobEditorSheet.swift; sourceTree = "<group>"; };
@@ -1493,7 +1492,7 @@
 				C107L0000000000000000102 /* InsightsDailyChart.swift */,
 				C107L0000000000000000103 /* InsightsActivityCharts.swift */,
 				C107L0000000000000000104 /* ProviderQuotaDetailView.swift */,
-				C107L0000000000000000291 /* ProviderQuotaTileView.swift */,
+				C107L0000000000000000291 /* ProviderQuotaAccountRow.swift */,
 				C107L0000000000000000105 /* InsightsStatGrid.swift */,
 			);
 			path = Insights;
@@ -1747,7 +1746,6 @@
 				C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
 				C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */,
 				C107M0000000000000000091 /* ProgressRailView.swift in Sources */,
-				C107M0000000000000000093 /* ProviderQuotaWidgetSourceView.swift in Sources */,
 				A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
@@ -1869,7 +1867,7 @@
 				C107L0000000000000000002 /* InsightsDailyChart.swift in Sources */,
 				C107L0000000000000000003 /* InsightsActivityCharts.swift in Sources */,
 				C107L0000000000000000004 /* ProviderQuotaDetailView.swift in Sources */,
-				C107L0000000000000000191 /* ProviderQuotaTileView.swift in Sources */,
+				C107L0000000000000000191 /* ProviderQuotaAccountRow.swift in Sources */,
 				C107L0000000000000000005 /* InsightsStatGrid.swift in Sources */,
 				C107L0000000000000000006 /* CronJobRowView.swift in Sources */,
 				C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */,

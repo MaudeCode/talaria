@@ -9,8 +9,10 @@ import TalariaKit
 final class InsightsHostedTests: XCTestCase {
     /// Rendering clock: both fixture windows are live, their paces valid, and the fetch is twelve minutes old.
     static let now = ISO8601DateFormatter().date(from: "2030-01-01T00:12:00Z")!
-    /// Clock times render in UTC, so the same strings and pixels come out on every machine (CI runs in UTC).
+    /// Clock times render in UTC and en_US (12-hour), so the same strings and pixels come out on every machine: CI runs
+    /// in UTC on a simulator set to 24-hour time.
     static let utc = TimeZone(identifier: "UTC")!
+    static let enUS = Locale(identifier: "en_US")
 
     static let pacedSource = """
     {"version": 1, "scope_id": "qscope_test", "profile_id": "default", "computed_at": "2030-01-01T00:00:00Z", "sources": [{
@@ -59,6 +61,7 @@ final class InsightsHostedTests: XCTestCase {
             referenceDate: referenceDate
         )
         .environment(\.timeZone, utc)
+        .environment(\.locale, enUS)
     }
 
     static func detail(_ json: String, referenceDate: Date = now, isPinned: Bool = false, canPin: Bool = true) throws -> some View {
@@ -80,6 +83,7 @@ final class InsightsHostedTests: XCTestCase {
             )
         }
         .environment(\.timeZone, utc)
+        .environment(\.locale, enUS)
     }
 
     private static func identified(_ identifier: String) -> (NSObject) -> Bool {
@@ -175,16 +179,18 @@ final class InsightsHostedTests: XCTestCase {
 
     // MARK: Screen
 
-    /// The Insights screen against the fixture server: Quotas opens on the widget tiles and a tile pushes the account's
-    /// detail; Usage holds the stat grid and the three charts.
-    func testInsightsOpensOnQuotaTilesAndUsageHoldsTheAnalytics() async throws {
+    /// The Insights screen against the fixture server: Quotas opens on every account's windows and a row pushes the
+    /// account's detail; Usage holds the stat grid and the three charts.
+    func testInsightsOpensOnQuotaRowsAndUsageHoldsTheAnalytics() async throws {
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList())
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "Insights"))
 
-        let tileID = "provider-quota-tile-ui-fixture-source"
-        _ = try await requireElement(in: window, "No quota tile") { HostedAccessibility.identifier(of: $0) == tileID }
+        let rowID = "provider-quota-row-ui-fixture-source"
+        _ = try await requireElement(in: window, "No quota row") { HostedAccessibility.identifier(of: $0) == rowID }
+        _ = try await requireElement(in: window, "No inline forecast") { $0.accessibilityLabel?.contains("Lasts through reset") == true }
+        _ = try await requireElement(in: window, "No inline weekly forecast") { $0.accessibilityLabel?.contains("Empty 5h early") == true }
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Loading analytics…"), "Usage content must stay off the Quotas tab")
         attachHostedScreenshot(window, name: "insights-quotas-tab")
 
@@ -213,9 +219,8 @@ final class InsightsHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "insights-usage-activity")
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Quotas"))
-        HostedAccessibility.activate(try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == tileID })
-        _ = try await requireElement(in: window, "Tapping a tile did not open the detail") { $0.accessibilityLabel?.contains("Lasts through reset") == true }
-        _ = try await requireElement(in: window, "No weekly forecast") { $0.accessibilityLabel?.contains("Empty 5h early") == true }
+        HostedAccessibility.activate(try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == rowID })
+        _ = try await requireElement(in: window, "Tapping an account did not open the detail") { $0.accessibilityLabel?.hasPrefix("Account, Fixture Account") == true }
         _ = try await requireElementScrolling(in: window, "No pin action") { $0.accessibilityLabel == "Pin to Sidebar" }
         attachHostedScreenshot(window, name: "insights-quota-detail")
     }

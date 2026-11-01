@@ -38,6 +38,10 @@ struct InsightsView: View {
         ProviderQuotaDisplaySettings.aliasesKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var providerAliasesData = Data()
+    @AppStorage(
+        ProviderQuotaPercentageMode.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var quotaPercentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
     @AppStorage(ProviderQuotaRefreshInterval.storageKey)
     private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
 
@@ -162,17 +166,28 @@ struct InsightsView: View {
         if visibleQuotaSources.isEmpty {
             foldAvoiding(quotaStatus)
         } else {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 240), spacing: 12)], spacing: 12) {
+            // One clock for every row; the countdowns move together once a minute.
+            TimelineView(.everyMinute) { context in
+                List {
                     ForEach(visibleQuotaSources) { source in
-                        ProviderQuotaTileView(
+                        ProviderQuotaAccountRow(
                             source: source,
                             scopeID: quotaViewModel.quotaScopeID ?? "",
                             displayName: providerDisplayName(source),
+                            percentageMode: ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue,
                             isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
-                            referenceDate: Date(),
+                            referenceDate: context.date,
                             open: { selection = .quotaSource(id: source.id) }
                         )
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                hideProvider(source.providerID)
+                            } label: {
+                                Label("Hide", systemImage: "eye.slash")
+                            }
+                            .tint(.orange)
+                        }
                         .contextMenu {
                             Button {
                                 Task { await refreshQuotaSource(source.id) }
@@ -187,7 +202,7 @@ struct InsightsView: View {
                         }
                     }
                 }
-                .padding()
+                .listStyle(.insetGrouped)
             }
             .accessibilityIdentifier("provider-quota-section")
             .refreshable {

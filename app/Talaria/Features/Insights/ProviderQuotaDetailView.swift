@@ -6,6 +6,7 @@ import TalariaKit
 struct ProviderQuotaDetailView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.locale) private var locale
 
     let source: ProviderQuotaSource
     let scopeID: String
@@ -76,7 +77,7 @@ struct ProviderQuotaDetailView: View {
                         if let resetAt = period.state.resetAt {
                             LabeledContent(period.state.window?.label ?? period.shortLabel) {
                                 VStack(alignment: .trailing, spacing: 2) {
-                                    Text(resetAt.formatted(Date.FormatStyle(timeZone: timeZone).weekday(.abbreviated).month(.abbreviated).day().hour().minute()))
+                                    Text(resetAt.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).month(.abbreviated).day().hour().minute()))
                                     if let countdown = period.resetLabel(display: .compact) {
                                         Text(countdown)
                                             .font(.caption.monospacedDigit())
@@ -101,10 +102,10 @@ struct ProviderQuotaDetailView: View {
                     LabeledContent("Active provider", value: String(localized: "Yes"))
                 }
                 if let fetchedAt = ProviderQuotaDateParser.date(from: source.fetchedAt) {
-                    LabeledContent("Last checked", value: fetchedAt.formatted(Date.FormatStyle(timeZone: timeZone).weekday(.abbreviated).hour().minute()))
+                    LabeledContent("Last checked", value: fetchedAt.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute()))
                 }
                 if let computedAt = ProviderQuotaDateParser.date(from: source.computedAt) {
-                    LabeledContent("Pace as of", value: computedAt.formatted(Date.FormatStyle(timeZone: timeZone).weekday(.abbreviated).hour().minute()))
+                    LabeledContent("Pace as of", value: computedAt.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute()))
                 }
                 if let retryAt = ProviderQuotaDateParser.date(from: source.retryAfter) {
                     LabeledContent("Retry") { Text(retryAt, style: .relative) }
@@ -166,8 +167,10 @@ struct ProviderQuotaDetailView: View {
 /// rail tinted by the server urgency with the pace marker, the reset and countdown, the pace status, burn, budget and
 /// forecast; then credits, status, detail, retry and freshness. The same presentation state drives the widgets.
 struct ProviderQuotaWindowsView: View {
-    /// Clock times follow the SwiftUI environment, so references and tests can pin a zone.
+    /// Clock times follow the SwiftUI environment (zone and locale, which carries the 12/24-hour preference), so
+    /// references and tests can pin both.
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.locale) private var locale
 
     let source: ProviderQuotaSource
     let scopeID: String
@@ -287,9 +290,11 @@ struct ProviderQuotaWindowsView: View {
             if let pace = state.pace {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let serverForecast = state.forecast {
+                        // The forecast keeps one line; the burn and budget figures wrap first.
                         Label(forecast.forecastLabel, systemImage: forecast.systemImage)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(forecast.outcome.tint)
+                            .layoutPriority(1)
                         Spacer(minLength: 8)
                         Text(serverForecast.budgetPercent == nil
                             ? String(localized: "\(forecast.burnRateLabel) burn")
@@ -312,8 +317,8 @@ struct ProviderQuotaWindowsView: View {
         // A weekday names a reset within the week; a monthly window's reset needs its date.
         let withinWeek = resetAt.timeIntervalSince(period.state.referenceDate) < 6 * 86_400
         let exact = withinWeek
-            ? resetAt.formatted(Date.FormatStyle(timeZone: timeZone).weekday(.abbreviated).hour().minute())
-            : resetAt.formatted(Date.FormatStyle(timeZone: timeZone).month(.abbreviated).day().hour().minute())
+            ? resetAt.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute())
+            : resetAt.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).month(.abbreviated).day().hour().minute())
         guard let countdown = period.resetLabel(display: .compact) else {
             return String(localized: "Resets \(exact)")
         }
@@ -373,7 +378,7 @@ struct ProviderQuotaWindowsView: View {
             HStack(spacing: 5) {
                 Image(systemName: state.isStale ? "clock.badge.exclamationmark" : "clock")
                 if let computedAt = state.computedAt {
-                    Text("As of \(computedAt.formatted(Date.FormatStyle(timeZone: timeZone).weekday(.abbreviated).hour().minute()))")
+                    Text("As of \(computedAt.formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute()))")
                 }
                 if let fetchedAt {
                     if state.computedAt != nil { Text("·") }

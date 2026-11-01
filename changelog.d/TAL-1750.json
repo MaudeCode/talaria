@@ -2,14 +2,14 @@
   "entries": [
     {
       "category": "Changed",
-      "summary": "Insights splits into Quotas and Usage: each quota account is a widget-style tile that opens its windows, pace, burn rate, budget, forecast, reset schedule and actions.",
+      "summary": "Insights splits into Quotas and Usage: every quota account shows all its windows with pace, burn rate, budget and forecast, and opens a detail with its reset schedule and actions.",
       "highlight": true,
       "components": [
         "app"
       ],
       "announcement": {
         "title": "Insights, rebuilt",
-        "description": "Quota tiles with pace and forecasts, usage charts and a compact summary, each on its own tab.",
+        "description": "Every quota window with pace and forecast, usage charts and a compact summary, each on its own tab.",
         "icon": "sparkles"
       }
     },
