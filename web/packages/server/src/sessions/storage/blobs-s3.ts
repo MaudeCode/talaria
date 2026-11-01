@@ -3,14 +3,15 @@
  * downloads each one into `<cacheDir>/<key>` so the Agent always gets a real file.
  */
 import { createHash, randomBytes } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Readable, Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+import type { Readable } from 'node:stream'
 import {
   AbortMultipartUploadCommand, CompleteMultipartUploadCommand, CreateMultipartUploadCommand, DeleteObjectCommand, DeleteObjectsCommand,
   GetObjectCommand, HeadBucketCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client, UploadPartCommand,
 } from '@aws-sdk/client-s3'
+import { writeFully } from '../../fs/atomic.js'
+import { makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, renameAnchored, rmtreeAnchored, unlinkAnchored } from '../../workspace/fs.js'
 import { ATTACHMENTS, BlobExists, blobKeyParts, type BlobPutOptions, type BlobStat, type BlobStore } from './blobs.js'
 
 export const MULTIPART_THRESHOLD = 8 * 1024 * 1024
@@ -102,9 +103,17 @@ export class S3BlobStore implements BlobStore {
   attachmentRoot(): string { return join(this.cacheDir, ATTACHMENTS) }
   private objectKey(key: string): string { return this.prefix + key }
   private cachePath(key: string): string { return join(this.cacheDir, ...blobKeyParts(key)) }
-  private partialPath(): string { return join(this.cacheDir, '.partial', randomBytes(8).toString('hex')) }
 
   async put(key: string, body: Readable | Uint8Array, meta: BlobPutOptions = {}): Promise<BlobStat> {
+    const stat = await this.upload(key, body, meta)
+    // An upload the session is about to reference is written through, so its first turn needs no download.
+    if (body instanceof Uint8Array) await this.writeCache(key, body)
+    else this.forget(key)
+    return stat
+  }
+
+  /** The object write alone; the caller decides what the cache holds afterwards. */
+  private async upload(key: string, body: Readable | Uint8Array, meta: BlobPutOptions): Promise<BlobStat> {
     blobKeyParts(key)
     const hash = createHash('sha256')
     const parts = chunked(body, MULTIPART_THRESHOLD)
@@ -151,9 +160,6 @@ export class S3BlobStore implements BlobStore {
       if (meta.exclusive && preconditionFailed(error)) throw new BlobExists(key)
       throw error
     }
-    // An upload the session is about to reference is written through, so its first turn needs no download.
-    if (body instanceof Uint8Array) this.writeCache(key, body)
-    else this.forget(key)
     return { size, etag, contentType: common.ContentType, modifiedAt: Date.now(), sha256 }
   }
 
@@ -207,7 +213,8 @@ export class S3BlobStore implements BlobStore {
     }
     await flush()
     for (const key of [...this.cached.keys()]) if (key.startsWith(prefix)) this.forget(key)
-    rmSync(join(this.cacheDir, ...parts), { recursive: true, force: true })
+    const dir = join(this.cacheDir, ...parts)
+    try { rmtreeAnchored(this.cacheDir, dir) } catch { this.unlinkCached(dir) }
     return count
   }
 
@@ -229,7 +236,7 @@ export class S3BlobStore implements BlobStore {
     const path = this.cachePath(key)
     const pending = this.downloads.get(key)
     if (pending) return pending
-    if (this.cached.has(key) && existsSync(path)) {
+    if (this.cached.has(key) && this.cachedFile(path)) {
       this.remember(key, this.cached.get(key)!)
       return path
     }
@@ -244,45 +251,65 @@ export class S3BlobStore implements BlobStore {
       this.forget(key)
       return path
     }
-    const partial = this.partialPath()
-    mkdirSync(dirname(partial), { recursive: true })
-    try {
-      const out = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.objectKey(key), IfMatch: `"${head.etag}"` }))
+    const out = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.objectKey(key), IfMatch: `"${head.etag}"` }))
+    await this.publish(path, async (fd) => {
       let received = 0
-      const count = new Transform({ transform(chunk: Buffer, _enc, done) { received += chunk.length; done(null, chunk) } })
-      await pipeline(out.Body as Readable, count, createWriteStream(partial, { flags: 'wx' }))
+      for await (const chunk of out.Body as Readable) {
+        received += (chunk as Buffer).length
+        writeFully(fd, chunk as Buffer)
+      }
       if (received !== head.size || stripEtag(out.ETag) !== head.etag) throw new Error(`Blob ${key} changed while it was downloading`)
-      mkdirSync(dirname(path), { recursive: true })
-      renameSync(partial, path)
-    } catch (error) {
-      rmSync(partial, { force: true })
-      throw error
-    }
+    })
     this.remember(key, head.size)
     return path
   }
 
+  /** The file stays where the local writer left it and becomes a cache entry. */
   async commitLocal(key: string): Promise<BlobStat> {
-    const path = this.cachePath(key)
-    const stat = await this.put(key, createReadStream(path), { exclusive: true })
+    const fd = openAnchoredFd(this.cacheDir, this.cachePath(key), { wantDir: false })
+    const stat = await this.upload(key, createReadStream('', { fd }), { exclusive: true })
     this.remember(key, stat.size)
     return stat
   }
 
-  private writeCache(key: string, body: Uint8Array): void {
-    const path = this.cachePath(key)
-    const partial = this.partialPath()
+  private async writeCache(key: string, body: Uint8Array): Promise<void> {
     try {
-      mkdirSync(dirname(partial), { recursive: true })
-      writeFileSync(partial, body, { flag: 'wx' })
-      mkdirSync(dirname(path), { recursive: true })
-      renameSync(partial, path)
+      await this.publish(this.cachePath(key), (fd) => { writeFully(fd, body) })
       this.remember(key, body.byteLength)
     } catch {
       // The object is stored; a failed cache write only costs the next turn a download.
-      rmSync(partial, { force: true })
       this.forget(key)
     }
+  }
+
+  /**
+   * Stage bytes in a fresh file, then move it to `path`. Every step walks from the cache root with `O_NOFOLLOW`, so a
+   * cache directory a local writer swapped for a symlink refuses the write instead of following it out of the cache.
+   */
+  private async publish(path: string, write: (fd: number) => Promise<void> | void): Promise<void> {
+    const partial = join(this.cacheDir, '.partial', randomBytes(8).toString('hex'))
+    const fd = openAnchoredCreateFd(this.cacheDir, partial)
+    try {
+      try { await write(fd) } finally { closeSync(fd) }
+      makeAnchoredDir(this.cacheDir, dirname(path))
+      this.unlinkCached(path)
+      renameAnchored(this.cacheDir, partial, path)
+    } catch (error) {
+      this.unlinkCached(partial)
+      throw error
+    }
+  }
+
+  /** A regular cache file reached without following a link. */
+  private cachedFile(path: string): boolean {
+    let fd: number
+    try { fd = openAnchoredFd(this.cacheDir, path, { wantDir: false }) } catch { return false }
+    try { return fstatSync(fd).isFile() } finally { closeSync(fd) }
+  }
+
+  /** Remove one cache entry, or the link that replaced it; a path through a link is left alone. */
+  private unlinkCached(path: string): void {
+    try { unlinkAnchored(this.cacheDir, path) } catch { /* missing, or refused */ }
   }
 
   /**
@@ -307,7 +334,7 @@ export class S3BlobStore implements BlobStore {
       this.cached.delete(key)
       this.cachedBytes -= size
     }
-    rmSync(this.cachePath(key), { force: true })
+    this.unlinkCached(this.cachePath(key))
   }
 
   close(): Promise<void> {

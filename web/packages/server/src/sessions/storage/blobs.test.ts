@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { Readable, Writable } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -12,6 +13,7 @@ import { loadConfig } from '../../config.js'
 import { bootTestServer } from '../../test/harness.js'
 import { FakeSidecar } from '../../sidecar/fake.js'
 import { str } from '../../util.js'
+import { ZipWriter } from '../../workspace/zip.js'
 
 const temp = (name: string): string => mkdtempSync(join(tmpdir(), `talaria-blobs-${name}-`))
 
@@ -129,6 +131,49 @@ describe.skipIf(!endpoint)(endpoint ? 'S3 blob store' : 'S3 blob store (skipped:
       expect(await objectKeys(`${prefix}/attachments/${sid}/`)).toEqual([])
       expect(existsSync(upload.path)).toBe(false)
     } finally { await s.close() }
+  })
+
+  it('keeps extracted archive files on disk while storing each one', async () => {
+    const prefix = `extract-${randomBytes(4).toString('hex')}`
+    await ensureBucket()
+    const s = await bootTestServer({ env: { TALARIA_BLOB_STORAGE: 's3', TALARIA_BLOB_S3_ENDPOINT: endpoint, TALARIA_BLOB_S3_BUCKET: bucket, TALARIA_BLOB_S3_PREFIX: prefix, AWS_ACCESS_KEY_ID: credentials.accessKeyId, AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey } })
+    try {
+      const sid = ((await (await s.get('/api/session/new', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })).json()) as { session: { session_id: string } }).session.session_id
+      const chunks: Buffer[] = []
+      const zip = new ZipWriter(new Writable({ write(chunk: Buffer, _enc, cb) { chunks.push(chunk); cb() } }))
+      for (const [name, text] of [['hello.txt', 'Hello'], ['sub/nested.txt', 'Nested']] as const) await zip.addFile(name, Readable.from([Buffer.from(text)]), text.length)
+      await zip.finish()
+      const head = Buffer.from(['--b', 'Content-Disposition: form-data; name="session_id"', '', sid, '--b', 'Content-Disposition: form-data; name="file"; filename="demo.zip"', 'Content-Type: application/zip', '', ''].join('\r\n'))
+      const res = await s.get('/api/upload/extract', { method: 'POST', body: Buffer.concat([head, Buffer.concat(chunks), Buffer.from('\r\n--b--\r\n')]), headers: { 'content-type': 'multipart/form-data; boundary=b' } })
+      const body = (await res.json()) as { dest: string; files: string[] }
+      expect(res.status, JSON.stringify(body)).toBe(200)
+      expect(readFileSync(join(body.dest, 'hello.txt'), 'utf8')).toBe('Hello')
+      expect(readFileSync(join(body.dest, 'sub', 'nested.txt'), 'utf8')).toBe('Nested')
+      expect(await objectKeys(`${prefix}/attachments/${sid}/`)).toEqual([`${prefix}/attachments/${sid}/demo/hello.txt`, `${prefix}/attachments/${sid}/demo/sub/nested.txt`])
+    } finally { await s.close() }
+  })
+
+  it('never writes or deletes through a cache directory replaced by a symlink', async () => {
+    const state = temp('s3-symlink')
+    const outside = temp('s3-outside')
+    const store = await s3Store(`symlink-${randomBytes(4).toString('hex')}`, join(state, 'cache'))
+    try {
+      writeFileSync(join(outside, 'victim.txt'), 'outside')
+      // A local writer (an Agent tool) swaps the session's cache directory for a link out of the cache.
+      symlinkSync(outside, join(store.attachmentRoot(), 's2'))
+      await store.put('attachments/s2/victim.txt', Buffer.from('uploaded'), { exclusive: true })
+      expect(readFileSync(join(outside, 'victim.txt'), 'utf8')).toBe('outside')
+      // The download is refused rather than written through the link.
+      await store.localPath('attachments/s2/victim.txt').catch(() => null)
+      expect(readFileSync(join(outside, 'victim.txt'), 'utf8')).toBe('outside')
+      await store.delete('attachments/s2/victim.txt')
+      await store.deletePrefix('attachments/s2/')
+      expect(readFileSync(join(outside, 'victim.txt'), 'utf8')).toBe('outside')
+    } finally {
+      await store.close()
+      rmSync(state, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 
   it('copies a local attachment tree to S3, verifies it, and copies nothing on a re-run', async () => {
