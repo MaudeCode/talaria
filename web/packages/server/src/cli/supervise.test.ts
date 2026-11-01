@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as atomic from '../fs/atomic.js'
 import { loadStartupEnv } from './dotenv.js'
-import { RESTART_EXIT_CODE, supervise, watchRetirement, WORKER_SHUTDOWN_MS, STOP_GRACE_MS } from './supervise.js'
+import { DUPLICATE_SIGNAL_MS, RESTART_EXIT_CODE, RUN_DRAIN_MS, RUN_SETTLE_MS, supervise, watchRetirement, WORKER_SHUTDOWN_MS, STOP_GRACE_MS } from './supervise.js'
 
 const STOP_SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const
 const baseline = new Map(STOP_SIGNALS.map((signal) => [signal, process.listenerCount(signal)]))
@@ -384,18 +384,59 @@ describe('supervisor loss', () => {
 })
 
 describe('worker retirement policy', () => {
-  function retirement(opts: { connected?: boolean; supervised?: boolean } = {}) {
+  function retirement(opts: { connected?: boolean; supervised?: boolean; deadlineMs?: number } = {}) {
     vi.useFakeTimers()
     const events = Object.assign(new EventEmitter(), { connected: opts.connected ?? true })
     const exit = vi.fn<(code: number) => void>()
     const log: string[] = []
-    const r = watchRetirement({ log: (line) => log.push(line), supervised: opts.supervised ?? true, deadlineMs: 1000, exit, events })
+    const r = watchRetirement({ log: (line) => log.push(line), supervised: opts.supervised ?? true, deadlineMs: opts.deadlineMs ?? 1000, exit, events })
     return { events, exit, log, r }
   }
   afterEach(() => { vi.useRealTimers() })
 
   it('leaves the worker room to finish inside the supervisor grace', () => {
     expect(WORKER_SHUTDOWN_MS).toBeLessThan(STOP_GRACE_MS)
+  })
+
+  it('drains and settles local runs with a margin left before the worker deadline (TAL-1628)', () => {
+    expect(RUN_DRAIN_MS + RUN_SETTLE_MS).toBeLessThan(WORKER_SHUTDOWN_MS)
+  })
+
+  it('escalates once on a stop signal repeated after the duplicate window, never on a duplicate delivery (TAL-1628)', async () => {
+    const { events, exit, log, r } = retirement({ deadlineMs: WORKER_SHUTDOWN_MS })
+    let finish!: () => void
+    const close = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const escalate = vi.fn()
+    r.attach(close, escalate)
+    events.emit('SIGINT')
+    events.emit('SIGINT')
+    await vi.advanceTimersByTimeAsync(DUPLICATE_SIGNAL_MS - 1)
+    events.emit('SIGTERM')
+    expect(escalate).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) events.emit(signal)
+    expect(escalate).toHaveBeenCalledTimes(1)
+    expect(close).toHaveBeenCalledTimes(1)
+    finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(exit.mock.calls).toEqual([[0]])
+    expect(log).toEqual(['[webui] SIGINT received; shutting down', '[webui] SIGINT received again; interrupting local runs now'])
+  })
+
+  it('does not escalate supervisor loss or a retirement before the close path exists', async () => {
+    const { events, exit, r } = retirement({ deadlineMs: WORKER_SHUTDOWN_MS })
+    const escalate = vi.fn()
+    r.attach(() => new Promise<void>(() => undefined), escalate)
+    events.emit('disconnect')
+    await vi.advanceTimersByTimeAsync(DUPLICATE_SIGNAL_MS)
+    events.emit('disconnect')
+    expect(escalate).not.toHaveBeenCalled()
+    const early = retirement({ deadlineMs: WORKER_SHUTDOWN_MS })
+    early.events.emit('SIGTERM')
+    await vi.advanceTimersByTimeAsync(DUPLICATE_SIGNAL_MS)
+    early.events.emit('SIGTERM')
+    expect(early.exit.mock.calls).toEqual([[0]])
+    expect(exit).not.toHaveBeenCalled()
   })
 
   it('runs the shared close once for signals plus supervisor loss, then exits 0', async () => {

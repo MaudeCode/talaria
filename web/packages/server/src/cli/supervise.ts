@@ -8,8 +8,9 @@
  * - The supervisor forwards the first stop signal once, kills its own worker if it has not exited
  *   within `stopGraceMs`, and returns or respawns only after that worker's `close`.
  * - The worker (`watchRetirement`) retires on a stop signal or when its IPC supervisor disconnects:
- *   before its close path exists it exits at once; after, it stops listening, drains, and exits
- *   within `WORKER_SHUTDOWN_MS`, which is shorter than the supervisor's grace.
+ *   before its close path exists it exits at once; after, it stops listening, drains its local chat runs
+ *   (`RUN_DRAIN_MS`, then saves the rest as interrupted), and exits within `WORKER_SHUTDOWN_MS`, which is
+ *   shorter than the supervisor's grace. A later repeated signal ends the drain's wait early, once.
  * A process stuck in an uninterruptible kernel wait ignores SIGKILL too; the supervisor then keeps
  * waiting rather than start a successor that cannot bind.
  */
@@ -23,6 +24,16 @@ export const RESTART_EXIT_CODE = 75
 export const WORKER_ENV = 'TALARIA_WEB_WORKER'
 export const WORKER_SHUTDOWN_MS = 10_000
 export const STOP_GRACE_MS = 15_000
+/**
+ * TAL-1628: how the worker's shutdown budget is spent on local chat runs. They may finish on their own for
+ * `RUN_DRAIN_MS`; the rest is the settlement margin, in which `RUN_SETTLE_MS` saves each unfinished run as interrupted
+ * and what remains closes storage, all before `WORKER_SHUTDOWN_MS`.
+ */
+export const RUN_SETTLEMENT_MARGIN_MS = 4_000
+export const RUN_DRAIN_MS = WORKER_SHUTDOWN_MS - RUN_SETTLEMENT_MARGIN_MS
+export const RUN_SETTLE_MS = 2_500
+/** Signals this close together are one stop request delivered twice (a terminal's process group and the supervisor's forward). */
+export const DUPLICATE_SIGNAL_MS = 1_000
 
 export interface SuperviseOptions {
   command: string[]
@@ -118,8 +129,8 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
 
 export interface Retirement {
   readonly retiring: boolean
-  /** Registers the shared close path once the server is listening. */
-  attach: (close: () => Promise<void>) => void
+  /** Registers the shared close path once the server is listening, and what a repeated stop signal escalates. */
+  attach: (close: () => Promise<void>, escalate?: () => void) => void
 }
 
 export interface RetirementOptions {
@@ -130,6 +141,8 @@ export interface RetirementOptions {
   exit?: (code: number) => void
   /** Signal and IPC event source; tests substitute an emitter. */
   events?: NodeJS.EventEmitter & { connected?: boolean }
+  /** Milliseconds clock for telling a repeated signal from a duplicate delivery. */
+  now?: () => number
 }
 
 /** Retires the server on SIGTERM/SIGINT/SIGHUP and, for a supervised worker, on loss of its supervisor. */
@@ -137,8 +150,12 @@ export function watchRetirement(opts: RetirementOptions): Retirement {
   const events = opts.events ?? process
   const exit = opts.exit ?? ((code: number) => { process.exit(code) })
   const deadlineMs = opts.deadlineMs ?? WORKER_SHUTDOWN_MS
+  const now = opts.now ?? (() => Date.now())
   let close: (() => Promise<void>) | null = null
+  let escalate: (() => void) | null = null
   let retiring = false
+  let retiredAt = 0
+  let escalated = false
   let exited = false
   const finish = (code: number): void => { if (!exited) { exited = true; exit(code) } }
   const run = (shutdown: () => Promise<void>): void => {
@@ -154,12 +171,21 @@ export function watchRetirement(opts: RetirementOptions): Retirement {
   const retire = (reason: string): void => {
     if (retiring) return
     retiring = true
+    retiredAt = now()
     opts.log(`[webui] ${reason}; shutting down`)
     // Nothing has been served before the close path exists.
     if (close) run(close)
     else finish(0)
   }
-  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) events.on(signal, () => { retire(`${signal} received`) })
+  // TAL-1628: a stop signal repeated after the first one's duplicate window escalates the shutdown once.
+  const signalled = (signal: NodeJS.Signals): void => {
+    if (!retiring) { retire(`${signal} received`); return }
+    if (escalated || !close || !escalate || now() - retiredAt < DUPLICATE_SIGNAL_MS) return
+    escalated = true
+    opts.log(`[webui] ${signal} received again; interrupting local runs now`)
+    escalate()
+  }
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) events.on(signal, () => { signalled(signal) })
   if (opts.supervised) {
     events.on('disconnect', () => { retire('supervisor disconnected') })
     // The listener must not keep a worker alive that would otherwise exit.
@@ -168,6 +194,6 @@ export function watchRetirement(opts: RetirementOptions): Retirement {
   }
   return {
     get retiring() { return retiring },
-    attach: (shutdown) => { if (!retiring) close = shutdown },
+    attach: (shutdown, onEscalate) => { if (!retiring) { close = shutdown; escalate = onEscalate ?? null } },
   }
 }

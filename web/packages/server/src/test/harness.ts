@@ -67,6 +67,8 @@ export interface BootOptions {
   gatewayPollMs?: number
   /** Install the SIGTERM/SIGINT/SIGHUP shutdown handlers (tests stub `process.exit` and remove them). */
   signals?: boolean
+  /** TAL-1628: the local-run drain budget `close` uses (the default is the worker's shutdown budget). */
+  drain?: import('../server.js').StartServerOptions['drain']
 }
 
 export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer> {
@@ -88,7 +90,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
   }
   const deps = await createDeps({ ...(opts.storage ? { storage: opts.storage } : {}), env, webRoot: WEB_ROOT, log: (line) => logs.push(line), version: 'web-v0.0.0-test', ...(opts.now ? { now: opts.now } : {}), ...(opts.sidecar !== undefined ? { sidecar: opts.sidecar } : {}), ...(opts.gatewayPollMs !== undefined ? { gatewayPollMs: opts.gatewayPollMs } : {}) })
   opts.deps?.(deps)
-  const running = await startServer(createApp(deps), deps.config, { log: (line) => logs.push(line), signals: opts.signals ?? false })
+  const running = await startServer(createApp(deps), deps.config, { log: (line) => logs.push(line), signals: opts.signals ?? false, ...(opts.drain ? { drain: opts.drain } : {}) })
   const base = `http://127.0.0.1:${running.port}`
   return {
     deps,

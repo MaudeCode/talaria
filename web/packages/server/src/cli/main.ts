@@ -63,7 +63,7 @@ async function serve(args: string[]): Promise<number> {
   await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
   const app = createApp(deps)
   const running = await startServer(app, deps.config, { signals: false })
-  retirement.attach(running.close)
+  retirement.attach(running.close, running.escalate)
   if (process.connected) process.send?.('ready')
   await starting
   await deps.notifications.start()
