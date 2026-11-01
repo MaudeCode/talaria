@@ -2808,6 +2808,16 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_usage_balance.py::test_a_quota_redirect_never_reaches_another_origin": {
+      "layer": "process",
+      "reason": "Two test-owned loopback HTTP servers on distinct ports prove a bearer-authenticated quota read refuses every redirect status and never contacts the redirect destination or discloses its synthetic key. A stubbed opener cannot observe the real urllib redirect handling.",
+      "cases": ["[301]", "[302]", "[303]", "[307]", "[308]"]
+    },
+    "tests/test_usage_balance.py::test_a_loopback_quota_read_still_parses_and_bounds_failures": {
+      "layer": "process",
+      "reason": "A test-owned loopback HTTP server proves real-socket parsing plus bounded unavailable results for malformed, oversized, truncated, slow and non-HTTP quota answers with a synthetic key. Stubbed responses cannot raise the real http.client protocol and timeout errors.",
+      "cases": [""]
     }
   }
 }

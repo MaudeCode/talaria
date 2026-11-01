@@ -7,6 +7,7 @@ import dataclasses
 import functools
 import hashlib
 import hmac
+import http.client
 import inspect
 import json
 import logging
@@ -208,6 +209,16 @@ _BALANCE_TIMEOUT_SECONDS = 15.0
 _BALANCE_MAX_BYTES = 256 * 1024
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A 3xx surfaces as an HTTPError: a bearer-authenticated quota read never resends its key to another URL."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_open_balance = urllib.request.build_opener(_RefuseRedirects()).open
+
+
 def _number(value: Any) -> int | float | None:
     """Python `_quota_number`, finite only: a NaN or infinity is not JSON."""
     if isinstance(value, bool) or value is None:
@@ -282,14 +293,15 @@ def balance(provider: str, *, credential_id: str | None, api_key: str | None, en
         return {**result, "status": "no_key"}
     request = urllib.request.Request(_BALANCE_URLS[provider], headers={"Authorization": f"Bearer {key}", "Accept": "application/json", "User-Agent": "Talaria-Web/1.0"})
     try:
-        with urllib.request.urlopen(request, timeout=_BALANCE_TIMEOUT_SECONDS) as response:
+        with _open_balance(request, timeout=_BALANCE_TIMEOUT_SECONDS) as response:
             raw = response.read(_BALANCE_MAX_BYTES + 1)
         if len(raw) > _BALANCE_MAX_BYTES:
             raise ValueError("oversized balance response")
         parsed = _BALANCE_PARSERS[provider](json.loads(raw.decode("utf-8")))
     except urllib.error.HTTPError as exc:
+        exc.close()
         return {**result, "status": "http_error", "http_status": exc.code}
-    except (OSError, ValueError):  # URLError and timeouts are OSErrors; malformed JSON or UTF-8 are ValueErrors
+    except (OSError, ValueError, http.client.HTTPException):  # URLError and timeouts are OSErrors; malformed JSON or UTF-8 are ValueErrors; a non-HTTP or truncated answer is an HTTPException
         log.debug("%s balance read failed", provider, exc_info=True)
         return result
     return {**result, **parsed, "status": "ok"} if parsed is not None else result
