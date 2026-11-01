@@ -1,5 +1,5 @@
 /** Public share snapshots embed only images read through the anchored walk from an allowed root. */
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,8 @@ import { buildShareSnapshot, embedShareMedia } from './shares.js'
 
 /** One-shot hook: right after `fstatSync` samples the armed file's inode, append `bytes` to that same file. */
 const grow = vi.hoisted(() => ({ path: '', ino: 0, bytes: 0 }))
+/** One-shot hook run before the next `openSync`, i.e. immediately before the anchored walk acquires its root. */
+const beforeOpen = vi.hoisted(() => ({ hook: null as (() => void) | null }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
   const fstatSync = ((...args: Parameters<typeof fs.fstatSync>) => {
@@ -18,7 +20,13 @@ vi.mock('node:fs', async (importOriginal) => {
     }
     return st
   }) as typeof fs.fstatSync
-  return { ...fs, fstatSync }
+  const openSync = ((...args: Parameters<typeof fs.openSync>) => {
+    const hook = beforeOpen.hook
+    beforeOpen.hook = null
+    hook?.()
+    return fs.openSync(...args)
+  }) as typeof fs.openSync
+  return { ...fs, fstatSync, openSync }
 })
 
 const SHARE_EMBED_MAX_BYTES = 512 * 1024
@@ -163,6 +171,73 @@ describe('buildShareSnapshot inline data', () => {
       const started = performance.now()
       snapshot(content)
       expect(performance.now() - started, content.slice(0, 40)).toBeLessThan(1000)
+    }
+  })
+})
+
+describe('public share root acquisition', () => {
+  let base = ''
+  const inside = Buffer.concat([png, Buffer.from('synthetic-inside')])
+  const outsidePrivate = Buffer.concat([png, Buffer.from('synthetic-outside-private')])
+  beforeAll(() => { base = realpathSync(mkdtempSync(join(tmpdir(), 'share-acquire-'))) })
+  afterAll(() => { rmSync(base, { recursive: true, force: true }) })
+
+  /** `<base>/<case>/anc/ws/pic.png` is the approved image; `<base>/<case>/evil/ws/pic.png` mirrors it outside every root. */
+  function layout(name: string): { dir: string; ws: string; attach: string } {
+    const dir = join(base, name)
+    mkdirSync(join(dir, 'anc', 'ws', 'sub'), { recursive: true })
+    mkdirSync(join(dir, 'evil', 'ws', 'sub'), { recursive: true })
+    mkdirSync(join(dir, 'attach'))
+    writeFileSync(join(dir, 'anc', 'ws', 'pic.png'), inside)
+    writeFileSync(join(dir, 'anc', 'ws', 'sub', 'pic.png'), inside)
+    writeFileSync(join(dir, 'evil', 'ws', 'pic.png'), outsidePrivate)
+    writeFileSync(join(dir, 'evil', 'ws', 'sub', 'pic.png'), outsidePrivate)
+    return { dir, ws: join(dir, 'anc', 'ws'), attach: join(dir, 'attach') }
+  }
+
+  function snapshotText(ws: string, attach: string, ref: string): string {
+    const session = new Session({ title: 'Swap', messages: [] }, { workspace: ws, model: null })
+    return JSON.stringify(buildShareSnapshot(session, [{ role: 'assistant', content: `see MEDIA:${ref} here` }], { hermesHome: join(base, '.hermes'), attachmentRoot: attach, home: base }))
+  }
+
+  // Each swap runs after the reference resolved inside the approved root and immediately before the walk opens the root.
+  it.each([
+    ['an ancestor of the root', 'pic.png', (dir: string) => { renameSync(join(dir, 'anc'), join(dir, 'anc-held')); symlinkSync(join(dir, 'evil'), join(dir, 'anc')) }],
+    ['the root itself', 'pic.png', (dir: string) => { renameSync(join(dir, 'anc', 'ws'), join(dir, 'anc', 'ws-held')); symlinkSync(join(dir, 'evil', 'ws'), join(dir, 'anc', 'ws')) }],
+    ['a directory below the root', 'sub/pic.png', (dir: string) => { renameSync(join(dir, 'anc', 'ws', 'sub'), join(dir, 'anc', 'ws', 'sub-held')); symlinkSync(join(dir, 'evil', 'ws', 'sub'), join(dir, 'anc', 'ws', 'sub')) }],
+  ])('never embeds outside bytes when %s is swapped for a symlink before root acquisition', (name, ref, swap) => {
+    const { dir, ws, attach } = layout(name.replaceAll(' ', '-'))
+    let fired = false
+    beforeOpen.hook = () => { fired = true; swap(dir) }
+    const text = snapshotText(ws, attach, ref)
+    expect(fired, 'the swap ran before the root was opened').toBe(true)
+    expect(text).not.toContain(outsidePrivate.toString('base64'))
+    expect(text).toContain('Local attachment omitted')
+  })
+
+  it('still embeds the image when nothing was swapped', () => {
+    const { ws, attach } = layout('unswapped')
+    expect(snapshotText(ws, attach, 'sub/pic.png')).toContain(inside.toString('base64'))
+  })
+
+  // Search permission alone suffices to reach a readable image; listing permission on the directories is not required.
+  it.each([
+    ['below the root', (ws: string) => join(ws, 'locked'), 'locked/pic.png'],
+    ['above the root', (ws: string) => ws, 'pic.png'],
+  ])('embeds a readable image through a search-only directory %s', (name, lockedDir, ref) => {
+    const dir = join(base, `search-only-${name.replaceAll(' ', '-')}`)
+    const ws = name === 'above the root' ? join(dir, 'locked', 'ws') : join(dir, 'ws')
+    const locked = lockedDir(name === 'above the root' ? join(dir, 'locked') : ws)
+    mkdirSync(join(dir, 'attach'), { recursive: true })
+    mkdirSync(name === 'above the root' ? ws : locked, { recursive: true })
+    const image = name === 'above the root' ? join(ws, 'pic.png') : join(locked, 'pic.png')
+    writeFileSync(image, inside, { mode: 0o644 })
+    chmodSync(locked, 0o111)
+    try {
+      expect(readFileSync(image).equals(inside), 'the owner can read the image by pathname').toBe(true)
+      expect(snapshotText(ws, join(dir, 'attach'), ref)).toContain(inside.toString('base64'))
+    } finally {
+      chmodSync(locked, 0o755)
     }
   })
 })
