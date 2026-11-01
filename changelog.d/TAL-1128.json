@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "The model hint for script-only scheduled tasks now appears in German when Web uses German.", "highlight": false, "components": ["web"]}]
+}
