@@ -131,7 +131,7 @@ struct ProviderQuotaDetailView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
     }
 
     private var header: some View {
