@@ -59,3 +59,12 @@ export function catalogModelSections(group: Models['groups'][number], query = ''
     models: section.model_ids.map((id) => rows.find((entry) => entry.id === id)).filter((entry): entry is ModelEntry => !!entry && matches(entry)),
   })).filter((section) => section.models.length)
 }
+
+/** The catalog as `<Select>` option groups; a plain list, since `Select` reads `<optgroup>`/`<option>` children directly. */
+export function catalogModelOptgroups(catalog: Models | undefined) {
+  return (catalog?.groups ?? []).flatMap((g) => catalogModelSections(g).map((section) => (
+    <optgroup key={`${g.provider}:${section.label}`} label={[catalogGroupLabel(g), section.label].filter(Boolean).join(' · ')}>
+      {section.models.map((entry) => <option key={entry.id} value={entry.id}><ModelOptionContent entry={entry} /></option>)}
+    </optgroup>
+  )))
+}

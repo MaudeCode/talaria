@@ -9116,7 +9116,8 @@
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "TAL-1032: a visible project whose bound default workspace and model fill the choices this request omits; null starts outside any project."
                   },
                   "worktree": {},
                   "enabled_toolsets": {
@@ -44450,6 +44451,57 @@
                           },
                           "created_at": {
                             "type": "number"
+                          },
+                          "workspaces": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                          },
+                          "default_workspace": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                          },
+                          "model_provider": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                          },
+                          "model_option_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
                           }
                         },
                         "required": [
@@ -44571,6 +44623,57 @@
                         },
                         "created_at": {
                           "type": "number"
+                        },
+                        "workspaces": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                        },
+                        "default_workspace": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                        },
+                        "model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                        },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
                         }
                       },
                       "required": [
@@ -44671,6 +44774,231 @@
                         },
                         "created_at": {
                           "type": "number"
+                        },
+                        "workspaces": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                        },
+                        "default_workspace": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                        },
+                        "model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                        },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
+                        }
+                      },
+                      "required": [
+                        "project_id",
+                        "name"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "project"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/bind": {
+      "post": {
+        "operationId": "projects.setBindings",
+        "tags": [
+          "projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "workspaces": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "default_workspace": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model_provider": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "project_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "project_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "color": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "workspaces": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1032: canonical trusted workspaces bound to the project."
+                        },
+                        "default_workspace": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the bound workspace a new chat in the project starts in; null starts in the profile default."
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the bare model a new chat in the project starts on; null uses the profile default."
+                        },
+                        "model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the provider serving `model`, kept even when the catalog no longer offers it."
+                        },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1032: the catalog entry the bound pair selects; null when unbound or no longer offered."
                         }
                       },
                       "required": [

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Projects in Talaria Web can save chat defaults: the workspaces they use, the workspace and model new chats start on, and a New chat action that starts a chat in the project with them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

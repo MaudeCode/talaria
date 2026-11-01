@@ -40,7 +40,7 @@ import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, sha
 import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
 import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
-import type { ProjectStore } from '../projects.js'
+import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
 import type { GatewaySessions } from './gateway-sessions.js'
@@ -1701,6 +1701,28 @@ export class SessionService {
       try { await this.store.save(session) } catch (error) { this.store.sessions.delete(sid); throw error }
       return session
     })
+  }
+
+  /**
+   * TAL-1032: the new-session choices with the project's bound defaults filling what the request omits. A workspace inherited
+   * from the previous chat is not a choice, so the project default replaces it; a named model or provider is, so the project's
+   * pair applies only when the request names neither. Resolved once: the worktree preflight and creation both read the result.
+   */
+  async withProjectDefaults(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const id = body.project_id
+    if (typeof id !== 'string' || !id) return body
+    const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
+    const project = (await this.deps.projects.load()).find((p) => p.project_id === id)
+    if (!project || !this.deps.profilesMatch(project.profile ?? null, profile)) throw new HttpFailure(404, 'Project not found')
+    const bound = projectBindings(project)
+    const out = { ...body }
+    if (bound.default_workspace && (!body.workspace || body.workspace_inherited_from_prev_session === true)) {
+      out.workspace = bound.default_workspace
+      delete out.workspace_inherited_from_prev_session
+    }
+    const named = (value: unknown): boolean => typeof value === 'string' && !!value.trim()
+    if (bound.model && !named(body.model) && !named(body.model_provider)) { out.model = bound.model; out.model_provider = bound.model_provider }
+    return out
   }
 
   async resolveNewSessionWorkspace(body: Record<string, unknown>, visiblePrevSessionId: string | null, profile: string | null): Promise<string | null> {

@@ -9,10 +9,12 @@ import { ApiError } from '../../contracts/common'
 vi.mock('../../api/endpoints', () => ({
   fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn(),
   renameSession: vi.fn(), pinSession: vi.fn(), deleteSession: vi.fn(), moveSession: vi.fn(), revokeShare: vi.fn(), removeWorktree: vi.fn(), fetchWorktreeStatus: vi.fn(),
-  renameProject: vi.fn(), deleteProject: vi.fn(), duplicateSession: vi.fn(), regenerateTitle: vi.fn(), createShare: vi.fn(), exportSessionUrl: vi.fn(() => ''),
+  renameProject: vi.fn(), deleteProject: vi.fn(), bindProject: vi.fn(), fetchModels: vi.fn(() => Promise.resolve({ groups: [] })),
+  fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ path: '/w/alpha', name: 'Alpha space' }, { path: '/w/beta', name: 'Beta space' }], last: '/w/alpha' })), duplicateSession: vi.fn(), regenerateTitle: vi.fn(), createShare: vi.fn(), exportSessionUrl: vi.fn(() => ''),
 }))
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
-vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
+const newChat = vi.hoisted(() => vi.fn())
+vi.mock('./useNewChat', () => ({ useNewChat: () => newChat }))
 const router = vi.hoisted(() => ({ navigate: vi.fn(), active: undefined as string | undefined }))
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
@@ -339,6 +341,33 @@ describe('project writes show their result while the server is held (TAL-1179)',
     await projectMenu('Gold', 'menuitemradio')
     expect(api.renameProject).toHaveBeenCalledWith('p1', 'Proj', '#f5c542')
     expect(screen.getByRole('button', { name: 'Proj' }).querySelector<HTMLElement>('.color-dot')?.style.background).toBe('rgb(245, 197, 66)')
+  })
+
+  it('quick-creates a chat in the project (TAL-1032)', async () => {
+    await panel()
+    await projectMenu('New chat')
+    expect(newChat).toHaveBeenCalledWith('p1')
+  })
+
+  it('saves project defaults at once, keeps an unavailable model, and reopens the draft on refusal (TAL-1032)', async () => {
+    vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj', workspaces: ['/w/alpha', '/w/beta'], default_workspace: '/w/beta', model: 'retired-model', model_provider: 'custom:backup', model_option_id: null }] } as never)
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.bindProject).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    await panel()
+    await projectMenu('Chat defaults')
+    const dialog = await screen.findByRole('dialog', { name: 'Chat defaults' })
+    expect(within(dialog).getByRole('combobox', { name: 'Default model' })).toHaveTextContent('retired-model · custom:backup · Temporarily unavailable')
+    expect(within(dialog).getByRole('combobox', { name: 'Default workspace' })).toHaveTextContent('Beta space')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove Beta space' }))
+    expect(within(dialog).getByRole('combobox', { name: 'Default workspace' })).toHaveTextContent('Profile default')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.bindProject).toHaveBeenCalledWith({ project_id: 'p1', workspaces: ['/w/alpha'], default_workspace: null, model: 'retired-model', model_provider: 'custom:backup' })
+    refuse(new ApiError({ kind: 'http', status: 400, path: '/x', message: 'Path does not exist: /w/alpha' }))
+    const reopened = await screen.findByRole('dialog', { name: 'Chat defaults' })
+    expect(within(reopened).getByRole('button', { name: 'Remove Alpha space' })).toBeInTheDocument()
+    expect(within(reopened).queryByRole('button', { name: 'Remove Beta space' })).toBeNull()
+    expect(toast).toHaveBeenCalledWith('Path does not exist: /w/alpha', 4000, 'error')
   })
 
   it('removes a deleted project chip at once and restores it on refusal', async () => {

@@ -9,15 +9,15 @@ import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
 
-const { renders, navigate, composer, chatRenders, sidePanel, references } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn(), references: vi.fn() }))
-vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
+const { renders, navigate, composer, chatRenders, sidePanel, references, search, projects } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn(), references: vi.fn(), search: vi.fn((): Record<string, string> => ({})), projects: vi.fn((): { data?: unknown } => ({})) }))
+vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => search() }))
 vi.mock('../../shell/AppShell', () => ({ MAIN_VIEW: '' }))
 vi.mock('../../app/bootstrap', async (original) => {
   const bootstrap = { profile: { name: 'default' }, assistant_name: 'Assistant', features: {} }
   // ChatView is the only caller here (the Composer is mocked), so each call is one ChatView render.
   return { ...await original<object>(), useBootstrap: () => { chatRenders(); return bootstrap } }
 })
-vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }), useExecutionModesQuery: () => ({ data: { modes: [{ mode: 'normal', can_reference: true }, { mode: 'safe', can_reference: false }, { mode: 'ignore_config', can_reference: false }] } }) }))
+vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useProjectsQuery: () => projects(), useWorkspacesQuery: () => ({ data: { workspaces: [] } }), useExecutionModesQuery: () => ({ data: { modes: [{ mode: 'normal', can_reference: true }, { mode: 'safe', can_reference: false }, { mode: 'ignore_config', can_reference: false }] } }) }))
 vi.mock('../composer/Composer', () => ({ Composer: (props: unknown) => { composer(props); return null } }))
 vi.mock('../sessions/SessionReferences', () => ({ SessionReferences: (props: { onChange?: (refs: unknown[]) => void }) => { references(props); return props.onChange ? <button>Reference selector</button> : null } }))
 // Count side panel renders inside the real export's memo boundary, if it has one.
@@ -32,6 +32,7 @@ vi.mock('../toast/toast', async (original) => ({ ...await original<object>(), sh
 vi.mock('../../api/endpoints', async (original) => ({
   ...await original<object>(),
   fetchSession: vi.fn(),
+  newSession: vi.fn(),
   fetchSessionYolo: vi.fn(() => Promise.resolve({ yolo_enabled: false })),
   fetchReasoning: () => Promise.resolve({ reasoning_effort: null }),
   fetchClarifyPending: () => Promise.resolve({ pending: null }),
@@ -57,6 +58,8 @@ const { setWatchingRun } = await import('../presence/presence')
 
 beforeEach(() => {
   vi.clearAllMocks()
+  search.mockReturnValue({})
+  projects.mockReturnValue({})
   resetStreamStoreForTests()
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
 })
@@ -84,6 +87,21 @@ it.each(['safe', 'ignore_config'])('clears draft references and hides selection 
   act(() => { composer.mock.lastCall![0].onExecutionModeChange(mode) })
   expect(composer.mock.lastCall![0].pendingChoices.source_references).toEqual([])
   expect(screen.queryByRole('button', { name: 'Reference selector' })).not.toBeInTheDocument()
+})
+
+it('starts a project quick-create on the project defaults and sends only the user picks (TAL-1032)', async () => {
+  search.mockReturnValue({ project: 'p1' })
+  projects.mockReturnValue({ data: { projects: [{ project_id: 'p1', name: 'Proj', workspaces: ['/w/beta'], default_workspace: '/w/beta', model: 'gemini-2.5-flash', model_provider: 'gemini', model_option_id: '@gemini:gemini-2.5-flash' }] } })
+  vi.mocked(api.newSession).mockImplementation(() => Promise.resolve({ session: sessionFixture({ session_id: 'created' }) }))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={qc}><ChatView sessionId={null} /></QueryClientProvider>)
+  await waitFor(() => expect(composer).toHaveBeenCalled())
+  expect(composer.mock.lastCall![0].pendingChoices).toMatchObject({ workspace: '/w/beta', model: '@gemini:gemini-2.5-flash', model_provider: 'gemini' })
+  // The shown defaults are the server's; the request names the project and leaves its defaults to the server.
+  await act(() => composer.mock.lastCall![0].onEnsureSession())
+  expect(api.newSession).toHaveBeenLastCalledWith({ project_id: 'p1', profile: 'default', worktree: false })
+  act(() => { composer.mock.lastCall![0].onModelChange('@google:gemini-2.5-flash', 'google') })
+  expect(composer.mock.lastCall![0].pendingChoices).toMatchObject({ workspace: '/w/beta', model: '@google:gemini-2.5-flash', model_provider: 'google' })
 })
 
 it('renders each persisted message once while three token frames update the live turn', async () => {

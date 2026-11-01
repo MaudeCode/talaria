@@ -12,7 +12,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
-import { useExecutionModesQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
+import { useExecutionModesQuery, useProjectsQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import type { Session, SessionsList } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
@@ -105,9 +105,17 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
   const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode; source_references?: AcceptedSourceReference[] }>({})
-  const [draftProfile, setDraftProfile] = useState(bootstrap.profile?.name)
-  if (draftProfile !== bootstrap.profile?.name) { setDraftProfile(bootstrap.profile?.name); setPending({}) }
-  const focusKey = useSearch({ strict: false }).msg
+  const search = useSearch({ strict: false })
+  const focusKey = search.msg
+  // TAL-1032: a project quick-create starts the unsaved chat on the project's server-resolved defaults.
+  const projectId = sessionId ? null : search.project ?? null
+  const projects = useProjectsQuery(!!projectId)
+  const project = projectId ? projects.data?.projects.find((p) => p.project_id === projectId) : undefined
+  const draftKey = `${bootstrap.profile?.name ?? ''}\0${projectId ?? ''}`
+  const [draft, setDraft] = useState(draftKey)
+  if (draft !== draftKey) { setDraft(draftKey); setPending({}) }
+  // The project's defaults show until the user picks otherwise; only the picks are sent, so the server applies its own.
+  const shownChoices = { ...(project?.model ? { model: project.model_option_id ?? project.model, model_provider: project.model_provider ?? null } : {}), ...(project?.default_workspace ? { workspace: project.default_workspace } : {}), ...pending }
   const creation = useCreationId(pending)
   const executionModes = useExecutionModesQuery(!sessionId)
   const canReference = executionModes.data?.modes.find((mode) => mode.mode === (pending.execution_mode ?? 'normal'))?.can_reference === true
@@ -143,7 +151,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const ensureSession = async (onCreated?: (sessionId: string) => void): Promise<Session> => {
     if (session) return session
     const scope = getStreamContext()
-    const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default', request_id: creation.next() })
+    const created = await createSessionNow({ ...(!projectId && settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, ...(projectId ? { project_id: projectId } : {}), profile: bootstrap.profile?.name ?? 'default', request_id: creation.next() })
     creation.settle()
     if (scope !== getStreamContext()) throw new DOMException('Context changed', 'AbortError')
     onCreated?.(created.session_id)
@@ -158,7 +166,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
   const newWorktreeChat = async (workspace: string | undefined) => {
     try {
-      const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true, request_id: creation.next() })
+      const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), ...(projectId ? { project_id: projectId } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true, request_id: creation.next() })
       qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
       void invalidateSessionQueries(qc, created.session_id)
       showToast(m.workspace_worktree_created())
@@ -542,7 +550,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <Composer
           sessionId={sessionId}
           session={composerSession}
-          pendingChoices={sessionId ? undefined : pending}
+          pendingChoices={sessionId ? undefined : shownChoices}
           busy={!!live && !isTerminal(live.status)}
           streamId={live?.streamId ?? null}
           settings={settings.data}

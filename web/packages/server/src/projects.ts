@@ -3,7 +3,26 @@ import type { DocumentBackend } from './sessions/storage/backend.js'
 import { updateDocument } from './sessions/storage/document.js'
 import { randomUUID } from 'node:crypto'
 
-export interface Project { project_id: string; name: string; color?: string | null; profile?: string | null; created_at?: number; [key: string]: unknown }
+export interface Project {
+  project_id: string; name: string; color?: string | null; profile?: string | null; created_at?: number
+  /** TAL-1032: trusted workspaces bound to the project, and the one its new chats start in. */
+  workspaces?: string[]; default_workspace?: string | null
+  /** TAL-1032: the model and its provider new chats in the project start on; never one without the other. */
+  model?: string | null; model_provider?: string | null
+  [key: string]: unknown
+}
+
+/** TAL-1032: the bindings as stored, reading an upstream single `workspace` row as one bound default. */
+export function projectBindings(p: Project): { workspaces: string[]; default_workspace: string | null; model: string | null; model_provider: string | null } {
+  const legacy = typeof p.workspace === 'string' && p.workspace ? p.workspace : null
+  const workspaces = Array.isArray(p.workspaces) ? p.workspaces.filter((w): w is string => typeof w === 'string' && !!w) : legacy ? [legacy] : []
+  const chosen = 'default_workspace' in p ? p.default_workspace : legacy
+  const model = typeof p.model === 'string' && p.model ? p.model : null
+  return {
+    workspaces, default_workspace: typeof chosen === 'string' && workspaces.includes(chosen) ? chosen : null,
+    model, model_provider: model && typeof p.model_provider === 'string' && p.model_provider ? p.model_provider : null,
+  }
+}
 
 /** Python `CRON_PROJECT_NAME` / `WEBHOOK_PROJECT_NAME`: system projects that group background sessions per profile. */
 export const SYSTEM_PROJECTS: Record<'cron' | 'webhook', { name: string; color: string }> = { cron: { name: 'Cron Jobs', color: '#6366f1' }, webhook: { name: 'Webhooks', color: '#0ea5e9' } }
