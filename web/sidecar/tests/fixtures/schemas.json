@@ -10067,6 +10067,33 @@
     ],
     "additionalProperties": false
   },
+  "gateway.ownership": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "owned",
+          "foreign",
+          "unbound",
+          "stopped",
+          "unverified"
+        ]
+      },
+      "start_command": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "state",
+      "start_command"
+    ],
+    "additionalProperties": false
+  },
   "gateway.groups": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

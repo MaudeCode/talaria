@@ -3,7 +3,7 @@ import type { InferContractRouterInputs } from '@orpc/contract'
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayMode, type GatewayStatus, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayLifecycle, type GatewayMode, type GatewayStatus, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -21,8 +21,9 @@ import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
-import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
-import { restartGateway } from '../tools/gateway-restart.js'
+import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetRemoteProbes, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
+import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
+import { NOT_CONTROLLED, restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { PluginSettingsInvalid, planPluginSettings, pluginSettingsView, serializePluginSettingsSave } from '../tools/plugin-settings.js'
 import { checkPastedRedirect } from '../tools/plugin-oauth.js'
@@ -170,13 +171,28 @@ async function gatewayMode(ctx: RequestContext, health: Dict): Promise<GatewayMo
 async function currentGatewayStatus(ctx: RequestContext): Promise<GatewayStatus> {
   const sessionsPath = join(home(ctx), 'sessions', 'sessions.json')
   const probe = await health(ctx)
-  return gatewayStatus(probe, loadGatewaySessionIdentityMap(sessionsPath), sessionsPath, await gatewayMode(ctx, probe))
+  const [mode, lifecycle] = await Promise.all([gatewayMode(ctx, probe), ctx.deps.gatewayLifecycle(home(ctx))])
+  return gatewayStatus(probe, loadGatewaySessionIdentityMap(sessionsPath), sessionsPath, mode, lifecycle)
+}
+
+/**
+ * TAL-1627: every lifecycle entry point asks first. A Gateway Web does not control is refused with a typed 409 before any
+ * sidecar lock or CLI runs. Each dispatch then clears the remote probe cache, so the status it returns reads the Gateway afresh.
+ */
+async function controlledGateway<T>(ctx: RequestContext, action: 'start' | 'stop' | 'restart', run: () => Promise<T>): Promise<T> {
+  const lifecycle: GatewayLifecycle = await ctx.deps.gatewayLifecycle(home(ctx))
+  if (!lifecycle.managed) throw new HttpError(409, EXTERNALLY_MANAGED, { ok: false, code: 'gateway_externally_managed', action, lifecycle })
+  return run()
 }
 
 const GATEWAY_ACTION_TIMEOUT_S = 60
 
 /** Python `_handle_gateway_lifecycle` through sidecar `gateway.control`: 409 busy, 504 timeout, 500 failure; only the Agent's first error line (`reason`) leaves the server, never its CLI output (TAL-884). */
 async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 'restart'): Promise<Dict> {
+  return controlledGateway(ctx, action, () => runGatewayAction(ctx, action))
+}
+
+async function runGatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 'restart'): Promise<Dict> {
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running', { ok: false, action })
   let outcome
@@ -187,6 +203,8 @@ async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 're
       : await sidecar.call('gateway.control', { profile_home: home(ctx), action, interrupt: true, background_wait_seconds: GATEWAY_ACTION_TIMEOUT_S }, { timeoutMs: 300_000 })
   } catch (error) {
     throw new HttpError(500, sanitizeError(error), { ok: false, action })
+  } finally {
+    forgetRemoteProbes()
   }
   if (outcome.status === 'busy_live_work') throw new HttpError(409, outcome.reason || 'The gateway still has live work.', { ok: false, action })
   if (outcome.status === 'busy') throw new HttpError(409, 'Another gateway action is already in progress; try again shortly.', { ok: false, action })
@@ -256,7 +274,9 @@ async function applyWithNotification(
     } else if (target === 'agent' && result.gateway_restart === 'resumed') {
       // TAL-1138: the native updater restarted the gateways inside its writer pause. Agent responding still needs the
       // new gateway processes and a current Agent runtime; a scheduled Web restart runs that check from the new server.
-      const detail = result.stash_conflict === true ? str(result.message) : null
+      // TAL-1627: the updater restarts only the local gateways it paused; a monitored Gateway Web does not control is named as not restarted.
+      const controlled = await ctx.deps.gatewayLifecycle(home(ctx)).then((lifecycle) => lifecycle.managed, () => false)
+      const detail = [result.stash_conflict === true ? str(result.message) : null, controlled ? null : NOT_CONTROLLED].filter(Boolean).join('\n\n') || null
       await ctx.deps.updateNotifications.recordGatewayBaseline(notification.id, gatewaysBefore)
       await ctx.deps.updateNotifications.transition(notification.id, 'verifying', null, verifiedIdentity, detail)
       if (result.restart_scheduled === true) (await ctx.deps.updateNotifications.markWebRestart(notification.id))
@@ -598,16 +618,16 @@ export const toolsRouter = os.router({
   })),
   logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail, signal) as Promise<never>)),
   ops: {
-    agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar())]); return { ...gateway, chat } })),
+    agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat, lifecycle] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar()), ctx.deps.gatewayLifecycle(home(ctx))]); return { ...gateway, chat, gateway_lifecycle: lifecycle } })),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),
-    restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
+    restart: os.ops.restart.handler(({ context: { ctx } }) => run(() => controlledGateway(ctx, 'restart', async () => {
       const sidecar = ctx.deps.sidecar()
       if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running')
-      const outcome = await restartGateway(sidecar, home(ctx), true)
+      const outcome = await restartGateway(sidecar, home(ctx), true).finally(forgetRemoteProbes)
       if (outcome.status === 'completed') return { ok: true as const, message: 'Gateway service restarted successfully' }
       if (outcome.status === 'busy') throw new HttpError(429, outcome.message || 'Restart already in progress. Please wait a moment and try again.')
       throw new HttpError(500, outcome.message || 'Internal error running restart')
-    })),
+    }))),
     dashboard: os.ops.dashboard.handler(({ context: { ctx } }) => run(async () => { const config: Dict = await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({})); return dashboardStatus(config, ctx.deps.config.env, ctx.deps.fetch) as Promise<never> })),
     dashboardConfig: os.ops.dashboardConfig.handler(({ context: { ctx } }) => run(async () => dashboardConfig(await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({}))))),
     saveDashboardConfig: os.ops.saveDashboardConfig.handler(({ input, context: { ctx } }) => run(async () => {

@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dict } from '../config/agent-config.js'
-import { GatewayRestartQueue } from './gateway-restart.js'
+import type { GatewayLifecycle } from '@maudecode/talaria-web-contracts'
+import { GatewayRestartQueue, NOT_CONTROLLED } from './gateway-restart.js'
 import { gatewayRestartBlockers, liveGateways } from './health.js'
 import { GATEWAY_RESTART_NOW, UpdateNotificationStore, type UpdateNotificationScope } from './update-notifications.js'
 import { bootTestServer } from '../test/harness.js'
@@ -46,12 +47,16 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
   const waiters: (() => void)[] = []
   const clock = { ms: NOW * 1000 }
   const ready = { now: true }
+  /** TAL-1627: the lifecycle capability each restart reads; an Error rejects the read. */
+  const control: { now: GatewayLifecycle | Error } = { now: { managed: true, reason: 'local_gateway', start_command: null } }
+  const lifecycles: string[] = []
   const queue = new GatewayRestartQueue({
     notifications: store,
     blockers: (profile) => { profiles.push(`probe:${profile}`); const blockers = gatewayRestartBlockers(home, home, NOW); probe(); return blockers },
     restart: (profile, interrupt) => { interrupts.push(interrupt); calls.push('gateway.restart'); profiles.push(`restart:${profile}`); return (restart ?? replaced)(interrupt) },
     gateways: () => liveGateways(home, home, NOW),
     runtimeReady: () => Promise.resolve(ready.now),
+    lifecycle: (profile) => { lifecycles.push(profile); return control.now instanceof Error ? Promise.reject(control.now) : Promise.resolve(control.now) },
     updating: () => updating.now,
     sleep: () => new Promise<void>((resolve) => { waiters.push(resolve) }),
     now: () => clock.ms,
@@ -65,7 +70,7 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
     return row.id
   }
   const row = async (id: string) => (await store.list(OWNER)).notifications.find((entry) => entry.id === id)
-  return { stateDir, home, gateway, replaced, store, queue, calls, interrupts, profiles, tick, waiting, row, clock, ready }
+  return { stateDir, home, gateway, replaced, store, queue, calls, interrupts, profiles, tick, waiting, row, clock, ready, control, lifecycles }
 }
 
 describe('gatewayRestartBlockers', () => {
@@ -349,6 +354,68 @@ describe('GatewayRestartQueue', () => {
     await t.tick()
     await t.tick()
     expect((await t.row(failed))).toMatchObject({ phase: 'failed', detail: expect.stringContaining('Run `hermes gateway restart` manually.') as string })
+  })
+})
+
+/** TAL-1627: the post-update restart reads the same lifecycle capability as every explicit restart. */
+describe('GatewayRestartQueue lifecycle capability', () => {
+  const EXTERNAL: GatewayLifecycle = { managed: false, reason: 'external_gateway', start_command: null }
+
+  it.each([
+    ['external', EXTERNAL],
+    ['unproven loopback', { managed: false, reason: 'local_gateway_unproven' as const, start_command: 'hermes --profile work gateway start' }],
+    ['unknown', new Error('sidecar down')],
+  ] as const)('an %s Gateway is never restarted, retried, or reported restarted', async (_name, lifecycle) => {
+    const t = await setup()
+    t.control.now = lifecycle
+    t.gateway({ active_agents: 0 })
+    const id = await t.waiting('kept update detail', 'work')
+    await t.queue.schedule(id, 'work', 'kept update detail')
+    await t.tick()
+    await t.tick()
+    expect(t.calls).toEqual([])
+    expect(t.lifecycles).toEqual(['work'])
+    const row = await t.row(id)
+    expect(row).toMatchObject({ phase: 'failed', detail: `${NOT_CONTROLLED}\n\nkept update detail` })
+    expect(row?.steps.find((step) => step.id === 'gateway_restart')?.state).toBe('failed')
+    expect(t.queue.pendingId()).toBeNull()
+    expect(t.queue.restartNow(id)).toBe(false)
+  })
+
+  it('rereads the capability when the wait ends, so a target changed during the wait is not restarted', async () => {
+    const t = await setup()
+    t.gateway({ active_agents: 1 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('waiting_for_idle')
+    t.control.now = EXTERNAL
+    t.gateway({ active_agents: 0 })
+    await t.tick()
+    await t.tick()
+    expect(t.calls).toEqual([])
+    expect((await t.row(id))).toMatchObject({ phase: 'failed', detail: NOT_CONTROLLED })
+  })
+
+  it('a resumed wait reads the capability again before restarting', async () => {
+    const t = await setup()
+    t.control.now = EXTERNAL
+    t.gateway({ active_agents: 0 })
+    const id = await t.waiting()
+    await t.queue.resume()
+    await t.tick()
+    expect(t.calls).toEqual([])
+    expect((await t.row(id))?.phase).toBe('failed')
+  })
+
+  it('a controlled Gateway still restarts and verifies as before', async () => {
+    const t = await setup()
+    t.gateway({ active_agents: 0 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    expect(t.calls).toEqual(['gateway.restart'])
+    expect((await t.row(id))?.phase).toBe('succeeded')
   })
 })
 

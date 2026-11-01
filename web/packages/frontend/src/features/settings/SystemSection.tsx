@@ -40,7 +40,8 @@ export function SystemSection() {
   const logout = useLogout()
   const [confirmShutdown, setConfirmShutdown] = useState(false)
   const fail = (e: unknown) => showErrorToast(e)
-  const restart = useMutation({ mutationFn: api.restartAgent, onSuccess: () => { showToast(m.saved()); void qc.invalidateQueries({ queryKey: keys.health.agent }) }, onError: fail })
+  // A refused restart (TAL-1627) rereads the capability, so the control disappears with the error.
+  const restart = useMutation({ mutationFn: api.restartAgent, onSuccess: () => { showToast(m.saved()) }, onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.health.agent }) } })
   const shutdown = useMutation({ mutationFn: api.shutdownServer, onSuccess: () => markServerStopped(qc), onError: fail })
   // The chosen channel is held locally until its save settles; the cache only catches up on success,
   // and a later save (e.g. ignore-agent) must not make the Select snap back meanwhile.
@@ -163,7 +164,7 @@ export function SystemSection() {
           <dd className="text-xs text-muted">{health.data?.checked_at ? formatDate(health.data.checked_at) : null}</dd>
           <dt className="text-muted">{AGENT}</dt>
           <dd className="text-text">{agent.data?.alive === true ? 'ok' : agent.data?.alive === false ? (agent.data.details?.reason ?? 'down') : agent.data?.details?.state ?? '—'}</dd>
-          <dd>{canManage && <Button onClick={() => restart.mutate()} disabled={restart.isPending}>{m.system_restart_agent()}</Button>}</dd>
+          <dd>{canManage && <GatewayRestart lifecycle={agent.data?.gateway_lifecycle} pending={restart.isPending} onRestart={() => restart.mutate()} />}</dd>
         </dl>
       </section>
       <McpSection heading={heading} />
@@ -204,6 +205,21 @@ export function SystemSection() {
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
       <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.result.notification_id) void api.cancelUpdateNotification(pending.result.notification_id).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_title() : m.system_agent_unsupported_title()} description={agentConfirmation ? agentConfirmation.result.refresh_confirmation ? m.system_agent_refresh_warning({ services: agentConfirmation.result.refresh_confirmation.services.join(', '), revision: agentConfirmation.result.candidate_revision?.slice(0, 12) ?? '' }) : `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.result.supported_version ?? '—', supported: (agentConfirmation.result.supported_revision ?? '—').slice(0, 12), candidate: (agentConfirmation.result.candidate_revision ?? '').slice(0, 12) })}` : ''} confirmLabel={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_confirm() : m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); applyAgent.mutate({ ...pending.request, ...(pending.result.refresh_confirmation ? { refreshToken: pending.result.refresh_confirmation.token } : pending.result.candidate_revision ? { confirmedRevision: pending.result.candidate_revision } : {}) }) } }} />
     </div>
+  )
+}
+
+type GatewayLifecycle = NonNullable<Awaited<ReturnType<typeof api.fetchAgentHealth>>['gateway_lifecycle']>
+
+/** TAL-1627: restart only when the server says Web controls the monitored Gateway; otherwise its reason, read-only. An older server sends no capability, so nothing is offered. */
+function GatewayRestart({ lifecycle, pending, onRestart }: { lifecycle: GatewayLifecycle | undefined; pending: boolean; onRestart: () => void }) {
+  if (lifecycle?.managed === true) return <Button onClick={onRestart} disabled={pending}>{m.system_restart_agent()}</Button>
+  if (!lifecycle) return null
+  return (
+    <HelpTip label={m.system_gateway_restart_unavailable()}>
+      {lifecycle.reason === 'external_gateway' ? m.system_gateway_external()
+        : lifecycle.start_command ? <>{m.system_gateway_start_once()}<code className="mt-1 block break-words font-mono">{lifecycle.start_command}</code></>
+          : m.system_gateway_unconfirmed()}
+    </HelpTip>
   )
 }
 

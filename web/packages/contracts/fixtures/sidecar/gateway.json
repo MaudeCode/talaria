@@ -21,6 +21,18 @@
       }
     }
   ],
+  "gateway.ownership": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "port": 8642
+      },
+      "result": {
+        "state": "stopped",
+        "start_command": "hermes --profile default gateway start"
+      }
+    }
+  ],
   "gateway.session": [
     {
       "params": {

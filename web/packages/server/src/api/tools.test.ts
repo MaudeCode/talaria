@@ -1043,7 +1043,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   it('gateway status follows Agent health and the profile gateway sessions without a gateway mode (TAL-266)', async () => {
     sidecar.respond('gateway.mode', () => { throw new Error('the sidecar cannot answer') })
     let body = await json(await s.get('/api/gateway/status'))
-    expect(body).toEqual({ running: false, configured: false, gateway_mode: null, platforms: [], last_active: '', session_count: 0, health: { state: 'unknown', reason: 'gateway_not_configured', gateway_state: null } })
+    expect(body).toEqual({ running: false, configured: false, gateway_mode: null, platforms: [], last_active: '', session_count: 0, health: { state: 'unknown', reason: 'gateway_not_configured', gateway_state: null }, lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
     const sessions = join(s.state, 'sessions', 'sessions.json')
     mkdirSync(join(s.state, 'sessions'), { recursive: true })
     writeFileSync(sessions, JSON.stringify({ a: { session_id: 'sa', origin: { platform: 'telegram' } }, b: { session_id: 'sb', platform: 'Discord' }, c: { session_id: 'sc' } }))
@@ -1549,10 +1549,10 @@ describe('tools helpers', () => {
   it('gateway status maps every Agent health outcome like the Python payload (TAL-266)', () => {
     const tg = { raw_source: 'telegram', platform: 'telegram' }
     const ids = (...metas: { raw_source: string; platform: string }[]): Map<string, { raw_source: string; platform: string }> => new Map(metas.map((m, i) => [`s${String(i)}`, m]))
-    const status = (alive: boolean | null, identity = ids(), details: Json = {}): Json => gatewayStatus({ alive, details }, identity, '/nonexistent/sessions.json')
+    const status = (alive: boolean | null, identity = ids(), details: Json = {}): Json => gatewayStatus({ alive, details }, identity, '/nonexistent/sessions.json', null, { managed: true, reason: 'local_gateway', start_command: null })
     const flags = (body: Json): [unknown, unknown] => [body.running, body.configured]
     // alive true: running and configured, whatever the sessions.
-    expect(status(true)).toEqual({ running: true, configured: true, gateway_mode: null, platforms: [], last_active: '', session_count: 0, health: { state: null, reason: null, gateway_state: null } })
+    expect(status(true)).toEqual({ running: true, configured: true, gateway_mode: null, platforms: [], last_active: '', session_count: 0, health: { state: null, reason: null, gateway_state: null }, lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
     expect(status(true, ids(tg, { raw_source: 'discord', platform: 'discord' })).platforms).toEqual([{ name: 'discord', label: 'Discord' }, { name: 'telegram', label: 'Telegram' }])
     expect(status(true, ids({ raw_source: '', platform: '' }, { raw_source: '', platform: '' }))).toMatchObject({ running: true, platforms: [], session_count: 2 })
     // alive false: configured but down, platforms still listed.
@@ -1567,7 +1567,7 @@ describe('tools helpers', () => {
     expect(flags(status(null, ids(), { state: 'unknown', reason: 'cross_container_freshness', gateway_state: 'running' }))).toEqual([false, true])
     expect(flags(status(null, ids(), { state: 'unknown', reason: 'gateway_stale_stopped_state', gateway_state: 'stopped' }))).toEqual([false, false])
     // TAL-805: a known profile mode decides running over health and sessions; any mode but stopped is configured.
-    const moded = (mode: GatewayMode, alive: boolean | null = true): [unknown, unknown, unknown] => { const body = gatewayStatus({ alive, details: {} }, ids(tg), '/nonexistent/sessions.json', mode); return [body.running, body.configured, body.gateway_mode] }
+    const moded = (mode: GatewayMode, alive: boolean | null = true): [unknown, unknown, unknown] => { const body = gatewayStatus({ alive, details: {} }, ids(tg), '/nonexistent/sessions.json', mode, { managed: true, reason: 'local_gateway', start_command: null }); return [body.running, body.configured, body.gateway_mode] }
     expect(moded('parked')).toEqual([false, true, 'parked'])
     expect(moded('standalone')).toEqual([false, true, 'standalone'])
     expect(moded('stopped', null)).toEqual([false, true, 'stopped'])

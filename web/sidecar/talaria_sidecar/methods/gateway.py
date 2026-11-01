@@ -80,6 +80,52 @@ def _host_serves(home: Path, budget_deadline: float) -> bool:
         time.sleep(0.5)
 
 
+def _ownership_state(home: Path, port: int) -> str:
+    """TAL-1627: who owns loopback ``port`` for the profile at ``home``. Only the Agent's own gateway identity checks (PID
+    lock identity, home, command line and profile) name a gateway, the root host's too for a named profile it serves,
+    and the OS socket inventory names the port's holder. Any error is ``unverified``; nothing here guesses a process."""
+    from .. import agent_services as services
+
+    try:
+        from gateway.status import get_running_pid_identity_strict
+        from hermes_cli import update_cmd_posix_pause as pause
+    except ImportError:  # An Agent without the identity helpers proves nothing.
+        return "unverified"
+    root = _host_root(home)
+    held: list[str] = []
+    try:
+        for candidate in [home.resolve()] + ([root.resolve()] if root else []):
+            runtime = get_running_pid_identity_strict(candidate / "gateway.pid")
+            if runtime is None:
+                continue
+            if not services._gateway_home_matches(candidate, runtime, pause):
+                return "unverified"
+            held.append(services.listener_state(runtime[0], port))
+    except Exception:  # noqa: BLE001 - unreadable identity or socket inventory proves nothing
+        log.debug("gateway ownership probe failed for %s", home, exc_info=True)
+        return "unverified"
+    if not held:
+        return "stopped"
+    if "owned" in held:
+        return "owned"
+    return "unbound" if set(held) == {"none"} else "foreign"
+
+
+def _start_command(home: Path) -> str | None:
+    """The exact one-time start ``_run`` would run for ``home``, named only by a valid profile id."""
+    try:
+        from hermes_cli.profiles import _PROFILE_ID_RE
+
+        profile = _profile_selector(home)
+    except Exception:  # noqa: BLE001 - an Agent that cannot name the profile gets no command
+        return None
+    return f"hermes --profile {profile} gateway start" if isinstance(profile, str) and _PROFILE_ID_RE.fullmatch(profile) else None
+
+
+def ownership(home: Path, port: int) -> dict:
+    return {"state": _ownership_state(home, port), "start_command": _start_command(home)}
+
+
 def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float, interrupt: bool = False) -> dict:
     if action not in ACTIONS:
         raise InvalidParams("unsupported gateway action")
@@ -279,6 +325,13 @@ def register(registry) -> None:
     @registry.method("gateway.restart", requires_agent=False)
     def restart_(ctx: CallContext, params: dict) -> dict:
         return run(ctx, params, "restart")
+
+    @registry.method("gateway.ownership")
+    def ownership_(ctx: CallContext, params: dict) -> dict:
+        port = params.get("port")
+        if not isinstance(port, int) or isinstance(port, bool) or not 0 < port <= 65535:
+            raise InvalidParams("port must be a TCP port")
+        return ownership(profile_home_param(params), port)
 
     @registry.method("gateway.mode")
     def mode_(ctx: CallContext, params: dict) -> dict:

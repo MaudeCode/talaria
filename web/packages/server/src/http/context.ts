@@ -66,6 +66,7 @@ import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
 import type { UpdateService } from '../tools/updates.js'
 import type { GatewayRestartQueue } from '../tools/gateway-restart.js'
+import type { GatewayLifecycle } from '@maudecode/talaria-web-contracts'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 
 /**
@@ -183,6 +184,8 @@ export interface AppDeps {
   pruneAdvice: PruneAdvice
   /** TAL-953: the post-update gateway restart that waits for the gateway to go idle. */
   gatewayRestarts: GatewayRestartQueue
+  /** TAL-1627: whether Web's local gateway CLI controls the Gateway it monitors for the profile at this home. */
+  gatewayLifecycle: (profileHome: string) => Promise<GatewayLifecycle>
   cspLimiter: WindowLimiter
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter

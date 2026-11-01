@@ -1,3 +1,4 @@
+import type { GatewayLifecycle } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
@@ -15,6 +16,8 @@ export interface GatewayRestartQueueDeps {
   gateways: (profile: string) => Promise<GatewayProcess[]>
   /** TAL-1138: the server's Agent runtime check (sidecar `runtime.status`) reports compatible and not stale. */
   runtimeReady: () => Promise<boolean>
+  /** TAL-1627: whether Web's local gateway CLI controls the Gateway it monitors for that profile. */
+  lifecycle: (profile: string) => Promise<GatewayLifecycle>
   /** An update is changing the Agent source; no restart, even a forced one, starts mid-checkout. */
   updating?: () => boolean
   pollMs?: number
@@ -36,6 +39,8 @@ const HELD: RestartBlockers = { ...IDLE, restart_blocked: true }
 const REUSED = 'The gateway restart from an earlier Hermes Agent update is still waiting, and it loads this update too.'
 const NOT_BACK = 'Hermes Agent was updated, but the gateway did not come back. Run `hermes gateway restart` manually.'
 const UNVERIFIABLE = 'Hermes Agent was updated, but the gateway restart could not be verified. Run `hermes gateway restart` manually.'
+/** TAL-1627: the post-update restart skipped a Gateway Web does not control. */
+export const NOT_CONTROLLED = 'Hermes Agent was updated, but Talaria does not control the gateway it monitors, so that gateway was not restarted. Restart it where it runs.'
 const READY_WINDOW_MS = 90_000
 const READY_POLL_MS = 1_000
 
@@ -130,6 +135,7 @@ export class GatewayRestartQueue {
   }
 
   private async run(pending: { id: string; profile: string; forced: boolean }, woken: Promise<void>, detail: string | null): Promise<void> {
+    if (await this.uncontrolled(pending, detail)) return
     while (!this.stopped) {
       // An update can take the source lock while a blocker probe is in flight: recheck it before restarting.
       await this.waitForIdle(pending, woken)
@@ -159,8 +165,24 @@ export class GatewayRestartQueue {
     while (this.inFlight) await this.inFlight
   }
 
+  /**
+   * TAL-1627: a Gateway Web does not control (or whose control is unknown) is never restarted, retried, or reported
+   * restarted: the record fails at the restart step with the reason, and the waiting slot is released.
+   */
+  private async uncontrolled(pending: { id: string; profile: string }, detail: string | null): Promise<boolean> {
+    let managed = false
+    try { managed = (await this.deps.lifecycle(pending.profile)).managed } catch (error) { this.deps.log(`[updates] gateway lifecycle unavailable: ${(error as Error).message}`) }
+    if (managed) return false
+    this.deps.log('[updates] the post-update gateway restart was skipped: Talaria does not control that gateway')
+    if (this.pending === pending) this.pending = null
+    await this.deps.notifications.transition(pending.id, 'restarting')
+    await this.deps.notifications.transition(pending.id, 'failed', null, undefined, [NOT_CONTROLLED, detail].filter(Boolean).join('\n\n'))
+    return true
+  }
+
   private async restartGateway(pending: { id: string; profile: string; forced: boolean }, detail: string | null): Promise<boolean> {
     const { id, profile } = pending
+    if (await this.uncontrolled(pending, detail)) return false
     await this.deps.notifications.transition(id, 'restarting')
     const baseline = await this.deps.gateways(profile)
     await this.deps.notifications.recordGatewayBaseline(id, baseline)

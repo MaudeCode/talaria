@@ -489,7 +489,13 @@ def wait_stopped(entry, records, stopped, *, writers_only=False):
 def verify_listener(entry):
     """A legacy HTTP response has no PID identity; require OS socket ownership as well."""
     _endpoint(entry)
-    pid, port = entry['pid'], entry['port']
+    if listener_state(entry['pid'], entry['port']) != 'owned':
+        raise RuntimeError(f'{_name(entry)} legacy listener ownership could not be proved; source was not changed.')
+
+
+def listener_state(pid, port):
+    """Who holds TCP ``port``'s listeners: ``owned`` when ``pid`` holds every one, ``none`` when nothing listens, else
+    ``other`` (also on a platform without a socket inventory). Unreadable inventories raise OSError."""
     if sys.platform.startswith('linux'):
         owned = set()
         for path in Path(f'/proc/{pid}/fd').iterdir():
@@ -507,15 +513,13 @@ def verify_listener(entry):
                 fields = line.split()
                 if int(fields[1].split(':')[1], 16) == port and fields[3] == '0A':
                     listeners.add('socket:[' + fields[9] + ']')
-        matched = bool(listeners) and listeners <= owned
-    elif sys.platform == 'darwin':
+        return 'none' if not listeners else 'owned' if listeners <= owned else 'other'
+    if sys.platform == 'darwin':
         result = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN', '-Fp'],
                                 capture_output=True, text=True, timeout=10, check=False)
-        matched = result.returncode == 0 and {int(line[1:]) for line in result.stdout.splitlines() if line.startswith('p')} == {pid}
-    else:
-        matched = False
-    if not matched:
-        raise RuntimeError(f'{_name(entry)} legacy listener ownership could not be proved; source was not changed.')
+        pids = {int(line[1:]) for line in result.stdout.splitlines() if line.startswith('p')}
+        return 'none' if not pids else 'owned' if result.returncode == 0 and pids == {pid} else 'other'
+    return 'other'
 
 
 def _auth(entry):

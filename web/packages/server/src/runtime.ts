@@ -71,7 +71,8 @@ import { CronService } from './tools/crons.js'
 import { KanbanService } from './tools/kanban.js'
 import { DashboardPlugins } from './tools/dashboard-plugins.js'
 import { ExtensionService } from './tools/extensions.js'
-import { dashboardStatus, gatewayRestartBlockers, liveGateways } from './tools/health.js'
+import { agentHealth, dashboardStatus, gatewayRestartBlockers, liveGateways } from './tools/health.js'
+import { gatewayLifecycle } from './tools/gateway-lifecycle.js'
 import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
 
@@ -804,6 +805,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     updateNotifications,
     pruneAdvice,
     gatewayRestarts: null as unknown as GatewayRestartQueue,
+    gatewayLifecycle: (home: string) => gatewayLifecycle({
+      env, stateDir: config.stateDir, sidecar: () => sidecar, log,
+      answering: async (profileHome) => (await agentHealth({ env, hermesHome: config.hermesHome, profileHome: () => profileHome, fetch: () => lazyFetch, now })).alive === true,
+    }, home),
     cspLimiter: new WindowLimiter(60, 100, now),
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
@@ -976,6 +981,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return restartGateway(sidecar, profileHome(profile), interrupt)
     },
     gateways: (profile) => liveGateways(config.hermesHome, profileHome(profile), now()),
+    lifecycle: (profile) => deps.gatewayLifecycle(profileHome(profile)),
     runtimeReady: async () => {
       if (!sidecar) return false
       const runtime = await sidecar.call('runtime.status', {}, { timeoutMs: 5000 })

@@ -189,6 +189,9 @@ def test_error_conditions_are_typed(handshaken: SidecarProcess, hermes_home: pat
     assert message["error"]["data"]["condition"] == "not_found"
     message, _ = handshaken.call("cron.history", {"profile_home": home, "job_id": "../etc"})
     assert message["error"]["code"] == -32602
+    for port in (0, 65536, "8642", True):
+        message, _ = handshaken.call("gateway.ownership", {"profile_home": home, "port": port})
+        assert message["error"]["code"] == -32602, port
     message, _ = handshaken.call("commands.exec", {"profile_home": home, "command": "/definitely-not-a-command"})
     assert message["error"]["data"]["condition"] == "command_not_found"
     message, _ = handshaken.call("stt.transcribe", {"profile_home": home, "audio_b64": "not base64!"})

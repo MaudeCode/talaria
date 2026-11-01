@@ -851,5 +851,17 @@ export const GATEWAY_METHODS = {
   'gateway.restart': { params: GatewayActionParams, result: GatewayActionResult, stream: GatewayActionStream },
   /** TAL-805: the gateway mode of the profile `name` at `profile_home`; the root profile (`is_default`) is the host itself. */
   'gateway.mode': { params: ProfileHomeParams.extend({ name: z.string().min(1), is_default: z.boolean() }), result: z.object({ gateway_mode: GatewayModeSchema }) },
+  /**
+   * TAL-1627: who owns the loopback `port` Web monitors, from the Agent's own gateway identity checks for the profile at
+   * `profile_home` (and, for a named profile, its host root). `owned`: a verified gateway of that profile owns every listener
+   * on the port; `foreign`: a verified gateway runs, but another process holds the port; `unbound`: a verified gateway runs
+   * and nothing provably listens there yet; `stopped`: no gateway runs for the profile; `unverified`: a gateway runs whose
+   * identity or listener could not be proved. `start_command` is the exact CLI start the sidecar would run for the profile,
+   * null when its profile name is not a valid profile id.
+   */
+  'gateway.ownership': {
+    params: ProfileHomeParams.extend({ port: z.number().int().min(1).max(65535) }),
+    result: z.object({ state: z.enum(['owned', 'foreign', 'unbound', 'stopped', 'unverified']), start_command: z.string().nullable() }),
+  },
 } as const
 export const GROUP_METHODS = { 'gateway.groups': { params: GroupSidecarParamsSchema, result: GroupSidecarResultSchema } } as const
