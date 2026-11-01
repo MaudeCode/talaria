@@ -1045,6 +1045,47 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertTrue(status.isAlreadySignedIn)
     }
 
+    /// TAL-48: Sign In Again as another person on the same server and profile drops the previous person's local state.
+    @MainActor
+    func testSigningInAsAnotherPersonPurgesThePreviousPersonsState() async throws {
+        let server = URL(string: "https://example.test")!
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(server.absoluteString, forKey: .serverURL)
+        let cookies = ServerCookieStore.makeIsolatedStorage()
+        let client = OIDCMockAuthAPIClient()
+        var purged: [URL] = []
+        let manager = AuthManager(
+            keychain: keychain, clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
+            webAuthenticator: { _, scheme in
+                URL(string: "\(scheme)://oidc-callback?code=exchange-code&state=\(client.state!)&flow_id=flow-1&server_id=server-1")!
+            },
+            cookieStorage: cookies, profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetServerScopedState: { purged.append($0) },
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+        client.personID = "oidc:alice"
+        manager.reauthenticateActivePerson()
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        let aliceRevision = manager.authenticatedIdentityRevision
+        let alicePurges = purged.count
+
+        // The same person again keeps the local state.
+        manager.reauthenticateActivePerson()
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+        XCTAssertEqual(purged.count, alicePurges)
+        XCTAssertEqual(manager.authenticatedIdentityRevision, aliceRevision)
+
+        // Bob signs in on the same profile: Alice's cache, drafts and mounted views go.
+        client.personID = "oidc:bob"
+        manager.reauthenticateActivePerson()
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(purged.count, alicePurges + 1)
+        XCTAssertEqual(manager.authenticatedIdentityRevision, aliceRevision + 1)
+    }
+
     func testRecoveryBlocksWritesAndUploadsButAllowsAuthAndReads() async throws {
         let server = URL(string: "https://example.test")!
         let owner = UUID()
@@ -1815,6 +1856,8 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private(set) var logoutCount = 0
     /// Auth-relevant calls in order: `authStatus`, `exchange`, `profiles`.
     private(set) var callLog: [String] = []
+    /// The person a server that keeps sessions per person reports for the login (TAL-48); nil: no isolation.
+    var personID: String?
 
     init(
         authorizationBaseURL: URL = URL(string: "https://example.test")!,
@@ -1851,7 +1894,9 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
             loggedIn: reportsLoggedInAfterExchange && !exchangeCodes.isEmpty,
             passwordAuthEnabled: passwordAuthEnabled,
             oidcEnabled: true,
-            oidcNativeHandoffEnabled: true
+            oidcNativeHandoffEnabled: true,
+            personIsolation: personID == nil ? nil : PersonIsolationCapability(version: 1, enabled: true),
+            person: personID.map { ServerPerson(id: $0, displayName: $0) }
         )
     }
 

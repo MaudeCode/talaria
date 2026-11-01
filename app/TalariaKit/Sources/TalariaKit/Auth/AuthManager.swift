@@ -470,7 +470,8 @@ public final class AuthManager {
             let activeProfile = try await authenticateWithOIDC(
                 client: client,
                 serverURL: serverURL,
-                cookieStorage: cookies
+                cookieStorage: cookies,
+                replacingSignedInSession: reauthenticationIsVoluntary && pendingReauthentication == serverURL
             )
             func abandonSession() async {
                 _ = try? await client.logout()
@@ -654,7 +655,8 @@ public final class AuthManager {
     private func authenticateWithOIDC(
         client: any AuthAPIClient,
         serverURL: URL,
-        cookieStorage: HTTPCookieStorage
+        cookieStorage: HTTPCookieStorage,
+        replacingSignedInSession: Bool = false
     ) async throws -> String {
         var startedFlow: (id: String, state: String)?
         var attemptedExchange = false
@@ -664,7 +666,8 @@ public final class AuthManager {
             guard status.oidcNativeHandoffEnabled == true else {
                 throw OIDCSignInError.incompatibleServer
             }
-            guard !status.isAlreadySignedIn else { throw OIDCSignInError.unavailable }
+            // A user-chosen Sign In Again (TAL-48) replaces a session that is still valid.
+            guard !status.isAlreadySignedIn || replacingSignedInSession else { throw OIDCSignInError.unavailable }
 
             let callbackScheme = TalariaDeepLink.scheme
             var flow = try NativeOIDCFlow.make(callbackScheme: callbackScheme)
@@ -695,7 +698,8 @@ public final class AuthManager {
                 codeVerifier: flow.codeVerifier
             )
             guard response.ok == true else { throw APIError.unauthorized }
-            guard try await client.authStatus().isAlreadySignedIn else {
+            let signedIn = try await client.authStatus()
+            guard signedIn.isAlreadySignedIn else {
                 throw APIError.unauthorized
             }
             startedFlow = nil
@@ -703,7 +707,8 @@ public final class AuthManager {
             // that before anything is committed, never a local default or cached
             // selection (TAL-131). This response may also set `hermes_profile`,
             // so callers persist cookies only after it returns.
-            return try Self.authorizedProfileName(from: try await client.profiles())
+            let profile = try Self.authorizedProfileName(from: try await client.profiles())
+            return Self.authenticatedIdentity(profile: profile, status: signedIn)
         } catch {
             if let startedFlow {
                 _ = try? await client.cancelNativeOIDC(
@@ -717,6 +722,15 @@ public final class AuthManager {
             }
             throw error
         }
+    }
+
+    /// The sign-in marker `resetProfileScopedStateIfChanged` compares: the
+    /// authorized profile, plus the person on a server that keeps sessions per
+    /// person (TAL-48), so signing in as someone else purges the previous
+    /// person's cache, drafts and views exactly like a profile change.
+    nonisolated static func authenticatedIdentity(profile: String, status: AuthStatusResponse) -> String {
+        guard status.personIsolation?.enabled == true, let person = status.person?.id, !person.isEmpty else { return profile }
+        return "\(profile)\n\(person)"
     }
 
     /// The `active` profile from `GET /api/profiles`, accepted only when it is a

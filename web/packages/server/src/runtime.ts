@@ -732,7 +732,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
    */
   const sessionTarget = async (caller: Session, targetId: string, self: string): Promise<Session> => {
     const target = await storedSession(targetId)
-    if (!target || !profilesMatch(target.profile, caller.profile)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
+    // TAL-48: another person's session (or, for a person, an unowned one) is as unknown as another profile's.
+    if (!target || !profilesMatch(target.profile, caller.profile) || !sessions.personMaySee(target.owner_person_id)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
     if (target.session_id === caller.session_id) throw new SidecarServerError(self, 'self_target')
     const readOnly = await sessions.readOnlyReason(target)
       ?? ((await sessions.isSubagentViewOnly(target.session_id)) ? 'Subagent sessions are view-only and cannot be written from WebUI' : null)
