@@ -231,6 +231,26 @@ describe('Composer', () => {
     expect(document.querySelector('.attach-tray')).toBeNull()
   })
 
+  it('does not bring back a discussion send refused after auth or profile teardown (TAL-1074)', async () => {
+    const sent = deferred<boolean>()
+    const room = { identity: 'room-a', maxUploadBytes: 1_000_000, maxAttachments: 4, canSend: true, onSend: vi.fn(() => sent.promise), onUpload: vi.fn((file: File) => Promise.resolve({ attachment_id: file.name } as never)) }
+    const tree = () => (
+      <QueryClientProvider client={new QueryClient()}>
+        <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer room={room} settings={undefined} /></BootstrapContext.Provider>
+      </QueryClientProvider>
+    )
+    const view = render(tree())
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [new File(['x'], 'kept.txt', { type: 'text/plain', lastModified: 1 })] } })
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(room.onSend).toHaveBeenCalledOnce()
+    view.unmount()
+    resetConnectionsForTests()
+    await act(async () => { sent.resolve(false); await sent.promise })
+    render(tree())
+    expect(document.querySelector('.attach-tray')).toBeNull()
+  })
+
   it.each(['session', 'owner', 'attachment refusal', 'capability refusal'].flatMap((replacement) => [false, true].map((completedBeforeReplacement) => ({ replacement, completedBeforeReplacement }))))('leaves attachment identity on $replacement (completed: $completedBeforeReplacement), rolling back only a refused receipt', async ({ replacement, completedBeforeReplacement }) => {
     const upload = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
     const receipt = { filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png', rollback_token: 'obsolete-receipt' }

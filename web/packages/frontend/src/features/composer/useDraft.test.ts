@@ -459,7 +459,13 @@ describe('staged files (TAL-1074)', () => {
     act(() => { discardStagedFiles('s-c') })
     expect(hooks.map((hook) => hook.result.current[0].length)).toEqual([0, 0, 0, 1])
     expect(finishUpload('f', fenced, { status: 'done' })).toBe(false)
+    const stale = hooks[3]!.result.current[1]
     act(() => { resetStagedFiles() })
     expect(hooks[3]!.result.current[0]).toEqual([])
+    // A setter captured before the reset writes nothing; one from a render after it works again.
+    act(() => { stale([pending('late')]) })
+    expect(hooks[3]!.result.current[0]).toEqual([])
+    act(() => { hooks[3]!.result.current[1]([pending('fresh')]) })
+    expect(hooks[3]!.result.current[0].map((f) => f.key)).toEqual(['fresh'])
   })
 })

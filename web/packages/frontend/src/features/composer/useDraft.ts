@@ -166,6 +166,8 @@ interface Tray { sessionId: string | null; files: PendingFile[]; attempts: Map<s
 const trays = new Map<string, Tray>()
 const trayListeners = new Set<() => void>()
 const NO_FILES: PendingFile[] = []
+/** Advances on every auth or profile reset: a setter captured before it (a send settling late) writes nothing. */
+let trayGeneration = 0
 const subscribeTrays = (changed: () => void) => { trayListeners.add(changed); return () => { trayListeners.delete(changed) } }
 function writeTray(id: string, tray: Tray): void {
   // Attempts follow their chips: a key no longer staged fences its late receipt.
@@ -178,7 +180,9 @@ function writeTray(id: string, tray: Tray): void {
 /** The staged files of one composer identity; an update made after the composer moved on still lands on that identity. */
 export function useStagedFiles(id: string, sessionId: string | null) {
   const files = useSyncExternalStore(subscribeTrays, () => trays.get(id)?.files ?? NO_FILES, () => NO_FILES)
+  const generation = useSyncExternalStore(subscribeTrays, () => trayGeneration, () => trayGeneration)
   const setFiles = (update: SetStateAction<PendingFile[]>) => {
+    if (generation !== trayGeneration) return
     const tray = trays.get(id)
     const current = tray?.files ?? NO_FILES
     const next = typeof update === 'function' ? update(current) : update
@@ -233,6 +237,7 @@ export function discardStagedFiles(sessionId: string): void {
 
 /** Auth or profile changes cannot hand another identity staged files. */
 export function resetStagedFiles(): void {
+  trayGeneration++
   trays.clear()
   for (const changed of trayListeners) changed()
 }
