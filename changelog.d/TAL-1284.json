@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A chat that is close to its context limit now compresses in the background after five quiet minutes, so your next message starts without waiting; archived chats are left alone.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
