@@ -197,8 +197,11 @@ export function SessionListPanel() {
   const effects = useResourceEffects()
   const rows = withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
   const tree = nestSessionRows(rows)
-  // A nested row is in its parent's source tab.
-  const tabCount = (cli: boolean) => tree.roots.reduce((n, r) => (!!r.is_cli_session === cli ? n + 1 + (tree.children.get(r.session_id)?.length ?? 0) : n), 0)
+  // The server counts each tab (a nested row in its parent's); an optimistic write that hides a row takes it and its nested rows off at once.
+  const shownIds = new Set(rows.map((r) => r.session_id))
+  const listed = nestSessionRows(data?.sessions ?? [])
+  const tabCount = (cli: boolean) => ((cli ? data?.cli_session_count : data?.webui_session_count) ?? 0)
+    - listed.roots.reduce((n, r) => (!!r.is_cli_session === cli && !shownIds.has(r.session_id) ? n + 1 + (listed.children.get(r.session_id)?.length ?? 0) : n), 0)
   const cliCount = tabCount(true)
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = useDebounced(filter.trim(), 200)

@@ -37,7 +37,7 @@ const cli = row('cli', 'Cli zebra', { project_id: 'p1', is_cli_session: true, so
 const shown = () => [...document.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))
 
 beforeEach(() => {
-  vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli] } as never)
+  vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli], webui_session_count: 3, cli_session_count: 1 } as never)
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj' }] } as never)
   vi.mocked(api.searchSessions).mockReset()
 })
@@ -75,7 +75,7 @@ describe('nested subagent rows (TAL-1151)', () => {
   const nested = () => [...document.querySelectorAll('.session-item-nested')].map((el) => el.getAttribute('data-sid'))
 
   it('renders each linked row under its parent and hides it with the parent\'s filtered-out row', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host] } as never)
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Plan the release')
     expect(shown()).toEqual(['sub-orphan', 'web-parent', 'sub-web'])
@@ -91,8 +91,21 @@ describe('nested subagent rows (TAL-1151)', () => {
     expect(shown()).toEqual(['web-parent', 'sub-web'])
   })
 
+  it('shows the server\'s tab counts and takes an archived parent\'s nested rows off at once', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
+    vi.mocked(api.archiveSession).mockReturnValue(new Promise(() => undefined) as never)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Plan the release')
+    expect(screen.getByRole('button', { name: 'WebUI sessions (3)' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(api.archiveSession).toHaveBeenCalledWith('web-parent', true))
+    expect(shown()).toEqual(['sub-orphan'])
+    expect(screen.getByRole('button', { name: 'WebUI sessions (1)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'CLI sessions (2)' })).toBeInTheDocument()
+  })
+
   it('nests a search match only under a parent the server matched too', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host] } as never)
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
     vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...child, match_type: 'title' }, { ...parent, match_type: 'title' }, { ...orphan, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Plan the release')
