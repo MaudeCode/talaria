@@ -203,6 +203,7 @@ textarea#msg::-webkit-scrollbar{display:var(--composer-scrollbar-display)}
 .msg-foot{flex-wrap:nowrap;margin-top:2px}
 .msg-foot .msg-time,.msg-foot .msg-run-meta{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .msg-foot > button{flex-shrink:0;width:26px;height:26px}
+.msg-foot > .msg-turn-usage{width:auto;height:26px;white-space:nowrap}
 @media (max-width:640px){.msg-foot .msg-run-meta{display:none}}
 }
 /* Transcript loading skeleton (TranscriptSkeleton.tsx). Sheen/fade keyframes live in keyframes.css. */

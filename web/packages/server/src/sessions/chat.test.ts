@@ -490,6 +490,88 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  describe('per-turn usage on the reply (TAL-1076)', () => {
+    type Counters = [prompt: number, completion: number, cacheRead: number, cacheWrite: number, cost: number | null, costStatus?: string]
+    const counters = ([prompt, completion, cacheRead, cacheWrite, cost, costStatus = 'estimated']: Counters): ChatResult['usage'] => ({ prompt_tokens: prompt, completion_tokens: completion, cache_read_tokens: cacheRead, cache_write_tokens: cacheWrite, estimated_cost_usd: cost, cost_status: costStatus })
+    /** One turn whose agent read `start` when the turn bound it and `end` when it finished; `start: null` is an older sidecar. */
+    async function usageTurn(sid: string, message: string, start: Counters | null, end: Counters, extra: Partial<ChatResult> = {}): Promise<{ frames: SseFrame[]; streamId: string }> {
+      sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${message}` }],
+        { usage: counters(end), ...(start ? { usage_start: counters(start) } : {}), ...extra }))
+      const begun = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      const streamId = String(begun.stream_id)
+      return { frames: await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end' || f.event === 'apperror' || f.event === 'cancel'), streamId }
+    }
+    const replies = (messages: unknown): Json[] => (messages as Json[]).filter((m) => m.role === 'assistant')
+    const detailReplies = async (sid: string, query = ''): Promise<Json[]> => replies(((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages)
+    const doneReplies = (frames: SseFrame[]): Json[] => replies(((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages)
+    const FIRST = { input_tokens: 100, output_tokens: 20, cache_read_tokens: 40, cache_write_tokens: 10, estimated_cost: 0.002, cache_hit_percent: 40 }
+
+    it('stamps each reply with its own turn deltas, the same live, on reload, cold, paged and replayed', async () => {
+      const sid = await newSession(s)
+      await usageTurn(sid, 'one', [0, 0, 0, 0, 0], [100, 20, 40, 10, 0.002])
+      // The cached agent's counters carry the first turn: the second reply shows only what the second turn added.
+      const { frames, streamId } = await usageTurn(sid, 'two', [100, 20, 40, 10, 0.002], [250, 50, 140, 10, 0.005])
+      const second = { input_tokens: 150, output_tokens: 30, cache_read_tokens: 100, cache_write_tokens: 0, estimated_cost: 0.003, cache_hit_percent: 67 }
+      const expected = [FIRST, second]
+      expect(doneReplies(frames).map((m) => m._turnUsage)).toEqual(expected)
+      // The session counters keep their meaning: the totals, not the turn.
+      expect((frames.find((f) => f.event === 'done')?.data as Json).usage).toMatchObject({ input_tokens: 250, output_tokens: 50 })
+      expect((await detailReplies(sid)).map((m) => m._turnUsage)).toEqual(expected)
+      s.deps.sessionStore.sessions.delete(sid)
+      expect((await detailReplies(sid)).map((m) => m._turnUsage)).toEqual(expected)
+      expect((await detailReplies(sid, '&msg_limit=1')).map((m) => m._turnUsage)).toEqual([second])
+      expect((await detailReplies(sid, '&msg_limit=2&msg_before=2')).map((m) => m._turnUsage)).toEqual([FIRST])
+      // A second client attaching after the run replays the same settled record.
+      const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      expect(doneReplies(replay).map((m) => m._turnUsage)).toEqual(expected)
+      // Copies keep each reply's own record.
+      const duplicate = String(((await json(await post(s, '/api/session/duplicate', { session_id: sid }))).session as Json).session_id)
+      expect((await detailReplies(duplicate)).map((m) => m._turnUsage)).toEqual(expected)
+      const branch = String((await json(await post(s, '/api/session/branch', { session_id: sid, keep_count: 2 }))).session_id)
+      expect((await detailReplies(branch)).map((m) => m._turnUsage)).toEqual([FIRST])
+      // Editing the second prompt cuts the transcript back to the first exchange, whose reply keeps its record.
+      expect((await post(s, '/api/session/truncate', { session_id: duplicate, keep_count: 2 })).status).toBe(200)
+      expect((await detailReplies(duplicate)).map((m) => m._turnUsage)).toEqual([FIRST])
+    })
+
+    it.each([
+      ['a restarted agent counts from its own start', [0, 0, 0, 0, 0], [80, 12, 0, 0, 0.001], { input_tokens: 80, output_tokens: 12, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: 0.001, cache_hit_percent: null }],
+      ['cache-only consumption', [100, 20, 40, 10, 0.002], [100, 20, 90, 10, 0.002], { input_tokens: 0, output_tokens: 0, cache_read_tokens: 50, cache_write_tokens: 0, estimated_cost: 0, cache_hit_percent: null }],
+      ['an unpriced provider', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.002, 'unknown'], { input_tokens: 60, output_tokens: 10, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: null, cache_hit_percent: null }],
+      ['an Agent with no cost figure', [100, 20, 40, 10, null], [160, 30, 40, 10, null], { input_tokens: 60, output_tokens: 10, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: null, cache_hit_percent: null }],
+      ['a turn that compressed mid-run', [100, 20, 40, 10, 0.002], [400, 60, 40, 10, 0.004], { input_tokens: 300, output_tokens: 40, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: 0.002, cache_hit_percent: null }],
+    ] as [string, Counters, Counters, Json][])('records %s', async (name, start, end, expected) => {
+      const sid = await newSession(s)
+      await usageTurn(sid, 'one', [0, 0, 0, 0, 0], [100, 20, 40, 10, 0.002])
+      const compressed = name.includes('compressed')
+      const { frames } = await usageTurn(sid, 'two', start, end, compressed ? { compressed: true, context_messages: [{ role: 'user', content: 'two' }, { role: 'assistant', content: 'answer to two' }], post_compression_context_tokens_estimate: 50 } : {})
+      expect(doneReplies(frames).map((m) => m._turnUsage)).toEqual([FIRST, expected])
+      s.deps.sessionStore.sessions.delete(sid)
+      expect((await detailReplies(sid)).map((m) => m._turnUsage)).toEqual([FIRST, expected])
+    })
+
+    it.each([
+      ['a turn that consumed nothing', [100, 20, 40, 10, 0.002], [100, 20, 40, 10, 0.002], {}],
+      ['a turn with no answer', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { messages: [], final_response: '', token_sent: false }],
+      ['an older sidecar with no baseline', null, [160, 30, 40, 10, 0.003], {}],
+      ['a failed turn', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { status: 'error', failed: true, error: 'synthetic failure' }],
+      ['a partial turn with an error', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { partial: true, error: 'synthetic cut off' }],
+      ['a cancelled turn', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { status: 'cancelled' }],
+    ] as [string, Counters | null, Counters, Partial<ChatResult>][])('stamps no reply for %s and leaves the previous one alone', async (_name, start, end, extra) => {
+      const sid = await newSession(s)
+      await usageTurn(sid, 'one', [0, 0, 0, 0, 0], [100, 20, 40, 10, 0.002])
+      await usageTurn(sid, 'two', start, end, extra)
+      s.deps.sessionStore.sessions.delete(sid)
+      const rows = await detailReplies(sid)
+      expect(rows[0]?._turnUsage).toEqual(FIRST)
+      expect(rows.slice(1).every((m) => !('_turnUsage' in m))).toBe(true)
+      // The next turn's baseline is its agent's counters when it began: it never absorbs the unstamped turn's tokens.
+      const { frames } = await usageTurn(sid, 'three', [160, 30, 40, 10, 0.003], [200, 35, 40, 10, 0.004])
+      expect(doneReplies(frames).at(-1)?._turnUsage).toEqual({ input_tokens: 40, output_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: 0.001, cache_hit_percent: null })
+      expect(doneReplies(frames)[0]?._turnUsage).toEqual(FIRST)
+    })
+  })
+
   it('streams a turn, settles the transcript, journals every frame, and replays it after the run', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {

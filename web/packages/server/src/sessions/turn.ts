@@ -19,13 +19,13 @@ import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { TRANSCRIPT_WINDOW, ChatUsageSchema, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
+import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
-import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
+import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
@@ -188,6 +188,23 @@ function applyAgentUsage(target: UsageCounters, usage: ChatUsage): void {
   if (usage.estimated_cost_usd !== null) target.estimated_cost = usage.estimated_cost_usd
   if (usage.cache_read_tokens > 0) target.cache_read_tokens = usage.cache_read_tokens
   if (usage.cache_write_tokens > 0) target.cache_write_tokens = usage.cache_write_tokens
+}
+
+/**
+ * TAL-1076: what one turn's agent added to its counters between binding and settling, or null when the sidecar reported no
+ * baseline or the turn consumed nothing. An unpriced call (`cost_status: unknown`) that left the cost unchanged has no cost.
+ */
+function turnUsageOf(start: ChatUsage | null | undefined, end: ChatUsage): TurnUsage | null {
+  if (!start) return null
+  const delta = (key: 'prompt_tokens' | 'completion_tokens' | 'cache_read_tokens' | 'cache_write_tokens'): number => Math.max(0, end[key] - start[key])
+  const [input, output, cacheRead, cacheWrite] = [delta('prompt_tokens'), delta('completion_tokens'), delta('cache_read_tokens'), delta('cache_write_tokens')]
+  if (!input && !output && !cacheRead && !cacheWrite) return null
+  const priced = end.estimated_cost_usd !== null && start.estimated_cost_usd !== null && !(end.cost_status === 'unknown' && end.estimated_cost_usd === start.estimated_cost_usd)
+  return {
+    input_tokens: input, output_tokens: output, cache_read_tokens: cacheRead, cache_write_tokens: cacheWrite,
+    estimated_cost: priced ? Math.max(0, Math.round((end.estimated_cost_usd! - start.estimated_cost_usd!) * 1e10) / 1e10) : null,
+    cache_hit_percent: promptCacheHitPercent(cacheRead, input),
+  }
 }
 
 /** TAL-397: the `metering` frame's counters, the same figures the session persists. */
@@ -1152,12 +1169,18 @@ export class TurnRunner {
         if (turnIdx === prevAssistants && reasoning.trim() && !m.reasoning) m.reasoning = reasoning.trim()
       }
       const duration = Math.max(0, now - previousStartedAt(s, activeRun))
+      const turnUsage = turnUsageOf(result.usage_start, usage)
+      // The turn's own output: the session counter is only a fallback for a sidecar that reports no baseline.
+      const turnOutput = result.usage_start ? turnUsage?.output_tokens ?? 0 : usage.completion_tokens
+      const turnTps = turnOutput && duration > 0 ? Math.round((turnOutput / duration) * 10) / 10 : undefined
       for (let i = s.messages.length - 1; i >= 0; i -= 1) {
         const m = s.messages[i]!
         if (m.role === 'assistant') {
           m._turnDuration = Math.round(duration * 1000) / 1000
-          if (usage.completion_tokens && duration > 0) m._turnTps = Math.round((usage.completion_tokens / duration) * 10) / 10
+          if (turnTps !== undefined) m._turnTps = turnTps
           if (result.model) m._usedModel = result.model
+          // Only this turn's own reply carries its usage; an earlier turn's row keeps the record it settled with.
+          if (turnUsage && m._turn_id === streamId) m._turnUsage = turnUsage
           // The live `done` frame says the tool budget ran out; the persisted row says so too, so a reload agrees.
           if (result.tool_limit_reached && m._turn_id === streamId) m._terminal_state = 'tool_limit_reached'
           break
@@ -1180,20 +1203,17 @@ export class TurnRunner {
         deps.log(`[webui] persistent state change detection failed for ${sessionId}: ${(error as Error).message}`)
       }
       // Python usage payload: session counters plus the per-turn timing and cache-hit figures the clients label with.
-      const cacheHit = (cacheRead: number, prompt: number): number | null => (cacheRead > 0 && prompt > 0 ? Math.min(100, Math.round((cacheRead / prompt) * 100)) : null)
-      const inputTokens = s.input_tokens || 0
-      const cacheReadTokens = s.cache_read_tokens || 0
-      const turnInput = Math.max(0, inputTokens - prevInputTokens)
-      const turnCacheRead = Math.max(0, cacheReadTokens - prevCacheReadTokens)
       const doneUsage: Record<string, unknown> = {
         plan_gauge: s.plan_gauge, input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens,
-        cache_hit_percent: cacheHit(cacheReadTokens, inputTokens), turn_cache_hit_percent: cacheHit(turnCacheRead, turnInput), duration_seconds: Math.round(duration * 1000) / 1000,
+        cache_hit_percent: promptCacheHitPercent(s.cache_read_tokens, s.input_tokens),
+        // The reply's own record when the sidecar reported a baseline; else the session counters' change.
+        turn_cache_hit_percent: result.usage_start ? turnUsage?.cache_hit_percent ?? null : promptCacheHitPercent((s.cache_read_tokens || 0) - prevCacheReadTokens, (s.input_tokens || 0) - prevInputTokens), duration_seconds: Math.round(duration * 1000) / 1000,
         context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
       }
       const doneSession = (await this.publicTerminalSession(s, streamId))
       // TAL-299: the ring's figures match the terminal session's (and a detail reload's).
       for (const key of CONTEXT_USAGE_FIELDS) doneUsage[key] = doneSession[key]
-      if (usage.completion_tokens && duration > 0) doneUsage.tps = Math.round((usage.completion_tokens / duration) * 10) / 10
+      if (turnTps !== undefined) doneUsage.tps = turnTps
       if (firstTokenAt !== null) doneUsage.ttft_ms = Math.max(0, Math.round((firstTokenAt - previousStartedAt(s, activeRun)) * 1000))
       const usedModel = str(result.model) || str(opts.model) || str(s.model)
       if (usedModel) doneUsage.used_model = usedModel

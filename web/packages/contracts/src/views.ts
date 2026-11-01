@@ -171,6 +171,17 @@ export const BackgroundLineSchema = z.object({ kind: z.enum(['agent', 'command',
 })
 export type BackgroundLine = z.infer<typeof BackgroundLineSchema>
 
+/**
+ * TAL-1076: one turn's own token, cache and cost figures, on its last assistant row: the Agent's counters at the turn's
+ * end less those when it began. `estimated_cost` is null when the provider could not be priced; `cache_hit_percent` is
+ * null when the turn read no cache or sent no prompt tokens.
+ */
+export const TurnUsageSchema = z.object({
+  input_tokens: z.number().int().nonnegative(), output_tokens: z.number().int().nonnegative(), cache_read_tokens: z.number().int().nonnegative(), cache_write_tokens: z.number().int().nonnegative(),
+  estimated_cost: z.number().nonnegative().nullable(), cache_hit_percent: z.number().int().min(0).max(100).nullable(),
+})
+export type TurnUsage = z.infer<typeof TurnUsageSchema>
+
 export const MessageSchema = z.looseObject({
   role: z.string(), content: MessageContentSchema.optional(), id: MessageIdSchema.optional(), message_id: MessageIdSchema.optional(), timestamp: z.number().nullable().optional(),
   reaction_view: MessageReactionViewSchema.optional(),
@@ -189,6 +200,8 @@ export const MessageSchema = z.looseObject({
   _turnDuration: z.number().optional(),
   /** On a turn's last assistant row: output tokens per second, when the turn reported usage. */
   _turnTps: z.number().optional(),
+  /** On a settled turn's last assistant row, when the turn consumed tokens: that turn's own usage. Older rows omit it. */
+  _turnUsage: TurnUsageSchema.optional(),
   /** Epoch seconds the row was written; `timestamp` when absent. */
   _ts: z.number().optional(),
   /** Reasoning titles an older Web stored on the row, in order. */

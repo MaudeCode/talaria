@@ -509,6 +509,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             focusKey={focusKey}
             actions={actions}
             tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
+            tokenUsage={(settings.data as Record<string, unknown> | undefined)?.show_token_usage === true}
             autoRead={(settings.data as Record<string, unknown> | undefined)?.tts_auto_read === true}
             truncated={truncated}
             loadedFrom={base}

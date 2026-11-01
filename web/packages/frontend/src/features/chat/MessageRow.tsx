@@ -1,4 +1,5 @@
-import type { MessageReactionView } from '@maudecode/talaria-web-contracts'
+import type { MessageReactionView, TurnUsage } from '@maudecode/talaria-web-contracts'
+import { Popover } from '@base-ui/react/popover'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { memo, useState } from 'react'
 import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook } from 'lucide-react'
@@ -21,6 +22,8 @@ import { rawFileUrl } from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
 import { speak } from '../voice/tts'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
+import { usageDetailLines } from '../composer/chips'
+import { useLocale } from '../../i18n/useLocale'
 
 export interface RowActions {
   onQuoteSelection?: (text: string) => void
@@ -225,8 +228,28 @@ export const DeliveryRow = memo(function DeliveryRow({ row }: { row: VisibleMess
   )
 })
 
-/** `continuation`: the live turn that continues this running scene (TAL-374). */
-export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
+/** TAL-1076: the reply's own in/out tokens, opening its cache and estimated-cost figures; every value is the server's. */
+function TurnUsageMeta({ usage }: { usage: TurnUsage }) {
+  const locale = useLocale()
+  const compact = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 })
+  const figures = { input: compact.format(usage.input_tokens), output: compact.format(usage.output_tokens) }
+  const details = usageDetailLines({ input: usage.input_tokens, output: usage.output_tokens, cacheRead: usage.cache_read_tokens, cacheWrite: usage.cache_write_tokens, cacheHitPercent: usage.cache_hit_percent, cost: usage.estimated_cost })
+  return (
+    <Popover.Root>
+      <Popover.Trigger className="msg-turn-usage rounded-sm font-mono text-[11px] tabular-nums text-muted opacity-75 outline-none hover:opacity-100 focus-visible:ring-2 focus-visible:ring-(--focus-ring)" aria-label={m.turn_usage_label(figures)}>{m.turn_usage_summary(figures)}</Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="top" align="start" sideOffset={6} className="z-[1500]">
+          <Popover.Popup aria-label={m.turn_usage_label(figures)} className="flex max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
+            {details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+/** `continuation`: the live turn that continues this running scene (TAL-374). `tokenUsage`: the `show_token_usage` setting. */
+export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, tokenUsage = false, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; tokenUsage?: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
   const activity = continuation ? continuedActivity(persistedActivity(row), continuation) : persistedActivity(row)
   const content = activityText(activity)
   const parts = row.assistantRows ?? [row]
@@ -243,6 +266,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
         {parts.map((part) => <MessageReactions key={part.key} row={part} actions={actions} />)}
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
+        {tokenUsage && row.message._turnUsage && <TurnUsageMeta usage={row.message._turnUsage} />}
         <span className="ml-auto" aria-hidden="true" />
         <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(content).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
         {tts && content.trim() && <IconButton label={m.speak_message()} className="h-6 w-6" onClick={() => { void speak(content) }}><Volume2 size={12} aria-hidden="true" /></IconButton>}

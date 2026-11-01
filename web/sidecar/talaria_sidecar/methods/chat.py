@@ -433,6 +433,7 @@ def _usage(agent: Any) -> dict:
     except Exception:  # noqa: BLE001 - older Agent capability omission clears a complete snapshot
         gauge = None
     cost = getattr(agent, "session_estimated_cost_usd", None)
+    status = getattr(agent, "session_cost_status", None)
     return {
         **({"plan_gauge": gauge} if gauge is not None else {}),
         "prompt_tokens": int(_num("session_prompt_tokens")),
@@ -440,6 +441,7 @@ def _usage(agent: Any) -> dict:
         "cache_read_tokens": int(_num("session_cache_read_tokens")),
         "cache_write_tokens": int(_num("session_cache_write_tokens")),
         "estimated_cost_usd": float(cost) if isinstance(cost, (int, float)) else None,
+        "cost_status": str(status) if isinstance(status, str) else None,
     }
 
 
@@ -1823,6 +1825,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     raw_emit = ctx.emit
     steer_state = {"last": None}
     usage_state = {"last": None}
+    # TAL-1076: the bound agent's counters when this turn began, the baseline of the turn's own usage.
+    usage_start = None
     pending_mcp = False
     token_parts: list[str] = []
     last_token_flush: float | None = None
@@ -2172,7 +2176,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with _APPROVAL_CB_LOCK:
                 register_gateway_notify(session_id, approval_cb)
                 _APPROVAL_CB_OWNER[session_id] = stream_id
-        usage_state["last"] = _usage(agent)
+        usage_start = usage_state["last"] = _usage(agent)
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 
         # A cached agent may still carry the interrupt a previous cancel left behind; the Agent keeps a pending
@@ -2300,6 +2304,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "tool_limit_reached": bool(result.get("tool_limit_reached") or result.get("max_iterations_reached") or str(result.get("turn_exit_reason") or "").startswith("max_iterations_reached")),
             "max_iterations_summary_request": _max_iterations_summary_request(),
             "usage": _usage(agent),
+            "usage_start": usage_start,
             "context": _context_length(agent),
             # TAL-801: the Agent's result names the model the turn ran on; a voice turn's route is undone by now.
             "model": str(result.get("model") or getattr(agent, "model", None) or resolved_model),

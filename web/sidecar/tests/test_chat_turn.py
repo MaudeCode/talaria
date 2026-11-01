@@ -119,6 +119,33 @@ def test_a_finished_turn_never_interrupts_the_cached_agent(monkeypatch) -> None:
     assert agent.cleared == 2
 
 
+def test_each_turn_reports_its_cached_agents_counters_when_it_began(monkeypatch) -> None:
+    """TAL-1076: ``usage_start`` is the bound agent's counters at the turn's start, so the server can stamp the turn's own
+    usage; a cached agent's second turn begins from the first turn's totals."""
+    _patch(monkeypatch)
+
+    class CountingAgent(FakeAgent):
+        session_prompt_tokens = 0
+        session_cache_read_tokens = 0
+        session_estimated_cost_usd = 0.0
+        session_cost_status = "unknown"
+
+        def run_conversation(self, **kwargs):
+            self.session_prompt_tokens += 100
+            self.session_cache_read_tokens += 40
+            self.session_estimated_cost_usd += 0.25
+            self.session_cost_status = "estimated"
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: CountingAgent)
+    first = chat.start(Ctx(), _params("st-usage-1"))
+    second = chat.start(Ctx(), _params("st-usage-2"))
+    assert len(FakeAgent.instances) == 1
+    assert first["usage_start"] == {"prompt_tokens": 0, "completion_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": 0.0, "cost_status": "unknown"}
+    assert second["usage_start"] == first["usage"]
+    assert second["usage"] == {"prompt_tokens": 200, "completion_tokens": 0, "cache_read_tokens": 80, "cache_write_tokens": 0, "estimated_cost_usd": 0.5, "cost_status": "estimated"}
+
+
 def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monkeypatch) -> None:
     _patch(monkeypatch)
     ctx = Ctx()
@@ -601,7 +628,7 @@ def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch, to
     assert chat.start(ctx, _params("st-meter"))["status"] == "completed"
     events = [event for event, _ in ctx.frames if event not in ("steer_pending", "notices_reset")]
     assert events == ["token", "usage", "tool", "tool_complete", "token"]
-    assert dict(ctx.frames)["usage"] == {"prompt_tokens": 100, "completion_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": 0.5}
+    assert dict(ctx.frames)["usage"] == {"prompt_tokens": 100, "completion_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": 0.5, "cost_status": None}
     complete = dict(ctx.frames)["tool_complete"]
     assert complete["todo_result"] == todo
     assert len(complete["raw_result"]["todos"]) == 4000
