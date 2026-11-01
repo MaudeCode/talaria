@@ -18,6 +18,7 @@ import { QuoteSelection } from './QuoteSelection'
 import { useAutoRead } from './useAutoRead'
 import { useLiveTurn } from '../../stream/store'
 import { VirtualHistory, type HistoryVirtualizer } from './VirtualHistory'
+import { firstRowPast, nextBoxed, readerAnchorRow, rowBoxes } from './viewportAnchor'
 
 const VIRTUALIZE_AT = 200
 const NO_ACTIONS: RowActions = {}
@@ -141,16 +142,13 @@ export function Transcript(props: TranscriptProps) {
         if (focus.bottom > bounds.top && focus.top < bounds.bottom) { readerAnchor.current = { key: focused, top: focus.top - bounds.top }; return }
         focusAnchor.current = null
       }
-      // Rows are in visual order; leave later contained history unmeasured once the anchor is known.
-      for (const row of pane.querySelectorAll<HTMLElement>('[data-message-key]')) {
-        const rect = row.getBoundingClientRect()
-        if (rect.top >= bounds.bottom) break
-        if (rect.bottom <= bounds.top) continue
-        const key = row.dataset.messageKey
-        if (!key) continue
-        if (!readerAnchor.current || rect.top >= bounds.top) readerAnchor.current = { key, top: rect.top - bounds.top }
-        if (rect.top >= bounds.top) break
-      }
+      // Rows are in visual order; the locator measures O(log n) of them, not every row above the reader (TAL-1631).
+      const rows = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')]
+      const box = rowBoxes(rows)
+      const index = readerAnchorRow(rows.length, bounds.top, bounds.bottom, box)
+      const key = rows[index]?.dataset.messageKey
+      const rect = box(index)
+      if (key && rect) readerAnchor.current = { key, top: rect.top - bounds.top }
     })
   }
   // Away from the bottom, the reader's row stays where it was through every size change above it.
@@ -265,13 +263,13 @@ export function Transcript(props: TranscriptProps) {
       if (entryRef.current) return
       const top = pane.getBoundingClientRect().top
       const elements = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')]
-      const first = elements.findIndex((row) => row.getBoundingClientRect().bottom > top)
+      const box = rowBoxes(elements)
+      const first = firstRowPast(elements.length, top, box)
       // The following row stays keyed when the first visible assistant turn absorbs an older part.
-      const anchors = first < 0 ? [] : elements.slice(first, first + 2).flatMap((row) => {
-        const key = row.dataset.messageKey
-        if (!key) return []
-        const bounds = row.getBoundingClientRect()
-        return [{ key, top: bounds.top - top, height: bounds.height }]
+      const anchors = (first < 0 ? [] : [first, nextBoxed(box, first + 1, elements.length)]).flatMap((index) => {
+        const key = elements[index]?.dataset.messageKey
+        const bounds = box(index)
+        return key && bounds ? [{ key, top: bounds.top - top, height: bounds.height }] : []
       })
       if (anchors.length) prependRef.current = { from: loadedFrom, anchors, height: pane.scrollHeight, offset: pane.scrollTop }
     })

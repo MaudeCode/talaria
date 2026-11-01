@@ -290,6 +290,72 @@ it.each([
   expect(pane.scrollTop).toBe(620)
 })
 
+it.each([
+  { rows: 600, budget: 24 },
+  { rows: 1200, budget: 28 },
+])('captures a reader anchor near the tail of $rows rows within $budget row reads (TAL-1631)', ({ rows: count, budget }) => {
+  const flush = animationFrames()
+  const input = { ...props(), truncated: false, rows: projectMessages(Array.from({ length: count }, (_, i) => ({ id: i + 1, role: 'user' as const, content: `Row ${i + 1}` }))) }
+  const view = render(<Transcript {...input} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, value: count * 100 })
+  vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = count * 100 - 600 })
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 600 } as DOMRect)
+  let shift = 0
+  const reads = vi.fn()
+  // Rows 100px tall; the reader's view starts 40px into row `count - 10`, so the next row is the first fully visible one.
+  for (const [index, row] of [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].entries()) {
+    row.getBoundingClientRect = () => {
+      reads(index)
+      const top = index * 100 - pane.scrollTop + (index > 0 ? shift : 0)
+      return { top, bottom: top + 100, width: 400, height: 100 } as DOMRect
+    }
+  }
+  act(() => requestScroll('end'))
+  fireEvent.wheel(pane, { deltaY: -1 }); pane.scrollTop = (count - 10) * 100 + 40; fireEvent.scroll(pane)
+  reads.mockClear()
+  flush()
+  expect(reads.mock.calls.length).toBeGreaterThan(0)
+  expect(reads.mock.calls.length).toBeLessThanOrEqual(budget)
+  // Growth above the reader keeps row `count - 9` at its 60px offset.
+  shift = 250
+  act(() => resized([], {} as ResizeObserver))
+  expect(pane.scrollTop).toBe((count - 10) * 100 + 40 + 250)
+})
+
+it('captures before-prepend anchors from the middle of 600 rows within 24 row reads (TAL-1631)', () => {
+  vi.stubGlobal('CSS', { escape: (key: string) => key })
+  vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  const rows = projectMessages(Array.from({ length: 600 }, (_, i) => ({ id: i + 2, role: 'user' as const, content: `Row ${i + 2}` })))
+  let added = 0
+  const reads = vi.fn()
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const pane = document.getElementById('messages')!
+    if (this === pane) return { top: 0, bottom: 600, width: 400, height: 600 } as DOMRect
+    const key = Number(this.dataset.messageKey)
+    if (Number.isNaN(key)) return { top: 0, bottom: 0, width: 0, height: 0 } as DOMRect
+    reads(key)
+    const top = (key - 2 + added) * 100 - pane.scrollTop
+    return { top, bottom: top + 100, width: 400, height: 100 } as DOMRect
+  })
+  let capture: (() => void) | undefined
+  const input = { ...props(), rows, loadedFrom: 1, onLoadOlder: vi.fn((_retry?: boolean, beforePrepend?: () => void) => { capture ??= beforePrepend }) }
+  const view = render(<Transcript {...input} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!
+  let height = 60_000
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, get: () => height })
+  pane.scrollTop = 30_020
+  act(() => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+  reads.mockClear()
+  act(() => capture?.())
+  expect(reads.mock.calls.length).toBeGreaterThan(0)
+  expect(reads.mock.calls.length).toBeLessThanOrEqual(24)
+  // Row 302 was partly visible at -20px; the restored pane keeps it there after one older row lands above.
+  added = 1; height = 60_100
+  view.rerender(<Transcript {...input} loadedFrom={0} rows={[...projectMessages([{ id: 1, role: 'user', content: 'Older' }]), ...rows]} />)
+  expect(pane.scrollTop).toBe(30_120)
+})
+
 it('prefetches from a sentinel one viewport before the top, with no load button', () => {
   const input = props()
   const view = render(<Transcript {...input} />)

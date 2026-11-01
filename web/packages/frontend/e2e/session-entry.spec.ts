@@ -51,6 +51,45 @@ test('off-screen rows stay searchable and reveal their measured content', async 
   await expect(page.locator('[data-message-key]')).toHaveCount(600)
 })
 
+for (const rows of [600, 1_200]) {
+  test(`a reader capture near the tail measures a bounded set of rows: rows=${rows}`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'row reads are counted at one fixed viewport')
+    const sid = `anchor-reads-${rows}`
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: false } }))
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long history', messages: transcript(sid, rows / 2) } } }))
+    await page.goto(`/session/${sid}`)
+    await shows(page, sid)
+    await expect(page.locator('[data-message-key]')).toHaveCount(rows)
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    // Read near the tail, with off-screen rows under their default content-visibility containment.
+    const reader = page.locator(`[data-message-key="${rows - 10}"]`)
+    await reader.evaluate((el) => el.scrollIntoView({ block: 'start' }))
+    await page.waitForTimeout(300)
+    // One reader capture: count row rect reads apart from the elapsed time of the frame that holds them.
+    const capture = await page.locator('#messages').evaluate((pane) => new Promise<{ reads: number; ms: number }>((resolve) => {
+      const rect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!.value as (this: Element) => DOMRect
+      let reads = 0
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        if (this instanceof HTMLElement && this.dataset.messageKey !== undefined) reads += 1
+        return rect.call(this)
+      }
+      const start = performance.now()
+      pane.scrollTop -= 1
+      requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+        Element.prototype.getBoundingClientRect = rect
+        resolve({ reads, ms: performance.now() - start })
+      })))
+    }))
+    testInfo.annotations.push({ type: 'reader capture', description: `${capture.reads} row rect reads, ${capture.ms.toFixed(1)} ms over three frames` })
+    expect(capture.reads, 'the scroll captured a reader anchor').toBeGreaterThan(0)
+    expect(capture.reads, 'row rect reads in one capture').toBeLessThanOrEqual(rows === 600 ? 24 : 28)
+    // The captured anchor still holds the reader through growth above it.
+    const before = (await reader.boundingBox())!.y
+    await page.locator('[data-message-key="5"]').evaluate((el) => { el.style.marginTop = '400px' })
+    await expect.poll(async () => Math.abs((await reader.boundingBox())!.y - before)).toBeLessThan(2)
+  })
+}
+
 /** A 300-turn history whose session reports a running turn; its fake run stream starts the turn and holds open. */
 async function liveHistory(page: Page) {
   const sid = 'contained-history', streamId = 'contained-run'

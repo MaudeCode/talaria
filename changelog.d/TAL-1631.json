@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scrolling back through a long chat in Talaria Web no longer measures every earlier message on each scroll frame.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
