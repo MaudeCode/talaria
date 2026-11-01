@@ -158,7 +158,7 @@ describe('CSP', () => {
     expect(script).not.toContain("'unsafe-inline'")
     expect(policy).not.toContain('cdn.jsdelivr.net')
     expect(policy).toContain("manifest-src 'self' https://*.cloudflareaccess.com")
-    expect(policy).toContain("connect-src 'self' http://127.0.0.1:* http://localhost:* http://ipc.localhost https://127.0.0.1:* https://localhost:* ws://127.0.0.1:* ws://localhost:*; ")
+    expect(policy).toContain("connect-src 'self' http://127.0.0.1:* http://localhost:* http://ipc.localhost https://127.0.0.1:* https://localhost:* ws://127.0.0.1:* ws://localhost:* blob:; ")
     expect(policy).toContain("frame-src 'self'; ")
     expect(buildCspReportOnlyPolicy({ connect: '', frame: '' })).toBe(policy + '; report-uri /api/csp-report; report-to csp-endpoint')
   })

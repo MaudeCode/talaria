@@ -33,6 +33,8 @@ import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
 import { sanitizeError } from '../workspace/media.js'
+import { MeshyError } from '../tools/meshy.js'
+import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { isWebChannel, normalizeWebChannel, updatesCheckView, type WebChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { filterAsync, str } from '../util.js'
@@ -60,6 +62,19 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 }
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
+
+/** TAL-1514: Meshy work for the active profile, aborted when the request goes away. */
+function meshy<T>(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<T>): Promise<never> {
+  return run(async () => {
+    const abort = new AbortController()
+    const close = (): void => { abort.abort() }
+    ctx.res.once('close', close)
+    try { return await fn(abort.signal) } catch (error) {
+      if (error instanceof MeshyError) throw new HttpFailure(error.status, error.message)
+      throw error
+    } finally { ctx.res.off('close', close) }
+  })
+}
 
 /** Profile homes with an `stt.warm` in flight (TAL-916). */
 const warmingHomes = new Set<string>()
@@ -946,6 +961,19 @@ export const toolsRouter = os.router({
     }
     return { ok: true as const }
   })),
+  meshy: {
+    overview: os.meshy.overview.handler(({ context: { ctx } }) => meshy(ctx, (signal) => ctx.deps.meshy.overview(dashboardScope(ctx), signal))),
+    card: os.meshy.card.handler(({ input, context: { ctx } }) => meshy(ctx, async (signal) => {
+      // The transcript read admits only a session visible to the active profile, whose scope then owns the asset.
+      const directive = await ctx.deps.sessions.meshyDirective(input.session_id, input.ref)
+      return ctx.deps.meshy.card(dashboardScope(ctx), directive, signal)
+    })),
+    task: os.meshy.task.handler(({ input, context: { ctx } }) => meshy(ctx, (signal) => ctx.deps.meshy.task(dashboardScope(ctx), input.task_id, signal))),
+    details: os.meshy.details.handler(({ input, context: { ctx } }) => meshy(ctx, (signal) => ctx.deps.meshy.details(dashboardScope(ctx), input.task_id, input.beside, signal))),
+    // Downloads run to completion once started: a closed tab does not cancel the native write.
+    save: os.meshy.save.handler(({ input, context: { ctx } }) => meshy(ctx, () => ctx.deps.meshy.save(dashboardScope(ctx), input))),
+    saveImages: os.meshy.saveImages.handler(({ input, context: { ctx } }) => meshy(ctx, () => ctx.deps.meshy.saveImages(dashboardScope(ctx), input.task_id))),
+  },
   clientEvents: os.clientEvents.handler(({ input, context: { ctx } }) => run(() => {
     if (ctx.deps.clientEventLimiter.limited(ctx.peer || 'unknown')) throw new HttpError(429, 'rate_limited', { ok: false })
     const payload = sanitizeClientEvent(input)

@@ -2965,5 +2965,79 @@
   "skill_replay_run_refused": "Refused",
   "skill_replay_run_unknown": "Unknown outcome",
   "skill_replay_run_skipped": "Skipped",
-  "skill_replay_answer": "Answer"
+  "skill_replay_answer": "Answer",
+  "meshy_viewer_label": "3D model: {title}. Drag or use arrow keys to orbit, scroll to zoom.",
+  "meshy_model_loading": "Loading model…",
+  "meshy_model_error": "The model could not be shown.",
+  "meshy_animation_play": "Play animation",
+  "meshy_animation_pause": "Pause animation",
+  "meshy_animation_clip": "Animation",
+  "meshy_view_3d": "View in 3D",
+  "meshy_images": "Images",
+  "meshy_image_n": "{title}, image {n}",
+  "meshy_credits": [
+    {
+      "declarations": [
+        "input count"
+      ],
+      "selectors": [
+        "count"
+      ],
+      "match": {
+        "count=1": "1 credit",
+        "count=*": "{count} credits"
+      }
+    }
+  ],
+  "meshy_balance": [
+    {
+      "declarations": [
+        "input count"
+      ],
+      "selectors": [
+        "count"
+      ],
+      "match": {
+        "count=1": "1 credit left",
+        "count=*": "{count} credits left"
+      }
+    }
+  ],
+  "meshy_open_file": "Download {name}",
+  "meshy_downloading": "Downloading…",
+  "meshy_download_model": "Download GLB",
+  "meshy_download_images": "Download images",
+  "meshy_retry_images": "Retry image download",
+  "meshy_download_failed": "The download failed. Nothing was overwritten.",
+  "meshy_saved_files": "Saved {names}",
+  "meshy_more": "Formats and next steps",
+  "meshy_less": "Hide formats and next steps",
+  "meshy_formats": "Formats",
+  "meshy_format_saved": "{format} saved",
+  "meshy_save_format": "Save {format}",
+  "meshy_next": "Next",
+  "meshy_prepare_draft": "Puts this request in the message box. Nothing is sent or spent until you send it.",
+  "meshy_free": "free",
+  "meshy_made_from": "Made from",
+  "meshy_prompt": "Prompt",
+  "meshy_prompt_inherited": "Prompt (earlier step)",
+  "meshy_texture_prompt": "Texture prompt",
+  "meshy_style_prompt": "Style prompt",
+  "meshy_negative_prompt": "Avoid",
+  "meshy_source_image": "Source image",
+  "meshy_seed": "Seed",
+  "meshy_cost": "Cost",
+  "meshy_parents": "Made from steps",
+  "meshy_children": "Used for",
+  "meshy_task_failed": "Meshy could not finish this task: {reason}",
+  "meshy_progress": "Meshy {progress}%",
+  "meshy_progress_stage": "Meshy {progress}% · {stage}",
+  "meshy_unavailable": "This model is not available.",
+  "meshy_running": "Running",
+  "meshy_recent": "Recent",
+  "meshy_local": "On this machine",
+  "meshy_empty": "No Meshy models yet",
+  "meshy_kind_model": "Model",
+  "meshy_kind_images": "Images",
+  "meshy_incomplete": "Incomplete"
 }

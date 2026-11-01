@@ -1,0 +1,53 @@
+{
+  "plugins.meshy": [
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "overview" },
+      "result": {
+        "availability": "ready", "message": null, "balance": 42, "revision": "c16e967d798d8dd3b1827a62673c18627f31e0ed", "auto_rotate": true,
+        "recent": [{ "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "task_type": "text-to-3d", "kind": "model", "prompt": "A small robot", "created_at": 1761980000000, "credits": null, "thumbnail_url": "https://assets.meshy.ai/tasks/thumb.png?Expires=1&Signature=s", "image_urls": [], "expired": false, "local_path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/meshy_output/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b/model.glb" }],
+        "local": [
+          { "path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/meshy_output/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b/model.glb", "name": "model.glb", "kind": "model", "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "prompt": "A small robot", "modified": 1761980100000, "bytes": 1024, "images": [], "download_incomplete": false },
+          { "path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/saved-assets/0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa/image-1.png", "name": "image-1.png", "kind": "image", "task_id": "0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa", "prompt": "Concept art", "modified": 1761980050000, "bytes": 2048, "images": ["/synthetic/profile/plugin-data/agent-plugin-meshy-0/saved-assets/0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa/image-1.png"], "download_incomplete": true }
+        ],
+        "active": [{ "task_id": "0192a3b4-c5d6-7e8f-9a0b-bbbbbbbbbbbb", "status": "in_progress", "progress": 38, "terminal": false, "stage": "preview", "error": null }]
+      }
+    },
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "card", "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/meshy_output/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b/model.glb" },
+      "result": {
+        "availability": "missing_key", "message": "Add a Meshy API key in Plugins to see generations and download files.", "balance": null, "revision": "c16e967d798d8dd3b1827a62673c18627f31e0ed",
+        "local": [{ "path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/meshy_output/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b/model.glb", "name": "model.glb", "kind": "model", "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "prompt": null, "modified": null, "bytes": 1024, "images": [], "download_incomplete": false }],
+        "task": null
+      }
+    },
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "task", "task_id": "0192a3b4-c5d6-7e8f-9a0b-bbbbbbbbbbbb" },
+      "result": { "availability": "ready", "message": null, "balance": 42, "revision": "c16e967d798d8dd3b1827a62673c18627f31e0ed", "task": { "task_id": "0192a3b4-c5d6-7e8f-9a0b-bbbbbbbbbbbb", "status": "in_progress", "progress": 38, "terminal": false, "stage": "preview", "error": null, "prompt": "A small robot", "thumbnail_url": null, "credits": null, "has_model": false, "task_type": "text-to-3d-preview" } }
+    },
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "details", "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b" },
+      "result": {
+        "availability": "ready", "message": null, "balance": null, "revision": "c16e967d798d8dd3b1827a62673c18627f31e0ed",
+        "details": {
+          "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "is_preview": true,
+          "formats": [{ "format": "glb", "label": "GLB", "saved": true }],
+          "conversions": [{ "id": "convert-fbx", "label": "Convert to FBX", "cost": 1, "affordable": null, "draft": "Meshy task 0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b: convert it to FBX using meshy_convert (1 credit)." }],
+          "actions": [{ "id": "remesh", "label": "Remesh", "cost": 5, "affordable": null, "draft": "Meshy task 0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b: remesh it with meshy_remesh (5 credits)." }],
+          "provenance": { "prompt": "A small robot", "prompt_inherited": false, "texture_prompt": null, "style_prompt": null, "negative_prompt": null, "source_image": null, "settings": [{ "key": "model_type", "value": "standard" }], "seed": 7, "credits": null, "created_at": 1761980000000, "parents": [], "children": [], "recorded": true }
+        }
+      }
+    },
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "save_images", "task_id": "0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa" },
+      "result": { "availability": "ready", "message": null, "balance": 42, "revision": "c16e967d798d8dd3b1827a62673c18627f31e0ed", "saved": ["image-1.png"], "complete": false, "error": "Some images did not download. Retry to resume." }
+    },
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "asset", "path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/meshy_output/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b/model.glb" },
+      "result": { "availability": "ready", "message": null, "balance": null, "revision": "c16e967d798d8dd3b1827a62673c18627f31e0ed", "asset": { "path": "/synthetic/profile/plugin-data/agent-plugin-meshy-0/meshy_output/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b/model.glb", "anchor": "/synthetic/profile/plugin-data", "mime": "model/gltf-binary", "bytes": 1024 } }
+    },
+    {
+      "params": { "profile_home": "/synthetic/profile", "action": "overview" },
+      "result": { "availability": "agent_incompatible", "message": null, "balance": null, "revision": null }
+    }
+  ]
+}

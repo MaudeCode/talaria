@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { AppShell, HubPage } from '../../shell/AppShell'
@@ -17,6 +17,8 @@ import { SidecarFetchResult } from '../../contracts/extension'
 import { Link } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { keys } from '../../api/queryKeys'
+
+const MeshyGallery = lazy(() => import('../meshy/MeshyGallery').then((module) => ({ default: module.MeshyGallery })))
 
 /** Connects one sandboxed extension iframe to the host services once its document loads; closes it on unmount. */
 function useExtensionHost(manifest: ExtensionManifest, iframe: RefObject<HTMLIFrameElement | null>): { status: HostStatus; detail: string | undefined } {
@@ -118,7 +120,8 @@ export function ExtensionRoute({ extensionId }: { extensionId: string }) {
         <HubPage title={extensionId}><ErrorState error={new Error(m.extensions_unknown())} /><Link to="/settings/$section" params={{ section: 'extensions' }} className="mt-2 inline-block text-sm text-accent-text underline">{m.settings_section_extensions_title()}</Link></HubPage>
       )}
       {manifest && !manifest.enabled && <HubPage title={manifest.name}><ErrorState error={new Error(m.extensions_disabled_panel())} /></HubPage>}
-      {manifest && manifest.enabled && <ExtensionPanel key={manifestKey(manifest)} manifest={manifest} />}
+      {manifest && manifest.enabled && manifest.native_view === 'meshy_gallery' && <Suspense fallback={<LoadingState />}><MeshyGallery title={manifest.name} /></Suspense>}
+      {manifest && manifest.enabled && !manifest.native_view && <ExtensionPanel key={manifestKey(manifest)} manifest={manifest} />}
     </AppShell>
   )
 }

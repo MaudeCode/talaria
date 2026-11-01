@@ -40,6 +40,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("commands.expand_prompt", {"profile_home": "{home}", "command": "/plan add a dark mode", "workspace": "{home}", "enabled_toolsets": None}),
     ("plugins.list", {"profile_home": "{home}"}),
     ("plugins.buffers", {"profile_home": "{home}", "session_id": "synthetic-no-buffers", "action": "list"}),
+    ("plugins.meshy", {"profile_home": "{home}", "action": "overview"}),
     ("plugins.dashboard_list", {"profile_home": "{home}"}),
     ("plugins.dashboard_asset", {"profile_home": "{home}", "name": "not-installed", "path": "dist/index.html"}),
     ("plugins.dashboard_request", {"profile_home": "{home}", "name": "not-installed", "path": "/", "method": "GET", "query": "", "headers": {}, "body": "", "authenticated": True, "websocket": False}),

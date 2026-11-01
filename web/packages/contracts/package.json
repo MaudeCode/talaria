@@ -2,6 +2,7 @@
   "name": "@maudecode/talaria-web-contracts",
   "version": "0.0.0",
   "type": "module",
+  "sideEffects": false,
   "description": "Talaria Web contract package: oRPC route contract, Zod schemas, SSE event unions, sidecar RPC schema, and the OpenAPI generator.",
   "exports": {
     ".": {

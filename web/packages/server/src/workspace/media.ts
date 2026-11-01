@@ -122,6 +122,8 @@ export interface ServeFileOptions {
   downloadName?: string | null
   /** Media policy on the opened inode: a file with more than one link may be a hard link to a denied state file. */
   denyHardLinks?: boolean
+  /** A content check on the opened inode before any byte is sent: a reason refuses it with 403. */
+  inspect?: (fd: number, size: number) => string | null
 }
 
 /** Serve a file with MIME/disposition, weak ETag revalidation, and single byte ranges. */
@@ -136,6 +138,8 @@ export async function serveFileBytes(ctx: RequestContext, target: string, opts: 
     if (opts.denyHardLinks && st.nlink > 1n) { closeSync(fd); fd = null; (await ctx.json({ error: 'Path not in allowed location' }, { status: 403 })); return }
     fileSize = Number(st.size)
     signature = fileSignature(st)
+    const refusal = opts.inspect?.(fd, fileSize)
+    if (refusal) { closeSync(fd); fd = null; (await ctx.json({ error: refusal }, { status: 403 })); return }
   } catch (error) {
     if (fd !== null) closeSync(fd)
     const code = (error as NodeJS.ErrnoException).code

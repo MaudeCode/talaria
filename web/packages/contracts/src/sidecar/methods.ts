@@ -9,6 +9,7 @@ import {
   RuntimeAgentMutationParamsSchema, RuntimeAgentMutationResultSchema, RuntimeAgentMutationStreamSchema,
   RuntimeAgentRecoveryParamsSchema, RuntimeAgentRecoveryResultSchema,
 } from './runtime.js'
+import { MESHY_METHODS } from '../meshy-sidecar.js'
 
 const Empty = z.object({})
 
@@ -30,6 +31,7 @@ export const SIDECAR_METHODS = {
   'runtime.agent_recovery': { params: RuntimeAgentRecoveryParamsSchema, result: RuntimeAgentRecoveryResultSchema },
   ...GOALS_METHODS,
   ...COMMANDS_METHODS,
+  ...MESHY_METHODS,
   ...KANBAN_METHODS,
   ...STATE_DB_METHODS,
   ...PROFILES_METHODS,
@@ -63,5 +65,3 @@ export type SidecarResult<M extends SidecarMethodName> = z.output<SidecarMethods
 /** A result before its schema applies defaults (what a fake sidecar may answer; the call parses it). */
 export type SidecarResultInput<M extends SidecarMethodName> = z.input<SidecarMethods[M]['result']>
 export type SidecarStreamEvent<M extends SidecarMethodName> = SidecarMethods[M] extends { stream: infer S extends z.ZodType } ? z.output<S> : never
-
-export const SIDECAR_METHOD_NAMES = Object.keys(SIDECAR_METHODS) as SidecarMethodName[]

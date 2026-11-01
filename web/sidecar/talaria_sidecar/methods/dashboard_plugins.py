@@ -219,7 +219,7 @@ def _reply(status=404, body=b'', content_type='application/octet-stream'):
     return {'status': status, 'body': base64.b64encode(body).decode('ascii'), 'content_type': content_type}
 
 
-def _request(ctx, plugin, params, *, require_panel=True):
+def _request(ctx, plugin, params, *, require_panel=True, timeout=10.0):
     ctx.check_cancelled()
     if params.get('authenticated') is not True:
         return _reply()
@@ -250,7 +250,7 @@ def _request(ctx, plugin, params, *, require_panel=True):
     try:
         result = get_plugin_manager()._plugin_host().asgi_request(
             plugin['name'], root, snapshot_api, method, path, query, headers, body,
-            timeout=10.0, authenticated=True)
+            timeout=timeout, authenticated=True)
     except TimeoutError:
         ctx.check_cancelled()
         return _reply(504)

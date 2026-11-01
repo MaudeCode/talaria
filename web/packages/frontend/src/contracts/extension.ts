@@ -51,6 +51,8 @@ export const ExtensionManifestSchema = z.object({
   source: z.enum(['manifest', 'gallery', 'plugin', 'agent-plugin']),
   agent_host: z.boolean().optional(),
   display_id: z.string().max(64).optional(),
+  /** TAL-1514: an Agent plugin the app renders with its own view (no panel document). */
+  native_view: z.literal('meshy_gallery').optional(),
   enabled: z.boolean(),
   /** The server's decision that Settings shows an enable switch for this row. */
   can_toggle: z.boolean(),

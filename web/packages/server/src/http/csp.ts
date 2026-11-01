@@ -49,7 +49,8 @@ export function buildCspEnforcedPolicy(extras: CspExtras, frameAncestors = "'non
     "img-src 'self' data: https: blob:; " +
     "font-src 'self' data:; " +
     "media-src 'self' data: blob:; " +
-    `connect-src ${CSP_CONNECT_BASE}${extras.connect}; ` +
+    // `blob:`: the 3D viewer decodes a model's embedded textures from blob URLs it creates itself (TAL-1514).
+    `connect-src ${CSP_CONNECT_BASE} blob:${extras.connect}; ` +
     `frame-src ${CSP_FRAME_BASE}${extras.frame}; ` +
     "manifest-src 'self' https://*.cloudflareaccess.com; " +
     "base-uri 'self'; form-action 'self'"

@@ -5934,9 +5934,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -6334,9 +6348,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -6555,9 +6583,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -10336,9 +10378,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -10736,9 +10792,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -10957,9 +11027,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -13802,9 +13886,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -14202,9 +14300,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -14423,9 +14535,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -19354,9 +19480,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -19754,9 +19894,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -19975,9 +20129,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -24467,9 +24635,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -24867,9 +25049,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -25088,9 +25284,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -30308,9 +30518,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -30708,9 +30932,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -30929,9 +31167,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -33723,9 +33975,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -34123,9 +34389,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -34344,9 +34624,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -37200,9 +37494,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -37600,9 +37908,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -37821,9 +38143,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -40675,9 +41011,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -41075,9 +41425,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -41296,9 +41660,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -43533,9 +43911,23 @@
                                     "audio",
                                     "video",
                                     "pdf",
-                                    "file"
+                                    "file",
+                                    "model"
                                   ],
                                   "type": "string"
+                                },
+                                "model": {
+                                  "type": "object",
+                                  "properties": {
+                                    "ref": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 4096
+                                    }
+                                  },
+                                  "required": [
+                                    "ref"
+                                  ]
                                 }
                               },
                               "required": [
@@ -54230,9 +54622,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -54630,9 +55036,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -54851,9 +55271,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -57693,9 +58127,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -58093,9 +58541,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -58314,9 +58776,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -61548,9 +62024,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -61948,9 +62438,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -62169,9 +62673,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -65278,9 +65796,16 @@
                                                       "audio",
                                                       "video",
                                                       "pdf",
-                                                      "file"
+                                                      "file",
+                                                      "model"
                                                     ],
                                                     "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {}
+                                                    }
                                                   }
                                                 },
                                                 "required": [
@@ -65645,9 +66170,23 @@
                                                 "audio",
                                                 "video",
                                                 "pdf",
-                                                "file"
+                                                "file",
+                                                "model"
                                               ],
                                               "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -65866,9 +66405,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -96213,6 +96766,1734 @@
         }
       }
     },
+    "/api/meshy/overview": {
+      "get": {
+        "operationId": "meshy.overview",
+        "summary": "Meshy gallery for the active profile (TAL-1514).",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "ready",
+                        "missing_key",
+                        "plugin_unavailable",
+                        "agent_incompatible",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "balance": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recent": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "task_id": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "kind": {
+                            "enum": [
+                              "model",
+                              "image"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "task_type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "credits": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "thumbnail": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "mime": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "model",
+                                      "image"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "name",
+                                  "mime",
+                                  "kind",
+                                  "bytes"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "mime": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "model",
+                                      "image"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "name",
+                                  "mime",
+                                  "kind",
+                                  "bytes"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "model",
+                                    "image"
+                                  ],
+                                  "type": "string"
+                                },
+                                "bytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "name",
+                                "mime",
+                                "kind",
+                                "bytes"
+                              ]
+                            }
+                          },
+                          "saved": {
+                            "type": "boolean"
+                          },
+                          "expired": {
+                            "type": "boolean"
+                          },
+                          "download_incomplete": {
+                            "type": "boolean"
+                          },
+                          "can_download": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "task_id",
+                          "kind",
+                          "title",
+                          "prompt",
+                          "task_type",
+                          "created_at",
+                          "credits",
+                          "thumbnail",
+                          "model",
+                          "images",
+                          "saved",
+                          "expired",
+                          "download_incomplete",
+                          "can_download"
+                        ]
+                      }
+                    },
+                    "local": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "task_id": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "kind": {
+                            "enum": [
+                              "model",
+                              "image"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "task_type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "credits": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "thumbnail": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "mime": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "model",
+                                      "image"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "name",
+                                  "mime",
+                                  "kind",
+                                  "bytes"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "mime": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "model",
+                                      "image"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "name",
+                                  "mime",
+                                  "kind",
+                                  "bytes"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "model",
+                                    "image"
+                                  ],
+                                  "type": "string"
+                                },
+                                "bytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "name",
+                                "mime",
+                                "kind",
+                                "bytes"
+                              ]
+                            }
+                          },
+                          "saved": {
+                            "type": "boolean"
+                          },
+                          "expired": {
+                            "type": "boolean"
+                          },
+                          "download_incomplete": {
+                            "type": "boolean"
+                          },
+                          "can_download": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "task_id",
+                          "kind",
+                          "title",
+                          "prompt",
+                          "task_type",
+                          "created_at",
+                          "credits",
+                          "thumbnail",
+                          "model",
+                          "images",
+                          "saved",
+                          "expired",
+                          "download_incomplete",
+                          "can_download"
+                        ]
+                      }
+                    },
+                    "active": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task_id": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "in_progress",
+                              "succeeded",
+                              "failed",
+                              "canceled",
+                              "expired",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "progress": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100
+                          },
+                          "terminal": {
+                            "type": "boolean"
+                          },
+                          "stage": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "task_id",
+                          "status",
+                          "progress",
+                          "terminal",
+                          "stage",
+                          "error"
+                        ]
+                      }
+                    },
+                    "auto_rotate": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "message",
+                    "balance",
+                    "recent",
+                    "local",
+                    "active",
+                    "auto_rotate"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meshy/card": {
+      "get": {
+        "operationId": "meshy.card",
+        "summary": "Resolve a model media ref found in its session assistant text.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "ready",
+                        "missing_key",
+                        "plugin_unavailable",
+                        "agent_incompatible",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "balance": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "item": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "task_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "kind": {
+                              "enum": [
+                                "model",
+                                "image"
+                              ],
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "prompt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "task_type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "created_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "credits": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "thumbnail": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "model",
+                                        "image"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "bytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind",
+                                    "bytes"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "model",
+                                        "image"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "bytes": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind",
+                                    "bytes"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "images": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "mime": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "model",
+                                      "image"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "name",
+                                  "mime",
+                                  "kind",
+                                  "bytes"
+                                ]
+                              }
+                            },
+                            "saved": {
+                              "type": "boolean"
+                            },
+                            "expired": {
+                              "type": "boolean"
+                            },
+                            "download_incomplete": {
+                              "type": "boolean"
+                            },
+                            "can_download": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "task_id",
+                            "kind",
+                            "title",
+                            "prompt",
+                            "task_type",
+                            "created_at",
+                            "credits",
+                            "thumbnail",
+                            "model",
+                            "images",
+                            "saved",
+                            "expired",
+                            "download_incomplete",
+                            "can_download"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "task": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                            },
+                            "status": {
+                              "enum": [
+                                "pending",
+                                "in_progress",
+                                "succeeded",
+                                "failed",
+                                "canceled",
+                                "expired",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "progress": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "terminal": {
+                              "type": "boolean"
+                            },
+                            "stage": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "task_id",
+                            "status",
+                            "progress",
+                            "terminal",
+                            "stage",
+                            "error"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "message",
+                    "balance",
+                    "title",
+                    "item",
+                    "task"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meshy/task": {
+      "get": {
+        "operationId": "meshy.task",
+        "summary": "One Meshy task snapshot; poll until terminal.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "ready",
+                        "missing_key",
+                        "plugin_unavailable",
+                        "agent_incompatible",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "balance": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "task": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                            },
+                            "status": {
+                              "enum": [
+                                "pending",
+                                "in_progress",
+                                "succeeded",
+                                "failed",
+                                "canceled",
+                                "expired",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "progress": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "terminal": {
+                              "type": "boolean"
+                            },
+                            "stage": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "task_id",
+                            "status",
+                            "progress",
+                            "terminal",
+                            "stage",
+                            "error"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "message",
+                    "balance",
+                    "task"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meshy/details": {
+      "get": {
+        "operationId": "meshy.details",
+        "summary": "Formats, follow-up drafts and provenance of a task.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "beside",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "ready",
+                        "missing_key",
+                        "plugin_unavailable",
+                        "agent_incompatible",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "balance": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "task_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                    },
+                    "formats": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "format": {
+                            "type": "string",
+                            "pattern": "^(?:glb|fbx|obj|stl|usdz|3mf|blend)(?::[a-z0-9_]{1,40})?$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "saved": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "format",
+                          "label",
+                          "saved"
+                        ]
+                      }
+                    },
+                    "conversions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "cost": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "affordable": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "draft": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "cost",
+                          "affordable",
+                          "draft"
+                        ]
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "cost": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "affordable": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "draft": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "cost",
+                          "affordable",
+                          "draft"
+                        ]
+                      }
+                    },
+                    "provenance": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "prompt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "prompt_inherited": {
+                              "type": "boolean"
+                            },
+                            "texture_prompt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "style_prompt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "negative_prompt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source_image": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "settings": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "value"
+                                ]
+                              }
+                            },
+                            "seed": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "credits": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "created_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "parents": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                                  },
+                                  "tool": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "task_id",
+                                  "tool"
+                                ]
+                              }
+                            },
+                            "children": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                                  },
+                                  "tool": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "task_id",
+                                  "tool"
+                                ]
+                              }
+                            },
+                            "recorded": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "prompt",
+                            "prompt_inherited",
+                            "texture_prompt",
+                            "style_prompt",
+                            "negative_prompt",
+                            "source_image",
+                            "settings",
+                            "seed",
+                            "credits",
+                            "created_at",
+                            "parents",
+                            "children",
+                            "recorded"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "is_preview": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "message",
+                    "balance",
+                    "task_id",
+                    "formats",
+                    "conversions",
+                    "actions",
+                    "provenance",
+                    "is_preview"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meshy/save": {
+      "post": {
+        "operationId": "meshy.save",
+        "summary": "Explicitly download one existing format. Never overwrites.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                  },
+                  "format": {
+                    "type": "string",
+                    "pattern": "^(?:glb|fbx|obj|stl|usdz|3mf|blend)(?::[a-z0-9_]{1,40})?$"
+                  },
+                  "beside": {
+                    "type": "string",
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "format"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "ready",
+                        "missing_key",
+                        "plugin_unavailable",
+                        "agent_incompatible",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "balance": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "saved": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "complete": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "message",
+                    "balance",
+                    "saved",
+                    "complete",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meshy/save-images": {
+      "post": {
+        "operationId": "meshy.saveImages",
+        "summary": "Explicitly download an image set; reports partial sets.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f][0-9a-f-]{15,63}$"
+                  }
+                },
+                "required": [
+                  "task_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "ready",
+                        "missing_key",
+                        "plugin_unavailable",
+                        "agent_incompatible",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "balance": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "saved": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "complete": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "message",
+                    "balance",
+                    "saved",
+                    "complete",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/client-events/log": {
       "post": {
         "operationId": "clientEvents",
@@ -104016,6 +106297,9 @@
                           },
                           "display_id": {
                             "type": "string"
+                          },
+                          "native_view": {
+                            "const": "meshy_gallery"
                           }
                         },
                         "required": [
@@ -105948,9 +108232,23 @@
                                                   "audio",
                                                   "video",
                                                   "pdf",
-                                                  "file"
+                                                  "file",
+                                                  "model"
                                                 ],
                                                 "type": "string"
+                                              },
+                                              "model": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "ref": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 4096
+                                                  }
+                                                },
+                                                "required": [
+                                                  "ref"
+                                                ]
                                               }
                                             },
                                             "required": [
@@ -106348,9 +108646,23 @@
                                             "audio",
                                             "video",
                                             "pdf",
-                                            "file"
+                                            "file",
+                                            "model"
                                           ],
                                           "type": "string"
+                                        },
+                                        "model": {
+                                          "type": "object",
+                                          "properties": {
+                                            "ref": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 4096
+                                            }
+                                          },
+                                          "required": [
+                                            "ref"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -106569,9 +108881,23 @@
                                         "audio",
                                         "video",
                                         "pdf",
-                                        "file"
+                                        "file",
+                                        "model"
                                       ],
                                       "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "object",
+                                      "properties": {
+                                        "ref": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        }
+                                      },
+                                      "required": [
+                                        "ref"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -108461,6 +110787,60 @@
           },
           "404": {
             "description": "Not found.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/meshy/asset": {
+      "get": {
+        "summary": "TAL-1514: bytes behind a Meshy asset grant. Each request rechecks the signed-in owner, profile generation, the reviewed plugin revision and consent, and the native inventory; local files open no-follow under their anchor, GLBs must be self-contained, remote images come only from Meshy's asset host without redirects.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "grant",
+            "in": "query",
+            "required": true,
+            "description": "Opaque grant from a Meshy overview, card or details response.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model or image bytes.",
+            "content": {
+              "model/gltf-binary": {},
+              "image/png": {},
+              "image/jpeg": {},
+              "image/webp": {}
+            }
+          },
+          "206": {
+            "description": "Partial content."
+          },
+          "304": {
+            "description": "ETag matched."
+          },
+          "403": {
+            "description": "Refused before any bytes: not self-contained, a link, or too large.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Unknown, expired, revoked or foreign grant.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "502": {
+            "description": "The remote asset redirected, failed or was not an image.",
             "content": {
               "application/json": {}
             }

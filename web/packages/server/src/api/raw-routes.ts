@@ -33,6 +33,8 @@ import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
 import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
 import { handleTranscribeStream } from './transcribe-stream.js'
 import { FEEDBACK_UPLOAD_MAX_BYTES, stageFeedbackAttachment } from '../feedback.js'
+import { MeshyError } from '../tools/meshy.js'
+import { dashboardScope } from '../tools/dashboard-plugins.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -46,6 +48,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/file/raw': handleFileRaw,
   '/api/escape/file/raw': handleEscapeFileRaw,
   '/api/media': handleMedia,
+  '/api/meshy/asset': handleMeshyAsset,
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
   '/api/transcribe/stream': handleTranscribeStream,
@@ -241,6 +244,19 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
   const csp = htmlInlineOk ? 'sandbox allow-scripts' : null
   // The pathname policy ran before the open; the hard-link rule is re-applied to the inode actually opened.
   await serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot, denyHardLinks: true })
+}
+
+/** TAL-1514: bytes behind a Meshy asset grant, rechecked against the caller's owner and active profile on every request. */
+async function handleMeshyAsset(ctx: RequestContext): Promise<void> {
+  const grant = ctx.query.get('grant') ?? ''
+  if (!grant) throw new HttpError(400, 'grant parameter required')
+  const abort = new AbortController()
+  const close = (): void => { abort.abort() }
+  ctx.res.once('close', close)
+  try { await ctx.deps.meshy.serve(ctx, grant, dashboardScope(ctx), abort.signal) } catch (error) {
+    if (error instanceof MeshyError) throw new HttpError(error.status, error.message)
+    throw error
+  } finally { ctx.res.off('close', close) }
 }
 
 /** Python `_folder_zip_limits`: `HERMES_WEBUI_FOLDER_ZIP_MAX_MB` / `_MAX_FILES` are honoured as given (ZIP64 covers large archives). */

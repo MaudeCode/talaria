@@ -7,7 +7,7 @@
 import { basename, extname, isAbsolute, resolve } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Nodes } from 'mdast'
-import type { DisplayMedia } from '@maudecode/talaria-web-contracts'
+import { MESHY_TASK_ID_RE, type DisplayMedia } from '@maudecode/talaria-web-contracts'
 import { INLINE_IMAGE_TYPES, mimeFor } from './media.js'
 
 export interface MediaRefResolver {
@@ -24,14 +24,74 @@ export interface MediaProjection {
 
 interface Edit { start: number; end: number; text: string; media: DisplayMedia }
 
+const MESHY_DIRECTIVE = '::meshy-model'
+const MESHY_LINE_RE = /^[ \t]*::meshy-model\{([^{}\r\n]*)\}[ \t]*$/
+const MESHY_ATTR_RE = /\s*([a-z_]+)="([^"\\\r\n]*)"\s*/y
+
+/** TAL-1514: one `::meshy-model{…}` directive line, validated. `ref` is opaque to clients and found again server-side. */
+export interface MeshyDirective { task: string | null; path: string | null; title: string | null; ref: string }
+
+/** A directive's attributes when every one parses and it names a valid task or an absolute `.glb` path; else null. */
+export function parseMeshyDirective(line: string): MeshyDirective | null {
+  const body = MESHY_LINE_RE.exec(line)?.[1]
+  if (body === undefined) return null
+  const attrs = new Map<string, string>()
+  MESHY_ATTR_RE.lastIndex = 0
+  while (MESHY_ATTR_RE.lastIndex < body.length) {
+    const at = MESHY_ATTR_RE.lastIndex
+    const match = MESHY_ATTR_RE.exec(body)
+    if (match?.index !== at || attrs.has(match[1] ?? '')) return null
+    attrs.set(match[1] ?? '', match[2] ?? '')
+  }
+  const task = attrs.get('task') ?? null
+  const path = attrs.get('path') ?? null
+  if (task !== null && !MESHY_TASK_ID_RE.test(task)) return null
+  // Only a self-contained binary model, named absolutely: a `.gltf` can fetch resources from anywhere.
+  if (path !== null && (!path.startsWith('/') || path.includes('\0') || !path.toLowerCase().endsWith('.glb'))) return null
+  if (task === null && path === null) return null
+  const title = (attrs.get('title') ?? '').trim().slice(0, 120) || null
+  return { task, path, title, ref: Buffer.from(JSON.stringify([task, path, title]), 'utf8').toString('base64url') }
+}
+
+/** Every valid directive in the Markdown's paragraphs, in order; code blocks and spans stay literal. */
+export function meshyDirectives(markdown: string): MeshyDirective[] {
+  if (!markdown.includes(MESHY_DIRECTIVE)) return []
+  return directiveLines(markdown).map((line) => line.directive)
+}
+
+function directiveLines(markdown: string): { start: number; end: number; directive: MeshyDirective }[] {
+  const out: { start: number; end: number; directive: MeshyDirective }[] = []
+  const visit = (node: Nodes): void => {
+    if (node.type === 'paragraph') {
+      const start = node.position?.start.offset
+      const end = node.position?.end.offset
+      if (start === undefined || end === undefined) return
+      let cursor = start
+      for (const line of markdown.slice(start, end).split('\n')) {
+        const directive = parseMeshyDirective(line)
+        // The line and its line break leave the display text.
+        if (directive) out.push({ start: cursor, end: Math.min(cursor + line.length + 1, markdown.length), directive })
+        cursor += line.length + 1
+      }
+      return
+    }
+    if ('children' in node) for (const child of node.children) visit(child)
+  }
+  visit(fromMarkdown(markdown))
+  return out
+}
+
 const TRAILING_PUNCTUATION = '.,;:!?'
 const FILE_URL = 'file://'
 const MEDIA = 'MEDIA:'
 
 /** Null when the text has no reference the resolver serves. `content` is never touched; this is display text only. */
 export function projectMediaRefs(markdown: string, resolver: MediaRefResolver): MediaProjection | null {
-  if (!markdown.includes(MEDIA) && !markdown.includes(FILE_URL) && !markdown.includes('![')) return null
+  if (!markdown.includes(MEDIA) && !markdown.includes(FILE_URL) && !markdown.includes('![') && !markdown.includes(MESHY_DIRECTIVE)) return null
   const edits: Edit[] = []
+  const models: Edit[] = markdown.includes(MESHY_DIRECTIVE)
+    ? directiveLines(markdown).map(({ start, end, directive }) => ({ start, end, text: '', media: { url: '', name: directive.title ?? 'Meshy model', mime: 'model/gltf-binary', kind: 'model', model: { ref: directive.ref } } }))
+    : []
   const visit = (node: Nodes): void => {
     const start = node.position?.start.offset
     const end = node.position?.end.offset
@@ -50,6 +110,8 @@ export function projectMediaRefs(markdown: string, resolver: MediaRefResolver): 
     if ('children' in node) for (const child of node.children) visit(child)
   }
   visit(fromMarkdown(markdown))
+  // A directive line is replaced whole; no other reference inside it is rewritten.
+  edits.splice(0, edits.length, ...edits.filter((edit) => !models.some((m) => edit.start < m.end && m.start < edit.end)), ...models)
   if (!edits.length) return null
   edits.sort((a, b) => a.start - b.start)
   let text = ''
@@ -58,7 +120,7 @@ export function projectMediaRefs(markdown: string, resolver: MediaRefResolver): 
   for (const edit of edits) {
     text += markdown.slice(cursor, edit.start) + edit.text
     cursor = edit.end
-    if (!media.some((m) => m.url === edit.media.url)) media.push(edit.media)
+    if (!media.some((m) => m.url === edit.media.url && m.model?.ref === edit.media.model?.ref)) media.push(edit.media)
   }
   return { text: text + markdown.slice(cursor), media }
 }

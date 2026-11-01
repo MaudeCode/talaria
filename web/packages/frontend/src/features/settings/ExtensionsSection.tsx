@@ -100,7 +100,7 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
           <div className="font-medium text-text">{ext.name}{ext.version ? <span className="ml-1 text-[11px] text-muted">v{ext.version}</span> : null} <span className="ml-1 whitespace-nowrap rounded-full border border-border px-1.5 text-[10px] uppercase tracking-wider text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</span></div>
           <div className="text-[11px] text-muted">{ext.display_id ?? ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
         </div>
-        {ext.panel && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
+        {(ext.panel || ext.native_view) && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
         {canManage && ext.can_toggle && (
           <ResourceSwitch effect={effect} checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={ext.name} stateLabel={(enabled) => enabled ? m.plugins_enabled() : m.plugins_disabled()} />
         )}

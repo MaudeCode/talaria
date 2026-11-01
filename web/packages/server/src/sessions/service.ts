@@ -30,7 +30,7 @@ import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { isOrphanPrunableSource } from './source-kind.js'
@@ -41,7 +41,7 @@ import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } fro
 import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
 import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
-import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
+import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
@@ -3315,6 +3315,20 @@ export class SessionService {
     const full = fullToolResult((await this.fullTranscript(sid)).transcript, id)
     if (full === null) throw new HttpFailure(404, 'Tool result not found')
     return { tool_call_id: id, ...redactValue(full, this.deps.redactEnabled()) as typeof full }
+  }
+
+  /**
+   * TAL-1514: a `model` media ref is honoured only when that exact directive is in one of the session's assistant
+   * messages; a client cannot name a path or task the Agent did not.
+   */
+  async meshyDirective(sid: string, ref: string): Promise<MeshyDirective> {
+    const { transcript } = await this.fullTranscript(await this.resolveSessionId(sid))
+    for (const message of transcript) {
+      if (!isMessageDict(message) || message.role !== 'assistant') continue
+      const found = meshyDirectives(messageText(message.content)).find((d) => d.ref === ref)
+      if (found) return found
+    }
+    throw new HttpFailure(404, 'Model not found in this conversation')
   }
 
   /** Artifact state lives in the producer DB, never in a directive, saved scene or client-posted content. */
