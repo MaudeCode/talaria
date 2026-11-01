@@ -1745,3 +1745,41 @@ describe('gateway session feeds under person isolation (TAL-48)', () => {
     }
   })
 })
+
+describe('lineage continuations under person isolation (TAL-48)', () => {
+  it('give a compressed Web chat\'s Agent tip to the chat\'s person, not to other server owners', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ gatewayPollMs: 100, env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = createStateDb(join(s.state, 'state.db'))
+    try {
+      await s.deps.settings.save({ show_cli_sessions: true })
+      const headers = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}` }
+      }
+      const alice = headers('alice')
+      const olive = headers('olive', true)
+      const aliceId = ((await (await s.get('/api/auth/status', { headers: alice })).json()) as { person: { id: string } }).person.id
+      // Alice's Web chat was compressed: its Web document keeps the root id, the Agent continues under a new tip id.
+      const chat = await s.deps.sessionStore.newSession({ profile: 'default' })
+      chat.owner_person_id = aliceId
+      chat.messages.push({ role: 'user', content: 'private', timestamp: 300 })
+      await s.deps.sessionStore.save(chat)
+      insertSession(db, { id: chat.session_id, source: 'webui', started_at: 300, title: 'Private chat', messages: [['user', 301]], ended_at: 310, end_reason: 'compression' })
+      insertSession(db, { id: 'alicetip0001', source: 'webui', started_at: 310.2, parent: chat.session_id, title: 'Private chat', messages: [['user', 311]] })
+
+      expect((await s.get('/api/session?session_id=alicetip0001', { headers: olive })).status).toBe(404)
+      const ids = (frames: { event?: string; data?: unknown }[]) => frames.filter((f) => f.event === 'sessions_changed').flatMap((f) => ((f.data as Json).sessions as Json[] | undefined ?? []).map((r) => r.session_id))
+      const feed = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: olive, timeoutMs: 3000 })
+      expect(ids(feed)).not.toContain('alicetip0001')
+      expect(await s.deps.sessions.foreignOwnerOf('alicetip0001')).toBe(aliceId)
+    } finally {
+      db.close()
+      s.deps.gatewayWatchers.stopAll()
+      await s.close()
+    }
+  })
+})

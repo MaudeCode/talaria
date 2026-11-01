@@ -343,7 +343,21 @@ export class SessionService {
   /** A session with no Web document: an Agent-owned chat a person created, else unowned Agent state. */
   async personMaySeeForeign(sid: string): Promise<boolean> {
     if (!this.store.personAccess()) return true
-    return this.personMaySee((await this.store.foreignOwners()).get(sid) ?? null)
+    return this.personMaySee(await this.foreignOwnerOf(sid))
+  }
+
+  /**
+   * The person an id without a Web document belongs to: its recorded Agent-session owner, else its lineage root's owner,
+   * because a compression or reset continuation gets a new Agent id while the Web document keeps the root's.
+   */
+  async foreignOwnerOf(sid: string): Promise<string | null> {
+    const owners = await this.store.foreignOwners()
+    const recorded = owners.get(sid)
+    if (recorded) return recorded
+    const report = await stateDbSessionReadAsync(emptyLineageReport(sid), 'stateDbLineageReport', this.stateDbPath(null), sid)
+    const root = report.found ? str(report.lineage_key) : ''
+    if (!root || root === sid) return null
+    try { return (await this.store.get(root, { metadataOnly: true, cacheOnMiss: false })).owner_person_id } catch { return owners.get(root) ?? null }
   }
 
   /** Every session read, write and projection goes through this: the request's person owns it and its profile is active. */
@@ -1494,8 +1508,15 @@ export class SessionService {
       if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
     }
     const foreignOwners = await this.store.foreignOwners()
+    // TAL-48: an Agent row continuing a Web chat (its lineage root) belongs to that chat's person.
+    const webOwners = new Map(webuiRows.flatMap((row) => typeof row.owner_person_id === 'string' && row.owner_person_id ? [[str(row.session_id), row.owner_person_id] as const] : []))
+    const rowOwner = (row: Row): string | null => {
+      if (typeof row.owner_person_id === 'string' && row.owner_person_id) return row.owner_person_id
+      const root = str(row._lineage_root_id)
+      return (root && (webOwners.get(root) ?? foreignOwners.get(root))) || foreignOwners.get(str(row.session_id)) || null
+    }
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
-    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(row.owner_person_id ?? foreignOwners.get(str(row.session_id)) ?? null) }))
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(rowOwner(row)) }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }
 
