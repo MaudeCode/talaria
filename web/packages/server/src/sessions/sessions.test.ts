@@ -1225,6 +1225,89 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
   })
 })
 
+describe('a CLI turn committed after a cut shows on an id-less state.db (TAL-998)', () => {
+  let s: TestServer
+  let clock = 150
+  beforeAll(async () => { s = await bootTestServer({ now: () => clock }) })
+  afterAll(() => s.close())
+
+  type Row = [string, string, number]
+  async function idlessSession(rows: Row[]): Promise<{ sid: string, insert: (list: Row[]) => void }> {
+    clock = 150
+    const sid = String((await newSession(s)).session_id)
+    await writeMessages(s, sid, rows.map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    const insert = (list: Row[]): void => {
+      const db = openStateDb(join(s.state, 'state.db'))
+      db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+      for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+      db.close()
+    }
+    insert(rows)
+    return { sid, insert }
+  }
+  const served = async (sid: string): Promise<unknown[]> => (((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+  const model = async (sid: string): Promise<unknown[]> => (await s.deps.sessions.readModelContext((await s.deps.sessionStore.get(sid)))).map((m) => m.content)
+
+  it('serves a CLI row committed after a cut at 0 and sends it to the model', async () => {
+    const { sid, insert } = await idlessSession([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0 })).status).toBe(200)
+    insert([['user', 'from the CLI afterwards', 200]])
+    expect(await served(sid)).toEqual(['from the CLI afterwards'])
+    expect(await model(sid)).toEqual(['from the CLI afterwards'])
+  })
+
+  it('serves a CLI row committed after a cut that kept two rows, without a new Web turn', async () => {
+    const { sid, insert } = await idlessSession([['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]])
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    insert([['user', 'from the CLI afterwards', 200]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'from the CLI afterwards'])
+    expect(await model(sid)).toEqual(['u1', 'a1', 'from the CLI afterwards'])
+  })
+
+  it.each([
+    ['truncate', { keep_count: 2 }, ['u1', 'a1']],
+    ['undo', {}, ['u1', 'a1']],
+    ['retry', {}, ['u1', 'a1']],
+    ['clear', {}, []],
+  ] as const)('keeps the deleted suffix and rows stamped before the cut hidden after %s', async (path, body, kept) => {
+    const { sid, insert } = await idlessSession([['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]])
+    expect((await post(s, `/api/session/${path}`, { session_id: sid, ...body })).status).toBe(200)
+    expect((await s.deps.sessionStore.get(sid)).truncation_cut_at).toBe(150)
+    insert([['user', 'stamped at the cut', 150], ['user', 'from the CLI afterwards', 200]])
+    expect(await served(sid)).toEqual([...kept, 'from the CLI afterwards'])
+    expect(await model(sid)).toEqual([...kept, 'from the CLI afterwards'])
+  })
+
+  it('merges a session cut before truncation_cut_at existed exactly as before', async () => {
+    const { sid, insert } = await idlessSession([['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]])
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    const stored = await s.deps.sessionStore.get(sid)
+    stored.truncation_cut_at = null
+    await s.deps.sessionStore.save(stored)
+    insert([['user', 'from the CLI afterwards', 200]])
+    expect(await served(sid)).toEqual(['u1', 'a1'])
+  })
+
+  it('ignores the cut time after an older release saves the session', async () => {
+    const { sid, insert } = await idlessSession([['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]])
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    insert([['user', 'from the CLI afterwards', 200]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'from the CLI afterwards'])
+    // A Stable truncate at keep 2 cuts the CLI row, changes no field this version reads, and keeps the unknown cut time.
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const doc = JSON.parse(readFileSync(path, 'utf8')) as Json
+    doc.updated_at = Number(doc.updated_at) + 60
+    writeFileSync(path, JSON.stringify(doc))
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(['u1', 'a1'])
+    expect(await model(sid)).toEqual(['u1', 'a1'])
+    // A later save by this version does not make the stale cut time valid again.
+    clock = 300
+    expect((await post(s, '/api/session/rename', { session_id: sid, title: 'renamed' })).status).toBe(200)
+    expect(await served(sid)).toEqual(['u1', 'a1'])
+  })
+})
+
 describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   let s: TestServer
   let sidecar: FakeSidecar

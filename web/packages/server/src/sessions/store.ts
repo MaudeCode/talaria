@@ -244,8 +244,10 @@ export class SessionStore {
     if (!isSafeSessionId(sid)) throw new Error(`Unsafe session_id ${JSON.stringify(sid)}; refusing to write outside session store`)
     if (session.loadedMetadataOnly) throw new Error(`Refusing to save metadata-only session ${JSON.stringify(sid)}: would overwrite messages with []. Reload before mutating state.`)
     const markerCurrent = session.state_db_seen_stamp === session.updated_at
+    const cutCurrent = session.truncation_cut_stamp === session.updated_at
     if (opts.touchUpdatedAt ?? true) session.updated_at = this.deps.now()
     if (markerCurrent) session.state_db_seen_stamp = session.updated_at
+    if (cutCurrent) session.truncation_cut_stamp = session.updated_at
     session.messages = withBackgroundDisplayKinds(session.messages, session)
     const liveRows = session.messages, liveCalls = session.tool_calls, callCount = liveCalls.length
     const prefix = session.prefixIndex

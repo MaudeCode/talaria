@@ -51,6 +51,8 @@ export const METADATA_FIELDS = [
   'truncation_watermark',
   'truncation_boundary',
   'truncation_watermark_compressed',
+  'truncation_cut_at',
+  'truncation_cut_stamp',
   'state_db_seen_id',
   'state_db_seen_boundary',
   'state_db_seen_stamp',
@@ -281,6 +283,10 @@ export class Session {
   truncation_boundary: unknown
   /** TAL-504: the watermark marks compressed rows (newer state.db rows are new), not a cut suffix. */
   truncation_watermark_compressed: boolean
+  /** TAL-998: when the last cut ran (seconds); an id-less state.db row stamped after it was committed after the cut. */
+  truncation_cut_at: number | null
+  /** TAL-998: `updated_at` while `truncation_cut_at` is current; this version's saves carry it forward, an older release's do not. */
+  truncation_cut_stamp: number | null
   /** TAL-493: the highest Agent state.db message id a boundary or settled turn read; newer rows are continuations. */
   state_db_seen_id: number | null
   /** TAL-493: what `state_db_seen_id` was recorded under (boundary fields, its row); a change makes the marker stale. */
@@ -407,6 +413,10 @@ export class Session {
     this.truncation_watermark = take('truncation_watermark', null)
     this.truncation_boundary = take('truncation_boundary', null)
     this.truncation_watermark_compressed = take('truncation_watermark_compressed', false) === true
+    const cutAt = take('truncation_cut_at', null)
+    this.truncation_cut_at = typeof cutAt === 'number' && Number.isFinite(cutAt) ? cutAt : null
+    const cutStamp = take('truncation_cut_stamp', null)
+    this.truncation_cut_stamp = typeof cutStamp === 'number' && Number.isFinite(cutStamp) ? cutStamp : null
     const seenId = take('state_db_seen_id', null)
     this.state_db_seen_id = typeof seenId === 'number' && Number.isFinite(seenId) ? seenId : null
     const seenBoundary = take('state_db_seen_boundary', null)

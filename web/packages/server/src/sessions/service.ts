@@ -551,7 +551,7 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[], stateRows: Message[]): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows), stateDbGeneration: markedStateDbGeneration(s) })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { ...truncationOpts(s), stateDbSeenId: currentStateDbSeenId(s, stateRows), stateDbGeneration: markedStateDbGeneration(s) })
   }
 
   /**
@@ -608,7 +608,7 @@ export class SessionService {
     const ownWorkAfter = turn.agentRows?.length || generationChanged ? null : turn.startId ?? null
     // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
     const seenId = currentStateDbSeenId(s, read.rows) ?? (generationChanged ? null : turn.startId ?? null)
-    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId, stateDbGeneration: generation }) : s.messages
+    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { ...truncationOpts(s), stateDbSeenId: seenId, stateDbGeneration: generation }) : s.messages
     const fresh = new Set(shown.slice(s.messages.length))
     // The turn's own rows the merge already matched to their local copies use up their share before any shown row can.
     if (seenId !== null) {
@@ -998,7 +998,7 @@ export class SessionService {
       if (pending) tail = withPendingUserTurn(tail, { ...pending, localCount: s.messages.length - prefixEnd })
       if (journaled) tail = withoutRunningTurnOutput(tail, { ...journaled, localCount: s.messages.length - prefixEnd })
       const tailIndex = new SessionPrefixIndex(tail, index.revision, index.generation, { toolCalls: index.toolCalls(prefixEnd, tail.length), baseIndex: prefixEnd, initialTurn: prefixEnd ? index.turnId(prefixEnd - 1) : 'legacy:start', timestampFloor: index.summary(prefixEnd).maxTimestamp, todoFloor: index.summary(prefixEnd).maxTodoTimestamp, parent: { index, end: prefixEnd } })
-      const enoughContext = !streaming && (context.enough || sanitizeMessagesForApi(context.marker ? context.local : mergeSessionMessagesAppendOnly(context.local, stateRows!, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: effectiveSeenId, stateDbGeneration: index.generation }).filter((m) => !s.active_stream_id || m._turn_id !== s.active_stream_id), { maxMessages: 4 }).length >= 4)
+      const enoughContext = !streaming && (context.enough || sanitizeMessagesForApi(context.marker ? context.local : mergeSessionMessagesAppendOnly(context.local, stateRows!, { ...truncationOpts(s), stateDbSeenId: effectiveSeenId, stateDbGeneration: index.generation }).filter((m) => !s.active_stream_id || m._turn_id !== s.active_stream_id), { maxMessages: 4 }).length >= 4)
       const owners = new Map<string, Map<string, StateDbSessionSource>>()
       const sources: SessionService['stateDbSources'] = async (ids, profile) => {
         const ownerKey = JSON.stringify([ids, profile])
@@ -2046,7 +2046,7 @@ export class SessionService {
         if (s.context_messages.length) s.context_messages = this.modelContext(s, read.rows)
         s.messages = this.mergedTranscript(s, s.messages, read.rows)
       }
-      truncateSessionAtKeep(s, keep)
+      truncateSessionAtKeep(s, keep, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       return null
@@ -2390,9 +2390,7 @@ export class SessionService {
         // TAL-1566: the compaction's own row follows the anchor (first without one), before a waiting turn's rows.
         if (live.compression_anchor_summary) insertCompactionRow(live, anchor ? live.messages.indexOf(anchor) : -1, str(live.compression_anchor_summary), this.deps.now())
         // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
-        live.truncation_watermark = truncationWatermarkFor(compressed)
-        live.truncation_boundary = live.truncation_watermark
-        live.truncation_watermark_compressed = true
+        setTruncationBoundary(live, compressed, { compressed: true, cutAt: null })
         this.markStateDbSeen(live, read, { boundary: true })
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
@@ -2447,7 +2445,7 @@ export class SessionService {
       // The boundary covers every row this read saw, the session's finalization rows included.
       const read = await this.stateDbRead(s)
       const hadMessages = s.messages.length > 0
-      truncateSessionAtKeep(s, 0)
+      truncateSessionAtKeep(s, 0, this.deps.now())
       s.messages = messages.map((content) => ({ role: 'local_notice', content, _notice_kind: 'session_finalize', timestamp: this.deps.now() }))
       s.tool_calls = []
       if (s.parent_session_id) {
@@ -2491,7 +2489,7 @@ export class SessionService {
       const lastUserPrompt = stripWorkspacePrefix(lastUserAttachments.length ? stripAttachedFilesMarker(lastUserText) : lastUserText, true)
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser
-      shrinkTo(s, lastUser)
+      shrinkTo(s, lastUser, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
@@ -2508,7 +2506,7 @@ export class SessionService {
       if (lastUser === null) return { error: 'Nothing to undo.' }
       const removedText = extractText(history[lastUser]?.content)
       const removed = history.length - lastUser
-      shrinkTo(s, lastUser)
+      shrinkTo(s, lastUser, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       const preview = removedText.length > 40 ? `${removedText.slice(0, 40)}...` : removedText
@@ -3210,6 +3208,26 @@ function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
 }
 
 
+/**
+ * The merge options every transcript and model-history merge reads from the session's truncation boundary. The cut time
+ * holds only while this version wrote the session last: an older release keeps the unknown field through its own cut.
+ */
+function truncationOpts(s: Session): { truncationWatermark: unknown; compressedWatermark: boolean; truncationCutAt: number | null } {
+  return { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, truncationCutAt: s.truncation_cut_stamp === s.updated_at ? s.truncation_cut_at : null }
+}
+
+/**
+ * Every boundary writer: the watermark at the newest of `messages`, and, for a cut, when it ran (TAL-998). Every row the
+ * cut deleted was committed before it ran, so it is stamped at or before `cutAt`.
+ */
+function setTruncationBoundary(session: Session, messages: unknown[], opts: { compressed: boolean; cutAt: number | null }): void {
+  session.truncation_watermark = truncationWatermarkFor(messages)
+  session.truncation_boundary = session.truncation_watermark
+  session.truncation_watermark_compressed = opts.compressed
+  session.truncation_cut_at = opts.cutAt
+  session.truncation_cut_stamp = opts.cutAt === null ? null : session.updated_at
+}
+
 function truncationWatermarkFor(messages: unknown[]): number {
   if (!messages.length) return 0.0
   const last = messages[messages.length - 1]
@@ -3359,26 +3377,22 @@ export function truncateContextForDisplayKeep(context: Message[] | null | undefi
   return ctx.slice(0, prefixLen + keep)
 }
 
-export function truncateSessionAtKeep(session: Session, keep: number): [number, number] {
+export function truncateSessionAtKeep(session: Session, keep: number, cutAt: number): [number, number] {
   const full = [...session.messages]
   const oldMsgCount = full.length
   const oldCtxCount = session.context_messages.length
   session.messages = full.slice(0, keep)
   stampIntentionalShrink(session, oldMsgCount, session.messages.length)
   session.context_messages = truncateContextForDisplayKeep(session.context_messages, full, keep)
-  session.truncation_watermark = truncationWatermarkFor(session.messages)
-  session.truncation_boundary = session.truncation_watermark
-  session.truncation_watermark_compressed = false
+  setTruncationBoundary(session, session.messages, { compressed: false, cutAt })
   return [oldMsgCount, oldCtxCount]
 }
 
-function shrinkTo(session: Session, lastUserIdx: number): void {
+function shrinkTo(session: Session, lastUserIdx: number, cutAt: number): void {
   const history = session.messages
   session.messages = history.slice(0, lastUserIdx)
   stampIntentionalShrink(session, history.length, session.messages.length)
-  session.truncation_watermark = truncationWatermarkFor(session.messages)
-  session.truncation_boundary = session.truncation_watermark
-  session.truncation_watermark_compressed = false
+  setTruncationBoundary(session, session.messages, { compressed: false, cutAt })
   // Cut at the selected display turn, not the context's own last user row: after compaction that can be a summary or a
   // hidden internal row, which would keep the removed turn in the model's history (TAL-1027).
   session.context_messages = truncateContextForDisplayKeep(session.context_messages, history, lastUserIdx, { failClosed: true })
