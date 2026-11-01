@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Enlarged chat images in Talaria Web now zoom and pan: pinch, scroll, drag, or use the zoom and Fit buttons or the +, - and F keys.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
