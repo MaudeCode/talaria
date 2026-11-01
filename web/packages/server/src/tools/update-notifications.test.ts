@@ -69,6 +69,17 @@ describe('UpdateNotificationStore', () => {
     expect((await store.list(alice)).notifications).toMatchObject([{ id: original.id, unread: true }])
   })
 
+  it('follows the operation a tab rejoined within the millisecond it started another', async () => {
+    const now = new Date('2026-10-14T12:00:00Z')
+    const scope = { ...alice, tab: 'tab-rejoin' }
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()), () => now))
+    const waiting = await store.begin(scope, 'agent')
+    const repeated = await store.begin(scope, 'agent')
+    await store.watch(scope, waiting.id)
+    expect((await store.list(scope)).tab_update?.id).toBe(waiting.id)
+    expect(repeated.id).not.toBe(waiting.id)
+  })
+
   it('keeps the initiating dialog active and non-dismissible throughout automatic recovery', async () => {
     const root = temp()
     const scope = { ...alice, tab: 'tab-recovery' }
