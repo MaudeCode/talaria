@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Security", "summary": "Update status no longer shows credentials stored in the Hermes Agent checkout's remote URL.", "highlight": false, "components": ["web"]}]
+}
