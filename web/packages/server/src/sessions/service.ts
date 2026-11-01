@@ -3263,8 +3263,12 @@ function alignDisplayToContext(ctx: unknown[], full: unknown[]): { matches: (num
   return { matches, ambiguous }
 }
 
-/** Align model context with the display prefix `full[:keep]` (Python `truncate_context_for_display_keep`, #5096/#5563). */
-export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number): Message[] {
+/**
+ * Align model context with the display prefix `full[:keep]` (Python `truncate_context_for_display_keep`, #5096/#5563).
+ * `failClosed` (Retry/Undo, TAL-1027): the unkept row `full[keep]` must be proved present in the context, or the context
+ * clears rather than guessing a cut that could keep the removed turn (the model then reads the kept display rows).
+ */
+export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number, { failClosed = false } = {}): Message[] {
   if (keep <= 0) return []
   const ctx = context ?? []
   if (!ctx.length || !full.length) return []
@@ -3276,6 +3280,7 @@ export function truncateContextForDisplayKeep(context: Message[] | null | undefi
     const keptUser = isDict(boundary) && boundary.role === 'user'
     // Cut at the first unkept display row; a kept user turn ends at its own row so unkept tool rows after it drop.
     if (firstUnkept !== null) return lastKept !== null && keptUser ? ctx.slice(0, lastKept + 1) : ctx.slice(0, firstUnkept)
+    if (failClosed) return []
     if (lastKept !== null) {
       const ambiguousUnkept = ambiguous[keep]!
       return ambiguousUnkept !== null && isDict(boundary) && !keptUser ? ctx.slice(0, ambiguousUnkept) : ctx.slice(0, lastKept + 1)
@@ -3314,10 +3319,9 @@ function shrinkTo(session: Session, lastUserIdx: number): void {
   session.truncation_watermark = truncationWatermarkFor(session.messages)
   session.truncation_boundary = session.truncation_watermark
   session.truncation_watermark_compressed = false
-  if (session.context_messages.length) {
-    const ctxLast = findLastUserIndex(session.context_messages)
-    if (ctxLast !== null) session.context_messages = session.context_messages.slice(0, ctxLast)
-  }
+  // Cut at the selected display turn, not the context's own last user row: after compaction that can be a summary or a
+  // hidden internal row, which would keep the removed turn in the model's history (TAL-1027).
+  session.context_messages = truncateContextForDisplayKeep(session.context_messages, history, lastUserIdx, { failClosed: true })
 }
 
 /** Python `_extract_text`: flatten content to the user-typed text. */
