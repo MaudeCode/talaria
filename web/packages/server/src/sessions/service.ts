@@ -21,7 +21,7 @@ import type { SessionEventBus } from './events.js'
 import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
-import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
+import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
@@ -418,7 +418,10 @@ export class SessionService {
       pruneOrphanedImports: async (current) => {
         // Only an id the worker checked can be an orphan; a row that became a candidate meanwhile waits for the next list.
         const orphans = (await this.orphanedImports(current.filter((r) => checked.has(str(r.session_id))), existing, owners([], activeProfile)))
-        for (const sid of orphans) (await this.store.delete(sid))
+        for (const sid of orphans) {
+          // The listing still drops the gone owner; cleanup retries its surviving draft (TAL-1073).
+          try { await this.store.delete(sid) } catch (error) { if (!(error instanceof DraftDeleteFailed)) throw error }
+        }
         return orphans
       },
     }
@@ -2691,6 +2694,7 @@ export class SessionService {
     const assertIdle = async () => { for (const id of knownIds) if (await this.activeRunBlocking(id)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
     await assertIdle()
     let stateDbCleanupFailed = false
+    let draftDeleteFailed = false
     let removedIds = [sid]
     try {
       await this.withMutationLock(sid, async () => {
@@ -2716,7 +2720,8 @@ export class SessionService {
             await this.deps.clearRelayCompletions?.(id, session.profile)
           } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
           const finalize = id === sid && !(await this.store.wasDeleted(id))
-          if (!(await this.store.delete(id))) throw new HttpFailure(500, 'Failed to delete session data')
+          try { if (!(await this.store.delete(id))) throw new HttpFailure(500, 'Failed to delete session data') }
+          catch (error) { if (!(error instanceof DraftDeleteFailed)) throw error; draftDeleteFailed = true }
           if (finalize) await this.finalizeSession(sid, eventProfile, 'delete')
         }
       }, { timeoutMs: 5000, allowReadOnly: orphaned })
@@ -2732,6 +2737,8 @@ export class SessionService {
       this.deps.runtime.closeTerminal(id)
     }
     this.publish('session_delete', eventProfile)
+    // The session is gone but its unsent draft survived; a retried delete or cleanup removes it (TAL-1073).
+    if (draftDeleteFailed) throw new HttpFailure(500, 'Failed to delete session data')
     return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
   }
 
@@ -2752,6 +2759,7 @@ export class SessionService {
 
   async cleanup(zeroOnly: boolean): Promise<Record<string, unknown>> {
     let cleaned = 0
+    let draftDeleteFailed = false
     const removed = new Set<string>()
     for (const candidate of (await this.store.scanAll())) {
       await this.store.withLock(candidate.session_id, async () => {
@@ -2760,12 +2768,29 @@ export class SessionService {
         catch (error) { if (error instanceof SessionNotFound) return; throw error }
         const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
         if (!shouldDelete || (await this.isReadOnly(s))) return
+        // A first turn in flight has no messages yet; a later cleanup decides once it settles.
+        if (s.hasPendingPrompt || (await this.activeRunBlocking(s.session_id))) return
         // Keep the session (and its revoke route) if its share cannot be revoked.
         try { (await this.deps.shares.revoke(s)) } catch { return }
-        if (!await this.store.delete(s.session_id, { tombstone: false })) return
+        try { if (!await this.store.delete(s.session_id, { tombstone: false })) return }
+        catch (error) { if (!(error instanceof DraftDeleteFailed)) throw error; draftDeleteFailed = true }
         cleaned += 1
         removed.add(s.session_id)
       })
+    }
+    // TAL-1073: a draft whose owner is gone (an earlier failed or interrupted delete) is retried here; it is not a session.
+    for (const sid of await this.store.deps.drafts.ids()) {
+      if (removed.has(sid)) continue
+      const aborted = await this.store.withLock(sid, async () => {
+        if (this.store.sessions.has(sid)) return false
+        // Fail closed: an unreadable owner path is not proof the owner is gone, so the sweep stops instead.
+        let owned: boolean
+        try { owned = await this.store.exists(sid) } catch { return true }
+        if (owned) return false
+        try { await this.store.deps.drafts.delete(sid) } catch { draftDeleteFailed = true }
+        return false
+      })
+      if (aborted) { draftDeleteFailed = true; break }
     }
     let rewroteIndex = false
     try {
@@ -2784,6 +2809,7 @@ export class SessionService {
       }
     } catch { /* corrupt index is rebuilt below */ }
     if (removed.size && !rewroteIndex) { try { (await this.store.writeIndex()) } catch { /* ignore */ } }
+    if (draftDeleteFailed) throw new HttpFailure(500, 'Failed to delete session data')
     return { ok: true, cleaned }
   }
 

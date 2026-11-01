@@ -3215,6 +3215,136 @@ describe('POST /api/sessions/cleanup (TAL-257)', () => {
   })
 })
 
+describe('session draft deletion (TAL-1073)', () => {
+  let s: TestServer
+  beforeEach(async () => { s = await bootTestServer() })
+  afterEach(() => { vi.restoreAllMocks(); return s.close() })
+
+  const ownerPath = (sid: string): string => sessionPath(s.deps.sessionStore, sid)
+  const draftPath = (sid: string): string => join(s.state, 'sessions', '_drafts', `${sid}.json`)
+  const draftText = (sid: string): string | null => existsSync(draftPath(sid)) ? String((JSON.parse(readFileSync(draftPath(sid), 'utf8')) as Json).text) : null
+  const writeDraftFile = (sid: string, text: string): void => { mkdirSync(join(s.state, 'sessions', '_drafts'), { recursive: true }); writeFileSync(draftPath(sid), JSON.stringify({ text, files: [], _draft_version: '10' })) }
+  const withDraft = async (text = 'unsent synthetic text'): Promise<string> => {
+    const sid = String((await newSession(s)).session_id)
+    expect((await post(s, '/api/session/draft', { session_id: sid, text, draft_version: '10' })).status).toBe(200)
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([true, text])
+    return sid
+  }
+  const failNextDraftDelete = () => vi.spyOn(s.deps.sessionStore.deps.drafts, 'delete').mockRejectedValueOnce(new Error('synthetic EIO'))
+  const call = async (path: string, body: Json = {}): Promise<[number, Json]> => { const res = await post(s, path, body); return [res.status, await json(res)] }
+
+  it('removes an eligible session and its draft in both cleanup modes, idempotently', async () => {
+    for (const path of ['/api/sessions/cleanup_zero_message', '/api/sessions/cleanup']) {
+      const sid = await withDraft()
+      expect(await call(path), path).toEqual([200, { ok: true, cleaned: 1 }])
+      expect([existsSync(ownerPath(sid)), draftText(sid)], path).toEqual([false, null])
+      expect(await call(path), path).toEqual([200, { ok: true, cleaned: 0 }])
+    }
+  })
+
+  it('reports a failed draft delete on explicit delete, and a retried delete removes the draft', async () => {
+    const sid = await withDraft()
+    failNextDraftDelete()
+    expect(await call('/api/session/delete', { session_id: sid })).toEqual([500, { error: 'Failed to delete session data' }])
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([false, 'unsent synthetic text'])
+    expect((await call('/api/session/delete', { session_id: sid }))[0]).toBe(200)
+    expect(draftText(sid)).toBeNull()
+  })
+
+  it('retries the surviving draft of an already-deleted owner during cleanup without counting it', async () => {
+    const sid = await withDraft()
+    failNextDraftDelete()
+    expect((await call('/api/session/delete', { session_id: sid }))[0]).toBe(500)
+    expect(await call('/api/sessions/cleanup_zero_message')).toEqual([200, { ok: true, cleaned: 0 }])
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([false, null])
+  })
+
+  it('reports a failed draft delete during cleanup, then removes the orphan on the next cleanup', async () => {
+    const sid = await withDraft()
+    failNextDraftDelete()
+    expect(await call('/api/sessions/cleanup_zero_message')).toEqual([500, { error: 'Failed to delete session data' }])
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([false, 'unsent synthetic text'])
+    expect(await call('/api/sessions/cleanup_zero_message')).toEqual([200, { ok: true, cleaned: 0 }])
+    expect(draftText(sid)).toBeNull()
+  })
+
+  it('waits for a held session lock and revalidates eligibility before deleting', async () => {
+    const sid = await withDraft()
+    let release!: () => void
+    const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const cleanup = call('/api/sessions/cleanup_zero_message')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([true, 'unsent synthetic text'])
+    // The lock holder gives the session its first message before releasing.
+    await writeMessages(s, sid, [{ role: 'user', content: 'now kept' }])
+    release()
+    await held
+    expect(await cleanup).toEqual([200, { ok: true, cleaned: 0 }])
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([true, 'unsent synthetic text'])
+  })
+
+  it('applies a queued draft save before cleanup, and a stale save after it resurrects nothing', async () => {
+    const sid = await withDraft()
+    let release!: () => void
+    const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const save = call('/api/session/draft', { session_id: sid, text: 'queued text', draft_version: '11' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const cleanup = call('/api/sessions/cleanup_zero_message')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    release()
+    await held
+    expect((await save)[0]).toBe(200)
+    expect(await cleanup).toEqual([200, { ok: true, cleaned: 1 }])
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([false, null])
+    expect((await call('/api/session/draft', { session_id: sid, text: 'stale text', draft_version: '12' }))[0]).toBe(404)
+    expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([false, null])
+  })
+
+  it('skips a zero-message session whose first turn is in flight', async () => {
+    const sid = await withDraft()
+    const stored = await s.deps.sessionStore.get(sid)
+    stored.active_stream_id = 'tal1073-run'
+    stored.pending_user_message = 'first prompt'
+    await s.deps.sessionStore.save(stored)
+    s.deps.registry.liveIds.add('tal1073-run')
+    try {
+      expect(await call('/api/sessions/cleanup_zero_message')).toEqual([200, { ok: true, cleaned: 0 }])
+      expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([true, 'unsent synthetic text'])
+    } finally { s.deps.registry.liveIds.delete('tal1073-run') }
+  })
+
+  it('keeps every draft and reports failure when the session directory cannot be listed', async () => {
+    const dir = sessionDirectory(s.deps.sessionStore)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'tal1073-unlisted.json'), JSON.stringify({ session_id: 'tal1073-unlisted', title: 'Kept', messages: [{ role: 'user', content: 'hi' }], created_at: 1, updated_at: 1 }))
+    writeDraftFile('tal1073-unlisted', 'unlisted text')
+    // Simulate EACCES on the session directory: the lenient listing reads as empty and the owner lookup throws.
+    const store = s.deps.sessionStore
+    vi.spyOn(store, 'persistedIds').mockResolvedValue(new Set<string>())
+    vi.spyOn(store, 'exists').mockRejectedValue(Object.assign(new Error('synthetic EACCES'), { code: 'EACCES' }))
+    expect(await call('/api/sessions/cleanup_zero_message')).toEqual([500, { error: 'Failed to delete session data' }])
+    expect([existsSync(join(dir, 'tal1073-unlisted.json')), draftText('tal1073-unlisted')]).toEqual([true, 'unlisted text'])
+  })
+
+  it('keeps live owners\' drafts and removes only orphans, even with a corrupt index', async () => {
+    const dir = sessionDirectory(s.deps.sessionStore)
+    mkdirSync(dir, { recursive: true })
+    // Disk-only owners, one in another profile, never loaded into the cache.
+    for (const [sid, profile] of [['tal1073-disk', 'default'], ['tal1073-other', 'work']] as const) {
+      writeFileSync(join(dir, `${sid}.json`), JSON.stringify({ session_id: sid, title: 'Kept', profile, messages: [{ role: 'user', content: 'hi' }], created_at: 1, updated_at: 1 }))
+      writeDraftFile(sid, `${sid} text`)
+    }
+    // A cache-only first session that has not reached disk yet.
+    const cached = String((await newSession(s)).session_id)
+    expect(existsSync(ownerPath(cached))).toBe(false)
+    writeDraftFile(cached, 'cache-only text')
+    writeDraftFile('tal1073-orphan', 'orphan text')
+    writeFileSync(sessionIndexPath(s.deps.sessionStore), 'corrupt json')
+    expect(await call('/api/sessions/cleanup_zero_message')).toEqual([200, { ok: true, cleaned: 0 }])
+    expect([draftText('tal1073-disk'), draftText('tal1073-other'), draftText(cached), draftText('tal1073-orphan')]).toEqual(['tal1073-disk text', 'tal1073-other text', 'cache-only text', null])
+  })
+})
+
 describe('the file a companion page shows (TAL-1458)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
