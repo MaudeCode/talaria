@@ -12,7 +12,8 @@ import { claimAutoRead } from './autoReadClaim'
 
 export const TTS_PREF = { engine: 'hermes-tts-engine', voice: 'hermes-tts-voice', rate: 'hermes-tts-rate', pitch: 'hermes-tts-pitch' } as const
 
-let current: HTMLAudioElement | null = null
+/** The playing extension clip; `release` pauses it and frees its Blob URL once, whichever exit comes first. */
+let current: { release: () => void } | null = null
 /** Bumped by every stop, so a reply still being prepared never starts after a later stop or speak. */
 let generation = 0
 
@@ -24,7 +25,7 @@ export async function claimAutomaticSpeech(identity: string): Promise<boolean> {
 
 export function stopSpeaking(): void {
   generation += 1
-  if (current) { current.pause(); current = null }
+  current?.release()
   if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) window.speechSynthesis.cancel()
 }
 
@@ -40,11 +41,21 @@ export async function speak(text: string): Promise<void> {
     const rate = parseFloat(readPersisted(TTS_PREF.rate) ?? '')
     const pitch = parseFloat(readPersisted(TTS_PREF.pitch) ?? '')
     const audioBuf = await ext.synthesize(spoken, { voice: readPersisted(TTS_PREF.voice), rate: Number.isNaN(rate) ? null : rate, pitch: Number.isNaN(pitch) ? null : pitch })
+    if (turn !== generation) return
     const url = URL.createObjectURL(new Blob([audioBuf]))
     const audio = new Audio(url)
-    current = audio
-    audio.onended = () => { URL.revokeObjectURL(url); if (current === audio) current = null }
-    await audio.play()
+    let released = false
+    const playback = { release: () => {
+      if (released) return
+      released = true
+      audio.pause()
+      URL.revokeObjectURL(url)
+      if (current === playback) current = null
+    } }
+    current = playback
+    audio.onended = audio.onerror = playback.release
+    // A Stop during play() rejects it with AbortError; that is the requested silence, not a failure.
+    try { await audio.play() } catch (err) { const stopped = released; playback.release(); if (!stopped) throw err }
     return
   }
   if (!('speechSynthesis' in window)) return
