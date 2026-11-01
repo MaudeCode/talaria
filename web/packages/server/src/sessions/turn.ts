@@ -345,7 +345,7 @@ export class TurnRunner {
    * TAL-1162: `startReadPending` while the turn's starting state.db read is still in flight.
    */
   /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
-  private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
+  private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined; max_iterations_summary_request?: string | undefined } | null>>()
   private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null; stateDbStartGeneration: string | null; startReadPending: boolean }>()
   /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
   private readonly workers = new Map<string, Promise<void>>()
@@ -1005,7 +1005,7 @@ export class TurnRunner {
         const interrupted = await this.interrupts.get(streamId)
         applyAgentUsage(liveUsage, result.usage)
         this.liveUsage.set(streamId, liveUsage)
-        await this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages)
+        await this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages, interrupted?.max_iterations_summary_request || result.max_iterations_summary_request)
         await put('cancel', (await this.cancelFrame(sessionId, streamId)))
         return
       }
@@ -1439,12 +1439,12 @@ export class TurnRunner {
    * TAL-921: the model context a turn that ends without its settled result leaves: the work its Agent reported, else the
    * rows it committed past its starting read in `read`, the read its settlement uses.
    */
-  private unsettledContext(streamId: string, agentRows: Message[] | null, read: StateDbRead): Message[] | null {
+  private unsettledContext(streamId: string, agentRows: Message[] | null, read: StateDbRead, summaryRequest = ''): Message[] | null {
     const stop = this.stopContexts.get(streamId)
     if (!stop) return null
     const after = stop.stateDbStartGeneration !== null && read.generation !== null && stop.stateDbStartGeneration !== read.generation ? -1 : stop.stateDbStartId
     const stateRows = after === null ? [] : read.rows.filter((m) => typeof m._state_db_row_id === 'number' && m._state_db_row_id > after)
-    return this.deps.service().unsettledTurnContext({ ...stop, streamedText: this.registry.liveText.get(streamId)?.text ?? '', agentRows, stateRows })
+    return this.deps.service().unsettledTurnContext({ ...stop, streamedText: this.registry.liveText.get(streamId)?.text ?? '', agentRows, stateRows, summaryRequest })
   }
 
   private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
@@ -1496,9 +1496,10 @@ export class TurnRunner {
   /**
    * Python `_finalize_cancelled_turn`/`_persist_cancelled_turn`: only while this stream still owns writeback. TAL-364: the
    * turn's model context keeps what the Agent had captured (`checkpoint`, its canonical transcript) and the prose that
-   * streamed, so the next request continues from it; the terminal row carries the outcome and no copy.
+   * streamed, so the next request continues from it; the terminal row carries the outcome and no copy. TAL-739: never the
+   * Agent's max-iterations `summaryRequest`.
    */
-  private async finalizeCancelled(s: Session, streamId: string, ephemeral: boolean | undefined, checkpoint: unknown[] | null = null): Promise<boolean> {
+  private async finalizeCancelled(s: Session, streamId: string, ephemeral: boolean | undefined, checkpoint: unknown[] | null = null, summaryRequest = ''): Promise<boolean> {
     if (this.registry.writebackOwners.get(s.session_id) !== streamId) return false
     let current: Session = s
     try { current = (await this.deps.store.get(s.session_id)) } catch { return false }
@@ -1534,7 +1535,7 @@ export class TurnRunner {
     const settle = (): Message[] | null => {
       if (!stop) return null
       if (canonical) stop.checkpointed = true
-      return this.unsettledContext(streamId, checkpoint as Message[] | null, read)
+      return this.unsettledContext(streamId, checkpoint as Message[] | null, read, summaryRequest)
     }
     if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) {
       // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
@@ -1869,7 +1870,7 @@ export class TurnRunner {
       let current: Session | null = null
       try { current = (await this.deps.store.get(sessionId)) } catch { current = null }
       if (current?.active_stream_id === streamId) {
-        await this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint)
+        await this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint, str(reply?.max_iterations_summary_request))
       }
     }
     // The worker may already have written its terminal row while the interrupt was in flight; the stream is then

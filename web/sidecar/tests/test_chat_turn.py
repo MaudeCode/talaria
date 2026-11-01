@@ -162,7 +162,7 @@ def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monke
     registry = Registry(runtime=None)  # type: ignore[arg-type]
     chat.register(registry)
     reply = registry.methods["chat.interrupt"](Ctx(), {"stream_id": "st-3"})
-    assert reply == {"ok": True, "pending_steer": "prefer tests"}
+    assert {k: reply[k] for k in ("ok", "pending_steer")} == {"ok": True, "pending_steer": "prefer tests"}
     assert getattr(run_obj.agent, "_pending_steer", "") == ""
     worker.join(5)
     assert not worker.is_alive()
@@ -210,6 +210,8 @@ def test_interrupt_returns_the_agents_checkpoint_only_once_this_turn_published_o
             gate.set()
 
     monkeypatch.setattr(chat, "_agent_class", lambda: CheckpointingAgent)
+    # TAL-739: the Agent's max-iterations summary request (test_chat_tool_limit pins it to the Agent's constant).
+    monkeypatch.setattr(chat, "_max_iterations_summary_request", lambda: "Summarize; no more tools.")
     result: dict = {}
     worker = threading.Thread(target=lambda: result.update(chat.start(Ctx(), {**_params("st-ck", "s-ck"), "conversation_history": previous, "user_message": "check the rollout"})))
     worker.start()
@@ -227,6 +229,7 @@ def test_interrupt_returns_the_agents_checkpoint_only_once_this_turn_published_o
     reply = registry.methods["chat.interrupt"](Ctx(), {"stream_id": "st-ck"})
     assert reply["ok"] is True
     assert reply["checkpoint"] == [*previous, {"role": "user", "content": "check the rollout"}, tool_call, tool_result]
+    assert reply["max_iterations_summary_request"] == "Summarize; no more tools."
     # The reply matches the result schema exported from the contracts package (RPC v2).
     from conftest import assert_matches
 

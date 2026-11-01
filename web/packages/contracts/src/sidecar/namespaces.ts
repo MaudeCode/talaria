@@ -760,8 +760,11 @@ export const CHAT_METHODS = {
   },
   'chat.interrupt': {
     params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }),
-    /** `checkpoint`: the Agent's canonical transcript for the stopped turn, captured before the interrupt (absent until it has one). */
-    result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional(), checkpoint: z.array(Loose).optional() }),
+    /**
+     * `checkpoint`: the Agent's canonical transcript for the stopped turn, captured before the interrupt (absent until it has one).
+     * `max_iterations_summary_request`: as `chat.start`'s, so a Stop during that summary drops the row (TAL-739).
+     */
+    result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional(), checkpoint: z.array(Loose).optional(), max_iterations_summary_request: z.string().optional() }),
   },
   /** `can_redirect`: the Agent can deliver a pending steer now (TAL-424 Send now). */
   'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional(), can_redirect: z.boolean().optional() }) },

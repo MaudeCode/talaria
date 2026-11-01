@@ -2605,7 +2605,7 @@ def register(registry) -> None:
                 pending = str(drain() or "") if callable(drain) else _agent_pending_steer_text(agent)
             except Exception:  # noqa: BLE001
                 pending = _agent_pending_steer_text(agent)
-        result = {"ok": True, "pending_steer": pending}
+        result = {"ok": True, "pending_steer": pending, "max_iterations_summary_request": _max_iterations_summary_request()}
         if checkpoint is not None:
             result["checkpoint"] = checkpoint
         return result
