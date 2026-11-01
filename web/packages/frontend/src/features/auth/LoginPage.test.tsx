@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { BootstrapContext } from '../../app/bootstrap'
 import type { Bootstrap } from '../../contracts/bootstrap'
 import { ApiError } from '../../contracts/common'
+import { resetAppRootForTests } from '../../lib/appRoot'
 
 vi.mock('../../api/endpoints', () => ({ login: vi.fn(), passkeyOptions: vi.fn(), passkeyLogin: vi.fn() }))
+vi.mock('./passkeys', () => ({ passkeysSupported: () => true, decodeRequestOptions: (pk: unknown) => pk, encodeAssertion: () => ({ id: 'synthetic-credential' }) }))
 import * as api from '../../api/endpoints'
 import { LoginPage } from './LoginPage'
 
@@ -15,8 +17,29 @@ const bootstrap = {
   profile: { name: 'default', is_default: true }, onboarding: null,
 } as unknown as Bootstrap
 
-function renderLogin(next?: string) {
-  return render(<BootstrapContext.Provider value={bootstrap}><LoginPage next={next} /></BootstrapContext.Provider>)
+function renderLogin(next?: string, boot: Bootstrap = bootstrap) {
+  return render(<BootstrapContext.Provider value={boot}><LoginPage next={next} /></BootstrapContext.Provider>)
+}
+
+/** Serve the page from a `/mount/` install, as a prefix-stripping proxy does, and capture navigation. */
+function mountAt(path: string) {
+  window.history.replaceState(null, '', path)
+  const base = document.createElement('base')
+  base.setAttribute('href', './')
+  document.head.prepend(base)
+  resetAppRootForTests()
+  const assign = vi.fn()
+  vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign })
+  return {
+    assign,
+    landed: () => new URL(String(assign.mock.calls[0]?.[0]), window.location.origin),
+    restore: () => {
+      vi.unstubAllGlobals()
+      base.remove()
+      resetAppRootForTests()
+      window.history.replaceState(null, '', '/')
+    },
+  }
 }
 
 describe('LoginPage', () => {
@@ -28,7 +51,7 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByPlaceholderText(/password/i), 'nope')
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid password')
-    expect(api.login).toHaveBeenCalledWith('nope')
+    expect(api.login).toHaveBeenCalledWith('nope', { mount_path: '/' })
     expect(screen.getByRole('button', { name: /sign in/i })).toBeEnabled()
   })
 
@@ -40,13 +63,17 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/connection failed/i)
   })
 
-  it('links SSO to the OIDC start route with a validated next target', () => {
-    renderLogin('https://evil.example/phish')
-    const sso = screen.getByRole('link', { name: /sso|single sign|oidc/i })
-    expect(sso.getAttribute('href')).toMatch(/api\/auth\/oidc\/start$/)
-    renderLogin('/settings/providers')
-    const [, second] = screen.getAllByRole('link', { name: /sso|single sign|oidc/i })
-    expect(decodeURIComponent(second!.getAttribute('href') ?? '')).toContain('next=/settings/providers')
+  it('hands SSO the requested target and the page mount for the server to resolve', () => {
+    const page = mountAt('/mount/login')
+    try {
+      renderLogin()
+      const sso = new URL(screen.getByRole('link', { name: /sso|single sign|oidc/i }).getAttribute('href') ?? '')
+      expect(sso.pathname).toBe('/mount/api/auth/oidc/start')
+      expect([...sso.searchParams]).toEqual([['mount_path', '/mount/']])
+      renderLogin('/mount/tasks?view=open')
+      const [, second] = screen.getAllByRole('link', { name: /sso|single sign|oidc/i })
+      expect([...new URL(second!.getAttribute('href') ?? '').searchParams]).toEqual([['next', '/mount/tasks?view=open'], ['mount_path', '/mount/']])
+    } finally { page.restore() }
   })
 
   it('withholds SSO and explains why while the server cannot resolve its OIDC config', () => {
@@ -54,6 +81,41 @@ describe('LoginPage', () => {
     render(<BootstrapContext.Provider value={unresolved}><LoginPage next={undefined} /></BootstrapContext.Provider>)
     expect(screen.queryByRole('link', { name: /sso|single sign|oidc/i })).toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent(/sso is temporarily unavailable/i)
+  })
+
+  // TAL-1075: at a /mount/ install the server resolves the destination once; the page navigates its path verbatim.
+  it('navigates once to the server-resolved destination at a subpath mount', async () => {
+    const page = mountAt('/mount/login?next=%2Fmount%2Ftasks%3Fview%3Dopen')
+    vi.mocked(api.login).mockResolvedValue({ ok: true, redirect_path: '/mount/tasks?view=open' })
+    try {
+      renderLogin('/mount/tasks?view=open')
+      await userEvent.type(screen.getByPlaceholderText(/password/i), 'synthetic-pw')
+      await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+      await waitFor(() => expect(page.assign).toHaveBeenCalledTimes(1))
+      const url = page.landed()
+      expect(url.origin).toBe(window.location.origin)
+      expect(url.pathname + url.search).toBe('/mount/tasks?view=open')
+      expect(api.login).toHaveBeenCalledWith('synthetic-pw', { next: '/mount/tasks?view=open', mount_path: '/mount/' })
+    } finally { page.restore() }
+  })
+
+  it('lands a mounted passkey sign-in on the same server-resolved destination', async () => {
+    const page = mountAt('/mount/login?next=%2Ftasks')
+    vi.mocked(api.passkeyOptions).mockResolvedValue({ ok: true, publicKey: { challenge: 'c' } })
+    vi.mocked(api.passkeyLogin).mockResolvedValue({ ok: true, redirect_path: '/mount/tasks' })
+    vi.stubGlobal('PublicKeyCredential', {})
+    const get = vi.fn().mockResolvedValue({})
+    Object.defineProperty(navigator, 'credentials', { configurable: true, value: { get } })
+    try {
+      renderLogin('/tasks', { ...bootstrap, auth: { ...bootstrap.auth, passkeys_enabled: true } })
+      await userEvent.click(screen.getByRole('button', { name: /passkey/i }))
+      await waitFor(() => expect(page.assign).toHaveBeenCalledTimes(1))
+      expect(page.landed().pathname).toBe('/mount/tasks')
+      expect(api.passkeyLogin).toHaveBeenCalledWith({ id: 'synthetic-credential' }, { next: '/tasks', mount_path: '/mount/' })
+    } finally {
+      page.restore()
+      Reflect.deleteProperty(navigator, 'credentials')
+    }
   })
 
   it('redirects to the validated target after a successful login', async () => {

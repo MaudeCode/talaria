@@ -99,6 +99,21 @@ describe('OIDC browser login', () => {
     }
   })
 
+  // TAL-1075: browser SSO at a prefix-stripping /mount/ install returns to exactly one mount.
+  it('returns a mounted browser sign-in to the same validated destination', async () => {
+    for (const next of ['/tasks?view=open', '/mount/tasks?view=open']) {
+      const start = await s.get(`/api/auth/oidc/start?next=${encodeURIComponent(next)}&mount_path=${encodeURIComponent('/mount/')}`)
+      expect(start.status).toBe(302)
+      const { state, code } = providerCode(start.headers.get('location') ?? '')
+      const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      expect(cb.status, next).toBe(302)
+      expect(cb.headers.get('location'), next).toBe('/mount/tasks?view=open')
+    }
+    const start = await s.get(`/api/auth/oidc/start?next=${encodeURIComponent('//evil.example/x')}&mount_path=${encodeURIComponent('/mount/')}`)
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    expect((await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)).headers.get('location')).toBe('/mount/')
+  })
+
   it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
@@ -227,6 +242,70 @@ describe('OIDC browser login', () => {
   })
 })
 
+// TAL-1075: the server resolves where a browser goes after sign-in, applying a subpath mount exactly once.
+describe('sign-in destination at a subpath mount', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'synthetic-pw' } }) })
+  afterAll(() => s.close())
+
+  const destination = async (body: Json): Promise<unknown> => {
+    const res = await post(s, '/api/auth/login', { password: 'synthetic-pw', ...body })
+    expect(res.status).toBe(200)
+    return (await json(res)).redirect_path
+  }
+
+  it.each([
+    ['prefixed', '/mount/tasks?view=open', '/mount/', '/mount/tasks?view=open'],
+    ['stripped', '/tasks?view=open#top', '/mount/', '/mount/tasks?view=open#top'],
+    ['root', '/', '/mount/', '/mount/'],
+    ['default', undefined, '/mount/', '/mount/'],
+    ['bare mount', '/mount?x=1', '/mount/', '/mount?x=1'],
+    ['sibling segment', '/mount-other/x', '/mount/', '/mount/mount-other/x'],
+    ['nested stripped', '/tasks', '/a/b/', '/a/b/tasks'],
+    ['nested prefixed', '/a/b/tasks', '/a/b/', '/a/b/tasks'],
+    ['nested partial', '/a/tasks', '/a/b/', '/a/b/a/tasks'],
+    ['root mount', '/tasks', '/', '/tasks'],
+    ['no mount', '/tasks', undefined, '/tasks'],
+  ])('%s: %s at %s → %s', async (_case, next, mount, expected) => {
+    expect(await destination({ next, mount_path: mount })).toBe(expected)
+  })
+
+  it.each([
+    'https://evil.example/x', '//evil.example/x', '/\\evil.example', '\\evil.example', '/a\nb', '/a b', '/x\u0000y',
+    '/login', '/mount/login', '/mount/login/', '/mount/login?next=%2Fmount%2Ftasks', '/tasks/login%3Fnext%3D%252Flogin',
+    `/${'%25'.repeat(9)}2Flogin`, 'tasks',
+  ])('rejects %j to the mount root', async (next) => {
+    const result = await destination({ next, mount_path: '/mount/' })
+    expect(result).toBe('/mount/')
+  })
+
+  it('rejects an overlong target to the mount root', async () => {
+    expect(await destination({ next: `/${'a'.repeat(3000)}`, mount_path: '/mount/' })).toBe('/mount/')
+  })
+
+  it.each(['//evil.example/', '/\\evil.example/', 'https://evil.example/', '/a/../', '/./', '/mount', 'mount/', '/mo unt/', '/m?x/', '/m#x/'])('ignores the unsafe mount %j', async (mount) => {
+    const result = await destination({ next: '/tasks', mount_path: mount })
+    expect(result).toBe('/tasks')
+  })
+
+  it('never leaves the origin or repeats the mount for hostile targets', async () => {
+    const hostile = ['//evil.example', '/\\evil.example', '/%2F%2Fevil.example', '/%5Cevil.example', '/mount//evil.example', '/%E0%A4%A']
+    for (const next of hostile) {
+      const result = await destination({ next, mount_path: '/mount/' })
+      expect(typeof result, next).toBe('string')
+      const url = new URL(String(result), 'https://talaria.example')
+      expect(url.origin, next).toBe('https://talaria.example')
+      expect(url.pathname.startsWith('/mount/'), next).toBe(true)
+      expect(url.pathname.startsWith('/mount/mount/'), next).toBe(false)
+    }
+  })
+
+  it('keeps old callers valid', async () => {
+    const res = await post(s, '/api/auth/login', { password: 'synthetic-pw' })
+    expect(await json(res)).toEqual({ ok: true, redirect_path: '/' })
+  })
+})
+
 describe('OIDC unconfigured', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
@@ -282,6 +361,13 @@ describe('passkeys', () => {
     const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
     expect(status).toMatchObject({ logged_in: true, can_manage_server: true })
     expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
+  })
+
+  it('resolves the browser destination once for a mounted passkey sign-in', async () => {
+    const opts = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json
+    const login = await post(s, '/api/auth/passkey/login', { ...authenticator.assert(opts, origin), next: '/mount/tasks?view=open', mount_path: '/mount/' }, { origin })
+    expect(login.status).toBe(200)
+    expect(await json(login)).toEqual({ ok: true, redirect_path: '/mount/tasks?view=open' })
   })
 
   it('rejects replayed challenges, stale counters, and wrong origins', async () => {

@@ -284,6 +284,30 @@ export function safeLoginRedirectPath(rawPath: string | null | undefined): strin
   return '/'
 }
 
+const MOUNT_PATH_RE = /^\/(?:[^/?#\\\s\x00-\x1f\x7f]+\/)*$/
+
+/** A browser-reported mount pathname (`/` or `/seg/…/`, no dot segments); anything else counts as the origin root. */
+function safeMountPath(raw: string | null | undefined): string {
+  const mount = (raw ?? '').trim()
+  if (!MOUNT_PATH_RE.test(mount)) return '/'
+  const dotted = mount.split('/').some((seg) => ['.', '..'].includes(seg.toLowerCase().replaceAll('%2e', '.')))
+  return dotted ? '/' : mount
+}
+
+/**
+ * TAL-1075: the browser destination after sign-in. A prefix-stripping proxy hands the server `/tasks` while
+ * the page itself sends `/mount/tasks`; mount a safe target exactly once (on a segment boundary), revalidate
+ * the result, and fall back to the mount root.
+ */
+export function loginRedirectPath(rawNext: string | null | undefined, rawMount: string | null | undefined): string {
+  const mount = safeMountPath(rawMount)
+  const next = safeLoginRedirectPath(rawNext)
+  if (mount === '/') return next
+  const pathname = next.split(/[?#]/, 1)[0] ?? ''
+  const target = pathname === mount.slice(0, -1) || pathname.startsWith(mount) ? next : mount + next.slice(1)
+  return safeLoginRedirectPath(target) === target ? target : mount
+}
+
 /** Python `_safe_login_inner_next`: preserve a safe non-login inner `next`, else ``. */
 export function safeLoginInnerNext(query: URLSearchParams): string {
   const path = (query.get('next') ?? '').trim()

@@ -728,6 +728,14 @@
                 "properties": {
                   "password": {
                     "type": "string"
+                  },
+                  "next": {
+                    "type": "string",
+                    "description": "Requested return target, prefix-stripped or already mounted."
+                  },
+                  "mount_path": {
+                    "type": "string",
+                    "description": "The page's mount pathname with its trailing slash; `/` at the origin root."
                   }
                 }
               }
@@ -747,6 +755,10 @@
                     },
                     "message": {
                       "type": "string"
+                    },
+                    "redirect_path": {
+                      "type": "string",
+                      "description": "Same-origin path-absolute destination for a browser sign-in, mounted exactly once; absent from older servers."
                     }
                   },
                   "required": [
@@ -1043,6 +1055,14 @@
                       "type": "string"
                     },
                     "additionalProperties": {}
+                  },
+                  "next": {
+                    "type": "string",
+                    "description": "Requested return target, prefix-stripped or already mounted."
+                  },
+                  "mount_path": {
+                    "type": "string",
+                    "description": "The page's mount pathname with its trailing slash; `/` at the origin root."
                   }
                 },
                 "additionalProperties": {}
@@ -1060,6 +1080,10 @@
                   "properties": {
                     "ok": {
                       "const": true
+                    },
+                    "redirect_path": {
+                      "type": "string",
+                      "description": "Same-origin path-absolute destination for a browser sign-in, mounted exactly once; absent from older servers."
                     }
                   },
                   "required": [
@@ -102835,6 +102859,15 @@
             "in": "query",
             "required": false,
             "description": "Safe path-absolute return target after login.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mount_path",
+            "in": "query",
+            "required": false,
+            "description": "The browser page's mount pathname; the saved return target is mounted exactly once.",
             "schema": {
               "type": "string"
             }

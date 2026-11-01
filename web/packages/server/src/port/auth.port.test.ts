@@ -59,7 +59,7 @@ describe('password login: CSRF exemption and attempt persistence', () => {
   it('the login route ignores a hostile Origin and needs no CSRF token', async () => {
     const res = await post(s, '/api/auth/login', { password: PASSWORD }, { origin: 'https://evil.example', host: s.base.replace('http://', '') })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true })
+    expect(await json(res)).toEqual({ ok: true, redirect_path: '/' })
   })
 
   it('the attempt window persists on disk and a fresh store still rate-limits the address', async () => {

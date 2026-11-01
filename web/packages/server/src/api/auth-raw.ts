@@ -6,7 +6,7 @@
 import { truthy } from '../config.js'
 import type { RequestContext } from '../http/context.js'
 import { normalizeHostPort } from '../http/origin.js'
-import { buildProfileCookie, safeLoginRedirectPath } from '../auth/gate.js'
+import { buildProfileCookie, loginRedirectPath, safeLoginRedirectPath } from '../auth/gate.js'
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
 
 /** Python `_validated_request_host`: a bare `host[:port]` with no userinfo, path, or stray separators. */
@@ -56,7 +56,7 @@ async function oidcFailure(ctx: RequestContext, error: unknown): Promise<void> {
 
 export async function handleOidcStart(ctx: RequestContext): Promise<void> {
   ctx.requestProfile = null
-  const nextPath = safeLoginRedirectPath(ctx.query.get('next'))
+  const nextPath = loginRedirectPath(ctx.query.get('next'), ctx.query.get('mount_path'))
   const nativeFlowId = (ctx.query.get('native_flow') ?? '').trim() || null
   let location: string
   try {

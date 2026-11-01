@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { AgentRuntimeMetadataSchema, FrontendBuildIdSchema, LoginResponseSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, FrontendBuildIdSchema, LoginRedirectSchema, LoginResponseSchema } from '../views.js'
 
 /**
  * Core routes: liveness, the public bootstrap document, and password
@@ -135,7 +135,12 @@ export const HealthSchema = z.object({
 })
 export type Health = z.infer<typeof HealthSchema>
 
-export const LoginRequestSchema = z.object({ password: z.string().optional() })
+/** TAL-1075: a browser sign-in's requested return target and the page's mount; the server validates both and answers `redirect_path`. */
+export const LoginDestinationSchema = z.object({
+  next: z.string().optional().describe('Requested return target, prefix-stripped or already mounted.'),
+  mount_path: z.string().optional().describe('The page\'s mount pathname with its trailing slash; `/` at the origin root.'),
+})
+export const LoginRequestSchema = z.object({ password: z.string().optional(), ...LoginDestinationSchema.shape })
 export const LogoutResponseSchema = z.object({ ok: z.literal(true), trusted_logout_url: z.string().optional() })
 
 export const OidcNativeStartRequestSchema = z.object({ callback_url: z.string(), state: z.string(), code_challenge: z.string(), code_challenge_method: z.string() })
@@ -152,7 +157,8 @@ export type PasskeyCredential = z.infer<typeof PasskeyCredentialSchema>
 /** A serialised `PublicKeyCredential` (`id`, `rawId`, `type`, `response.{clientDataJSON,attestationObject|authenticatorData,signature}`), plus an optional `label` on register (the Python field; the frontend's `name` is reconciled in checkpoint 8). */
 export const PasskeyAssertionSchema = z.object({ id: z.string().optional(), rawId: z.string().optional(), type: z.string().optional(), name: z.string().optional(), response: z.record(z.string(), z.unknown()).optional() }).catchall(z.unknown())
 export const PasskeyRegisterResponseSchema = z.object({ ok: z.literal(true), credential: z.object({ id: z.string(), label: z.string() }), credentials: z.array(PasskeyCredentialSchema) })
-export const PasskeyLoginResponseSchema = z.object({ ok: z.literal(true) })
+export const PasskeyLoginRequestSchema = PasskeyAssertionSchema.extend(LoginDestinationSchema.shape)
+export const PasskeyLoginResponseSchema = z.object({ ok: z.literal(true), ...LoginRedirectSchema.shape })
 export const PasskeyDeleteRequestSchema = z.object({ id: z.string() })
 export const PasskeyDeleteResponseSchema = z.object({ ok: z.literal(true), credentials: z.array(PasskeyCredentialSchema) })
 export const PasskeysListSchema = z.object({ credentials: z.array(PasskeyCredentialSchema), disabled: z.boolean().optional() })
@@ -188,7 +194,7 @@ export const coreContract = {
       .output(PasskeyOptionsResponseSchema),
     passkeyLogin: oc
       .route({ method: 'POST', path: '/api/auth/passkey/login', tags: ['auth'], summary: 'Verify a passkey assertion and start a session (public; CSRF exempt).' })
-      .input(PasskeyAssertionSchema).output(PasskeyLoginResponseSchema),
+      .input(PasskeyLoginRequestSchema).output(PasskeyLoginResponseSchema),
     passkeyRegisterOptions: oc
       .route({ method: 'POST', path: '/api/auth/passkey/register/options', tags: ['auth'], summary: 'WebAuthn creation options (owner session or local first-run bootstrap).' })
       .output(PasskeyOptionsResponseSchema),

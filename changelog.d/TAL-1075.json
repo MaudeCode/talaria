@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Signing in to Talaria Web served under a path prefix now returns you to the page you asked for instead of a doubled-prefix address.", "highlight": false, "components": ["web"]}]
+}

@@ -711,7 +711,7 @@ final class CrossOriginRedirectHeaderTests: XCTestCase {
             let server = try LoopbackHTTPServer { request in
                 request.path == "/api/auth/login"
                     ? .redirect(status, to: URL(string: "/api/auth/login-final")!)
-                    : .json(#"{"ok":true}"#)
+                    : .json(#"{"ok":true,"redirect_path":"/"}"#)
             }
 
             let response = try await loopbackClient(server).login(password: "synthetic-password-1406")

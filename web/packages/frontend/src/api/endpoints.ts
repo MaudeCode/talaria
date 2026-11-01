@@ -1,4 +1,4 @@
-import type { DelegationWrite, FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
+import type { DelegationWrite, FeedbackSubmitSchema, LoginDestinationSchema } from '@maudecode/talaria-web-contracts'
 /**
  * Endpoint functions, one per route the application uses, all typed by the
  * contract package through the oRPC client (`orpc.ts`). Byte streams
@@ -45,10 +45,10 @@ export const ownerAction = (input: OwnerActionRequest) => orpc().chat.ownerActio
 
 // Bootstrap and auth
 export const fetchBootstrap = () => orpc().bootstrap()
-export const login = (password: string) => orpc().auth.login({ password })
+export const login = (password: string, destination?: z.infer<typeof LoginDestinationSchema>) => orpc().auth.login({ password, ...destination })
 export const logout = () => orpc().auth.logout()
 export const passkeyOptions = () => orpc().auth.passkeyOptions()
-export const passkeyLogin = (credential: unknown) => orpc().auth.passkeyLogin(credential as Record<string, unknown>)
+export const passkeyLogin = (credential: unknown, destination?: z.infer<typeof LoginDestinationSchema>) => orpc().auth.passkeyLogin({ ...(credential as Record<string, unknown>), ...destination })
 export const passkeyRegisterOptions = () => orpc().auth.passkeyRegisterOptions()
 /** `label` is the server's field for the credential name. */
 export const passkeyRegister = (credential: unknown, label?: string) => orpc().auth.passkeyRegister({ ...(credential as Record<string, unknown>), ...(label ? { name: label } : {}) })
