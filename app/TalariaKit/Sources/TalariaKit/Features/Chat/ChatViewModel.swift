@@ -1687,7 +1687,9 @@ public final class ChatViewModel {
         if let clear = clearConversationTask { _ = await clear.value }
 
         let titleVersionAtFetch = sessionListOwner?.resourceMetadataVersion(for: sessionID)
-        resetPendingStreamingContentBuffers()
+        // A run sends its text once, so text awaiting its paced reveal joins the live row before the run's snapshot
+        // (TAL-1645); a load with no run discards it.
+        if activeStreamID != nil { flushPendingStreamingContent() } else { resetPendingStreamingContentBuffers() }
         latestServerLoadHadAssistantResponseAfterLatestUser = false
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
         sessionLoadRequestGeneration &+= 1
