@@ -24,7 +24,7 @@ import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
-import { materializeAttachment, type BlobStore } from './storage/blobs.js'
+import { materializeTurnAttachments, type BlobStore } from './storage/blobs.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
@@ -726,9 +726,10 @@ export class TurnRunner {
     const titles = new ReasoningTitleTracker()
     let capturedTerminalError: string | null = null
     const attachments = opts.attachments ?? []
-    // TAL-1069: a remote attachment store downloads every file this turn names to the path the prompt gives the Agent;
-    // a failure fails the turn below instead of handing the Agent a missing file.
-    const materializeError = await Promise.all(attachments.map((att) => materializeAttachment(deps.blobs, str(att.path).trim()))).then(() => null, (error: unknown) => error as Error)
+    // TAL-1069: a remote attachment store downloads every file this turn names to the path the prompt gives the Agent,
+    // and restores what earlier turns attached; a failure on this turn's files fails the turn below.
+    const earlier = s.messages.toReversed().flatMap((m) => (Array.isArray(m.attachments) ? m.attachments : []).map((att: unknown) => (isDict(att) ? str(att.path).trim() : '')))
+    const materializeError = await materializeTurnAttachments(deps.blobs, attachments.map((att) => str(att.path).trim()), earlier).then(() => null, (error: unknown) => error as Error)
     // TAL-545: one image mode decides both this turn's upload and the replayed history, which a text-mode turn sends
     // without native images; only a turn with an image on either side asks for it.
     const imageMode = attachments.some(isImageAttachment) || hasNativeImages(apiHistory) ? await this.imageInputMode(sessionId, s, opts, controller.signal) : null

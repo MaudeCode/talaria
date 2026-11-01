@@ -4,7 +4,7 @@ import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { MIMEType } from 'node:util'
 import { isWithin, resolvePathLikePython } from './paths.js'
-import { attachmentKey, attachmentSessionName, BlobExists, BlobKeyRejected, type BlobStat, type BlobStore } from '../sessions/storage/blobs.js'
+import { attachmentKey, attachmentSessionName, BlobExists, BlobKeyRejected, localSignature, type BlobStat, type BlobStore } from '../sessions/storage/blobs.js'
 import { extractArchive, type Extraction } from './extract.js'
 import { mimeFor } from './media.js'
 import { MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
@@ -80,8 +80,11 @@ export function sanitizeUploadName(filename: string): string {
   return safe
 }
 
-/** A file receipt holds its key's etag; an extracted tree's receipt holds every file's. */
-interface Receipt { sessionId: string; key: string; isDir: boolean; etags: Map<string, string>; createdAt: number; rollingBack?: boolean }
+/**
+ * A file receipt holds its key's etag; an extracted tree's receipt holds every file's. `local` holds the identity of each
+ * file's local copy at upload, since a remote store's etag does not change when that copy is edited.
+ */
+interface Receipt { sessionId: string; key: string; isDir: boolean; etags: Map<string, string>; local: Map<string, string>; createdAt: number; rollingBack?: boolean }
 
 const RECEIPT_TTL_MS = 60 * 60 * 1000
 
@@ -107,16 +110,31 @@ export class UploadInbox {
     return dest
   }
 
+  /** Where `key`'s local copy is, without downloading it. */
+  private localFile(sessionId: string, key: string): string {
+    return join(this.sessionDir(sessionId), ...key.split('/').slice(2))
+  }
+
   private registerReceipt(sessionId: string, key: string, isDir: boolean, etags: Map<string, string>): string {
     const token = randomBytes(32).toString('base64url')
     const now = this.now()
     for (const [k, value] of this.receipts) if (now - value.createdAt > RECEIPT_TTL_MS) this.receipts.delete(k)
-    this.receipts.set(token, { sessionId, key, isDir, etags, createdAt: now })
+    const local = new Map<string, string>()
+    for (const k of etags.keys()) {
+      const sig = localSignature(this.localFile(sessionId, k))
+      if (sig) local.set(k, sig)
+    }
+    this.receipts.set(token, { sessionId, key, isDir, etags, local, createdAt: now })
     return token
   }
 
   /** The stored objects still match the receipt exactly: nothing replaced, added or removed since the upload. */
   private async unchanged(receipt: Receipt): Promise<boolean> {
+    // A local copy still on disk must be the one written at upload; an evicted one has nothing left to protect.
+    for (const [key, sig] of receipt.local) {
+      const current = localSignature(this.localFile(receipt.sessionId, key))
+      if (current !== null && current !== sig) return false
+    }
     if (!receipt.isDir) return (await this.blobs.stat(receipt.key))?.etag === receipt.etags.get(receipt.key)
     let seen = 0
     for await (const item of this.blobs.list(receipt.key)) {

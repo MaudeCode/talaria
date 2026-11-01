@@ -83,8 +83,34 @@ export async function materializeAttachment(blobs: BlobStore, path: string): Pro
   if (key) await blobs.localPath(key)
 }
 
+/** ponytail: earlier turns' attachments are restored newest first up to this many bytes per turn; size it from the cache cap if that ever needs tuning. */
+export const HISTORY_ATTACHMENT_BUDGET = 256 * 1024 * 1024
+
+/**
+ * A turn's files on disk: every attachment it sends, then those of earlier turns, newest first, within
+ * `HISTORY_ATTACHMENT_BUDGET`, since the Agent may reopen a path its history names. Only the current ones may fail.
+ */
+export async function materializeTurnAttachments(blobs: BlobStore, current: string[], earlier: string[]): Promise<void> {
+  await Promise.all(current.map((path) => materializeAttachment(blobs, path)))
+  let budget = HISTORY_ATTACHMENT_BUDGET
+  for (const path of new Set(earlier)) {
+    if (current.includes(path) || !isAbsolute(path)) continue
+    try {
+      const key = blobKeyForPath(blobs.attachmentRoot(), resolvePathLikePython(path))
+      const stat = key ? await blobs.stat(key) : null
+      if (!key || !stat || stat.size > budget) continue
+      budget -= stat.size
+      await blobs.localPath(key)
+    } catch { /* an earlier file stays missing, as it would be on disk */ }
+  }
+}
+
 /** The identity the upload inbox's rollback receipts always compared: inode, size and both change times. */
 const signature = (st: BigIntStats): string => `${String(st.dev)}:${String(st.ino)}:${String(st.size)}:${String(st.mtimeNs)}:${String(st.ctimeNs)}`
+/** The identity of the file at `path` (not followed if a link), or null when nothing is there. */
+export function localSignature(path: string): string | null {
+  try { return signature(lstatSync(path, { bigint: true })) } catch { return null }
+}
 const statOf = (st: BigIntStats): BlobStat => ({ size: Number(st.size), etag: signature(st), modifiedAt: Number(st.mtimeMs) })
 
 /** Today's attachment directory, byte for byte: `<root>/<sid>/<name>`, written with anchored exclusive creates. */

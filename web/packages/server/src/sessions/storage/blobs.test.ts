@@ -133,6 +133,46 @@ describe.skipIf(!endpoint)(endpoint ? 'S3 blob store' : 'S3 blob store (skipped:
     } finally { await s.close() }
   })
 
+  it('restores earlier turns\' attachments and refuses to roll back an edited upload', async () => {
+    const prefix = `history-${randomBytes(4).toString('hex')}`
+    await ensureBucket()
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, env: { TALARIA_BLOB_STORAGE: 's3', TALARIA_BLOB_S3_ENDPOINT: endpoint, TALARIA_BLOB_S3_BUCKET: bucket, TALARIA_BLOB_S3_PREFIX: prefix, AWS_ACCESS_KEY_ID: credentials.accessKeyId, AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey } })
+    try {
+      const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+      const sid = ((await (await post('/api/session/new', {})).json()) as { session: { session_id: string } }).session.session_id
+      const upload = async (name: string, text: string): Promise<{ path: string; rollback_token: string }> => {
+        const form = ['--b', 'Content-Disposition: form-data; name="session_id"', '', sid, '--b', `Content-Disposition: form-data; name="file"; filename="${name}"`, 'Content-Type: text/plain', '', text, '--b--', ''].join('\r\n')
+        return (await (await s.get('/api/upload', { method: 'POST', body: form, headers: { 'content-type': 'multipart/form-data; boundary=b' } })).json()) as { path: string; rollback_token: string }
+      }
+      const earlier = await upload('earlier.txt', 'earlier bytes')
+      const seen: string[] = []
+      sidecar.respond('chat.start', (params) => {
+        seen.push(existsSync(earlier.path) ? readFileSync(earlier.path, 'utf8') : '<missing>')
+        return { status: 'completed', messages: [...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 1000 }, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }
+      })
+      const turn = async (body: Record<string, unknown>): Promise<void> => {
+        const start = (await (await post('/api/chat/start', { session_id: sid, ...body })).json()) as { stream_id: string }
+        await s.sse(`/api/chat/stream?stream_id=${start.stream_id}`, (f) => f.event === 'stream_end')
+      }
+      await turn({ message: 'read this', attachments: [{ path: earlier.path, name: 'earlier.txt', mime: 'text/plain' }] })
+      // The cache is gone (a restart, eviction); a follow-up names no attachment but its history does.
+      rmSync(earlier.path)
+      await turn({ message: 'read the file I sent earlier again' })
+      expect(seen).toEqual(['earlier bytes', 'earlier bytes'])
+
+      const edited = await upload('edited.txt', 'original')
+      writeFileSync(edited.path, 'edited by the Agent')
+      expect(await (await post('/api/upload/rollback', { session_id: sid, rollback_tokens: [edited.rollback_token] })).json()).toEqual({ ok: false, rolled_back: 0, failed: 1 })
+      expect(readFileSync(edited.path, 'utf8')).toBe('edited by the Agent')
+      expect(await objectKeys(`${prefix}/attachments/${sid}/edited.txt`)).toEqual([`${prefix}/attachments/${sid}/edited.txt`])
+      const clean = await upload('clean.txt', 'clean')
+      expect(await (await post('/api/upload/rollback', { session_id: sid, rollback_tokens: [clean.rollback_token] })).json()).toEqual({ ok: true, rolled_back: 1, failed: 0 })
+      expect(await objectKeys(`${prefix}/attachments/${sid}/clean.txt`)).toEqual([])
+      expect(existsSync(clean.path)).toBe(false)
+    } finally { await s.close() }
+  })
+
   it('downloads only the images a share embeds', async () => {
     const prefix = `share-${randomBytes(4).toString('hex')}`
     await ensureBucket()
