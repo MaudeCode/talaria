@@ -1746,13 +1746,16 @@ export class SessionService {
     const profile = this.deps.activeProfile()
     if (body.profile && body.profile !== profile || refs.some((r) => r.profile !== profile)) throw new HttpFailure(409, 'Selected conversations belong to another profile')
     if (typeof body.request_id !== 'string' || !body.request_id) throw new HttpFailure(400, 'Referenced creation requires request_id')
-    const sid = createHash('sha256').update(JSON.stringify(['source-reference', profile, body.request_id])).digest('hex').slice(0, 32)
+    // TAL-48: under person isolation the receipt belongs to one person, so another person's replay is a new creation.
+    const person = this.store.newSessionOwner()
+    const sid = createHash('sha256').update(JSON.stringify(person ? ['source-reference', profile, person, body.request_id] : ['source-reference', profile, body.request_id])).digest('hex').slice(0, 32)
     const signature = JSON.stringify([profile, body.workspace ?? null, body.model ?? null, body.model_provider ?? null, body.enabled_toolsets ?? null, body.worktree ?? null, body.project_id ?? null, refs])
     return this.store.withLock(sid, async () => {
       if (await this.store.wasDeleted(sid)) throw new HttpFailure(409, 'This creation was deleted; start a new chat')
       let existing: Session | null = null
       try { existing = await this.store.get(sid) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
       if (existing) {
+        if (!this.personMaySee(existing.owner_person_id)) throw new HttpFailure(404, 'Session not found')
         if (existing.extra.reference_creation_signature !== signature || !this.deps.profilesMatch(existing.profile, profile)) throw new HttpFailure(409, 'Creation choices changed; start a new chat')
         return existing
       }
