@@ -67,7 +67,12 @@ closes, so attachments are never delivered early. Deliveries run one at a time:
 a change during a run queues exactly one more. A delivery also runs every 120
 seconds so failed reports are retried. A subscription error (wrong token,
 feedback disabled) prints one fixed line and exits 1. SIGTERM exits 0 after the
-current delivery. Reports and diagnostics remain fenced untrusted text;
+current delivery.
+
+With `HEALTH_PORT` also set, watch mode serves `GET /healthz` on that port.
+It answers 200 once Relay has answered the subscription (so the token is
+authorized) and while the WebSocket is connected, and 503 otherwise. Any other
+request gets 404. Use it as the readiness probe. Reports and diagnostics remain fenced untrusted text;
 install IDs are hashed before inclusion in ticket metadata. The bridge keeps
 its own npm lockfile because its image installs from it; `scripts/check relay`
 installs both before `pnpm check`.
@@ -96,6 +101,7 @@ the report is acknowledged only after every kept file is attached.
 | `KANVIL_INTAKE_KEY` | Create-only `intake` key bound to Talaria Inbox |
 | `KANVIL_PROJECT_ID` | Talaria Inbox project ID |
 | `RELAY_SYNC_URL` | Optional Convex client URL of the Relay deployment (`https://<deployment>.convex.cloud`); enables watch mode |
+| `HEALTH_PORT` | Optional port (1–65535) for watch mode's `/healthz` readiness endpoint |
 
 Use the `intake` scope provided by KAN-67. It forces human triage and disables
 automation on created tickets; KAN-77 lets the same key attach files to the

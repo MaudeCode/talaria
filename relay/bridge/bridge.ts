@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -257,7 +258,7 @@ async function collect(relay: string, token: string, report: FeedbackReport, dir
 }
 
 const required = ["RELAY_URL", "FEEDBACK_OPERATOR_TOKEN", "KANVIL_URL", "KANVIL_INTAKE_KEY", "KANVIL_PROJECT_ID"] as const;
-type Config = Record<typeof required[number], string> & { RELAY_SYNC_URL?: string };
+type Config = Record<typeof required[number], string> & { RELAY_SYNC_URL?: string; HEALTH_PORT?: number };
 
 // Exit code 2 for a missing or invalid variable, naming only the variable.
 function readConfig(): Config | number {
@@ -267,7 +268,7 @@ function readConfig(): Config | number {
       return 2;
     }
   }
-  const config: Config = Object.fromEntries(required.map((name) => [name, process.env[name]!])) as Config;
+  const config = Object.fromEntries(required.map((name) => [name, process.env[name]!])) as unknown as Config;
   if (process.env.RELAY_SYNC_URL?.trim()) config.RELAY_SYNC_URL = process.env.RELAY_SYNC_URL;
   for (const name of ["RELAY_URL", "KANVIL_URL", "RELAY_SYNC_URL"] as const) {
     if (config[name] === undefined) continue;
@@ -279,6 +280,14 @@ function readConfig(): Config | number {
       console.error(`Feedback bridge: invalid ${name}`);
       return 2;
     }
+  }
+  const port = process.env.HEALTH_PORT?.trim();
+  if (port) {
+    if (!/^[1-9][0-9]{0,4}$/.test(port) || Number(port) > 65_535) {
+      console.error("Feedback bridge: invalid HEALTH_PORT");
+      return 2;
+    }
+    config.HEALTH_PORT = Number(port);
   }
   return config;
 }
@@ -400,6 +409,19 @@ export function watch(subscribe: Subscribe, run: () => Promise<unknown>, stop: A
   });
 }
 
+/** `GET /healthz` answers 200 while `healthy()` holds and 503 otherwise; any other request is 404. */
+export function serveHealth(port: number, healthy: () => boolean): Promise<Server> {
+  const server = createServer((request, response) => {
+    if (request.method !== "GET" || request.url !== "/healthz") return void response.writeHead(404).end();
+    const ok = healthy();
+    response.writeHead(ok ? 200 : 503, { "content-type": "text/plain" }).end(ok ? "ok" : "unavailable");
+  });
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "0.0.0.0", () => resolve(server));
+  });
+}
+
 const pendingSignal = makeFunctionReference<"query", { token: string }, string[]>("feedback:pendingSignal");
 
 async function main(): Promise<number> {
@@ -410,11 +432,19 @@ async function main(): Promise<number> {
   const client = new ConvexClient(config.RELAY_SYNC_URL, { logger: false, unsavedChangesWarning: false });
   const stop = new AbortController();
   process.once("SIGTERM", () => stop.abort());
+  // Healthy once Relay has answered the subscription (the token is authorized) and while the socket is up.
+  let subscribed = false;
+  const health = config.HEALTH_PORT === undefined ? undefined
+    : await serveHealth(config.HEALTH_PORT, () => subscribed && client.connectionState().isWebSocketConnected);
   const code = await watch(
-    (onIds, onError) => client.onUpdate(pendingSignal, { token: config.FEEDBACK_OPERATOR_TOKEN }, onIds, onError),
+    (onIds, onError) => client.onUpdate(pendingSignal, { token: config.FEEDBACK_OPERATOR_TOKEN }, (ids) => {
+      subscribed = true;
+      onIds(ids);
+    }, onError),
     () => deliver(config),
     stop.signal,
   );
+  await new Promise((resolve) => health ? health.close(resolve) : resolve(undefined));
   await client.close();
   return code;
 }

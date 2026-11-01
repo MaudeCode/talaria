@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The feedback bridge reports its readiness over HTTP, so cluster updates reach it automatically.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
