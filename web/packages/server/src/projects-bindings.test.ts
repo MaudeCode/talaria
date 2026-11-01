@@ -5,8 +5,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { FakeSidecar } from './sidecar/fake.js'
 import { bootTestServer, type TestServer } from './test/harness.js'
 import { writeEnvFile } from './test/env-file.js'
+import { useJsonStorage } from './test/storage.js'
 
 type Json = Record<string, unknown>
+
+// The cases read the stored projects.json directly (TAL-1066).
+useJsonStorage()
 
 describe('project bindings', () => {
   let s: TestServer
