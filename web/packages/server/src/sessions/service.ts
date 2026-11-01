@@ -1,5 +1,5 @@
 import { reasoningProjection } from './reasoning-display.js'
-import { MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { AGENT_SESSION_LIST_LIMIT, MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { filterAsync } from '../util.js'
 import { statSignature } from '../fs/stat.js'
 import { SessionPrefixIndex } from './prefix-index.js'
@@ -8,7 +8,7 @@ import { SessionPrefixIndex } from './prefix-index.js'
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult, SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
@@ -18,7 +18,7 @@ import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maud
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
@@ -1386,6 +1386,30 @@ export class SessionService {
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
     const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
+  }
+
+  /**
+   * TAL-1164: the agent tool `session_list`. The caller's profile's `/api/sessions` rows, newest first, with the run
+   * state those rows carry. Run inside the caller's profile scope; `params` is that list's selection.
+   */
+  async agentSessionList(callerSessionId: string, query: string | null, params: Parameters<SessionService['list']>[0]): Promise<SidecarServerResultInput<'server.session_list'>> {
+    const needle = query?.trim().toLowerCase() ?? ''
+    const rows = (await this.list(params)).body.sessions
+      .filter((row) => !needle || str(row.title).toLowerCase().includes(needle))
+      .sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
+    const steers = (row: Row): number => (row.is_streaming && row.active_stream_id ? this.deps.runtime.pendingSteers?.(str(row.active_stream_id)).length ?? 0 : 0)
+    return {
+      sessions: rows.slice(0, AGENT_SESSION_LIST_LIMIT).map((row) => ({
+        session_id: str(row.session_id),
+        title: str(row.title),
+        updated_at: sessionSortTimestamp(row),
+        is_caller: sessionLineageIds(row).has(callerSessionId),
+        is_streaming: Boolean(row.is_streaming),
+        pending_steer_count: steers(row),
+        attention: (row.attention as SidecarServerResultInput<'server.session_list'>['sessions'][number]['attention'] | undefined) ?? null,
+      })),
+      truncated: rows.length > AGENT_SESSION_LIST_LIMIT,
+    }
   }
 
   async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {

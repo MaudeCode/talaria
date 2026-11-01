@@ -12,6 +12,7 @@ import errno
 import importlib
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -25,6 +26,8 @@ from pathlib import Path
 
 from . import SIDECAR_RPC_VERSION
 from .errors import RpcError
+
+log = logging.getLogger("talaria_sidecar.runtime")
 
 PIN_PATH = Path(__file__).resolve().parent.parent / "agent_dependency.json"
 _RUNTIME_UNAVAILABLE_MESSAGE = (
@@ -323,6 +326,12 @@ class AgentRuntime:
                 self.agent_dir = self.module_path.parent
             self.revision = read_agent_revision(self.agent_dir, self.module_path)
             self.loaded = True
+            try:
+                from .talaria_toolset import register
+
+                register()
+            except Exception:  # noqa: BLE001 - the Agent stays usable without Talaria's own tools
+                log.warning("talaria toolset registration failed", exc_info=True)
 
     def _stop_handoff(self) -> None:
         if self._handoff is not None:

@@ -7,6 +7,9 @@ One line per message. Requests dispatch on a worker thread each, at most
 ``rpc.cancel`` sets the request's cancel event; the method decides how to stop
 and still returns (a result with ``status: "cancelled"`` or a CANCELLED error).
 Cancellation never takes a slot, so it always reaches the call it targets.
+
+The sidecar can also ask the server (TAL-1164): ``call_server`` writes a ``server.*`` request with an ``s:`` string id
+on stdout and waits for the server's reply on stdin. It times out, and closing the channel fails every waiting call.
 """
 
 from __future__ import annotations
@@ -39,6 +42,18 @@ log = logging.getLogger("talaria_sidecar.rpc")
 Handler = Callable[["CallContext", dict], Any]
 
 DEFAULT_MAX_CALLS = 64
+SERVER_CALL_TIMEOUT = 30.0
+
+# The server channel the running process serves; ``call_server`` asks through it.
+_ACTIVE: "RpcServer | None" = None
+
+
+def call_server(method: str, params: dict, *, timeout: float | None = None):
+    """Ask the server over the active channel; raises ``RpcError`` with the server's or the channel's condition."""
+    server = _ACTIVE
+    if server is None:
+        raise RpcError("Talaria server is not connected", condition="server_unavailable")
+    return server.call_server(method, params, timeout=timeout)
 
 
 class CallContext:
@@ -87,6 +102,10 @@ class RpcServer:
         self._active_lock = threading.Lock()
         self._closed = threading.Event()
         self.exit_code = 0
+        self._server_calls: dict[str, dict] = {}
+        self._server_calls_lock = threading.Lock()
+        self._server_seq = 0
+        self._server_closed = False
 
     # ── output ────────────────────────────────────────────────────────────
     def _write(self, message: dict) -> None:
@@ -106,6 +125,11 @@ class RpcServer:
                 self._out.flush()
             except (BrokenPipeError, OSError, ValueError):
                 self._closed.set()
+                broken = True
+            else:
+                broken = False
+        if broken:
+            self._fail_server_calls()
 
     def notify(self, method: str, params: dict) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})
@@ -118,6 +142,48 @@ class RpcServer:
         if data:
             error["data"] = data
         self._write({"jsonrpc": "2.0", "id": request_id, "error": error})
+
+    # ── requests to the server ───────────────────────────────────────────
+    def call_server(self, method: str, params: dict, *, timeout: float | None = None):
+        waiter: dict = {"done": threading.Event()}
+        with self._server_calls_lock:
+            if self._server_closed:
+                raise RpcError("Talaria server channel is closed", condition="server_unavailable")
+            self._server_seq += 1
+            request_id = f"s:{self._server_seq}"
+            self._server_calls[request_id] = waiter
+        try:
+            self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+            if not waiter["done"].wait(SERVER_CALL_TIMEOUT if timeout is None else timeout):
+                raise RpcError(f"server call {method} timed out", condition="timeout")
+        finally:
+            with self._server_calls_lock:
+                self._server_calls.pop(request_id, None)
+        error = waiter.get("error")
+        if error is not None:
+            data = error.get("data") if isinstance(error.get("data"), dict) else None
+            code = error.get("code") if isinstance(error.get("code"), int) else APPLICATION_ERROR
+            raise RpcError(str(error.get("message") or "server call failed"), code=code, data=data)
+        return waiter.get("result")
+
+    def _settle_server_call(self, message: dict) -> None:
+        with self._server_calls_lock:
+            waiter = self._server_calls.get(message["id"])
+        if waiter is None:
+            return  # timed out, or a reply to nothing we asked
+        if "error" in message:
+            waiter["error"] = message["error"] if isinstance(message["error"], dict) else {"message": "server call failed"}
+        else:
+            waiter["result"] = message.get("result")
+        waiter["done"].set()
+
+    def _fail_server_calls(self) -> None:
+        with self._server_calls_lock:
+            self._server_closed = True
+            waiters = list(self._server_calls.values())
+        for waiter in waiters:
+            waiter.setdefault("error", {"code": APPLICATION_ERROR, "message": "Talaria server channel closed", "data": {"condition": "server_unavailable"}})
+            waiter["done"].set()
 
     # ── built-ins ─────────────────────────────────────────────────────────
     def _cancel(self, ctx: CallContext, params: dict) -> dict:
@@ -132,6 +198,7 @@ class RpcServer:
     def request_shutdown(self, exit_code: int = 0) -> None:
         self.exit_code = exit_code
         self._closed.set()
+        self._fail_server_calls()
         with self._active_lock:
             for ctx in self._active.values():
                 ctx.cancel_event.set()
@@ -211,6 +278,8 @@ class RpcServer:
 
     def serve_forever(self) -> int:
         """Read requests until stdin closes or shutdown is requested."""
+        global _ACTIVE
+        _ACTIVE = self
         incoming = queue.Queue(maxsize=1)
         def read_input():
             try:
@@ -255,6 +324,9 @@ class RpcServer:
             if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
                 self._error(request.get("id") if isinstance(request, dict) else None, INVALID_REQUEST, "expected a JSON-RPC 2.0 request object")
                 continue
+            if "method" not in request and isinstance(request.get("id"), str) and request["id"].startswith("s:"):
+                self._settle_server_call(request)
+                continue
             if request.get("method") == "rpc.cancel":
                 # Cancellation must not queue behind the call it targets.
                 self._dispatch(request)
@@ -270,6 +342,8 @@ class RpcServer:
                 continue
             ctx = self._register(request)
             threading.Thread(target=self._dispatch_slot, args=(request, ctx), name=f"rpc-{request.get('method')}", daemon=True).start()
+        # No more replies can arrive: a tool waiting on the server fails now rather than at its timeout.
+        self._fail_server_calls()
         if self._closed.is_set():
             # Let the terminal reply reach stdout before the process returns its final exit code.
             deadline = time.monotonic() + 5
