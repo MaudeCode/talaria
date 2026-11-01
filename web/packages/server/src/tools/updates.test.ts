@@ -21,7 +21,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
@@ -1687,7 +1687,13 @@ describe('Agent checkout updates', () => {
     const agent = tmp()
     mkdirSync(join(agent, '.git'))
     const failing: GitRun = () => Promise.resolve({ ok: false, out: `fatal: unable to access ${CREDENTIALED}: The requested URL returned error: 403` })
-    const result = await checkAgentUpdate(agent, failing)
+    vi.useFakeTimers()
+    let result: Dict
+    try {
+      const pending = checkAgentUpdate(agent, failing)
+      await vi.advanceTimersByTimeAsync(FETCH_RETRY_MS)
+      result = await pending
+    } finally { vi.useRealTimers() }
     expectNoSecret(result)
     expect(result).toMatchObject({ behind: null, stale_check: true,
       error: "fetch failed: fatal: unable to access 'https://<redacted>@example.invalid/agent.git/?token=<redacted>': The requested URL returned error: 403" })
@@ -1716,15 +1722,29 @@ describe('Agent checkout updates', () => {
     ['merge', `fatal: ${CREDENTIALED} was rejected`, 'Pull failed: ', false],
     ['merge', `error: RPC failed; partial output from ${CREDENTIALED} before git merge --ff-only timed out after 30s`, 'Pull failed: ', false],
   ] as const)('a failed Agent %s step exposes only its sanitized diagnostic (TAL-1025)', async (step, out, prefix, lock) => {
-    const a = agentInstall()
-    const failing: GitRun = (args, cwd, timeout) => args[0] === step ? Promise.resolve({ ok: false, out }) : runGit(args, cwd, timeout)
-    const result = await applyAgentUpdate(a.agent, failing, 'stable', { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0' })
+    // In-process: a synthetic Stable checkout one release behind, failing only at the injected step.
+    const agent = tmp()
+    mkdirSync(join(agent, '.git'))
+    const [v1, v2] = ['1'.repeat(40), '2'.repeat(40)]
+    const calls: string[] = []
+    const fake: GitRun = (args) => {
+      calls.push(args[0] ?? '')
+      const ok = (text = ''): Promise<GitOutcome> => Promise.resolve({ ok: true, out: text })
+      if (args[0] === step) return Promise.resolve({ ok: false, out })
+      if (args[0] === 'tag') return ok(args.includes('--merged') ? 'v2.0.0' : 'v2.0.0\nv1.0.0')
+      if (args[0] === 'remote') return ok('https://example.invalid/agent.git')
+      if (args[0] === 'rev-parse') return ok(args[1] === 'HEAD' ? v1 : v2)
+      if (args[0] === 'rev-list') return ok('1')
+      if (args[0] === 'describe') return Promise.resolve({ ok: false, out: 'no tag' })
+      return ok()
+    }
+    const result = await applyAgentUpdate(agent, fake, 'stable', { supportedRevisions: [v2], supportedRevision: v2, supportedVersion: '2.0.0' })
     expectNoSecret(result)
     expect(result.ok).toBe(false)
     expect(result.lock_conflict).toBe(lock || undefined)
     expect(String(result.message).startsWith(prefix)).toBe(true)
     expect(String(result.message)).toContain('<redacted>')
-    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(calls.includes('merge')).toBe(step === 'merge')
   })
 
   it('masks quoted, short and token-shaped secrets, keeping text outside them (TAL-1025)', () => {
