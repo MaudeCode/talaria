@@ -2779,6 +2779,7 @@
 	"session_reference_empty": "No available conversations",
 	"session_reference_count": "{selected} of {max} selected",
 	"message_reactions": "React to message",
+	"message_menu": "Message actions",
 	"reaction_add": "React with {emoji}",
 	"reaction_remove": "Remove {emoji} reaction",
 	"reaction_clear": "Remove reaction",

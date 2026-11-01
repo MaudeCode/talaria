@@ -63,10 +63,16 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
   )
 }
 
+/**
+ * Links nested in a trigger, including Markdown links and code-block controls that Streamdown renders as buttons
+ * (TAL-1154).
+ */
+const NESTED_NATIVE = 'a[href], [data-streamdown="link"], [data-streamdown="code-block-actions"], [data-streamdown="mermaid-block-actions"]'
+
 /** TAL-699: text fields, a selection reaching into the trigger, and links nested in it keep the browser's own menu. */
 function wantsNativeMenu(trigger: Element, target: Element): boolean {
   if (target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
-  const link = target.closest('a[href]')
+  const link = target.closest(NESTED_NATIVE)
   if (link && link !== trigger && trigger.contains(link)) return true
   const selection = trigger.ownerDocument.getSelection()
   return !!selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.getRangeAt(0).intersectsNode(trigger)
