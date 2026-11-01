@@ -85,6 +85,8 @@ export interface NotificationPreferences {
 export interface ActivityAlert {
   title: string;
   body: string;
+  // Time Sensitive alerts break through Focus; they arrive as a standalone notification wherever the device can receive one.
+  interruptionLevel?: "time-sensitive";
 }
 
 export const defaultNotificationPreferences: NotificationPreferences = {

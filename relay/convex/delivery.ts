@@ -15,6 +15,7 @@ import {
   shouldUpdateAggregate,
 } from "./lib/aggregate";
 import {
+  liveActivityAlert,
   nativeSessionRequest,
   makeLiveActivityEnd,
   makeLiveActivityStart,
@@ -179,6 +180,23 @@ async function pendingDeviceJobs(
       .take(20),
   ]);
   return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
+}
+
+function receivesNotifications(
+  device: Doc<"devices">,
+  now: number,
+): device is Doc<"devices"> & Required<Pick<Doc<"devices">, "pushToken" | "bundleId" | "apsEnvironment">> {
+  return device.revokedAt === undefined
+    && (device.sessionExpiresAt === undefined || device.sessionExpiresAt > now)
+    && device.preferences.notificationsEnabled
+    && !!device.pushToken && !!device.bundleId && !!device.apsEnvironment;
+}
+
+// A Time Sensitive alert moves to the standalone notification. A device that cannot receive one keeps it on its activity.
+function activityAlertForDevice(alert: ActivityAlert | null, device: Doc<"devices">, now: number): ActivityAlert | null {
+  if (!alert?.interruptionLevel || receivesNotifications(device, now)) return alert;
+  const { interruptionLevel: _interruptionLevel, ...rest } = alert;
+  return rest;
 }
 
 function carriesAlert(payload: unknown): boolean {
@@ -397,6 +415,7 @@ export const recompute = internalMutation({
         );
         return value ? [value] : [];
       })[0] ?? null;
+      const startAlert = activityAlertForDevice(transitionAlert, device, now);
       if (!transitionAlert && deferred) continue;
       const request = makeLiveActivityStart({
         token: device.pushToStartToken,
@@ -404,7 +423,7 @@ export const recompute = internalMutation({
         environment: device.apsEnvironment,
         aggregate,
         nowEpochSeconds: Math.floor(now / 1_000),
-        alert: transitionAlert ?? { title: "Talaria", body: aggregate.subtitle },
+        alert: startAlert ?? { title: "Talaria", body: aggregate.subtitle },
       });
       await enqueueJob(ctx, {
         userId: args.userId,
@@ -416,7 +435,7 @@ export const recompute = internalMutation({
         now,
       });
       await ctx.db.patch(device._id, { pushToStartIssuedAt: now, pushToStartDeferredAt: undefined, updatedAt: now });
-      if (transitionAlert) alertedDevices.add(device.deviceId);
+      if (liveActivityAlert(startAlert)) alertedDevices.add(device.deviceId);
     }
 
     for (const activity of allActivities) {
@@ -455,7 +474,7 @@ export const recompute = internalMutation({
         );
         return value ? [{ alert: value, state }] : [];
       })[0];
-      const alert = alerted?.alert ?? null;
+      const alert = activityAlertForDevice(alerted?.alert ?? null, device, now);
       // Source the job from the alerting state so claiming can revalidate that alert's eligibility.
       const activityChangedState = alerted?.state ?? activityChanged[0]?.state ?? null;
 
@@ -507,7 +526,7 @@ export const recompute = internalMutation({
           stateFingerprint: `end:${aggregateFingerprint(terminalAggregate)}`,
           now,
         });
-        if (alert) alertedDevices.add(activity.deviceId);
+        if (liveActivityAlert(alert)) alertedDevices.add(activity.deviceId);
         continue;
       }
       if (
@@ -553,23 +572,13 @@ export const recompute = internalMutation({
         stateFingerprint: aggregateFingerprint(nextAggregate),
         now,
       });
-      if (alert) alertedDevices.add(activity.deviceId);
+      if (liveActivityAlert(alert)) alertedDevices.add(activity.deviceId);
     }
 
     if (changedState) {
       for (const device of devices) {
-          if (
-            alertedDevices.has(device.deviceId) ||
-            device.revokedAt !== undefined ||
-            (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
-            !device.preferences.notificationsEnabled ||
-            !device.pushToken ||
-            !device.bundleId ||
-            !device.apsEnvironment
-          ) {
-            continue;
-          }
-          const changedAlert = changed.flatMap(({ state, previousPhase }) => {
+          if (!receivesNotifications(device, now)) continue;
+          const alerts = changed.flatMap(({ state, previousPhase }) => {
             if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
             const value = alertForTransition(
               previousPhase ?? null,
@@ -577,10 +586,12 @@ export const recompute = internalMutation({
               device.preferences,
             );
             return value ? [{ alert: value, state }] : [];
-          })[0];
-          const alert: ActivityAlert | null = changedAlert?.alert ?? null;
-          if (!alert) continue;
-          const notificationState = changedAlert?.state ?? changedState;
+          });
+          // A Time Sensitive alert always arrives as a notification; any other alert already sounded on the activity.
+          const changedAlert = alerts.find(({ alert }) => alert.interruptionLevel)
+            ?? (alertedDevices.has(device.deviceId) ? undefined : alerts[0]);
+          if (!changedAlert) continue;
+          const { alert, state: notificationState } = changedAlert;
           await enqueueJob(ctx, {
             userId: args.userId,
             deviceId: device.deviceId,

@@ -137,6 +137,7 @@ describe("alertForTransition", () => {
     expect(alertForTransition(previous, waiting, defaultNotificationPreferences)).toEqual({
       title: "Session a",
       body: "Approval needed on Home",
+      interruptionLevel: "time-sensitive",
     });
     expect(alertForTransition(waiting, waiting, defaultNotificationPreferences)).toBeNull();
   });
