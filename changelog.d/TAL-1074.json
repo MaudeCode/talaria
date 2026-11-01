@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Files you attach to a message now stay when you switch to another chat and come back, including uploads that failed and can be retried.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

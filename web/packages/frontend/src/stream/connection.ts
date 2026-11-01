@@ -12,6 +12,7 @@ import { invalidateSessionQueries } from '../api/sessionQueries'
 import type { ChatEvent } from '../contracts/sse'
 import type { ChatStartRequest, ChatStartResponse, Session, Attachment } from '../contracts'
 import { forgetOwnSteer, resetComposerReturns, returnStoppedSteer } from '../features/composer/composerReturn'
+import { resetStagedFiles } from '../features/composer/useDraft'
 import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
 import { clearTurnIntents, dispatch, getStreamState, getTurnIntent, setTurnIntent } from './store'
 import { isTerminal } from './reducer'
@@ -450,6 +451,7 @@ export function teardownAll(): void {
   clearTurnIntents()
   endFirstSend()
   resetComposerReturns()
+  resetStagedFiles()
   for (const sid of new Set([...owners.keys(), ...live.keys(), ...Object.keys(getStreamState().turns)])) discardSession(sid)
 }
 
