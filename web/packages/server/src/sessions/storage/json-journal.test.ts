@@ -168,11 +168,26 @@ it('invalidates session deletion, including an already removed directory', async
     expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'session' })
     if (removedExternally) fs.rmSync(join(journal.root(), 'session'), { recursive: true })
     expect(await journal.deleteSession('session')).toBe(!removedExternally)
+    vi.clearAllMocks()
+    expect(await journal.findRunSummary('run')).toBeNull()
+    expect(fs.readdirSync).toHaveBeenCalledTimes(1)
+    // A recreated run's writer records its owner again.
     await writeRun(journal, 'session')
     vi.clearAllMocks()
     expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'session' })
-    expect(fs.readdirSync).toHaveBeenCalledTimes(1)
+    expect(fs.readdirSync).not.toHaveBeenCalled()
   }
+})
+
+it('knows a run owner from its first writer, before any lookup', async () => {
+  const journal = fixture()
+  for (let i = 0; i < 200; i++) fs.mkdirSync(join(journal.root(), `s${String(i).padStart(3, '0')}`), { recursive: true })
+  const writer = await journal.writer('s199', 'run')
+  await writer.appendSseEvent('token', { text: 'live' })
+  vi.clearAllMocks()
+  expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 's199', terminal: false })
+  expect(fs.readdirSync).not.toHaveBeenCalled()
+  await writer.close()
 })
 
 it('isolates identical run IDs in independent roots and rejects invalid IDs before I/O', async () => {

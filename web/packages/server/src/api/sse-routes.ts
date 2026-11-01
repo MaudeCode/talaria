@@ -8,7 +8,7 @@ import { reasoningProjection } from '../sessions/reasoning-display.js'
  * `_handle_session_events_stream`, `_handle_session_run_journal_stream_for_session`).
  */
 import type { RequestContext } from '../http/context.js'
-import { parseRunJournalEventId, PromptReplayFilter, runRowsAfter, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal } from '../sessions/journal.js'
+import { parseRunJournalEventId, PromptReplayFilter, runRowsAfter, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal, type RunSummary } from '../sessions/journal.js'
 import type { SessionJournalReplay } from '../sessions/storage/backend.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
@@ -16,7 +16,7 @@ import type { Session } from '../sessions/session.js'
 import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
-import { streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
+import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
 import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
@@ -213,8 +213,8 @@ async function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, le
   return publicFramePayload(ctx, entry.event, withToolId(payload as Record<string, unknown>, id), entry.redacted)
 }
 
-async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): Promise<{ found: boolean; terminal: boolean }> {
-  const summary = (await ctx.deps.journal.findRunSummary(streamId))
+/** `summary` is the run's journal summary, resolved once by the caller. */
+async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, summary: RunSummary | null, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): Promise<{ found: boolean; terminal: boolean }> {
   if (!summary) return { found: false, terminal: false }
   let terminal = false
   const legacy = new LegacyToolIds(ctx.deps.journal)
@@ -238,11 +238,10 @@ async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: s
   return { found: true, terminal }
 }
 
-async function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: number | null, cutoff: number | null): Promise<boolean> {
+async function journalCoversGap(ctx: RequestContext, streamId: string, summary: RunSummary | null, afterSeq: number | null, cutoff: number | null): Promise<boolean> {
   if (cutoff === null) return false
   const floor = afterSeq === null ? 0 : Math.max(0, afterSeq)
   if (floor >= cutoff) return true
-  const summary = (await ctx.deps.journal.findRunSummary(streamId))
   if (!summary) return false
   const seqs = new Set<number>()
   for await (const e of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
@@ -260,7 +259,7 @@ function interruptedFrame(sessionId: string, streamId: string, dropped: number, 
  * refetch signal follows. When the journal cannot cover the run frames, the interrupted recovery frame is sent instead and
  * this returns false, ending the stream.
  */
-async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, sessionId: string, seq: number | null, floor: number | null, backfill: (range: { afterSeq: number; maxSeq: number }) => Promise<void>): Promise<boolean> {
+async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, sessionId: string, seq: number | null, floor: number | null, backfill: (range: { afterSeq: number; maxSeq: number }, summary: RunSummary | null) => Promise<void>): Promise<boolean> {
   const gap = sub.gap
   if (!gap) return true
   const journaled = gap.firstEventId !== null
@@ -270,11 +269,13 @@ async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSu
   sub.gap = null
   if (journaled || gap.unjournaled) {
     const afterSeq = Math.max((from ?? 1) - 1, floor ?? 0)
-    if (gap.unjournaled || from === null || seq === null || !(await journalCoversGap(ctx, streamId, afterSeq, seq - 1))) {
+    // One summary read serves the coverage check and the backfill.
+    const summary = gap.unjournaled || from === null || seq === null ? null : await ctx.deps.journal.findRunSummary(streamId)
+    if (gap.unjournaled || from === null || seq === null || !(await journalCoversGap(ctx, streamId, summary, afterSeq, seq - 1))) {
       sse.event('apperror', interruptedFrame(sessionId, streamId, gap.dropped, 'The live stream fell behind a slow connection and the run journal cannot backfill the dropped frames.'))
       return false
     }
-    await backfill({ afterSeq, maxSeq: seq - 1 })
+    await backfill({ afterSeq, maxSeq: seq - 1 }, summary)
   }
   for (const [event, data] of gap.signals) sse.event(event, data)
   return true
@@ -302,7 +303,7 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
       if (!item) { sse.comment('heartbeat'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
-      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, async (gap) => { await replayRunJournal(ctx, sse, streamId, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) }))) return
+      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, async (gap, summary) => { await replayRunJournal(ctx, sse, streamId, summary, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) }))) return
       if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
         if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
         continue
@@ -318,19 +319,20 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
-  const owner = (await streamOwnerSessionId(ctx, streamId))
-  if (!(await streamVisibleToRequest(ctx, streamId))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
+  const resolved = await resolveStreamOwner(ctx, streamId)
+  const { owner } = resolved
+  if (!(await streamVisibleToRequest(ctx, streamId, resolved))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {
-    const summary = streamId ? (await ctx.deps.journal.findRunSummary(streamId)) : null
+    const summary = await streamRunSummary(ctx, streamId, resolved)
     if (!summary) { (await ctx.json({ error: 'stream not found' }, { status: 404 })); return }
     let afterSeq = cursor.afterSeq
     if (afterSeq !== null && afterSeq > (summary.last_seq || 0)) afterSeq = 0
     const sse = (await claimOrReject(ctx, true))
     if (!sse) return
     sse.start()
-    try { await replayRunJournal(ctx, sse, streamId, afterSeq) } finally { sse.end() }
+    try { await replayRunJournal(ctx, sse, streamId, summary, afterSeq) } finally { sse.end() }
     return
   }
   const [sub, snapshot] = channel.subscribeWithSnapshot()
@@ -350,11 +352,12 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
       const cursorCoversSnapshot = snapshotCutoff !== null && afterSeq >= snapshotCutoff
       const droppedGapRequired = snapshot.offline_dropped_events > 0 && !cursorCoversSnapshot && (firstBuffered === null || afterSeq < firstBuffered - 1)
       const gapRequired = droppedGapRequired || (replayMaxSeq !== null && replayMaxSeq > afterSeq)
-      const covered = !gapRequired || (await journalCoversGap(ctx, streamId, afterSeq, replayMaxSeq))
+      const summary = await streamRunSummary(ctx, streamId, resolved)
+      const covered = !gapRequired || (await journalCoversGap(ctx, streamId, summary, afterSeq, replayMaxSeq))
       let replayed = false
       let terminalReplayed = false
       if (covered) {
-        const result = await replayRunJournal(ctx, sse, streamId, afterSeq, { maxSeq: replayMaxSeq, includeStale: false })
+        const result = await replayRunJournal(ctx, sse, streamId, summary, afterSeq, { maxSeq: replayMaxSeq, includeStale: false })
         replayed = result.found
         terminalReplayed = result.terminal
         if (replayed) replayCutoffSeq = replayMaxSeq

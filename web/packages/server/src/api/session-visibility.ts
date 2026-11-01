@@ -8,6 +8,7 @@ import { os as orpcBase } from '@orpc/server'
 import { HttpError, type ApiContext } from './router.js'
 import type { RequestContext } from '../http/context.js'
 import { isSafeSessionId } from '../sessions/session.js'
+import type { RunSummary } from '../sessions/journal.js'
 
 /** Python `_request_session_visibility_exempt`: detail-load owns the mismatch so the frontend can switch profiles; import and chat/start (placeholder retag) run their own rules. */
 const EXEMPT_PROCEDURES = new Set(['session.get', 'session.import', 'chat.start'])
@@ -42,19 +43,27 @@ export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(
   return next()
 })
 
+/** A stream's owner, with the journal summary it came from; `summary` is undefined when the live registry answered. */
+export interface StreamOwner { owner: string | null; summary?: RunSummary | null }
+
 /** Python `_stream_id_owner_session_id`: the live registry first, then the run journal once the run has finished. */
-export async function streamOwnerSessionId(ctx: RequestContext, streamId: string): Promise<string | null> {
+export async function resolveStreamOwner(ctx: RequestContext, streamId: string): Promise<StreamOwner> {
   const id = streamId.trim()
-  if (!id) return null
+  if (!id) return { owner: null }
   const live = ctx.deps.registry.ownerSessionId(id)
-  if (live) return live
-  if (!isSafeSessionId(id)) return null
-  return (await ctx.deps.journal.findRunSummary(id))?.session_id || null
+  if (live) return { owner: live }
+  if (!isSafeSessionId(id)) return { owner: null }
+  const summary = await ctx.deps.journal.findRunSummary(id)
+  return { owner: summary?.session_id || null, summary }
+}
+
+/** The resolved journal summary, read now only when the live registry answered the owner lookup. */
+export async function streamRunSummary(ctx: RequestContext, streamId: string, resolved: StreamOwner): Promise<RunSummary | null> {
+  return resolved.summary !== undefined ? resolved.summary : streamId ? await ctx.deps.journal.findRunSummary(streamId) : null
 }
 
 /** Python `_stream_id_visible_to_request_profile`: a stream is visible when its owner session is (or it has no known owner). */
-export async function streamVisibleToRequest(ctx: RequestContext, streamId: string): Promise<boolean> {
+export async function streamVisibleToRequest(ctx: RequestContext, streamId: string, { owner }: StreamOwner): Promise<boolean> {
   if (!ctx.deps.registry.visible(streamId.trim())) return false
-  const owner = (await streamOwnerSessionId(ctx, streamId))
   return !owner || (await sessionIdVisibleToRequest(ctx, owner))
 }

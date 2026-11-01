@@ -219,7 +219,9 @@ It protects active writers during pruning. Sidecar frames are processed in order
 arrival timestamps remain authoritative for event times, tool durations and metering even when storage is slow.
 The JSON journal keeps at most 1,000 recently used run-to-session resolutions per backend instance.
 Each lookup rechecks the resolved journal or pruned summary and reads its current contents; missing paths
-fall back to discovery and misses are never cached. Session deletion and backend close release cached owners.
+fall back to discovery and misses are never cached. A run writer records its owner when it opens, so a run started
+by this server never needs discovery. Session deletion and backend close release cached owners. SSE and chat
+stream handlers resolve a stream's owner and journal summary once per request (or per gap recovery) and pass it on.
 Per-session SSE reconnects read each journal asynchronously once. The replay result owns a request-local
 continuation that reads only the active run's appended bytes before handing off to the live queue.
 The continuation shares the replay's byte/row limits and checks file identity and contiguous sequence;

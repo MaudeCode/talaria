@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reconnecting to a chat stream reads its run journal once instead of up to four times.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

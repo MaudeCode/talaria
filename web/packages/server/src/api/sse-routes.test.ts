@@ -1,13 +1,15 @@
 import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { JsonJournal } from '../sessions/storage/json-journal.js'
 import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
 
 const io = vi.hoisted(() => ({ full: [] as string[], asyncFull: [] as string[], tails: [] as { path: string; position: number }[] }))
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
-  return { ...real, readFileSync: vi.fn((...args: Parameters<typeof fs.readFileSync>) => {
+  return { ...real, readdirSync: vi.fn(real.readdirSync), readFileSync: vi.fn((...args: Parameters<typeof fs.readFileSync>) => {
     if (String(args[0]).endsWith('.jsonl')) io.full.push(String(args[0]))
     return real.readFileSync(...args)
   }) }
@@ -208,4 +210,31 @@ it.each(['chat', 'session'])('%s stream backfill of dropped frames omits a settl
   channel.put(['token', row.payload, row.event_id])
   const frames = await received
   expect(frames.filter((f) => f.id).map((f) => [f.event, f.id])).toEqual([['tool', 'live:1'], ['tool_complete', 'live:3'], ['approval', 'live:4'], ['token', 'live:5']])
+})
+
+it('chat reconnect among 200 session journals lists the journals root once in total and never once warm', async () => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  const journal = s.deps.journal as JsonJournal
+  for (let i = 0; i < 200; i++) fs.mkdirSync(join(journal.root(), `s${String(i).padStart(3, '0')}`), { recursive: true })
+  // A run written before a restart: another journal on the same directory leaves this server's owner map cold.
+  const before = new JsonJournal(journal.sessionDir)
+  const writer = await before.writer(sid, 'ended')
+  for (const [event, payload] of [['token', { text: 'a' }], ['token', { text: 'b' }], ['done', {}]] as const) await writer.appendSseEvent(event, payload)
+  await writer.close()
+  await before.close()
+  const lookups = vi.spyOn(journal, 'findRunSummary')
+  const reconnect = async (streamId: string, until: string): Promise<{ ids: (string | null)[]; listings: number; lookups: number }> => {
+    vi.mocked(fs.readdirSync).mockClear(); lookups.mockClear()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.id === until, { headers: { 'Last-Event-ID': `${streamId}:1` }, timeoutMs: 2000 })
+    return { ids: frames.map((f) => f.id), listings: vi.mocked(fs.readdirSync).mock.calls.filter(([path]) => String(path) === journal.root()).length, lookups: lookups.mock.calls.length }
+  }
+  expect(await reconnect('ended', 'ended:3')).toEqual({ ids: ['ended:2', 'ended:3'], listings: 1, lookups: 1 })
+  expect(await reconnect('ended', 'ended:3')).toEqual({ ids: ['ended:2', 'ended:3'], listings: 0, lookups: 1 })
+  // A run started on this server is warm from its first row.
+  const channel = liveRun(s, sid, 'live')
+  const [otherTab] = channel.subscribeWithSnapshot()
+  await writeRun(s, sid, 'live', [['token', { text: 'a' }], ['token', { text: 'b' }], ['token', { text: 'c' }]], 1, channel)
+  channel.unsubscribe(otherTab)
+  expect(await reconnect('live', 'live:3')).toEqual({ ids: ['live:2', 'live:3'], listings: 0, lookups: 1 })
 })
