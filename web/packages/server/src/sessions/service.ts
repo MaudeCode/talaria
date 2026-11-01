@@ -18,7 +18,7 @@ import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maud
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, pruneSidebarParents, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionStore } from './store.js'
@@ -1498,7 +1498,8 @@ export class SessionService {
     else if (opts.projectId) rows = rows.filter((r) => str(r.project_id) === opts.projectId)
     const query = q.toLowerCase().trim()
     const base = { all_profiles: params.allProfiles, active_profile: this.deps.activeProfile(), include_archived: params.includeArchived, sidebar_filtered: true }
-    if (!query) return { ...base, sessions: rows }
+    // TAL-1151: a match nests only under a parent that is also listed.
+    if (!query) return { ...base, sessions: pruneSidebarParents(rows) }
     const terms = sessionSearchTerms(query)
     const metadataMatch = (row: Row) => ['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => sessionSearchMatches(str(row[k]), terms))
     const matches = opts.content ? await this.store.searchMessages(rows.filter((row) => !sessionSearchMatches(str(row.title), terms) && !metadataMatch(row)).map((row) => str(row.session_id)), terms, opts.depth) : new Map<string, { idx: number; text: string }>()
@@ -1511,7 +1512,7 @@ export class SessionService {
         if (hit) results.push({ ...row, ...this.contentMatch(hit.text, terms) })
       }
     }
-    return { ...base, sessions: results, query, count: results.length }
+    return { ...base, sessions: pruneSidebarParents(results), query, count: results.length }
   }
 
   /** The first of a stored session's first `depth` messages (0: all) containing every term, with its redacted excerpt. */

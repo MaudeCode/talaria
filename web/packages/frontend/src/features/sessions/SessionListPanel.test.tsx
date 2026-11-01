@@ -66,6 +66,42 @@ describe('SessionListPanel search (TAL-308)', () => {
   })
 })
 
+describe('nested subagent rows (TAL-1151)', () => {
+  const parent = row('web-parent', 'Plan the release', { project_id: 'p1', sort_ts: now - 100 })
+  const child = row('sub-web', 'Subagent Session', { project_id: 'p1', sort_ts: now - 50, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'web-parent' })
+  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sort_ts: now - 200 })
+  const cliChild = row('sub-cli', 'Subagent Session', { sort_ts: now - 20, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'cli-host' })
+  const orphan = row('sub-orphan', 'Subagent Session', { sort_ts: now - 10, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: null })
+  const nested = () => [...document.querySelectorAll('.session-item-nested')].map((el) => el.getAttribute('data-sid'))
+
+  it('renders each linked row under its parent and hides it with the parent\'s filtered-out row', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host] } as never)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Plan the release')
+    expect(shown()).toEqual(['sub-orphan', 'web-parent', 'sub-web'])
+    expect(nested()).toEqual(['sub-web'])
+    expect(screen.getByRole('button', { name: 'WebUI sessions (3)' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'CLI sessions (2)' }))
+    expect(shown()).toEqual(['cli-host', 'sub-cli'])
+    expect(nested()).toEqual(['sub-cli'])
+    await userEvent.click(screen.getByRole('button', { name: 'WebUI sessions (3)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Unassigned' }))
+    expect(shown()).toEqual(['sub-orphan'])
+    await userEvent.click(screen.getByRole('button', { name: 'Proj' }))
+    expect(shown()).toEqual(['web-parent', 'sub-web'])
+  })
+
+  it('nests a search match only under a parent the server matched too', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host] } as never)
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...child, match_type: 'title' }, { ...parent, match_type: 'title' }, { ...orphan, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Plan the release')
+    await userEvent.type(screen.getByRole('searchbox'), 'session')
+    await waitFor(() => { expect(shown()).toEqual(['web-parent', 'sub-web', 'sub-orphan']) })
+    expect(nested()).toEqual(['sub-web'])
+  })
+})
+
 describe('sidebar search work (TAL-1390)', () => {
   it('debounces a burst into one request and aborts it when the next term settles', async () => {
     vi.mocked(api.searchSessions).mockReturnValue(new Promise(() => undefined))

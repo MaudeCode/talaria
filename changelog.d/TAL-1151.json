@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With CLI sessions shown, subagent sessions appear under the chat that started them, in its project and tab, instead of as separate rows.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
