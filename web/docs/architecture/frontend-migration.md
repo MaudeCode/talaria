@@ -221,7 +221,9 @@ reconciliation finishes. Failed reconciliation retains the intent and offers a r
 
 `GET /api/bootstrap` returns public runtime configuration and initial state in
 one validated payload: `webuiVersion`, `maxUploadBytes`, `csrfToken` (empty
-when unauthenticated or auth disabled), `language`, `auth` (the
+when unauthenticated or auth disabled), `language` (the explicitly saved
+setting, empty when none is saved or unauthenticated), `browser_language` (the
+request's negotiated `Accept-Language` locale, or `en`), `auth` (the
 `/api/auth/status` payload), `onboarding` (`needs_onboarding`), `profile`
 (active profile summary), `features` (dashboard link availability, terminal
 remote backend, extension platform enabled). It replaces the inline
