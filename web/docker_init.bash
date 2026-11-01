@@ -223,6 +223,50 @@ load_env() {
   fi
 }
 
+# Inline helper for `find ... -exec sh -c "$_chown_tolerating_vanished" NAME
+# ROOT OWNER {} +`. Two-container compose shares ~/.hermes with a running Agent
+# that replaces files atomically (write temp + rename), so an entry find listed
+# can be gone before chown reaches it. A failed batch is retried per entry, and
+# only chown's own single ENOENT diagnostic for a descendant of ROOT is
+# tolerated; EACCES, EROFS, EIO, an empty or extra diagnostic, and the root
+# itself still fail the walk. Absence is never inferred from `test -e`.
+_chown_tolerating_vanished='
+  root=$1; owner=$2; shift 2
+  chown -h "$owner" "$@" 2>/dev/null && exit 0
+  for f in "$@"; do
+    err=$(LC_ALL=C chown -h "$owner" "$f" 2>&1) && continue
+    if [ "$f" != "$root" ]; then
+      case "$err" in
+        *"
+"*) ;;
+        "chown: "*": No such file or directory") continue ;;
+      esac
+    fi
+    printf "%s\n" "${err:-chown -h $owner $f failed without a diagnostic}" >&2
+    exit 1
+  done
+'
+
+# Run find from ROOT, tolerating only entries that vanish mid-walk.
+# -ignore_readdir_race covers an entry that vanishes before find stats it, but
+# find still reports a directory that vanished before it could be opened and
+# exits non-zero. Its "No such file or directory" diagnostics for descendants of
+# ROOT are accepted; any other diagnostic, including the chown helper's, one for
+# ROOT itself or a failure without a diagnostic, fails the walk.
+find_tolerating_vanished() {
+  local root="$1" err rc=0 line
+  shift
+  err=$(LC_ALL=C find "$root" -ignore_readdir_race "$@" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ -n "$err" ] || { echo "find exited with status $rc" >&2; return 1; }
+  while IFS= read -r line; do
+    case "$line" in
+      "find: '$root/"*"': No such file or directory") ;;
+      *) printf "%s\n" "$err" >&2; return 1 ;;
+    esac
+  done <<< "$err"
+}
+
 chown_home_hermeswebui() {
   # macOS Docker bind mounts can expose hermes-agent git object packs as
   # read-only host files. The runtime only needs to read those existing objects;
@@ -236,10 +280,59 @@ chown_home_hermeswebui() {
   # source — prune the entire hermes-agent path from the chown walk so a
   # read-only or partially-read-only mount doesn't break the rest of the home
   # ownership alignment.
-  find /home/hermeswebui \
+  find_tolerating_vanished /home/hermeswebui \
     -path "/home/hermeswebui/.hermes/hermes-agent" -prune \
     -o -name ".git" -prune \
-    -o -exec chown -h "${WANTED_UID}:${WANTED_GID}" {} +
+    -o -exec sh -c "$_chown_tolerating_vanished" chown_home_hermeswebui /home/hermeswebui "${WANTED_UID}:${WANTED_GID}" {} +
+}
+
+# `usermod -u` used to move the old UID's files to the new UID anywhere under
+# the home. Its walk is skipped (see align_hermeswebui_identity), so this gives
+# the subtrees chown_home_hermeswebui prunes the same old-UID-only migration:
+# every .git directory (git refuses repositories owned by another user) and the
+# hermes-agent checkout when it is writable. Like usermod, only the UID changes
+# and symlinks are not followed. A read-only Agent source mount is left alone.
+migrate_home_old_uid() {
+  local old_uid="$1" agent="/home/hermeswebui/.hermes/hermes-agent" skip_agent=()
+  [ -w "$agent" ] || skip_agent=(-path "$agent" -prune -o)
+  find_tolerating_vanished /home/hermeswebui "${skip_agent[@]}" -uid "$old_uid" \
+    -exec sh -c "$_chown_tolerating_vanished" migrate_home_old_uid /home/hermeswebui "${WANTED_UID}" {} +
+}
+
+# Align the hermeswebui account with WANTED_UID/WANTED_GID and its home with
+# that identity. Argument: "true" when /etc/passwd or /etc/group is read-only.
+align_hermeswebui_identity() {
+  local readonly_root="$1" old_uid old_gid passwd_home nohome usermod_rc=0
+  old_uid=$(id -u hermeswebui) || error_exit "Failed to read UID of hermeswebui user"
+  old_gid=$(id -g hermeswebui) || error_exit "Failed to read GID of hermeswebui user"
+  if [ "A${readonly_root}" == "Atrue" ]; then
+    if [ "A${old_gid}" == "A${WANTED_GID}" ] && [ "A${old_uid}" == "A${WANTED_UID}" ]; then
+      echo "  -- Skipping groupmod/usermod — hermeswebui already has UID ${WANTED_UID} GID ${WANTED_GID} and root fs is read-only"
+    else
+      error_exit "Cannot modify /etc/group or /etc/passwd (read-only root fs). Set UID=${old_uid} and GID=${old_gid} to match, or run without read_only=true. See issue #1470."
+    fi
+  else
+    groupmod -o -g "${WANTED_GID}" hermeswebui || error_exit "Failed to set GID of hermeswebui user"
+    if [ "A${old_uid}" != "A${WANTED_UID}" ]; then
+      # usermod -u also chowns the old UID's files under the home and aborts on
+      # the first entry that vanishes mid-walk, which a running Agent causes in
+      # the shared ~/.hermes. Pointing the home at a path that does not exist for
+      # that one call skips its walk; the configured home is restored whether or
+      # not the UID change succeeded, and the race-tolerant walks below replace it.
+      passwd_home=$(getent passwd hermeswebui | cut -d: -f6)
+      [ -n "$passwd_home" ] || error_exit "Failed to read home directory of hermeswebui user"
+      nohome="/nonexistent-hermeswebui-home.$$"
+      [ ! -e "$nohome" ] || error_exit "Unexpected path $nohome exists"
+      usermod -o -u "${WANTED_UID}" -d "$nohome" hermeswebui || usermod_rc=$?
+      usermod -d "$passwd_home" hermeswebui || error_exit "Failed to restore home directory of hermeswebui user"
+      [ "$usermod_rc" -eq 0 ] || error_exit "Failed to set UID of hermeswebui user"
+    fi
+  fi
+
+  chown_home_hermeswebui || error_exit "Failed to set owner of /home/hermeswebui"
+  if [ "A${old_uid}" != "A${WANTED_UID}" ]; then
+    migrate_home_old_uid "$old_uid" || error_exit "Failed to move files of UID ${old_uid} under /home/hermeswebui to UID ${WANTED_UID}"
+  fi
 }
 
 # The production image does not ship sudo. The entrypoint starts as root only
@@ -248,29 +341,14 @@ chown_home_hermeswebui() {
 if [ "A${whoami}" == "Aroot" ]; then
   echo "-- Running as root for one-time container init; will switch to hermeswebui"
 
-  # We are altering the UID/GID of the hermeswebui user to the desired ones and restarting as that user
-  # using usermod for the already created hermeswebui user, knowing it is not already in use
-  # per usermod manual: "You must make certain that the named user is not executing any processes when this command is being executed"
   # Guard for read-only root filesystem (podman with read_only=true, issue #1470).
   _readonly_root=false
   if ! sh -c 'test -w /etc/group && test -w /etc/passwd' 2>/dev/null; then
     _readonly_root=true
     echo "  !! Detected read-only root filesystem — /etc/group or /etc/passwd is not writable"
   fi
-  if [ "A${_readonly_root}" == "Atrue" ]; then
-    _current_hermeswebui_gid=$(id -g hermeswebui 2>/dev/null || echo "")
-    _current_hermeswebui_uid=$(id -u hermeswebui 2>/dev/null || echo "")
-    if [ "A${_current_hermeswebui_gid}" == "A${WANTED_GID}" ] && [ "A${_current_hermeswebui_uid}" == "A${WANTED_UID}" ]; then
-      echo "  -- Skipping groupmod/usermod — hermeswebui already has UID ${WANTED_UID} GID ${WANTED_GID} and root fs is read-only"
-    else
-      error_exit "Cannot modify /etc/group or /etc/passwd (read-only root fs). Set UID=${_current_hermeswebui_uid} and GID=${_current_hermeswebui_gid} to match, or run without read_only=true. See issue #1470."
-    fi
-  else
-    groupmod -o -g "${WANTED_GID}" hermeswebui || error_exit "Failed to set GID of hermeswebui user"
-    usermod -o -u "${WANTED_UID}" hermeswebui || error_exit "Failed to set UID of hermeswebui user"
-  fi
-
-  chown_home_hermeswebui || error_exit "Failed to set owner of /home/hermeswebui"
+  # usermod requires that hermeswebui is not running any process yet, which holds in this root phase.
+  align_hermeswebui_identity "$_readonly_root"
 
   echo ""; echo "-- Preparing /app for the hermeswebui runtime user"
   mkdir -p /app || error_exit "Failed to create /app directory"

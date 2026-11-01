@@ -169,8 +169,10 @@ function the compiler skips; a skipped function still builds, unmemoized. Lint m
   The two- and three-container variants also import the staged Agent and send a
   Web API chat through the sidecar to a loopback stub provider. Use
   `python3 scripts/check-docker.py two-container --agent-release v0.22.3`
-  from the repository root to check an older release from `sidecar/agent_support.json`. The Python selector's
-  isolated unit checks run with `python3 scripts/lib/test_agent_python.py` from `web/`.
+  from the repository root to check an older release from `sidecar/agent_support.json`. Every variant also
+  checks the runtime UID, the passwd home and a restart. The Python selector's and the entrypoint ownership
+  helpers' isolated unit checks run with `python3 -m unittest discover -s scripts/lib -p 'test_*.py'`
+  from `web/`; the ownership checks drive `docker_init.bash` through PATH stubs and never run `usermod`.
   `python3 ../scripts/check-docker.py agent-upgrade` checks both multi-container
   layouts on disposable named volumes, upgrading the oldest and previous supported
   Agent images to the active pin. It verifies the CLI version, Python, unchanged
