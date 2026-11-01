@@ -114,7 +114,7 @@ struct InsightsDailyChart: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 6))
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
                     }
             }
         }

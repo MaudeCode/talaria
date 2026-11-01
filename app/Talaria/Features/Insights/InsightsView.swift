@@ -168,9 +168,8 @@ struct InsightsView: View {
             }
     }
 
-    private var tabBackground: Color {
-        tab == .quotas && !visibleQuotaSources.isEmpty ? Color(.systemBackground) : Color(.systemGroupedBackground)
-    }
+    /// Both tabs are plain lists on the system background: no cards anywhere on Insights.
+    private var tabBackground: Color { Color(.systemBackground) }
 
     @ViewBuilder
     private var content: some View {
@@ -318,7 +317,7 @@ struct InsightsView: View {
             List {
                 analyticsSections
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
             .refreshable {
                 await loadInsights()
             }
@@ -367,35 +366,35 @@ struct InsightsView: View {
             }
         }
         .pickerStyle(.segmented)
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
-        .listRowBackground(Color.clear)
+        .listRowInsets(Self.usageInsets)
         .listRowSeparator(.hidden)
 
         Section {
             InsightsStatGrid(stats: summaryStats)
+                .listRowInsets(Self.usageInsets)
+                .listRowSeparator(.hidden)
         } header: {
-            HStack {
-                Text(viewModel.periodTitle)
-                if viewModel.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Refreshing usage analytics")
-                }
-            }
-            .textCase(.uppercase)
+            usageHeader(viewModel.periodTitle, isRefreshing: viewModel.isLoading)
         }
 
         if viewModel.dailyTokens.count > 1 {
-            Section("Daily") {
+            Section {
                 InsightsDailyChart(days: viewModel.dailyTokens, metric: $dailyMetric)
+                    .listRowInsets(Self.usageInsets)
+                    .listRowSeparator(.hidden)
+            } header: {
+                usageHeader(String(localized: "Daily"))
             }
         }
 
         if !viewModel.modelBreakdowns.isEmpty {
-            Section("Models") {
+            Section {
                 ForEach(Array(viewModel.modelBreakdowns.prefix(10).enumerated()), id: \.offset) { _, model in
                     ModelBreakdownRow(model: model)
+                        .listRowInsets(Self.usageInsets)
                 }
+            } header: {
+                usageHeader(String(localized: "Models"))
             }
         }
 
@@ -407,8 +406,10 @@ struct InsightsView: View {
                     summary: InsightsActivitySummary.weekday(viewModel.peakDay),
                     identifier: "insights-weekday-chart"
                 )
+                .listRowInsets(Self.usageInsets)
+                .listRowSeparator(.hidden)
             } header: {
-                activityHeader("By weekday", summary: InsightsActivitySummary.weekday(viewModel.peakDay))
+                usageHeader(String(localized: "By weekday"), detail: InsightsActivitySummary.weekday(viewModel.peakDay))
             }
         }
 
@@ -420,8 +421,10 @@ struct InsightsView: View {
                     summary: InsightsActivitySummary.hour(viewModel.peakHour),
                     identifier: "insights-hour-chart"
                 )
+                .listRowInsets(Self.usageInsets)
+                .listRowSeparator(.hidden)
             } header: {
-                activityHeader("By hour", summary: InsightsActivitySummary.hour(viewModel.peakHour))
+                usageHeader(String(localized: "By hour"), detail: InsightsActivitySummary.hour(viewModel.peakHour))
             }
         }
 
@@ -429,18 +432,38 @@ struct InsightsView: View {
             Text(viewModel.sourceDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .listRowInsets(Self.usageInsets)
+                .listRowSeparator(.hidden)
         }
     }
 
-    private func activityHeader(_ title: LocalizedStringKey, summary: String?) -> some View {
-        HStack {
+    /// The Quotas rows' insets, so both tabs share one left edge.
+    private static let usageInsets = EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20)
+
+    /// A plain-list section header: the title, an optional detail (the peak) on the right, and the refresh spinner.
+    private func usageHeader(_ title: String, detail: String? = nil, isRefreshing: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline) {
             Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            if isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Refreshing usage analytics")
+            }
             Spacer(minLength: 8)
-            if let summary {
-                Text(summary)
-                    .textCase(nil)
+            if let detail {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .listRowInsets(EdgeInsets())
     }
 
     private var summaryStats: [InsightsStat] {
