@@ -539,6 +539,7 @@ export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, t
 /** `accepted: false` with a `fallback` reason means the message was not delivered; the caller keeps the draft. */
 /** TAL-460: a steer sent while a background turn runs starts the user's own turn instead; `started_turn` is its start response. */
 export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional(), started_turn: ChatStartResponseSchema.optional() })
+export type SteerResponse = z.infer<typeof SteerResponseSchema>
 
 export const ApprovalPendingSchema = z.looseObject({
   allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional()

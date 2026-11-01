@@ -289,5 +289,283 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.session_new": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "message"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "stream_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_id",
+        "title",
+        "stream_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.session_send": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id",
+        "message"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "started",
+            "queued"
+          ]
+        },
+        "stream_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "steer_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "outcome",
+        "stream_id",
+        "steer_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.session_wait": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_s": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "ended",
+            "not_running",
+            "timeout",
+            "cancelled"
+          ]
+        },
+        "is_streaming": {
+          "type": "boolean"
+        },
+        "run_state": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "starting",
+                "running",
+                "waiting_for_approval",
+                "waiting_for_input",
+                "completed",
+                "failed",
+                "cancelled",
+                "stale"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_assistant_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_id",
+        "outcome",
+        "is_streaming",
+        "run_state",
+        "last_assistant_message",
+        "truncated"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.session_interrupt": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "activity_phase": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "running",
+            "waiting_for_approval",
+            "waiting_for_input",
+            "completed",
+            "failed",
+            "cancelled",
+            "stale"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "cancelled": {
+          "type": "boolean"
+        },
+        "stream_id": {
+          "type": "string"
+        },
+        "withdrawn_steers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "steer_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "edit",
+                  "cancel",
+                  "stopped",
+                  "followup"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "steer_id",
+              "reason",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "cancelled"
+      ],
+      "additionalProperties": {}
+    }
   }
 }

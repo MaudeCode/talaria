@@ -3,7 +3,7 @@
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
 import { redactFeedbackText } from './feedback.js'
-import { SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SESSION_WAIT_DEFAULT_S, SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
@@ -41,6 +41,8 @@ import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
 import { sidebarListSelection } from './api/sessions-router.js'
+import { str } from './util.js'
+import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { JsonStorage } from './sessions/storage/json.js'
 import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
 import type { StorageBackend } from './sessions/storage/backend.js'
@@ -697,29 +699,81 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       throw error
     }
   }
-  /** Run `fn` as a request bound to the calling session: its profile scopes every read and gate. */
+  /**
+   * Run `fn` as a request bound to the calling session: its profile scopes every read and gate. A route's refusal
+   * (`HttpFailure`) reaches the agent as the tool's error, with the route's code as its condition.
+   */
   const asCaller = async <T>(callerId: string, fn: (caller: Session) => Promise<T>): Promise<T> => {
     const caller = await storedSession(callerId)
     if (!caller) throw new SidecarServerError(`no Talaria session ${callerId}`, 'caller_unknown')
-    return requestScope.run({ requestProfile: caller.profile ?? 'default' }, () => fn(caller))
+    try {
+      return await requestScope.run({ requestProfile: caller.profile ?? 'default' }, () => fn(caller))
+    } catch (error) {
+      if (error instanceof HttpFailure) throw new SidecarServerError(error.message, typeof error.extra.code === 'string' ? error.extra.code : 'refused')
+      throw error
+    }
   }
   /**
-   * TAL-1167: the session whose queue a tool manages: in the caller's profile (another profile's reads as unknown), never
-   * the caller (its own queue drains only after its turn ends), and writable (else the server's read-only reason).
+   * TAL-1165, TAL-1167: the session a tool acts on: in the caller's profile (another profile's reads as unknown), never
+   * the caller (`self`, why it cannot be), and writable: not read-only or a view-only subagent child (else the reason).
    */
-  const queueTarget = async (caller: Session, targetId: string): Promise<Session> => {
+  const sessionTarget = async (caller: Session, targetId: string, self: string): Promise<Session> => {
     const target = await storedSession(targetId)
     if (!target || !profilesMatch(target.profile, caller.profile)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
-    if (target.session_id === caller.session_id) throw new SidecarServerError('a session cannot manage its own queue; it is delivered after your turn ends', 'self_target')
+    if (target.session_id === caller.session_id) throw new SidecarServerError(self, 'self_target')
     const readOnly = await sessions.readOnlyReason(target)
+      ?? ((await sessions.isSubagentViewOnly(target.session_id)) ? 'Subagent sessions are view-only and cannot be written from WebUI' : null)
     if (readOnly) throw new SidecarServerError(readOnly, 'read_only')
     return target
+  }
+  const queueTarget = (caller: Session, targetId: string) => sessionTarget(caller, targetId, 'a session cannot manage its own queue; it is delivered after your turn ends')
+  const runTarget = (caller: Session, targetId: string) => sessionTarget(caller, targetId, 'a session cannot message, wait on or stop its own turn')
+  /** The toolsets a session's turns run with: its own selection, else its profile's defaults, as the sidecar resolves them. */
+  const effectiveToolsets = async (s: Session): Promise<Set<string>> => {
+    if (!sidecar) throw new SidecarServerError('the Agent sidecar is not running', 'sidecar_unavailable')
+    return new Set((await sidecar.call('toolsets.catalog', { profile_home: profileHome(s.profile ?? 'default'), enabled_toolsets: s.enabled_toolsets })).selected_toolsets)
+  }
+  /**
+   * TAL-1165: work a caller hands on runs with no more access than the caller's own, so a prompt-injected caller cannot
+   * enlist a session with YOLO on or a toolset it lacks to act without the caller's approvals.
+   */
+  const assertNoWiderThanCaller = async (caller: Session, target: Session): Promise<void> => {
+    const refuse = (why: string) => new SidecarServerError(`session ${target.session_id} has more access than this one (${why})`, 'exceeds_caller')
+    if (yoloSessions.has(target.session_id) && !yoloSessions.has(caller.session_id)) throw refuse('YOLO is on')
+    if (JSON.stringify(target.enabled_toolsets) === JSON.stringify(caller.enabled_toolsets)) return
+    const allowed = await effectiveToolsets(caller)
+    const extra = [...(await effectiveToolsets(target))].filter((name) => !allowed.has(name))
+    if (extra.length) throw refuse(`toolsets: ${extra.join(', ')}`)
   }
   sidecar?.serveSidecarRequests?.({
     'server.session_list': ({ caller_session_id, query }) => asCaller(caller_session_id, async (caller) => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false))),
     'server.queue_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => sessions.agentQueue(await queueTarget(caller, session_id))),
     'server.queue_send_now': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.sendSteerNow((await queueTarget(caller, session_id)).session_id, steer_id)),
     'server.queue_withdraw': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.withdrawSteer((await queueTarget(caller, session_id)).session_id, steer_id, 'cancel')),
+    // TAL-1165: the route services behind `/api/session/new`, `/api/chat/start`, `/api/chat/steer` and `/api/chat/cancel`.
+    'server.session_new': ({ caller_session_id, message, title }) => asCaller(caller_session_id, async (caller) => {
+      // The new chat runs with the caller's toolsets, not the profile's defaults, and starts without YOLO.
+      const created = await sessions.create({ enabled_toolsets: caller.enabled_toolsets })
+      if (title?.trim()) await sessions.rename(created.session_id, title.trim())
+      const started = await startSessionChat(deps, { session_id: created.session_id, message })
+      return { session_id: created.session_id, title: str(started.title) || (await store.get(created.session_id, { metadataOnly: true })).title, stream_id: started.stream_id ? str(started.stream_id) : null }
+    }),
+    'server.session_send': ({ caller_session_id, session_id, message }) => asCaller(caller_session_id, async (caller) => {
+      const target = await runTarget(caller, session_id)
+      await assertNoWiderThanCaller(caller, target)
+      return sendSessionMessage(deps, target.session_id, message)
+    }),
+    'server.session_wait': ({ caller_session_id, session_id, timeout_s }) => asCaller(caller_session_id, async (caller) => {
+      const target = await runTarget(caller, session_id)
+      const streamId = registry.activeRunStreamForSession(target.session_id)
+      const outcome = streamId ? await turns.waitForRun(streamId, (timeout_s ?? SESSION_WAIT_DEFAULT_S) * 1000, registry.activeRunStreamForSession(caller.session_id)) : 'not_running'
+      return sessions.agentWaitResult(target.session_id, outcome)
+    }),
+    'server.session_interrupt': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => {
+      const target = await runTarget(caller, session_id)
+      const streamId = registry.activeRunStreamForSession(target.session_id) ?? (str(target.active_stream_id) || null)
+      return streamId ? cancelSessionStream(deps, streamId, target.session_id) : { ok: true, cancelled: false }
+    }),
   })
   const deps: AppDeps = {
     config,

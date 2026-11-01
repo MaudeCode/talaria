@@ -1,5 +1,6 @@
 /** Shared admission for interactive sends and explicitly started serial queues. */
-import { MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult, type PromptQueueCard } from '@maudecode/talaria-web-contracts'
+import { MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult, type PromptQueueCard, type SidecarServerResultInput, type SteerResponse, type SteerWithdrawn, type SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import { randomUUID } from 'node:crypto'
 import type { AppDeps } from '../http/context.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { ensureAgentRuntimeCurrent, HttpFailure } from './service.js'
@@ -153,4 +154,43 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   const response = (await deps.turns.start(s, { timing, admissionCheck, msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, skillSecret: body.skill_secret === true, ...settle }))
   if (response._status !== undefined && response._status >= 400) throw new HttpFailure(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
+}
+
+/**
+ * `chat.steer` for a visible session: queue `text` as a pending steer on its running turn (TAL-424). A steer sent while
+ * a background turn runs starts the user's turn through `start` instead (TAL-460).
+ */
+export async function steerSessionChat(deps: AppDeps, sid: string, text: string, displayText: string, steerId: string, start: (body: Record<string, unknown>) => Promise<Record<string, unknown>>): Promise<SteerResponse> {
+  const active = deps.registry.activeRunStreamForSession(sid)
+  if (active && deps.registry.activeRuns.get(active)?.origin === 'background') {
+    const started = await start({ session_id: sid, message: text })
+    return { accepted: true, fallback: null, stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: steerId, started_turn: started }
+  }
+  // TAL-817: a prompt built-in steers with its expansion; the steer still shows as typed. A missing session is the steer's to report.
+  let target: Session | null = null
+  try { target = (await deps.sessionStore.get(sid, { metadataOnly: true })) } catch { target = null }
+  const prompt = target ? await expandPromptBuiltin(deps, target, text, undefined) : null
+  return (await deps.turns.steer(sid, prompt ?? text, displayText || (prompt === null ? '' : text), steerId)) as SteerResponse
+}
+
+/** `chat.cancel` for a visible stream: Stop its turn and answer with the steers it withdrew and the session's phase. */
+export async function cancelSessionStream(deps: AppDeps, streamId: string, sid: string | null): Promise<{ ok: true; cancelled: boolean; stream_id: string; withdrawn_steers: SteerWithdrawn[]; activity_phase?: SessionActivityPhase }> {
+  const { cancelled, withdrawn } = await deps.turns.cancel(streamId)
+  const activity_phase = sid ? await deps.background.activityPhase(sid, deps.activeProfile(), cancelled ? { excludeStreamId: streamId, terminalPhase: 'cancelled' } : {}) : undefined
+  return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn, ...(activity_phase ? { activity_phase } : {}) }
+}
+
+/**
+ * TAL-1165: the agent tool `session_send`. A running target gets `message` as a pending steer, the composer's queue; an
+ * idle one starts a turn. A running turn that refuses the steer is the tool's error, never a second turn.
+ */
+export async function sendSessionMessage(deps: AppDeps, sid: string, message: string): Promise<SidecarServerResultInput<'server.session_send'>> {
+  if (deps.registry.activeRunStreamForSession(sid)) {
+    const steered = await steerSessionChat(deps, sid, message, '', `steer-${randomUUID()}`, (body) => startSessionChat(deps, body))
+    if (steered.started_turn) return { outcome: 'started', stream_id: steered.stream_id ?? null, steer_id: null }
+    if (steered.accepted) return { outcome: 'queued', stream_id: steered.stream_id ?? null, steer_id: steered.steer_id ?? null }
+    if (deps.registry.activeRunStreamForSession(sid)) throw new HttpFailure(409, `the session's running turn did not take the message (${steered.fallback ?? 'refused'})`, { code: 'steer_refused' })
+  }
+  const started = await startSessionChat(deps, { session_id: sid, message })
+  return { outcome: 'started', stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: null }
 }

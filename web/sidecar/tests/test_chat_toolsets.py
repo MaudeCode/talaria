@@ -199,7 +199,7 @@ def test_talaria_toolset_is_registered_listed_and_off_by_default(handshaken, her
     row = next((r for r in defaults['toolsets'] if r['name'] == 'talaria'), None)
     assert row is not None, 'the talaria toolset is missing from the catalog'
     assert row['available'] is True and row['selected'] is False, row
-    assert row['description'] == "List this profile's Talaria chats, see which are running or waiting on you, and manage their queued messages."
+    assert row['description'] == "List, start and message this profile's Talaria chats, wait on or stop their turns, and manage their queued messages."
     assert 'talaria' not in defaults['selected_toolsets']
     picked = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': ['file', 'talaria']})
     assert next(r for r in picked['toolsets'] if r['name'] == 'talaria')['selected'] is True

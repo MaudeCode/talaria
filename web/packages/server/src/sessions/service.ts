@@ -1,5 +1,5 @@
 import { reasoningProjection } from './reasoning-display.js'
-import { AGENT_SESSION_LIST_LIMIT, MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { AGENT_SESSION_LIST_LIMIT, SESSION_WAIT_MESSAGE_LIMIT, MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { filterAsync } from '../util.js'
 import { statSignature } from '../fs/stat.js'
 import { SessionPrefixIndex } from './prefix-index.js'
@@ -28,7 +28,7 @@ import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { isOrphanPrunableSource } from './source-kind.js'
@@ -1501,6 +1501,27 @@ export class SessionService {
     const streamId = str(target.active_stream_id)
     const isStreaming = Boolean(streamId) && this.deps.runtime.activeStreamIds.has(streamId)
     return { session_id: target.session_id, is_streaming: isStreaming, pending_steers: this.pendingSteersOf(isStreaming ? streamId : null) }
+  }
+
+  /**
+   * TAL-1165: the agent tool `session_wait`'s answer once its wait ended with `outcome`: the target's live run state and
+   * its latest assistant reply, cut to `SESSION_WAIT_MESSAGE_LIMIT` characters.
+   */
+  async agentWaitResult(sid: string, outcome: SidecarServerResultInput<'server.session_wait'>['outcome']): Promise<SidecarServerResultInput<'server.session_wait'>> {
+    const s = await this.store.get(sid)
+    const streamId = str(s.active_stream_id)
+    // The reply as the transcript shows it: conversational rows only, reasoning split off.
+    const shown = (m: unknown): string => (isConversationalAssistant(m) ? splitDisplayText(messageText(m.content))[0].trim() : '')
+    const reply = s.messages.findLast((m) => shown(m))
+    const text = reply ? shown(reply) : null
+    return {
+      session_id: sid,
+      outcome,
+      is_streaming: Boolean(streamId) && this.deps.runtime.activeStreamIds.has(streamId),
+      run_state: (await this.activityPhase(s)) ?? null,
+      last_assistant_message: text === null ? null : text.slice(0, SESSION_WAIT_MESSAGE_LIMIT),
+      truncated: text !== null && text.length > SESSION_WAIT_MESSAGE_LIMIT,
+    }
   }
 
   async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {

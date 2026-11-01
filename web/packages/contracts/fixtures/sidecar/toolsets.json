@@ -380,7 +380,7 @@
           },
           {
             "name": "talaria",
-            "description": "List this profile's Talaria chats, see which are running or waiting on you, and manage their queued messages.",
+            "description": "List, start and message this profile's Talaria chats, wait on or stop their turns, and manage their queued messages.",
             "available": true,
             "selected": false,
             "unavailable_reason": null

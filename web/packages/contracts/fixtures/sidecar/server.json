@@ -95,5 +95,98 @@
         "text": "Then update the changelog"
       }
     }
+  ],
+  "server.session_new": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "message": "Fix the flaky test",
+        "title": "Flaky test"
+      },
+      "result": {
+        "session_id": "20261020_121000_new",
+        "title": "Flaky test",
+        "stream_id": "stream-new1"
+      }
+    }
+  ],
+  "server.session_send": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "message": "Also update the changelog"
+      },
+      "result": {
+        "outcome": "queued",
+        "stream_id": "stream-busy1",
+        "steer_id": "steer-3f2a"
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_121000_new",
+        "message": "Now the docs"
+      },
+      "result": {
+        "outcome": "started",
+        "stream_id": "stream-new2",
+        "steer_id": null
+      }
+    }
+  ],
+  "server.session_wait": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "timeout_s": 300
+      },
+      "result": {
+        "session_id": "20261020_120500_busy",
+        "outcome": "ended",
+        "is_streaming": false,
+        "run_state": "completed",
+        "last_assistant_message": "All green: the flaky test now waits for the port.",
+        "truncated": false
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "timeout_s": 1
+      },
+      "result": {
+        "session_id": "20261020_120500_busy",
+        "outcome": "timeout",
+        "is_streaming": true,
+        "run_state": "running",
+        "last_assistant_message": null,
+        "truncated": false
+      }
+    }
+  ],
+  "server.session_interrupt": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy"
+      },
+      "result": {
+        "ok": true,
+        "cancelled": true,
+        "stream_id": "stream-busy1",
+        "withdrawn_steers": [
+          {
+            "steer_id": "steer-3f2a",
+            "reason": "stopped",
+            "text": "Also update the changelog"
+          }
+        ],
+        "activity_phase": "cancelled"
+      }
+    }
   ]
 }
