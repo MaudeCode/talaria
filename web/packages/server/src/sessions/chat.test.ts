@@ -2533,19 +2533,22 @@ describe('chat turns through the sidecar', () => {
 
     // A native-owner session: its owner does not report delivery, so the summary never reads this process's ledger or registry.
     const asked = sidecar.calls.filter((c) => c.method === 'process.delegation_status').length
-    const owned = vi.spyOn(s.deps.sessions.owner!, 'isOwned').mockImplementation((id) => Promise.resolve(id === sid))
+    const unsupported = summary({ availability: 'unsupported', running_count: null, awaiting_delivery_count: null, memory_live: null })
+    const sources = vi.spyOn(s.deps.sessions, 'stateDbSources')
     try {
-      expect((await read()).delegation_status).toEqual(summary({ availability: 'unsupported', running_count: null, awaiting_delivery_count: null, memory_live: null }))
+      // Canonical, whether this server may use it or not.
+      for (const owner of [{ source: 'tui', canonical: true as const }, { source: 'tui', canonical: true as const, reason: 'read only' }]) {
+        sources.mockImplementation((ids) => Promise.resolve(new Map(ids.map((id) => [id, id === sid ? owner : 'webui']))))
+        expect((await read()).delegation_status).toEqual(unsupported)
+      }
       expect(sidecar.calls.filter((c) => c.method === 'process.delegation_status')).toHaveLength(asked)
-    } finally { owned.mockRestore() }
-    // An owner lookup that fails is unknown, and the tasks still list.
-    const failing = vi.spyOn(s.deps.sessions.owner!, 'isOwned').mockRejectedValue(new Error('owner offline'))
-    try {
+      // Ownership that cannot be read (the state database read failed) is unknown, and the tasks still list.
+      sources.mockResolvedValue(null)
       const lookupFailed = await read()
       expect(lookupFailed.delegation_status).toEqual(unknown)
       expect(lookupFailed.tasks).toEqual(pending.tasks)
       expect(sidecar.calls.filter((c) => c.method === 'process.delegation_status')).toHaveLength(asked)
-    } finally { failing.mockRestore() }
+    } finally { sources.mockRestore() }
 
     // No delegation record and nothing counted: nothing to show.
     const quiet = await newSession(s)
