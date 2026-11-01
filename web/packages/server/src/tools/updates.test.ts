@@ -1674,6 +1674,77 @@ describe('Agent checkout updates', () => {
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
   })
 
+  /** TAL-1026: origin replaces `topic` with `topic/next` (or the reverse), so the stale tracking ref blocks the new name. */
+  function renameOriginBranch(a: { agent: string; origin: string; v1: string }, reverse = false): void {
+    const [before, after] = reverse ? ['topic/next', 'topic'] : ['topic', 'topic/next']
+    git(a.origin, 'branch', before, a.v1)
+    git(a.agent, 'fetch', 'origin')
+    git(a.origin, 'branch', '-D', before)
+    git(a.origin, 'branch', after, a.v1)
+  }
+
+  it.each([false, true])('recovers an update check from an origin branch-name collision (reverse: %s, TAL-1026)', async (reverse) => {
+    const a = agentInstall()
+    renameOriginBranch(a, reverse)
+    git(a.agent, 'tag', 'local-only-mark')
+    git(a.agent, 'branch', 'local-keep')
+    git(a.origin, 'tag', 'remote-added-mark', a.v1)
+    writeFileSync(join(a.agent, 'README'), 'uncommitted edit\n')
+    writeFileSync(join(a.agent, 'untracked.txt'), 'untracked\n')
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ behind: 1, latest_sha: a.v2, dirty: true })
+    expect(git(a.agent, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin/topic', 'refs/remotes/origin/topic/next')).toBe(`refs/remotes/origin/${reverse ? 'topic' : 'topic/next'}`)
+    expect(git(a.agent, 'tag', '-l', '*-mark').split('\n')).toEqual(['local-only-mark', 'remote-added-mark'])
+    expect(git(a.agent, 'rev-parse', 'local-keep')).toBe(a.v1)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('uncommitted edit\n')
+    expect(readFileSync(join(a.agent, 'untracked.txt'), 'utf8')).toBe('untracked\n')
+  })
+
+  it.each(['apply', 'force'] as const)('%s recovers from an origin branch-name collision (TAL-1026)', async (action) => {
+    const a = agentInstall()
+    renameOriginBranch(a)
+    const policy = { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0' }
+    expect(action === 'apply' ? await applyAgentUpdate(a.agent, runGit, 'stable', policy) : await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: true, verified_revision: a.v2 })
+    expect(git(a.agent, 'rev-parse', 'origin/topic/next')).toBe(a.v1)
+  })
+
+  it('refuses to prune a custom origin refspec and names the manual repair (TAL-1026)', async () => {
+    const a = agentInstall()
+    renameOriginBranch(a)
+    git(a.agent, 'tag', 'local-only-mark')
+    git(a.agent, 'config', '--add', 'remote.origin.fetch', '+refs/tags/*:refs/tags/*')
+    const result = await checkAgentUpdate(a.agent, runGit)
+    expect(result).toMatchObject({ behind: null, stale_check: true })
+    expect(String(result.error)).toContain("run 'git remote prune --dry-run origin', delete only the stale branch with 'git update-ref -d refs/remotes/origin/<branch>'")
+    expect(String(result.error)).not.toContain('…')
+    expect(git(a.agent, 'tag', '-l', 'local-only-mark')).toBe('local-only-mark')
+    expect(git(a.agent, 'rev-parse', 'refs/remotes/origin/topic')).toBe(a.v1)
+  })
+
+  it.each([
+    ['the prune hint', "error: some local refs could not be updated; try running\n 'git remote prune origin' to remove any old, conflicting branches"],
+    ["Git 2.43's file-to-directory conflict", "error: cannot lock ref 'refs/remotes/origin/topic/next': 'refs/remotes/origin/topic' exists; cannot create 'refs/remotes/origin/topic/next'"],
+    ["Git 2.43's directory-to-file conflict", "error: cannot lock ref 'refs/remotes/origin/topic': there is a non-empty directory '.git/refs/remotes/origin/topic' blocking reference 'refs/remotes/origin/topic'"],
+  ])('bounds collision recovery from %s to one prune and never retries an unrelated failure through it (TAL-1026)', async (_case, collision) => {
+    const agent = tmp()
+    mkdirSync(join(agent, '.git'))
+    const fetches: string[][] = []
+    const stuck: GitRun = (args) => {
+      if (args[0] === 'config') return Promise.resolve({ ok: true, out: '+refs/heads/*:refs/remotes/origin/*' })
+      if (args[0] === 'fetch') fetches.push(args)
+      return Promise.resolve({ ok: false, out: collision })
+    }
+    expect(await applyAgentUpdate(agent, stuck)).toMatchObject({ ok: false })
+    expect(fetches).toEqual([['fetch', 'origin', '--quiet', '--tags', '--force'], ['fetch', 'origin', '--quiet', '--prune', '--no-prune-tags', '+refs/heads/*:refs/remotes/origin/*']])
+    fetches.length = 0
+    const offline: GitRun = (args) => { if (args[0] === 'fetch') fetches.push(args); return Promise.resolve({ ok: false, out: 'fatal: unable to access: Could not resolve host: example.invalid' }) }
+    expect(await forceAgentUpdate(agent, offline, () => undefined)).toEqual({ ok: false, message: 'Could not reach the remote repository. Check your connection.' })
+    expect(fetches).toHaveLength(1)
+    fetches.length = 0
+    const locked: GitRun = (args) => { if (args[0] === 'fetch') fetches.push(args); return Promise.resolve({ ok: false, out: "error: cannot lock ref 'refs/remotes/origin/topic': Unable to create '/agent/.git/refs/remotes/origin/topic.lock': File exists." }) }
+    expect(await applyAgentUpdate(agent, locked)).toMatchObject({ ok: false, lock_conflict: true })
+    expect(fetches).toHaveLength(1)
+  })
+
   it.each([
     ['the updater deadline', 'git fetch origin --quiet --tags --force timed out after 15s', 'The update check timed out after 15s. Try again.', 'The update check timed out after 15s. Try again.'],
     ['a libcurl stall', 'fatal: unable to access \'https://example.invalid/agent.git/\': Operation timed out after 30000 milliseconds with 0 bytes received', 'Could not reach the remote repository. Check your internet connection and try again.', 'Could not reach the remote repository. Check your connection.'],

@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Agent update checks and updates no longer fail after the Agent repository replaces a branch with a same-named branch folder, or the reverse.", "highlight": false, "components": ["web"]}]
+}
