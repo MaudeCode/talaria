@@ -140,6 +140,32 @@ describe('server close drains local runs (TAL-1628)', () => {
     } finally { release(); vi.restoreAllMocks() }
   })
 
+  it('reports a launch still persisting at the deadline as unresolved and never starts its worker', async () => {
+    const { sidecar } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    const session = await server.deps.sessionStore.newSession()
+    let entered!: () => void
+    const persisting = new Promise<void>((resolve) => { entered = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const save = server.deps.sessionStore.save.bind(server.deps.sessionStore)
+    vi.spyOn(server.deps.sessionStore, 'save').mockImplementation(async (s, opts) => {
+      if (s.session_id === session.session_id && s.pending_user_message) { entered(); await gate }
+      return save(s, opts)
+    })
+    try {
+      const admitting = server.deps.turns.start(session, { msg: 'hi', workspace: server.deps.config.defaultWorkspace, model: null, modelProvider: null })
+      await persisting
+      const streamId = String(session.active_stream_id)
+      expect(await server.deps.turns.drain({ waitMs: 0, settleMs: 20 })).toEqual({ completed: 0, interrupted: 0, unresolved: [streamId] })
+      release()
+      expect(await admitting).toMatchObject({ _status: 503 })
+      expect(server.deps.registry.activeRuns.has(streamId)).toBe(false)
+      expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+      expect(durable(server, session.session_id).active_stream_id).toBe(streamId)
+    } finally { release(); vi.restoreAllMocks(); await server.running.close().catch(() => undefined) }
+  })
+
   it('returns at once with no local runs and leaves Gateway-owned observations running', async () => {
     const { sidecar } = heldSidecar()
     const server = await bootTestServer({ sidecar, drain: { waitMs: 60_000, settleMs: 5_000 } })

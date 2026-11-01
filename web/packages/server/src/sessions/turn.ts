@@ -389,6 +389,8 @@ export class TurnRunner {
   /** TAL-1628: the one drain of this server's local runs, shared by stop, a repeated signal and restart. */
   private drainRun: Promise<DrainResult> | null = null
   private drainEscalated = false
+  /** The drain has returned: storage may be closing, so no admission still in flight may launch its worker. */
+  private drainFinished = false
   private wakeDrain: (() => void) | null = null
   /** Streams a drain stopped: whether their stopped outcome is saved (`pending` until a save reports). */
   private readonly drainOutcomes = new Map<string, 'pending' | 'saved' | 'failed'>()
@@ -447,7 +449,9 @@ export class TurnRunner {
       }
       await Promise.race([settle(), after(settleMs)])
       const interrupted = (await Promise.all([...stops.values()].map((stop) => Promise.race([stop, Promise.resolve(false)])))).filter(Boolean).length
-      const unresolved = [...stops.keys()].filter((streamId) => this.drainOutcomes.get(streamId) !== 'saved')
+      // An admission still persisting at the deadline never got a worker to stop; it stays unresolved and never launches.
+      this.drainFinished = true
+      const unresolved = [...[...stops.keys()].filter((streamId) => this.drainOutcomes.get(streamId) !== 'saved'), ...[...this.admissions.keys()].filter((streamId) => !stops.has(streamId))]
       for (const streamId of unresolved) this.deps.log(`[webui] shutdown: run ${streamId} has no saved outcome; its session recovers from the run journal on next open`)
       return { completed: [...started].filter((streamId) => !stops.has(streamId)).length, interrupted, unresolved }
     } finally { for (const timer of timers) clearTimeout(timer) }
@@ -659,6 +663,12 @@ export class TurnRunner {
       this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
       try { this.deps.onTurnStart?.(s.session_id) } catch { /* best effort */ }
       try { await timing.measure('workspace_persistence', () => this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
+      // TAL-1628: a drain that already returned reported this run unresolved; its saved pending prompt recovers on next open.
+      if (this.drainFinished) {
+        this.registry.activeRuns.delete(streamId)
+        this.registry.clearWritebackOwnerIfOwned(s.session_id, streamId)
+        return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
+      }
       const channel = this.registry.create(streamId, s.session_id)
       admission.admitting = false
       if (opts.goalRelated) this.registry.goalRelated.add(streamId)
