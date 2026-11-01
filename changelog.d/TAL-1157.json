@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Right-click or long-press a Kanban card in Talaria Web to open it, move it to another column, dispatch, block, unblock, complete, archive, or select it without opening the task dialog.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
