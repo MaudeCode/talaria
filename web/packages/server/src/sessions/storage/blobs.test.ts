@@ -133,6 +133,32 @@ describe.skipIf(!endpoint)(endpoint ? 'S3 blob store' : 'S3 blob store (skipped:
     } finally { await s.close() }
   })
 
+  it('downloads only the images a share embeds', async () => {
+    const prefix = `share-${randomBytes(4).toString('hex')}`
+    await ensureBucket()
+    const s = await bootTestServer({ env: { TALARIA_BLOB_STORAGE: 's3', TALARIA_BLOB_S3_ENDPOINT: endpoint, TALARIA_BLOB_S3_BUCKET: bucket, TALARIA_BLOB_S3_PREFIX: prefix, AWS_ACCESS_KEY_ID: credentials.accessKeyId, AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey } })
+    try {
+      const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+      const sid = ((await (await post('/api/session/new', {})).json()) as { session: { session_id: string } }).session.session_id
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), randomBytes(64)])
+      const blobs = s.deps.blobs
+      for (const name of ['shown.png', 'unreferenced.png']) await blobs.put(`attachments/${sid}/${name}`, png)
+      const shown = join(blobs.attachmentRoot(), sid, 'shown.png')
+      // Neither image is cached any more (eviction, a restart).
+      for (const name of ['shown.png', 'unreferenced.png']) rmSync(join(blobs.attachmentRoot(), sid, name))
+      const session = await s.deps.sessionStore.get(sid)
+      session.messages = [{ role: 'user', content: 'draw it', timestamp: 1 }, { role: 'assistant', content: `Here it is MEDIA:${shown}`, timestamp: 2 }]
+      await s.deps.sessionStore.save(session)
+      const send = vi.spyOn((blobs as S3BlobStore).client, 'send')
+      const res = await post('/api/share/create', { session_id: sid })
+      expect(res.status).toBe(200)
+      const downloads = send.mock.calls.filter(([command]) => command instanceof GetObjectCommand).map(([command]) => (command as GetObjectCommand).input.Key)
+      expect(downloads).toEqual([`${prefix}/attachments/${sid}/shown.png`])
+      const token = ((await res.json()) as { share: { token: string } }).share.token
+      expect(JSON.stringify(await s.deps.sessions.deps.shares.load(token))).toContain(`data:image/png;base64,${png.toString('base64')}`)
+    } finally { await s.close() }
+  })
+
   it('keeps extracted archive files on disk while storing each one', async () => {
     const prefix = `extract-${randomBytes(4).toString('hex')}`
     await ensureBucket()

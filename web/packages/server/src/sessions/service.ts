@@ -36,8 +36,8 @@ import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
-import { buildShareSnapshot, shareEmbeddable, type ShareStore } from './shares.js'
-import { attachmentPrefix, type BlobStore } from './storage/blobs.js'
+import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
+import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
 import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
 import type { ProjectStore } from '../projects.js'
@@ -3063,9 +3063,16 @@ export class SessionService {
     this.rejectClaudeCode(sid, 'shared')
     return this.withShareLock(sid, async (s) => {
       let snapshot
-      // A remote attachment store puts the session's embeddable images on disk, where the snapshot reads them.
+      // A remote attachment store puts the images the snapshot embeds on disk, where it reads them, within a byte budget.
       const blobs = this.deps.blobs
-      for await (const item of blobs.list(attachmentPrefix(sid))) if (shareEmbeddable(item.key, item.size)) await blobs.localPath(item.key)
+      let budget = SHARE_MATERIALIZE_MAX_BYTES
+      for (const path of shareMediaPaths(s.messages, shareAllowedRoots(s, blobs.attachmentRoot()), blobs.attachmentRoot(), this.deps.home)) {
+        const key = blobKeyForPath(blobs.attachmentRoot(), path)
+        const stat = key ? await blobs.stat(key) : null
+        if (!key || !stat || !shareEmbeddable(key, stat.size) || stat.size > budget) continue
+        budget -= stat.size
+        await blobs.localPath(key)
+      }
       try {
         snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: blobs.attachmentRoot(), home: this.deps.home })
       } catch (error) {
