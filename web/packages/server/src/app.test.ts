@@ -116,7 +116,7 @@ describe('open server (no auth)', () => {
   it('login without auth answers ok and logout is allowed', async () => {
     const res = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'x' }) })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, message: 'Auth not enabled' })
+    expect(await res.json()).toEqual({ ok: true, message: 'Auth not enabled', redirect_path: '/' })
     const out = await s.get('/api/auth/logout', { method: 'POST' })
     expect(out.status).toBe(200)
     expect(await out.json()).toEqual({ ok: true })
@@ -303,7 +303,7 @@ describe('password auth', () => {
     expect(await bad.json()).toEqual({ error: 'Invalid password' })
     const res = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: PASSWORD }) })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
+    expect(await res.json()).toEqual({ ok: true, redirect_path: '/' })
     const setCookie = res.headers.getSetCookie()
     expect(setCookie).toHaveLength(1)
     expect(setCookie[0]).toMatch(/^hermes_session=[0-9a-f]{64}\.[0-9a-f]{64}; HttpOnly; Max-Age=2592000; Path=\/; SameSite=Lax$/)
