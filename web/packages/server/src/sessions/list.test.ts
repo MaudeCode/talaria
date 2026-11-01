@@ -7,7 +7,7 @@ import { bootTestServer } from '../test/harness.js'
 import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
 import { Session } from './session.js'
 
-const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { stored: Row[]; live_stream_ids: string[]; sessions: Row[] } }
+const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { stored: Row[]; live_stream_ids: string[]; sessions: Row[] }; nested_session_list: { stored: Row[]; sessions: Row[] } }
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof import('node:fs')>()
@@ -104,6 +104,14 @@ describe('canonical session-list order (TAL-306)', () => {
   })
 })
 
+describe('nested subagent rows (TAL-1151)', () => {
+  it('ships each row\'s sidebar parent link as the shared fixture records it', () => {
+    const { stored, sessions } = fixture.nested_session_list
+    expect(listed(stored, [])).toEqual(sessions)
+    expect(sessions.map((r) => [r.session_id, r.sidebar_parent_session_id])).toEqual([['tal1151-parent', null], ['tal1151-child', 'tal1151-parent'], ['tal1151-orphan', null]])
+  })
+})
+
 describe('sidebar groups (TAL-1534)', () => {
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
   const body = (stored: Row[]) => sessionListResponse({ sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload, overlay, false, 0, () => null).body
@@ -191,7 +199,7 @@ describe('parent snapshot lookup (TAL-1219)', () => {
         showKanbanSessions: false, requestVisibilityOverrides: true, sidebarSource: null,
         archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
       }
-      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false }))
+      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false, sidebar_parent_session_id: null }))
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
       expect(load).toHaveBeenCalledTimes(indexed && !legacy ? 0 : 1)
       if (!indexed || legacy) expect(load).toHaveBeenCalledWith(legacy ? 'legacy_parent' : 'missing_parent')

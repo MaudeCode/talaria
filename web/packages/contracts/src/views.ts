@@ -430,6 +430,7 @@ export const SessionRowSchema = z.looseObject({
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
   sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it.'),
+  sidebar_parent_session_id: NullableString.optional().describe('TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent\'s project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it.'),
   ...ContextUsageFields,
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>

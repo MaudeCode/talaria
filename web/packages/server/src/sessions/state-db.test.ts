@@ -1637,3 +1637,71 @@ describe('one-shot Agent runs and the interactive window (TAL-1379)', () => {
     expect(((await json(await s.get('/api/session?session_id=oneshot-old'))).session as Json)).toMatchObject({ title: 'Kept one-shot', project_id: project })
   })
 })
+
+describe('subagent sessions nest under their parent (TAL-1151)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  beforeAll(async () => {
+    s = await bootTestServer()
+    db = createStateDb(join(s.state, 'state.db'))
+    const saved = async (session_id: string, title: string, extra: Record<string, unknown> = {}): Promise<void> => {
+      await s.deps.sessionStore.save(new Session({ session_id, title, messages: [{ role: 'user', content: 'go', timestamp: 1001 }, { role: 'assistant', content: 'ok', timestamp: 1002 }], ...extra }, { workspace: s.state, model: null }))
+    }
+    await saved('web-parent', 'Zebra plan', { project_id: 'proj-p' })
+    insertSession(db, { id: 'web-parent', source: 'webui', started_at: 1000, title: 'Zebra plan', messages: [['user', 1001], ['assistant', 1002]] })
+    insertSession(db, { id: 'sub-web', source: 'subagent', started_at: 1003, title: 'Zebra worker', parent: 'web-parent', messages: [['user', 1004], ['assistant', 1005]] })
+    insertSession(db, { id: 'sub-nested', source: 'subagent', started_at: 1006, parent: 'sub-web', messages: [['user', 1007], ['assistant', 1008]] })
+    insertSession(db, { id: 'cli-host', source: 'cli', started_at: 1100, title: 'CLI host', messages: [['user', 1101], ['assistant', 1102]] })
+    insertSession(db, { id: 'sub-cli', source: 'subagent', started_at: 1103, parent: 'cli-host', messages: [['user', 1104], ['assistant', 1105]] })
+    insertSession(db, { id: 'cmp-root', source: 'cli', started_at: 1200, title: 'Long chat', messages: [['user', 1201], ['assistant', 1202]], ended_at: 1210, end_reason: 'compression' })
+    insertSession(db, { id: 'cmp-seg2', source: 'cli', started_at: 1210.2, parent: 'cmp-root', messages: [['user', 1211]], ended_at: 1220, end_reason: 'compression' })
+    insertSession(db, { id: 'cmp-seg3', source: 'cli', started_at: 1220.3, parent: 'cmp-seg2', messages: [['user', 1221], ['assistant', 1230]] })
+    insertSession(db, { id: 'sub-cmp', source: 'subagent', started_at: 1215, parent: 'cmp-seg2', messages: [['user', 1216], ['assistant', 1217]] })
+    insertSession(db, { id: 'sub-orphan', source: 'subagent', started_at: 1300, parent: 'missing-parent', messages: [['user', 1301], ['assistant', 1302]] })
+    // An untitled single-turn CLI row stays out of the sidebar window.
+    insertSession(db, { id: 'cli-hidden', source: 'cli', started_at: 1400, messages: [['user', 1401]], ended_at: 1402, end_reason: 'cli_close' })
+    insertSession(db, { id: 'sub-hidden', source: 'subagent', started_at: 1401, parent: 'cli-hidden', messages: [['user', 1402], ['assistant', 1403]] })
+    await saved('other-host', 'Other profile host', { profile: 'other' })
+    insertSession(db, { id: 'sub-other', source: 'subagent', started_at: 1500, parent: 'other-host', messages: [['user', 1501], ['assistant', 1502]] })
+    await s.deps.settings.save({ show_cli_sessions: true })
+    s.deps.cliSessions.invalidate()
+  })
+  afterAll(async () => { db.close(); await s.close() })
+  const rows = async (path: string): Promise<Json[]> => (await json(await s.get(path))).sessions as Json[]
+  const links = (list: Json[]): Record<string, unknown> => Object.fromEntries(list.filter((r) => str(r.session_id).startsWith('sub-')).map((r): [string, unknown] => [str(r.session_id), r.sidebar_parent_session_id]))
+
+  it('links a child of a project WebUI parent and files it in that project', async () => {
+    const child = (await rows('/api/sessions')).find((r) => r.session_id === 'sub-web')
+    expect(child).toMatchObject({ sidebar_parent_session_id: 'web-parent', project_id: 'proj-p', source_kind: 'subagent', read_only: true })
+    expect((await rows('/api/sessions/search?q=&project_id=none')).map((r) => r.session_id)).not.toContain('sub-web')
+    expect((await rows('/api/sessions/search?q=&project_id=proj-p')).map((r) => r.session_id)).toEqual(expect.arrayContaining(['web-parent', 'sub-web', 'sub-nested']))
+  })
+
+  it('links CLI, compressed and nested children; leaves missing, hidden and other-profile parents unlinked', async () => {
+    expect(links(await rows('/api/sessions'))).toEqual({ 'sub-web': 'web-parent', 'sub-nested': 'web-parent', 'sub-cli': 'cli-host', 'sub-cmp': 'cmp-seg3', 'sub-orphan': null, 'sub-hidden': null, 'sub-other': null })
+    const all = await rows('/api/sessions?all_profiles=1')
+    expect(all.map((r) => r.session_id)).toContain('other-host')
+    expect(links(all)['sub-other']).toBeNull()
+    const orphan = await s.get('/api/session?session_id=sub-orphan&messages=0')
+    expect(orphan.status).toBe(200)
+  })
+
+  it('files a child of a CLI parent in the CLI tab with its parent, never the WebUI tab', async () => {
+    const cliTab = await rows('/api/sessions?sidebar_source=cli')
+    expect(cliTab.map((r) => r.session_id)).toEqual(expect.arrayContaining(['cli-host', 'sub-cli', 'cmp-seg3', 'sub-cmp']))
+    expect(links(cliTab)['sub-cli']).toBe('cli-host')
+    const webTab = (await rows('/api/sessions?sidebar_source=webui')).map((r) => r.session_id)
+    expect(webTab).not.toContain('sub-cli')
+    expect(webTab).toEqual(expect.arrayContaining(['web-parent', 'sub-web', 'sub-orphan']))
+  })
+
+  it('links a search match only when its parent row matched too', async () => {
+    const both = await rows('/api/sessions/search?q=zebra&include_archived=0')
+    expect(both.map((r) => r.session_id)).toEqual(expect.arrayContaining(['web-parent', 'sub-web']))
+    expect(links(both)).toEqual({ 'sub-web': 'web-parent' })
+    const children = await rows('/api/sessions/search?q=subagent&include_archived=0&sidebar_source=webui')
+    expect(children.map((r) => r.session_id)).not.toContain('web-parent')
+    expect(links(children)).toMatchObject({ 'sub-web': null, 'sub-nested': null, 'sub-orphan': null })
+    expect(Object.keys(links(children))).not.toContain('sub-cli')
+  })
+})

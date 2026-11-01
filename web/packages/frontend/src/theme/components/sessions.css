@@ -51,6 +51,8 @@
 .session-list > div[style*="uppercase"]{padding:8px 10px 3px !important;font-size:10px !important}
 .session-item.archived{opacity:.5}
 .session-item.archived .session-title{font-style:italic}
+/* TAL-1151: a subagent row under its parent. */
+.session-item-nested{margin-left:16px}
 .session-source-tabs{display:flex;gap:4px;padding:4px 10px 8px;flex-shrink:0}
 .session-source-tab{flex:1;min-width:0;border:1px solid var(--border2);border-radius:10px;background:var(--input-bg);color:var(--muted);font-size:10px;font-weight:700;line-height:1.2;padding:5px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s,color .15s,border-color .15s}
 .session-source-tab:hover{background:var(--overlay);color:var(--text)}

@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
+import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, Users, X } from 'lucide-react'
@@ -97,9 +97,27 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
   return GROUP_ORDER.flatMap((id) => { const grouped = byGroup.get(id); return grouped ? [{ id, rows: grouped }] : [] })
 }
 
+/**
+ * TAL-1151: the server's nesting. A row with `sidebar_parent_session_id` shows only under that listed parent, in server
+ * order; filters apply to the top-level rows and their nested rows follow them.
+ */
+export function nestSessionRows(rows: SessionRow[]): { roots: SessionRow[]; children: Map<string, SessionRow[]> } {
+  const ids = new Set(rows.map((r) => r.session_id))
+  const roots: SessionRow[] = []
+  const children = new Map<string, SessionRow[]>()
+  for (const r of rows) {
+    const parent = r.sidebar_parent_session_id
+    if (!parent) roots.push(r)
+    else if (ids.has(parent)) { const nested = children.get(parent); if (nested) nested.push(r); else children.set(parent, [r]) }
+  }
+  return { roots, children }
+}
+
 /** The existing sidebar row, memoized so unchanged server rows retain their rendered subtree. */
-export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection, onDragStart, onDragEnd }: {
+export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection, onDragStart, onDragEnd, nested = false }: {
   row: SessionRow
+  /** TAL-1151: shown under its parent row. */
+  nested?: boolean
   active: boolean
   proj: Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number] | undefined
   preview: string | undefined
@@ -124,7 +142,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
         {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
       </div>
   </>)
-  if (selection) return <button type="button" role="checkbox" aria-checked={selection.selected} disabled={selection.disabled} onClick={selection.onSelect} className={cn('session-item min-h-11 w-full text-left', selection.selected && 'active')} data-sid={row.session_id}>
+  if (selection) return <button type="button" role="checkbox" aria-checked={selection.selected} disabled={selection.disabled} onClick={selection.onSelect} className={cn('session-item min-h-11 w-full text-left', nested && 'session-item-nested', selection.selected && 'active')} data-sid={row.session_id}>
     {content}<span aria-hidden="true">{selection.selected ? '✓' : ''}</span>
   </button>
   // TAL-1120: the wrapper is the list item, so the anchor keeps its link role; its name skips the nested action buttons.
@@ -142,7 +160,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
         data-sid={row.session_id}
         data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
         aria-current={active ? 'page' : undefined}
-        className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
+        className={cn('session-item', nested && 'session-item-nested', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
       >
         {content}
         {/* The rail shows status by color; this says it in words (TAL-365). */}
@@ -183,7 +201,13 @@ export function SessionListPanel() {
   const data = list.data
   const effects = useResourceEffects()
   const rows = withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
-  const cliCount = rows.filter((r) => r.is_cli_session).length
+  const tree = nestSessionRows(rows)
+  // The server counts each tab (a nested row in its parent's); an optimistic write that hides a row takes it and its nested rows off at once.
+  const shownIds = new Set(rows.map((r) => r.session_id))
+  const listed = nestSessionRows(data?.sessions ?? [])
+  const tabCount = (cli: boolean) => ((cli ? data?.cli_session_count : data?.webui_session_count) ?? 0)
+    - listed.roots.reduce((n, r) => (!!r.is_cli_session === cli && !shownIds.has(r.session_id) ? n + 1 + (listed.children.get(r.session_id)?.length ?? 0) : n), 0)
+  const cliCount = tabCount(true)
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = useDebounced(filter.trim(), 200)
   const [retainSearchMatches, setRetainSearchMatches] = useState(false)
@@ -198,7 +222,7 @@ export function SessionListPanel() {
   // Disabled short-term queries never replace Query's previous data. Re-arm only after a real search result.
   if (q.length < 2 && retainSearchMatches) setRetainSearchMatches(false)
   else if (q.length >= 2 && search.data && !search.isPlaceholderData && !retainSearchMatches) setRetainSearchMatches(true)
-  const webuiCount = rows.length - cliCount
+  const webuiCount = tabCount(false)
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage
   const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'unavailable' ? m.agent_storage_unavailable() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
@@ -208,15 +232,14 @@ export function SessionListPanel() {
   const newName = effects['project:new']?.fields?.name
   // The provisional chip gives way as soon as the server's list carries the created project.
   const newProject = typeof newName === 'string' && !projectList.some((p) => p.name === newName) ? newName : null
-  const filtered = (() => {
+  const { roots: filtered, children } = (() => {
     const term = q.toLowerCase()
-    let visible = rows
+    let visible = tree.roots
     if (cliCount > 0) visible = visible.filter((r) => (source === 'cli' ? !!r.is_cli_session : !r.is_cli_session))
     if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
     else if (project) visible = visible.filter((r) => r.project_id === project)
-    if (!term) return visible
-    if (q.length >= 2 && search.data) return withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
-    return visible.filter((r) => r.title.toLowerCase().includes(term))
+    if (term && q.length >= 2 && search.data) return nestSessionRows(withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived))
+    return { roots: term ? visible.filter((r) => r.title.toLowerCase().includes(term)) : visible, children: tree.children }
   })()
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
   const groups = groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
@@ -293,7 +316,7 @@ export function SessionListPanel() {
   const [viewAll, setViewAll] = useState<{ id: DisclosureId; at: string | null } | null>(null)
   if (viewAll && viewAll.at !== activeId) setViewAll(null)
   const viewAllGroup = viewAll ? groups.find((g) => g.id === viewAll.id) : undefined
-  const navIds = groups.flatMap((g) => (isCollapsed(g.id) ? [] : shownRows(g).map((r) => r.session_id)))
+  const navIds = groups.flatMap((g) => (isCollapsed(g.id) ? [] : shownRows(g).flatMap((r) => [r.session_id, ...(children.get(r.session_id) ?? []).map((c) => c.session_id)])))
   const archive = useResourceMutation({
     resource: ({ id }: { id: string; archived: boolean }) => `session:${id}`,
     effect: ({ archived }) => ({ fields: { archived } }),
@@ -416,27 +439,45 @@ export function SessionListPanel() {
                 {disclosure && <span className="session-disclosure-count">{disclosureCount[g.id as DisclosureId]}</span>}
               </div>
               <div className="session-date-body" style={collapsed ? { display: 'none' } : undefined}>
-                {shownRows(g).map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
+                {shownRows(g).map((row) => <SessionTreeItem key={row.session_id} row={row} nested={children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
                 {disclosure && !searching && g.rows.length > DISCLOSURE_PREVIEW && <button type="button" className="session-view-all" onClick={() => setViewAll({ id: g.id as DisclosureId, at: activeId })}>{m.session_group_view_all()}</button>}
               </div>
             </div>
           )
         })}
       </div>
-      {viewAll && <SessionGroupDialog title={GROUP_LABEL[viewAll.id]()} kind={viewAll.id} rows={viewAllGroup?.rows ?? []} filters={searchFilters} activeId={activeId} projectsById={projectsById} onArchive={onArchive} onClose={() => setViewAll(null)} />}
+      {viewAll && <SessionGroupDialog title={GROUP_LABEL[viewAll.id]()} kind={viewAll.id} rows={viewAllGroup?.rows ?? []} nested={children} filters={searchFilters} activeId={activeId} projectsById={projectsById} onArchive={onArchive} onClose={() => setViewAll(null)} />}
     </div>
     </SessionActions>
   )
 }
 
+type ProjectsById = Map<string, Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number]>
+
+/** A top-level sidebar row followed by the rows the server nests under it (TAL-1151). */
+function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArchive, onDragStart, onDragEnd }: {
+  row: SessionRow
+  nested: SessionRow[] | undefined
+  activeId: string | null
+  projectsById: ProjectsById
+  previews: Map<string, string>
+  onArchive: (id: string, archived: boolean) => void
+  onDragStart?: (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => void
+  onDragEnd?: () => void
+}) {
+  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} />
+  return <Fragment>{item(row, false)}{nested?.map((child) => item(child, true))}</Fragment>
+}
+
 /** TAL-1639: every row of one server group, searched through the sidebar search within the panel's scope. */
-function SessionGroupDialog({ title, kind, rows, filters, activeId, projectsById, onArchive, onClose }: {
+function SessionGroupDialog({ title, kind, rows, nested, filters, activeId, projectsById, onArchive, onClose }: {
   title: string
   kind: DisclosureId
   rows: SessionRow[]
+  nested: Map<string, SessionRow[]>
   filters: api.SessionSearchFilters
   activeId: string | null
-  projectsById: Map<string, Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number]>
+  projectsById: ProjectsById
   onArchive: (id: string, archived: boolean) => void
   onClose: () => void
 }) {
@@ -444,7 +485,9 @@ function SessionGroupDialog({ title, kind, rows, filters, activeId, projectsById
   const q = useDebounced(filter.trim(), 200)
   const effects = useResourceEffects()
   const search = useQuery({ queryKey: keys.sessions.search(q, filters), queryFn: ({ signal }) => api.searchSessions(q, filters, 5, signal), enabled: q.length >= 2, staleTime: 15_000, placeholderData: keepPreviousData })
-  const matches = q.length < 2 ? rows : search.data ? withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => r.sidebar_group === kind && (filters.include_archived || !r.archived)) : null
+  const found = search.data ? nestSessionRows(withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => filters.include_archived || !r.archived)) : null
+  const matches = q.length < 2 ? rows : found ? found.roots.filter((r) => r.sidebar_group === kind) : null
+  const children = q.length < 2 ? nested : found?.children ?? nested
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={title} className="max-h-[85dvh]">
@@ -459,7 +502,7 @@ function SessionGroupDialog({ title, kind, rows, filters, activeId, projectsById
         {matches === null && search.isError ? <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
           : matches === null ? <div className="session-list-note" role="status">{m.loading()}</div>
           : matches.length === 0 ? <div className="session-list-note">{m.no_matching_sessions()}</div>
-          : matches.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} />)}
+          : matches.map((row) => <SessionTreeItem key={row.session_id} row={row} nested={children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} />)}
       </div>
       </SessionActions>
     </Dialog>

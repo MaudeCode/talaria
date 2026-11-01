@@ -319,8 +319,14 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
   'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'can_share', 'gateway_routing', 'share_url',
-  'execution_mode',
+  'execution_mode', 'sidebar_parent_session_id',
 ])
+
+/** TAL-1151: keeps each row's `sidebar_parent_session_id` only while that parent row is in `rows` too. */
+export function pruneSidebarParents(rows: Row[]): Row[] {
+  const ids = new Set(rows.map((r) => str(r.session_id)))
+  return rows.map((r) => (r.sidebar_parent_session_id && !ids.has(str(r.sidebar_parent_session_id)) ? { ...r, sidebar_parent_session_id: null } : r))
+}
 
 export function isCliSessionRow(row: Row): boolean {
   const lower = (v: unknown) => str(v).trim().toLowerCase()
@@ -486,6 +492,36 @@ export function ownerLockCandidates(rows: Row[]): Map<string, Set<string>> {
 /** Python `_session_is_subagent_view_only` on a row: a delegated child by any source marker. */
 export function isSubagentRow(row: Row): boolean {
   return str(row.source_tag || row.raw_source || row.session_source || row.source).trim().toLowerCase() === 'subagent'
+}
+
+/**
+ * TAL-1151: each subagent row's sidebar host among `rows`, by child id: its nearest non-subagent ancestor through
+ * `parent_session_id`, where a parent id matches the row whose lineage (`_lineage_ids`, root or tip) contains it, in
+ * the child's own profile. A parent segment inside a collapsed compression chain matches by the chain root the
+ * projection names (`_parent_lineage_root_id`). A parent missing from `rows` leaves the child without a host.
+ */
+export function sidebarHosts(rows: Row[], profilesMatch: ListParams['profilesMatch']): Map<string, Row> {
+  const subagent = (row: Row): boolean => sourceKind(row) === 'subagent' || isSubagentRow(row)
+  const hosts = new Map<string, Row>()
+  if (!rows.some(subagent)) return hosts
+  const byId = new Map<string, Row[]>()
+  for (const row of rows) for (const id of sessionLineageIds(row)) { const listed = byId.get(id); if (listed) listed.push(row); else byId.set(id, [row]) }
+  for (const row of rows) {
+    if (!subagent(row)) continue
+    const sid = str(row.session_id)
+    const profile = str(row.profile) || null
+    const seen = new Set([row])
+    let current = row
+    for (;;) {
+      const parent = [current.parent_session_id, current._parent_lineage_root_id].map((id) => str(id).trim()).filter(Boolean)
+        .map((id) => byId.get(id)?.find((r) => profilesMatch(str(r.profile) || null, profile))).find(Boolean)
+      if (!parent || seen.has(parent)) break
+      if (!subagent(parent)) { hosts.set(sid, parent); break }
+      seen.add(parent)
+      current = parent
+    }
+  }
+  return hosts
 }
 
 /**
@@ -801,10 +837,13 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   }
   const archivedWebuiCount = archivedScoped.filter((r) => r.archived && !isCliSessionForSettings(r)).length
   const archivedCliCount = archivedScoped.filter((r) => r.archived && isCliSessionForSettings(r)).length
-  const filterSource = (rows: Row[]) => (params.sidebarSource === 'webui' ? rows.filter((r) => !isCliSessionForSettings(r)) : params.sidebarSource === 'cli' ? rows.filter((r) => isCliSessionForSettings(r)) : [...rows])
+  // TAL-1151: a subagent row is in its host's source tab.
+  const cliTab = (rows: Row[]) => { const hosts = sidebarHosts(rows, params.profilesMatch); return (r: Row) => isCliSessionForSettings(hosts.get(str(r.session_id)) ?? r) }
+  const filterSource = (rows: Row[]) => { if (!params.sidebarSource) return [...rows]; const cli = cliTab(rows); return rows.filter((r) => cli(r) === (params.sidebarSource === 'cli')) }
   const fullScoped = params.includeArchived ? archivedScoped : visibleScoped
-  const webuiSessionCount = fullScoped.filter((r) => !isCliSessionForSettings(r)).length
-  const cliSessionCount = fullScoped.filter((r) => isCliSessionForSettings(r)).length
+  const inCliTab = cliTab(fullScoped)
+  const webuiSessionCount = fullScoped.filter((r) => !inCliTab(r)).length
+  const cliSessionCount = fullScoped.filter(inCliTab).length
   const visibleFiltered = filterSource(visibleScoped)
   const archivedFiltered = filterSource(archivedScoped)
   let result = filterSource(fullScoped)
@@ -815,8 +854,10 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   }
   const references = params.includeArchived ? [] : hiddenArchivedReferences(visibleFiltered, archivedFiltered)
   const truncated = params.truncatedSources ?? new Set<string>()
+  // TAL-1151: a subagent row nests under its host when the host is listed too, and files in the host's project.
+  const hosts = sidebarHosts(result, params.profilesMatch)
   return {
-    sessions: result.map((r) => ({ ...r })),
+    sessions: result.map((r) => { const host = hosts.get(str(r.session_id)); return host ? { ...r, sidebar_parent_session_id: host.session_id, project_id: host.project_id ?? null } : { ...r, sidebar_parent_session_id: null } }),
     sidebar_reference_sessions: references.map((r) => ({ ...r })),
     cli_count: 0,
     archived_count: archivedWebuiCount + archivedCliCount,

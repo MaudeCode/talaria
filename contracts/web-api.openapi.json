@@ -2073,6 +2073,17 @@
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                           },
+                          "sidebar_parent_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
+                          },
                           "context_used_tokens": {
                             "anyOf": [
                               {
@@ -2879,6 +2890,17 @@
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                           },
+                          "sidebar_parent_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
+                          },
                           "context_used_tokens": {
                             "anyOf": [
                               {
@@ -3523,6 +3545,17 @@
                               }
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          },
+                          "sidebar_parent_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                           },
                           "context_used_tokens": {
                             "anyOf": [
@@ -4469,6 +4502,17 @@
                               }
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          },
+                          "sidebar_parent_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                           },
                           "context_used_tokens": {
                             "anyOf": [
@@ -16359,6 +16403,17 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -17051,6 +17106,17 @@
                             }
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                        },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -17751,6 +17817,17 @@
                             }
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                        },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -21819,6 +21896,17 @@
                               ],
                               "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                             },
+                            "sidebar_parent_session_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
+                            },
                             "context_used_tokens": {
                               "anyOf": [
                                 {
@@ -22541,6 +22629,17 @@
                             }
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                        },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -26996,6 +27095,17 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -27686,6 +27796,17 @@
                             }
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                        },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -44523,6 +44644,17 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -45212,6 +45344,17 @@
                             }
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                        },
+                        "sidebar_parent_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
