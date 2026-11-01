@@ -163,7 +163,7 @@ textarea#msg::placeholder{color:var(--muted)}
 :root[data-chat-width="full"] .messages-inner{max-width:none}
 @media (max-width: 700px){.msg-role{margin-bottom:4px}}
 @media (max-width: 700px){.msg-row[data-error="1"] .msg-body{padding:8px 12px}}
-@media (max-width:640px){.msg-row[data-role="user"] .msg-foot,.msg-row[data-role="assistant"] .msg-foot,.assistant-turn .msg-foot{opacity:1}}
+@media (max-width:640px),(hover:none){.msg-row[data-role="user"] .msg-foot,.msg-row[data-role="assistant"] .msg-foot,.assistant-turn .msg-foot{opacity:1}}
 .msg-row{padding:10px 0}
 .msg-role{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none}
 .msg-role.assistant{color:var(--muted);opacity:1}
