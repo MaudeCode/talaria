@@ -288,26 +288,28 @@ struct ProviderQuotaWindowsView: View {
             .foregroundStyle(.secondary)
 
             if let pace = state.pace {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if let serverForecast = state.forecast {
-                        // The forecast keeps one line; the burn and budget figures wrap first.
+                if let serverForecast = state.forecast {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        // The forecast keeps one line; the figures wrap between units, never inside one.
                         Label(forecast.forecastLabel, systemImage: forecast.systemImage)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(forecast.outcome.tint)
                             .layoutPriority(1)
                         Spacer(minLength: 8)
                         Text(serverForecast.budgetPercent == nil
-                            ? String(localized: "\(forecast.burnRateLabel) burn")
-                            : String(localized: "\(forecast.burnRateLabel) burn · \(forecast.budgetLabel)\(forecast.budgetUnitSuffix) budget"))
+                            ? String(localized: "\(forecast.burnRateLabel)\u{00A0}burn")
+                            : String(localized: "\(forecast.burnRateLabel)\u{00A0}burn · \(forecast.budgetLabel)\(Self.unbreakable(forecast.budgetUnitSuffix))\u{00A0}budget"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
-                    } else {
-                        // A pace without a forecast still names its burn; the summary's placeholder wording is for widgets.
-                        Spacer(minLength: 8)
-                        Text("\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))× burn")
                     }
+                } else {
+                    // A pace without a forecast still names its burn; the summary's placeholder wording is for widgets.
+                    Text("\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))× burn")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
@@ -395,6 +397,11 @@ struct ProviderQuotaWindowsView: View {
     }
 
     // MARK: Helpers
+
+    /// "/hr" with a word joiner after the slash, so "25%/hr" never breaks into "25%/" and "hr".
+    private static func unbreakable(_ unitSuffix: String) -> String {
+        unitSuffix.replacingOccurrences(of: "/", with: "/\u{2060}")
+    }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()

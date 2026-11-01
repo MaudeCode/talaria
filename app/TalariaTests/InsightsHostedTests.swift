@@ -138,8 +138,8 @@ final class InsightsHostedTests: XCTestCase {
         }
         let labels = seen.joined(separator: "\n")
         for expected in [
-            "15% under pace", "Lasts through reset", "0.62× burn · 25%/hr budget",
-            "Weekly, 30% remaining", "6% over pace", "Empty 5h early", "1.10× burn · 12%/day budget",
+            "15% under pace", "Lasts through reset", "0.62×\u{00A0}burn · 25%/\u{2060}hr\u{00A0}budget",
+            "Weekly, 30% remaining", "6% over pace", "Empty 5h early", "1.10×\u{00A0}burn · 12%/\u{2060}day\u{00A0}budget",
             // Clock times end in a narrow no-break space before AM/PM, so the expectations stop at the minutes.
             "Monthly, 90% remaining", "Resets Jan 20 at 12:00", "Session, 75% remaining, Resets Tue 3:00", "As of Tue 12:00", "Updated 12 min. ago", "Last checked",
         ] {
@@ -220,7 +220,8 @@ final class InsightsHostedTests: XCTestCase {
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Quotas"))
         HostedAccessibility.activate(try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == rowID })
-        _ = try await requireElement(in: window, "Tapping an account did not open the detail") { $0.accessibilityLabel?.hasPrefix("Account, Fixture Account") == true }
+        _ = try await requireElement(in: window, "Tapping an account did not open the detail") { $0.accessibilityLabel == "Reset schedule" }
+        _ = try await requireElementScrolling(in: window, "No account section") { $0.accessibilityLabel?.hasPrefix("Account, Fixture Account") == true }
         _ = try await requireElementScrolling(in: window, "No pin action") { $0.accessibilityLabel == "Pin to Sidebar" }
         attachHostedScreenshot(window, name: "insights-quota-detail")
     }
