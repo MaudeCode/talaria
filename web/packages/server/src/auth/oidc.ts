@@ -34,6 +34,10 @@ const NATIVE_VALUE_RE = /^[A-Za-z0-9._~-]{16,256}$/
 const PKCE_CHALLENGE_RE = /^[A-Za-z0-9_-]{43}$/
 const PKCE_VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/
 const UNRESOLVED_RE = /\$\{[^}]+\}/
+const TOKEN_AUTH_METHODS = ['auto', 'client_secret_basic', 'client_secret_post'] as const
+type TokenAuthMethod = (typeof TOKEN_AUTH_METHODS)[number]
+/** Distinct unsupported `token_auth_method` values warned about; past the cap the server stays quiet. */
+const MAX_TOKEN_AUTH_WARNINGS = 32
 const OWNER_POLICY_ERROR = 'webui_oidc.owner_claim and owner_values must both be set to a claim path and a non-empty list of strings; the OIDC owner allowlist matches nobody until they are'
 
 export const b64u = (data: Buffer): string => data.toString('base64url')
@@ -44,6 +48,7 @@ export interface OidcConfig {
   issuer: string; client_id: string; client_secret: string; redirect_uri: string; scopes: string[]; allow_claim: string; allow_values: string[]; trusted_private_hosts: string[]
   profile_claim: string; profile_map: Record<string, string> | null; profile_map_configured: boolean; profile_map_error: string | null
   owner_claim: string; owner_values: string[]; owner_policy_configured: boolean; owner_policy_error: string | null; config_read_failed: boolean
+  token_auth_method: TokenAuthMethod
 }
 
 export interface OidcDeps {
@@ -137,6 +142,7 @@ export class OidcService {
   private lastConfigAt = 0
   private inflight: Promise<OidcConfig> | null = null
   private warnedOwnerPolicy = false
+  private readonly warnedTokenAuth = new Set<string>()
 
   constructor(private readonly deps: OidcDeps) {}
 
@@ -205,6 +211,7 @@ export class OidcService {
       trusted_private_hosts: this.trustedHosts(pick('trusted_private_hosts', 'HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS')), profile_claim: profileClaim, profile_map: profileMap, profile_map_configured: profileMapConfigured,
       profile_map_error: profileMapError ?? (profileClaim ? null : 'webui_oidc.profile_claim could not be resolved; it still contains an unexpanded ${...} reference'),
       owner_claim: ownerClaim, owner_values: ownerValues, owner_policy_configured: ownerConfigured, owner_policy_error: ownerError, config_read_failed: readFailed,
+      token_auth_method: this.tokenAuthMethod(pick('token_auth_method', 'HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD')),
     }
     this.lastConfig = cfg
     this.lastConfigAt = this.deps.now()
@@ -231,6 +238,18 @@ export class OidcService {
       map[claim] = profile
     }
     return [map, null, true]
+  }
+
+  /** An unsupported value means auto, warned once per distinct value; the warning never echoes it, in case a secret was pasted there. */
+  private tokenAuthMethod(raw: unknown): TokenAuthMethod {
+    const value = str(raw).trim().toLowerCase()
+    if (!value) return 'auto'
+    if ((TOKEN_AUTH_METHODS as readonly string[]).includes(value)) return value as TokenAuthMethod
+    if (!this.warnedTokenAuth.has(value) && this.warnedTokenAuth.size < MAX_TOKEN_AUTH_WARNINGS) {
+      this.warnedTokenAuth.add(value)
+      this.deps.log(`[oidc] ignoring an unsupported webui_oidc.token_auth_method; using auto (supported: ${TOKEN_AUTH_METHODS.join(', ')})`)
+    }
+    return 'auto'
   }
 
   private trustedHosts(raw: unknown): string[] {
@@ -323,8 +342,13 @@ export class OidcService {
       const tokenEndpoint = str(discovery.token_endpoint).trim()
       if (!tokenEndpoint) throw new OidcConfigError('OIDC discovery document is missing token_endpoint')
       const form: Record<string, string> = { grant_type: 'authorization_code', client_id: cfg.client_id, code, code_verifier: pending.code_verifier, redirect_uri: this.redirectUri(cfg, requestBaseUrl) }
-      if (cfg.client_secret) form.client_secret = cfg.client_secret
-      const token = await this.postForm(cfg, tokenEndpoint, form)
+      const headers: Record<string, string> = {}
+      if (cfg.client_secret && tokenEndpointAuth(cfg, discovery) === 'client_secret_basic') {
+        // RFC 6749 §2.3.1: each part is form-urlencoded before base64; §2.3: one client authentication mechanism per request.
+        headers.Authorization = `Basic ${Buffer.from(`${formEncode(cfg.client_id)}:${formEncode(cfg.client_secret)}`, 'utf8').toString('base64')}`
+        delete form.client_id
+      } else if (cfg.client_secret) form.client_secret = cfg.client_secret
+      const token = await this.postForm(cfg, tokenEndpoint, form, headers)
       const idToken = str(token.id_token).trim()
       if (!idToken) throw new OidcAuthError('OIDC token response did not include an id_token', 502)
       const claims = await this.validateIdToken(cfg, idToken, pending.nonce, str(discovery.jwks_uri).trim())
@@ -564,8 +588,8 @@ export class OidcService {
     return data
   }
 
-  private postForm(cfg: OidcConfig, url: string, form: Record<string, string>): Promise<Dict> {
-    return this.fetchJson(cfg, url, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form).toString() }, 'Failed to exchange the OIDC authorization code')
+  private postForm(cfg: OidcConfig, url: string, form: Record<string, string>, headers: Record<string, string>): Promise<Dict> {
+    return this.fetchJson(cfg, url, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams(form).toString() }, 'Failed to exchange the OIDC authorization code')
   }
 
   private async validateIdToken(cfg: OidcConfig, token: string, nonce: string, jwksUri: string): Promise<Dict> {
@@ -617,6 +641,20 @@ export class OidcService {
     if (str(claims.nonce).trim() !== nonce) throw new OidcAuthError('OIDC id_token nonce did not match the login request')
   }
 }
+
+/**
+ * How the client secret reaches the token endpoint. Configuration wins; auto keeps the historical form body unless discovery
+ * advertises Basic without post, the one case where a form secret is sure to be refused.
+ */
+function tokenEndpointAuth(cfg: OidcConfig, discovery: Dict): Exclude<TokenAuthMethod, 'auto'> {
+  if (cfg.token_auth_method !== 'auto') return cfg.token_auth_method
+  const raw = discovery.token_endpoint_auth_methods_supported
+  const methods = Array.isArray(raw) ? new Set(raw.filter((v) => typeof v === 'string').map((v) => v.trim().toLowerCase())) : new Set<string>()
+  return !methods.has('client_secret_post') && methods.has('client_secret_basic') ? 'client_secret_basic' : 'client_secret_post'
+}
+
+/** application/x-www-form-urlencoded serialization of one value (space as `+`, UTF-8 percent-encoding). */
+const formEncode = (value: string): string => new URLSearchParams({ v: value }).toString().slice(2)
 
 /**
  * Python `json.dumps(value, sort_keys=True, separators=(",", ":"))` — including its default `ensure_ascii=True`, which

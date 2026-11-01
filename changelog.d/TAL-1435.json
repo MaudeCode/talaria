@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Single sign-on works with identity providers that only accept HTTP Basic client authentication.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
