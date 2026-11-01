@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
-import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { MENU_ROW, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
@@ -44,7 +44,7 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
   )
 }
 
-const RADIO_CLASS = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover data-[checked]:text-accent-text'
+const RADIO_CLASS = cn(MENU_ROW, 'data-[checked]:text-accent-text')
 
 /** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
 function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; locale: string }) {

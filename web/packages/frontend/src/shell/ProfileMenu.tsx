@@ -3,7 +3,7 @@ import { Chip } from '../features/composer/chips'
 import { m } from '../paraglide/messages.js'
 import { useProfilesQuery, useSwitchProfile } from '../app/queries'
 import { useBootstrap } from '../app/bootstrap'
-import { Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../ui/Menu'
+import { MENU_ROW, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../ui/Menu'
 import { showToast } from '../features/toast/toast'
 import { Link } from '@tanstack/react-router'
 
@@ -29,7 +29,7 @@ export function ProfileMenu({ row }: { row?: boolean } = {}) {
     >
       <MenuRadioGroup value={active} onValueChange={(value: string) => { if (value !== active) switchProfile.mutate(value, { onSuccess: () => { showToast(m.profile_switched({ name: value })); window.location.reload() } }) }}>
         {list.map((p) => (
-          <MenuRadioItem key={p.name} value={p.name} className="flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover">
+          <MenuRadioItem key={p.name} value={p.name} className={MENU_ROW}>
             <span className="flex-1 truncate">{p.name}{p.is_default ? ` ${m.profile_default_label()}` : ''}</span>
             {p.name === active && <span className="text-[10px] font-semibold text-accent-text">{m.profile_active()}</span>}
           </MenuRadioItem>

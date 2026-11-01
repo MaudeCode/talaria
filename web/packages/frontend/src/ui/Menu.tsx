@@ -18,7 +18,8 @@ export interface MenuProps {
 
 /** Menus share the Select popup layer above dialogs (z 1300/1301), so a menu opened inside a dialog takes clicks (TAL-1639). */
 const POSITIONER = 'z-[1400] outline-none'
-const POPUP = 'min-w-44 max-w-[min(92vw,360px)] overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none'
+// Base UI's available height keeps a long menu inside a short viewport, where it scrolls.
+const POPUP = 'min-w-44 max-w-[min(92vw,360px)] max-h-[var(--available-height)] overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none'
 
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
 export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, initialFocus }: MenuProps) {
@@ -52,8 +53,11 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
   )
 }
 
+/** One row look for action and choice items: compact under a mouse, a 44 px target under a coarse pointer (TAL-1626). */
+export const MENU_ROW = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover pointer-coarse:min-h-11'
+
 export function MenuItem({ className, ...props }: ComponentProps<typeof BaseMenu.Item>) {
-  return <BaseMenu.Item {...props} className={cn('flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover data-[disabled]:opacity-50', className as string | undefined)} />
+  return <BaseMenu.Item {...props} className={cn(MENU_ROW, 'data-[disabled]:opacity-50', className as string | undefined)} />
 }
 
 export function MenuSeparator() {
