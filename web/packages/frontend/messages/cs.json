@@ -721,8 +721,6 @@
 	"settings_desc_session_jump_buttons": "Zobrazit plovoucí tlačítko Začátek pro skok na začátek dlouhých historií relací.",
 	"settings_label_terminal_auto_expand": "Automaticky rozbalit terminál při výstupu",
 	"settings_desc_terminal_auto_expand": "Automaticky rozbalit sbalený terminálový panel když běžící příkaz emituje nový výstup.",
-	"settings_label_terminal_screen_reader": "Režim čtečky obrazovky v terminálu",
-	"settings_desc_terminal_screen_reader": "Umožní čtečkám obrazovky číst výstup terminálu pracovního prostoru. Jinak jej nechte vypnutý; zatěžuje každou aktualizaci terminálu.",
 	"settings_label_session_endless_scroll": "Načítat starší zprávy při posouvání nahoru",
 	"settings_desc_session_endless_scroll": "Když povoleno, starší zprávy se načítají automaticky při posouvání nahoru. Když zakázáno, použijte tlačítko starších zpráv.",
 	"settings_label_auto_scroll_follow": "Automatické sledování nového obsahu",

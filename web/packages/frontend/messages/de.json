@@ -646,8 +646,6 @@
 	"settings_desc_session_jump_buttons": "Zeigt eine schwebende Anfang-Taste, um zum Beginn langer Sitzungsverläufe zu springen.",
 	"settings_label_terminal_auto_expand": "Terminal bei Ausgabe automatisch aufklappen",
 	"settings_desc_terminal_auto_expand": "Das eingeklappte Terminal-Panel automatisch aufklappen, wenn ein laufender Befehl neue Ausgaben erzeugt.",
-	"settings_label_terminal_screen_reader": "Screenreader-Modus für das Terminal",
-	"settings_desc_terminal_screen_reader": "Lässt Screenreader die Ausgabe des Arbeitsbereich-Terminals vorlesen. Sonst ausgeschaltet lassen; jede Terminal-Aktualisierung kostet damit mehr.",
 	"settings_label_session_endless_scroll": "Ältere Nachrichten beim Hochscrollen laden",
 	"settings_desc_session_endless_scroll": "Wenn aktiviert, werden ältere Nachrichten beim Hochscrollen automatisch geladen. Wenn deaktiviert, nutzt du den Button für ältere Nachrichten.",
 	"settings_label_auto_scroll_follow": "Neuen Inhalten automatisch folgen",

@@ -702,8 +702,6 @@
 	"settings_desc_session_jump_buttons": "長いセッション履歴の先頭へ移動するための浮動「開始」ボタンを表示します。",
 	"settings_label_terminal_auto_expand": "出力時にターミナルを自動展開",
 	"settings_desc_terminal_auto_expand": "実行中のコマンドが新しい出力を生成したときに、折りたたまれたターミナルパネルを自動的に展開します。",
-	"settings_label_terminal_screen_reader": "ターミナルのスクリーンリーダーモード",
-	"settings_desc_terminal_screen_reader": "スクリーンリーダーでワークスペースのターミナル出力を読み上げられるようにします。不要ならオフのままにしてください。ターミナルの更新ごとに処理が増えます。",
 	"settings_label_session_endless_scroll": "上スクロールで古いメッセージを読み込む",
 	"settings_desc_session_endless_scroll": "有効にすると、上にスクロールしたとき古いメッセージを自動で読み込みます。無効の場合は古いメッセージボタンを使います。",
 	"settings_label_auto_scroll_follow": "新しい内容を自動で追従",

@@ -702,8 +702,6 @@
 	"settings_desc_session_jump_buttons": "顯示浮動的開頭按鈕，用於跳至較長對話記錄的開頭。",
 	"settings_label_terminal_auto_expand": "輸出時自動展開終端",
 	"settings_desc_terminal_auto_expand": "當運行中的命令產生新輸出時，自動展開已折疊的終端面板。",
-	"settings_label_terminal_screen_reader": "終端機螢幕閱讀器模式",
-	"settings_desc_terminal_screen_reader": "讓螢幕閱讀器讀取工作區終端機輸出。不需要時請保持關閉；它會增加每次終端機更新的負擔。",
 	"settings_label_session_endless_scroll": "向上捲動時載入較早訊息",
 	"settings_desc_session_endless_scroll": "啟用後，向上捲動時會自動載入較早訊息。停用時請使用載入較早訊息按鈕。",
 	"settings_label_auto_scroll_follow": "自動跟隨新內容",

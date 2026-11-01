@@ -702,8 +702,6 @@
 	"settings_desc_session_jump_buttons": "Uzun oturum geçmişlerinin başına atlamak için kayan bir Başlangıç düğmesi gösterin.",
 	"settings_label_terminal_auto_expand": "Çıktı geldiğinde terminali otomatik genişlet",
 	"settings_desc_terminal_auto_expand": "Çalışan bir komut yeni çıktı ürettiğinde daraltılmış terminal panelini otomatik olarak genişletir.",
-	"settings_label_terminal_screen_reader": "Terminal ekran okuyucu modu",
-	"settings_desc_terminal_screen_reader": "Ekran okuyucuların çalışma alanı terminal çıktısını okumasını sağlar. Aksi halde kapalı bırakın; her terminal güncellemesine ek yük getirir.",
 	"settings_label_session_endless_scroll": "Yukarı kaydırırken eski mesajları yükle",
 	"settings_desc_session_endless_scroll": "Etkinleştirildiğinde, yukarı doğru kaydırdığınızda eski mesajlar otomatik olarak yüklenir. Devre dışı bırakıldığında eski mesajlar düğmesini kullanın.",
 	"settings_label_auto_scroll_follow": "Yeni içeriği otomatik takip et",

@@ -715,8 +715,6 @@
 	"settings_desc_session_jump_buttons": "Pokaż pływający przycisk Początek, aby przejść na początek długich historii sesji.",
 	"settings_label_terminal_auto_expand": "Automatycznie rozwiń terminal przy wyjściu",
 	"settings_desc_terminal_auto_expand": "Automatycznie rozwija zwinięty panel terminala, gdy uruchomione polecenie generuje nowe wyjście.",
-	"settings_label_terminal_screen_reader": "Tryb czytnika ekranu w terminalu",
-	"settings_desc_terminal_screen_reader": "Pozwala czytnikom ekranu odczytywać wyjście terminala obszaru roboczego. W przeciwnym razie pozostaw wyłączone; zwiększa koszt każdej aktualizacji terminala.",
 	"settings_label_session_endless_scroll": "Ładuj starsze wiadomości podczas przewijania w górę",
 	"settings_desc_session_endless_scroll": "Gdy ta opcja jest włączona, starsze wiadomości ładują się automatycznie przy przewijaniu w górę. Gdy jest wyłączona, użyj przycisku wczytywania starszych wiadomości.",
 	"settings_label_auto_scroll_follow": "Automatycznie podążaj za nową treścią",
