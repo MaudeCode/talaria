@@ -18,7 +18,7 @@ import { agentSessionRowsExisting, cheapChangeFingerprint, insightsSessionRows, 
 import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
 import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
-import type { CliSessionRead } from './cli-sessions.js'
+import { CLI_VISIBLE_SESSION_LIMIT, type CliSessionRead } from './cli-sessions.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -1512,5 +1512,56 @@ describe('foreign session detail windows (TAL-1249)', () => {
       expect(res.status).toBe(503)
       expect(await other.deps.sessionStore.exists('f-cli')).toBe(false)
     } finally { await other.close() }
+  })
+})
+
+describe('one-shot Agent runs and the interactive window (TAL-1379)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  const listed = async (): Promise<Json[]> => { s.deps.cliSessions.invalidate(); return (await json(await s.get('/api/sessions'))).sessions as Json[] }
+  const twoTurns = (t: number): [string, number][] => [['user', t + 1], ['assistant', t + 2], ['user', t + 3], ['assistant', t + 4]]
+  const ordinary = ['cli-chat', 'tui-chat', 'desktop-chat']
+  const burst = (from: number, count: number, at: number): void => {
+    for (let i = from; i < from + count; i++) insertSession(db, { id: `oneshot-${String(i)}`, source: 'oneshot', started_at: at + i * 10, title: `One-shot ${String(i)}`, messages: twoTurns(at + i * 10) })
+  }
+  beforeAll(async () => {
+    s = await bootTestServer({ sidecar: new FakeSidecar() })
+    db = createStateDb(join(s.state, 'state.db'))
+    insertSession(db, { id: 'oneshot-old', source: 'oneshot', started_at: 50, title: 'Old one-shot', messages: twoTurns(50) })
+    for (const [i, sid] of ordinary.entries()) insertSession(db, { id: sid, source: sid.split('-')[0]!, started_at: 100 + i * 10, title: `Named ${sid}`, messages: twoTurns(100 + i * 10) })
+    burst(0, CLI_VISIBLE_SESSION_LIMIT + 5, 1000)
+    await s.deps.settings.save({ show_cli_sessions: true })
+  })
+  afterAll(async () => { db.close(); await s.close() })
+
+  it('keeps older CLI, TUI and Desktop chats listed past a burst of newer one-shot runs', async () => {
+    const rows = await listed()
+    expect(rows.map((r) => r.session_id)).toEqual(expect.arrayContaining(ordinary))
+    expect(rows.filter((r) => r.raw_source === 'oneshot')).toEqual([])
+  })
+
+  it('still lists one-shot runs for an explicit source filter, with the truncation flag', async () => {
+    s.deps.cliSessions.invalidate()
+    const read = await s.deps.cliSessions.read('default', { sourceFilter: 'oneshot' })
+    expect(read.rows.map((r) => r.raw_source)).toEqual(Array<string>(CLI_VISIBLE_SESSION_LIMIT + 6).fill('oneshot'))
+    expect(read.truncated.has('oneshot')).toBe(false)
+    burst(100, 200, 5000)
+    s.deps.cliSessions.invalidate()
+    const full = await s.deps.cliSessions.read('default', { sourceFilter: 'oneshot' })
+    expect(full.rows).toHaveLength(200)
+    expect(full.truncated.has('oneshot')).toBe(true)
+    expect((await listed()).map((r) => r.session_id)).toEqual(expect.arrayContaining(ordinary))
+  })
+
+  it('opens an old one-shot run by exact id and keeps its saved, pinned, project-filed alias listed', async () => {
+    expect(((await json(await s.get('/api/session?session_id=oneshot-old'))).session as Json).session_id).toBe('oneshot-old')
+    const project = String(((await json(await post('/api/projects/create', { name: 'One-shots' }))).project as Json).project_id)
+    expect((await post('/api/session/rename', { session_id: 'oneshot-old', title: 'Kept one-shot' })).status).toBe(200)
+    expect((await post('/api/session/pin', { session_id: 'oneshot-old', pinned: true })).status).toBe(200)
+    expect((await post('/api/session/move', { session_id: 'oneshot-old', project_id: project })).status).toBe(200)
+    const row = (await listed()).find((r) => r.session_id === 'oneshot-old')
+    expect(row).toMatchObject({ title: 'Kept one-shot', pinned: true, project_id: project, workspace: expect.any(String) as unknown })
+    expect(((await json(await s.get('/api/session?session_id=oneshot-old'))).session as Json)).toMatchObject({ title: 'Kept one-shot', project_id: project })
   })
 })

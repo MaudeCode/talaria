@@ -177,6 +177,22 @@ describe('batched sidebar reads and targeted lookup cache', () => {
     expect(ops()).toEqual(['rowBatches'])
   })
 
+  it('refreshes a cached listing after a one-shot burst without letting it evict interactive chats (TAL-1379)', async () => {
+    expect((await source.read('default')).rows.map((r) => r.session_id)).toEqual(['webui', 'cli', 'cron', 'webhook', 'kanban'])
+    const db = openStateDb(path)
+    try {
+      for (let i = 0; i < 25; i++) {
+        db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, NULL, 2)').run(`oneshot-${String(i)}`, 'oneshot', 100 + i, `One-shot ${String(i)}`)
+        db.prepare('INSERT INTO messages (session_id, role, timestamp) VALUES (?, ?, ?)').run(`oneshot-${String(i)}`, 'user', 100 + i)
+      }
+    } finally { db.close() }
+    now += 5
+    const read = await source.read('default')
+    expect(read.rows.map((r) => r.session_id)).toEqual(['webui', 'cli', 'cron', 'webhook', 'kanban'])
+    expect(read.storage.state).toBe('ok')
+    expect((await source.read('default', { sourceFilter: 'oneshot' })).rows).toHaveLength(25)
+  })
+
   it('separates lookup flags, IDs, profile and source filter from a cached listing', async () => {
     expect((await source.read('default', { sessionIds: ['webui'] })).rows).toEqual([])
     expect((await source.read('default', { sessionIds: ['webui'], sidebarRows: true })).rows).toHaveLength(1)

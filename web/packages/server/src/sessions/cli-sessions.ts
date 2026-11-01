@@ -22,6 +22,13 @@ const BACKGROUND_PROJECT_CHIP_LIMIT = 200
 const CACHE_TTL_S = 5
 const CACHE_SLOT_LIMIT = 200
 const BACKGROUND_KINDS = ['cron', 'webhook', 'kanban'] as const
+/**
+ * Sources kept out of the default interactive window: the background kinds, which have their own bounded passes, and
+ * one-shot `hermes -z` runs, which have none. A delegating agent can start hundreds of one-shots a day; inside the
+ * window they push every CLI/TUI/Desktop conversation out (TAL-1379). An explicit `sourceFilter` and an exact-id lookup
+ * still reach them, and a saved alias of one comes back through that lookup.
+ */
+const INTERACTIVE_WINDOW_EXCLUDED_SOURCES: readonly string[] = [...BACKGROUND_KINDS, 'oneshot']
 
 export interface CliSessionsDeps {
   store: SessionStore
@@ -149,7 +156,7 @@ export class CliSessionSource {
     if (slot.sessionIds !== null) return [{ sessionIds: slot.sessionIds, limit: null, excludeSources: slot.sidebarRows ? null : ['webui'], compressionChains: slot.sidebarRows, keepEmpty: slot.keepEmpty, log }]
     const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
     // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
-    const out: ReadRowsOptions[] = [{ limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? [...BACKGROUND_KINDS] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log }]
+    const out: ReadRowsOptions[] = [{ limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? INTERACTIVE_WINDOW_EXCLUDED_SOURCES : null, includeSources: sourceFilter === null ? null : [sourceFilter], log }]
     // One row past the cap tells the sidebar that more sessions of this kind exist than it lists (TAL-482).
     if (sourceFilter === null) for (const kind of BACKGROUND_KINDS) out.push({ limit: BACKGROUND_PROJECT_CHIP_LIMIT + 1, excludeSources: null, includeSources: [kind], log })
     return out
