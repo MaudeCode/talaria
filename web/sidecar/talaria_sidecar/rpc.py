@@ -7,6 +7,11 @@ One line per message. Requests dispatch on a worker thread each, at most
 ``rpc.cancel`` sets the request's cancel event; the method decides how to stop
 and still returns (a result with ``status: "cancelled"`` or a CANCELLED error).
 Cancellation never takes a slot, so it always reaches the call it targets.
+The reader loop routes a request by its leading ``jsonrpc``/``id``/``method``
+members and leaves the full parse to the call's worker, so a multi-MB body
+(a ``chat.start`` history) never delays the requests read after it. The worker
+decodes member by member because CPython's C JSON scanner holds the GIL for a
+whole call: one ``json.loads`` of the body would stall every thread anyway.
 
 The sidecar can also ask the server (TAL-1164): ``call_server`` writes a ``server.*`` request with an ``s:`` string id
 on stdout and waits for the server's reply on stdin. It times out, and closing the channel fails every waiting call.
@@ -18,6 +23,7 @@ import json
 import logging
 import os
 import queue
+import re
 import time
 import sys
 import threading
@@ -44,8 +50,83 @@ Handler = Callable[["CallContext", dict], Any]
 DEFAULT_MAX_CALLS = 64
 SERVER_CALL_TIMEOUT = 30.0
 
+# The server writes ``{"jsonrpc","id","method","params",...}``: the routing members lead every request line.
+_PEEK_BYTES = 256
+_HEAD_MEMBER = re.compile(rb'\s*"([A-Za-z_]+)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+)\s*([,}])')
+
+# Containers this many levels deep are walked member by member (request → params → each params value's members, so
+# every history message is one C decode); the GIL can pass to other threads between members.
+_WALK_DEPTH = 3
+_SPACE = re.compile(r"[ \t\n\r]*")
+_DECODER = json.JSONDecoder()
+
 # The server channel the running process serves; ``call_server`` asks through it.
 _ACTIVE: "RpcServer | None" = None
+
+
+def _peek_head(raw: bytes) -> dict | None:
+    """The request's leading top-level scalar members, read from a bounded prefix without parsing the body.
+
+    Returns ``None`` (parse the whole line instead) unless ``jsonrpc`` is ``"2.0"`` and a string ``method`` and an
+    integer or string ``id`` all precede the first non-scalar member.
+    """
+    prefix = raw[:_PEEK_BYTES]
+    if not prefix.startswith(b"{"):
+        return None
+    head: dict[str, Any] = {}
+    pos = 1
+    try:
+        while match := _HEAD_MEMBER.match(prefix, pos):
+            head[match[1].decode()] = json.loads(match[2])
+            if match[3] == b"}":
+                break
+            pos = match.end()
+    except ValueError:
+        return None
+    if head.get("jsonrpc") == "2.0" and isinstance(head.get("method"), str) and type(head.get("id")) in (int, str):
+        return head
+    return None
+
+
+def _decode_value(text: str, idx: int, depth: int) -> tuple[Any, int]:
+    """One JSON value at ``idx`` (no leading space) and the index after it, decoded exactly as ``json.loads`` would."""
+    opener = text[idx:idx + 1]
+    if depth and opener in ("{", "["):
+        closer = "}" if opener == "{" else "]"
+        container: Any = {} if opener == "{" else []
+        idx = _SPACE.match(text, idx + 1).end()
+        if text[idx:idx + 1] == closer:
+            return container, idx + 1
+        while True:
+            if opener == "{":
+                if text[idx:idx + 1] != '"':
+                    raise json.JSONDecodeError("Expecting property name enclosed in double quotes", text, idx)
+                key, idx = json.decoder.scanstring(text, idx + 1)
+                idx = _SPACE.match(text, idx).end()
+                if text[idx:idx + 1] != ":":
+                    raise json.JSONDecodeError("Expecting ':' delimiter", text, idx)
+                container[key], idx = _decode_value(text, _SPACE.match(text, idx + 1).end(), depth - 1)
+            else:
+                value, idx = _decode_value(text, idx, depth - 1)
+                container.append(value)
+            idx = _SPACE.match(text, idx).end()
+            delimiter = text[idx:idx + 1]
+            if delimiter == closer:
+                return container, idx + 1
+            if delimiter != ",":
+                raise json.JSONDecodeError("Expecting ',' delimiter", text, idx)
+            idx = _SPACE.match(text, idx + 1).end()
+    return _DECODER.raw_decode(text, idx)
+
+
+def _loads_yielding(raw: bytes) -> Any:
+    """``json.loads`` for a request line that lets other threads run while a multi-MB body decodes."""
+    text = raw.decode("utf-8")
+    value, end = _decode_value(text, _SPACE.match(text).end(), _WALK_DEPTH)
+    end = _SPACE.match(text, end).end()
+    if end != len(text):
+        raise json.JSONDecodeError("Extra data", text, end)
+    return value
 
 
 def call_server(method: str, params: dict, *, timeout: float | None = None):
@@ -316,17 +397,20 @@ class RpcServer:
             raw = raw.strip()
             if not raw:
                 continue
-            try:
-                request = json.loads(raw)
-            except ValueError:
-                self._error(None, PARSE_ERROR, "invalid JSON")
-                continue
-            if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
-                self._error(request.get("id") if isinstance(request, dict) else None, INVALID_REQUEST, "expected a JSON-RPC 2.0 request object")
-                continue
-            if "method" not in request and isinstance(request.get("id"), str) and request["id"].startswith("s:"):
-                self._settle_server_call(request)
-                continue
+            request = _peek_head(raw)
+            if request is None or request["method"] == "rpc.cancel":
+                line, raw = raw, None
+                try:
+                    request = json.loads(line)
+                except (ValueError, RecursionError):
+                    self._error(None, PARSE_ERROR, "invalid JSON")
+                    continue
+                if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
+                    self._error(request.get("id") if isinstance(request, dict) else None, INVALID_REQUEST, "expected a JSON-RPC 2.0 request object")
+                    continue
+                if "method" not in request and isinstance(request.get("id"), str) and request["id"].startswith("s:"):
+                    self._settle_server_call(request)
+                    continue
             if request.get("method") == "rpc.cancel":
                 # Cancellation must not queue behind the call it targets.
                 self._dispatch(request)
@@ -341,7 +425,7 @@ class RpcServer:
                 self._error(request.get("id"), APPLICATION_ERROR, "sidecar is at its concurrent call limit", {"condition": "sidecar_busy"})
                 continue
             ctx = self._register(request)
-            threading.Thread(target=self._dispatch_slot, args=(request, ctx), name=f"rpc-{request.get('method')}", daemon=True).start()
+            threading.Thread(target=self._dispatch_slot, args=(request, ctx, raw), name=f"rpc-{request.get('method')}", daemon=True).start()
         # No more replies can arrive: a tool waiting on the server fails now rather than at its timeout.
         self._fail_server_calls()
         if self._closed.is_set():
@@ -355,10 +439,33 @@ class RpcServer:
                 threading.Event().wait(.01)
         return self.exit_code
 
-    def _dispatch_slot(self, request: dict, ctx: CallContext | None) -> None:
+    def _dispatch_slot(self, request: dict, ctx: CallContext | None, raw: bytes | None = None) -> None:
+        method = request.get("method")
         try:
-            self._dispatch(request, ctx)
+            if raw is not None:
+                request = self._parse_body(raw, request, ctx)
+            if request is not None:
+                self._dispatch(request, ctx)
         finally:
             self._slots.release()
-            if request.get("method") == "commands.exec":
+            if method == "commands.exec":
                 self._command_slots.release()
+
+    def _parse_body(self, raw: bytes, head: dict, ctx: CallContext | None) -> dict | None:
+        """Parse a peeked request on its worker; an unusable body is answered under the peeked id."""
+        try:
+            request = _loads_yielding(raw)
+        except (ValueError, RecursionError):
+            code, message = PARSE_ERROR, "invalid JSON"
+        else:
+            if isinstance(request, dict) and all(request.get(name) == head[name] for name in ("jsonrpc", "id", "method")):
+                if ctx and ctx.timing:
+                    ctx.timing.identify(request)
+                return request
+            code, message = INVALID_REQUEST, "request body does not match its leading jsonrpc, id and method"
+        if ctx and ctx.timing:
+            ctx.timing.finish("refused")
+        with self._active_lock:
+            self._active.pop(head["id"], None)
+        self._error(head["id"], code, message)
+        return None
