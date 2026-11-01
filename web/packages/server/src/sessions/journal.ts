@@ -44,6 +44,16 @@ export interface PruneOptions {
   now?: number
   retentionSeconds?: number
   keepRecent?: number
+  /** Soft per-session live journal budgets; 0 disables each. */
+  maxRuns?: number
+  maxBytes?: number
+  /** The instance's archived journal bytes; past it the oldest archives are removed, keeping their summaries. 0 disables. */
+  maxArchiveBytes?: number
+  /**
+   * Runs a session's persisted state still names (its `active_stream_id`), which stay live for the prior Stable's
+   * recovery path; null when that state cannot be read, which leaves the whole session live.
+   */
+  protectedRuns?: (sessionId: string) => Promise<ReadonlySet<string> | null>
   isActive?: (path: string) => boolean
   dryRun?: boolean
   signal?: AbortSignal
@@ -55,6 +65,36 @@ export interface PruneResult {
   terminal: number
   pruned: number
   bytes_reclaimed: number
+  /** Archives removed to fit the instance archive budget; their runs keep only a summary. */
+  archives_removed: number
+}
+
+export interface RetentionPolicy { retentionSeconds: number; keepRecent: number; maxRuns: number; maxBytes: number; maxArchiveBytes: number }
+const RETENTION_MAX_RUNS_DEFAULT = 40
+const RETENTION_MAX_BYTES_DEFAULT = 256 * 1024 * 1024
+const RETENTION_MAX_RUNS_LIMIT = 100_000
+const RETENTION_MAX_BYTES_LIMIT = 100 * 1024 * 1024 * 1024
+const ARCHIVE_MAX_BYTES_DEFAULT = 2 * 1024 * 1024 * 1024
+
+/** A cap is a whole number up to `limit`; 0 disables it, and anything else disables it too so a typo never widens archival. */
+function retentionCap(raw: string | undefined, fallback: number, limit: number): number {
+  const text = (raw ?? '').trim()
+  if (!text) return fallback
+  const value = /^\d+$/.test(text) ? Number(text) : Number.NaN
+  return Number.isSafeInteger(value) && value <= limit ? value : 0
+}
+
+/** The run-journal retention policy, read once from the server environment. */
+export function retentionPolicy(env: Record<string, string | undefined>): RetentionPolicy {
+  const days = Number.parseFloat(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
+  const keep = Number.parseInt(env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
+  return {
+    retentionSeconds: Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400,
+    keepRecent: Number.isFinite(keep) ? Math.max(0, keep) : 3,
+    maxRuns: retentionCap(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION, RETENTION_MAX_RUNS_DEFAULT, RETENTION_MAX_RUNS_LIMIT),
+    maxBytes: retentionCap(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION, RETENTION_MAX_BYTES_DEFAULT, RETENTION_MAX_BYTES_LIMIT),
+    maxArchiveBytes: retentionCap(env.HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES, ARCHIVE_MAX_BYTES_DEFAULT, Number.MAX_SAFE_INTEGER),
+  }
 }
 
 export function validateId(value: string, field: string): string {
@@ -126,10 +166,9 @@ export function staleInterruptedEvent(summary: RunSummary, sessionId: string, ru
 
 /** Retention for `pruneSettled`: `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) and `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3), unless the caller overrides them. */
 export function pruneRetention(env: Record<string, string | undefined>, opts: PruneOptions): { retention: number; keep: number; now: number; cutoff: number } {
-  const days = Number.parseFloat(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
-  const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
-  const keepEnv = Number.parseInt(env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
-  const keep = opts.keepRecent ?? (Number.isFinite(keepEnv) ? Math.max(0, keepEnv) : 3)
+  const policy = retentionPolicy(env)
+  const retention = opts.retentionSeconds ?? policy.retentionSeconds
+  const keep = opts.keepRecent ?? policy.keepRecent
   const now = opts.now ?? Date.now() / 1000
   return { retention, keep, now, cutoff: now - retention }
 }

@@ -1304,8 +1304,11 @@ describe('hygiene tick', () => {
     const summaries = ['run0', 'run1', 'run2', 'run3', 'run4', 'live'].filter((r) => existsSync(join(dir, '_run_journal', 'sess1', `${r}.summary.json`)))
     expect(summaries).toEqual(['run1', 'run2', 'run3'])
     const pruned = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess1', `${summaries[0] ?? ''}.summary.json`), 'utf8')) as Json
-    expect(pruned).toMatchObject({ journal_pruned: true, terminal: true, terminal_state: 'completed' })
-    expect((await journal.latestRunSummary('sess1', summaries[0] ?? ''))).toMatchObject({ journal_pruned: true })
+    expect(pruned, 'the previous Stable still reads a compacted summary').toMatchObject({ journal_pruned: true, terminal: true, terminal_state: 'completed' })
+    const archived = await journal.latestRunSummary('sess1', summaries[0] ?? '')
+    expect(archived).toMatchObject({ terminal: true, terminal_state: 'completed', last_seq: 3 })
+    expect(archived.journal_pruned).toBeUndefined()
+    expect((await journal.readRunEvents('sess1', summaries[0] ?? '')).map((e) => e.event)).toEqual(['token', 'done', 'stream_end'])
   })
 })
 
@@ -1344,6 +1347,7 @@ describe('run-journal retention sweep', () => {
         for (let r = 0; r < 5; r += 1) (await writeRun(journal, `sess${String(i)}`, `run${String(r)}`, { bytes: i < 2 ? 5 * 1024 * 1024 : 64 * 1024, mtime: old + r }))
         await writeRun(journal, `sess${String(i)}`, 'open', { terminal: false, mtime: old - 1 })
       }
+      const before = await Promise.all(['sess0', 'sess39'].map(async (sid) => (await journal.readRunEvents(sid, 'run0'))))
       let reached!: () => void
       const midSweep = new Promise<void>((resolve) => { reached = resolve })
       let pauses = 0
@@ -1357,8 +1361,10 @@ describe('run-journal retention sweep', () => {
       expect(settled).toBe(false)
       release()
       await sweep
-      for (const sid of ['sess0', 'sess39']) {
+      for (const [i, sid] of ['sess0', 'sess39'].entries()) {
         expect(existsSync(journal.pathFor(sid, 'run0'))).toBe(false)
+        expect(existsSync(journal.archivePathFor(sid, 'run0'))).toBe(true)
+        expect(await journal.readRunEvents(sid, 'run0'), 'the archived run replays the rows it had live').toEqual(before[i])
         expect(existsSync(journal.pathFor(sid, 'run2'))).toBe(true)
         expect(existsSync(journal.pathFor(sid, 'open'))).toBe(true)
       }
@@ -1367,7 +1373,8 @@ describe('run-journal retention sweep', () => {
       release()
       await s.close()
     }
-  })
+  // 240 fsynced journals and their archives: a loaded workstation's full fsync can pass the default 20 s.
+  }, 60_000)
 
   it('waits for a running sweep on server close and stops it there', async () => {
     const s = await bootTestServer()
@@ -1413,7 +1420,7 @@ describe('run-journal retention sweep', () => {
     expect(calls).toBe(2)
     release()
     await first
-    expect(log.at(-1)).toMatch(/^\[webui\] run-journal retention pruned 2 files/)
+    expect(log.at(-1)).toMatch(/^\[webui\] run-journal retention archived 2 journals/)
     // Stop aborts the in-flight sweep at its next yield and prevents later sweeps.
     for (let r = 5; r < 8; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
     ;({ gate, release } = gated())
@@ -1499,7 +1506,7 @@ describe('run-journal retention sweep', () => {
     const controller = new AbortController()
     // The abort lands on the next loop turn, while the sweep is listing and stat-ing the session's journals.
     const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
-    expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
+    expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
   })
 
   it('keeps nonterminal and recent journals, writes faithful summaries, and leaves dry runs and disabled retention untouched', async () => {
@@ -1514,11 +1521,12 @@ describe('run-journal retention sweep', () => {
     utimesSync(journal.pathFor('sess', 'a'), old, old)
     await writeRun(journal, 'small', 'only', { mtime: old })
     const before = tree(dir)
-    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
+    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
     const dry = await journal.pruneSettled({ now, keepRecent: 1, dryRun: true })
     expect(dry).toMatchObject({ examined: 5, terminal: 3, pruned: 2 })
     expect(tree(dir)).toEqual(before)
-    const expected = JsonJournal.summaryFromEvents('sess', 'a', (await journal.readRunEvents('sess', 'a')))
+    const rowsBefore = await journal.readRunEvents('sess', 'a')
+    const expected = JsonJournal.summaryFromEvents('sess', 'a', rowsBefore)
     expect(await journal.pruneSettled({ now, keepRecent: 1 })).toMatchObject({ pruned: 2 })
     // Equal mtimes keep the path that sorts last; the nonterminal journal and a session under the keep count stay.
     expect(['a', 'b', 'c', 'live'].map((r) => existsSync(journal.pathFor('sess', r)))).toEqual([false, false, true, true])
@@ -1527,7 +1535,8 @@ describe('run-journal retention sweep', () => {
     const summary = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess', 'a.summary.json'), 'utf8')) as Json
     expect(summary).toMatchObject({ ...expected, journal_pruned: true, journal_pruned_at: now })
     expect(summary.original_mtime).toBeCloseTo(old, 3)
-    expect((await journal.latestRunSummary('sess', 'a'))).toMatchObject({ journal_pruned: true, terminal_state: 'completed' })
+    expect((await journal.latestRunSummary('sess', 'a'))).toMatchObject({ terminal: true, terminal_state: 'completed' })
+    expect(await journal.readRunEvents('sess', 'a'), 'the archive keeps every row, beside the malformed line').toEqual(rowsBefore)
   })
 })
 

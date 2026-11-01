@@ -8,6 +8,8 @@ import { closeSync, existsSync, fstatSync, ftruncateSync, openSync, readSync } f
 import { writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
 import type { RunJournal } from '../sessions/journal.js'
+import { isSafeSessionId } from '../sessions/session.js'
+import type { SessionBackend } from '../sessions/storage/backend.js'
 
 export const HYGIENE_INTERVAL_MS = 60_000
 const RETENTION_INTERVAL_S = 6 * 3600
@@ -60,6 +62,21 @@ export function rotateWebuiLog(paths: string[], limit: number, log: (line: strin
   return paths.filter(existsSync).map((p) => rotateOne(p, limit, log)).some(Boolean)
 }
 
+/**
+ * The runs a session's persisted state still names, which retention leaves live for the prior Stable's recovery path. A
+ * journal session without a session document (an owner observation, or a session already deleted) names none; an
+ * unreadable document answers null, so the sweep leaves that session alone.
+ */
+export function sessionRunReferences(sessions: Pick<SessionBackend, 'readDocument'>): (sessionId: string) => Promise<ReadonlySet<string> | null> {
+  return async (sessionId) => {
+    if (!isSafeSessionId(sessionId)) return new Set()
+    try {
+      const active = (await sessions.readDocument(sessionId, { metadataOnly: true }))?.doc.active_stream_id
+      return new Set(typeof active === 'string' && active.trim() ? [active.trim()] : [])
+    } catch { return null }
+  }
+}
+
 export interface HygieneDeps {
   env: Record<string, string | undefined>
   stateDir: string
@@ -67,6 +84,8 @@ export interface HygieneDeps {
   journal: RunJournal
   now: () => number
   log: (line: string) => void
+  /** Session state retention must read before archiving a session's journals. */
+  sessions?: Pick<SessionBackend, 'readDocument'>
   /** Extra per-tick sweeps (completion dedupe, terminal idle reaper). */
   sweeps?: (() => void | Promise<void>)[]
 }
@@ -114,8 +133,11 @@ export class HygieneTicker {
     const { signal } = this.abort
     if (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S) return this.pending()
     this.retentionLastRun = now
-    this.retention = this.deps.journal.pruneSettled({ now, signal })
-      .then((result) => { if (result.pruned) this.deps.log(`[webui] run-journal retention pruned ${String(result.pruned)} files (${String(result.bytes_reclaimed)} bytes)`) })
+    this.retention = this.deps.journal.pruneSettled({ now, signal, ...(this.deps.sessions ? { protectedRuns: sessionRunReferences(this.deps.sessions) } : {}) })
+      .then((result) => {
+        if (result.pruned) this.deps.log(`[webui] run-journal retention archived ${String(result.pruned)} journals (${String(result.bytes_reclaimed)} live bytes)`)
+        if (result.archives_removed) this.deps.log(`[webui] run-journal retention removed ${String(result.archives_removed)} oldest archives to fit HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES`)
+      })
       .catch((error: unknown) => { this.warn('run-journal retention', error) })
       .finally(() => { this.retention = null })
     return this.pending()

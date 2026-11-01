@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Older finished chats keep their full replayable history: retention now compresses their run journals instead of reducing them to summaries, keeps each chat within 40 journals and 256 MiB, and keeps all compressed history within an adjustable 2 GiB budget.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

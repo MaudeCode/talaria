@@ -69,12 +69,18 @@ it('does not cache misses and rediscovers disappeared, moved and recreated runs'
   expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'third' })
 })
 
+/** Summary-only history, as releases before archival pruned it: the events are gone and only the summary remains. */
+async function legacyPrune(journal: JsonJournal, sid: string): Promise<void> {
+  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
+  fs.rmSync(join(journal.root(), sid, '_archive'), { recursive: true })
+}
+
 it('keeps pruned summaries warm and fresh, and rediscovers their moves and replacements', async () => {
   const journal = fixture()
   await writeRun(journal, 'session')
   const original = await journal.findRunSummary('run')
   expect(original).toMatchObject({ journal_truncated: false, terminal: true })
-  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
+  await legacyPrune(journal, 'session')
   for (let i = 0; i < 100; i++) fs.mkdirSync(join(journal.root(), `unrelated${i}`))
   vi.clearAllMocks()
   const pruned = await journal.findRunSummary('run')
@@ -98,7 +104,7 @@ it('keeps pruned summaries warm and fresh, and rediscovers their moves and repla
 it('prefers a recreated journal over a warm pruned summary', async () => {
   const journal = fixture()
   await writeRun(journal, 'session')
-  await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })
+  await legacyPrune(journal, 'session')
   expect(await journal.findRunSummary('run')).toMatchObject({ journal_pruned: true })
   const writer = await journal.writer('session', 'run')
   await writer.appendSseEvent('token', { text: 'new run' })
@@ -258,4 +264,16 @@ it('settles a terminal append only after its fsync completes, before closing the
   expect(order).toEqual(['synced', 'published', 'later'])
   expect(fs.closeSync).toHaveBeenCalledTimes(1)
   await writer.close()
+})
+
+it('keeps a settled run replayable after retention archives it', async () => {
+  const journal = fixture()
+  const writer = await journal.writer('session', 'run')
+  await writer.appendSseEvent('token', { text: 'kept after retention' })
+  await writer.appendSseEvent('done', { session_id: 'session' })
+  await writer.close()
+  const before = await journal.readRunEvents('session', 'run')
+  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
+  expect(fs.existsSync(journal.pathFor('session', 'run')), 'the live journal is reclaimed').toBe(false)
+  expect(await journal.readRunEvents('session', 'run'), 'retention keeps every replayable event').toEqual(before)
 })

@@ -223,7 +223,7 @@ export class SqliteJournal implements JournalBackend {
    * `keep` per session and any run with a live writer. Yields after every session and parsed run, like the JSON sweep.
    */
   async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
-    const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
+    const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 }
     const { retention, keep, now, cutoff } = pruneRetention(this.env, opts)
     const proceed = async (): Promise<boolean> => { await (opts.pause ?? nextTurn)(); return !opts.signal?.aborted && !this.closed }
     if (retention <= 0) return result
