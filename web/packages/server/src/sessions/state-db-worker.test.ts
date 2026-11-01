@@ -454,7 +454,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     const path = join(server.state, 'state.db')
-    seedStateDb(path, [{ id: 'cli-probe', source: 'cli', at: server.deps.nowSeconds() }, { id: 'cron_job1_1', source: 'cron', at: 1020 }])
+    seedStateDb(path, [{ id: 'cli-probe', source: 'cli', at: server.deps.nowSeconds() - 10 }, { id: 'cron_job1_1', source: 'cron', at: 1020 }])
     if (surface === 'handoff') {
       const db = openStateDb(path)
       db.exec("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 20) INSERT INTO messages (session_id, role, content, timestamp) SELECT 'handoff-probe', CASE WHEN x % 2 = 1 THEN 'user' ELSE 'assistant' END, 'synthetic', 1000 + x FROM n")
