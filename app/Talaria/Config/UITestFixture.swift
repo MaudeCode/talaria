@@ -30,6 +30,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let compactionRowArgument = "--ui-test-compaction-row"
     /// Serves the fixture chat as a branch of "Fixture Session 01", which opens with its own transcript (TAL-454).
     nonisolated static let branchedFromArgument = "--ui-test-branched-from"
+    /// Serves auth status from a server that keeps sessions per person, with a signed-in person (TAL-48).
+    nonisolated static let personIsolationArgument = "--ui-test-person-isolation"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
     nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
@@ -682,6 +684,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         switch url.path {
         case "/health":
             return json(["status": "ok"])
+        case "/api/auth/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.personIsolationArgument):
+            return json([
+                "auth_enabled": true, "logged_in": true,
+                "person_isolation": ["version": 1, "enabled": true],
+                "person": ["id": "oidc:fixture-person", "display_name": "alex@example.invalid"],
+            ])
         case "/api/auth/status":
             return json(["auth_enabled": false, "logged_in": true])
         case "/api/auth/login":

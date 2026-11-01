@@ -76,6 +76,23 @@ public final class AuthManager {
     public private(set) var authenticatedIdentityRevision = 0
     public private(set) var reauthenticationOffersSSO = false
     public private(set) var reauthenticationOffersPassword = true
+    /// The user chose to sign in again (TAL-48): the session is intact, so the
+    /// sheet says nothing expired and can be cancelled.
+    public private(set) var reauthenticationIsVoluntary = false
+    /// TAL-48: who the active server says is signed in, when it keeps sessions
+    /// per person; nil for a single-user server or before the first probe.
+    public var activePerson: ActivePerson? {
+        guard let answer = personAnswer, answer.server == state.server else { return nil }
+        return Self.activePerson(from: answer.status)
+    }
+    /// The last person probe, kept with its server so another server never shows it.
+    private var personAnswer: (server: URL, status: AuthStatusResponse)?
+
+    public enum ActivePerson: Equatable, Sendable {
+        case signedIn(displayName: String)
+        /// The server isolates sessions per person but this login has none.
+        case unidentified
+    }
     @ObservationIgnored private(set) var recoveryTask: Task<Void, Never>?
     private var recoveryID = UUID()
     private let mutationBlockID = UUID()
@@ -89,10 +106,12 @@ public final class AuthManager {
         recoveryTask?.cancel()
         recoveryTask = nil
         pendingReauthentication = nil
+        reauthenticationIsVoluntary = false
         APIClient.setReauthenticationRequired(nil, owner: mutationBlockID)
     }
 
-    private func requireReauthentication(for server: URL, status: AuthStatusResponse?) {
+    private func requireReauthentication(for server: URL, status: AuthStatusResponse?, voluntary: Bool = false) {
+        reauthenticationIsVoluntary = voluntary
         let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
         // Without a successful capability probe, keep retry/header repair available.
         reauthenticationOffersSSO = status != nil && status?.oidcEnabled != false
@@ -104,6 +123,42 @@ public final class AuthManager {
         }
         pendingReauthentication = server
         APIClient.setReauthenticationRequired(server, owner: mutationBlockID)
+    }
+
+    /// Re-reads the active server's person (TAL-48). An unreachable server keeps
+    /// the last answer; a session it no longer accepts goes through the normal
+    /// unauthorized recovery.
+    public func refreshActivePerson() async {
+        guard case .loggedIn(let server) = state else { return }
+        let client = probeClientFactory(server, currentCustomHeaders, cookieStorageProvider(server))
+        let status: AuthStatusResponse
+        do {
+            status = try await client.authStatus()
+        } catch {
+            handleAPIError(error, server: server)
+            return
+        }
+        guard state == .loggedIn(server: server) else { return }
+        personAnswer = (server, status)
+    }
+
+    static func activePerson(from status: AuthStatusResponse) -> ActivePerson? {
+        guard status.personIsolation?.enabled == true else { return nil }
+        if let name = status.person?.displayName, !name.isEmpty { return .signedIn(displayName: name) }
+        return .unidentified
+    }
+
+    /// Recovery for a missing or wrong person: the server's normal sign-in sheet,
+    /// so the new login decides who the person is.
+    public func reauthenticateActivePerson() {
+        guard case .loggedIn(let server) = state, pendingReauthentication == nil else { return }
+        requireReauthentication(for: server, status: personAnswer?.server == server ? personAnswer?.status : nil, voluntary: true)
+    }
+
+    /// Cancels a sign-in the user started; the existing session stays as it was.
+    public func cancelVoluntaryReauthentication() {
+        guard reauthenticationIsVoluntary, pendingReauthentication != nil, recoveryTask == nil else { return }
+        finishRecovery()
     }
 
     /// Observable snapshot of every configured server, mirrored from the

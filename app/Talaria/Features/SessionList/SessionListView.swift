@@ -260,6 +260,14 @@ struct SessionListView: View {
             }
             .feedbackPresentation(sidebarFeedback, isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications,
                                   onDismiss: sidebarModalDidDismiss)
+            // The sign-in sheet presents from the app root, which cannot stack it over these sheets: close them so a
+            // session loss or a Settings "Sign In Again" (TAL-48) always reaches it.
+            .onChange(of: authManager.pendingReauthentication) { _, server in
+                guard server != nil else { return }
+                isPresentingSettings = false
+                isPresentingUpdateNotifications = false
+                sidebarFeedback?.isPresented = false
+            }
             .sheet(isPresented: $isPresentingUpdateNotifications, onDismiss: {
                 guard let path = pendingSettingsPath else { return }
                 pendingSettingsPath = nil
