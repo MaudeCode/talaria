@@ -5,10 +5,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { FakeSidecar } from './sidecar/fake.js'
 import { bootTestServer, type TestServer } from './test/harness.js'
 import { writeEnvFile } from './test/env-file.js'
+import { useJsonStorage } from './test/storage.js'
 
 type Json = Record<string, unknown>
 
 describe('project bindings', () => {
+  // `stored()` reads projects.json directly, which only the JSON backend writes.
+  useJsonStorage()
   let s: TestServer
   let a: string
   let b: string
