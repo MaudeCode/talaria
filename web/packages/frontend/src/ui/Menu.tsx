@@ -1,6 +1,6 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
-import { useRef, type ComponentProps, type FocusEvent, type KeyboardEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
+import { useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import type { BaseUIEvent } from '@base-ui/react/types'
 import { cn } from './cn'
 
@@ -50,72 +50,73 @@ function revealRows(scroller: HTMLElement | null) {
   return () => { observer.disconnect() }
 }
 
-/** Base UI's rule for what opened a popup: a click with no click count came from the keyboard, else the pressing pointer. */
-function openingModality(event: Event, pointer: string): string {
-  return event instanceof KeyboardEvent || (event.type === 'click' && (event as MouseEvent).detail === 0) ? 'keyboard' : pointer
-}
+/**
+ * TAL-1625: the opening focus of a menu with a search field. `pointer` is the last trigger press's pointer type, read
+ * once per opening. Base UI's rule decides what opened it: a click with no click count came from the keyboard. A
+ * keyboard or mouse opening focuses search (`search`); a keyboard opening also redirects Base UI's one first-row focus
+ * (`row`). A touch or pen opening focuses the popup, so no software keyboard covers the list.
+ */
+interface OpeningFocus { pointer: string; search: boolean; row: boolean; popup: HTMLElement | null }
 
-/** A key that types into a search field rather than driving the list (Space activates the highlighted row). */
-function typesText(event: KeyboardEvent<HTMLElement>): boolean {
-  return event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey
+function openingFocus(s: OpeningFocus, search: RefObject<HTMLElement | null> | undefined, onOpenChange: MenuProps['onOpenChange']) {
+  return {
+    onTriggerPointerDown: (event: PointerEvent) => { s.pointer = event.pointerType },
+    onOpenChange: (next: boolean, { event }: { event: Event }) => {
+      const keyboard = next && (event instanceof KeyboardEvent || (event.type === 'click' && (event as MouseEvent).detail === 0))
+      s.search = keyboard || (next && s.pointer === 'mouse')
+      s.row = keyboard
+      s.pointer = ''
+      onOpenChange?.(next)
+    },
+    // Base UI's queued opening focus goes to the first tabbable element, the search field, and stands down once focus is
+    // already inside, so the opening's own target is focused as the popup mounts. A re-render hands the same node to a
+    // new callback, which leaves focus where the user put it.
+    ref: (popup: HTMLElement | null) => {
+      const input = search?.current
+      if (!popup || popup === s.popup) return
+      s.popup = popup
+      if (input) (s.search ? input : popup).focus({ preventScroll: true })
+    },
+    // A later focus of the popup itself, or Base UI's first-row focus on a keyboard opening, goes back to search.
+    onFocus: ({ target, currentTarget }: FocusEvent<HTMLElement>) => {
+      const input = search?.current
+      if (!input || !s.search || target === input) return
+      if (target === currentTarget || s.row) input.focus()
+      s.row = false
+    },
+    onKeyDown: (event: BaseUIEvent<KeyboardEvent<HTMLElement>>) => {
+      s.row = false
+      const input = search?.current
+      const { key } = event
+      if (!input || event.nativeEvent.isComposing) return
+      if (event.target === input) {
+        // From search, ArrowDown and ArrowUp reach the first and last row; a row's focus moves Base UI's highlight with it.
+        const rows = event.currentTarget.querySelectorAll<HTMLElement>('[role^=menuitem]:not([aria-disabled=true])')
+        const row = key === 'ArrowDown' ? rows[0] : key === 'ArrowUp' ? rows[rows.length - 1] : null
+        if (!row) return
+        event.preventBaseUIHandler()
+        event.preventDefault()
+        row.focus()
+      } else if (key.length === 1 && key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        // A typed character (Space activates the row) moves focus before its input, so it lands in search, not typeahead.
+        event.preventBaseUIHandler()
+        input.focus()
+      }
+    },
+  }
 }
 
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
 export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, search, header }: MenuProps) {
-  // The last trigger press's pointer type; an opening reads it once, so a stale value never outlives its press.
-  const pointer = useRef('')
-  // Whether this opening focuses `search`, and whether Base UI's first-row focus on a keyboard opening is still to come.
-  const toSearch = useRef(false)
-  const rowPending = useRef(false)
-  const changeOpen: NonNullable<ComponentProps<typeof BaseMenu.Root>['onOpenChange']> = (next, details) => {
-    const modality = next ? openingModality(details.event, pointer.current) : ''
-    pointer.current = ''
-    toSearch.current = modality === 'keyboard' || modality === 'mouse'
-    rowPending.current = modality === 'keyboard'
-    onOpenChange?.(next)
-  }
-  // Base UI's queued opening focus goes to the first tabbable element, the search field, and stands down once focus is
-  // already inside; the opening's own target is focused first, as the popup mounts. A re-render hands the same node to
-  // a new callback, which leaves focus where the user put it.
-  const placedOn = useRef<HTMLElement | null>(null)
-  const placeFocus = (popup: HTMLElement | null) => {
-    const input = search?.current
-    if (!popup || popup === placedOn.current) return
-    placedOn.current = popup
-    if (input) (toSearch.current ? input : popup).focus({ preventScroll: true })
-  }
-  // A later focus of the popup itself, or Base UI's one first-row focus on a keyboard opening, goes back to search.
-  const focusSearch = (event: FocusEvent<HTMLElement>) => {
-    const input = search?.current
-    if (!input || !toSearch.current || event.target === input) return
-    if (event.target === event.currentTarget) input.focus()
-    else if (rowPending.current) { rowPending.current = false; input.focus() }
-  }
-  const searchKeys = (event: BaseUIEvent<KeyboardEvent<HTMLElement>>) => {
-    rowPending.current = false
-    const input = search?.current
-    if (!input || event.nativeEvent.isComposing) return
-    if (event.target === input) {
-      // From search, ArrowDown and ArrowUp reach the first and last row; a row's focus moves Base UI's highlight with it.
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-      const rows = event.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])')
-      const row = event.key === 'ArrowDown' ? rows[0] : rows[rows.length - 1]
-      if (!row) return
-      event.preventBaseUIHandler()
-      event.preventDefault()
-      row.focus()
-    } else if (typesText(event)) {
-      // Focus moves before the key's input, so the character lands in search instead of Base UI's typeahead.
-      event.preventBaseUIHandler()
-      input.focus()
-    }
-  }
+  // One stable container for the opening's mutable focus state, read and written only by the handlers.
+  const [state] = useState<OpeningFocus>(() => ({ pointer: '', search: false, row: false, popup: null }))
+  const focus = openingFocus(state, search, onOpenChange)
   return (
-    <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={changeOpen}>
-      <BaseMenu.Trigger render={trigger} onPointerDown={(event) => { pointer.current = event.pointerType }} />
+    <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={focus.onOpenChange}>
+      <BaseMenu.Trigger render={trigger} onPointerDown={focus.onTriggerPointerDown} />
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={6} className={POSITIONER}>
-          <BaseMenu.Popup ref={header ? placeFocus : revealRows} aria-label={label} onFocus={focusSearch} onKeyDown={searchKeys} onPointerDown={() => { rowPending.current = false }} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
+          <BaseMenu.Popup ref={header ? focus.ref : revealRows} aria-label={label} onFocus={focus.onFocus} onKeyDown={focus.onKeyDown} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
             {header ? <>{header}<div ref={revealRows} className="min-h-0 overflow-y-auto">{children}</div></> : children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>
