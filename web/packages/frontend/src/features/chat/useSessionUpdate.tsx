@@ -17,7 +17,8 @@ type OwnerResult = Awaited<ReturnType<typeof api.ownerAction>>
 
 /** The chip shows the chosen model or workspace at once, and while its confirmation is open; Cancel or a refusal rolls it back. */
 export function chosenFields(body: Update): Record<string, unknown> {
-  return body.workspace !== undefined ? { workspace: body.workspace, workspace_name: null } : { model: body.model, model_option_id: body.model, model_provider: body.model_provider ?? null }
+  // TAL-978: a model pick voids the fallback route that answered the old one, as the server's write does.
+  return body.workspace !== undefined ? { workspace: body.workspace, workspace_name: null } : { model: body.model, model_option_id: body.model, model_provider: body.model_provider ?? null, served_model: null, served_model_provider: null }
 }
 
 /** A write to one session's fields: shown at once on `session:{sid}`, confirmed by the reread of that session. */

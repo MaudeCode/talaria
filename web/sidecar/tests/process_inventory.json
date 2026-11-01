@@ -569,13 +569,6 @@
         ""
       ]
     },
-    "tests/test_chat_served_route.py::test_start_returns_the_fallback_route_and_the_requested_model": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: chat.start runs on the installed Agent interpreter and returns the route a stand-in agent's fallback swapped in, with the primary model it requested. Disposable profile home; no model or network.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_chat_finalize.py::test_archive_notifies_profile_plugins_without_finalizing_or_writing_state": {
       "layer": "compatibility",
       "reason": "Real supported-Agent emitter and plugin discovery must deliver the owning profile archive event without finalization or a SessionDB open; boundary fakes cannot prove native lifecycle dispatch.",
