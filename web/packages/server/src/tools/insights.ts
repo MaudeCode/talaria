@@ -32,7 +32,7 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
   const today = new Date(nowSeconds * 1000)
   // Local calendar days, not 86,400-second steps: a DST change makes a day 23 or 25 hours long (TAL-1115).
   const windowDays = Array.from({ length: days }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1) + i))
-  const cutoff = (windowDays[0] as Date).getTime() / 1000
+  const cutoff = windowDays[0]!.getTime() / 1000
   const state = new Map((await stateRows(cutoff)).map((r) => [str(r.session_id), r]))
   const merged = entries.map((e) => {
     const row = state.get(str(e.session_id))
