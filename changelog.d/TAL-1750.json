@@ -1,0 +1,58 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Insights shows every provider quota window with its pace, burn rate, budget, forecast, reset time and freshness, matching the widgets.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Insights, rebuilt",
+        "description": "Quota pace and forecasts, usage charts and a compact summary on one screen.",
+        "icon": "sparkles"
+      }
+    },
+    {
+      "category": "Added",
+      "summary": "Insights charts daily tokens, cost or sessions over the whole period, plus sessions by weekday and by hour.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "Insights totals sit in a compact two-column summary, and each model row shows its share, cost, tokens, sessions and cache hit rate.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Insights lists every provider quota with its windows, pace, burn rate, budget and forecast.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Insights charts gained a baseline, labels, hover values, a metric switch and a table view; the models table shows input, output, total tokens, cache hit rate and share.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "The Insights models table no longer shows zero tokens for every model.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

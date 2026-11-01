@@ -85341,10 +85341,38 @@
                           "sessions": {
                             "type": "number"
                           },
-                          "tokens": {
+                          "input_tokens": {
                             "type": "number"
                           },
+                          "output_tokens": {
+                            "type": "number"
+                          },
+                          "total_tokens": {
+                            "type": "number"
+                          },
+                          "cache_read_tokens": {
+                            "type": "number"
+                          },
+                          "cache_hit_percent": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "cost": {
+                            "type": "number"
+                          },
+                          "session_share": {
+                            "type": "number"
+                          },
+                          "token_share": {
+                            "type": "number"
+                          },
+                          "cost_share": {
                             "type": "number"
                           }
                         },

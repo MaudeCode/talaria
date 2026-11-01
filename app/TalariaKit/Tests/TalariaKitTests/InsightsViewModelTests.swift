@@ -514,3 +514,23 @@ private final class RecordingSleeper {
         pendingRelease = nil
     }
 }
+
+extension InsightsViewModelTests {
+    func testCompactNumbersReadLikeStatTiles() {
+        let locale = Locale(identifier: "en_US")
+        XCTAssertEqual(insightsCompactNumber(0, locale: locale), "0")
+        XCTAssertEqual(insightsCompactNumber(950, locale: locale), "950")
+        XCTAssertEqual(insightsCompactNumber(48_200, locale: locale), "48.2K")
+        XCTAssertEqual(insightsCompactNumber(1_234_567, locale: locale), "1.23M")
+    }
+
+    func testDailyTokenDayParsesTheServerBucketAsALocalDay() throws {
+        let insights = try decodeInsights("""
+        {"daily_tokens": [{"date": "2030-02-03", "input_tokens": 1}, {"date": "yesterday", "input_tokens": 1}]}
+        """)
+        let days = try XCTUnwrap(insights.dailyTokens)
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: try XCTUnwrap(days[0].day))
+        XCTAssertEqual([components.year, components.month, components.day], [2030, 2, 3])
+        XCTAssertNil(days[1].day)
+    }
+}

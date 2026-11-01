@@ -13,6 +13,8 @@ enum ProviderQuotaForecastOutcome: Equatable {
 struct ProviderQuotaForecastSummary {
     let burnRateLabel: String
     let budgetTitle: String
+    /// The budget unit as a short suffix ("/hr", "/day"), for one-line layouts.
+    let budgetUnitSuffix: String
     let budgetLabel: String
     let forecastLabel: String
     let systemImage: String
@@ -22,6 +24,7 @@ struct ProviderQuotaForecastSummary {
         guard let pace = state.pace, let forecast = state.forecast else {
             burnRateLabel = "—"
             budgetTitle = String(localized: "Budget / hr")
+            budgetUnitSuffix = String(localized: "/hr")
             budgetLabel = "—"
             forecastLabel = state.paceNeedsRefresh
                 ? String(localized: "Refresh needed")
@@ -35,6 +38,7 @@ struct ProviderQuotaForecastSummary {
         budgetTitle = forecast.budgetUnit == .day
             ? String(localized: "Budget / day")
             : String(localized: "Budget / hr")
+        budgetUnitSuffix = forecast.budgetUnit == .day ? String(localized: "/day") : String(localized: "/hr")
         budgetLabel = forecast.budgetPercent?
             .formatted(.percent.scale(1).precision(.fractionLength(0...1))) ?? "—"
 

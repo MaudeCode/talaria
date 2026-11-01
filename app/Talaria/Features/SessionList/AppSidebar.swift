@@ -205,9 +205,9 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                 }
 
                 if options.showsRail, let percent = state.percent {
-                    quotaRail(
+                    ProgressRailView(
                         percent: percent,
-                        expectedPercent: options.showsPaceMarker ? state.expectedPercent : nil,
+                        markerPercent: options.showsPaceMarker ? state.expectedPercent : nil,
                         tint: tint
                     )
                 }
@@ -217,30 +217,6 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
         .accessibilityLabel(
             [providerDisplayName(source), detail, state.paceLabel].compactMap { $0 }.joined(separator: ", ")
         )
-    }
-
-    private func quotaRail(percent: Double, expectedPercent: Double?, tint: Color) -> some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            ZStack(alignment: .leading) {
-                Capsule().fill(.secondary.opacity(0.18))
-                Capsule()
-                    .fill(tint)
-                    .frame(width: width * min(max(percent, 0), 100) / 100)
-                if let expectedPercent {
-                    Rectangle()
-                        .fill(Color.primary)
-                        .frame(width: 1.5, height: 3)
-                        .offset(
-                            x: min(
-                                max(width * min(max(expectedPercent, 0), 100) / 100 - 0.75, 0),
-                                max(width - 1.5, 0)
-                            )
-                        )
-                }
-            }
-        }
-        .frame(height: 3)
     }
 
     private func providerDisplayName(_ source: ProviderQuotaWidgetSource) -> String {

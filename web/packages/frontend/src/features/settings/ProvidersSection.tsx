@@ -1,5 +1,5 @@
 import { ModelOptionContent } from '../../lib/modelEntry'
-import { reconcileProviderQuotas } from '../../lib/providerQuotas'
+import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
@@ -25,17 +25,12 @@ const setProviderKey = (provider: string, api_key: string | null) => post('api/p
 
 export function ProvidersSection() {
   const qc = useQueryClient()
-  const fetchQuotas = async (refresh = false) => {
-    const response = await api.fetchProviderQuotas(refresh)
-    return reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), response)
-  }
   const reads = useRef(0)
   const providers = useQuery({ queryKey: keys.providers, queryFn: () => { reads.current += 1; return api.fetchProviders() }, staleTime: 30_000, refetchInterval: (query) => {
     const interval = query.state.data?.providers.find((p) => p.id === 'nous')?.nous_account?.poll_after
     return interval && reads.current < 120 ? interval * 1000 : false
   } })
-  // The server recomputes pace on every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
-  const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000 })
+  const { quotas, refresh: refreshQuotas } = useProviderQuotas()
   const { str } = useSettingField(['default_model'])
   const setDefault = useSetDefaultModel()
   const chosenModel = useDefaultModelChoice()?.model
@@ -59,7 +54,7 @@ export function ProvidersSection() {
     <div className="flex flex-col gap-3" data-section="providers">
       <div className="flex items-center justify-between text-xs text-muted">
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
-        <Button onClick={() => { void qc.cancelQueries({ queryKey: keys.providerQuotas }).then(() => qc.query({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 })).then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
+        <Button onClick={() => { void refreshQuotas() }}>{m.providers_quota_refresh()}</Button>
       </div>
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}

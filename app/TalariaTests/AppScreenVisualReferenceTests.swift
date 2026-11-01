@@ -160,6 +160,22 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// The Insights quota row with two live windows, their server pace and forecast, and a fixed clock (TAL-1750).
+    func testProviderQuotaRowReferences() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            try VisualReference.assertMatchesReference(
+                try InsightsHostedTests.quotaRowView(InsightsHostedTests.pacedSource)
+                    .padding(16)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 16),
+                named: "insights-quota-row-\(name(for: scheme))",
+                size: CGSize(width: 390, height: 330),
+                colorScheme: scheme,
+                background: Color(.systemGroupedBackground)
+            )
+        }
+    }
+
     // MARK: - Fixtures
 
     private static let fixtureID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!

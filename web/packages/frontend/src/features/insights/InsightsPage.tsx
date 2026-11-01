@@ -3,72 +3,130 @@ import { useQuery } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { useLocale } from '../../i18n/useLocale'
+import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { HubPage } from '../../shell/AppShell'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
+import { BarChart } from './BarChart'
+import { ProviderQuotaRows } from './ProviderQuotaRows'
 
 const PERIODS = [7, 30, 90, 365]
+const METRICS = ['tokens', 'cost', 'sessions'] as const
+type Metric = (typeof METRICS)[number]
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wider text-muted">{label}</div>
-      <div className="text-lg font-semibold tabular-nums text-strong">{value}</div>
-    </div>
-  )
-}
-
-/** Bars are inline SVG on tokens; the table beneath is the accessible source of truth. */
-function Bars({ title, rows }: { title: string; rows: { label: string; value: number }[] }) {
-  const max = Math.max(1, ...rows.map((r) => r.value))
-  return (
-    <section className="rounded-lg border border-border bg-surface p-3">
-      <h2 className="mb-2 text-sm font-medium text-text">{title}</h2>
-      <svg viewBox={`0 0 ${rows.length * 12} 60`} className="h-20 w-full" role="img" aria-label={title} preserveAspectRatio="none">
-        {rows.map((r, i) => (
-          <rect key={r.label} x={i * 12 + 1} y={60 - (r.value / max) * 56} width={10} height={(r.value / max) * 56} fill="var(--accent)" opacity={0.85}><title>{`${r.label}: ${r.value}`}</title></rect>
-        ))}
-      </svg>
-      <table className="sr-only"><caption>{title}</caption><tbody>{rows.map((r) => <tr key={r.label}><th scope="row">{r.label}</th><td>{r.value}</td></tr>)}</tbody></table>
-    </section>
-  )
+/** The server's `YYYY-MM-DD` bucket as a local day; a UTC parse would shift it a day west of Greenwich. */
+function localDay(date: string): Date | null {
+  const [y, mo, d] = date.split('-').map(Number)
+  return y && mo && d ? new Date(y, mo - 1, d) : null
 }
 
 export function InsightsPage() {
+  const locale = useLocale()
   const [days, setDays] = useState(30)
+  const [metric, setMetric] = useState<Metric>('tokens')
   const insights = useQuery({ queryKey: keys.insights(days), queryFn: () => api.fetchInsights(days), staleTime: 60_000 })
+  const { quotas, refresh } = useProviderQuotas()
   const d = insights.data
+
+  const integer = new Intl.NumberFormat(locale)
+  const compact = (n: number) => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
+  const usd = (n: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', maximumFractionDigits: n < 1 && n > 0 ? 4 : 2 }).format(n)
+  const percent = (n: number) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(n / 100)
+  const dayLabel = (date: string) => localDay(date)?.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) ?? date
+  const metricLabel: Record<Metric, string> = { tokens: m.insights_tokens(), cost: m.insights_cost(), sessions: m.insights_sessions() }
+  const metricValue: Record<Metric, (r: NonNullable<typeof d>['daily_tokens'] extends (infer R)[] | undefined ? R : never) => number> = {
+    tokens: (r) => (r.input_tokens ?? 0) + (r.output_tokens ?? 0), cost: (r) => r.cost ?? 0, sessions: (r) => r.sessions ?? 0,
+  }
+  const metricFormat: Record<Metric, (n: number) => string> = { tokens: compact, cost: usd, sessions: (n) => integer.format(n) }
+
+  const stats = d ? [
+    { label: m.insights_sessions(), value: integer.format(d.total_sessions ?? 0) },
+    { label: m.insights_messages(), value: integer.format(d.total_messages ?? 0) },
+    { label: m.insights_input_tokens(), value: compact(d.total_input_tokens ?? 0), title: integer.format(d.total_input_tokens ?? 0) },
+    { label: m.insights_output_tokens(), value: compact(d.total_output_tokens ?? 0), title: integer.format(d.total_output_tokens ?? 0) },
+    { label: m.insights_tokens(), value: compact(d.total_tokens ?? 0), title: integer.format(d.total_tokens ?? 0) },
+    { label: m.insights_cost(), value: usd(d.total_cost ?? 0) },
+    { label: m.insights_cache_read(), value: compact(d.total_cache_read_tokens ?? 0), title: integer.format(d.total_cache_read_tokens ?? 0) },
+    ...(d.total_cache_hit_percent === null || d.total_cache_hit_percent === undefined ? [] : [{ label: m.insights_cache_hit(), value: percent(d.total_cache_hit_percent) }]),
+  ] : []
+
   return (
     <HubPage
       title={m.tab_insights()}
       toolbar={<label className="flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
     >
-      {insights.isPending && <LoadingState />}
-      {insights.isError && <ErrorState error={insights.error} onRetry={() => { void insights.refetch() }} />}
-      {d && (
-        <div className="flex flex-col gap-4" id="insightsContent">
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <Stat label={m.insights_sessions()} value={d.total_sessions ?? 0} />
-            <Stat label={m.insights_messages()} value={d.total_messages ?? 0} />
-            <Stat label={m.insights_tokens()} value={(d.total_tokens ?? 0).toLocaleString()} />
-            <Stat label={m.insights_cost()} value={`$${(d.total_cost ?? 0).toFixed(2)}`} />
-            <Stat label={m.insights_input_tokens()} value={(d.total_input_tokens ?? 0).toLocaleString()} />
-            <Stat label={m.insights_output_tokens()} value={(d.total_output_tokens ?? 0).toLocaleString()} />
-            <Stat label={m.insights_cache_read()} value={(d.total_cache_read_tokens ?? 0).toLocaleString()} />
-          </div>
-          {(d.total_sessions ?? 0) === 0 && <EmptyState>{m.insights_no_data()}</EmptyState>}
-          {d.activity_by_day && d.activity_by_day.length > 0 && <Bars title={m.insights_by_day()} rows={d.activity_by_day.map((r) => ({ label: r.day, value: r.sessions }))} />}
-          {d.activity_by_hour && d.activity_by_hour.length > 0 && <Bars title={m.insights_by_hour()} rows={d.activity_by_hour.map((r) => ({ label: String(r.hour), value: r.sessions }))} />}
-          {d.daily_tokens && d.daily_tokens.length > 0 && <Bars title={m.insights_daily_tokens()} rows={d.daily_tokens.map((r) => ({ label: r.date, value: (r.input_tokens ?? 0) + (r.output_tokens ?? 0) }))} />}
-          {d.models && d.models.length > 0 && (
-            <table className="w-full text-sm">
-              <caption className="mb-1 text-left text-sm font-medium text-text">{m.insights_models()}</caption>
-              <thead><tr className="text-left text-xs text-muted"><th className="py-1">Model</th><th>{m.insights_sessions()}</th><th>{m.insights_tokens()}</th><th>{m.insights_cost()}</th></tr></thead>
-              <tbody>{d.models.map((r, i) => <tr key={i} className="border-t border-border-subtle"><td className="py-1">{r.model ?? '—'}</td><td>{r.sessions ?? 0}</td><td>{(r.tokens ?? 0).toLocaleString()}</td><td>${(r.cost ?? 0).toFixed(2)}</td></tr>)}</tbody>
-            </table>
+      <div className="flex flex-col gap-8" id="insightsContent">
+        <ProviderQuotaRows quotas={quotas} onRefresh={() => { void refresh() }} />
+
+        <section className="flex flex-col gap-4" data-section="insights-usage">
+          <h2 className="text-base font-semibold text-text">{m.insights_usage()}</h2>
+          {insights.isPending && <LoadingState />}
+          {insights.isError && <ErrorState error={insights.error} onRetry={() => { void insights.refetch() }} />}
+          {d && (
+            <>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4" data-testid="insights-stats">
+                {stats.map((s) => (
+                  <div key={s.label} className="min-w-0">
+                    <dt className="text-[11px] uppercase tracking-wider text-muted">{s.label}</dt>
+                    <dd className="truncate text-lg font-semibold text-strong" title={s.title}>{s.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {(d.total_sessions ?? 0) === 0 && <EmptyState>{m.insights_no_data()}</EmptyState>}
+              {d.daily_tokens && d.daily_tokens.length > 1 && (
+                <BarChart
+                  id="daily"
+                  title={m.insights_daily()}
+                  rows={d.daily_tokens.map((r) => ({ label: dayLabel(r.date), title: r.date, value: metricValue[metric](r) }))}
+                  format={metricFormat[metric]}
+                  controls={<Select value={metric} onValueChange={(v) => setMetric(v as Metric)} aria-label={m.insights_metric()} className="h-7 text-xs">{METRICS.map((k) => <option key={k} value={k}>{metricLabel[k]}</option>)}</Select>}
+                />
+              )}
+              <div className="grid gap-6 md:grid-cols-2">
+                {d.activity_by_day && d.activity_by_day.length > 0 && <BarChart id="weekday" title={m.insights_by_day()} rows={d.activity_by_day.map((r) => ({ label: r.day, value: r.sessions }))} format={(n) => integer.format(n)} />}
+                {d.activity_by_hour && d.activity_by_hour.length > 0 && <BarChart id="hour" title={m.insights_by_hour()} rows={d.activity_by_hour.map((r) => ({ label: String(r.hour), title: `${String(r.hour).padStart(2, '0')}:00`, value: r.sessions }))} format={(n) => integer.format(n)} />}
+              </div>
+              {d.models && d.models.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full whitespace-nowrap text-sm tabular-nums" data-testid="insights-models">
+                    <caption className="mb-1 text-left text-sm font-medium text-text">{m.insights_models()}</caption>
+                    <thead>
+                      <tr className="text-left text-xs text-muted">
+                        <th className="py-1 pr-3 font-normal">{m.insights_model_name()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_sessions()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_model_input()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_model_output()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_tokens()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_model_cost()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_model_cache()}</th>
+                        <th className="py-1 pl-3 text-right font-normal">{m.insights_model_share()}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {d.models.map((r, i) => {
+                        const share = [r.cost_share, r.token_share, r.session_share].find((s) => s !== undefined && s > 0) ?? r.cost_share ?? r.token_share ?? r.session_share
+                        return (
+                          <tr key={`${r.model ?? ''}-${String(i)}`} className="border-t border-border-subtle">
+                            <td className="py-1 pr-3 font-mono text-xs text-text">{r.model ?? '—'}</td>
+                            <td className="py-1 pl-3 text-right">{integer.format(r.sessions ?? 0)}</td>
+                            <td className="py-1 pl-3 text-right" title={integer.format(r.input_tokens ?? 0)}>{compact(r.input_tokens ?? 0)}</td>
+                            <td className="py-1 pl-3 text-right" title={integer.format(r.output_tokens ?? 0)}>{compact(r.output_tokens ?? 0)}</td>
+                            <td className="py-1 pl-3 text-right" title={integer.format(r.total_tokens ?? 0)}>{compact(r.total_tokens ?? 0)}</td>
+                            <td className="py-1 pl-3 text-right">{usd(r.cost ?? 0)}</td>
+                            <td className="py-1 pl-3 text-right">{r.cache_hit_percent === null || r.cache_hit_percent === undefined ? '—' : percent(r.cache_hit_percent)}</td>
+                            <td className="py-1 pl-3 text-right">{share === undefined ? '—' : percent(share)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
-        </div>
-      )}
+        </section>
+      </div>
     </HubPage>
   )
 }

@@ -11,3 +11,12 @@ export function resetTime(locale: string, value: string | number): string {
   const today = at.toDateString() === new Date().toDateString()
   return at.toLocaleString(locale, today ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' })
 }
+
+/** Minutes as `1d 6h` / `18h` / `45m`; formatting only, the minutes are the server's. */
+export function formatMinutes(locale: string, minutes: number): string {
+  const total = Math.round(Math.abs(minutes))
+  const days = Math.floor(total / 1440)
+  const hours = Math.floor((total % 1440) / 60)
+  if (days > 0) return formatDurationUnits(locale, [days, 'day'], [hours, 'hour'])
+  return hours > 0 ? formatDurationUnits(locale, [hours, 'hour']) : formatDurationUnits(locale, [total, 'minute'])
+}

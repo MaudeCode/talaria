@@ -1,55 +1,63 @@
 import SwiftUI
 import TalariaKit
 
+/// One quota source on Insights: every server window with its rail, reset, pace and forecast, then the source's
+/// status and freshness. It renders the same presentation state as the widgets and the sidebar Quotas row, so the
+/// three surfaces agree on colour, pace and forecast wording.
 struct ProviderQuotaRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let source: ProviderQuotaSource
+    let scopeID: String
     let displayName: String
     let percentageMode: ProviderQuotaPercentageMode
     let isRefreshing: Bool
     let isPinned: Bool
     let canPin: Bool
+    /// A fixed clock for tests and visual references; nil renders against a minute-ticking clock.
+    var referenceDate: Date? = nil
     let refresh: () -> Void
     let togglePin: () -> Void
     let hide: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 4) {
-                    providerTitle
-                    HStack(spacing: 8) {
-                        badges
-                        Spacer(minLength: 4)
-                        actionButtons
-                    }
-                }
+        Group {
+            if let referenceDate {
+                content(at: referenceDate)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    providerTitle
-                        .layoutPriority(2)
-                    badges
-                        .fixedSize()
-                    Spacer(minLength: 2)
-                    actionButtons
+                TimelineView(.everyMinute) { context in
+                    content(at: context.date)
                 }
+            }
+        }
+        .accessibilityIdentifier("provider-quota-source-\(source.id)")
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Hide provider from Insights", hide)
+    }
+
+    private func content(at now: Date) -> some View {
+        let widgetSource = ProviderQuotaWidgetSource(source, scopeID: scopeID, scopeLabel: "")
+        let settings = evaluationSettings
+        let periods = ProviderQuotaPresentation.periods(for: widgetSource, settings: settings, at: now)
+        let sourceState = ProviderQuotaPresentation.state(for: widgetSource, settings: settings, at: now)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            header
+
+            ForEach(periods) { period in
+                window(period, isFirst: period.id == periods.first?.id)
             }
 
-            if !source.windows.isEmpty {
-                ForEach(Array(source.windows.enumerated()), id: \.offset) { index, window in
-                    quotaWindow(window, showsUpdatedAt: index == source.windows.count - 1)
-                }
-            } else if let quota = source.quota {
-                openRouterQuota(quota)
+            if periods.isEmpty, let quota = source.quota {
+                credits(quota, state: sourceState)
             }
+
             if source.status != "available" {
                 statusLine
             }
 
-            if (!source.windows.isEmpty || source.status != "available"),
-               let detail = source.details.first,
-               !detail.isEmpty {
+            if (!periods.isEmpty || source.status != "available"),
+               let detail = source.details.first, !detail.isEmpty {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -62,27 +70,60 @@ struct ProviderQuotaRow: View {
                     .foregroundStyle(.orange)
             }
 
-            if source.windows.isEmpty,
-               let fetchedAt = ProviderQuotaDateParser.date(from: source.fetchedAt) {
-                HStack {
-                    Spacer(minLength: 0)
-                    Text("Updated \(fetchedAt, style: .relative)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+            freshness(sourceState, now: now)
+        }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    providerTitle
+                    HStack(spacing: 8) {
+                        badges
+                        Spacer(minLength: 4)
+                        actionButtons
+                    }
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    providerTitle
+                        .layoutPriority(2)
+                    badges
+                        .fixedSize()
+                    Spacer(minLength: 2)
+                    actionButtons
                 }
             }
         }
-        .accessibilityIdentifier("provider-quota-source-\(source.id)")
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Hide provider from Insights", hide)
     }
 
     private var providerTitle: some View {
         HStack(spacing: 7) {
-            ProviderIconView(providerID: source.providerID, label: displayName, size: 18)
+            ProviderIconView(providerID: source.providerID, label: displayName, size: 20)
             Text(displayName)
-                .font(.subheadline.weight(.semibold))
+                .font(.headline)
                 .lineLimit(2)
+        }
+    }
+
+    @ViewBuilder
+    private var badges: some View {
+        if let plan = source.plan, !plan.isEmpty {
+            Text(plan)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color(.tertiarySystemFill)))
+        }
+        if source.isActiveProvider {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.green)
+                .accessibilityLabel("Active provider")
         }
     }
 
@@ -115,92 +156,112 @@ struct ProviderQuotaRow: View {
         }
     }
 
-    @ViewBuilder
-    private var badges: some View {
-        if let plan = source.plan, !plan.isEmpty {
-            Text(plan)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color(.tertiarySystemFill)))
-        }
-        if source.isActiveProvider {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.green)
-                .accessibilityLabel("Active provider")
-        }
-    }
+    // MARK: Windows
 
-    private func quotaWindow(_ window: ProviderQuotaWindow, showsUpdatedAt: Bool) -> some View {
-        let resetAt = ProviderQuotaDateParser.date(from: window.resetAt)
-        let updatedAt = showsUpdatedAt ? ProviderQuotaDateParser.date(from: source.fetchedAt) : nil
+    private func window(_ period: ProviderQuotaPeriodPresentation, isFirst: Bool) -> some View {
+        let state = period.state
+        let tint = tint(for: state)
+        let forecast = ProviderQuotaForecastSummary(state: state)
 
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(window.label)
-                    .font(.footnote.weight(.medium))
+                Text(state.window?.label ?? period.shortLabel)
+                    .font(.subheadline.weight(.medium))
                 Spacer(minLength: 8)
-                if let percent = ProviderQuotaPresentation.percent(window, mode: percentageMode) {
-                    Text(percentageText(percent))
-                        .font(.caption.monospacedDigit())
+                if let percent = state.percent {
+                    Text("\(percent.formatted(.percent.scale(1).precision(.fractionLength(0...1)))) \(state.modeLabel)")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else if let detail = state.window?.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            if let percent = ProviderQuotaPresentation.percent(window, mode: percentageMode) {
-                ProgressView(value: percent, total: 100)
-                    .tint(progressTint(percent))
-                    .accessibilityValue(Text(percentageText(percent)))
+            if let percent = state.percent {
+                ProgressRailView(
+                    percent: percent,
+                    markerPercent: state.expectedPercent,
+                    tint: tint,
+                    height: 6
+                )
             }
 
-            if resetAt != nil || window.detail?.isEmpty == false || updatedAt != nil {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if let resetAt {
-                        Text("Resets \(resetAt, style: .relative)")
-                    } else if let detail = window.detail, !detail.isEmpty {
-                        Text(detail)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    if let updatedAt {
-                        Text("Updated \(updatedAt, style: .relative)")
-                    }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let resetAt = state.resetAt {
+                    Text(resetLabel(resetAt, period: period))
+                } else if let detail = state.window?.detail, !detail.isEmpty, state.percent != nil {
+                    Text(detail)
                 }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                if let paceLabel = state.paceLabel {
+                    Text(paceLabel)
+                } else if state.paceNeedsRefresh {
+                    Text("Refresh needed")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if state.pace != nil {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label(forecast.forecastLabel, systemImage: forecast.systemImage)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(forecastTint(forecast.outcome))
+                    Spacer(minLength: 8)
+                    Text(forecast.budgetLabel == "—"
+                        ? String(localized: "\(forecast.burnRateLabel) burn")
+                        : String(localized: "\(forecast.burnRateLabel) burn · \(forecast.budgetLabel)\(forecast.budgetUnitSuffix) budget"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
             }
         }
+        .padding(.top, isFirst ? 0 : 2)
         .accessibilityElement(children: .combine)
     }
 
+    private func resetLabel(_ resetAt: Date, period: ProviderQuotaPeriodPresentation) -> String {
+        let exact = resetAt.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        guard let countdown = period.resetLabel(display: .compact) else {
+            return String(localized: "Resets \(exact)")
+        }
+        return String(localized: "Resets \(exact) · \(countdown)")
+    }
+
+    // MARK: Credits (OpenRouter)
+
     @ViewBuilder
-    private func openRouterQuota(_ quota: ProviderQuotaAmount) -> some View {
-        if let usage = quota.usage, let limit = quota.limit, limit > 0 {
-            let used = min(max(usage / limit * 100, 0), 100)
-            let percent = percentageMode == .used ? used : 100 - used
+    private func credits(_ quota: ProviderQuotaAmount, state: ProviderQuotaPresentationState) -> some View {
+        if let percent = state.percent {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text("Credits")
-                        .font(.footnote.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                     Spacer(minLength: 8)
-                    Text(percentageText(percent))
-                        .font(.caption.monospacedDigit())
+                    Text("\(percent.formatted(.percent.scale(1).precision(.fractionLength(0...1)))) \(state.modeLabel)")
+                        .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                ProgressView(value: percent, total: 100)
-                    .tint(progressTint(percent))
+                ProgressRailView(percent: percent, tint: tint(for: state), height: 6)
+                if let remaining = quota.limitRemaining {
+                    Text("\(remaining.formatted()) credits remaining")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .accessibilityElement(children: .combine)
         } else if let remaining = quota.limitRemaining {
             Text("\(remaining.formatted()) credits remaining")
-                .font(.footnote)
+                .font(.subheadline)
         } else if source.status == "available" {
             statusLine
         }
     }
+
+    // MARK: Status and freshness
 
     private var statusLine: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -208,7 +269,7 @@ struct ProviderQuotaRow: View {
                 .fill(statusColor)
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
-            Text(source.unavailableReason ?? source.message ?? statusLabel)
+            Text(source.unavailableReason ?? source.message ?? ProviderQuotaPresentation.statusLabel(source.status))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -216,20 +277,60 @@ struct ProviderQuotaRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func percentageText(_ percent: Double) -> String {
-        let suffix = percentageMode == .used ? String(localized: "used") : String(localized: "remaining")
-        return "\(insightsFormattedPercent(percent)) \(suffix)"
-    }
-
-    private func progressTint(_ percent: Double) -> Color {
-        if percentageMode == .used {
-            return percent >= 90 ? .red : percent >= 75 ? .orange : .accentColor
+    @ViewBuilder
+    private func freshness(_ state: ProviderQuotaPresentationState, now: Date) -> some View {
+        let fetchedAt = ProviderQuotaDateParser.date(from: source.fetchedAt)
+        if state.computedAt != nil || fetchedAt != nil {
+            HStack(spacing: 5) {
+                Image(systemName: state.isStale ? "clock.badge.exclamationmark" : "clock")
+                if let computedAt = state.computedAt {
+                    Text("As of \(computedAt.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
+                }
+                if let fetchedAt {
+                    if state.computedAt != nil { Text("·") }
+                    Text("Updated \(Self.relativeFormatter.localizedString(for: fetchedAt, relativeTo: now))")
+                }
+                if state.isStale {
+                    Text("· Stale")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(state.isStale ? Color.orange : Color.secondary)
+            .accessibilityElement(children: .combine)
         }
-        return percent <= 10 ? .red : percent <= 25 ? .orange : .accentColor
     }
 
-    private var statusLabel: String {
-        ProviderQuotaPresentation.statusLabel(source.status)
+    // MARK: Helpers
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    /// The stored widget settings, with the percentage mode Insights binds live.
+    private var evaluationSettings: ProviderQuotaEvaluationSettings {
+        let stored = ProviderQuotaEvaluationSettings.stored()
+        return ProviderQuotaEvaluationSettings(
+            percentageMode: percentageMode,
+            colorBasis: stored.colorBasis,
+            windowSelection: stored.windowSelection
+        )
+    }
+
+    private func tint(for state: ProviderQuotaPresentationState) -> Color {
+        ProviderQuotaWidgetPalette.arcColor(
+            urgency: state.urgency,
+            profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil)
+        )
+    }
+
+    private func forecastTint(_ outcome: ProviderQuotaForecastOutcome) -> Color {
+        switch outcome {
+        case .unavailable: .secondary
+        case .safe: .green
+        case .warning: .orange
+        }
     }
 
     private var statusColor: Color {

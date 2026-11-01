@@ -2,20 +2,11 @@ import type { PlanGauge, PlanUsage } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
-import { formatDurationUnits, resetTime } from '../../i18n/units'
+import { formatMinutes, resetTime } from '../../i18n/units'
 import type { ProviderQuotaSourceSchema } from '../../contracts'
 import { QuotaUrgency } from './QuotaThresholds'
 
 type QuotaSource = z.infer<typeof ProviderQuotaSourceSchema>
-
-/** Minutes as `1d 6h` / `18h` / `45m`; formatting only, the minutes are the server's. */
-function formatMinutes(locale: string, minutes: number): string {
-  const total = Math.round(Math.abs(minutes))
-  const days = Math.floor(total / 1440)
-  const hours = Math.floor((total % 1440) / 60)
-  if (days > 0) return formatDurationUnits(locale, [days, 'day'], [hours, 'hour'])
-  return hours > 0 ? formatDurationUnits(locale, [hours, 'hour']) : formatDurationUnits(locale, [total, 'minute'])
-}
 
 /** The server-selected pace window (`pace_window_index`) of a quota source and the source's urgency; every value is a TAL-409/TAL-411 contract field. */
 export function ProviderQuotaPace({ source, showAccount = false, plan, planStale = false, gauge, compact = false }: { source?: QuotaSource; showAccount?: boolean; plan?: PlanUsage | null | undefined; planStale?: boolean | undefined; gauge?: PlanGauge | null | undefined; compact?: boolean }) {

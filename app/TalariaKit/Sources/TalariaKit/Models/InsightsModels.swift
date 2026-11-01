@@ -117,6 +117,14 @@ public struct InsightsDailyToken: Codable, Equatable {
         sessions = container.decodeLossyIntIfPresent(forKey: .sessions)
         cost = container.decodeLossyCurrencyDoubleIfPresent(forKey: .cost)
     }
+
+    /// The server's `YYYY-MM-DD` bucket as a local calendar day, for charting; nil for any other text.
+    public var day: Date? {
+        guard let date, date.count == 10 else { return nil }
+        let parts = date.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    }
 }
 
 public struct InsightsActivityByDay: Codable, Equatable {

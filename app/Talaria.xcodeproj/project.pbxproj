@@ -59,6 +59,7 @@
 		D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */; };
 		D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000A002 /* DuoFoldHostedTests.swift */; };
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
+		D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
 		157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157503000000000000000002 /* APIClientFeedbackTests.swift */; };
@@ -88,6 +89,8 @@
 		C107M0000000000000000008 /* ProviderQuotaLockScreenPaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */; };
 		C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000205 /* ProviderQuotaForecastView.swift */; };
 		C107M0000000000000000010 /* ProviderQuotaForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000205 /* ProviderQuotaForecastView.swift */; };
+		C107M0000000000000000091 /* ProgressRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000306 /* ProgressRailView.swift */; };
+		C107M0000000000000000092 /* ProgressRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000306 /* ProgressRailView.swift */; };
 		C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */; };
 		C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */; };
 		C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */; };
@@ -308,10 +311,10 @@
 		C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */; };
 		C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */; };
 		C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000101 /* ModelBreakdownRow.swift */; };
-		C107L0000000000000000002 /* DailyTokenRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* DailyTokenRow.swift */; };
-		C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* ActivitySummaryRow.swift */; };
+		C107L0000000000000000002 /* InsightsDailyChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* InsightsDailyChart.swift */; };
+		C107L0000000000000000003 /* InsightsActivityCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* InsightsActivityCharts.swift */; };
 		C107L0000000000000000004 /* ProviderQuotaRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000104 /* ProviderQuotaRow.swift */; };
-		C107L0000000000000000005 /* AnalyticsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000105 /* AnalyticsCard.swift */; };
+		C107L0000000000000000005 /* InsightsStatGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000105 /* InsightsStatGrid.swift */; };
 		C107L0000000000000000006 /* CronJobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000106 /* CronJobRowView.swift */; };
 		C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000107 /* CronJobEditorSheet.swift */; };
 		C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000108 /* CronJobMetadataRow.swift */; };
@@ -505,6 +508,7 @@
 		D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListHostedTests.swift; sourceTree = "<group>"; };
 		D1477000000000000000A002 /* DuoFoldHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoFoldHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
+		D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
 		157503000000000000000002 /* APIClientFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/APIClientFeedbackTests.swift; sourceTree = "<group>"; };
@@ -529,6 +533,7 @@
 		C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPercentageView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPaceView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000205 /* ProviderQuotaForecastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaForecastView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000306 /* ProgressRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressRailView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPaceWidgetView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSourceView.swift; sourceTree = "<group>"; };
@@ -740,10 +745,10 @@
 		C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspacePickerSheet.swift; sourceTree = "<group>"; };
 		C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerAttachmentThumbnailView.swift; sourceTree = "<group>"; };
 		C107L0000000000000000101 /* ModelBreakdownRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelBreakdownRow.swift; sourceTree = "<group>"; };
-		C107L0000000000000000102 /* DailyTokenRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTokenRow.swift; sourceTree = "<group>"; };
-		C107L0000000000000000103 /* ActivitySummaryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySummaryRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000102 /* InsightsDailyChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDailyChart.swift; sourceTree = "<group>"; };
+		C107L0000000000000000103 /* InsightsActivityCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsActivityCharts.swift; sourceTree = "<group>"; };
 		C107L0000000000000000104 /* ProviderQuotaRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaRow.swift; sourceTree = "<group>"; };
-		C107L0000000000000000105 /* AnalyticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsCard.swift; sourceTree = "<group>"; };
+		C107L0000000000000000105 /* InsightsStatGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsStatGrid.swift; sourceTree = "<group>"; };
 		C107L0000000000000000106 /* CronJobRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobRowView.swift; sourceTree = "<group>"; };
 		C107L0000000000000000107 /* CronJobEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobEditorSheet.swift; sourceTree = "<group>"; };
 		C107L0000000000000000108 /* CronJobMetadataRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobMetadataRow.swift; sourceTree = "<group>"; };
@@ -975,6 +980,7 @@
 				D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */,
 				D1477000000000000000A002 /* DuoFoldHostedTests.swift */,
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
+				D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
 				157503000000000000000002 /* APIClientFeedbackTests.swift */,
@@ -1028,6 +1034,7 @@
 				C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */,
 				C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */,
 				C107M0000000000000000205 /* ProviderQuotaForecastView.swift */,
+				C107M0000000000000000306 /* ProgressRailView.swift */,
 				A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */,
 				A06300000000000000000011 /* ProviderIconRegistry.swift */,
 			);
@@ -1480,10 +1487,10 @@
 			children = (
 				57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */,
 				C107L0000000000000000101 /* ModelBreakdownRow.swift */,
-				C107L0000000000000000102 /* DailyTokenRow.swift */,
-				C107L0000000000000000103 /* ActivitySummaryRow.swift */,
+				C107L0000000000000000102 /* InsightsDailyChart.swift */,
+				C107L0000000000000000103 /* InsightsActivityCharts.swift */,
 				C107L0000000000000000104 /* ProviderQuotaRow.swift */,
-				C107L0000000000000000105 /* AnalyticsCard.swift */,
+				C107L0000000000000000105 /* InsightsStatGrid.swift */,
 			);
 			path = Insights;
 			sourceTree = "<group>";
@@ -1735,6 +1742,7 @@
 				C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
 				C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
 				C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */,
+				C107M0000000000000000091 /* ProgressRailView.swift in Sources */,
 				A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
@@ -1853,10 +1861,10 @@
 				C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */,
 				C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */,
 				C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */,
-				C107L0000000000000000002 /* DailyTokenRow.swift in Sources */,
-				C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */,
+				C107L0000000000000000002 /* InsightsDailyChart.swift in Sources */,
+				C107L0000000000000000003 /* InsightsActivityCharts.swift in Sources */,
 				C107L0000000000000000004 /* ProviderQuotaRow.swift in Sources */,
-				C107L0000000000000000005 /* AnalyticsCard.swift in Sources */,
+				C107L0000000000000000005 /* InsightsStatGrid.swift in Sources */,
 				C107L0000000000000000006 /* CronJobRowView.swift in Sources */,
 				C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */,
 				C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */,
@@ -2030,6 +2038,7 @@
 				D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */,
 				D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
+				D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
 				157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */,
@@ -2082,6 +2091,7 @@
 				C107M0000000000000000006 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
 				C107M0000000000000000008 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
 				C107M0000000000000000010 /* ProviderQuotaForecastView.swift in Sources */,
+				C107M0000000000000000092 /* ProgressRailView.swift in Sources */,
 				C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */,
 				C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */,
 				C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */,

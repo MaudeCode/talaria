@@ -63,29 +63,13 @@ struct ProviderQuotaBarsView: View {
     }
 
     private func bar(_ period: ProviderQuotaPeriodPresentation) -> some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(trackColor)
-                if let percent = period.state.percent {
-                    Capsule()
-                        .fill(arcColor(period.state))
-                        .frame(width: proxy.size.width * min(max(percent, 0), 100) / 100)
-                        .widgetAccentable()
-                }
-                if showsPaceMarker, let expected = period.state.expectedPercent {
-                    Rectangle()
-                        .fill(Color.primary)
-                        .frame(width: 1.5)
-                        .offset(
-                            x: min(
-                                max(proxy.size.width * min(max(expected, 0), 100) / 100 - 0.75, 0),
-                                max(proxy.size.width - 1.5, 0)
-                            )
-                        )
-                }
-            }
-        }
-        .frame(height: min(max(requestedLineWidth * 0.6, 3), 8))
+        ProgressRailView(
+            percent: period.state.percent ?? 0,
+            markerPercent: showsPaceMarker ? period.state.expectedPercent : nil,
+            tint: arcColor(period.state),
+            trackColor: trackColor,
+            height: min(max(requestedLineWidth * 0.6, 3), 8)
+        )
     }
 
     private var accessibilityLabel: String {

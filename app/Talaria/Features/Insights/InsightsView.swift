@@ -13,6 +13,7 @@ struct InsightsView: View {
     @State private var viewModel: InsightsViewModel
     @State private var quotaScrollPosition: String?
     @State private var isShowingQuotaNotice = false
+    @State private var dailyMetric: InsightsDailyMetric = .tokens
     @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
@@ -140,6 +141,7 @@ struct InsightsView: View {
                 ForEach(visibleQuotaSources) { source in
                     ProviderQuotaRow(
                         source: source,
+                        scopeID: quotaViewModel.quotaScopeID ?? "",
                         displayName: providerDisplayName(source),
                         percentageMode: quotaPercentageMode,
                         isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
@@ -243,87 +245,95 @@ struct InsightsView: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-                Picker("Timeframe", selection: $viewModel.selectedTimeframe) {
-                    ForEach(AnalyticsTimeframe.allCases) { timeframe in
-                        Text(timeframe.pickerTitle).tag(timeframe)
+            Picker("Timeframe", selection: $viewModel.selectedTimeframe) {
+                ForEach(AnalyticsTimeframe.allCases) { timeframe in
+                    Text(timeframe.pickerTitle).tag(timeframe)
+                }
+            }
+            .pickerStyle(.segmented)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+
+            Section {
+                InsightsStatGrid(stats: summaryStats)
+            } header: {
+                HStack {
+                    Text(viewModel.periodTitle)
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing usage analytics")
                     }
                 }
-                .pickerStyle(.segmented)
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                .textCase(.uppercase)
+            }
 
+            if viewModel.dailyTokens.count > 1 {
+                Section("Daily") {
+                    InsightsDailyChart(days: viewModel.dailyTokens, metric: $dailyMetric)
+                }
+            }
+
+            if !viewModel.modelBreakdowns.isEmpty {
+                Section("Models") {
+                    ForEach(Array(viewModel.modelBreakdowns.prefix(10).enumerated()), id: \.offset) { _, model in
+                        ModelBreakdownRow(model: model)
+                    }
+                }
+            }
+
+            if !viewModel.activityByDay.isEmpty {
                 Section {
-                    AnalyticsCard(title: String(localized: "Sessions"), value: "\(viewModel.sessionCount)", icon: "bubble.left.and.bubble.right", color: .blue)
-                    AnalyticsCard(title: String(localized: "Messages"), value: formatTokens(viewModel.totalMessages), icon: "text.bubble", color: .cyan)
-                    AnalyticsCard(title: String(localized: "Input Tokens"), value: formatTokens(viewModel.totalInputTokens), icon: "arrow.down.circle", color: .green)
-                    AnalyticsCard(title: String(localized: "Output Tokens"), value: formatTokens(viewModel.totalOutputTokens), icon: "arrow.up.circle", color: .orange)
-                    AnalyticsCard(title: String(localized: "Total Tokens"), value: formatTokens(viewModel.totalTokens), icon: "sum", color: .purple)
-                    AnalyticsCard(title: String(localized: "Estimated Cost"), value: viewModel.estimatedCost.formattedCost(collapsingZeroCents: true), icon: "dollarsign.circle", color: .indigo)
-
-                    if let cacheHitPercent = viewModel.totalCacheHitPercent {
-                        AnalyticsCard(title: String(localized: "Cache Hit Rate"), value: formatPercent(cacheHitPercent), icon: "bolt.circle", color: .teal)
-                    }
-
-                    if let cacheReadTokens = viewModel.totalCacheReadTokens {
-                        AnalyticsCard(title: String(localized: "Cache Read Tokens"), value: formatTokens(cacheReadTokens), icon: "arrow.counterclockwise.circle", color: .mint)
-                    }
+                    InsightsWeekdayChart(days: viewModel.activityByDay)
                 } header: {
-                    HStack {
-                        Text(viewModel.periodTitle)
-                        if viewModel.isLoading {
-                            ProgressView()
-                                .controlSize(.small)
-                                .accessibilityLabel("Refreshing usage analytics")
-                        }
-                    }
-                    .textCase(.uppercase)
+                    activityHeader("By weekday", summary: InsightsActivitySummary.weekday(viewModel.activityByDay))
                 }
+            }
 
-                if !viewModel.modelBreakdowns.isEmpty {
-                    Section("Models") {
-                        ForEach(Array(viewModel.modelBreakdowns.prefix(10).enumerated()), id: \.offset) { _, model in
-                            ModelBreakdownRow(model: model)
-                        }
-                    }
-                }
-
-                if !viewModel.recentDailyTokens.isEmpty {
-                    Section("Recent Daily Tokens") {
-                        ForEach(Array(viewModel.recentDailyTokens.enumerated()), id: \.offset) { _, day in
-                            DailyTokenRow(day: day)
-                        }
-                    }
-                }
-
-                if viewModel.peakDay != nil || viewModel.peakHour != nil {
-                    Section("Activity") {
-                        if let peakDay = viewModel.peakDay {
-                            ActivitySummaryRow(
-                                icon: "calendar",
-                                title: String(localized: "Peak Day"),
-                                value: peakDay.day ?? String(localized: "Unknown"),
-                                detail: String(localized: "\(peakDay.sessions ?? 0) sessions")
-                            )
-                        }
-
-                        if let peakHour = viewModel.peakHour {
-                            ActivitySummaryRow(
-                                icon: "clock",
-                                title: String(localized: "Peak Hour"),
-                                value: formatHour(peakHour.hour),
-                                detail: String(localized: "\(peakHour.sessions ?? 0) sessions")
-                            )
-                        }
-                    }
-                }
-
+            if !viewModel.activityByHour.isEmpty {
                 Section {
-                    Text(viewModel.sourceDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    InsightsHourChart(hours: viewModel.activityByHour)
+                } header: {
+                    activityHeader("By hour", summary: InsightsActivitySummary.hour(viewModel.activityByHour))
                 }
+            }
+
+            Section {
+                Text(viewModel.sourceDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private func activityHeader(_ title: LocalizedStringKey, summary: String?) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 8)
+            if let summary {
+                Text(summary)
+                    .textCase(nil)
+            }
+        }
+    }
+
+    private var summaryStats: [InsightsStat] {
+        var stats = [
+            InsightsStat(id: "sessions", title: String(localized: "Sessions"), value: viewModel.sessionCount.formatted()),
+            InsightsStat(id: "messages", title: String(localized: "Messages"), value: viewModel.totalMessages.formatted()),
+            InsightsStat(id: "input", title: String(localized: "Input tokens"), value: insightsCompactNumber(viewModel.totalInputTokens), exactValue: formatTokens(viewModel.totalInputTokens)),
+            InsightsStat(id: "output", title: String(localized: "Output tokens"), value: insightsCompactNumber(viewModel.totalOutputTokens), exactValue: formatTokens(viewModel.totalOutputTokens)),
+            InsightsStat(id: "total", title: String(localized: "Total tokens"), value: insightsCompactNumber(viewModel.totalTokens), exactValue: formatTokens(viewModel.totalTokens)),
+            InsightsStat(id: "cost", title: String(localized: "Estimated cost"), value: viewModel.estimatedCost.formattedCost(collapsingZeroCents: true)),
+        ]
+        if let cacheHitPercent = viewModel.totalCacheHitPercent {
+            stats.append(InsightsStat(id: "cache-hit", title: String(localized: "Cache hit rate"), value: insightsFormattedPercent(cacheHitPercent)))
+        }
+        if let cacheReadTokens = viewModel.totalCacheReadTokens {
+            stats.append(InsightsStat(id: "cache-read", title: String(localized: "Cache read tokens"), value: insightsCompactNumber(cacheReadTokens), exactValue: formatTokens(cacheReadTokens)))
+        }
+        return stats
     }
 
     private var isRefreshing: Bool {
@@ -448,12 +458,4 @@ struct InsightsView: View {
         }
     }
 
-    private func formatHour(_ value: Int?) -> String {
-        guard let value else { return String(localized: "Unknown") }
-        return "\(String(format: "%02d", value)):00"
-    }
-
-    private func formatPercent(_ value: Double) -> String {
-        insightsFormattedPercent(value)
-    }
 }
