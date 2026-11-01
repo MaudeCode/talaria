@@ -116,7 +116,10 @@ export function Transcript(props: TranscriptProps) {
   useEffect(() => { if (streaming) settlingRef.current = false }, [streaming])
   const lastTopRef = useRef(0)
 
+  // The first visible row and its offset from the pane's top. A scroll event moves it with the content; a size change above it does not.
   const readerAnchor = useRef<{ key: string; top: number } | null>(null)
+  // A `?msg=` target is the anchor until the reader moves: rows measured around it must not carry it out of view.
+  const focusAnchor = useRef<string | null>(null)
   const anchorFrame = useRef<number | null>(null)
   const rememberReaderAnchor = () => {
     // Following owns the scroll position; a reader anchor is only used away from the bottom.
@@ -129,6 +132,13 @@ export function Transcript(props: TranscriptProps) {
       if (!pane) return
       const bounds = pane.getBoundingClientRect()
       readerAnchor.current = null
+      // The target holds the view until the reader moves or something else carries it out of view (a jump to the start).
+      const focused = focusAnchor.current
+      const focus = focused === null ? null : pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(focused)}"]`)?.getBoundingClientRect()
+      if (focused !== null && focus) {
+        if (focus.bottom > bounds.top && focus.top < bounds.bottom) { readerAnchor.current = { key: focused, top: focus.top - bounds.top }; return }
+        focusAnchor.current = null
+      }
       // Rows are in visual order; leave later contained history unmeasured once the anchor is known.
       for (const row of pane.querySelectorAll<HTMLElement>('[data-message-key]')) {
         const rect = row.getBoundingClientRect()
@@ -141,6 +151,20 @@ export function Transcript(props: TranscriptProps) {
       }
     })
   }
+  // Away from the bottom, the reader's row stays where it was through every size change above it.
+  // A scroll that precedes its browser event leaves the anchor behind the reader, so it is dropped until the next capture.
+  const restoreReaderAnchor = () => {
+    const pane = scrollRef.current
+    if (pane && pane.scrollTop !== lastTopRef.current) readerAnchor.current = null
+    const anchor = readerAnchor.current
+    if (!pane || !anchor || followsRef.current()) return
+    const row = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(anchor.key)}"]`)
+    if (!row) return
+    const drift = row.getBoundingClientRect().top - pane.getBoundingClientRect().top - anchor.top
+    if (drift === 0) return
+    pane.scrollTop += drift
+    lastTopRef.current = pane.scrollTop
+  }
 
   useLayoutEffect(() => () => {
     if (anchorFrame.current !== null) cancelAnimationFrame(anchorFrame.current)
@@ -150,7 +174,7 @@ export function Transcript(props: TranscriptProps) {
   // A hand scroll (wheel or touch) that moves the transcript asks the composer to rest; a gesture against an edge
   // moves nothing, and programmatic follow and entry jumps record their own position, so neither does.
   const handAtRef = useRef(-Infinity)
-  const onReaderInput = () => { prependRef.current = null; readerAnchor.current = null }
+  const onReaderInput = () => { prependRef.current = null; readerAnchor.current = null; focusAnchor.current = null }
   const onReaderScroll = () => { onReaderInput(); handAtRef.current = performance.now() }
 
   const onScroll = () => {
@@ -164,8 +188,9 @@ export function Transcript(props: TranscriptProps) {
     // While following, only the reader moving up leaves the bottom; layout that lands between a jump and its scroll event does not.
     if (distance < 80) pin(true)
     else if (!followsRef.current() || el.scrollTop < lastTopRef.current) { pin(false); settlingRef.current = false }
-    // A scroll invalidates the previous viewport anchor immediately, before a resize can restore it.
-    if (lastTopRef.current !== el.scrollTop) readerAnchor.current = null
+    // The anchor rides the scroll until the next capture, so a size change measured in between is still corrected.
+    const anchor = readerAnchor.current
+    if (anchor) readerAnchor.current = { key: anchor.key, top: anchor.top - (el.scrollTop - lastTopRef.current) }
     lastTopRef.current = el.scrollTop
     rememberReaderAnchor()
     setAtTop(el.scrollTop < 40)
@@ -195,16 +220,9 @@ export function Transcript(props: TranscriptProps) {
       // Settling entry must follow lazy content synchronously; steady streaming can wait for resize.
       if (fromMutation && !settlingRef.current && followsRef.current() && performance.now() - handAtRef.current >= HAND_SCROLL_MS) return
       // A reader scroll can precede its browser event; reconcile it before following a DOM mutation.
-      if (pane.scrollTop !== lastTopRef.current) onScroll()
+      if (pane.scrollTop !== lastTopRef.current) { readerAnchor.current = null; onScroll() }
       if (followsRef.current()) scrollToBottom(false)
-      else if (!virtualize && readerAnchor.current) {
-        const anchor = readerAnchor.current
-        const row = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(anchor.key)}"]`)
-        if (row) {
-          pane.scrollTop += row.getBoundingClientRect().top - pane.getBoundingClientRect().top - anchor.top
-          lastTopRef.current = pane.scrollTop
-        }
-      }
+      else restoreReaderAnchor()
       rememberReaderAnchor()
     }
     follow()
@@ -216,7 +234,7 @@ export function Transcript(props: TranscriptProps) {
     const mutations = new MutationObserver(() => follow(true))
     mutations.observe(inner, { childList: true, subtree: true, characterData: true })
     return () => { observer.disconnect(); mutations.disconnect() }
-  }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor, onScroll])
+  }, [empty, scope, scrollToBottom, rememberReaderAnchor, restoreReaderAnchor, onScroll])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
   useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
@@ -304,7 +322,7 @@ export function Transcript(props: TranscriptProps) {
     setEntered({ scope, focusKey })
     setPinned(true)
   }
-  useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pinnedRef.current = true }, [scope, focusKey])
+  useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; focusAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pinnedRef.current = true }, [scope, focusKey])
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
@@ -323,11 +341,12 @@ export function Transcript(props: TranscriptProps) {
     if (index < 0 || (!virtualize && !target)) { scrollToBottom(false); return }
     pin(false)
     settlingRef.current = false
+    focusAnchor.current = rows[index]?.key ?? null
     if (target) {
       target.scrollIntoView({ block: 'center' })
       lastTopRef.current = scrollRef.current?.scrollTop ?? 0
-      rememberReaderAnchor()
     } else virtualizerRef.current?.scrollToIndex(index, { align: 'center' })
+    rememberReaderAnchor()
   }, [rows, loadedFrom, virtualize, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
 
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -372,7 +391,7 @@ export function Transcript(props: TranscriptProps) {
               </div>
             )}
             {virtualize ? (
-              <VirtualHistory rows={rows} estimateSize={estimateSize} followsRef={followsRef} handle={virtualizerRef} renderRow={renderRow} />
+              <VirtualHistory rows={rows} estimateSize={estimateSize} handle={virtualizerRef} renderRow={renderRow} anchorKey={() => readerAnchor.current?.key ?? null} onCommit={restoreReaderAnchor} />
             ) : <div className="messages-inner messages-history">{renderedRows}</div>}
             {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}

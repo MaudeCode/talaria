@@ -252,7 +252,11 @@ views continue to render their supplied `live` prop.
 Unvirtualized settled rows share a layout/style-contained history block, separate
 from the changing live tail. Its height remains content-sized; the existing row
 containment keeps history searchable and lets reader anchors measure visible rows.
-The opt-in virtualizer retains its existing measurement ownership.
+The opt-in virtualizer leaves the scroll position to the transcript. TanStack's own
+size-change correction is off, because on iOS WebKit it deferred corrections and
+replayed their sum after scrolling stopped. After every virtual commit, the reader
+anchor (the first visible row, or a `?msg=` target until the reader moves) holds its
+place, and the virtualizer keeps that row mounted so a measurement cannot unmount it.
 
 The live user bubble keeps one row object per text and attachments, so token
 frames render only the live turn. Row actions read the session through a ref, so a
