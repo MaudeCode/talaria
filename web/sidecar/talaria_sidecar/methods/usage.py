@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import secrets
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -220,11 +221,12 @@ _open_balance = urllib.request.build_opener(_RefuseRedirects()).open
 
 
 def _number(value: Any) -> int | float | None:
-    """Python `_quota_number`, finite only: a NaN or infinity is not JSON."""
+    """Python `_quota_number`, finite only: a NaN or infinity is not JSON, and an integer past float range reaches the
+    server's `JSON.parse` as Infinity."""
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, int):
-        return value
+        return value if abs(value) <= sys.float_info.max else None
     try:
         number = float(value if isinstance(value, float) else str(value).strip())
     except (TypeError, ValueError):

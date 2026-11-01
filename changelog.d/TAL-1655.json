@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Provider balances and usage limits still load when the provider reports a number too large to display.", "highlight": false, "components": ["web"]}]
+}

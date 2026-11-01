@@ -227,13 +227,14 @@ function costHistoryView(rows: CostSnapshot[], days: number, budget: number | nu
   const deltas = window.map((e, i) => {
     const prev = window[i - 1]
     if (i === 0 || e.used === null || prev?.used === null || prev?.used === undefined) return null
-    const delta = e.used - prev.used < 0 ? e.used : e.used - prev.used
-    return Math.abs(delta) < 1e-9 ? 0 : Math.round(delta * 1e6) / 1e6
+    // Finite readings near the largest number can still difference, sum or scale past it; `finite` leaves no value then.
+    const delta = finite(e.used - prev.used < 0 ? e.used : e.used - prev.used)
+    return delta === null ? null : Math.abs(delta) < 1e-9 ? 0 : finite(Math.round(delta * 1e6) / 1e6) ?? delta
   })
   const known = deltas.filter((d): d is number => d !== null)
   const maxDelta = Math.max(...deltas.map((d) => d ?? 0), 1e-9)
-  const pace = known.length ? (known.reduce((a, b) => a + b, 0) / known.length) * 30 : null
-  const budgetPercent = pace !== null && pace > 0 && budget !== null && budget > 0 ? Math.round((pace / budget) * 100) : null
+  const pace = known.length ? finite((known.reduce((a, b) => a + b, 0) / known.length) * 30) : null
+  const budgetPercent = pace !== null && pace > 0 && budget !== null && budget > 0 ? finite(Math.round((pace / budget) * 100)) : null
   return {
     snapshots: window.map((e, i) => {
       const delta = deltas[i] ?? null
