@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as zlib from 'node:zlib'
+import * as fsp from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { retentionPolicy, type JournalEvent, type RunSummary } from '../journal.js'
 import { sessionRunReferences } from '../../tools/hygiene.js'
@@ -11,6 +12,10 @@ import { StagedFile } from './json-journal-archive.js'
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
   return { ...real, renameSync: vi.fn(real.renameSync), openSync: vi.fn(real.openSync) }
+})
+vi.mock('node:fs/promises', async (original) => {
+  const real = await original<typeof import('node:fs/promises')>()
+  return { ...real, open: vi.fn(real.open) }
 })
 vi.mock('node:zlib', async (original) => {
   const real = await original<typeof zlib>()
@@ -29,6 +34,7 @@ const fixture = (dir = fs.mkdtempSync(join(tmpdir(), 'talaria-archive-'))): Json
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.mocked(fs.renameSync).mockReset().mockImplementation((await vi.importActual<typeof fs>('node:fs')).renameSync)
+  vi.mocked(fsp.open).mockReset().mockImplementation((await vi.importActual<typeof fsp>('node:fs/promises')).open)
   vi.mocked(zlib.createGzip).mockReset().mockImplementation((await vi.importActual<typeof zlib>('node:zlib')).createGzip)
   for (const journal of journals.splice(0)) await journal.close()
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
@@ -182,6 +188,45 @@ describe('run-journal archival', () => {
     expect(await journal.readRunEvents('session', 'run')).toEqual(before)
     expect((await sweep(journal)).pruned, 'the next sweep archives it').toBe(1)
     expect(await journal.readRunEvents('session', 'run')).toEqual(before)
+  })
+
+  it('never archives a prefix when reading the live journal fails part way', async () => {
+    const journal = fixture()
+    await writeRun(journal, 'session', 'run', { text: 'x'.repeat(100_000) })
+    const path = journal.pathFor('session', 'run')
+    const before = await journal.readRunEvents('session', 'run')
+    const real = await vi.importActual<typeof fsp>('node:fs/promises')
+    // Every read of the live journal past its first page fails, as on a disk error.
+    vi.mocked(fsp.open).mockImplementation(async (file, ...rest) => {
+      const handle = await real.open(file, ...rest)
+      if (file !== path) return handle
+      const read = handle.read.bind(handle) as (...args: unknown[]) => Promise<{ bytesRead: number }>
+      Object.assign(handle, { read: (...args: unknown[]) => (Number(args[3]) >= 65536 ? Promise.reject(Object.assign(new Error('EIO'), { code: 'EIO' })) : read(...args)) })
+      return handle
+    })
+    expect(await sweep(journal)).toMatchObject({ pruned: 0 })
+    vi.mocked(fsp.open).mockImplementation(real.open)
+    expect(fs.existsSync(path), 'the live journal stays').toBe(true)
+    expect(fs.existsSync(journal.archivePathFor('session', 'run'))).toBe(false)
+    expect(await journal.readRunEvents('session', 'run')).toEqual(before)
+  })
+
+  it('never reads a run as empty while retention archives it', async () => {
+    const journal = fixture()
+    await writeRun(journal, 'session', 'run')
+    const before = await journal.readRunEvents('session', 'run')
+    const real = await vi.importActual<typeof fsp>('node:fs/promises')
+    // The sweep finishes while the reader is opening the run, before its live journal open lands.
+    let race = true
+    vi.mocked(fsp.open).mockImplementation(async (file, ...rest) => {
+      if (race && file === journal.pathFor('session', 'run')) {
+        race = false
+        expect((await sweep(journal)).pruned).toBe(1)
+      }
+      return real.open(file, ...rest)
+    })
+    expect(await journal.readRunEvents('session', 'run')).toEqual(before)
+    expect(race, 'the race ran').toBe(false)
   })
 
   /** Run `race` while the sweep is between its first check and publication (the archive's fsync). */

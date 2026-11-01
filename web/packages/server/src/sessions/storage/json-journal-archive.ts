@@ -36,12 +36,14 @@ function parseRow(bytes: Buffer): JournalEvent | null {
   } catch { return null }
 }
 
-/** A file's bytes from `start`, a fresh buffer per page; a read failure ends the file, as journal readers always have. */
+/**
+ * A file's bytes from `start`, a fresh buffer per page. A read failure throws rather than ending the file early, so
+ * archival never verifies and publishes a prefix as the whole journal.
+ */
 export async function* fileChunks(handle: FileHandle, start = 0): AsyncGenerator<Buffer> {
   for (let position = start; ;) {
     const page = Buffer.allocUnsafe(PAGE_BYTES)
-    let n = 0
-    try { n = (await handle.read(page, 0, page.length, position)).bytesRead } catch { return }
+    const n = (await handle.read(page, 0, page.length, position)).bytesRead
     if (n <= 0) return
     position += n
     yield page.subarray(0, n)

@@ -89,16 +89,21 @@ export class JsonJournal implements JournalBackend {
     return handle
   }
 
-  /** Every reader, the writer's resume, and archival open a run here; `pin` refuses a symlinked live journal. */
+  /**
+   * Every reader, the writer's resume, and archival open a run here; `pin` refuses a symlinked live journal. The live
+   * journal is opened first: retention removes it only after publishing the archive, so either the held live handle
+   * still reads the run or the archive already exists, and a concurrent sweep never makes a run read as empty.
+   */
   private async openRun(sessionId: string, runId: string, pin = false): Promise<RunFiles> {
     try { validateId(sessionId, 'session_id'); validateId(runId, 'run_id') } catch { return NO_FILES }
-    const archive = await this.openArchive(sessionId, runId)
     let live: FileHandle | null = null
     let liveStat: BigIntStats | null = null
     try {
       live = await open(this.pathFor(sessionId, runId), fsConstants.O_RDONLY | (pin ? NOFOLLOW ?? 0 : 0))
       liveStat = await live.stat({ bigint: true })
     } catch { await live?.close().catch(() => undefined); live = null; liveStat = null }
+    let archive: FileHandle | null
+    try { archive = await this.openArchive(sessionId, runId) } catch (error) { await live?.close(); throw error }
     return { archive, live, liveStat, close: async () => { await archive?.close(); await live?.close() } }
   }
 
