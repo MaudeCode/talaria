@@ -10,6 +10,7 @@ import { Session } from './session.js'
 import { markerKind, mergeSessionMessagesAppendOnly, stateDbSeenId } from './merge.js'
 import { stateDbSessionRead, stateDbSessionTailRead } from './state-db.js'
 import { stripPublicInternalFields } from '../redact.js'
+import { truncateContextForDisplayKeep } from './service.js'
 
 describe('released Agent compaction replay identity (TAL-783)', () => {
   let dir: string
@@ -318,6 +319,18 @@ describe('micro-compacted user turns read as the originals the Agent displays (T
     const display = stateDbSessionRead(path, sid, { display: true })
     expect(contents(display.rows)).toEqual(['q0 q1'])
     expect(display.rows).toEqual(stateDbSessionRead(path, sid).rows)
+  })
+
+  it.each([[1, ['q0']], [2, ['q0\n\nq1']], [3, ['q0\n\nq1', 'answer']]] as const)('cuts the model context inside a merged prompt when keeping %i display rows', (keep, expected) => {
+    seed(db)
+    const display = stateDbSessionRead(path, sid, { display: true })
+    for (const failClosed of [false, true]) {
+      const context = truncateContextForDisplayKeep(display.model, display.rows, keep, { failClosed })
+      expect(contents(context)).toEqual(expected)
+      // The rebuilt prompt keeps the live row's identity, so the next state.db merge does not restore the cut text.
+      expect(context[0]?._state_db_row_id).toBe(4)
+      expect(context[0]?._absorbed_message_uids ?? []).toEqual(keep === 1 ? [] : ['uid-q1'])
+    }
   })
 
   it('serves the originals for a CLI session without a sidecar and keeps the claim on the model rows', async () => {

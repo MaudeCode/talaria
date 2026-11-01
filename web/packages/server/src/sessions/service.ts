@@ -3366,9 +3366,41 @@ function alignDisplayToContext(ctx: unknown[], full: unknown[]): { matches: (num
  * `failClosed` (Retry/Undo, TAL-1027): the unkept row `full[keep]` must be proved present in the context, or the context
  * clears rather than guessing a cut that could keep the removed turn (the model then reads the kept display rows).
  */
-export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number, { failClosed = false } = {}): Message[] {
+/**
+ * TAL-825: a micro-compaction's merged prompt (`model_only`) stands in the model context for display originals: its own
+ * message UID plus `_absorbed_message_uids`. Expand it into those originals so a cut can fall between them, cut, then join
+ * the kept originals back the way the Agent joined them, under the merged row's identity.
+ */
+export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number, opts: { failClosed?: boolean } = {}): Message[] {
+  const parts = new Map<unknown, Message>()
+  const uidRows = new Map(full.filter(isDict).filter((m) => typeof m._state_db_message_uid === 'string').map((m) => [m._state_db_message_uid, m as Message]))
+  const expanded = (context ?? []).flatMap((row) => {
+    const meta = row.display_metadata
+    const uids: unknown[] = [row._state_db_message_uid, ...(Array.isArray(row._absorbed_message_uids) ? row._absorbed_message_uids as unknown[] : [])]
+    const originals = uids.map((uid) => uidRows.get(uid))
+    if (row.role !== 'user' || uids.length < 2 || !isDict(meta) || meta.model_only !== true || !originals.every((m) => m?.role === 'user' && typeof m.content === 'string')) return [row]
+    return originals.map((m) => { const part = { ...m! }; parts.set(part, row); return part })
+  })
+  const cut = cutContextAtDisplayKeep(expanded, full, keep, opts)
+  const joined: Message[] = []
+  for (let i = 0; i < cut.length; i += 1) {
+    const merged = parts.get(cut[i])
+    if (!merged) { joined.push(cut[i]!); continue }
+    const kept: Message[] = []
+    while (i < cut.length && parts.get(cut[i]) === merged) kept.push(cut[i++]!)
+    i -= 1
+    const absorbed = Array.isArray(merged._absorbed_message_uids) ? merged._absorbed_message_uids : []
+    if (kept.length === absorbed.length + 1) { joined.push(merged); continue }
+    const rebuilt: Message = { ...merged, content: kept.map((m) => m.content).join('\n\n'), _absorbed_message_uids: kept.slice(1).map((m) => m._state_db_message_uid) }
+    if (kept.length === 1) delete rebuilt._absorbed_message_uids
+    joined.push(rebuilt)
+  }
+  return joined
+}
+
+function cutContextAtDisplayKeep(context: Message[], full: unknown[], keep: number, { failClosed = false } = {}): Message[] {
   if (keep <= 0) return []
-  const ctx = context ?? []
+  const ctx = context
   if (!ctx.length || !full.length) return []
   if (keep < full.length) {
     const { matches, ambiguous } = alignDisplayToContext(ctx, full)
