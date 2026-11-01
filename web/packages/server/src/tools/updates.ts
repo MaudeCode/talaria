@@ -166,13 +166,30 @@ function gitFailure(label: string, out: string, network?: string): { message: st
   return { message: detail ? `${label}: ${detail}` : label }
 }
 
-/** One delayed retry absorbs a transient network blip; a lock conflict is not transient. */
 export const FETCH_RETRY_MS = 1000
-async function fetchWithRetry(git: GitRun, args: string[], cwd: string, timeoutMs: number): Promise<GitOutcome> {
-  const first = await git(args, cwd, timeoutMs)
-  if (first.ok || isGitLockError(first.out)) return first
-  await new Promise((r) => setTimeout(r, FETCH_RETRY_MS))
-  return git(args, cwd, timeoutMs)
+const ORIGIN_FETCH = ['fetch', 'origin', '--quiet', '--tags', '--force']
+const ORIGIN_TRACKING = '+refs/heads/*:refs/remotes/origin/*'
+/** Git's hint when a stale origin tracking ref blocks a renamed branch (`topic` ↔ `topic/next`); a lock is not one. */
+const isOriginRefCollision = (out: string): boolean => !isGitLockError(out) && out.toLowerCase().includes("'git remote prune origin'")
+
+/**
+ * The one Agent origin fetch. `retry` spends one delayed attempt on a transient failure (never a lock or a collision).
+ * TAL-1026: a remote-tracking name collision gets one prune of the default origin mapping only, keeping tags,
+ * local branches, and the worktree; any other refspec is left for the user to prune.
+ */
+async function fetchOrigin(git: GitRun, cwd: string, retry = false): Promise<GitOutcome> {
+  let fetched = await git(ORIGIN_FETCH, cwd, 15_000)
+  if (retry && !fetched.ok && !isGitLockError(fetched.out) && !isOriginRefCollision(fetched.out)) {
+    await new Promise((r) => setTimeout(r, FETCH_RETRY_MS))
+    fetched = await git(ORIGIN_FETCH, cwd, 15_000)
+  }
+  if (fetched.ok || !isOriginRefCollision(fetched.out)) return fetched
+  const mapping = await git(['config', '--get-all', 'remote.origin.fetch'], cwd)
+  if (!mapping.ok || mapping.out !== ORIGIN_TRACKING) {
+    return { ok: false, out: "Origin's remote-tracking branches conflict with a renamed branch, and its custom fetch refspec is not pruned automatically. Run 'git remote prune origin' in the Agent checkout, then try again." }
+  }
+  const pruned = await git(['fetch', 'origin', '--quiet', '--prune', '--no-prune-tags', ORIGIN_TRACKING], cwd, 15_000)
+  return pruned.ok ? git(ORIGIN_FETCH, cwd, 15_000) : pruned
 }
 
 function normalizeRemoteUrl(remote: string): string {
@@ -926,7 +943,7 @@ const RETAINED_LOCAL_EDITS = { metadata_repair: true, message: 'Local Agent chan
 
 export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
-  const fetched = await fetchWithRetry(git, ['fetch', 'origin', '--tags', '--force'], path, 15_000)
+  const fetched = await fetchOrigin(git, path, true)
   if (!fetched.ok) {
     return { name: 'agent', channel, behind: null, error: gitFailure('fetch failed', fetched.out).message, stale_check: true, dirty: await isDirty(path, git) }
   }
@@ -1024,7 +1041,7 @@ async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: 
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
 export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
-  const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
+  const fetched = await fetchOrigin(git, path)
   if (!fetched.ok) return { ok: false, ...gitFailure('fetch failed', fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
   let info: Dict
   try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
@@ -1156,7 +1173,7 @@ async function recoverInterruptedAutostash(path: string, git: GitRun, requireRes
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
 export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
-  const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
+  const fetched = await fetchOrigin(git, path)
   if (!fetched.ok) return { ok: false, ...gitFailure('fetch failed', fetched.out, 'Could not reach the remote repository. Check your connection.') }
   let info: Dict
   try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
@@ -1918,7 +1935,7 @@ export class UpdateService {
     let repairCurrent = Boolean(path && marker && existsSync(marker))
     // Preserve the explicit legacy-release escape when the installed environment cannot run its sync entry point.
     if (repairCurrent && path && options.confirmedRevision) {
-      const fetched = await this.git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
+      const fetched = await fetchOrigin(this.git, path)
       if (fetched.ok) {
         try {
           const chosen = await agentTarget(path, this.git, options.agentChannel ?? this.agentChannel(), options.version, this.publishedTag)
