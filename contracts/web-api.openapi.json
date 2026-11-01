@@ -5175,6 +5175,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -9462,6 +9484,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -12891,6 +12935,28 @@
                             }
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
                         },
                         "messages": {
                           "type": "array",
@@ -18408,6 +18474,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -23484,6 +23572,28 @@
                             }
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
                         },
                         "messages": {
                           "type": "array",
@@ -29281,6 +29391,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -32659,6 +32791,28 @@
                             }
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
                         },
                         "messages": {
                           "type": "array",
@@ -36101,6 +36255,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -39539,6 +39715,28 @@
                             }
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
                         },
                         "messages": {
                           "type": "array",
@@ -52749,6 +52947,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -56175,6 +56395,28 @@
                             }
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
                         },
                         "messages": {
                           "type": "array",
@@ -59995,6 +60237,28 @@
                           ],
                           "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
+                        "served_model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                        },
+                        "served_model_provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-978: the provider of `served_model`; null with it."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -63711,6 +63975,28 @@
                                 }
                               ],
                               "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                            },
+                            "served_model": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it."
+                            },
+                            "served_model_provider": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-978: the provider of `served_model`; null with it."
                             },
                             "messages": {
                               "type": "array",

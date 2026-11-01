@@ -517,6 +517,8 @@ export class GatewaySessions {
       Object.assign(fields, { messages: limit === null ? rows : messagesForLimitedPayload(rows), message_count: Math.max(snapshot.message_count, nativeRows.length), _messages_offset: offset, _messages_truncated: offset > 0,
         title: str(snapshot.info.title) || base.title, model: str(snapshot.info.model) || base.model,
         model_provider: provider, model_option_id: this.deps.service.deps.modelOptionFor?.(model, provider) ?? null,
+        // TAL-978: the owner runs this session's turns; a route the Web copy recorded says nothing about them.
+        served_model: null, served_model_provider: null,
         workspace: str(snapshot.info.cwd) || base.workspace, active_stream_id: stream, is_streaming: Boolean(stream), agent_running: snapshot.running,
         transcript_seq: stream ? { stream_id: stream, seq: 0 } : null,
         tool_calls: withMessages && before === null && stream && snapshot.running && observed && sameExecution(snapshot, observed)

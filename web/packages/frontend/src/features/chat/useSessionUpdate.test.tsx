@@ -8,7 +8,7 @@ import { sessionFixture } from '../../test/fixtures'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import type { OwnerAttachment } from '@maudecode/talaria-web-contracts'
-import { useSessionUpdate } from './useSessionUpdate'
+import { chosenFields, useSessionUpdate } from './useSessionUpdate'
 import { showToast } from '../toast/toast'
 import { useResourceEffects } from '../sessions/useResourceMutation'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -161,6 +161,23 @@ it('shows the picked model at once, keeps it while confirming, and Cancel rolls 
   expect(screen.getByLabelText('chip')).toHaveTextContent('contributor')
   await userEvent.click(screen.getByText('Cancel'))
   await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('old'))
+})
+
+it('shows no fallback route while the pick is pending or confirming (TAL-978)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.updateSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+  function Served() {
+    const { updateSession, dialog, confirming } = useSessionUpdate('s1', refresh)
+    const effect = useResourceEffects()['session:s1']
+    const fields = confirming ? chosenFields(confirming) : effect?.fields
+    return <><button onClick={() => { updateSession(body) }}>Pick model</button><output aria-label="served">{fields && 'served_model' in fields ? String(fields.served_model) : 'fallback-model'}</output>{dialog}</>
+  }
+  render(<QueryClientProvider client={client}><Served /></QueryClientProvider>)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(screen.getByLabelText('served')).toHaveTextContent('null'))
+  await act(async () => { refuse(refusal('one')); await Promise.resolve() })
+  expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+  expect(screen.getByLabelText('served')).toHaveTextContent('null')
 })
 
 function WorkspaceChip() {

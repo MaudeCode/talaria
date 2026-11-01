@@ -26,7 +26,7 @@ import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply
 import type { JournalEventMeta } from './storage/backend.js'
 import { materializeTurnAttachments, type BlobStore } from './storage/blobs.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
-import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
+import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetModelFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
@@ -517,7 +517,7 @@ export class TurnRunner {
     // admission clears the post-compression estimate. A `/btw` clone is thrown away after one answer, so it is never due.
     const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)
     const compactionDue = !opts.ephemeral && sameRuntime && this.deps.service().compactionDue(s)
-    if (!sameRuntime) forgetContextFigures(s)
+    if (!sameRuntime) forgetModelFigures(s)
     const notificationOwner = this.deps.notificationOwner()
     if (notificationOwner) s.extra.notification_owner = notificationOwner
     s.workspace = opts.workspace
@@ -1142,6 +1142,13 @@ export class TurnRunner {
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
       s.next_turn_threshold_tokens = result.context.next_turn_threshold_tokens ?? null
+      // TAL-978: the route that answered when the Agent's fallback chain served a turn on the conversation's own route. A
+      // route picked mid-turn, or a voice turn on its own model slot, says nothing about that route, so both stay as they are.
+      if (!opts.voiceTurn && str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)) {
+        const fellBack = Boolean(result.requested_model && result.model && result.model !== result.requested_model)
+        s.served_model = fellBack ? result.model : null
+        s.served_model_provider = fellBack ? str(result.provider) || null : null
+      }
       if (result.compressed) (await put('compressed', this.compressedFrame(s)))
       s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
       this.clearPendingTurn(s)

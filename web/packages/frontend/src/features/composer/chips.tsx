@@ -59,9 +59,11 @@ function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; l
 
 /**
  * Conversation model picker: grouped by provider with a search field and a custom id entry. `optionId` is the entry the
- * server says `model` selects (or a just-picked id); with no `model`, the catalog default is ticked.
+ * server says `model` selects (or a just-picked id); with no `model`, the catalog default is ticked. `servedModel` is the
+ * session's `served_model` (TAL-978): the chip names the model that answered after a fallback while the picker keeps
+ * the configured one ticked.
  */
-export function ModelChip({ model, optionId, onChange, row }: { model: string | null; optionId: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
+export function ModelChip({ model, optionId, servedModel = null, onChange, row }: { model: string | null; optionId: string | null; servedModel?: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
   const locale = useLocale()
   const [open, setOpen] = useState(false)
@@ -73,11 +75,13 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
   })()
   const onSelect = (id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null)
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
-  const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
+  const configured = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
+  const label = servedModel ?? configured
+  const title = servedModel && !row ? m.composer_model_served({ configured, served: servedModel }) : m.composer_control_model()
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
     // TAL-1131: search is the menu's pinned header; ArrowUp/ArrowDown reach Base UI's list navigation, other keys stay typing.
-    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}
+    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={title} row={row} className="composer-model-chip" />}
       header={<div className="p-1"><input ref={searchInput} type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (!SEARCH_LIST_KEYS.has(e.key)) e.stopPropagation() }} /></div>}>
       <MenuRadioGroup value={selected?.id ?? ''} onValueChange={onSelect}>
         {groups.map((g) => (

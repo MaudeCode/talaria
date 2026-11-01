@@ -4599,3 +4599,69 @@ describe('live metering and todo_state (TAL-397)', () => {
     expect(live.slice(0, -1).map((m) => [m.tps, m.tps_available])).toEqual([[null, false], [22, true]])
   })
 })
+
+describe('the model that answered after a provider fallback (TAL-978)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Fallback"', usage: null }))
+  })
+  afterAll(() => s.close())
+
+  const turn = async (sid: string, body: Json = {}): Promise<Json> => {
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello', ...body }))
+    expect(start.stream_id).toBeTypeOf('string')
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    return (frames.find((f) => f.event === 'done')?.data as Json).session as Json
+  }
+  const detail = async (sid: string): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+  const reply = (params: Json): Json[] => [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'hi' }]
+  /** The Agent's result after its fallback chain served the turn: the served route plus the primary model it requested. */
+  const fallback = (): void => { sidecar.respond('chat.start', (params) => completed(reply(params), { model: 'fallback-model', provider: 'fallback-provider', requested_model: 'test-model' })) }
+
+  it('records the served model and provider and ships them on the session payload', async () => {
+    const sid = await newSession(s)
+    fallback()
+    const done = await turn(sid)
+    expect(done).toMatchObject({ served_model: 'fallback-model', served_model_provider: 'fallback-provider' })
+    expect(await detail(sid)).toMatchObject({ served_model: 'fallback-model', served_model_provider: 'fallback-provider' })
+    // The conversation's own model is unchanged: the next turn asks for it again.
+    expect((await detail(sid)).model).toBe(done.model)
+  })
+
+  it('clears both when the requested model answers the next turn', async () => {
+    const sid = await newSession(s)
+    fallback()
+    await turn(sid)
+    sidecar.respond('chat.start', (params) => completed(reply(params), { model: 'test-model', requested_model: 'test-model' }))
+    expect(await turn(sid)).toMatchObject({ served_model: null, served_model_provider: null })
+  })
+
+  it('records nothing when a turn ends on a model the user picked mid-turn', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', async (params) => {
+      expect((await json(await post(s, '/api/session/update', { session_id: sid, model: 'picked-mid-turn' }))).session).toMatchObject({ model: 'picked-mid-turn' })
+      return completed(reply(params), { model: 'fallback-model', provider: 'fallback-provider', requested_model: 'test-model' })
+    })
+    expect(await turn(sid)).toMatchObject({ model: 'picked-mid-turn', served_model: null, served_model_provider: null })
+  })
+
+  it('leaves the recorded route alone on a voice turn, which runs on its own model', async () => {
+    const sid = await newSession(s)
+    fallback()
+    await turn(sid)
+    sidecar.respond('chat.start', (params) => completed(reply(params), { model: 'voice-model', requested_model: 'test-model' }))
+    expect(await turn(sid, { voice_turn: true })).toMatchObject({ served_model: 'fallback-model', served_model_provider: 'fallback-provider' })
+  })
+
+  it('clears both when the session changes its model', async () => {
+    const sid = await newSession(s)
+    fallback()
+    await turn(sid)
+    const updated = (await json(await post(s, '/api/session/update', { session_id: sid, model: 'another-model' }))).session as Json
+    expect(updated).toMatchObject({ model: 'another-model', served_model: null, served_model_provider: null })
+    expect(await detail(sid)).toMatchObject({ served_model: null, served_model_provider: null })
+  })
+})

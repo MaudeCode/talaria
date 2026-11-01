@@ -34,7 +34,7 @@ function withoutCompactionCopies(messages: Message[]): Message[] {
 }
 
 export const METADATA_FIELDS = [
-  'session_id', 'title', 'workspace', 'created_workspace', 'model', 'model_provider', 'model_explicit_pick_signature', 'created_at', 'updated_at',
+  'session_id', 'title', 'workspace', 'created_workspace', 'model', 'model_provider', 'model_explicit_pick_signature', 'served_model', 'served_model_provider', 'created_at', 'updated_at',
   'pinned', 'archived', 'project_id', 'profile',
   'input_tokens', 'output_tokens', 'estimated_cost',
   'cache_read_tokens', 'cache_write_tokens',
@@ -194,9 +194,12 @@ export type ContextUsage = Record<(typeof CONTEXT_USAGE_FIELDS)[number], number 
  */
 /**
  * TAL-1005: a model or provider change voids the context figures measured on the old one (its threshold, last prompt,
- * post-compression estimate, and next turn's threshold) until a turn on the new one reports its own.
+ * post-compression estimate, and next turn's threshold) until a turn on the new one reports its own. TAL-978: it voids
+ * the fallback route that answered the old one too.
  */
-export function forgetContextFigures(s: Session): void {
+export function forgetModelFigures(s: Session): void {
+  s.served_model = null
+  s.served_model_provider = null
   s.threshold_tokens = 0
   s.last_prompt_tokens = 0
   s.post_compression_context_tokens_estimate = null
@@ -240,6 +243,9 @@ export class Session {
   model: string | null
   model_provider: string | null
   model_explicit_pick_signature: string | null
+  /** TAL-978: the route that answered the last turn after a provider fallback; null when the configured model answered. */
+  served_model: string | null
+  served_model_provider: string | null
   messages: Message[]
   tool_calls: ToolCall[]
   created_at: number
@@ -354,6 +360,10 @@ export class Session {
     this.model_provider = provider ? str(provider).trim().toLowerCase() : null
     const sig = take('model_explicit_pick_signature', null)
     this.model_explicit_pick_signature = sig ? str(sig) : null
+    const servedModel = take('served_model', null)
+    this.served_model = servedModel ? str(servedModel) : null
+    const servedProvider = take('served_model_provider', null)
+    this.served_model_provider = this.served_model && servedProvider ? str(servedProvider) : null
     const messages = take('messages', null)
     this.messages = isList(messages) ? withoutCompactionCopies(messages as Message[]) : []
     const toolCalls = take('tool_calls', null)
@@ -524,6 +534,8 @@ export class Session {
       model_provider: this.model_provider,
       // TAL-301: the catalog entry the stored pair selects, on the payloads a model picker renders.
       ...(opts.modelOptionFor ? { model_option_id: opts.modelOptionFor(this.model, this.model_provider) } : {}),
+      served_model: this.served_model,
+      served_model_provider: this.served_model_provider,
       message_count: messageCount,
       created_at: this.created_at,
       updated_at: this.updated_at,

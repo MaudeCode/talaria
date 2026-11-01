@@ -408,7 +408,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const workspaces = useWorkspacesQuery()
   // TAL-303: the server names the workspace: the session's own label, else the default workspace's registry entry.
   const wsLabel = session ? session.workspace_name : workspaces.data?.workspaces.find((w) => w.path === workspace)?.name
-  const meta = [session?.model, session?.message_count !== undefined ? m.session_meta_messages({ n: session.message_count }) : null, session?.updated_at ? formatDate(session.updated_at) : null].filter(Boolean).join(' · ')
+  // TAL-978: the model that answered after a fallback, else the configured one.
+  const meta = [session?.served_model ?? session?.model, session?.message_count !== undefined ? m.session_meta_messages({ n: session.message_count }) : null, session?.updated_at ? formatDate(session.updated_at) : null].filter(Boolean).join(' · ')
 
   // Composer placement. A session is assumed to have content until the transcript says otherwise;
   // only a session remembered as empty (legacy `hermes-webui-session-empty`) opens in the hero layout

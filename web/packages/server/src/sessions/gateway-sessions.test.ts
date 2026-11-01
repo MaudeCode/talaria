@@ -1241,10 +1241,12 @@ describe('canonical owner attachment', () => {
 
   it('preserves an explicit null provider in the owner model projection', async () => {
     const option = vi.spyOn(s.deps.sessions.deps, 'modelOptionFor').mockImplementation((model, provider) => JSON.stringify([model, provider]))
-    const base = { session_id: sid, read_only_reason: CANONICAL_READ_ONLY_REASON, model: 'old-model', model_provider: 'old-backend', workspace: s.state }
+    const base = { session_id: sid, read_only_reason: CANONICAL_READ_ONLY_REASON, model: 'old-model', model_provider: 'old-backend', served_model: 'web-fallback', served_model_provider: 'web-provider', workspace: s.state }
     sidecar.respond('gateway.session', () => attached(snapshot({ info: { model: 'native-model', provider: null } })))
     const cleared = await s.deps.sessions.owner!.project(base)
     expect(cleared.model_provider).toBeNull()
+    // TAL-978: the Web copy's fallback route never labels the owner's turns.
+    expect(cleared).toMatchObject({ served_model: null, served_model_provider: null })
     expect(cleared.model_option_id).toBe('["native-model",null]')
     expect(option).toHaveBeenLastCalledWith('native-model', null)
     sidecar.respond('gateway.session', () => attached(snapshot({ info: { model: 'native-model' } })))

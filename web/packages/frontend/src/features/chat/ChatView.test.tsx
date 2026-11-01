@@ -340,3 +340,13 @@ it('reports a running turn in the open chat as watched, and clears it when the t
   unmount()
   expect(vi.mocked(setWatchingRun).mock.lastCall).toEqual([false])
 })
+
+it.each([['fallback-model', 'fallback-model'], [null, 'configured-model']])('names the answering model in the header meta when served_model is %s (TAL-978)', async (served, shown) => {
+  const session = sessionFixture({ session_id: 'served-chat', model: 'configured-model', served_model: served, message_count: 2, messages: [] })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  const { container } = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(container.querySelector('#topbarMeta')?.textContent).toMatch(new RegExp(`^${shown} · `)))
+  expect(container.querySelector('#topbarMeta')?.textContent).not.toContain(served === null ? 'fallback-model' : 'configured-model')
+})

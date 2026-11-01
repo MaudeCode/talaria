@@ -387,6 +387,8 @@ export const SessionSchema = z.looseObject({
   clear_generation: NullableString.optional().describe('TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it.'),
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
   model_option_id: NullableString.optional().describe('TAL-301: the catalog entry id the stored model/provider selects; null when none.'),
+  served_model: NullableString.optional().describe('TAL-978: the model that answered the last turn after a provider fallback; null when the configured model answered. `model` stays the configured model the next turn requests. Older servers omit it.'),
+  served_model_provider: NullableString.optional().describe('TAL-978: the provider of `served_model`; null with it.'),
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
