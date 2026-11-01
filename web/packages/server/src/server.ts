@@ -12,7 +12,8 @@ import type { ServerConfig } from './config.js'
 import { fixCredentialPermissions, warnForwardedForWithoutProxy, warnUnauthenticatedBind } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
 import { closeTranscribeStreams } from './api/transcribe-stream.js'
-import { watchRetirement } from './cli/supervise.js'
+import { RUN_DRAIN_MS, RUN_SETTLE_MS, watchRetirement } from './cli/supervise.js'
+import type { DrainOptions } from './sessions/turn.js'
 
 export async function isAlreadyServing(host: string, port: number): Promise<boolean> {
   const probeHost = ['0.0.0.0', '', '::'].includes(host) ? '127.0.0.1' : host
@@ -41,9 +42,18 @@ export interface RunningServer {
   scheme: 'http' | 'https'
   port: number
   close: () => Promise<void>
+  /** TAL-1628: a repeated stop; the local-run drain stops waiting for runs to finish on their own. */
+  escalate: () => void
 }
 
-export async function startServer(app: App, config: ServerConfig, opts: { log?: (line: string) => void; signals?: boolean } = {}): Promise<RunningServer> {
+export interface StartServerOptions {
+  log?: (line: string) => void
+  signals?: boolean
+  /** TAL-1628: the local-run drain budget; the default fits the worker's shutdown deadline. */
+  drain?: DrainOptions
+}
+
+export async function startServer(app: App, config: ServerConfig, opts: StartServerOptions = {}): Promise<RunningServer> {
   const log = opts.log ?? ((line) => { console.log(line) })
   if (await isAlreadyServing(config.host, config.port)) {
     throw new Error(`Another server is already responding on ${config.host}:${config.port}. Stop the existing instance first.`)
@@ -87,6 +97,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
   warnForwardedForWithoutProxy(config.env, log)
   const close = async () => {
+    const began = Date.now()
     // One failed step must not skip the persistence after it; each failure is logged and fails the close.
     const failures: string[] = []
     const settle = async (step: string, work: () => Promise<unknown> | undefined): Promise<void> => {
@@ -98,16 +109,26 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     await settle('prompt queues', () => app.deps.promptQueues.close())
     await settle('groups', () => app.deps.groups.close())
     app.deps.updates.stopAutoApply()
+    // TAL-1628: no new turn starts from here; this server's own runs finish or are saved as interrupted before storage
+    // closes. Gateway-owned runs keep running in their owner; only their observation detaches below.
+    const drained = settle('local runs', async () => {
+      const budget = opts.drain ?? { waitMs: RUN_DRAIN_MS, settleMs: RUN_SETTLE_MS }
+      // The budget counts from the start of the close, which the worker's shutdown deadline also measures.
+      const result = await app.deps.turns.drain({ waitMs: Math.max(0, budget.waitMs - (Date.now() - began)), settleMs: budget.settleMs })
+      if (result.unresolved.length) throw new Error(`no saved outcome for ${result.unresolved.join(', ')}`)
+    })
     // TAL-953: start no post-update gateway restart, and let one in flight finish before the sidecar goes away.
     const gatewayRestarts = settle('gateway restart', () => app.deps.gatewayRestarts.quiesce())
     // A retention sweep finishes its current file step before the process exits.
     const hygiene = settle('retention sweep', () => app.deps.hygiene.stop())
-    await new Promise<void>((resolve) => {
-      server.close(() => { resolve() })
-      server.closeAllConnections()
-      // Upgraded sockets left the HTTP server's connection list.
-      closeTranscribeStreams()
-    })
+    // Stop listening at once; an open stream still receives its run's last frames while the drain runs.
+    const stopped = new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    server.closeIdleConnections()
+    await drained
+    server.closeAllConnections()
+    // Upgraded sockets left the HTTP server's connection list.
+    closeTranscribeStreams()
+    await stopped
     await hygiene
     await gatewayRestarts
     // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
@@ -119,6 +140,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     if (failures.length) throw new Error(`shutdown incomplete: ${failures.join(', ')}`)
   }
   // SIGHUP is handled too: its default action would exit before auth writes land.
-  if (opts.signals ?? true) watchRetirement({ log }).attach(close)
-  return { server, scheme, port, close }
+  const escalate = (): void => { app.deps.turns.escalateDrain() }
+  if (opts.signals ?? true) watchRetirement({ log }).attach(close, escalate)
+  return { server, scheme, port, close, escalate }
 }

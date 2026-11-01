@@ -51,8 +51,19 @@ The worker never outlives its supervisor while holding the port:
 - The worker retires on a stop signal or when its supervisor's IPC channel
   disconnects, including when the supervisor itself is killed with SIGKILL.
   During startup it exits at once. After it is listening it stops accepting
-  connections, lands pending auth and session writes, logs any failed step, and
+  connections and refuses new chat turns. Chat turns this server runs itself get
+  6 seconds to finish; each one still running is then stopped and saved as
+  interrupted, with its prompt and partial reply, so clients show a server
+  interruption rather than a Stop. Runs owned by a Hermes Agent gateway keep
+  running there and reattach after the restart. The worker then lands pending
+  auth and session writes, logs any failed step (including a run whose outcome
+  could not be saved, which the next open recovers from its run journal), and
   exits within 10 seconds even if a step stalls.
+- A stop signal that reaches the worker again more than a second after the first ends that
+  6-second wait early, once. Signals closer together, such as a terminal's
+  Ctrl-C reaching both supervisor and worker, count as one stop.
+- A self-update restart saves the chat turns still running when its wait for idle
+  work ends the same way before the worker exits.
 - A process stuck in an uninterruptible kernel wait ignores SIGKILL as well.
   The supervisor then keeps waiting instead of starting a worker that cannot
   bind; stopping it needs the operating system to release the process.

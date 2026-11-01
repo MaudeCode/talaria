@@ -59,6 +59,16 @@ const METERING_INTERVAL_S = 1
 const CONTENT_EVENTS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
+/** TAL-1628: a shutdown's interrupt waits this long for the Agent's checkpoint, inside the drain's settlement margin. */
+const SHUTDOWN_INTERRUPT_TIMEOUT_MS = 1_000
+export const SHUTTING_DOWN_MESSAGE = 'Web is shutting down. Retry after it restarts.'
+const SHUTDOWN_INTERRUPTED_MESSAGE = 'Talaria Web stopped before this reply finished.'
+const SHUTDOWN_INTERRUPTED_HINT = 'The partial reply was saved. Send a new message to continue.'
+
+/** TAL-1628: how long a drain lets local runs finish on their own, then how long it may take to save the rest as interrupted. */
+export interface DrainOptions { waitMs: number; settleMs: number }
+/** Runs that ended on their own, runs saved as interrupted, and streams left without a saved outcome. */
+export interface DrainResult { completed: number; interrupted: number; unresolved: string[] }
 
 export interface TurnRunnerDeps {
   notifications: UpdateNotificationStore
@@ -376,8 +386,86 @@ export class TurnRunner {
   private readonly stopHeld = new Set<string>()
   private readonly notices = new SessionNotices(() => this.deps.now())
   private readonly goals = new SessionGoals(() => this.deps.now())
+  /** TAL-1628: the one drain of this server's local runs, shared by stop, a repeated signal and restart. */
+  private drainRun: Promise<DrainResult> | null = null
+  private drainEscalated = false
+  private wakeDrain: (() => void) | null = null
+  /** Streams a drain stopped: whether their stopped outcome is saved (`pending` until a save reports). */
+  private readonly drainOutcomes = new Map<string, 'pending' | 'saved' | 'failed'>()
+  /** Streams stopped by the server's shutdown rather than the user: they end `interrupted`, not `cancelled`. */
+  private readonly shutdownStops = new Set<string>()
+  /** Stopped streams whose terminal frame was sent (by the worker or the Stop), so the other sends none. */
+  private readonly stopTerminals = new Set<string>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
+
+  /** TAL-1628: whether a drain fences new turns. */
+  get draining(): boolean { return this.drainRun !== null }
+
+  /**
+   * TAL-1628: fence new local and server-initiated turns, let this server's own runs finish within `waitMs`, then save
+   * each one still running as interrupted (prompt, partial output, one terminal row and journal frame) within `settleMs`.
+   * Gateway-owned observations are not local runs and are left to detach. Every caller shares the first drain.
+   */
+  drain(opts: DrainOptions): Promise<DrainResult> {
+    this.drainRun ??= this.runDrain(opts)
+    return this.drainRun
+  }
+
+  /** A repeated stop: the drain stops waiting for runs to finish on their own. Before a drain starts, it applies to it. */
+  escalateDrain(): void {
+    this.drainEscalated = true
+    this.wakeDrain?.()
+  }
+
+  private async runDrain({ waitMs, settleMs }: DrainOptions): Promise<DrainResult> {
+    const timers: NodeJS.Timeout[] = []
+    const after = (ms: number): Promise<void> => new Promise((resolve) => { timers.push(setTimeout(resolve, ms)) })
+    const escalation = new Promise<void>((resolve) => { this.wakeDrain = resolve; if (this.drainEscalated) resolve() })
+    const started = new Set(this.workers.keys())
+    const idle = async (): Promise<void> => { while (this.workers.size || this.admissions.size) await Promise.race([...this.workers.values(), ...this.admissions.values()]) }
+    try {
+      await Promise.race([idle(), after(waitMs), escalation])
+      const stops = new Map<string, Promise<boolean>>()
+      const stopRemaining = (): void => {
+        for (const streamId of this.workers.keys()) {
+          if (stops.has(streamId)) continue
+          this.drainOutcomes.set(streamId, 'pending')
+          stops.set(streamId, this.stop(streamId, 'shutdown').then((r) => r.cancelled, (error: unknown) => {
+            this.deps.log(`[webui] shutdown: interrupting ${streamId} failed: ${(error as Error).message}`)
+            return false
+          }))
+        }
+      }
+      const settle = async (): Promise<void> => {
+        stopRemaining()
+        // A launch past the fence (registered, no worker yet) gets its worker when its admission settles; it is stopped too.
+        await Promise.all(this.admissions.values())
+        stopRemaining()
+        await Promise.all(stops.values())
+        await Promise.all([...stops.keys()].map((streamId) => this.finished(streamId)))
+      }
+      await Promise.race([settle(), after(settleMs)])
+      const interrupted = (await Promise.all([...stops.values()].map((stop) => Promise.race([stop, Promise.resolve(false)])))).filter(Boolean).length
+      const unresolved = [...stops.keys()].filter((streamId) => this.drainOutcomes.get(streamId) !== 'saved')
+      for (const streamId of unresolved) this.deps.log(`[webui] shutdown: run ${streamId} has no saved outcome; its session recovers from the run journal on next open`)
+      return { completed: [...started].filter((streamId) => !stops.has(streamId)).length, interrupted, unresolved }
+    } finally { for (const timer of timers) clearTimeout(timer) }
+  }
+
+  /** TAL-1628: a drained stream's stopped outcome; a skipped settlement only resolves one nothing reported yet. */
+  private noteDrainOutcome(streamId: string, outcome: 'saved' | 'failed', definitive = true): void {
+    const current = this.drainOutcomes.get(streamId)
+    if (current === undefined || (!definitive && current !== 'pending')) return
+    this.drainOutcomes.set(streamId, outcome)
+  }
+
+  /** Saves a stopped turn's settlement and reports it to a drain that stopped the stream. */
+  private async saveStopped(s: Session, streamId: string): Promise<boolean> {
+    try { await this.deps.store.save(s) } catch { this.noteDrainOutcome(streamId, 'failed'); return false }
+    this.noteDrainOutcome(streamId, 'saved')
+    return true
+  }
 
   private get registry(): StreamRegistry { return this.deps.registry }
 
@@ -487,6 +575,7 @@ export class TurnRunner {
     const timing = opts.timing
     const closeChecks = timing.begin('admission_checks')
     const s = session
+    if (this.draining) return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
     const readOnly = (await this.deps.service().readOnlyReason(s))
     if (readOnly) return { error: readOnly, _status: 403 }
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
@@ -509,6 +598,9 @@ export class TurnRunner {
       return { stream_id: str(accepted[opts.completionKeys[0]!]), session_id: s.session_id }
     }
     opts.admissionCheck?.(s)
+    // TAL-1628: the fence again, synchronously before this admission mutates state and registers in `admissions`: a drain
+    // that started meanwhile refuses it, and one that starts later sees it there.
+    if (this.draining) return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
     closeChecks()
     const streamId = randomUUID().replace(/-/g, '')
     timing.identify(s.session_id, streamId)
@@ -677,12 +769,15 @@ export class TurnRunner {
       else if (event === 'cancel') failure.cancelled = true
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) (await put(steerEvent[0], steerEvent[1]))
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
-      // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
-      if (event === 'cancel' && !this.registry.streams.has(streamId)) {
+      // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one. A stopped
+      // run's terminal frame is sent once, by whichever of the worker and the Stop gets there first.
+      const stopTerminal = event === 'cancel' || (event === 'apperror' && this.registry.cancelled.has(streamId))
+      if (stopTerminal && (!this.registry.streams.has(streamId) || this.stopTerminals.has(streamId))) {
         timing?.frame(event, data)
-        try { deps.onTerminal?.(streamId, 'cancelled') } catch { /* best effort */ }
+        try { deps.onTerminal?.(streamId, event === 'cancel' ? 'cancelled' : 'failed') } catch { /* best effort */ }
         return
       }
+      if (stopTerminal) this.stopTerminals.add(streamId)
       let eventId: string | null = null
       if (writer && event !== 'tool_progress') {
         try {
@@ -823,7 +918,7 @@ export class TurnRunner {
       // start an Agent turn (the client also refuses an already-aborted signal outright).
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
-        await put('cancel', (await this.cancelFrame(sessionId, streamId)))
+        await put(...(await this.stopFrame(sessionId, streamId)))
         return
       }
       const turnContext = {
@@ -1083,7 +1178,7 @@ export class TurnRunner {
         applyAgentUsage(liveUsage, result.usage)
         this.liveUsage.set(streamId, liveUsage)
         await this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages, interrupted?.max_iterations_summary_request || result.max_iterations_summary_request)
-        await put('cancel', (await this.cancelFrame(sessionId, streamId)))
+        await put(...(await this.stopFrame(sessionId, streamId)))
         return
       }
       // Writeback only while this stream still owns the session (Python `_stream_writeback_is_current`).
@@ -1338,7 +1433,7 @@ export class TurnRunner {
       const settlement = await deps.service().settlementRead(s)
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
-        await put('cancel', (await this.cancelFrame(sessionId, streamId)))
+        await put(...(await this.stopFrame(sessionId, streamId)))
         return
       }
       const message = error instanceof Error ? error.message : String(error)
@@ -1575,12 +1670,15 @@ export class TurnRunner {
 
   /**
    * Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a
-   * reload. TAL-364: no copy — clients show their one localized status for the `cancelled` outcome.
+   * reload. TAL-364: no copy — clients show their one localized status for the `cancelled` outcome. TAL-1628: the server's
+   * shutdown ends the turn with an interrupted `apperror` instead, so no client shows it as the user's Stop.
    */
-  private async cancelFrame(sessionId: string | null, streamId: string): Promise<Record<string, unknown>> {
+  private async stopFrame(sessionId: string | null, streamId: string): Promise<[string, Record<string, unknown>]> {
     let snapshot: Record<string, unknown> | null = null
     if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)), streamId)) } catch { snapshot = null }
-    return { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
+    const context = { ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
+    if (this.shutdownStops.has(streamId)) return ['apperror', { type: 'interrupted', terminal_state: 'interrupted', message: SHUTDOWN_INTERRUPTED_MESSAGE, hint: SHUTDOWN_INTERRUPTED_HINT, ...context }]
+    return ['cancel', { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...context }]
   }
 
   /**
@@ -1608,6 +1706,7 @@ export class TurnRunner {
     if (ephemeral) {
       try { await this.deps.store.delete(current.session_id, { tombstone: false }) } catch { /* ignore */ }
       this.deps.store.sessions.delete(current.session_id)
+      this.noteDrainOutcome(streamId, 'saved')
       return true
     }
     // TAL-460: a background turn stops quietly: its prompt and model context are kept, but no partial and no Stop row,
@@ -1617,7 +1716,7 @@ export class TurnRunner {
       // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
       if (checkpoint) {
         this.settleStateDb(current, streamId, checkpoint as Message[], { read })
-        try { (await this.deps.store.save(current)) } catch { return false }
+        if (!(await this.saveStopped(current, streamId))) return false
       }
       return true
     }
@@ -1637,7 +1736,7 @@ export class TurnRunner {
         const late = canonical && !stop.checkpointed ? settle() : null
         if (late) current.context_messages = dedupeContext(late)
         this.settleStateDb(current, streamId, checkpoint as Message[], { read })
-        try { (await this.deps.store.save(current)) } catch { return false }
+        if (!(await this.saveStopped(current, streamId))) return false
       }
       return true
     }
@@ -1648,12 +1747,15 @@ export class TurnRunner {
     this.clearPendingTurn(current)
     if (!quiet) {
       this.appendPartialSnapshot(current, streamId)
-      current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+      // TAL-1628: the server's shutdown ends the turn as interrupted, in the wording next-open recovery uses.
+      current.messages.push(this.shutdownStops.has(streamId)
+        ? { role: 'assistant', content: `**Interrupted:** ${SHUTDOWN_INTERRUPTED_MESSAGE}`, _error: true, _terminal_state: 'interrupted', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId }
+        : { role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     this.settleStateDb(current, streamId, checkpoint as Message[] | null, { read })
-    try { (await this.deps.store.save(current)) } catch { return false }
+    if (!(await this.saveStopped(current, streamId))) return false
     void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
@@ -1689,6 +1791,8 @@ export class TurnRunner {
     this.consumedSteers.delete(streamId)
     this.lastCompletedTool.delete(streamId)
     this.settledStreams.delete(streamId)
+    this.stopTerminals.delete(streamId)
+    this.shutdownStops.delete(streamId)
     this.registry.retire(streamId, this.deps.now())
     this.registry.forgetOwner(streamId)
     this.registry.clearWritebackOwnerIfOwned(sessionId, streamId)
@@ -1930,14 +2034,17 @@ export class TurnRunner {
     return (await this.stop(streamId))
   }
 
-  private async stop(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
+  /** `shutdown` (TAL-1628): the server's drain stops the run; it ends interrupted, and a user's Stop already under way wins. */
+  private async stop(streamId: string, reason: 'user' | 'shutdown' = 'user'): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
     const channel = this.registry.peek(streamId)
     const run = this.registry.activeRuns.get(streamId)
-    if (!channel && !run) return { cancelled: false, withdrawn: [] }
+    // A run that already settled on its own has its outcome saved by its worker.
+    if (!channel && !run) { this.noteDrainOutcome(streamId, 'saved', false); return { cancelled: false, withdrawn: [] } }
     // Python popped the run before its title work: a cancel that lands after `done` (while the title prompts still run)
     // is not a cancellation, so it neither journals a `cancel` frame nor marks the completed run interrupted.
-    if (!run && this.settledStreams.has(streamId)) return { cancelled: false, withdrawn: [] }
+    if (!run && this.settledStreams.has(streamId)) { this.noteDrainOutcome(streamId, 'saved', false); return { cancelled: false, withdrawn: [] } }
     const sessionId = this.registry.ownerSessionId(streamId) ?? run?.session_id ?? null
+    if (reason === 'shutdown' && !this.registry.cancelled.has(streamId)) this.shutdownStops.add(streamId)
     this.registry.cancelled.add(streamId)
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
     // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
@@ -1947,7 +2054,7 @@ export class TurnRunner {
     let interrupt = this.interrupts.get(streamId)
     if (!interrupt) {
       const sidecar = this.deps.sidecar()
-      interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 }).catch(() => null) : Promise.resolve(null)
+      interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: reason === 'shutdown' ? SHUTDOWN_INTERRUPT_TIMEOUT_MS : 5_000 }).catch(() => null) : Promise.resolve(null)
       this.interrupts.set(streamId, interrupt)
     }
     const reply = await interrupt
@@ -1961,12 +2068,13 @@ export class TurnRunner {
       let current: Session | null = null
       try { current = (await this.deps.store.get(sessionId)) } catch { current = null }
       if (current?.active_stream_id === streamId) {
-        await this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint, str(reply?.max_iterations_summary_request))
-      }
-    }
+        if (await this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint, str(reply?.max_iterations_summary_request))) this.noteDrainOutcome(streamId, 'saved', false)
+      } else if (current) this.noteDrainOutcome(streamId, 'saved', false)
+    } else this.noteDrainOutcome(streamId, 'saved', false)
     // The worker may already have written its terminal row while the interrupt was in flight; the stream is then
     // gone from the registry and this path must not add a second one.
-    if (channel && this.registry.streams.has(streamId)) {
+    if (channel && this.registry.streams.has(streamId) && !this.stopTerminals.has(streamId)) {
+      this.stopTerminals.add(streamId)
       const writer = this.writers.get(streamId) ?? null
       const emit = async (event: string, data: Record<string, unknown>): Promise<void> => {
         let eventId: string | null = null
@@ -1976,7 +2084,7 @@ export class TurnRunner {
       for (const [event, data] of steerEvents) (await emit(event, data))
       this.runStatuses.delete(streamId)
       await emit('run_status', { session_id: sessionId, status: null })
-      await emit('cancel', (await this.cancelFrame(sessionId, streamId)))
+      await emit(...(await this.stopFrame(sessionId, streamId)))
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
     }
@@ -2516,7 +2624,7 @@ function previousStartedAt(s: Session, run: { started_at: number } | undefined):
 
 /** A persisted Stop row: TAL-364 marks its outcome; older rows carry only their English copy. */
 function isCancelMarker(m: Message): boolean {
-  return m._error === true && (m._terminal_state === 'cancelled' || str(m.content).startsWith('**Task cancelled:**'))
+  return m._error === true && (m._terminal_state === 'cancelled' || m._terminal_state === 'interrupted' || str(m.content).startsWith('**Task cancelled:**'))
 }
 
 

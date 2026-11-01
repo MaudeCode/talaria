@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Stopping or restarting Talaria Web lets running chat replies finish briefly, then saves any unfinished reply as interrupted instead of leaving it to recover later.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

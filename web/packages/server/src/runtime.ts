@@ -33,7 +33,7 @@ import type { AppDeps, RequestScope } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew } from './release.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
-import { RESTART_EXIT_CODE } from './cli/supervise.js'
+import { RESTART_EXIT_CODE, RUN_SETTLE_MS } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
@@ -888,7 +888,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
     // A running retention sweep stops before the exit, like on shutdown.
-    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => deps.promptQueues.close()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    // TAL-1628: local runs still going when the restart-safety wait ends are saved as interrupted through the stop path's drain.
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => turns.drain({ waitMs: 0, settleMs: RUN_SETTLE_MS })).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => deps.promptQueues.close()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
     pruneAdvice,
