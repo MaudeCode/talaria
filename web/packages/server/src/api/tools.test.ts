@@ -1068,6 +1068,31 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('insights drop future-dated index and state.db sessions on the HTTP route (TAL-1116)', async () => {
+    const now = Math.trunc(s.deps.nowSeconds())
+    const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockResolvedValue([
+      { session_id: 'web', created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, model: 'm' },
+      { session_id: 'web-future', created_at: now - 100, updated_at: now + 86_400, input_tokens: 1000, output_tokens: 1000, model: 'f' },
+    ])
+    const dbPath = join(s.deps.profileHome('default'), 'state.db')
+    const db = openStateDb(dbPath)
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model TEXT, message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, estimated_cost_usd REAL, started_at REAL, ended_at REAL)')
+    const insert = db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('cli', 'cli', 'c', 2, 20, 10, 0, 0.25, now - 300, now - 200)
+    insert.run('cli-future', 'cli', 'f', 2, 500, 500, 0, 5, now + 3600, null)
+    db.close()
+    try {
+      const body = await json(await s.get('/api/insights?days=7'))
+      expect(body).toMatchObject({ total_sessions: 2, total_input_tokens: 30, total_output_tokens: 15, total_cost: 0.25 })
+      expect((body.models as Json[]).map((m) => m.model)).toEqual(['c', 'm'])
+      expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.input_tokens), 0)).toBe(30)
+      expect((body.activity_by_hour as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(2)
+    } finally {
+      index.mockRestore()
+      rmSync(dbPath)
+    }
+  })
+
   it('shutdown and restart are operator-gated and restart maps sidecar outcomes', async () => {
     sidecar.respond('gateway.restart', () => ({ status: 'busy', message: 'Restart already in progress. Please wait a moment and try again.' }))
     let res = await post(s, '/api/health/restart', {})
@@ -1658,5 +1683,28 @@ describe('tools helpers', () => {
     const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 1000, cache_read_tokens: 900, model: 'm' }], '3', now)
     expect(insights).toMatchObject({ total_input_tokens: 1000, total_cache_hit_percent: 90 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', cache_hit_percent: 90 })
+  })
+
+  it('insights admit usage up to the server clock and drop future-dated sessions from totals and series (TAL-1116)', async () => {
+    const now = Date.parse('2026-10-17T12:00:00Z') / 1000
+    const insights = await buildInsights([
+      { session_id: 'at-now', created_at: now - 100, updated_at: now, input_tokens: 10, model: 'm' },
+      { session_id: 'later-today', created_at: now - 100, updated_at: now + 60, input_tokens: 20, model: 'm' },
+      { session_id: 'tomorrow', created_at: now + 86_400, updated_at: now + 86_400, input_tokens: 30, model: 'f' },
+      { session_id: 'invalid', created_at: 'soon', updated_at: -5, input_tokens: 40, model: 'i' },
+      { session_id: 'dup', created_at: now - 300, updated_at: now - 200, input_tokens: 1, model: 'm' },
+      { session_id: 'dup-future', created_at: now + 600, updated_at: now + 600, input_tokens: 2, model: 'f' },
+    ], '7', now, () => [
+      { session_id: 'dup', created_at: now - 300, updated_at: now - 100, input_tokens: 5, model: 'm' },
+      { session_id: 'dup-future', created_at: now + 600, updated_at: now + 900, input_tokens: 3, model: 'f' },
+      { session_id: 'cli-future', created_at: now - 50, updated_at: now + 7200, input_tokens: 50, model: 'f' },
+    ])
+    expect(insights).toMatchObject({ total_sessions: 2, total_input_tokens: 15, total_tokens: 15 })
+    expect((insights.models as Json[]).map((m) => [m.model, m.sessions, m.input_tokens])).toEqual([['m', 2, 15]])
+    const daily = insights.daily_tokens as Json[]
+    expect(daily.reduce((n, d) => n + Number(d.input_tokens), 0)).toBe(15)
+    expect(daily.reduce((n, d) => n + Number(d.sessions), 0)).toBe(2)
+    expect((insights.activity_by_day as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(2)
+    expect((insights.activity_by_hour as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(2)
   })
 })

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Insights no longer counts sessions dated in the future, so its totals match the daily chart.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
