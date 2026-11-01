@@ -529,6 +529,9 @@ describe('chat turns through the sidecar', () => {
       expect((await detailReplies(duplicate)).map((m) => m._turnUsage)).toEqual(expected)
       const branch = String((await json(await post(s, '/api/session/branch', { session_id: sid, keep_count: 2 }))).session_id)
       expect((await detailReplies(branch)).map((m) => m._turnUsage)).toEqual([FIRST])
+      // Editing the second prompt cuts the transcript back to the first exchange, whose reply keeps its record.
+      expect((await post(s, '/api/session/truncate', { session_id: duplicate, keep_count: 2 })).status).toBe(200)
+      expect((await detailReplies(duplicate)).map((m) => m._turnUsage)).toEqual([FIRST])
     })
 
     it.each([
@@ -549,6 +552,7 @@ describe('chat turns through the sidecar', () => {
 
     it.each([
       ['a turn that consumed nothing', [100, 20, 40, 10, 0.002], [100, 20, 40, 10, 0.002], {}],
+      ['a turn with no answer', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { messages: [], final_response: '', token_sent: false }],
       ['an older sidecar with no baseline', null, [160, 30, 40, 10, 0.003], {}],
       ['a failed turn', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { status: 'error', failed: true, error: 'synthetic failure' }],
       ['a partial turn with an error', [100, 20, 40, 10, 0.002], [160, 30, 40, 10, 0.003], { partial: true, error: 'synthetic cut off' }],

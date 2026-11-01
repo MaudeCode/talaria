@@ -194,7 +194,7 @@ function applyAgentUsage(target: UsageCounters, usage: ChatUsage): void {
  * TAL-1076: what one turn's agent added to its counters between binding and settling, or null when the sidecar reported no
  * baseline or the turn consumed nothing. An unpriced call (`cost_status: unknown`) that left the cost unchanged has no cost.
  */
-export function turnUsageOf(start: ChatUsage | null | undefined, end: ChatUsage): TurnUsage | null {
+function turnUsageOf(start: ChatUsage | null | undefined, end: ChatUsage): TurnUsage | null {
   if (!start) return null
   const delta = (key: 'prompt_tokens' | 'completion_tokens' | 'cache_read_tokens' | 'cache_write_tokens'): number => Math.max(0, end[key] - start[key])
   const [input, output, cacheRead, cacheWrite] = [delta('prompt_tokens'), delta('completion_tokens'), delta('cache_read_tokens'), delta('cache_write_tokens')]
