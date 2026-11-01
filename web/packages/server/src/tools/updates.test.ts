@@ -1677,6 +1677,74 @@ describe('Agent checkout updates', () => {
     expect(await applyAgentUpdate(agent, locked)).toMatchObject({ ok: false, lock_conflict: true })
   })
 
+  /** TAL-1025: synthetic secrets git echoes from a credentialed remote; none may survive into a returned payload. */
+  const SECRETS = ['SUFFIX_PRIVATE', 'synthetic-password', 'PRIVATE_PW', 'ghp_SYNTHETICSYNTHETICSYNTHETIC']
+  const CREDENTIALED = "'https://agent:synthetic-password@example.invalid/agent.git/?token=synthetic'SUFFIX_PRIVATE'"
+  const LOCKED = `fatal: Unable to create '/agent/.git/index.lock': File exists. Another git process seems to be running; remote https://agent:pass'PRIVATE_PW@example.invalid/agent.git?token=synthetic'SUFFIX_PRIVATE`
+  const expectNoSecret = (result: Dict): void => { for (const secret of SECRETS) expect(JSON.stringify(result)).not.toContain(secret) }
+
+  it('masks an apostrophe-bearing query secret in a failed Agent check (TAL-1025)', async () => {
+    const agent = tmp()
+    mkdirSync(join(agent, '.git'))
+    const failing: GitRun = () => Promise.resolve({ ok: false, out: `fatal: unable to access ${CREDENTIALED}: The requested URL returned error: 403` })
+    const result = await checkAgentUpdate(agent, failing)
+    expectNoSecret(result)
+    expect(result).toMatchObject({ behind: null, stale_check: true,
+      error: "fetch failed: fatal: unable to access 'https://<redacted>@example.invalid/agent.git/?token=<redacted>': The requested URL returned error: 403" })
+  })
+
+  it.each([
+    ['apply', 'a locked fetch', LOCKED, true],
+    ['force', 'a locked fetch', LOCKED, true],
+    ['apply', 'a credentialed fetch failure', `fatal: repository ${CREDENTIALED} not found`, false],
+    ['force', 'a credentialed fetch failure', `fatal: repository ${CREDENTIALED} not found`, false],
+  ] as const)('%s keeps %s free of credentials (TAL-1025)', async (action, _case, out, lock) => {
+    const agent = tmp()
+    mkdirSync(join(agent, '.git'))
+    const failing: GitRun = () => Promise.resolve({ ok: false, out })
+    const result = action === 'apply' ? await applyAgentUpdate(agent, failing) : await forceAgentUpdate(agent, failing, () => undefined)
+    expectNoSecret(result)
+    expect(result.ok).toBe(false)
+    expect(result.lock_conflict).toBe(lock || undefined)
+    expect(String(result.message)).toContain('fetch failed')
+  })
+
+  it.each([
+    ['status', LOCKED, 'Failed to inspect repo status due to a repository lock: ', true],
+    ['status', `fatal: ${CREDENTIALED} ${'x'.repeat(190)} ghp_SYNTHETICSYNTHETICSYNTHETIC`, 'Failed to inspect repo status: ', false],
+    ['merge', LOCKED, 'Pull failed due to a repository lock: ', true],
+    ['merge', `fatal: ${CREDENTIALED} was rejected`, 'Pull failed: ', false],
+    ['merge', `error: RPC failed; partial output from ${CREDENTIALED} before git merge --ff-only timed out after 30s`, 'Pull failed: ', false],
+  ] as const)('a failed Agent %s step exposes only its sanitized diagnostic (TAL-1025)', async (step, out, prefix, lock) => {
+    const a = agentInstall()
+    const failing: GitRun = (args, cwd, timeout) => args[0] === step ? Promise.resolve({ ok: false, out }) : runGit(args, cwd, timeout)
+    const result = await applyAgentUpdate(a.agent, failing, 'stable', { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0' })
+    expectNoSecret(result)
+    expect(result.ok).toBe(false)
+    expect(result.lock_conflict).toBe(lock || undefined)
+    expect(String(result.message).startsWith(prefix)).toBe(true)
+    expect(String(result.message)).toContain('<redacted>')
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+  })
+
+  it('masks quoted, short and token-shaped secrets, keeping text outside them (TAL-1025)', () => {
+    expect(sanitizeGitDiagnostic(`fatal: unable to access ${CREDENTIALED}: denied`)).toBe("fatal: unable to access 'https://<redacted>@example.invalid/agent.git/?token=<redacted>': denied")
+    expect(sanitizeGitDiagnostic('GET /x?api_key=ab"cd&page=2 "/y?secret=s3"')).toBe('GET /x?api_key=<redacted>&page=2 "/y?secret=<redacted>"')
+    expect(sanitizeGitDiagnostic("https://user:pa'ss\"PRIVATE_PW@example.invalid/a.git")).toBe('https://<redacted>@example.invalid/a.git')
+    expect(sanitizeGitDiagnostic('?token=Q')).toBe('?token=<redacted>')
+    expect(sanitizeGitDiagnostic("x?token=ab':cd'.Q, done.")).toBe('x?token=<redacted> done.')
+    expect(sanitizeGitDiagnostic('push ghp_SYNTHETICSYNTHETICSYNTHETIC done')).toBe('push <redacted> done')
+    expect(sanitizeGitDiagnostic('')).toBe('')
+    expect(sanitizeGitDiagnostic("fatal: couldn't find remote ref refs/heads/gone")).toBe("fatal: couldn't find remote ref refs/heads/gone")
+    // A bound applies after redaction: a lengthened short secret and a token cut by the bound both stay masked.
+    const short = sanitizeGitDiagnostic('?key=Q&next=1', 8)
+    expect(short).toBe('?key=<re…')
+    expect(short).not.toContain('Q')
+    const straddling = sanitizeGitDiagnostic(`${'a'.repeat(290)} ghp_SYNTHETICSYNTHETICSYNTHETIC tail`)
+    expect(straddling).not.toContain('ghp_')
+    expect(straddling.length).toBeLessThanOrEqual(301)
+  })
+
   function agentInstall(withSync = false): { agent: string; origin: string; v1: string; v2: string } {
     const root = tmp()
     const origin = join(root, 'origin')
