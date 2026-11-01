@@ -45,6 +45,8 @@ class JsonSessions implements SessionBackend {
   private persistedIds: { revision: string; ids: Set<string> } | null = null
   /** TAL-1212: each session's leading-message search text, valid while its file keeps the recorded revision. */
   private readonly searchTexts = new Map<string, { revision: string; depth: number; texts: string[] }>()
+  /** TAL-1283: uncached search reads in flight, keyed by session, revision and depth, so concurrent identical searches share one read. */
+  private readonly searchReads = new Map<string, Promise<{ revision: string; texts: string[] }>>()
   constructor(private readonly options: JsonStorageOptions) {}
   private check(): void { if (this.closed) throw new Error('Storage is closed') }
   /** Lets every staged write publish or fail before the backend refuses further calls. */
@@ -122,10 +124,17 @@ class JsonSessions implements SessionBackend {
     if (revision === null) return []
     const cached = this.searchTexts.get(sid)
     if (cached?.revision === revision && cached.depth === depth) return cached.texts
-    const prefix = await this.readMessagePrefix(sid, depth)
-    const texts = prefix.rows.map(sessionSearchMessageText)
-    if (depth > 0 && depth <= SEARCH_TEXT_CACHE_DEPTH_MAX && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, texts })
-    return texts
+    const key = `${sid}\0${revision}\0${depth}`
+    let read = this.searchReads.get(key)
+    if (!read) {
+      read = this.readMessagePrefix(sid, depth)
+        .then((prefix) => ({ revision: prefix.revision, texts: prefix.rows.map(sessionSearchMessageText) }))
+        .finally(() => this.searchReads.delete(key))
+      this.searchReads.set(key, read)
+    }
+    const prefix = await read
+    if (depth > 0 && depth <= SEARCH_TEXT_CACHE_DEPTH_MAX && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, texts: prefix.texts })
+    return prefix.texts
   }
   async write(sid: string, change: SessionChange, expected: string | null): Promise<string> {
     const path = this.path(sid)

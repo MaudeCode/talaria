@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as fsp from 'node:fs/promises'
 import { setImmediate } from 'node:timers/promises'
-import { expect, it, vi } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { RevisionConflict, type SessionChange } from './backend.js'
 import { JsonStorage } from './json.js'
 import type { Message } from '../session.js'
@@ -165,6 +165,67 @@ it('reads a message prefix equal to the full parse across chunk boundaries and f
     const signed = file('signed.json', '{"messages": [{"a": 1}]}')
     expect((await readJsonMessagePrefix(signed, 1)).signature).toBe(statSignature(signed))
   } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+})
+
+/** Counts session-file descriptors opened through `fs/promises.open`, per path and at once, until the returned restore. */
+function trackSessionOpens(directory: string) {
+  const real = vi.mocked(fsp.open).getMockImplementation()!
+  const perPath = new Map<string, number>()
+  const stats = { open: 0, maxOpen: 0, perPath }
+  vi.mocked(fsp.open).mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
+    const path = String(args[0])
+    if (!path.startsWith(directory)) return real(...args)
+    perPath.set(path, (perPath.get(path) ?? 0) + 1)
+    stats.open += 1
+    stats.maxOpen = Math.max(stats.maxOpen, stats.open)
+    const handle = await real(...args)
+    const close = handle.close.bind(handle)
+    handle.close = async () => { stats.open -= 1; return close() }
+    return handle
+  })
+  onTestFinished(() => { vi.mocked(fsp.open).mockImplementation(real) })
+  return stats
+}
+const bigRows = (sid: string) => Array.from({ length: 40 }, (_, i) => ({ role: 'user', content: `${sid} ${i} ${'x'.repeat(16 * 1024)}` }))
+
+it('coalesces concurrent identical uncached prefix reads into one descriptor (TAL-1283)', async () => {
+  await withStorage(async (storage, directory) => {
+    await storage.sessions.write('big', replace('big', bigRows('big')), null)
+    const stats = trackSessionOpens(directory)
+    const results = await Promise.all(Array.from({ length: 32 }, () => storage.sessions.searchMessages(['big'], ['nohit'], 21)))
+    expect(results).toEqual(Array.from({ length: 32 }, () => new Map()))
+    expect(stats.perPath.get(join(directory, 'big.json'))).toBe(1)
+    expect(await storage.sessions.searchMessages(['big'], ['big 20'], 21)).toEqual(new Map([['big', { idx: 20, text: expect.stringContaining('big 20 x') as string }]]))
+  })
+})
+
+it('caps concurrent prefix reads of distinct sessions at four descriptors (TAL-1283)', async () => {
+  await withStorage(async (storage, directory) => {
+    const sids = Array.from({ length: 32 }, (_, n) => `d${n}`)
+    for (const sid of sids) await storage.sessions.write(sid, replace(sid, bigRows(sid)), null)
+    const stats = trackSessionOpens(directory)
+    const results = await Promise.all(sids.map((sid) => storage.sessions.searchMessages([sid], [`${sid} 3 `], 21)))
+    expect(results.map((m) => [...m.keys()])).toEqual(sids.map((sid) => [sid]))
+    expect(stats.perPath.size).toBe(32)
+    expect(stats.maxOpen).toBeLessThanOrEqual(4)
+    expect(stats.open).toBe(0)
+  })
+})
+
+it('a rejected prefix read releases its slot and in-flight entry for the next search (TAL-1283)', async () => {
+  await withStorage(async (storage, directory) => {
+    const cut = Array.from({ length: 6 }, (_, n) => `cut${n}`)
+    for (const sid of cut) fs.writeFileSync(join(directory, `${sid}.json`), '{"messages": [{"a": 1}, {"b')
+    await storage.sessions.write('ok', replace('ok', bigRows('ok')), null)
+    const stats = trackSessionOpens(directory)
+    const rejected = await Promise.all(cut.flatMap((sid) => Array.from({ length: 8 }, () => storage.sessions.searchMessages([sid], ['a'], 21))))
+    expect(rejected).toEqual(rejected.map(() => new Map()))
+    for (const sid of cut) expect(stats.perPath.get(join(directory, `${sid}.json`))).toBe(1)
+    expect(stats.open).toBe(0)
+    expect([...(await storage.sessions.searchMessages(['ok'], ['ok 2 '], 21)).keys()]).toEqual(['ok'])
+    await storage.sessions.searchMessages([cut[0]!], ['a'], 21)
+    expect(stats.perPath.get(join(directory, 'cut0.json'))).toBe(2)
+  })
 })
 
 const rowsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ role: 'user', content: `row ${i}` }))

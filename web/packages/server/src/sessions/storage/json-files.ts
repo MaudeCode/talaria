@@ -80,6 +80,34 @@ function readPrefixFromFd(fd: number, maxBytes: number, initialStage: number): s
  * `messages` array, a non-object row, a truncated file) falls back to one full parse of the same descriptor.
  */
 export async function readJsonMessagePrefix(path: string, limit: number, chunkBytes = 64 * 1024): Promise<{ rows: unknown[]; signature: string }> {
+  await acquirePrefixRead()
+  try {
+    return await readJsonMessagePrefixUngated(path, limit, chunkBytes)
+  } finally {
+    releasePrefixRead()
+  }
+}
+
+/**
+ * TAL-1283: process-wide cap on concurrent prefix reads, so parallel searches hold at most this many descriptors and
+ * read buffers across every request and profile. Excess reads wait in FIFO order and are never rejected.
+ * ponytail: resident bytes still reach this cap times the largest session file (the import size limit); add a byte budget if that grows.
+ */
+const SESSION_PREFIX_READ_CONCURRENCY = 4
+let prefixReadsActive = 0
+const prefixReadWaiters: (() => void)[] = []
+async function acquirePrefixRead(): Promise<void> {
+  if (prefixReadsActive < SESSION_PREFIX_READ_CONCURRENCY) { prefixReadsActive += 1; return }
+  await new Promise<void>((resolve) => prefixReadWaiters.push(resolve))
+}
+/** Hands the slot straight to the oldest waiter, so a newcomer cannot overtake the queue. */
+function releasePrefixRead(): void {
+  const next = prefixReadWaiters.shift()
+  if (next) next()
+  else prefixReadsActive -= 1
+}
+
+async function readJsonMessagePrefixUngated(path: string, limit: number, chunkBytes: number): Promise<{ rows: unknown[]; signature: string }> {
   const handle = await open(path, 'r')
   try {
     const signature = signatureOf(path, await handle.stat({ bigint: true }))

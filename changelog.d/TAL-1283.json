@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Many searches running at once no longer exhaust server memory or file handles on large chats.", "highlight": false, "components": ["web"]}]
+}
