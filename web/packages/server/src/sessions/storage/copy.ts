@@ -3,7 +3,7 @@ import type { JournalEvent, RunSummary } from '../journal.js'
 import { InvalidDocument, type StorageBackend } from './backend.js'
 import { DOCUMENT_NAMESPACES } from './json-documents.js'
 
-/** What one `talaria-web storage copy` pass wrote, what already matched, and what could not be copied. */
+/** What one `talaria-web storage copy` pass wrote or removed, what already matched, and what could not be copied. */
 export interface CopyReport { copied: number; unchanged: number; failures: string[] }
 
 const canonical = (value: unknown): string => JSON.stringify(value, (_key, v: unknown) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, (v as Record<string, unknown>)[k]])) : v)
@@ -41,20 +41,36 @@ async function readRun(storage: StorageBackend, sid: string, streamId: string): 
   return { rows, summary: summary?.journal_pruned ? summary : null }
 }
 
-/** Every item the copy covers, listed from the source. */
-async function inventory(source: StorageBackend) {
-  const sessions = [...await source.sessions.ids({ strict: true })].sort()
+/** Every item a store holds that the copy covers. */
+async function inventory(storage: StorageBackend) {
+  const sessions = [...await storage.sessions.ids({ strict: true })].sort()
   const documents: [string, string][] = []
-  for (const namespace of DOCUMENT_NAMESPACES) for (const { key } of await source.documents.list(namespace)) documents.push([namespace, key])
+  for (const namespace of DOCUMENT_NAMESPACES) for (const { key } of await storage.documents.list(namespace)) documents.push([namespace, key])
   const runs: [string, string][] = []
-  for (const sid of await source.journals.sessionIds()) for (const streamId of await source.journals.streams(sid)) runs.push([sid, streamId])
-  return { sessions, documents, runs, tombstones: [...await source.sessions.tombstones.all()].sort() }
+  for (const sid of await storage.journals.sessionIds()) for (const streamId of await storage.journals.streams(sid)) runs.push([sid, streamId])
+  return { sessions, documents, runs, tombstones: [...await storage.sessions.tombstones.all()].sort() }
+}
+type Inventory = Awaited<ReturnType<typeof inventory>>
+
+/** What the destination holds that the source does not; a copy removes it, so the destination mirrors the source. */
+async function extras(source: Inventory, destination: StorageBackend) {
+  const held = await inventory(destination)
+  const pair = (items: [string, string][]): Set<string> => new Set(items.map((item) => item.join('/')))
+  const sourceDocuments = pair(source.documents)
+  const sourceRuns = pair(source.runs)
+  return {
+    sessions: held.sessions.filter((sid) => !source.sessions.includes(sid)),
+    tombstones: held.tombstones.filter((sid) => !source.tombstones.includes(sid)),
+    documents: held.documents.filter((item) => !sourceDocuments.has(item.join('/'))),
+    runs: held.runs.filter((item) => !sourceRuns.has(item.join('/'))),
+  }
 }
 
 /**
  * Copies every session (document and messages), shrink backup, tombstone, the session index, every document and every
- * journal stream and summary from `source` to `destination`. Items whose fingerprint already matches are skipped, so a
- * re-run copies only what is missing or different. The source is only read.
+ * journal stream and summary from `source` to `destination`, and removes what only the destination holds, so the
+ * destination mirrors the source. Items whose fingerprint already matches are skipped, so a re-run changes only what is
+ * missing or different. The source is only read.
  */
 export async function copyStorage(source: StorageBackend, destination: StorageBackend): Promise<CopyReport> {
   const report: CopyReport = { copied: 0, unchanged: 0, failures: [] }
@@ -96,10 +112,19 @@ export async function copyStorage(source: StorageBackend, destination: StorageBa
   for (const [sid, streamId] of items.runs) {
     await step(`journal ${sid}/${streamId}`, async () => equal(await fingerprints.run(source, sid, streamId), await fingerprints.run(destination, sid, streamId)), async () => destination.journals.importRun(sid, streamId, await readRun(source, sid, streamId)))
   }
+  const stale = await extras(items, destination)
+  const remove = async (label: string, run: () => Promise<unknown>): Promise<void> => {
+    try { await run(); report.copied += 1 } catch (error) { report.failures.push(`${label}: ${(error as Error).message}`) }
+  }
+  // Deleted here rather than restored from a tombstone: a session the source dropped must not come back.
+  for (const sid of stale.sessions) await remove(`session ${sid}`, () => destination.sessions.delete(sid, { tombstone: false }))
+  for (const sid of stale.tombstones) await remove(`tombstone ${sid}`, () => destination.sessions.tombstones.remove(sid))
+  for (const [namespace, key] of stale.documents) await remove(`document ${namespace}/${key}`, () => destination.documents.delete(namespace, key))
+  for (const [sid, streamId] of stale.runs) await remove(`journal ${sid}/${streamId}`, () => destination.journals.importRun(sid, streamId, { rows: [], summary: null }))
   return report
 }
 
-/** Re-reads every source item from both stores; each entry names an item whose destination copy differs. */
+/** Re-reads every source item from both stores; each entry names an item whose destination copy differs, or one only the destination holds. */
 export async function verifyStorage(source: StorageBackend, destination: StorageBackend): Promise<string[]> {
   const mismatches: string[] = []
   const items = await inventory(source)
@@ -115,5 +140,8 @@ export async function verifyStorage(source: StorageBackend, destination: Storage
   for (const sid of items.tombstones) if (!tombstones.has(sid)) mismatches.push(`tombstone ${sid}`)
   for (const [namespace, key] of items.documents) await compare(`document ${namespace}/${key}`, (storage) => fingerprints.document(storage, namespace, key))
   for (const [sid, streamId] of items.runs) await compare(`journal ${sid}/${streamId}`, (storage) => fingerprints.run(storage, sid, streamId))
+  const stale = await extras(items, destination)
+  mismatches.push(...stale.sessions.map((sid) => `extra session ${sid}`), ...stale.tombstones.map((sid) => `extra tombstone ${sid}`),
+    ...stale.documents.map((item) => `extra document ${item.join('/')}`), ...stale.runs.map((item) => `extra journal ${item.join('/')}`))
   return mismatches
 }

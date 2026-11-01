@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
 
@@ -36,6 +36,10 @@ export class SqliteDb {
   private readonly statements = new Map<string, StatementSync>()
   constructor(readonly path: string) {
     mkdirSync(dirname(path), { recursive: true })
+    // The database holds the same secrets the JSON adapter writes 0600. SQLite creates its WAL and shared-memory files
+    // with the database file's mode, so restrict the database before WAL starts, and any side file an older run left.
+    closeSync(openSync(path, 'a', 0o600))
+    for (const file of [path, `${path}-wal`, `${path}-shm`, `${path}-journal`]) if (existsSync(file)) chmodSync(file, 0o600)
     this.db = new DatabaseSync(path)
     try {
       this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = FULL')

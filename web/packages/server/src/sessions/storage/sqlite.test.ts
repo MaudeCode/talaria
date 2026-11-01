@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync, StatementSync } from 'node:sqlite'
@@ -123,4 +123,20 @@ it('refuses a database written by a newer schema', async () => {
   db.prepare('UPDATE talaria_schema SET version = ?').run(SCHEMA_VERSION + 1)
   db.close()
   expect(() => new SqliteStorage({ path: join(test.dir, 'talaria.db'), sessionDir: test.dir, stampingSince: () => 0 })).toThrow(/newer than this Talaria Web supports/)
+})
+
+it('keeps the database and its WAL side files owner-only, including a database created readable', async () => {
+  const test = open()
+  const path = join(test.dir, 'talaria.db')
+  await test.storage.sessions.write('session', { doc: doc('session'), messages: { kind: 'replace', rows: rows(1) } }, null)
+  await test.storage.documents.put('auth', 'signing-key', Buffer.from('synthetic key').toString('base64'), null)
+  const modes = (): number[] => ['', '-wal', '-shm'].map((suffix) => statSync(path + suffix).mode & 0o777)
+  expect(modes()).toEqual([0o600, 0o600, 0o600])
+  await test.storage.close()
+  chmodSync(path, 0o644)
+  const reopened = new SqliteStorage({ path, sessionDir: test.dir, stampingSince: () => 0 })
+  try {
+    expect(await reopened.sessions.exists('session')).toBe(true)
+    expect(modes()).toEqual([0o600, 0o600, 0o600])
+  } finally { await reopened.close() }
 })
