@@ -83,7 +83,7 @@ and the per-session relay. The chat-turn events:
 | Wire name | Role |
 |---|---|
 | `token` | Assistant text delta |
-| `reasoning` | Model reasoning / thinking delta |
+| `reasoning` | Model reasoning / thinking delta; `disclosure_key` names its segment, the same key the settled scene's reasoning row carries |
 | `tool` | Tool call started; required `id` names the call |
 | `tool_progress` | Ephemeral `{id, progress: {percent, message}}` for a running MCP call; percentages are server-normalized and messages redacted. Not journaled; an active-stream attach includes the latest in-memory value after replay. |
 | `tool_complete` | Tool call finished; carries the same `id` as its `tool` frame, the server's `is_error`, `duration` (seconds between the server receiving the call's start and its completion), and `result_view` (TAL-315, below) |

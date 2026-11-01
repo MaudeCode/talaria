@@ -349,7 +349,10 @@ describe('anchor scenes over HTTP', () => {
     const scene = (detail.messages as Json[])[1]?._anchor_activity_scene as Json
     // Both the preview and the paged rows carry each tool's server kind and target.
     const normalized = normalizeSceneRows([...rows, ...legacyRows])
-    const all = withSceneToolDisplay(normalized, normalized, true, null)
+    // TAL-1175: reasoning rows are numbered over the whole scene, so the preview and every page agree on each key.
+    const turnId = String((detail.messages as Json[])[1]?._turn_id)
+    let segment = 0
+    const all = (withSceneToolDisplay(normalized, normalized, true, null) as Json[]).map((row) => (row.role === 'reasoning' && !String(row.row_id).endsWith(':thinking') ? { ...row, disclosure_key: `${turnId}:reasoning:${String(segment++)}` } : row))
     expect(scene).toMatchObject({ activity_rows_total: all.length, activity_rows_offset: all.length - 80, activity_rows_complete: false })
     expect(scene.activity_rows).toEqual(all.slice(-80))
 

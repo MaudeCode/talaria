@@ -123,6 +123,8 @@ export type DisplayMedia = z.infer<typeof DisplayMediaSchema>
 export const ActivitySceneRowSchema = z.looseObject({
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
+  /** TAL-1175: a reasoning row's segment identity, equal to the `disclosure_key` of its live `reasoning` events; absent on inline thinking. */
+  disclosure_key: z.string().optional(),
   /** TAL-186: a prose row's `text` with its media references rewritten for display (see `_display_content`), and its media. */
   display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
   tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional(),

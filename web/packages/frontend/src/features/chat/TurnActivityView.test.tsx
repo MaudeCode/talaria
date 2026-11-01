@@ -356,6 +356,61 @@ describe('turn worklog presentation', () => {
   })
 })
 
+describe('thinking card disclosure across settle (TAL-1175)', () => {
+  const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+  beforeEach(() => { Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
+  afterEach(() => {
+    if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
+  })
+  const transcript = (messages: Message[], live: LiveTurn | null, mode: 'compact_worklog' | 'transparent_stream') => <Transcript rows={projectMessages(messages)} live={live} assistantName="Assistant" mode={mode} renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />
+  const thinking = (container: HTMLElement) => [...container.querySelectorAll('.thinking-card-header')].map((el) => el.getAttribute('aria-expanded'))
+  const toolOpen = (container: HTMLElement) => container.querySelector('[data-tool-id="a"] .tool-card-header')?.getAttribute('aria-expanded')
+
+  it.each(['transparent_stream', 'compact_worklog'] as const)('keeps a thinking card opened while live open once its turn settles, and across a remount (%s)', (mode) => {
+    const run = liveRun()
+    run.emit({ event: 'reasoning', data: { text: 'Planning', disclosure_key: 'turn:reasoning:0' } })
+    run.emit(tool('a'))
+    run.emit(completed('a'))
+    run.emit({ event: 'reasoning', data: { text: 'Checking', disclosure_key: 'turn:reasoning:1' } })
+    run.emit({ event: 'token', data: { text: 'Answer' } })
+    const user: Message = { role: 'user', content: 'Inspect', _turn_id: 'turn' }
+    const view = render(transcript([user], run.turn, mode))
+    expect(thinking(view.container)).toEqual(['false', 'false'])
+    fireEvent.click(view.container.querySelector('.thinking-card-header')!)
+    fireEvent.click(view.container.querySelector('[data-tool-id="a"] .tool-card-header')!)
+    expect(thinking(view.container)).toEqual(['true', 'false'])
+    expect(toolOpen(view.container)).toBe('true')
+
+    const settledMessages: Message[] = [user, { role: 'assistant', id: 'settled', content: 'Answer', _turn_id: 'turn', _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'completed', final_answer: 'Answer', expanded_by_default: false, activity_rows: rows(
+      { row_id: 'settled:reasoning', role: 'reasoning', text: 'Planning', titles: [], disclosure_key: 'turn:reasoning:0' }, toolRow('a'), { row_id: 'settled:reasoning:2', role: 'reasoning', text: 'Checking', titles: [], disclosure_key: 'turn:reasoning:1' },
+    ) } }]
+    const session: Session = { session_id: 's', title: 'Settled', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0, messages: settledMessages }
+    run.emit({ event: 'done', data: { session } })
+    view.rerender(transcript(settledMessages, run.turn, mode))
+    expect(view.container.querySelector('.live-turn')).toBeNull()
+    if (mode === 'compact_worklog') fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    expect(thinking(view.container)).toEqual(['true', 'false'])
+    expect(toolOpen(view.container)).toBe('true')
+
+    view.unmount()
+    const remount = render(transcript(settledMessages, null, mode))
+    expect(thinking(remount.container)).toEqual(['true', 'false'])
+    expect(toolOpen(remount.container)).toBe('true')
+  })
+
+  it('still toggles a thinking card the server sent without a disclosure key', () => {
+    const view = render(<View mode="transparent_stream" activity={settled({ activity_rows: rows({ row_id: 'r', role: 'reasoning', text: 'Planning', titles: [] }, toolRow('a')) })} />)
+    const header = view.container.querySelector('.thinking-card-header')!
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(header)
+    expect(header).toHaveAttribute('aria-expanded', 'true')
+    expect(view.container.querySelector('.thinking-card-body')).toHaveTextContent('Planning')
+    fireEvent.click(header)
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+
 describe('a running turn with no journal to replay (TAL-374)', () => {
   const example = { messages: MessageSchema.array().parse((JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { running_scene_session: { messages: unknown } }).running_scene_session.messages) }
   const streamId = 'contract-run-r'

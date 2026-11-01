@@ -291,7 +291,7 @@ describe('streamed reasoning titles (TAL-1215)', () => {
       const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
       const { stream_id: streamId } = await start.json() as { stream_id: string }
       const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
-      const reasoning = frames.filter((f) => f.event === 'reasoning').map((f) => f.data as { text: string; titles?: string[] })
+      const reasoning = frames.filter((f) => f.event === 'reasoning').map((f) => f.data as { text: string; titles?: string[]; disclosure_key?: string })
       return { scans: snapshot.mock.calls.length, stable: reasoning.filter((f) => f.text === ''), deltas: reasoning.filter((f) => f.text !== '').length, tokens: frames.filter((f) => f.event === 'token').length }
     } finally { snapshot.mockRestore(); await server.close() }
   }
@@ -306,7 +306,42 @@ describe('streamed reasoning titles (TAL-1215)', () => {
     const turn = await streamTurn([{ reasoning: 25, tokens: 250 }, { reasoning: 25, tokens: 250 }])
     expect(turn.deltas).toBe(50)
     const firstEight = Array.from({ length: 8 }, (_, i) => `Step ${String(i + 1)}`)
-    expect(turn.stable).toEqual([{ text: '', titles: firstEight }, { text: '', titles: firstEight }])
+    expect(turn.stable.map(({ disclosure_key: key, ...frame }) => [frame, key?.split(':').at(-1)])).toEqual([[{ text: '', titles: firstEight }, '0'], [{ text: '', titles: firstEight }, '1']])
     expect(turn.scans).toBeLessThanOrEqual(50)
+  })
+})
+
+describe('reasoning disclosure keys (TAL-1175)', () => {
+  it('gives each live reasoning segment the key its settled scene row carries, distinct per segment', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'reasoning', data: { text: 'Plan ' } })
+      emit({ event: 'reasoning', data: { text: 'the read.' } })
+      emit({ event: 'tool', data: { name: 'read_file', tid: 't', args: { path: 'a.txt' } } })
+      emit({ event: 'tool_complete', data: { name: 'read_file', tid: 't', result: 'A' } })
+      emit({ event: 'reasoning', data: { text: 'Check the result.' } })
+      emit({ event: 'token', data: { text: 'Answer' } })
+      return { ...completed(params), final_response: 'Answer', messages: [...params.conversation_history, { role: 'user', content: params.user_message },
+        { role: 'assistant', content: '', reasoning: 'Plan the read.', tool_calls: [{ id: 't', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } }] },
+        { role: 'tool', tool_call_id: 't', content: 'A' },
+        { role: 'assistant', content: 'Answer', reasoning: 'Check the result.' }] }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      const live = frames.filter((f) => f.event === 'reasoning').map((f) => (f.data as { disclosure_key?: string }).disclosure_key)
+      const keys = [`${streamId}:reasoning:0`, `${streamId}:reasoning:1`]
+      // The last frame is the stable title snapshot the answer's first token closes segment 1 with.
+      expect(live).toEqual([keys[0], keys[0], keys[1], keys[1]])
+      const sceneKeys = (messages: Record<string, unknown>[]) => ((messages.at(-1)?._anchor_activity_scene as { activity_rows: { role: string; disclosure_key?: string }[] }).activity_rows)
+        .filter((row) => row.role === 'reasoning').map((row) => row.disclosure_key)
+      const done = frames.find((f) => f.event === 'done')?.data as { session: { messages: Record<string, unknown>[] } }
+      expect(sceneKeys(done.session.messages)).toEqual(keys)
+      const detail = await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as { session: { messages: Record<string, unknown>[] } }
+      expect(sceneKeys(detail.session.messages)).toEqual(keys)
+    } finally { await server.close() }
   })
 })

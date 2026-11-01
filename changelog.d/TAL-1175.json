@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A thinking card you open while Talaria Web is still replying now stays open when the reply finishes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

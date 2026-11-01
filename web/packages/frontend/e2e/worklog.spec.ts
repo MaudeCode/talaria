@@ -227,6 +227,64 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
 
 }
 
+test('a thinking card opened while live stays open when its turn settles and after reload (TAL-1175)', async ({ page }, testInfo) => {
+  const sid = 'thinking-settle'
+  let finished = false
+  const messages = [
+    { role: 'user', id: 1, content: 'Read a.txt' },
+    { role: 'assistant', id: 2, content: 'Reading a.txt.', reasoning: 'Planning the read of a.txt.', tool_calls: [{ id: 'a', name: 'read_file', args: { path: 'a.txt' }, result: 'A contents' }] },
+    { role: 'assistant', id: 3, content: 'a.txt holds A.', reasoning: 'Checking what came back.' },
+  ].map((m) => ({ ...m, _turn_id: 'thinking-run' }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Read a.txt', messages: finished ? asServer(messages) : messages.slice(0, 1), active_stream_id: finished ? null : 'thinking-run' } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'thinking-run', replay_available: true } }))
+  // The server keys each reasoning segment; its settled row (built by the server below) carries the same key.
+  const events: [string, Record<string, unknown>][] = [
+    ['server_turn_started', { session_id: sid, stream_id: 'thinking-run', turn_id: 'thinking-run', user_message_id: 1 }],
+    ['reasoning', { text: 'Planning the read of a.txt.', disclosure_key: 'thinking-run:reasoning:0' }],
+    ['token', { text: 'Reading a.txt.' }],
+    ['tool', { id: 'a', name: 'read_file', args: { path: 'a.txt' } }],
+    ['tool_complete', { id: 'a', name: 'read_file', result_view: { text: 'A contents' } }],
+    ['reasoning', { text: 'Checking what came back.', disclosure_key: 'thinking-run:reasoning:1' }],
+    ['token', { text: 'a.txt holds A.' }],
+  ]
+  let stream: ServerResponse | undefined
+  const server = createServer((_request, response) => {
+    stream = response
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(events.map(([event, data], i) => `id: thinking-run:${i + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  try {
+    await page.goto(`/session/${sid}`)
+    const cards = page.locator('.thinking-card-header')
+    await expect(page.locator('.live-turn .thinking-card-header')).toHaveCount(2)
+    await page.locator('.live-turn .thinking-card-header').first().click()
+    await expect(cards.first()).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByText('Planning the read of a.txt.', { exact: true })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`thinking-live-open-${testInfo.project.name}.png`), fullPage: true })
+
+    finished = true
+    stream?.write(`id: thinking-run:${events.length + 1}\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Read a.txt', messages: asServer(messages) }, terminal_state: 'completed' })}\n\n`)
+    await expect(page.locator('.live-turn')).toHaveCount(0)
+    const worked = page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')
+    await worked.click()
+    await expect(cards).toHaveCount(2)
+    await expect(cards.first()).toHaveAttribute('aria-expanded', 'true')
+    await expect(cards.nth(1)).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByText('Planning the read of a.txt.', { exact: true })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`thinking-settled-open-${testInfo.project.name}.png`), fullPage: true })
+    await page.reload()
+    await expect(cards.first()).toHaveAttribute('aria-expanded', 'true')
+    await expect(cards.nth(1)).toHaveAttribute('aria-expanded', 'false')
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
 test('a credential in a tool command never reaches the page, live or settled', async ({ page }) => {
   const sid = 'tool-secret'
   const token = 'synthetic-bearer-0123456789abcdef'

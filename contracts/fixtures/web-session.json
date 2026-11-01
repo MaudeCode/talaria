@@ -2913,7 +2913,8 @@
               "role": "reasoning",
               "created_at": 2031,
               "text": "Plan typed.",
-              "titles": []
+              "titles": [],
+              "disclosure_key": "legacy:30:reasoning:0"
             }
           ],
           "final_answer": "Answer typed.",
@@ -2954,7 +2955,8 @@
               "role": "reasoning",
               "created_at": 2033,
               "text": "Plan shared.\n\nPlan extra.",
-              "titles": []
+              "titles": [],
+              "disclosure_key": "legacy:32:reasoning:0"
             }
           ],
           "final_answer": "Answer fields.",
@@ -3826,7 +3828,8 @@
               "role": "reasoning",
               "created_at": 1003,
               "text": "Plan the read.",
-              "titles": []
+              "titles": [],
+              "disclosure_key": "contract-run-r:reasoning:0"
             },
             {
               "row_id": "contract-run-r-1:prose",

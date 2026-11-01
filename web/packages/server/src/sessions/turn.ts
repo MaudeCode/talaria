@@ -29,7 +29,7 @@ import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINA
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
-import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
+import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
 import { UNSETTLED_TODO_KEY, parseTodoToolResult } from './todo.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 import { SessionNotices } from './notices.js'
@@ -690,6 +690,10 @@ export class TurnRunner {
     const live = this.registry.liveText.get(streamId) ?? { text: '', reasoning: '' }
     // Set by each reasoning delta: only then can a stable title snapshot differ from the last one.
     let reasoningChanged = false
+    // TAL-1175: the open reasoning segment's ordinal; prose, interim text or a tool closes it, as a new assistant row
+    // starts on the settled side, so the next delta opens the next segment.
+    let reasoningSegment = -1
+    let reasoningOpen = false
     const liveToolCalls = this.registry.liveToolCalls.get(streamId) ?? []
     // Each call's public `id`: the Agent's call id, else one minted here that its completion inherits through the pairing.
     const toolIds = new WeakMap<Record<string, unknown>, string>()
@@ -809,7 +813,8 @@ export class TurnRunner {
                 // Visible text closes the reasoning segment: a stable title snapshot (or a clear) goes out first.
                 const stable = reasoningChanged ? titles.stableSnapshot(live.reasoning) : null
                 reasoningChanged = false
-                if (stable !== null) (await emitFrame('reasoning', { text: '', titles: stable }))
+                if (stable !== null) (await emitFrame('reasoning', { text: '', titles: stable, disclosure_key: reasoningDisclosureKey(streamId, reasoningSegment) }))
+                reasoningOpen = false
                 finalStreamedText += str(data.text)
                 live.text += str(data.text)
                 if (holdSilence && mayBecomeSilentReply(live.text)) { heldText += str(data.text); (await meterDelta(receivedAt)); return }
@@ -823,8 +828,9 @@ export class TurnRunner {
                 if (live.text && !live.reasoning) titles.resetSegment()
                 live.reasoning += str(data.text)
                 reasoningChanged = true
+                if (!reasoningOpen) { reasoningSegment += 1; reasoningOpen = true }
                 // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
-                await emitFrame('reasoning', titles.prepare(reasoningEventPayload(str(data.text), live.reasoning)))
+                await emitFrame('reasoning', { ...titles.prepare(reasoningEventPayload(str(data.text), live.reasoning)), disclosure_key: reasoningDisclosureKey(streamId, reasoningSegment) })
                 await meterDelta(receivedAt)
                 return
               }
@@ -844,11 +850,13 @@ export class TurnRunner {
               }
               case 'interim_assistant': {
                 finalStreamedText = ''
+                reasoningOpen = false
                 await emitFrame(frame.event, data)
                 return
               }
               case 'tool': {
                 finalStreamedText = ''
+                reasoningOpen = false
                 const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
                 liveToolCalls.push(call)
                 toolIds.set(call, call.tid || mintToolId())

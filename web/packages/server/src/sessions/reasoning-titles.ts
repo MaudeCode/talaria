@@ -117,3 +117,11 @@ export class ReasoningTitleTracker {
     this.lastSent = []
   }
 }
+
+/**
+ * TAL-1175: one reasoning segment's identity within its turn, `n` counting from 0. Live `reasoning` events and the settled
+ * scene's reasoning rows carry the same key, so a client keeps one disclosure for the segment across the settle.
+ */
+export function reasoningDisclosureKey(turnId: string, n: number): string {
+  return `${turnId}:reasoning:${String(n)}`
+}

@@ -111,7 +111,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} /><MediaTiles media={item.media} /></div>
-      case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={activeTail && last} />
+      case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} call={item.call} sessionId={sessionId} />
     }

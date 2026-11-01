@@ -11,7 +11,11 @@ export { RateLimitWaitSchema, type RateLimitWait } from './run-status.js'
  * loose objects: the reducer reads the named fields and preserves the rest.
  */
 const Text = z.looseObject({ text: z.string().optional(), already_streamed: z.boolean().optional(), reasoning_echo: z.boolean().optional(), session_id: z.string().optional() })
-const Reasoning = z.looseObject({ text: z.string().optional(), titles: z.array(z.string()).optional(), name: z.string().optional(), session_id: z.string().optional() })
+/**
+ * TAL-1175: `disclosure_key` names the reasoning segment this delta belongs to (`<turn id>:reasoning:<n>`); the settled
+ * scene's reasoning row for that segment carries the same key, so a card the reader opened stays open when the turn settles.
+ */
+const Reasoning = z.looseObject({ text: z.string().optional(), titles: z.array(z.string()).optional(), name: z.string().optional(), session_id: z.string().optional(), disclosure_key: z.string().optional() })
 const Tool = z.looseObject({ name: z.string().optional(), ...ToolDisplayFields, preview: z.string().nullable().optional(), args: z.unknown().optional(), event_type: z.string().optional(), session_id: z.string().optional(), /** The call's one id, the same on its `tool` and `tool_complete` frames; `after_tool_call_id` names it. */ id: z.string(), timestamp: z.number().optional() })
 const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), is_error: z.boolean().optional(), cost_usd: z.number().nullable().optional(), result: z.unknown().optional(), result_view: ToolResultViewSchema.optional(), output: z.unknown().optional() })
 const Approval = z.looseObject({ allowed_choices: ApprovalPendingSchema.shape.allowed_choices, can_enable_yolo: ApprovalPendingSchema.shape.can_enable_yolo, approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
