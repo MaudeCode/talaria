@@ -228,11 +228,26 @@ describe('TTS limiter behind an opted-in trusted proxy', () => {
   beforeAll(async () => { ({ s } = await bootTts({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })) })
   afterAll(() => s.close())
 
-  it('different forwarded clients get separate limiter keys', async () => {
+  const tts = async (headers: Record<string, string>): Promise<number> => (await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, headers)).status
+
+  it('implicit loopback trust keys every forwarded client on the peer', async () => {
     s.deps.ttsLimiter = new WindowLimiter(60, 1)
-    expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.1' })).status).toBe(200)
-    expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(200)
-    expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(429)
+    expect(await tts({ 'x-forwarded-for': '203.0.113.1' })).toBe(200)
+    expect(await tts({ 'x-forwarded-for': '203.0.113.2' })).toBe(429)
+  })
+
+  it('a listed proxy gives different forwarded clients separate limiter keys', async () => {
+    s.deps.config.env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    try {
+      s.deps.ttsLimiter = new WindowLimiter(60, 1)
+      expect(await tts({ 'x-forwarded-for': '203.0.113.1' })).toBe(200)
+      expect(await tts({ 'x-forwarded-for': '203.0.113.2' })).toBe(200)
+      expect(await tts({ 'x-forwarded-for': '203.0.113.2' })).toBe(429)
+      expect(await tts({ 'x-forwarded-for': '203.0.113.3', 'x-real-ip': '192.0.2.99' })).toBe(200)
+      expect(await tts({ 'x-forwarded-for': '203.0.113.4', 'x-real-ip': '192.0.2.99' })).toBe(429)
+    } finally {
+      delete s.deps.config.env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+    }
   })
 })
 

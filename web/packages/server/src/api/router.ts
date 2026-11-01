@@ -11,8 +11,7 @@ import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
 import { PasskeyError, PasskeyRateLimitError, rpContext } from '../auth/passkeys.js'
 import { requestBaseUrl } from './auth-raw.js'
 import { onboardingGateAllows } from './settings-router.js'
-import { forwardedClientIp, rawPeerIsTrustedProxy } from '../http/origin.js'
-import { truthy } from '../config.js'
+import { throttleClientIp } from '../http/origin.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
 import { displayBotName } from '../settings.js'
 import { whatsNewState } from '../release.js'
@@ -266,14 +265,9 @@ async function passkeyList(ctx: RequestContext): Promise<PasskeysList> {
   return { credentials: (await ctx.deps.passkeys.registered()) as PasskeysList['credentials'] }
 }
 
-/** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding: the key for the login, native OIDC start, and TTS limiters. */
+/** The key for the login, passkey, native OIDC start, and TTS limiters; the policy lives in `throttleClientIp`. */
 export function rateLimitClientIp(ctx: RequestContext): string {
-  const env = ctx.deps.config.env
-  if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(ctx.peer, env)) {
-    const forwarded = forwardedClientIp(ctx.headerAll('x-forwarded-for'), ctx.header('x-real-ip'), ctx.peer, env)
-    if (forwarded !== null) return forwarded
-  }
-  return ctx.peer
+  return throttleClientIp(ctx.headerAll('x-forwarded-for'), ctx.headerAll('x-real-ip'), ctx.peer, ctx.deps.config.env)
 }
 
 async function oidcCall<T>(fn: () => Promise<T>): Promise<T> {

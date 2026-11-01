@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedPublicOrigins, checkSameOriginBrowserRequest, forwardedClientIp, isLoopback, normalizeHostPort, portsMatch, rawPeerIsTrustedProxy } from './origin.js'
+import { allowedPublicOrigins, canonicalIp, checkSameOriginBrowserRequest, forwardedClientIp, isLoopback, normalizeHostPort, portsMatch, rawPeerIsTrustedProxy, throttleClientIp } from './origin.js'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras } from './csp.js'
 
 describe('host and port normalisation', () => {
@@ -70,6 +70,66 @@ describe('trusted proxies and client IPs', () => {
     expect(forwardedClientIp([], '198.51.100.7', '10.0.0.1', env)).toBe('198.51.100.7')
     expect(forwardedClientIp([], 'nope', '10.0.0.1', env)).toBeNull()
     expect(forwardedClientIp([], undefined, '10.0.0.1', env)).toBe('10.0.0.1')
+  })
+
+  it('trusts only listed peers when implicit loopback trust is off', () => {
+    const explicit = { implicitLoopback: false }
+    for (const peer of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) expect(rawPeerIsTrustedProxy(peer, {}, explicit), peer).toBe(false)
+    expect(rawPeerIsTrustedProxy('127.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' }, explicit)).toBe(true)
+    expect(rawPeerIsTrustedProxy('::ffff:127.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1' }, explicit)).toBe(true)
+    expect(rawPeerIsTrustedProxy('::1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' }, explicit)).toBe(false)
+    expect(rawPeerIsTrustedProxy('::1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '::1/128' }, explicit)).toBe(true)
+    for (const cidrs of ['', ' , ;', 'not-a-cidr', '127.0.0.1/33', '127.0.0.1/x']) expect(rawPeerIsTrustedProxy('127.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }, explicit), cidrs).toBe(false)
+  })
+
+  it('spells each address one way', () => {
+    expect(canonicalIp('2001:0DB8:0:0::1')).toBe('2001:db8::1')
+    expect(canonicalIp('::ffff:203.0.113.1')).toBe('203.0.113.1')
+    expect(canonicalIp('::FFFF:cb00:7101')).toBe('203.0.113.1')
+    expect(canonicalIp('203.0.113.1')).toBe('203.0.113.1')
+    for (const bad of ['', 'evil', '010.0.0.1', '203.0.113.1 ']) expect(canonicalIp(bad), bad).toBeNull()
+  })
+
+  it('keys throttles on a forwarded client only behind an explicitly listed proxy with consistent evidence', () => {
+    const listed = { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8, 127.0.0.1/32' }
+    const key = (xff: string[], realIp: string[] = [], peer = '10.0.0.1', env: Record<string, string> = listed): string => throttleClientIp(xff, realIp, peer, env)
+    // Opt-in off, implicit loopback, unlisted and direct public peers, and empty or invalid CIDRs key on the peer.
+    expect(key(['203.0.113.9'], [], '10.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' })).toBe('10.0.0.1')
+    expect(key(['203.0.113.9'], [], '127.0.0.1', { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })).toBe('127.0.0.1')
+    expect(key(['203.0.113.9'], [], '::1', listed)).toBe('::1')
+    expect(key(['203.0.113.9'], [], '198.51.100.4')).toBe('198.51.100.4')
+    for (const cidrs of ['', 'bogus', '10.0.0.0/99']) expect(key(['203.0.113.9'], [], '10.0.0.1', { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).toBe('10.0.0.1')
+    // A listed peer, IPv4-mapped included, resolves the right-most untrusted hop.
+    expect(key(['203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['203.0.113.9'], [], '::ffff:10.0.0.1')).toBe('203.0.113.9')
+    expect(key(['203.0.113.9'], [], '127.0.0.1')).toBe('203.0.113.9')
+    expect(key(['198.51.100.7, 203.0.113.9, 10.0.0.2'])).toBe('203.0.113.9')
+    expect(key(['evil, 203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['198.51.100.7', '203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['10.0.0.3, 10.0.0.2'])).toBe('10.0.0.1')
+    // Only listed hops are skipped: an unlisted loopback hop is the client, not a proxy.
+    const lanOnly = { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }
+    expect(key(['198.51.100.7, 127.0.0.1'], [], '10.0.0.1', lanOnly)).toBe('127.0.0.1')
+    expect(key(['198.51.100.7, ::1'], [], '10.0.0.1', lanOnly)).toBe('::1')
+    expect(key(['198.51.100.7, 127.0.0.1'])).toBe('198.51.100.7')
+    // Missing, blank, empty, and malformed chains fail closed.
+    expect(key([])).toBe('10.0.0.1')
+    expect(key([], ['203.0.113.9'])).toBe('10.0.0.1')
+    for (const xff of [[''], [' , '], ['203.0.113.9,,10.0.0.2'], ['', '203.0.113.9'], ['203.0.113.9', ' '], ['203.0.113.9, evil'], ['x'.repeat(15_000)]]) expect(key(xff), JSON.stringify(xff)).toBe('10.0.0.1')
+    // Every X-Real-IP field must name the resolved client.
+    expect(key(['203.0.113.9'], ['203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['203.0.113.9'], ['203.0.113.9', '203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['203.0.113.9'], ['203.0.113.9, 203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['203.0.113.9'], ['192.0.2.99'])).toBe('10.0.0.1')
+    expect(key(['203.0.113.9'], ['203.0.113.9', '192.0.2.99'])).toBe('10.0.0.1')
+    expect(key(['203.0.113.9'], ['203.0.113.9', ''])).toBe('10.0.0.1')
+    expect(key(['203.0.113.9'], [''])).toBe('10.0.0.1')
+    expect(key(['203.0.113.9'], ['nope'])).toBe('10.0.0.1')
+    // Equivalent spellings agree and share one key.
+    expect(key(['::ffff:203.0.113.9'], ['203.0.113.9'])).toBe('203.0.113.9')
+    expect(key(['203.0.113.9'], ['::FFFF:cb00:7109'])).toBe('203.0.113.9')
+    expect(key(['2001:0DB8:0:0::1'], ['2001:db8::0:1'])).toBe('2001:db8::1')
+    expect(key(['2001:db8::1'])).toBe(key(['2001:0db8:0000::0001']))
   })
 
   it('recognises loopback addresses', () => {

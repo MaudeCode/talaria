@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Login, passkey, native sign-in, and speech limits behind a reverse proxy now require the proxy to be listed explicitly and its forwarded headers to agree, so a client cannot reset its attempt budget by rotating a header.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

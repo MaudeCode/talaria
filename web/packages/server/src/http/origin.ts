@@ -2,8 +2,8 @@
  * Same-origin / CSRF provenance checks, allowlisted public origins, trusted
  * proxy networks, and forwarded client IP resolution (Python `api/routes.py`).
  */
-import { BlockList, isIP } from 'node:net'
-import type { Env } from '../config.js'
+import { BlockList, SocketAddress, isIP } from 'node:net'
+import { truthy, type Env } from '../config.js'
 
 export function normalizeHostPort(value: string): [string, string | null] {
   const v = value.trim().toLowerCase()
@@ -112,11 +112,18 @@ export function ipv4Mapped(addr: string): string | null {
   return m ? (m[1] ?? null) : null
 }
 
-export function trustedProxyNetworks(env: Env): BlockList {
+export interface ProxyTrust {
+  /** Loopback peers count as proxies without being listed; per-client throttles turn this off. */
+  implicitLoopback?: boolean
+}
+
+export function trustedProxyNetworks(env: Env, { implicitLoopback = true }: ProxyTrust = {}): BlockList {
   const list = new BlockList()
-  list.addSubnet('127.0.0.0', 8, 'ipv4')
-  list.addSubnet('::1', 128, 'ipv6')
-  list.addSubnet('::ffff:127.0.0.0', 104, 'ipv6')
+  if (implicitLoopback) {
+    list.addSubnet('127.0.0.0', 8, 'ipv4')
+    list.addSubnet('::1', 128, 'ipv6')
+    list.addSubnet('::ffff:127.0.0.0', 104, 'ipv6')
+  }
   for (const rawToken of (env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS ?? '').replace(/;/g, ',').split(',')) {
     const token = rawToken.trim()
     if (!token) continue
@@ -150,19 +157,32 @@ export function isLoopback(addr: string): boolean {
   return isIP(mapped) === 6 && /^(0*:)*0*1$/.test(mapped.toLowerCase())
 }
 
-export function rawPeerIsTrustedProxy(peer: string, env: Env): boolean {
-  return Boolean(peer) && ipInNetworks(peer, trustedProxyNetworks(env))
+export function rawPeerIsTrustedProxy(peer: string, env: Env, trust: ProxyTrust = {}): boolean {
+  return Boolean(peer) && ipInNetworks(peer, trustedProxyNetworks(env, trust))
+}
+
+/** One spelling per address: compressed lower-case IPv6, IPv4-mapped IPv6 as IPv4; null when not an address. */
+export function canonicalIp(addr: string): string | null {
+  const family = isIP(addr)
+  if (!family) return null
+  try {
+    const canonical = new SocketAddress({ address: addr, family: family === 4 ? 'ipv4' : 'ipv6' }).address
+    return ipv4Mapped(canonical) ?? canonical
+  } catch {
+    return null
+  }
 }
 
 /**
  * Real client IP behind a trusted proxy: walk X-Forwarded-For right to left
- * skipping trusted hops; fail closed (null) on malformed chains.
+ * skipping trusted hops (`trust` as for the peer); fail closed (null) on
+ * malformed chains.
  */
-export function forwardedClientIp(xff: string[], realIp: string | undefined, peer: string, env: Env): string | null {
+export function forwardedClientIp(xff: string[], realIp: string | undefined, peer: string, env: Env, trust: ProxyTrust = {}): string | null {
   const hops = xff.flatMap((v) => v.split(',').map((t) => t.trim()))
   if (xff.length) {
     if (!hops.some(Boolean)) return null
-    const nets = trustedProxyNetworks(env)
+    const nets = trustedProxyNetworks(env, trust)
     for (const hop of [...hops].reverse()) {
       if (!hop || !isIP(hop)) return null
       if (ipInNetworks(hop, nets)) continue
@@ -173,4 +193,25 @@ export function forwardedClientIp(xff: string[], realIp: string | undefined, pee
   const real = (realIp ?? '').trim()
   if (real) return isIP(real) ? real : null
   return peer
+}
+
+/**
+ * The key for per-client throttles (password, passkey, native OIDC start,
+ * TTS). Stricter than `forwardedClientIp`, whose implicit loopback and
+ * X-Real-IP trust the onboarding and local-origin gates keep. Forwarded
+ * identity counts only with the opt-in, a raw peer listed in
+ * HERMES_WEBUI_TRUSTED_PROXY_CIDRS (loopback included, for the peer and every
+ * skipped hop alike), a non-empty
+ * X-Forwarded-For chain with no empty field, and every X-Real-IP field naming
+ * the same address. Anything else keys on the socket peer, so a client cannot
+ * pick a fresh budget by rotating a header.
+ */
+export function throttleClientIp(xff: string[], realIp: string[], peer: string, env: Env): string {
+  const explicit = { implicitLoopback: false }
+  if (!truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) || !rawPeerIsTrustedProxy(peer, env, explicit)) return peer
+  if (!xff.length || xff.some((field) => field.split(',').some((hop) => !hop.trim()))) return peer
+  const forwarded = forwardedClientIp(xff, undefined, peer, env, explicit)
+  const client = forwarded === null ? null : canonicalIp(forwarded)
+  if (client === null) return peer
+  return realIp.flatMap((field) => field.split(',')).every((value) => canonicalIp(value.trim()) === client) ? client : peer
 }
