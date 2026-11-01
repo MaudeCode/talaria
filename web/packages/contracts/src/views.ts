@@ -657,7 +657,9 @@ export const QuotaThresholdsSchema = z.object({
   pace_warning_burn_rate_percent: z.number().int().min(100).max(300), pace_critical_burn_rate_percent: z.number().int().min(100).max(400), pace_minimum_elapsed_hours: z.number().int().min(0).max(72),
 })
 export type QuotaThresholds = z.infer<typeof QuotaThresholdsSchema>
-export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message: z.string().optional() })
+/** TAL-1075: where a browser goes after sign-in, resolved by the server against the page's mount exactly once. */
+export const LoginRedirectSchema = z.object({ redirect_path: z.string().optional().describe('Same-origin path-absolute destination for a browser sign-in, mounted exactly once; absent from older servers.') })
+export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message: z.string().optional(), ...LoginRedirectSchema.shape })
 /** TAL-1569: Talaria Web update channels, in display order. Nightly is a daily snapshot of the Experimental artifact. */
 export const WebUpdateChannelSchema = z.enum(['stable', 'nightly', 'experimental'])
 export type WebUpdateChannel = z.infer<typeof WebUpdateChannelSchema>

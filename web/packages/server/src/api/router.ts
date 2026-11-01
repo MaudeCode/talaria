@@ -6,7 +6,7 @@
 import { implement, ORPCError } from '@orpc/server'
 import { coreContract, type AuthStatus, type Bootstrap, type Health, type PasskeysList } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
-import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, loginRedirectPath, sessionCanManageServer } from '../auth/gate.js'
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
 import { PasskeyError, PasskeyRateLimitError, rpContext } from '../auth/passkeys.js'
 import { requestBaseUrl } from './auth-raw.js'
@@ -161,7 +161,8 @@ export const coreRouter = os.router({
     login: os.auth.login.handler(async ({ input, context }) => {
       const { ctx } = context
       const auth = ctx.deps.auth
-      if (!(await auth.isAuthEnabled())) return { ok: true as const, message: 'Auth not enabled' }
+      const redirect_path = loginRedirectPath(input.next, input.mount_path)
+      if (!(await auth.isAuthEnabled())) return { ok: true as const, message: 'Auth not enabled', redirect_path }
       const clientIp = rateLimitClientIp(ctx)
       if (!auth.checkLoginRate(clientIp)) throw new HttpError(429, 'Too many attempts. Try again in a minute.')
       // Reserve the attempt before the async hash so concurrent guesses see it; success releases only this one.
@@ -170,7 +171,7 @@ export const coreRouter = os.router({
       auth.releaseLoginAttempt(clientIp, reservation)
       const cookieVal = auth.createSession({ authType: 'password' })
       ctx.queueCookie(ctx.authCookieHeader(cookieVal))
-      return { ok: true as const }
+      return { ok: true as const, redirect_path }
     }),
     logout: os.auth.logout.handler(async ({ context }) => {
       const { ctx } = context
@@ -223,7 +224,7 @@ export const coreRouter = os.router({
         throw new HttpError(401, error.message)
       }
       ctx.queueCookie(ctx.authCookieHeader(auth.createSession({ authType: 'passkey' })))
-      return { ok: true as const }
+      return { ok: true as const, redirect_path: loginRedirectPath(input.next, input.mount_path) }
     }),
     passkeyRegisterOptions: os.auth.passkeyRegisterOptions.handler(async ({ context }) => {
       const { ctx } = context

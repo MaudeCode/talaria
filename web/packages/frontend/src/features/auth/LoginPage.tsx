@@ -2,24 +2,27 @@ import { useState } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { useBootstrap } from '../../app/bootstrap'
 import * as api from '../../api/endpoints'
-import { appUrl } from '../../lib/appRoot'
+import { appRoot, appUrl } from '../../lib/appRoot'
 import { resetIdentityCache } from '../../api/queryClient'
 import { safeNextPath } from './safeNextPath'
 import { decodeRequestOptions, encodeAssertion, passkeysSupported } from './passkeys'
 import { isApiError } from '../../contracts/common'
 
-/** Password, passkey and OIDC sign-in. Redirect target validated with the legacy rules. */
+/** Password, passkey and OIDC sign-in; the server resolves where the browser lands. */
 export function LoginPage({ next }: { next: string | undefined }) {
   const bootstrap = useBootstrap()
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const target = safeNextPath(next)
+  // TAL-1075: the server validates `next` and mounts it exactly once; the page reports only where it is mounted.
+  const destination = { ...(next ? { next } : {}), mount_path: appRoot().pathname }
 
-  const finish = () => {
+  const finish = (redirectPath: string | undefined) => {
     // Whoever signs in next must not inherit the previous identity's boot snapshots.
     resetIdentityCache()
-    window.location.assign(target === './' ? appUrl('').href : appUrl(target).href)
+    // Old servers answer without `redirect_path`; there the page keeps its legacy validated target.
+    window.location.assign(redirectPath ?? (target === './' ? appUrl('').href : appUrl(target).href))
   }
 
   const onSubmit = async (e: { preventDefault: () => void }) => {
@@ -27,8 +30,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
     setError(null)
     setBusy(true)
     try {
-      await api.login(password)
-      finish()
+      finish((await api.login(password, destination)).redirect_path)
     } catch (err) {
       setError(isApiError(err) && err.kind === 'http' ? (err.message || m.login_invalid_pw()) : m.login_conn_failed())
     }
@@ -43,8 +45,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
       const opt = await api.passkeyOptions()
       const cred = await navigator.credentials.get({ publicKey: decodeRequestOptions(opt.publicKey as unknown as Parameters<typeof decodeRequestOptions>[0]) })
       if (cred) {
-        await api.passkeyLogin(encodeAssertion(cred as PublicKeyCredential))
-        finish()
+        finish((await api.passkeyLogin(encodeAssertion(cred as PublicKeyCredential), destination)).redirect_path)
       } else setError('Passkey cancelled')
     } catch (err) {
       setError(err instanceof Error ? err.message : m.login_conn_failed())
@@ -52,7 +53,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
     setBusy(false)
   }
 
-  const oidcHref = appUrl(`api/auth/oidc/start${target !== './' ? `?next=${encodeURIComponent(target)}` : ''}`).href
+  const oidcHref = appUrl(`api/auth/oidc/start?${new URLSearchParams(destination).toString()}`).href
   const showPassword = bootstrap.auth.password_auth_enabled && !bootstrap.auth.passwordless_enabled
 
   return (

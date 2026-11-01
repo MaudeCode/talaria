@@ -29,7 +29,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   },
   {
     method: 'GET', path: '/api/auth/oidc/start', summary: 'Redirect the browser to the configured OIDC provider (302, `Cache-Control: no-store`).', tags: ['auth'],
-    query: { next: { description: 'Safe path-absolute return target after login.' }, native_flow: { description: 'Pending native handoff id from `/api/auth/oidc/native/start`.' } },
+    query: { next: { description: 'Safe path-absolute return target after login.' }, mount_path: { description: 'The browser page\'s mount pathname; the saved return target is mounted exactly once.' }, native_flow: { description: 'Pending native handoff id from `/api/auth/oidc/native/start`.' } },
     responses: { 302: { description: 'Provider authorization URL in `Location`.' }, 404: { description: 'OIDC is not configured.', contentType: 'application/json' }, 502: { description: 'Provider discovery failed.', contentType: 'application/json' } },
   },
   {
