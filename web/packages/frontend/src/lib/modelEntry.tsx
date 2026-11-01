@@ -59,4 +59,3 @@ export function catalogModelSections(group: Models['groups'][number], query = ''
     models: section.model_ids.map((id) => rows.find((entry) => entry.id === id)).filter((entry): entry is ModelEntry => !!entry && matches(entry)),
   })).filter((section) => section.models.length)
 }
-
