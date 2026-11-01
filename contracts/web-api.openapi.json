@@ -81103,6 +81103,39 @@
                       ],
                       "description": "Always sent since TAL-951; absent from older servers."
                     },
+                    "gateway_lifecycle": {
+                      "type": "object",
+                      "properties": {
+                        "managed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "enum": [
+                            "local_gateway",
+                            "external_gateway",
+                            "local_gateway_unproven",
+                            "unverified"
+                          ],
+                          "type": "string"
+                        },
+                        "start_command": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "managed",
+                        "reason",
+                        "start_command"
+                      ],
+                      "description": "TAL-1627: whether the gateway restart may run; clients offer it only when `managed`. Absent from older servers."
+                    },
                     "alive": {
                       "anyOf": [
                         {
@@ -81247,7 +81280,7 @@
     "/api/health/restart": {
       "post": {
         "operationId": "ops.restart",
-        "summary": "Restart the Hermes gateway for the active profile (operator only).",
+        "summary": "Restart the Hermes gateway for the active profile (operator only). 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).",
         "tags": [
           "tools"
         ],
@@ -82077,6 +82110,39 @@
                         "reason",
                         "gateway_state"
                       ]
+                    },
+                    "lifecycle": {
+                      "type": "object",
+                      "properties": {
+                        "managed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "enum": [
+                            "local_gateway",
+                            "external_gateway",
+                            "local_gateway_unproven",
+                            "unverified"
+                          ],
+                          "type": "string"
+                        },
+                        "start_command": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "managed",
+                        "reason",
+                        "start_command"
+                      ],
+                      "description": "TAL-1627: whether Start/Stop/Restart may run; clients offer them only when `managed`."
                     }
                   },
                   "required": [
@@ -82086,7 +82152,8 @@
                     "platforms",
                     "last_active",
                     "session_count",
-                    "health"
+                    "health",
+                    "lifecycle"
                   ]
                 }
               }
@@ -82098,7 +82165,7 @@
     "/api/gateway/start": {
       "post": {
         "operationId": "gateway.start",
-        "summary": "Run `hermes gateway start` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds.",
+        "summary": "Run `hermes gateway start` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds. 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).",
         "tags": [
           "tools"
         ],
@@ -82229,6 +82296,39 @@
                             "reason",
                             "gateway_state"
                           ]
+                        },
+                        "lifecycle": {
+                          "type": "object",
+                          "properties": {
+                            "managed": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "enum": [
+                                "local_gateway",
+                                "external_gateway",
+                                "local_gateway_unproven",
+                                "unverified"
+                              ],
+                              "type": "string"
+                            },
+                            "start_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "managed",
+                            "reason",
+                            "start_command"
+                          ],
+                          "description": "TAL-1627: whether Start/Stop/Restart may run; clients offer them only when `managed`."
                         }
                       },
                       "required": [
@@ -82238,7 +82338,8 @@
                         "platforms",
                         "last_active",
                         "session_count",
-                        "health"
+                        "health",
+                        "lifecycle"
                       ]
                     }
                   },
@@ -82258,7 +82359,7 @@
     "/api/gateway/stop": {
       "post": {
         "operationId": "gateway.stop",
-        "summary": "Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds.",
+        "summary": "Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds. 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).",
         "tags": [
           "tools"
         ],
@@ -82389,6 +82490,39 @@
                             "reason",
                             "gateway_state"
                           ]
+                        },
+                        "lifecycle": {
+                          "type": "object",
+                          "properties": {
+                            "managed": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "enum": [
+                                "local_gateway",
+                                "external_gateway",
+                                "local_gateway_unproven",
+                                "unverified"
+                              ],
+                              "type": "string"
+                            },
+                            "start_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "managed",
+                            "reason",
+                            "start_command"
+                          ],
+                          "description": "TAL-1627: whether Start/Stop/Restart may run; clients offer them only when `managed`."
                         }
                       },
                       "required": [
@@ -82398,7 +82532,8 @@
                         "platforms",
                         "last_active",
                         "session_count",
-                        "health"
+                        "health",
+                        "lifecycle"
                       ]
                     }
                   },
@@ -82418,7 +82553,7 @@
     "/api/gateway/restart": {
       "post": {
         "operationId": "gateway.restart",
-        "summary": "Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. The old gateway drains for the Agent's own restart budget before it is replaced. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 with the sidecar's timeout message once that budget runs out.",
+        "summary": "Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. The old gateway drains for the Agent's own restart budget before it is replaced. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 with the sidecar's timeout message once that budget runs out. 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).",
         "tags": [
           "tools"
         ],
@@ -82549,6 +82684,39 @@
                             "reason",
                             "gateway_state"
                           ]
+                        },
+                        "lifecycle": {
+                          "type": "object",
+                          "properties": {
+                            "managed": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "enum": [
+                                "local_gateway",
+                                "external_gateway",
+                                "local_gateway_unproven",
+                                "unverified"
+                              ],
+                              "type": "string"
+                            },
+                            "start_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "managed",
+                            "reason",
+                            "start_command"
+                          ],
+                          "description": "TAL-1627: whether Start/Stop/Restart may run; clients offer them only when `managed`."
                         }
                       },
                       "required": [
@@ -82558,7 +82726,8 @@
                         "platforms",
                         "last_active",
                         "session_count",
-                        "health"
+                        "health",
+                        "lifecycle"
                       ]
                     }
                   },

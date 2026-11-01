@@ -5,7 +5,7 @@ import { constants, existsSync, readFileSync, statSync, statfsSync } from 'node:
 import { open, type FileHandle } from 'node:fs/promises'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import type { GatewayMode, GatewayStatus } from '@maudecode/talaria-web-contracts'
+import type { GatewayLifecycle, GatewayMode, GatewayStatus } from '@maudecode/talaria-web-contracts'
 import type { Config, Dict } from '../config/agent-config.js'
 import type { RestartBlockers } from './updates.js'
 import { dict } from '../config/agent-config.js'
@@ -186,6 +186,9 @@ function pidAlive(pid: number): boolean {
 
 const remoteCache = new Map<string, { until: number; result: Dict; inflight: Promise<Dict> | null }>()
 
+/** TAL-1627: after a lifecycle action, the next probe reads the Gateway afresh rather than its state before the action. */
+export function forgetRemoteProbes(): void { for (const [base, entry] of remoteCache) if (!entry.inflight) remoteCache.delete(base) }
+
 async function runRemoteProbe(base: string, env: Record<string, string | undefined>, fetchImpl: typeof fetch): Promise<Dict> {
   const apiKey = (env.HERMES_WEBUI_GATEWAY_API_KEY ?? env.API_SERVER_KEY ?? '').trim()
   let lastStatus: number | null = null
@@ -331,7 +334,7 @@ const titleCase = (name: string): string => name.replace(/(^|[^a-z])([a-z])/g, (
  * gateway configured. Otherwise `health` (`agentHealth`) decides running and configured; when it is inconclusive
  * (`alive` null), stale running metadata or any known gateway session marks the gateway configured, and sessions mean running.
  */
-export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_source: string; platform: string }>, sessionsPath: string, mode: GatewayMode | null = null): GatewayStatus {
+export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_source: string; platform: string }>, sessionsPath: string, mode: GatewayMode | null, lifecycle: GatewayLifecycle): GatewayStatus {
   const details = dict(health.details)
   const state = textOrNull(details.state)
   const reason = textOrNull(details.reason)
@@ -347,7 +350,7 @@ export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_
   const platforms = [...names].map((name) => ({ name, label: PLATFORM_LABELS[name] ?? titleCase(name) })).sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
   let lastActive = ''
   if (running) { try { lastActive = statSync(sessionsPath).mtime.toISOString() } catch { lastActive = '' } }
-  return { running, configured, gateway_mode: mode, platforms, last_active: lastActive, session_count: identity.size, health: { state, reason, gateway_state: gatewayState } }
+  return { running, configured, gateway_mode: mode, platforms, last_active: lastActive, session_count: identity.size, health: { state, reason, gateway_state: gatewayState }, lifecycle }
 }
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])

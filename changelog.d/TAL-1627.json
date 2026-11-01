@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings no longer starts, stops, or restarts a local gateway when Talaria only monitors a gateway that runs elsewhere.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -58,6 +58,7 @@
           "cron.update",
           "gateway.control",
           "gateway.mode",
+          "gateway.ownership",
           "gateway.restart",
           "goals.command",
           "goals.evaluate",

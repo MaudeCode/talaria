@@ -928,9 +928,26 @@ export const DashboardStatusSchema = z.looseObject({ running: z.boolean(), enabl
  * TAL-805: `gateway_mode` is the active profile's mode and decides `running` when it is not null. It is null for a remote
  * gateway, or for the root profile when the sidecar cannot answer; a named profile whose mode is unconfirmed reads `stopped`.
  */
+/**
+ * TAL-1627: whether Web's local `hermes gateway` CLI controls the Gateway it monitors, the one answer every lifecycle entry
+ * point (Gateway Start/Stop/Restart, health restart, the post-update restart) and Settings read. `local_gateway` (managed):
+ * no explicit Gateway URL, or a loopback URL whose endpoint a verified gateway of the active profile owns now or owned
+ * before (Web's custody record). `external_gateway`: a non-loopback, malformed or foreign-held URL. `local_gateway_unproven`:
+ * a loopback URL no gateway of this profile has been proven to serve. `unverified`: the ownership evidence could not be read.
+ * `start_command` is the profile's exact one-time CLI start, sent only for a stopped unproven loopback Gateway.
+ */
+export const GatewayLifecycleSchema = z.object({
+  managed: z.boolean(),
+  reason: z.enum(['local_gateway', 'external_gateway', 'local_gateway_unproven', 'unverified']),
+  start_command: NullableString,
+})
+export type GatewayLifecycle = z.infer<typeof GatewayLifecycleSchema>
+/** TAL-1627: the 409 body of a lifecycle action refused because Web does not control the monitored Gateway; nothing ran. */
+export const GatewayLifecycleRefusalSchema = z.object({ error: z.string(), ok: z.literal(false), code: z.literal('gateway_externally_managed'), action: z.enum(['start', 'stop', 'restart']), lifecycle: GatewayLifecycleSchema })
 export const GatewayStatusSchema = z.object({
   running: z.boolean(), configured: z.boolean(), gateway_mode: GatewayModeSchema.nullable(), platforms: z.array(z.object({ name: z.string(), label: z.string() })), last_active: z.string(), session_count: z.number().int(),
   health: z.object({ state: NullableString, reason: NullableString, gateway_state: NullableString }),
+  lifecycle: GatewayLifecycleSchema.describe('TAL-1627: whether Start/Stop/Restart may run; clients offer them only when `managed`.'),
 })
 export type GatewayStatus = z.infer<typeof GatewayStatusSchema>
 export const GatewayActionSchema = z.object({ ok: z.literal(true), action: z.enum(['start', 'stop', 'restart']), message: z.string(), status: GatewayStatusSchema })
@@ -962,7 +979,7 @@ export const ChatReadinessSchema = z.discriminatedUnion('available', [
 ])
 export type ChatReadiness = z.infer<typeof ChatReadinessSchema>
 /** Messaging-gateway liveness (`alive`, `details`, `gateway_chat`) for Settings → System, plus Web chat readiness in `chat`. */
-export const AgentHealthSchema = z.looseObject({ chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
+export const AgentHealthSchema = z.looseObject({ chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), gateway_lifecycle: GatewayLifecycleSchema.optional().describe('TAL-1627: whether the gateway restart may run; clients offer it only when `managed`. Absent from older servers.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
 export const SystemHealthSchema = z.looseObject({
   available: z.boolean().optional(), status: z.string().optional(), checked_at: z.string().optional(), cpu: Json.nullable().optional(), memory: Json.nullable().optional(), disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional() }).nullable().optional(),
   errors: z.array(z.looseObject({ code: z.string().optional(), metric: z.string().optional() })).optional(), webui_runtime: Json.optional(),

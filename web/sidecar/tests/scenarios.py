@@ -52,6 +52,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("profiles.runtime_env", {"profile_home": "{profile}", "protected_keys": []}),
     ("profiles.skills_stats", {"profile_home": "{profile}"}),
     ("gateway.mode", {"profile_home": "{home}", "name": "default", "is_default": True}),
+    ("gateway.ownership", {"profile_home": "{home}", "port": 8642}),
     ("gateway.session", {"profile_home": "{home}", "session_id": "not-running", "action": "snapshot"}),
     ("gateway.create", {"profile_home": "{home}", "probe": True}),
     ("gateway.groups", {"profile_home": "{home}", "subject": "fixture-owner", "operation": {"action": "capabilities"}}),

@@ -590,3 +590,47 @@ describe('passkeys (TAL-1179)', () => {
     expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Last passkey'), expect.any(Number), 'error')
   })
 })
+
+describe('Gateway restart capability (TAL-1627)', () => {
+  beforeEach(() => { settingsState = { ...SERVER_FIELDS }; vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current }) })
+  const restartButton = () => screen.queryByRole('button', { name: 'Restart agent' })
+  const why = () => screen.findByRole('button', { name: 'Why restart is unavailable' })
+
+  it('offers restart only when the server says Talaria controls the Gateway, and rereads it after a refusal', async () => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: { managed: false, reason: 'external_gateway', start_command: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValueOnce({ alive: true, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
+    vi.mocked(api.restartAgent).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, path: '/api/health/restart', message: 'This Gateway is managed outside Talaria. Start, stop, or restart it where it runs.' }))
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: 'Restart agent' }))
+    await waitFor(() => { expect(restartButton()).toBeNull() })
+    await userEvent.click(await why())
+    expect(await screen.findByText('This gateway runs outside Talaria. Start, stop, or restart it where it runs.')).toBeInTheDocument()
+    expect(screen.getAllByText('ok')).toHaveLength(2)
+  })
+
+  it('shows the server\'s start command for a stopped unproven loopback Gateway', async () => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, details: { reason: 'remote_gateway_unreachable' }, gateway_lifecycle: { managed: false, reason: 'local_gateway_unproven', start_command: 'hermes --profile work gateway start' } })
+    renderSystem()
+    await userEvent.click(await why())
+    expect(await screen.findByText('hermes --profile work gateway start')).toBeInTheDocument()
+    expect(restartButton()).toBeNull()
+  })
+
+  it.each([
+    ['unverified', { managed: false, reason: 'unverified', start_command: null }],
+    ['a running unproven Gateway', { managed: false, reason: 'local_gateway_unproven', start_command: null }],
+  ] as const)('%s reads as unconfirmed', async (_name, lifecycle) => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: lifecycle })
+    renderSystem()
+    await userEvent.click(await why())
+    expect(await screen.findByText('Talaria could not confirm that it runs this gateway.')).toBeInTheDocument()
+  })
+
+  it('offers nothing when an older server sends no capability', async () => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true })
+    renderSystem()
+    expect(await screen.findAllByText('ok')).toHaveLength(2)
+    expect(restartButton()).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Why restart is unavailable' })).toBeNull()
+  })
+})

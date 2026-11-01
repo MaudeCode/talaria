@@ -236,6 +236,13 @@ curl -sS "${GATEWAY_BASE_URL%/}/health/detailed" | jq '.gateway_state, .state'
 If the service name differs in your compose file, `docker compose -f docker-compose.two-container.yml ps` lists the running services.
 For container-to-container diagnostics, set one of `HERMES_API_URL` or `HERMES_WEBUI_GATEWAY_BASE_URL` in the WebUI environment, then restart WebUI.
 
+With one of these URLs set, Settings shows that gateway's health but offers its
+restart only when Talaria controls it: the URL is loopback and the active
+profile's own gateway has been seen listening there. A gateway in another
+container or host is restarted where it runs. A stopped loopback gateway that
+Talaria has not seen yet shows the exact `hermes --profile <name> gateway start`
+command to run once.
+
 
 ## What goes wrong (and how to fix it)
 
