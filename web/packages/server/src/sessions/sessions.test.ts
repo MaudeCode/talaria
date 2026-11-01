@@ -3581,4 +3581,3 @@ describe('project deletion unlinks every session that names it (TAL-1028)', () =
     }
   })
 })
-
