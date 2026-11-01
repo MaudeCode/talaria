@@ -227,6 +227,29 @@ describe('run-journal archival', () => {
     expect((await journal.readRunEvents('session', 'run')).map((e) => e.seq)).toEqual([1, 2, 3, 4])
   })
 
+  it('keeps a torn live continuation past the archive, and never archives without it', async () => {
+    const journal = fixture()
+    await writeRun(journal, 'session', 'run')
+    await sweep(journal)
+    // A crash during the first append after archival leaves only a torn row in the live journal.
+    fs.writeFileSync(journal.pathFor('session', 'run'), '{"seq":4,"event":"to')
+    fs.utimesSync(journal.pathFor('session', 'run'), old, old)
+    expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_malformed')
+    expect((await sweep(journal)).pruned).toBe(1)
+    expect(zlib.gunzipSync(fs.readFileSync(journal.archivePathFor('session', 'run'))).toString('utf8').endsWith('\n{"seq":4,"event":"to'), 'the torn bytes survive re-archival').toBe(true)
+    expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_malformed')
+  })
+
+  it('stops a session replay at its byte budget before assembling an archived row', async () => {
+    const journal = fixture()
+    await writeRun(journal, 'session', 'run', { text: 'x'.repeat(6 * 1024 * 1024) })
+    await sweep(journal)
+    const concat = vi.spyOn(Buffer, 'concat')
+    expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_limit_bytes')
+    const largest = Math.max(0, ...concat.mock.results.map((r) => (r.value as Buffer).length))
+    expect(largest, 'no buffer past the 4 MiB replay budget').toBeLessThanOrEqual(4 * 1024 * 1024)
+  })
+
   it('never reads a run as empty while retention archives it', async () => {
     const journal = fixture()
     await writeRun(journal, 'session', 'run')

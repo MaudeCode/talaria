@@ -64,10 +64,18 @@ export async function* gunzipped(handle: FileHandle): AsyncGenerator<Buffer> {
   }
 }
 
+/** A request's remaining read budget, shared by every source it reads. */
+export interface ReadBudget { remaining: number }
+/** The read passed its budget; raised per chunk, before a row is assembled or parsed. */
+export class JournalReadLimit extends Error {
+  constructor() { super('The run-journal read passed its byte budget'); this.name = 'JournalReadLimit' }
+}
+
 /** Lines split at the 0x0A byte, which never occurs inside a UTF-8 sequence; only the last line can be unterminated. */
-async function* splitLines(chunks: AsyncIterable<Buffer>): AsyncGenerator<JournalLine> {
+async function* splitLines(chunks: AsyncIterable<Buffer>, budget?: ReadBudget): AsyncGenerator<JournalLine> {
   let parts: Buffer[] = []
   for await (const chunk of chunks) {
+    if (budget && (budget.remaining -= chunk.length) < 0) throw new JournalReadLimit()
     let start = 0
     for (let nl = chunk.indexOf(10); nl >= 0; nl = chunk.indexOf(10, start)) {
       parts.push(chunk.subarray(start, nl))
@@ -83,11 +91,12 @@ async function* splitLines(chunks: AsyncIterable<Buffer>): AsyncGenerator<Journa
 
 /**
  * A run's logical journal. Live rows the archive already holds (a crash between publishing an archive and removing the
- * live file) must repeat the archive's bytes at the same seq and are read once; the live rows past the archive follow it.
- * Any other overlap, and archive rows of another session or run, refuse instead of masking either copy.
+ * live file) must repeat the archive's bytes at the same seq and are read once, as are the archive's own trailing torn
+ * or malformed lines repeated after them; every other live line follows the archive. Any other overlap, and archive rows
+ * of another session or run, refuse instead of masking either copy. `budget` bounds the bytes read from both sources.
  */
-export async function* runLines(archive: FileHandle | null, live: FileHandle | null, sessionId: string, runId: string): AsyncGenerator<JournalLine> {
-  const liveLines = live ? splitLines(fileChunks(live)) : null
+export async function* runLines(archive: FileHandle | null, live: FileHandle | null, sessionId: string, runId: string, budget?: ReadBudget): AsyncGenerator<JournalLine> {
+  const liveLines = live ? splitLines(fileChunks(live), budget) : null
   if (!archive) { if (liveLines) yield* liveLines; return }
   // The next live row, and the non-row lines before it.
   const pending: { next: JournalLine | null; held: JournalLine[] } = { next: null, held: [] }
@@ -105,19 +114,28 @@ export async function* runLines(archive: FileHandle | null, live: FileHandle | n
   try {
     await advance()
     let archived = 0
-    for await (const line of splitLines(gunzipped(archive))) {
+    let matched = false
+    // The archive's lines after its last row, which a crash-left live copy repeats.
+    let trailing: Buffer[] = []
+    for await (const line of splitLines(gunzipped(archive), budget)) {
       if (line.event) {
         if (line.event.session_id !== sessionId || line.event.run_id !== runId) throw new JournalArchiveError('The run-journal archive belongs to another run')
         archived = line.event.seq
+        trailing = []
         if (pending.next?.event?.seq === archived) {
           if (!pending.next.bytes.equals(line.bytes)) throw contradiction()
+          matched = true
           await advance()
         }
-      }
+      } else trailing.push(line.bytes)
       yield line
     }
     const first = pending.next
-    if (!first?.event) return
+    if (!first?.event) {
+      const repeated = matched && pending.held.length === trailing.length && pending.held.every((line, i) => line.bytes.equals(trailing[i]!))
+      if (!repeated) yield* pending.held
+      return
+    }
     if (!(first.event.seq > archived)) throw contradiction()
     yield* pending.held
     yield first

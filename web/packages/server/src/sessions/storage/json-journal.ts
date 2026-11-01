@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 
 import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, SessionJournalReplay } from './backend.js'
-import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, NOFOLLOW, StagedFile, fsyncDir, logicalBytes, runLines, stageArchive } from './json-journal-archive.js'
+import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, JournalReadLimit, NOFOLLOW, StagedFile, fsyncDir, logicalBytes, runLines, stageArchive } from './json-journal-archive.js'
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
 const PRUNED_SUMMARY_SUFFIX = '.summary.json'
 const RUN_OWNER_CACHE_MAX = 1000
@@ -604,7 +604,8 @@ export class JsonJournal implements JournalBackend {
         } else {
           const chunks: Buffer[] = []
           let size = 0
-          for await (const chunk of logicalBytes(runLines(files.archive, files.live, sid, runId))) {
+          // The budget stops the read per chunk, before an oversized row is assembled or parsed.
+          for await (const chunk of logicalBytes(runLines(files.archive, files.live, sid, runId, { remaining: SESSION_REPLAY_MAX_BYTES - retainedBytes }))) {
             size += chunk.length
             if (size + retainedBytes > SESSION_REPLAY_MAX_BYTES) return result('replay_limit_bytes')
             chunks.push(chunk)
@@ -622,6 +623,7 @@ export class JsonJournal implements JournalBackend {
         if (!Number.isFinite(createdAt)) createdAt = Number(st.mtimeMs) / 1000
         runs.push({ createdAt, runId, events })
       } catch (error) {
+        if (error instanceof JournalReadLimit) return result('replay_limit_bytes')
         if (error instanceof JournalArchiveError) return result('replay_unreadable')
         continue
       } finally { await files.close() }
