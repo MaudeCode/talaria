@@ -4449,6 +4449,45 @@
     ],
     "additionalProperties": false
   },
+  "mcp.probe_targets": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "headers": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "name",
+            "url",
+            "headers"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "targets"
+    ],
+    "additionalProperties": false
+  },
   "mcp.status": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

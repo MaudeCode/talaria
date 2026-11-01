@@ -1517,15 +1517,15 @@ describe('MCP health prober', () => {
     const ok = fetchFor(200, { jsonrpc: '2.0', id: 'x', result: { protocolVersion: '2025-06-18' } })
     const prober = new McpHealthProber({ fetch: () => ok.f, now: () => now, log: () => undefined })
     const servers = { one: { url: 'https://one.example/mcp' } }
-    expect(prober.refreshAndRead(servers).one).toEqual({ pending: true })
+    expect(prober.refreshAndRead('/profiles/test', servers).one).toEqual({ pending: true })
     await prober.settle()
-    expect(prober.refreshAndRead(servers).one).toMatchObject({ health: 'healthy', detail: 'HTTP 200', checked_at: 1000, pending: false })
+    expect(prober.refreshAndRead('/profiles/test', servers).one).toMatchObject({ health: 'healthy', detail: 'HTTP 200', checked_at: 1000, pending: false })
     expect(ok.calls.filter((c) => c.method === 'POST')).toHaveLength(1)
     // An edited config is a different identity and starts pending again; the old verdict never leaks.
-    expect(prober.refreshAndRead({ one: { url: 'https://two.example/mcp' } }).one).toEqual({ pending: true })
+    expect(prober.refreshAndRead('/profiles/test', { one: { url: 'https://two.example/mcp' } }).one).toEqual({ pending: true })
     now += 200
     await prober.settle()
-    expect(prober.refreshAndRead(servers).one).toMatchObject({ pending: true, health: 'healthy' })
+    expect(prober.refreshAndRead('/profiles/test', servers).one).toMatchObject({ pending: true, health: 'healthy' })
   })
 
   describe('SSE initialize replies', () => {
@@ -1564,9 +1564,9 @@ describe('MCP health prober', () => {
         expect(server.state.calls[1]?.headers).toMatchObject({ 'Mcp-Session-Id': 'sess-sse', 'MCP-Protocol-Version': '2025-06-18' })
 
         const prober = new McpHealthProber({ fetch: () => sseServer([`data: ${INIT_OK}\n\n`], { open: true }).f, now: () => 1000, log: () => undefined })
-        expect(prober.refreshAndRead({ one: { url: 'https://synthetic.invalid/mcp' } }).one).toEqual({ pending: true })
+        expect(prober.refreshAndRead('/profiles/test', { one: { url: 'https://synthetic.invalid/mcp' } }).one).toEqual({ pending: true })
         await vi.advanceTimersByTimeAsync(1)
-        expect(prober.refreshAndRead({ one: { url: 'https://synthetic.invalid/mcp' } }).one).toMatchObject({ health: 'healthy', pending: false })
+        expect(prober.refreshAndRead('/profiles/test', { one: { url: 'https://synthetic.invalid/mcp' } }).one).toMatchObject({ health: 'healthy', pending: false })
       } finally { vi.useRealTimers() }
     })
 

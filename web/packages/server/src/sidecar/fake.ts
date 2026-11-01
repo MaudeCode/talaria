@@ -60,6 +60,11 @@ export class FakeSidecar implements SidecarLike {
     })
     // TAL-906: a recorded text gets the Agent's recorded script; any other text is spoken as written.
     this.respond('text.spoken', (params) => (this.fixtures.get('text.spoken')?.find((entry) => (entry.params as { text?: unknown }).text === params.text)?.result as { spoken_text: string } | undefined) ?? { spoken_text: params.text })
+    // An isolated profile sets no `${VAR}`, so the Agent leaves every reference as written.
+    this.respond('mcp.probe_targets', (params) => ({ targets: Object.entries(params.servers).flatMap(([name, c]) => {
+      const cfg = c as { url?: unknown; headers?: Record<string, unknown> }
+      return typeof cfg.url === 'string' ? [{ name, url: cfg.url, headers: Object.fromEntries(Object.entries(cfg.headers ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string')) }] : []
+    }) }))
     this.respond('goals.evaluate', () => ({ status: null, should_continue: false, continuation_prompt: null, verdict: 'inactive', reason: 'no active goal', message: '' }))
   }
 

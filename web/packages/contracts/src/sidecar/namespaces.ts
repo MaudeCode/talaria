@@ -321,6 +321,8 @@ export const SKILLS_METHODS = {
 // ── mcp ────────────────────────────────────────────────────────────────
 export const MCP_METHODS = {
   'mcp.cost_policies': { params: ProfileHomeParams.extend({ servers: Loose }), result: z.object({ supported: z.boolean(), policies: z.array(McpCostPolicyDataSchema) }) },
+  /** Remote servers' url/headers rendered with the Agent's `${VAR}` rules in this profile's secret scope, for the server's health probe only (TAL-1565). */
+  'mcp.probe_targets': { params: ProfileHomeParams.extend({ servers: Loose }), result: z.object({ targets: z.array(z.object({ name: z.string(), url: z.string(), headers: z.record(z.string(), z.string()) })) }) },
   'mcp.status': { params: ProfileHomeParams, result: z.object({ servers: z.array(z.object({ name: z.string() }).catchall(Json)) }) },
   'mcp.registry_tools': { params: ProfileHomeParams, result: z.object({ tools: z.array(z.object({ name: z.string(), server: z.string(), schema: Loose })) }) },
   'mcp.reload': { params: ProfileHomeParams, result: z.object({ output: z.string() }) },

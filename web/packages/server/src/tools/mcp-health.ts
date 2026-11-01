@@ -3,7 +3,7 @@
  * driven, fingerprint keyed, at most four in flight, eight seconds each, one
  * probe per server identity per 120 s. `unknown` is never treated as healthy.
  */
-import { createHash } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { accessSync, constants as fsConstants } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { str } from '../util.js'
@@ -16,6 +16,10 @@ const MAX_CONCURRENT_PROBES = 4
 const AUTH_STATUSES = new Set([401, 403, 407])
 const PROTOCOL_MISMATCH_STATUSES = new Set([404, 405, 406, 415])
 const PROTOCOL_VERSION_RE = /\d{4}-\d{2}-\d{2}/
+/** The Agent's `${VAR}` reference; one left after rendering is unset, and the Agent refuses to connect with it. */
+const ENV_REF_RE = /\$\{([^}]+)\}/g
+/** Fingerprints cover resolved credentials, so they are keyed per process rather than plain hashes. */
+const FINGERPRINT_KEY = randomBytes(32)
 const INITIALIZE_REQUEST = { jsonrpc: '2.0', id: 'hermes-webui-health', method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'hermes-webui-health', version: '1' } } }
 
 export type Health = 'healthy' | 'needs_auth' | 'unhealthy' | 'unknown'
@@ -101,11 +105,17 @@ function statusResult(code: number, payload: Dict | null): [Health, string] {
 }
 
 async function probeHttp(url: string, cfg: Dict, fetchImpl: typeof fetch): Promise<[Health, string]> {
+  const configured: Record<string, string> = {}
+  if (cfg.headers && typeof cfg.headers === 'object') for (const [k, v] of Object.entries(cfg.headers as Dict)) if (typeof v === 'string') configured[k] = v
+  // Agent `_require_rendered_remote`: an unset reference would go out literally and read as a bad credential.
+  const unresolved = [...new Set([url, ...Object.values(configured)].flatMap((v) => [...v.matchAll(ENV_REF_RE)].map((m) => m[0])))].sort()
+  if (unresolved.length) return ['unhealthy', `unresolved in url/headers: ${unresolved.join(', ')}`]
   let scheme = ''
   try { scheme = new URL(url).protocol } catch { return ['unhealthy', 'unsupported url scheme'] }
   if (scheme !== 'http:' && scheme !== 'https:') return ['unhealthy', 'unsupported url scheme']
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }
-  if (cfg.headers && typeof cfg.headers === 'object') for (const [k, v] of Object.entries(cfg.headers as Dict)) if (typeof v === 'string') headers[k] = v
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...configured }
+  // Transport errors can quote a header value or the url, which may hold a resolved credential.
+  const scrub = (text: string) => [url, ...Object.values(configured)].filter((v) => v.length >= 4).reduce((t, v) => t.split(v).join('[REDACTED]'), text)
   const deadline = Date.now() + PROBE_TIMEOUT_MS
   let sessionId: string | null = null
   let protocolVersion: string | null = null
@@ -121,7 +131,7 @@ async function probeHttp(url: string, cfg: Dict, fetchImpl: typeof fetch): Promi
     }
     return statusResult(res.status, payload)
   } catch (error) {
-    return ['unhealthy', (error as Error).name === 'TimeoutError' ? 'timeout' : (error as Error).message || 'transport error']
+    return ['unhealthy', (error as Error).name === 'TimeoutError' ? 'timeout' : scrub((error as Error).message || 'transport error')]
   } finally {
     if (sessionId) {
       const remaining = deadline - Date.now()
@@ -156,7 +166,7 @@ export function configFingerprint(cfg: unknown): string {
     if (value && typeof value === 'object') return `{${Object.keys(value as Dict).sort().map((k) => `${JSON.stringify(k)}:${canonical((value as Dict)[k])}`).join(',')}}`
     return JSON.stringify(value ?? null) ?? 'null'
   }
-  return createHash('sha256').update(canonical(cfg)).digest('hex').slice(0, 16)
+  return createHmac('sha256', FINGERPRINT_KEY).update(canonical(cfg)).digest('hex').slice(0, 16)
 }
 
 export class McpHealthProber {
@@ -165,17 +175,21 @@ export class McpHealthProber {
   private readonly startedAt = new Map<string, number>()
   constructor(private readonly deps: { fetch: () => typeof fetch; now: () => number; log: (line: string) => void }) {}
 
-  /** Python `refresh_and_read`: schedule due probes and read back the verdicts for these exact configs. */
-  refreshAndRead(servers: Dict): Record<string, HealthRow> {
+  /**
+   * Python `refresh_and_read`: schedule due probes and read back the verdicts for these exact configs, as rendered
+   * for `profile`. A verdict belongs to its profile and rendered config, so another profile's or a rotated credential's never shows.
+   */
+  refreshAndRead(profile: string, servers: Dict): Record<string, HealthRow> {
     const now = this.deps.now()
     const current = new Map(Object.entries(servers).map(([name, cfg]) => [name, configFingerprint(cfg)]))
+    const keyOf = (name: string, fp: string) => JSON.stringify([profile, name, fp])
     for (const key of [...this.startedAt.keys()]) {
-      const [name, fp] = key.split('\n') as [string, string]
-      if (now - (this.startedAt.get(key) ?? 0) >= HEALTH_INTERVAL_S && current.get(name) !== fp) { this.startedAt.delete(key); this.state.delete(key) }
+      const [owner, name, fp] = JSON.parse(key) as [string, string, string]
+      if (owner === profile && now - (this.startedAt.get(key) ?? 0) >= HEALTH_INTERVAL_S && current.get(name) !== fp) { this.startedAt.delete(key); this.state.delete(key) }
     }
     const due: [string, unknown, string][] = []
     for (const [name, fp] of current) {
-      const key = `${name}\n${fp}`
+      const key = keyOf(name, fp)
       if (this.inFlight.has(key)) continue
       const started = this.startedAt.get(key)
       if (started !== undefined && now - started < HEALTH_INTERVAL_S) continue
@@ -186,7 +200,7 @@ export class McpHealthProber {
     }
     const readable: Record<string, HealthRow> = {}
     for (const [name, fp] of current) {
-      const key = `${name}\n${fp}`
+      const key = keyOf(name, fp)
       const started = this.startedAt.get(key)
       readable[name] = { ...(this.state.get(key) ?? {}), pending: this.inFlight.has(key) || started === undefined || now - started >= HEALTH_INTERVAL_S }
     }

@@ -96,6 +96,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("state_db.prune_advice", {"profile_home": "{home}"}),
     # mcp / stt / usage (a provider with no account-usage fetcher answers offline)
     ("mcp.cost_policies", {"profile_home": "{home}", "servers": {"paid": {"command": "never-spawn", "tool_costs": {"search": {"credits": [1, 3], "note": "estimate"}}, "spend_limit": 5}}}),
+    ("mcp.probe_targets", {"profile_home": "{home}", "servers": {"remote": {"url": "https://mcp.invalid/mcp", "headers": {"Authorization": "Bearer ${TALARIA_SCENARIO_UNSET}", "X-Literal": "literal-value"}}, "local": {"command": "never-spawn"}}}),
     ("mcp.status", {"profile_home": "{home}"}),
     ("mcp.registry_tools", {"profile_home": "{home}"}),
     ("stt.capability", {"profile_home": "{home}"}),
