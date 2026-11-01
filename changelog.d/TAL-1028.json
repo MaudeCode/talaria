@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Deleting a project now also removes it from new chats that have not been saved yet, so they no longer reappear under the deleted project.", "highlight": false, "components": ["web"]}]
+}

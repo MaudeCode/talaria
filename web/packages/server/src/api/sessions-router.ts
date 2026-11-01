@@ -455,23 +455,7 @@ export const sessionsRouter = os.router({
         if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
         projects.splice(position, 1)
       })
-      const store = ctx.deps.sessionStore
-      const activeIds = ctx.deps.sessions.deps.runtime.activeStreamIds
-      try {
-        for (const entry of (await store.readIndexEntries())) {
-          if (entry.project_id !== input.project_id) continue
-          const sid = str(entry.session_id)
-          try {
-            if (entry.active_stream_id && activeIds.has(str(entry.active_stream_id))) {
-              const cached = store.sessions.get(sid)
-              if (cached) { cached.project_id = null; continue }
-            }
-            const s = (await store.get(sid))
-            s.project_id = null
-            await store.save(s)
-          } catch { /* one slow or failing session never aborts the request */ }
-        }
-      } catch { /* no index */ }
+      await ctx.deps.sessionStore.unlinkProject(input.project_id)
       ctx.deps.events.publish('project_delete', { profile: activeProfile })
       return { ok: true as const }
     })),
