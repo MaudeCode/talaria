@@ -16,6 +16,7 @@ import time
 from .. import home as homes
 from ..errors import InvalidParams, RpcError
 from . import config, memory, plugin_catalog
+from .profiles import invalidate_skill_stats
 
 _SOURCES = {'claude-code': ('.claude', 'Claude Code'), 'codex': ('.codex', 'Codex CLI'), 'cursor': ('.cursor', 'Cursor')}
 _CREDENTIALS = {'.credentials.json', 'auth.json', 'credentials.json', 'cli-config.json', '.env'}
@@ -342,5 +343,13 @@ def run(ctx, params):
             return _result('unknown' if action == 'result' else 'changed' if action == 'apply' else 'unavailable', message='Import paths or state are unsafe, unavailable or changed. Check the profile before continuing.')
 
 
+def _run(ctx, params):
+    try:
+        return run(ctx, params)
+    finally:
+        if params.get('action') == 'apply':
+            invalidate_skill_stats(homes.profile_home_param(params))
+
+
 def register(registry):
-    registry.method('profiles.import')(run)
+    registry.method('profiles.import')(_run)

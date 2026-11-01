@@ -21,6 +21,10 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v72 adds `profiles.skills_stats_invalidate` (TAL-1578). The sidecar caches each
+profile home's `profiles.skills_stats` count for 30 seconds; the server calls this after
+its own skill save or delete so the next count walks the skill tree again.
+
 RPC v71 adds the toolset's session tools (TAL-1165), each a `server.*` method
 that calls the service behind a route. `session_new` (`server.session_new`)
 creates a chat in the caller's profile as `POST /api/session/new` does with an

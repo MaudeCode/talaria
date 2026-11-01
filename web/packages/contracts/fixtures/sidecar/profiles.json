@@ -78,6 +78,16 @@
       }
     }
   ],
+  "profiles.skills_stats_invalidate": [
+    {
+      "params": {
+        "profile_home": "<profile>"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
   "profiles.delete": [
     {
       "params": {

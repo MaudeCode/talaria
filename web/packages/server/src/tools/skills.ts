@@ -22,6 +22,13 @@ export class SkillsService {
     return s
   }
 
+  /** TAL-1578: profile skill counts are cached in the sidecar; a file write here ends that count at once (toggles go through `config.set`). */
+  private async forgetSkillStats(profileHome: string): Promise<void> {
+    try { await this.sidecar().call('profiles.skills_stats_invalidate', { profile_home: profileHome }) } catch (error) {
+      this.deps.log(`skill count refresh failed; counts catch up within 30 s: ${String(error)}`)
+    }
+  }
+
   static skillsDir(profileHome: string): string {
     return join(profileHome, 'skills')
   }
@@ -125,6 +132,7 @@ export class SkillsService {
       throw new HttpFailure(400, 'Cannot save to a symlinked skill file')
     }
     try { writeFileSync(fd, content, 'utf8') } finally { closeSync(fd) }
+    await this.forgetSkillStats(profileHome)
     return { ok: true, name, path: file }
   }
 
@@ -135,6 +143,7 @@ export class SkillsService {
     if (!match) throw new HttpFailure(404, 'Skill not found')
     // Delete through the anchored walk from the skills root so a symlinked root or category cannot redirect the removal.
     try { rmtreeAnchored(skillsDir, join(match, '..')) } catch { throw new HttpFailure(404, 'Skill not found') }
+    await this.forgetSkillStats(profileHome)
     return { ok: true, name: nameRaw }
   }
 
