@@ -19,8 +19,10 @@ on:
 permissions:
   contents: read
 
+# Only a pull request's initial attempts share its group, so a newer head cancels superseded work. A retry keeps
+# its old head's PR event, so it, like a push or manual run, gets its own run's group and cancels nothing (TAL-1656).
 concurrency:
-  group: ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
+  group: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 && format('ci-{0}', github.event.pull_request.number) || format('ci-run-{0}', github.run_id) }}
   cancel-in-progress: true
 
 defaults:
