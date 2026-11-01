@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Public share links no longer publish images or other files pasted inline into a message or title; they show an omitted-attachment note instead, while images from your workspace still appear.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
