@@ -288,9 +288,10 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_adjacent_tags_order_highlights_multiple_entries_and_determinism(self):
         self.add_fragment(10, "Reconnect safely", "Fixed")
-        self.add_fragment(2, "New boards", highlight=True)
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+            {"category": "Added", "summary": "New boards", "highlight": True, "announce": False}]}))
         data = {"entries": [
-            {"category": "Security", "summary": "Protect tokens", "highlight": True},
+            {"category": "Security", "summary": "Protect tokens", "highlight": True, "announce": False},
             {"category": "Changed", "summary": "Clearer settings", "highlight": False},
         ]}
         self.write("changelog.d/TAL-3.json", json.dumps(data))
@@ -648,6 +649,47 @@ class ReleaseNotesTests(unittest.TestCase):
         self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
             {"category": "Added", "summary": "Text", "highlight": False, "components": ["relay"], "announcement": valid}]}))
         self.cli("validate", error="announcement needs an app or web component")
+
+
+    def test_new_highlighted_app_and_web_entries_must_decide_whether_to_announce(self):
+        valid = {"title": "Pinned chats", "description": "Keep favorites on top.", "icon": "chat"}
+        # Merged history predates the rule and keeps validating, with or without a base.
+        self.add_fragment(2, "Historical highlight", highlight=True)
+        self.commit("TAL-2: historical highlight")
+        self.git("tag", "before")
+        self.cli("validate", "--base", "v1.0.0", error="changelog.d/TAL-2.json: a highlighted app or web entry")
+        self.cli("validate", "--base", "before")
+        undecided = [
+            {"category": "Added", "summary": "App by default", "highlight": True},
+            {"category": "Added", "summary": "Web", "highlight": True, "components": ["web"]},
+            {"category": "Added", "summary": "Shared", "highlight": True, "components": ["relay", "app"]},
+        ]
+        for entry in undecided:
+            with self.subTest(entry=entry):
+                self.write("changelog.d/TAL-3.json", json.dumps({"entries": [entry]}))
+                self.cli("validate")
+                self.cli("validate", "--base", "before",
+                         error='changelog.d/TAL-3.json: a highlighted app or web entry needs an "announcement" or "announce": false')
+                for decision in ({"announcement": valid}, {"announce": False}):
+                    self.write("changelog.d/TAL-3.json", json.dumps({"entries": [{**entry, **decision}]}))
+                    self.cli("validate", "--base", "before")
+        for entry in ({"category": "Added", "summary": "Detail", "highlight": False},
+                      {"category": "Added", "summary": "Relay", "highlight": True, "components": ["relay"]}):
+            with self.subTest(entry=entry):
+                self.write("changelog.d/TAL-3.json", json.dumps({"entries": [entry]}))
+                self.cli("validate", "--base", "before")
+        highlighted = {"category": "Added", "summary": "Text", "highlight": True}
+        for decision, error in (({"announce": True}, '"announce" must be false'),
+                                ({"announce": "no"}, '"announce" must be false'),
+                                ({"announce": 0}, '"announce" must be false'),
+                                ({"announce": False, "announcement": valid}, 'either an "announcement" or "announce": false')):
+            with self.subTest(decision=decision):
+                self.write("changelog.d/TAL-3.json", json.dumps({"entries": [{**highlighted, **decision}]}))
+                self.cli("validate", error=error)
+        self.write("changelog.d/TAL-3.json", json.dumps({"entries": [{**highlighted, "announce": False}]}))
+        self.commit("TAL-3: decided not to announce")
+        self.generate()
+        self.assertNotIn("announce", (self.root / "out/release-notes.json").read_text())
 
 
 WHATS_NEW = json.loads((SCRIPT.parents[2] / "contracts/fixtures/whats-new.json").read_text())

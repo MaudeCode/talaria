@@ -90,8 +90,8 @@ def fragment(path, source):
             for entry in data["entries"]:
                 required = {"category", "summary", "highlight"}
                 if (not isinstance(entry, dict) or not required <= set(entry)
-                        or not set(entry) <= required | {"components", "announcement"}):
-                    raise ValueError("each entry requires only category, summary, highlight, and optional components and announcement")
+                        or not set(entry) <= required | {"components", "announcement", "announce"}):
+                    raise ValueError("each entry requires only category, summary, highlight, and optional components and announcement or announce")
                 components = entry.get("components", ["app"])
                 if (not isinstance(components, list) or not components
                         or any(component not in COMPONENTS for component in components)
@@ -104,6 +104,11 @@ def fragment(path, source):
                     raise ValueError("highlight must be true or false")
                 if "announcement" in entry:
                     announcement_fields(entry["announcement"], components)
+                if "announce" in entry:
+                    if entry["announce"] is not False:
+                        raise ValueError('"announce" must be false; add an "announcement" to announce the entry')
+                    if "announcement" in entry:
+                        raise ValueError('use either an "announcement" or "announce": false, not both')
         else:
             raise ValueError('provide a non-empty "entries" array OR a "skip" reason')
         return data
@@ -349,6 +354,12 @@ def validate(base=None, target=None):
         changed = changes(base, target)
         if changed and not selected:
             raise ValueError(f"missing release metadata: add {DIRECTORY}/TAL-<number>.json with entries or an explicit skip reason")
+        # A new highlighted App or Web entry decides whether What's New shows it; merged history predates the rule.
+        undecided = dict.fromkeys(path for path, data in sorted(selected.items()) for entry in data.get("entries", [])
+                                  if entry["highlight"] and set(entry.get("components", ["app"])) & set(ANNOUNCED)
+                                  and not {"announcement", "announce"} & set(entry))
+        if undecided:
+            raise ValueError(f'{", ".join(undecided)}: a highlighted app or web entry needs an "announcement" or "announce": false')
         has_app_entries = any("app" in entry.get("components", ["app"])
                               for data in selected.values() for entry in data.get("entries", []))
         app_changes = [path for path in changed if not repository_only(path)
@@ -541,7 +552,7 @@ def generate(previous, target, version, output, component="app"):
     highlights = []
     for identifier, ticket, entry in component_entries(selected, component):
         item = {"id": identifier, "ticket": ticket,
-                **{key: value for key, value in entry.items() if key not in ("components", "announcement")}}
+                **{key: value for key, value in entry.items() if key not in ("components", "announcement", "announce")}}
         sections[entry["category"]].append(item)
         if entry["highlight"]:
             highlights.append(item)

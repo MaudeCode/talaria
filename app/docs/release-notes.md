@@ -90,6 +90,22 @@ component shows only the rows its `components` select. Announce only the few
 changes a user benefits from noticing. The schema is generated from
 `web/packages/contracts`; the generator reads its icons and limits from it.
 
+Every new highlighted entry whose `components` include `app` or `web` (omitted
+`components` means `app`) must decide: add an `announcement`, or mark it
+`"announce": false` to keep it in the release notes only. `validate --base`
+rejects a new highlighted App or Web entry with neither; fragments already
+merged before this rule are not checked. `announce` accepts only `false` and
+never appears beside an `announcement`.
+
+```json
+{
+  "category": "Fixed",
+  "summary": "Chats reconnect after an interrupted response.",
+  "highlight": true,
+  "announce": false
+}
+```
+
 A release shows at most four rows, in the same ticket and entry order as its
 notes. Rows past the fourth stay in the release notes only. A release with no
 opted-in rows has no announcement and stays quiet. The announcement covers only
