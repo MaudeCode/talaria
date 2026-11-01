@@ -3377,3 +3377,97 @@ describe('the file a companion page shows (TAL-1458)', () => {
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).focus_path).toBeNull()
   })
 })
+
+describe('project deletion unlinks every session that names it (TAL-1028)', () => {
+  it('a cache-only new chat drops the deleted project before its first save', async () => {
+    const s = await bootTestServer()
+    const store = s.deps.sessionStore
+    try {
+      const pid = String(((await json(await post(s, '/api/projects/create', { name: 'Doomed' }))).project as Json).project_id)
+      const sid = String((await newSession(s, { project_id: pid })).session_id)
+      expect(existsSync(sessionPath(store, sid))).toBe(false)
+      expect((await post(s, '/api/projects/delete', { project_id: pid })).status).toBe(200)
+      expect(((await json(await s.get('/api/projects'))).projects as Json[]).some((p) => p.project_id === pid)).toBe(false)
+      expect(existsSync(sessionPath(store, sid))).toBe(false)
+      expect(existsSync(sessionIndexPath(store))).toBe(false)
+      expect((await post(s, '/api/session/rename', { session_id: sid, title: 'Renamed' })).status).toBe(200)
+      expect(store.sessions.get(sid)!.project_id).toBeNull()
+      expect((JSON.parse(readFileSync(sessionPath(store, sid), 'utf8')) as Json).project_id).toBeNull()
+      expect((((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json)).project_id).toBeNull()
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('clears cache-only drafts, resident, disk-only, metadata-only and active sessions without persisting drafts', async () => {
+    const s = await bootTestServer()
+    const store = s.deps.sessionStore
+    const liveIds = s.deps.sessions.deps.runtime.activeStreamIds
+    const onDisk = (sid: string): Json | null => existsSync(sessionPath(store, sid)) ? JSON.parse(readFileSync(sessionPath(store, sid), 'utf8')) as Json : null
+    const detail = async (sid: string): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    try {
+      const project = async (name: string): Promise<string> => String(((await json(await post(s, '/api/projects/create', { name }))).project as Json).project_id)
+      const doomed = await project('Doomed'), kept = await project('Kept')
+      const saved = async (projectId: string): Promise<string> => {
+        const sid = String((await newSession(s, { project_id: projectId })).session_id)
+        await writeMessages(s, sid, [{ role: 'user', content: 'hi', timestamp: 1 }])
+        return sid
+      }
+      const draft = String((await newSession(s, { project_id: doomed })).session_id)
+      const keptDraft = String((await newSession(s, { project_id: kept })).session_id)
+      store.sessions.get(keptDraft)!.composer_draft = { text: 'unsent', files: [] }
+      const resident = await saved(doomed)
+      const diskOnly = await saved(doomed)
+      store.sessions.delete(diskOnly)
+      const stub = await saved(doomed)
+      store.sessions.set(stub, (await store.loadMetadataOnly(stub))!)
+      expect(store.sessions.get(stub)!.loadedMetadataOnly).toBe(true)
+      const active = await saved(doomed)
+      const keptSaved = await saved(kept)
+      store.sessions.get(active)!.active_stream_id = 'tal-1028-stream'
+      liveIds.add('tal-1028-stream')
+      expect(onDisk(draft)).toBeNull()
+      const indexRows = async (sid: string): Promise<Json[]> => (await store.readIndexEntries()).filter((row) => row.session_id === sid)
+      const draftRows = (await indexRows(draft)).length
+
+      expect((await post(s, '/api/projects/delete', { project_id: doomed })).status).toBe(200)
+      expect(((await json(await s.get('/api/projects'))).projects as Json[]).map((p) => p.project_id)).toEqual([kept])
+
+      // The cache-only draft is unlinked in memory and stays unpersisted; no index row is added or left stale.
+      expect(store.sessions.get(draft)!.project_id).toBeNull()
+      expect(onDisk(draft)).toBeNull()
+      expect((await indexRows(draft)).map((row) => row.project_id)).toEqual(Array<null>(draftRows).fill(null))
+      // Its next ordinary save persists project_id:null; the dead ID never reappears.
+      expect((await post(s, '/api/session/rename', { session_id: draft, title: 'Renamed draft' })).status).toBe(200)
+      expect(onDisk(draft)?.project_id).toBeNull()
+      expect((await detail(draft)).project_id).toBeNull()
+
+      for (const sid of [resident, diskOnly, stub]) {
+        expect(onDisk(sid)?.project_id, sid).toBeNull()
+        expect((onDisk(sid)?.messages as Json[]).map((m) => m.content), sid).toEqual(['hi'])
+        expect((await detail(sid)).project_id, sid).toBeNull()
+      }
+      expect((await store.readIndexEntries()).filter((row) => row.project_id === doomed)).toEqual([])
+
+      // A running turn is unlinked in memory; its own next save persists the change.
+      const live = store.sessions.get(active)!
+      expect(live.project_id).toBeNull()
+      liveIds.delete('tal-1028-stream')
+      live.active_stream_id = null
+      await store.save(live)
+      expect(onDisk(active)?.project_id).toBeNull()
+
+      // Other projects keep their sessions, and an unrelated draft stays unpersisted with its unsent text.
+      expect(onDisk(keptSaved)?.project_id).toBe(kept)
+      expect(store.sessions.get(keptDraft)!.project_id).toBe(kept)
+      expect(store.sessions.get(keptDraft)!.composer_draft).toEqual({ text: 'unsent', files: [] })
+      expect(onDisk(keptDraft)).toBeNull()
+
+      // Repeated deletion keeps its refusal.
+      expect((await post(s, '/api/projects/delete', { project_id: doomed })).status).toBe(404)
+    } finally {
+      liveIds.delete('tal-1028-stream')
+      await s.close()
+    }
+  })
+})

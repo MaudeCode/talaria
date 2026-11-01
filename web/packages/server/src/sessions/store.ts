@@ -450,6 +450,33 @@ export class SessionStore {
       return true
     })
   }
+  /**
+   * TAL-1028: unlink a deleted project from every session that names it, resident or indexed.
+   * Cache-only drafts and running turns change in memory only; their own next save persists `project_id: null`.
+   */
+  async unlinkProject(projectId: string): Promise<void> {
+    const indexed = new Set<string>()
+    try { for (const row of await this.readIndexEntries()) if (row.project_id === projectId) indexed.add(str(row.session_id)) } catch { /* no index */ }
+    const sids = new Set(indexed)
+    for (const [sid, s] of this.sessions) if (s.project_id === projectId) sids.add(sid)
+    const live = this.deps.activeStreamIds()
+    for (const sid of sids) {
+      try {
+        const cached = this.sessions.get(sid)
+        if (cached && ((cached.active_stream_id && live.has(cached.active_stream_id)) || !await this.exists(sid))) {
+          if (cached.project_id !== projectId) continue
+          cached.project_id = null
+          // Refresh a row the index already holds; never add one for an unsaved draft.
+          if (indexed.has(sid)) void this.queueIndexUpdate([cached])
+          continue
+        }
+        const s = await this.get(sid)
+        if (s.project_id !== projectId) continue
+        s.project_id = null
+        await this.save(s)
+      } catch { /* one slow or failing session never aborts the deletion */ }
+    }
+  }
   async scanAll(): Promise<Session[]> {
     const out: Session[] = []
     for (const sid of await this.persistedIds()) { const s = await this.load(sid); if (s) out.push(s) }
