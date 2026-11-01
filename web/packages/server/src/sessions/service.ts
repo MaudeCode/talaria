@@ -1821,10 +1821,14 @@ export class SessionService {
     if (!model) throw new HttpFailure(400, 'Choose a model before starting a diagnostic chat')
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
     const route = provider ? this.deps.profileLaunchRoute?.(profile, provider) ?? { provider, baseUrl: null } : null
-    const sid = await this.owner.create(profile, typeof body.request_id === 'string' ? body.request_id : null, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
+    const requestId = typeof body.request_id === 'string' ? body.request_id : null
+    const person = this.store.newSessionOwner()
+    // TAL-48: a person's retry finds that person's creation, never another person's with the same request id.
+    const creationId = requestId && person ? createHash('sha256').update(JSON.stringify([person, requestId]), 'utf8').digest('hex') : requestId
+    const sid = await this.owner.create(profile, creationId, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
       ...(route ? { provider: route.provider } : {}), ...(route?.baseUrl ? { base_url: route.baseUrl } : {}), ...(toolsets ? { toolsets } : {}) })
     // TAL-48: the Agent owner holds this chat, so its person is recorded here before anything reads it.
-    await this.store.recordForeignOwner(sid, this.store.newSessionOwner())
+    if (!(await this.store.recordForeignOwner(sid, person))) throw new HttpFailure(404, 'Session not found')
     return this.detail(sid, {})
   }
 

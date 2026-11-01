@@ -130,11 +130,20 @@ export class SessionStore {
     return this.foreignOwnerTable
   }
 
-  /** Records `owner` for an Agent-owned session this request just created; durable before the session is exposed. */
-  async recordForeignOwner(sid: string, owner: string | null): Promise<void> {
-    if (!owner) return
-    await updateDocument(this.deps.storage.documents, 'session-owners', 'owners', (raw) => ({ value: { ...(isDict(raw) ? raw : {}), [sid]: owner }, result: undefined }), { replaceInvalid: true })
-    ;(await this.foreignOwners()).set(sid, owner)
+  /**
+   * Records `owner` for an Agent-owned session this request created or retried; durable before the session is exposed.
+   * False when the session already belongs to someone else: ownership is never reassigned.
+   */
+  async recordForeignOwner(sid: string, owner: string | null): Promise<boolean> {
+    if (!owner) return !(await this.foreignOwners()).has(sid)
+    const recorded = await updateDocument(this.deps.storage.documents, 'session-owners', 'owners', (raw) => {
+      const table = isDict(raw) ? raw : {}
+      const existing = table[sid]
+      if (typeof existing === 'string' && existing) return { value: table, result: existing === owner, skip: true }
+      return { value: { ...table, [sid]: owner }, result: true }
+    }, { replaceInvalid: true })
+    if (recorded) (await this.foreignOwners()).set(sid, owner)
+    return recorded
   }
 
   private async construct(init: SessionInit, profile: string | null): Promise<Session> {

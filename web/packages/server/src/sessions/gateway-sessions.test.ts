@@ -1886,11 +1886,20 @@ describe('diagnostic chats under person isolation (TAL-48)', () => {
         return { cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
       }
       const alice = signIn('alice')
-      const response = await s.get('/api/session/new', { method: 'POST', headers: alice, body: JSON.stringify({ execution_mode: 'safe', model: 'fixture' }) })
+      const bob = signIn('bob')
+      const start = (headers: Record<string, string>) => s.get('/api/session/new', { method: 'POST', headers, body: JSON.stringify({ execution_mode: 'safe', model: 'fixture', request_id: 'shared-retry' }) })
+      const response = await start(alice)
       expect(response.status, await response.clone().text()).toBe(200)
       expect(SessionEnvelopeSchema.parse(await response.json()).session.session_id).toBe(created)
       expect((await s.get(`/api/session?session_id=${created}`, { headers: alice })).status).toBe(200)
-      for (const other of [signIn('bob'), signIn('olive', true)]) expect((await s.get(`/api/session?session_id=${created}`, { headers: other })).status).toBe(404)
+      for (const other of [bob, signIn('olive', true)]) expect((await s.get(`/api/session?session_id=${created}`, { headers: other })).status).toBe(404)
+      // The same request id from Bob is a different creation, and even an owner answering with Alice's chat never hands it over.
+      expect((await start(bob)).status).toBe(404)
+      const keys = sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => (c.params as { request_id: string }).request_id)
+      expect(keys).toHaveLength(2)
+      expect(keys[0]).not.toBe(keys[1])
+      expect((await s.get(`/api/session?session_id=${created}`, { headers: alice })).status).toBe(200)
+      expect((await s.get(`/api/session?session_id=${created}`, { headers: bob })).status).toBe(404)
     } finally {
       db.close()
       await s.close()
