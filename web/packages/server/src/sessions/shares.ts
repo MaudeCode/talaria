@@ -6,14 +6,14 @@ import { str } from '../util.js'
  * references become inline images only when they resolve inside an allowed
  * root and pass the image allow-list.
  */
-import { closeSync, fstatSync, readFileSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { basename, extname, resolve } from 'node:path'
 import type { DocumentBackend } from './storage/backend.js'
 import { readDocument } from './storage/document.js'
 import { redactSensitive } from '../redact.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
-import { openAnchoredFd } from '../workspace/fs.js'
+import { openAnchoredFd, readFdUpTo } from '../workspace/fs.js'
 import type { Session } from './session.js'
 import { normalizeAssistantDisplay } from './merge.js'
 
@@ -100,7 +100,9 @@ function readAnchoredImage(root: string, path: string): Buffer | null {
     const st = fstatSync(fd)
     // A hard link to a private image outside the roots passes the pathname walk; the inode's link count does not.
     if (!st.isFile() || st.nlink > 1 || st.size > SHARE_EMBED_MAX_BYTES) return null
-    return readFileSync(fd)
+    // The file can grow after fstat: read one byte past the cap and refuse any overflow rather than the whole file.
+    const data = readFdUpTo(fd, SHARE_EMBED_MAX_BYTES + 1)
+    return data.length > SHARE_EMBED_MAX_BYTES ? null : data
   } catch {
     return null
   } finally {

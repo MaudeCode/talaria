@@ -10,6 +10,7 @@ import { parseDotenv } from '../cli/dotenv.js'
 import { isDict, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
+import { readFdUpTo } from '../workspace/fs.js'
 
 export const WIKI_DOCS_URL = 'https://hermes-agent.nousresearch.com/docs/user-guide/skills/bundled/research/research-llm-wiki'
 const SECTIONS = ['entities', 'concepts', 'comparisons', 'queries']
@@ -322,10 +323,7 @@ export class WikiPages {
     }
     try {
       if (!sameFile(fstatSync(fd), entry)) throw new HttpFailure(404, 'Page not found')
-      const buf = Buffer.alloc(MAX_PAGE_BYTES)
-      let total = 0
-      for (let n = 1; n > 0 && total < buf.length; total += n) n = readSync(fd, buf, total, buf.length - total, null)
-      return { content: buf.subarray(0, total).toString('utf8'), path }
+      return { content: readFdUpTo(fd, MAX_PAGE_BYTES).toString('utf8'), path }
     } catch (error) {
       if (error instanceof HttpFailure) throw error
       throw new HttpFailure(404, 'Could not read page')
