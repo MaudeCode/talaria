@@ -341,6 +341,16 @@ describe('mergeSessionMessagesAppendOnly truncation watermark (TAL-504)', () => 
   it('keeps state rows newer than a compression watermark, which marks compressed rows rather than a cut', () => {
     expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), state, { truncationWatermark: 101, compressedWatermark: true }))).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
   })
+
+  it('appends id-less rows stamped after the cut, and only those (TAL-998)', () => {
+    const db = [...state, msg('user', 'at the cut', 150), msg('user', 'after the cut', 200), msg('assistant', 'CLI reply', 201)]
+    expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), db, { truncationWatermark: 101, truncationCutAt: 150 }))).toEqual(['u1', 'a1', 'after the cut', 'CLI reply'])
+    expect(contents(mergeSessionMessagesAppendOnly([], db, { truncationWatermark: 0, truncationCutAt: 150 }))).toEqual(['after the cut', 'CLI reply'])
+    expect(contents(mergeSessionMessagesAppendOnly([], db, { truncationWatermark: 101, truncationCutAt: 150 }))).toEqual(['u1', 'a1', 'after the cut', 'CLI reply'])
+    // Without the field (a cut before TAL-998), the rules are unchanged.
+    expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), db, { truncationWatermark: 101 }))).toEqual(['u1', 'a1'])
+    expect(contents(mergeSessionMessagesAppendOnly([], db, { truncationWatermark: 0 }))).toEqual([])
+  })
 })
 
 describe('assistant display text (TAL-302)', () => {

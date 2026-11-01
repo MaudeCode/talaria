@@ -992,12 +992,14 @@ export function normalizeAssistantDisplay<T>(message: T): T {
  * replay): rows at or before it, and, for a truncation cut, rows after it until the sidecar advances past it (TAL-504).
  * A compression watermark only covers the compressed rows. Rows past the sidecar tail (a conversation continued from the
  * CLI) are appended in state.db order.
+ * TAL-998: without row ids, a cut's `truncationCutAt` (when it ran) bounds the deleted suffix: a row stamped after it was
+ * committed after the cut and is appended even past the watermark before the sidecar advances.
  * TAL-493: once a boundary or settled turn recorded the highest state.db id it read (`stateDbSeenId`) and the rows carry
  * ids, identity replaces the timestamp rules: rows up to that id are covered, and every newer row not already in the
  * sidecar is appended, even one a writer stamped before the newest local row or the watermark but committed later.
  * Direct and absorbed durable identities cover merged Agent prompts even when their text and timestamp changed.
  */
-export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; stateDbSeenId?: number | null; stateDbGeneration?: string | null } = {}): Message[] {
+export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; truncationCutAt?: number | null; stateDbSeenId?: number | null; stateDbGeneration?: string | null } = {}): Message[] {
   const watermark = Number(opts.truncationWatermark)
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
@@ -1032,10 +1034,12 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     rememberIds(message)
     return true
   })
+  const cutAt = opts.truncationCutAt
+  const afterCut = (m: Message): boolean => { const t = ts(m); return typeof cutAt === 'number' && Number.isFinite(cutAt) && opts.compressedWatermark !== true && t !== null && t > cutAt }
   if (!sidecar.length) {
     if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
-    if (watermark === 0) return []
-    return state.filter((m) => { const t = ts(m); return t !== null && (opts.compressedWatermark === true ? t > watermark : t <= watermark) })
+    if (watermark === 0) return state.filter(afterCut)
+    return state.filter((m) => { const t = ts(m); return t !== null && (afterCut(m) || (opts.compressedWatermark === true ? t > watermark : t <= watermark)) })
   }
   const seen = new Set(sidecar.map(key))
   let maxSidecar: number | null = null
@@ -1049,7 +1053,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     const t = ts(m)
     // A kept-message compaction summary inherits the reply's old timestamp, but is new history.
     if (maxSidecar !== null && t !== null && t <= maxSidecar && m._context_compression_marker !== true) continue
-    if (hasWatermark && t !== null && (t <= watermark || !advanced)) continue
+    if (hasWatermark && t !== null && (t <= watermark || !advanced) && !afterCut(m)) continue
     seen.add(k)
     merged.push(m)
   }

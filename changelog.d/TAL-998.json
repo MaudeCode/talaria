@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A CLI turn sent after you edit, undo, retry, or clear a chat now shows in Talaria Web when the profile's history database is from an older Agent.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
