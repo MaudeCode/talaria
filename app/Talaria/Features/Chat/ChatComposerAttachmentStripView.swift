@@ -5,11 +5,9 @@ import TalariaKit
 /// Pending photos in a strip hanging from the composer card's top edge, the mirror of the control
 /// strip under it (TAL-634). The strip is the only background; each photo is just its thumbnail.
 /// Files go inside the card as links instead (`ComposerFileLinkView`).
-/// The feedback form (TAL-1597) shows the same strip as a plain form row, with its Current screen offer last.
+/// The feedback form (TAL-1597) shows the same strip as a plain form row.
 struct ComposerAttachmentStripView: View {
     let photos: [PendingAttachment]
-    var offer: PendingAttachment?
-    var onAcceptOffer: () -> Void = {}
     /// False inside a form row, where the strip has no panel of its own.
     var hangsFromCard = true
     let onRemove: (UUID) -> Void
@@ -24,9 +22,6 @@ struct ComposerAttachmentStripView: View {
                         onRemove: { onRemove(photo.id) },
                         onOpen: onPreview.map { preview in { preview(photo) } }
                     )
-                }
-                if let offer {
-                    ComposerAttachmentThumbnailView(attachment: offer, onRemove: {}, onOpen: onAcceptOffer, isOffer: true)
                 }
             }
             .padding(.horizontal, 10)
