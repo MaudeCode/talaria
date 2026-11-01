@@ -591,6 +591,8 @@ export class GitRunner {
       }
       const full: string[] = []
       for (const [key, value] of GIT_HARDENED_CONFIG) full.push('-c', `${key}=${value}`)
+      // `git diff` refreshes stat-dirty index entries regardless of GIT_OPTIONAL_LOCKS; reads must not write the index.
+      if (argv.find((arg) => !arg.startsWith('-')) === 'diff') full.push('-c', 'diff.autoRefreshIndex=false')
       if (hardenedDestructive) {
         for (const [key, value] of GIT_DESTRUCTIVE_HARDENED_CONFIG) full.push('-c', `${key}=${value}`)
         if (hooksPath) full.push('-c', `core.hooksPath=${hooksPath}`)
