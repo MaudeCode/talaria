@@ -33,6 +33,7 @@ case "$component" in
     python3 scripts/check-committed-images.py
     python3 scripts/test-check-hosted-runners.py
     python3 scripts/check-hosted-runners.py
+    python3 scripts/test-ci-concurrency.py
     python3 scripts/test-main-ci-failure.py
     python3 scripts/test-stamp-release.py
     python3 scripts/test-check-agent-compatibility.py

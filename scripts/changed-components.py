@@ -69,6 +69,7 @@ SCRIPTS = {
     "test-check-hosted-runners.py": {"tooling"},
     "main-ci-failure.py": {"tooling"},
     "test-main-ci-failure.py": {"tooling"},
+    "test-ci-concurrency.py": {"tooling"},
 }
 
 
