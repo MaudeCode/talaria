@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
-import type { ClarifyAnswers, ClarifyStep, VaultPrompt, VaultPromptField } from '@maudecode/talaria-web-contracts'
+import { ApprovalChoiceSchema, type ClarifyAnswers, type ClarifyStep, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
@@ -30,6 +30,21 @@ function normalizedChoices(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) return null
   const choices = raw.map(choiceText).filter(Boolean).slice(0, CLARIFY_MAX_CHOICES)
   return choices.length ? choices : null
+}
+
+/**
+ * TAL-1414: the approval choices an owner offers, failing closed. A list of strings keeps the choices Talaria can send;
+ * anything else (null, an object, a scalar, a mixed list) offers none. Only an approval that never names its choices
+ * (no `allowed_choices`) accepts all four.
+ */
+function approvalChoices(raw: unknown) {
+  if (!Array.isArray(raw) || raw.some((choice) => typeof choice !== 'string')) return []
+  return ApprovalChoiceSchema.options.filter((choice) => raw.includes(choice))
+}
+
+/** Whether a queued approval accepts this answer (its owner offered it, or the approval never named its choices). */
+export function approvalAllows(entry: Record<string, unknown>, choice: string): boolean {
+  return !Array.isArray(entry.allowed_choices) || entry.allowed_choices.includes(choice)
 }
 
 /**
@@ -194,6 +209,12 @@ export class PendingPrompts {
   submitApproval(sid: string, approval: Record<string, unknown>): Record<string, unknown> {
     const entry = { ...approval }
     entry.approval_id ??= str(entry.request_id) || randomUUID().replace(/-/g, '')
+    if ('allowed_choices' in entry) {
+      const allowed = approvalChoices(entry.allowed_choices)
+      entry.allowed_choices = allowed
+      // Skipping approvals answers "once"; an approval whose owner did not offer it cannot be skipped.
+      if (!allowed.includes('once')) entry.can_enable_yolo = false
+    }
     const q = this.queue(this.approvals, sid)
     if (q.entries.some((e) => e.approval_id === entry.approval_id)) return entry
     q.entries.push(entry)

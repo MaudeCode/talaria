@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "An approval request with unreadable choices now offers no Allow button, and answers the Agent did not offer are refused.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

@@ -92,3 +92,18 @@ test('menu keyboard actions retain ownership while an approval is visible', asyn
   await expect.poll(() => responses.map((response) => response.choice)).toEqual(['always'])
   await expect(card).toHaveCount(0)
 })
+
+/** TAL-1414: an approval whose owner offered no choice Talaria can send shows why, with no answer to give. */
+test('an approval offering no choice shows no answer and ignores Enter', async ({ page, approval: { send, responses } }, info) => {
+  const card = page.getByRole('alertdialog')
+  send('approval', { approval_id: 'no-choices', command: 'rm -rf build', allowed_choices: [], can_enable_yolo: false })
+  await expect(card).toContainText('rm -rf build')
+  if (process.env.TALARIA_APPROVAL_EVIDENCE_DIR) {
+    mkdirSync(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, { recursive: true })
+    await page.screenshot({ path: join(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, `${info.project.name}-no-choices.png`) })
+  }
+  for (const name of ['Allow once', 'Deny', 'More options']) await expect(card.getByRole('button', { name, exact: true })).toHaveCount(0)
+  await expect(card).toContainText("This approval can't be answered here.")
+  await page.locator('body').press('Enter')
+  expect(responses).toEqual([])
+})

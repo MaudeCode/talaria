@@ -12,7 +12,7 @@ import { redactNestedMessageContainers, publicToolFrame, redactString } from '..
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
 import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
-import { clarifyReply } from './pending.js'
+import { approvalAllows, clarifyReply } from './pending.js'
 import type { SessionService } from './service.js'
 import { HttpFailure } from './service.js'
 import type { SessionChannels, StreamRegistry } from './streams.js'
@@ -666,6 +666,8 @@ export class GatewaySessions {
     }
     const prompt = current.snapshot?.prompts.find((p) => p.kind === kind && p.prompt_id === id)
     if (!prompt) throw new HttpFailure(409, 'The owner prompt is stale')
+    const offered = kind === 'approval' ? pending.peekApproval(sid, id).entry : null
+    if (offered && !approvalAllows(offered, str(value))) throw new HttpFailure(409, 'The owner did not offer this choice')
     let text = ''
     if (kind === 'clarify') {
       const entry = pending.peekClarify(sid, id)

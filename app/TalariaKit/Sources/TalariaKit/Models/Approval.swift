@@ -59,7 +59,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
     public let description: String?
     let patternKey: String?
     let patternKeys: [String]?
-    /// TAL-1043: the choices the approval's owner accepts; nil allows all four.
+    /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
     let allowedChoices: [ApprovalChoice]?
     /// TAL-1043: false when the owner cannot turn on approval bypass for the session.
     let canEnableYolo: Bool?
@@ -135,8 +135,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
         patternKey = container.decodeLossyStringIfPresent(forKey: .patternKey)
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])
-        allowedChoices = Self.decodeStringArray(from: container, keys: [.allowedChoices, .allowedChoicesSnake])?
-            .compactMap(ApprovalChoice.init(rawValue:))
+        allowedChoices = Self.decodeAllowedChoices(from: container)
         canEnableYolo = container.decodeLossyBoolIfPresent(forKey: .canEnableYolo)
             ?? container.decodeLossyBoolIfPresent(forKey: .canEnableYoloSnake)
     }
@@ -157,6 +156,17 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
             if let value = container.decodeLossyStringIfPresent(forKey: key) {
                 return [value]
             }
+        }
+
+        return nil
+    }
+
+    /// TAL-1414: a present field offers only the listed choices Talaria can send; null, an object, a scalar, or a list
+    /// holding a non-string offers none. Only an absent field keeps an older server's allow-all behavior.
+    private static func decodeAllowedChoices(from container: KeyedDecodingContainer<CodingKeys>) -> [ApprovalChoice]? {
+        for key in [CodingKeys.allowedChoices, .allowedChoicesSnake] where container.contains(key) {
+            guard let values = try? container.decode([String].self, forKey: key) else { return [] }
+            return values.compactMap(ApprovalChoice.init(rawValue:))
         }
 
         return nil

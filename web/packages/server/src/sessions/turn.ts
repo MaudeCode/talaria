@@ -22,7 +22,7 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import { TRANSCRIPT_WINDOW, ChatUsageSchema, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
-import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
+import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
@@ -2281,6 +2281,7 @@ export class TurnRunner {
     // The mirrored prompt stays queued until the sidecar acknowledges the answer: a relay failure leaves it
     // answerable (503) instead of hiding a prompt the Agent is still blocked on.
     const { entry, found } = this.deps.pending.peekApproval(sessionId, approvalId)
+    if (entry && !approvalAllows(entry, choice)) return { ok: false, choice, error: 'The approval did not offer this choice', _status: 409 }
     const sidecar = this.deps.sidecar()
     const relayFailure = (message: string): Record<string, unknown> => ({ ok: false, choice, error: `The Agent sidecar did not accept the approval (${message}); retry in a moment.`, _status: 503 })
     let s: Session | null = null

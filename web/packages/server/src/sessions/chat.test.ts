@@ -1213,6 +1213,28 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'old' }))).toEqual({ ok: true, choice: 'deny', stale_cleared: true })
   })
 
+  it('publishes malformed approval choices as none and refuses an unoffered answer before the sidecar (TAL-1414)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('approval.respond', () => ({ ok: true, resolved: 1, choice: 'once' }))
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'approval', data: { request_id: 'req-null', command: 'rm -rf build', session_id: sid, allowed_choices: null } })
+      emit({ event: 'approval', data: { request_id: 'req-deny', command: 'rm -rf dist', session_id: sid, allowed_choices: ['deny', 'view'] } })
+      await new Promise(() => undefined)
+      return completed([{ role: 'user', content: str(params.user_message) }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean up' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'approval' && (f.data as Json).pending_count === 2)
+    expect(frames.find((f) => f.event === 'approval')?.data).toMatchObject({ approval_id: 'req-null', allowed_choices: [], can_enable_yolo: false })
+    const pending = await json(await s.get(`/api/approval/pending?session_id=${sid}`))
+    expect(pending.pending).toMatchObject({ approval_id: 'req-null', allowed_choices: [], can_enable_yolo: false })
+    expect((await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'req-null' })).status).toBe(409)
+    expect((await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'req-deny' })).status).toBe(409)
+    const relayed = () => sidecar.calls.filter((c) => c.method === 'approval.respond' && (c.params as Json).session_id === sid).map((c) => c.params)
+    expect(relayed()).toEqual([])
+    expect((await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'req-deny' })).status).toBe(200)
+    expect(relayed()).toEqual([expect.objectContaining({ choice: 'deny', request_id: 'req-deny' })])
+  })
+
   it('relays the Agent\'s password-manager prompts and hands their answers only to the Agent (TAL-887)', async () => {
     const sid = await newSession(s)
     // Track the submitted answers; the vault-code prompt below is declined.
