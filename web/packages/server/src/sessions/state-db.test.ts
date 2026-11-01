@@ -1776,6 +1776,13 @@ describe('lineage continuations under person isolation (TAL-48)', () => {
       const feed = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: olive, timeoutMs: 3000 })
       expect(ids(feed)).not.toContain('alicetip0001')
       expect(await s.deps.sessions.foreignOwnerOf('alicetip0001')).toBe(aliceId)
+      // A mutation that materializes the tip as a Web document keeps it Alice's.
+      const cookie = s.deps.auth.createSession({ authType: 'oidc', username: 'alice', oidcBinding: { issuer, subject: 'alice' } })
+      const write = { cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+      const renamed = await s.get('/api/session/rename', { method: 'POST', headers: write, body: JSON.stringify({ session_id: 'alicetip0001', title: 'Renamed' }) })
+      expect(renamed.status, await renamed.clone().text()).toBe(200)
+      expect((await s.deps.sessionStore.get('alicetip0001', { metadataOnly: true })).owner_person_id).toBe(aliceId)
+      expect((await s.get('/api/session?session_id=alicetip0001', { headers: olive })).status).toBe(404)
     } finally {
       db.close()
       s.deps.gatewayWatchers.stopAll()

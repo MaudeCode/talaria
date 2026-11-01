@@ -901,8 +901,9 @@ export class SessionService {
     const model = transcript?.model && JSON.stringify(transcript.model) !== JSON.stringify(msgs) ? transcript.model : null
     const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.context() : model
     const session = new Session({
-      // A Web-created Agent chat keeps its person when a turn materializes it; Agent state stays unowned.
-      owner_person_id: (await this.store.foreignOwners()).get(sid) ?? null,
+      // The Web document a turn or mutation materializes keeps the person the Agent session resolves to (its recorded
+      // owner, the chat it continues or the chat that delegated it); Agent state nobody owns stays unowned.
+      owner_person_id: await this.foreignOwnerOf(sid),
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
       pinned: Boolean(meta.pinned), archived: Boolean(meta.archived),
