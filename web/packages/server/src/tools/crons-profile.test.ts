@@ -97,6 +97,16 @@ describe('cross-profile cron ownership', () => {
     expect(stores.get(homes.research)?.[0]?.owner_profile).toBe('default')
   })
 
+  it('sends a pin to the execution store so the sidecar resolves that profile’s main model', async () => {
+    const { service, sidecar, homes } = setup()
+    await service.create(homes.default, { schedule: 'every 1h', prompt: 'x', profile: 'research', model: 'seed', provider: 'seed' })
+    for (const pinned of [true, false]) {
+      await service.update(homes.default, { job_id: 'new-job', pinned })
+      const call = sidecar.calls.filter((entry) => entry.method === 'cron.update').at(-1)
+      expect(call?.params).toEqual({ profile_home: homes.research, job_id: 'new-job', updates: { pinned } })
+    }
+  })
+
   it('refuses inaccessible profiles and cannot route an id into an unrelated or hidden store', async () => {
     const { service, stores, homes, sidecar, deps } = setup()
     stores.get(homes.research)?.push({ id: 'foreign', profile: 'research', toast_notifications: true, monitor: '', continuity: false })

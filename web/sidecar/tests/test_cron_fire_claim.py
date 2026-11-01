@@ -70,6 +70,7 @@ def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, ex
         mark_job_run=lambda job_id, success, error, **kw: calls["marked"].append((job_id, success, kw.get("expected_fire_owner"))),
     )
     monkeypatch.setattr(cron, "_jobs", lambda: jobs)
+    monkeypatch.setattr(cron, "scoped_home", lambda home, **kwargs: contextlib.nullcontext(home))
     monkeypatch.setitem(sys.modules, "cron", types.ModuleType("cron"))
     monkeypatch.setitem(sys.modules, "cron.scheduler", types.ModuleType("cron.scheduler"))
     monkeypatch.setattr(cron, "_result_timeout", lambda job: 60.0)

@@ -1085,6 +1085,36 @@
         ""
       ]
     },
+    "tests/test_cron_parity.py::test_update_pins_the_store_profiles_own_main_model": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: update pins the store profile's own main model through the Agent's real pin helper. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[root]",
+        "[beta]"
+      ]
+    },
+    "tests/test_cron_parity.py::test_concurrent_pins_never_read_another_profiles_runtime": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: concurrent pins in different profiles resolve each profile's own config expansion, secret scope and provider, never another profile's or the launch environment's. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_parity.py::test_profile_scope_is_restored_after_a_refused_update": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a refused or missing-job update restores the home and secret scope for the next call. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_parity.py::test_schedule_times_follow_the_store_profiles_timezone": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: schedule edits, pause and resume compute times in the store profile's configured timezone. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[cron.update]",
+        "[cron.resume]"
+      ]
+    },
     "tests/test_dependency_sync.py::test_dependency_sync_rpc_owns_the_agent_subprocess": {
       "layer": "process",
       "reason": "Actual child/grandchild execution, cancellation and process-group cleanup cannot be proved by fake Popen responses.",

@@ -420,6 +420,12 @@ snapshot keys. A profile without a main model returns `cron_snapshot_failed`
 before any job is created. An explicit model and provider, or a script-only
 `no_agent` job, skips model resolution but still uses the execution store.
 
+Writes whose Agent helpers read profile configuration (`cron.create`,
+`cron.update`, `cron.pause`, `cron.resume` and the manual-run fire claim) run
+under the store home's own `scoped_home`: a `pinned` update locks that
+profile's main model and provider, `${VAR}` references expand from its secret
+scope, and schedule times use its timezone. Reads keep the bare store override.
+
 New Agent records retain the creating Web profile in additive `owner_profile`
 metadata. The server uses it to keep those jobs in the creator's list and route
 edit, pause, resume, delete, manual run, output, history and recent-completion

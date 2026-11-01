@@ -137,3 +137,115 @@ def test_delivery_options_list_messaging_platforms(handshaken: SidecarProcess, h
     platforms = [p["value"] for p in handshaken.result("cron.delivery_options", {"profile_home": str(hermes_home)})["platforms"]]
     assert platforms[:2] == ["local", "origin"] and platforms[2:] == sorted(platforms[2:])
     assert {"telegram", "discord", "slack", "matrix"} <= set(platforms), platforms
+
+
+def _pin_profile(home: pathlib.Path, name: str, *, timezone: str = "UTC", expand: bool = True) -> None:
+    """A synthetic profile with its own main model; ``expand`` reads model and provider from its ``.env`` via ``${VAR}``."""
+    home.mkdir(parents=True, exist_ok=True)
+    model, provider = ("${PIN_MODEL}", "${PIN_PROVIDER}") if expand else (f"{name}-fixture-model", "openrouter")
+    (home / "config.yaml").write_text(
+        f"timezone: {timezone}\nmodel:\n  provider: {provider}\n  default: {model}\n", encoding="utf-8")
+    (home / ".env").write_text(
+        f"PIN_MODEL={name}-fixture-model\nPIN_PROVIDER=openrouter\nOPENROUTER_API_KEY=synthetic-{name}-key\n", encoding="utf-8")
+
+
+def _unpinned_job(sidecar: SidecarProcess, home: pathlib.Path, profile: str) -> str:
+    """A job in ``home``'s own store that follows the main model (no pin), created without resolving any profile."""
+    job = sidecar.result("cron.create", {"profile_home": str(home), "execution_home": str(home), "job": {
+        "schedule": "every 1h", "prompt": "say hi", "profile": profile, "model": "seed-model", "provider": "seed-provider"}})["job"]
+    released = sidecar.result("cron.update", {"profile_home": str(home), "job_id": job["id"], "updates": {"pinned": False}})["job"]
+    assert (released["provider"], released["model"]) == (None, None), released
+    return job["id"]
+
+
+@requires_agent
+@pytest.mark.parametrize("store", ["root", "beta"])
+def test_update_pins_the_store_profiles_own_main_model(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, store: str) -> None:
+    _pin_profile(hermes_home, "root", expand=False)
+    beta = tmp_path / "profiles" / "beta"
+    _pin_profile(beta, "beta", expand=False)
+    home = hermes_home if store == "root" else beta
+    job_id = _unpinned_job(handshaken, home, store)
+    pinned = handshaken.result("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {"pinned": True}})["job"]
+    assert (pinned["provider"], pinned["model"]) == ("openrouter", f"{store}-fixture-model"), pinned
+    # A fresh read from the store, not the update's echo.
+    stored = handshaken.result("cron.get", {"profile_home": str(home), "job_id": job_id})["job"]
+    assert (stored["provider"], stored["model"]) == ("openrouter", f"{store}-fixture-model"), stored
+    # Unpinning releases both; an explicit model in the same update wins over the profile's main model.
+    released = handshaken.result("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {"pinned": False}})["job"]
+    assert (released["provider"], released["model"]) == (None, None), released
+    explicit =handshaken.result("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {
+        "pinned": True, "model": "caller-model", "provider": "caller-provider"}})["job"]
+    assert (explicit["provider"], explicit["model"]) == ("caller-provider", "caller-model"), explicit
+
+
+@requires_agent
+def test_concurrent_pins_never_read_another_profiles_runtime(hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    # The launch environment carries the same names a profile's config expands; a named profile must never see them.
+    sidecar = SidecarProcess(hermes_home, env={"PIN_MODEL": "launch-env-model", "PIN_PROVIDER": "launch-env-provider"})
+    try:
+        from talaria_sidecar import SIDECAR_RPC_VERSION
+
+        assert sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
+        _pin_profile(hermes_home, "root")
+        homes = {name: tmp_path / "profiles" / name for name in ("alpha", "beta")}
+        for name, home in homes.items():
+            _pin_profile(home, name)
+        # Gamma names a variable only alpha's .env defines: a miss must stay a miss, never alpha's value.
+        gamma = homes["gamma"] = tmp_path / "profiles" / "gamma"
+        gamma.mkdir(parents=True)
+        (gamma / "config.yaml").write_text("model:\n  provider: openrouter\n  default: ${ALPHA_ONLY}\n", encoding="utf-8")
+        (homes["alpha"] / ".env").write_text((homes["alpha"] / ".env").read_text() + "ALPHA_ONLY=alpha-secret-model\n", encoding="utf-8")
+        jobs = {name: _unpinned_job(sidecar, home, name) for name, home in homes.items()}
+        for _ in range(3):
+            pending = {}
+            for name, home in homes.items():
+                pending[sidecar.request("cron.update", {"profile_home": str(home), "job_id": jobs[name], "updates": {"pinned": True}})] = name
+            while pending:
+                message = sidecar.next_message(timeout=60)
+                assert message is not None, sidecar.stderr_lines[-20:]
+                if message.get("id") in pending:
+                    assert "error" not in message, message
+                    pending.pop(message["id"])
+            for name, home in homes.items():
+                stored = sidecar.result("cron.get", {"profile_home": str(home), "job_id": jobs[name]})["job"]
+                if name == "gamma":
+                    assert stored["model"] not in ("alpha-secret-model", "root-fixture-model", "launch-env-model"), stored
+                else:
+                    assert (stored["provider"], stored["model"]) == ("openrouter", f"{name}-fixture-model"), stored
+                sidecar.result("cron.update", {"profile_home": str(home), "job_id": jobs[name], "updates": {"pinned": False}})
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+def test_profile_scope_is_restored_after_a_refused_update(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    _pin_profile(hermes_home, "root")
+    beta = tmp_path / "profiles" / "beta"
+    _pin_profile(beta, "beta")
+    root_job, beta_job = _unpinned_job(handshaken, hermes_home, "root"), _unpinned_job(handshaken, beta, "beta")
+    # The Agent refuses an invalid schedule after the pin is resolved inside the beta scope.
+    refused, _ = handshaken.call("cron.update", {"profile_home": str(beta), "job_id": beta_job, "updates": {"pinned": True, "schedule": "not a schedule"}})
+    assert "error" in refused, refused
+    assert handshaken.result("cron.get", {"profile_home": str(beta), "job_id": beta_job})["job"]["model"] is None
+    missing, _ = handshaken.call("cron.update", {"profile_home": str(beta), "job_id": "missing-job", "updates": {"pinned": True}})
+    assert missing["error"]["data"]["condition"] == "not_found", missing
+    root = handshaken.result("cron.update", {"profile_home": str(hermes_home), "job_id": root_job, "updates": {"pinned": True}})["job"]
+    assert root["model"] == "root-fixture-model", root
+    assert handshaken.result("cron.update", {"profile_home": str(beta), "job_id": beta_job, "updates": {"pinned": True}})["job"]["model"] == "beta-fixture-model"
+
+
+@requires_agent
+@pytest.mark.parametrize("method", ["cron.update", "cron.resume"])
+def test_schedule_times_follow_the_store_profiles_timezone(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, method: str) -> None:
+    _pin_profile(hermes_home, "root", timezone="UTC")
+    beta = tmp_path / "profiles" / "beta"
+    _pin_profile(beta, "beta", timezone="Asia/Tokyo")
+    job_id = _unpinned_job(handshaken, beta, "beta")
+    if method == "cron.update":
+        job = handshaken.result("cron.update", {"profile_home": str(beta), "job_id": job_id, "updates": {"schedule": "0 9 * * *"}})["job"]
+    else:
+        handshaken.result("cron.update", {"profile_home": str(beta), "job_id": job_id, "updates": {"schedule": "0 9 * * *"}})
+        assert handshaken.result("cron.pause", {"profile_home": str(beta), "job_id": job_id})["job"]["paused_at"].endswith("+09:00")
+        job = handshaken.result("cron.resume", {"profile_home": str(beta), "job_id": job_id})["job"]
+    assert job["next_run_at"].endswith("T09:00:00+09:00"), job

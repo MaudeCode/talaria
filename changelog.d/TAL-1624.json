@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Pinning a scheduled task's model, editing its schedule, and pausing, resuming or running it now use the task's own profile model, credentials and timezone instead of the default profile's.", "highlight": false, "components": ["web"]}]
+}

@@ -97,6 +97,14 @@ def _store(home: Path):
     return _jobs().use_cron_store(home)
 
 
+@contextlib.contextmanager
+def _owned_store(home: Path):
+    """``home``'s store under ``home``'s own Agent runtime, for writes whose Agent helpers read profile config: the
+    ``pinned`` main model, ``${VAR}`` expansion, provider resolution and schedule times. Reads keep the bare store."""
+    with _store(home), scoped_home(home, recover_processes=False):
+        yield
+
+
 def _job_id(params: dict, key: str = "job_id") -> str:
     """A job id that names files under ``cron/output/<id>``: strict shape."""
     job_id = str(params.get(key) or "").strip()
@@ -219,7 +227,7 @@ def _claim_fire(store_home: Path, job: dict) -> dict | bool | None:
     ``None`` for a job the Agent does not claim (paused, disabled, or terminal), which no tick fires. ``mark_job_run``
     releases a claim when the run ends; the run heartbeats it meanwhile."""
     jobs = _jobs()
-    with _store(store_home):
+    with _owned_store(store_home):
         if not jobs.is_job_runnable(job):
             return None
         claimed = jobs.claim_job_for_fire(job["id"], manual=True, return_job=True)
@@ -742,7 +750,7 @@ def register(registry) -> None:
                 model = model or profile_model
             except Exception as exc:  # noqa: BLE001
                 raise RpcError(f"Cannot safely resolve cron model for profile {post['profile']!r}", condition="cron_snapshot_failed") from exc
-        with _store(home), scoped_home(home):
+        with _owned_store(home):
             try:
                 job = jobs.create_job(prompt=body.get("prompt") or "", schedule=body["schedule"], name=body.get("name") or None, deliver=body.get("deliver") or "local",
                                       skills=body.get("skills") or [], model=model, provider=provider, **kwargs)
@@ -758,7 +766,7 @@ def register(registry) -> None:
         jobs = _jobs()
         job_id = _job_ref(params)
         body = params.get("updates") or {}
-        with _store(profile_home_param(params)):
+        with _owned_store(profile_home_param(params)):
             updates = {}
             for key, value in body.items():
                 if key in ("monitor", "continuity", "repeat"):
@@ -793,7 +801,7 @@ def register(registry) -> None:
 
     @registry.method("cron.pause")
     def pause(ctx: CallContext, params: dict) -> dict:
-        with _store(profile_home_param(params)):
+        with _owned_store(profile_home_param(params)):
             job = _jobs().pause_job(_job_ref(params), reason=params.get("reason"))
         if not job:
             raise RpcError("Job not found", condition="not_found")
@@ -802,7 +810,7 @@ def register(registry) -> None:
     @registry.method("cron.resume")
     @_settled_mutation
     def resume(ctx: CallContext, params: dict) -> dict:
-        with _store(profile_home_param(params)):
+        with _owned_store(profile_home_param(params)):
             try:
                 job = _jobs().resume_job(_job_ref(params))
             except ValueError as exc:
