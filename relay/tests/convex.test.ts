@@ -2950,6 +2950,133 @@ describe("Convex relay state", () => {
     expect(await notifications()).toHaveLength(1);
   });
 
+  describe("attention alerts during a Live Activity", () => {
+    type Phase = "waiting_for_approval" | "waiting_for_input" | "completed" | "failed";
+    async function deliverTransition(
+      phase: Phase,
+      options: { activity: boolean; preferences?: Partial<typeof defaultNotificationPreferences> },
+    ) {
+      const backend = testBackend();
+      const now = Date.now();
+      await backend.run(async (ctx) => {
+        await ctx.db.insert("devices", {
+          userId: "user-1",
+          deviceId: "device-1",
+          label: "iPhone",
+          bundleId: "dev.kil.talaria",
+          apsEnvironment: "sandbox",
+          pushToken: "push-token",
+          pushToStartToken: options.activity ? undefined : "start-token",
+          preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, ...options.preferences },
+          createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.insert("sessionStates", {
+          version: 2,
+          userId: "user-1",
+          profileId: "profile-1",
+          deleted: false,
+          publisherId: "https://hermes.example",
+          publisherLabel: "Home",
+          sessionId: "session-1",
+          eventId: "event-2",
+          revision: 2,
+          title: "Build relay",
+          phase,
+          updatedAt: now,
+          deepLink: "/sessions/session-1",
+          expiresAt: now + 15 * 60_000,
+          terminalExpiresAt: phase === "completed" || phase === "failed" ? now + 15 * 60_000 : undefined,
+          receivedAt: now,
+        });
+        if (options.activity) {
+          await ctx.db.insert("liveActivities", {
+            userId: "user-1",
+            deviceId: "device-1",
+            activityId: "activity-1",
+            mode: "all_running",
+            attributesType: "TalariaAggregateActivityAttributes",
+            schemaVersion: 1,
+            activityPushToken: "activity-token",
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      });
+      await backend.mutation(internal.delivery.recompute, {
+        userId: "user-1",
+        transitions: [{ publisherId: "https://hermes.example", sessionId: "session-1", previousPhase: "running" }],
+      });
+      const jobs = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
+      return jobs.map((job) => ({
+        kind: job.kind,
+        aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps,
+      }));
+    }
+
+    it.each([
+      ["waiting_for_approval", "Approval needed on Home"],
+      ["waiting_for_input", "Input needed on Home"],
+    ] as const)("sends a silent activity update and a Time Sensitive notification for %s", async (phase, body) => {
+      const jobs = await deliverTransition(phase, { activity: true });
+
+      const activityJobs = jobs.filter((job) => job.kind.startsWith("live_activity_"));
+      expect(activityJobs).toHaveLength(1);
+      expect(activityJobs[0]!.aps).not.toHaveProperty("alert");
+      const notifications = jobs.filter((job) => job.kind === "notification");
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]!.aps).toMatchObject({
+        alert: { title: "Build relay", body },
+        sound: "default",
+        "interruption-level": "time-sensitive",
+      });
+    });
+
+    it("starts an approval activity with a silent alert alongside the Time Sensitive notification", async () => {
+      const jobs = await deliverTransition("waiting_for_approval", { activity: false });
+
+      const starts = jobs.filter((job) => job.kind === "live_activity_start");
+      expect(starts).toHaveLength(1);
+      expect(starts[0]!.aps.alert).toEqual({ title: "Build relay", body: "Approval needed on Home" });
+      const notifications = jobs.filter((job) => job.kind === "notification");
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]!.aps["interruption-level"]).toBe("time-sensitive");
+    });
+
+    it.each([
+      ["completed", "Completed on Home"],
+      ["failed", "Failed on Home"],
+    ] as const)("keeps the %s alert on the activity without a standalone duplicate", async (phase, body) => {
+      const jobs = await deliverTransition(phase, { activity: true });
+
+      const activityJobs = jobs.filter((job) => job.kind.startsWith("live_activity_"));
+      expect(activityJobs).toHaveLength(1);
+      expect(activityJobs[0]!.aps.alert).toEqual({ title: "Build relay", body, sound: "default" });
+      expect(activityJobs[0]!.aps).not.toHaveProperty("interruption-level");
+      expect(jobs.filter((job) => job.kind === "notification")).toHaveLength(0);
+    });
+
+    it("keeps the approval alert on the activity when the device cannot receive notifications", async () => {
+      const jobs = await deliverTransition("waiting_for_approval", {
+        activity: true,
+        preferences: { notificationsEnabled: false },
+      });
+
+      expect(jobs.map((job) => job.kind)).toEqual(["live_activity_update"]);
+      expect(jobs[0]!.aps.alert).toEqual({ title: "Build relay", body: "Approval needed on Home", sound: "default" });
+    });
+
+    it("sends no approval alert when approval notifications are off", async () => {
+      const jobs = await deliverTransition("waiting_for_approval", {
+        activity: true,
+        preferences: { notifyOnApproval: false },
+      });
+
+      expect(jobs.filter((job) => job.kind === "notification")).toHaveLength(0);
+      for (const job of jobs) expect(job.aps).not.toHaveProperty("alert");
+    });
+  });
+
   it("leases a locally seeded activity for publisher reconciliation", async () => {
     const backend = testBackend();
     const now = Date.now();

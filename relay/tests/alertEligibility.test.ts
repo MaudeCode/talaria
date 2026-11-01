@@ -118,16 +118,30 @@ describe("publisher alert eligibility", () => {
     const withActivity = await seed({ pushToken: "push-token", activity: true });
     await withActivity.mutation(internal.publishers.acceptSnapshot, { ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1", states: mixed });
     await runScheduledRecomputes(withActivity);
-    expect(await jobs(withActivity)).toEqual([
-      expect.objectContaining({ kind: "live_activity_update", aps: expect.objectContaining({ alert: { title: "session-2", body: "Input needed on Home", sound: "default" } }) }),
-    ]);
+    const activityJobs = await jobs(withActivity);
+    expect(activityJobs.map((job) => job.kind)).toEqual(["live_activity_update", "notification"]);
+    expect(activityJobs[0]!.aps).not.toHaveProperty("alert");
+    expect(activityJobs[1]!.aps).toMatchObject({ alert: { title: "session-2", body: "Input needed on Home" }, "interruption-level": "time-sensitive" });
 
     const withoutActivity = await seed({ pushToken: "push-token", activity: false });
     await withoutActivity.mutation(internal.publishers.acceptSnapshot, { ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1", states: mixed });
     await runScheduledRecomputes(withoutActivity);
     expect(await jobs(withoutActivity)).toEqual([
-      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default", "thread-id": expect.any(String) } }),
+      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default", "thread-id": expect.any(String), "interruption-level": "time-sensitive" } }),
     ]);
+  });
+
+  it("still sends the Time Sensitive notification when another alert sounds on the activity", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: true });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "completed"), snapshotState("session-2", 2, "waiting_for_approval")],
+    });
+    await runScheduledRecomputes(backend);
+    const delivered = await jobs(backend);
+    expect(delivered.map((job) => job.kind)).toEqual(["live_activity_update", "notification"]);
+    expect(delivered[0]!.aps.alert).toEqual({ title: "session-1", body: "Completed on Home", sound: "default" });
+    expect(delivered[1]!.aps).toMatchObject({ alert: { title: "session-2", body: "Approval needed on Home" }, "interruption-level": "time-sensitive" });
   });
 
   it("honors the per-session route and keeps an ineligible end silent", async () => {
@@ -286,7 +300,8 @@ describe("publisher alert eligibility", () => {
   });
 
   it("sends a queued alerted update silently once its transition is suppressed", async () => {
-    const backend = await seed({ pushToken: "push-token", activity: true });
+    // Without a notification token the approval alert stays on the activity.
+    const backend = await seed({ activity: true });
     await backend.mutation(internal.publishers.acceptSnapshot, {
       ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
       states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
@@ -418,7 +433,8 @@ describe("publisher alert eligibility", () => {
   });
 
   it("lets a later eligible transition replace a queued silent update", async () => {
-    const backend = await seed({ pushToken: "push-token", activity: true });
+    // Without a notification token the input alert stays on the activity.
+    const backend = await seed({ activity: true });
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
       state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
@@ -475,7 +491,8 @@ describe.each([false, true])("claim preferences, retry=%s", (retry) => {
   afterEach(() => vi.useRealTimers());
 
   async function queuedAlert(activity: boolean, phase: SessionPhase = "waiting_for_approval") {
-    const backend = await seed({ pushToken: "push-token", activity });
+    // An activity device without a notification token keeps every alert, Time Sensitive included, on its activity.
+    const backend = await seed({ pushToken: activity ? undefined : "push-token", activity });
     await backend.mutation(internal.publishers.acceptSnapshot, {
       ...publish, nonce: "preferences", receivedAt: now + 1, snapshotId: "preferences",
       states: [snapshotState("session-1", 2, phase), snapshotState("session-2", 1, "running")],

@@ -8,8 +8,22 @@ import {
   makeLiveActivityUpdate,
   makeNotification,
 } from "../convex/lib/apnsPayload";
-import { makeAggregate } from "../convex/lib/aggregate";
-import type { ActivityAggregate } from "../convex/lib/model";
+import { alertForState, makeAggregate } from "../convex/lib/aggregate";
+import type { ActivityAggregate, ActivityAlert, SessionState } from "../convex/lib/model";
+import { defaultNotificationPreferences } from "../convex/lib/model";
+
+const attentionState: SessionState = {
+  publisherId: "publisher-1",
+  publisherLabel: "Home",
+  sessionId: "session-1",
+  eventId: "event-1",
+  revision: 1,
+  title: "Build relay",
+  phase: "running",
+  updatedAt: 1_800_000_000_000,
+  deepLink: "/sessions/session-1",
+  expiresAt: 1_800_000_060_000,
+};
 
 const aggregate: ActivityAggregate = {
   schemaVersion: 1,
@@ -191,6 +205,32 @@ describe("ActivityKit payloads", () => {
       sessionId: "session-1",
       deepLink: "/sessions/session-1",
     });
+  });
+
+  it("marks attention notifications Time Sensitive and leaves other alerts at the default level", () => {
+    const notification = (alert: ActivityAlert) => makeNotification({
+      token: "device-token",
+      bundleId: "dev.kil.talaria",
+      environment: "sandbox",
+      alert,
+      row: aggregate.rows[0]!,
+      threadId: "chat-1",
+    });
+    const approval = alertForState({ ...attentionState, phase: "waiting_for_approval" }, defaultNotificationPreferences)!;
+    const completion = alertForState({ ...attentionState, phase: "completed" }, defaultNotificationPreferences)!;
+
+    expect(notification(approval).payload.aps).toMatchObject({ "interruption-level": "time-sensitive" });
+    expect(notification(completion).payload.aps).not.toHaveProperty("interruption-level");
+  });
+
+  it("keeps Time Sensitive alerts off activity updates and ends, and silences their push-to-start", () => {
+    const approval = alertForState({ ...attentionState, phase: "waiting_for_approval" }, defaultNotificationPreferences)!;
+    const common = { token: "activity-token", bundleId: "dev.kil.talaria", environment: "sandbox" as const, nowEpochSeconds: 100 };
+
+    expect(makeLiveActivityUpdate({ ...common, aggregate, alert: approval }).payload.aps).not.toHaveProperty("alert");
+    expect(makeLiveActivityEnd({ ...common, aggregate, alert: approval }).payload.aps).not.toHaveProperty("alert");
+    expect((makeLiveActivityStart({ ...common, aggregate, alert: approval }).payload.aps as Record<string, unknown>).alert)
+      .toEqual({ title: approval.title, body: approval.body });
   });
 
   it("drops overflow rows before ActivityKit's content-state boundary", () => {

@@ -11,6 +11,11 @@ export interface ApnsRequest {
   collapseId?: string;
 }
 
+// The standalone notification carries a Time Sensitive alert, so the activity stays silent and the user hears it once.
+export function liveActivityAlert(alert: ActivityAlert | null | undefined): ActivityAlert | null {
+  return alert && !alert.interruptionLevel ? alert : null;
+}
+
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 
@@ -54,6 +59,7 @@ export function makeLiveActivityUpdate(input: {
   nowEpochSeconds: number;
   alert?: ActivityAlert | null;
 }): ApnsRequest {
+  const alert = liveActivityAlert(input.alert);
   const requiresImmediateDelivery = input.aggregate.activeCount === 0 || input.aggregate.rows.some(
     (row) => row.phase === "waiting_for_approval"
       || row.phase === "waiting_for_input"
@@ -72,9 +78,7 @@ export function makeLiveActivityUpdate(input: {
         event: "update",
         "content-state": aggregate,
         "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
-        ...(input.alert
-          ? { alert: { title: input.alert.title, body: input.alert.body, sound: "default" } }
-          : {}),
+        ...(alert ? { alert: { title: alert.title, body: alert.body, sound: "default" } } : {}),
       },
     },
   };
@@ -104,7 +108,12 @@ export function makeLiveActivityStart(input: {
         "attributes-type": "TalariaAggregateActivityAttributes",
         attributes: {},
         "input-push-token": 1,
-        alert: { title: input.alert.title, body: input.alert.body, sound: "default" },
+        // APNs requires an alert on push-to-start.
+        alert: {
+          title: input.alert.title,
+          body: input.alert.body,
+          ...(liveActivityAlert(input.alert) ? { sound: "default" } : {}),
+        },
       },
     },
   };
@@ -120,6 +129,7 @@ export function makeLiveActivityEnd(input: {
   alert?: ActivityAlert | null;
 }): ApnsRequest {
   const aggregate = input.aggregate ? fitActivityAggregate(input.aggregate) : null;
+  const alert = liveActivityAlert(input.alert);
   return {
     token: input.token,
     topic: `${input.bundleId}.push-type.liveactivity`,
@@ -131,9 +141,7 @@ export function makeLiveActivityEnd(input: {
         timestamp: input.nowEpochSeconds,
         event: "end",
         ...(aggregate ? { "content-state": aggregate } : {}),
-        ...(input.alert
-          ? { alert: { title: input.alert.title, body: input.alert.body, sound: "default" } }
-          : {}),
+        ...(alert ? { alert: { title: alert.title, body: alert.body, sound: "default" } } : {}),
         "dismissal-date": input.nowEpochSeconds
           + (input.dismissalDelaySeconds ?? (aggregate ? 5 * 60 : 15)),
       },
@@ -162,6 +170,7 @@ export function makeNotification(input: {
         alert: { title: input.alert.title, body: input.alert.body },
         sound: "default",
         "thread-id": input.threadId,
+        ...(input.alert.interruptionLevel ? { "interruption-level": input.alert.interruptionLevel } : {}),
       },
       publisherId: input.row.publisherId,
       sessionId: input.row.sessionId,

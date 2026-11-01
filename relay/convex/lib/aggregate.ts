@@ -153,11 +153,11 @@ export function alertForState(
   switch (activityPhase(next)) {
     case "waiting_for_approval":
       return preferences.notifyOnApproval
-        ? { title: next.title, body: `Approval needed on ${next.publisherLabel}` }
+        ? { title: next.title, body: `Approval needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive" }
         : null;
     case "waiting_for_input":
       return preferences.notifyOnInput
-        ? { title: next.title, body: `Input needed on ${next.publisherLabel}` }
+        ? { title: next.title, body: `Input needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive" }
         : null;
     case "completed":
       return preferences.notifyOnCompletion

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Approval and question alerts arrive as Time Sensitive notifications that can break through Focus, and they now reach Notification Center while a Live Activity is running.",
+      "highlight": false,
+      "components": [
+        "relay"
+      ]
+    }
+  ]
+}

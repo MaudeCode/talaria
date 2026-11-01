@@ -200,6 +200,8 @@ Send either token field as `null` to clear the stored token. The relay uses `pus
 
 The relay rechecks current device preferences before each queued or retried delivery attempt. Disabling ordinary notifications or an event category prevents queued ordinary alerts for that category. Disabling an event category removes the alert and sound from otherwise valid Live Activity updates, while disabling Live Activities prevents queued updates and starts. Silent end and displacement cleanup can still finish existing activities. Ordinary notification enablement does not control Live Activity alerts. Requests already accepted by APNs cannot be retracted.
 
+Approval and input alerts are Time Sensitive (`interruption-level: time-sensitive`) so they can break through Focus. On a device that can receive ordinary notifications, they always arrive as a standalone notification, even while a Live Activity runs; that transition's Live Activity update or end carries no `alert`, and a push-to-start carries its required `alert` without `sound`, so the user hears one sound. A device without notifications enabled or a notification token keeps these alerts on its Live Activity. Completion and failure alerts keep the default interruption level and sound on the Live Activity instead of a standalone notification.
+
 Register an aggregate ActivityKit token with `PUT /v1/devices/{deviceId}/live-activities/{activityId}`:
 
 ```json
