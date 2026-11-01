@@ -140,7 +140,7 @@ this policy changes test boundaries rather than worker count.
 Both frontend build commands run `npm run check:bundle` after Vite emits
 `packages/frontend/dist/client/.vite/manifest.json`. The check follows the `_app`
 route's static imports and CSS, counts shared files once, and enforces the measured
-1,497,999-byte baseline plus 10% headroom. Its build-output Vitest checks keep the
+1,607,194-byte baseline (main's layout when TAL-1032 rebaselined it) plus 10% headroom. Its build-output Vitest checks keep the
 Markdown renderer, Mermaid runtime, and KaTeX runtime and stylesheet out of that
 graph. Dynamic imports are excluded from the layout budget. The Markdown browser
 test holds plugin requests to verify readable fallback code, then releases them
