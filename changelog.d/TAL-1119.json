@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Rename, Move to project, and other conversation dialogs in Talaria Web stay open, with what you typed or picked, when a background update moves the conversation to another sidebar group.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -2,8 +2,8 @@ import { useResourceMutation } from './useResourceMutation'
 import { useSessionPin } from './useSessionPin'
 import { discardSession } from '../../stream/connection'
 import { discardStagedFiles } from '../composer/useDraft'
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { createContext, useContext, useRef, useState, type ReactNode } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { MoreHorizontal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -19,31 +19,57 @@ import { Select } from '../../ui/Select'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { WorktreeRemoveDialog } from './WorktreeRemoveDialog'
-import { useQuery } from '@tanstack/react-query'
 
-type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | { kind: 'revoke' } | { kind: 'worktree' } | null
+type ActionKind = 'rename' | 'delete' | 'move' | 'revoke' | 'worktree'
+/** An open session dialog and its draft; `list` is the list element its menu sat in, where focus returns on close. */
+interface PendingAction { sid: string; kind: ActionKind; active: boolean; list: Element | null; title: string; projectId: string }
 
-/** Per-row conversation actions (legacy long-press / kebab menu). Every mutation invalidates the session list family. */
-export function SessionContextMenu({ row, active }: { row: SessionRow; active: boolean }) {
+/** The server permission each dialog needs: the menu offers it, and a refreshed row that withdraws it closes the dialog. */
+const allowed: Record<ActionKind, (row: SessionRow) => boolean> = {
+  rename: (row) => !row.read_only,
+  move: (row) => !row.read_only,
+  delete: (row) => !row.read_only,
+  worktree: (row) => !!row.worktree_branch && !row.read_only,
+  revoke: (row) => !!row.share_url,
+}
+
+const OpenAction = createContext<((action: PendingAction) => void) | null>(null)
+
+/**
+ * TAL-1119: one owner for a list's session dialogs and drafts, outside its rows, so a refresh that moves a row to
+ * another group (Older to Today, a pin from another device) keeps the open dialog. `rows` are the rows the list shows
+ * now: a dialog reads its session's current row there, and closes once the session is gone or no longer allows it.
+ */
+export function SessionActions({ rows, children }: { rows: readonly SessionRow[]; children: ReactNode }) {
+  const [pending, setPending] = useState<PendingAction | null>(null)
+  const row = pending ? rows.find((r) => r.session_id === pending.sid) : undefined
+  const shown = pending && row && allowed[pending.kind](row) ? pending : null
+  if (pending && !shown) setPending(null)
+  return (
+    <OpenAction.Provider value={setPending}>
+      {children}
+      <SessionActionDialogs pending={shown} row={row} onChange={setPending} />
+    </OpenAction.Provider>
+  )
+}
+
+/** The session's actions trigger as the list shows it now; a regrouped row has a new one. */
+function currentTrigger({ list, sid }: PendingAction) {
+  const item = [...(list?.querySelectorAll<HTMLElement>('[data-sid]') ?? [])].find((el) => el.dataset.sid === sid)
+  return item?.querySelector<HTMLElement>('.session-actions-trigger') ?? null
+}
+
+function SessionActionDialogs({ pending, row, onChange }: { pending: PendingAction | null; row: SessionRow | undefined; onChange: (action: PendingAction | null) => void }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [dialog, setDialog] = useState<PendingDialog>(null)
-  const [title, setTitle] = useState(row.title)
-  const [projectId, setProjectId] = useState(row.project_id ?? '')
-  const projects = useQuery({ queryKey: keys.projects, queryFn: api.fetchProjects, staleTime: 60_000, enabled: dialog?.kind === 'move' })
-  const sid = row.session_id
-  const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.sessions.all }) }
+  const projects = useQuery({ queryKey: keys.projects, queryFn: api.fetchProjects, staleTime: 60_000, enabled: pending?.kind === 'move' })
   const fail = (e: unknown) => showErrorToast(e)
-  // `row` is the displayed row, so a repeated toggle targets the state the user sees.
-  const rename = useResourceMutation({ resource: () => `session:${sid}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => api.renameSession(sid, title), onError: fail })
-  const pin = useSessionPin()
-  const archive = useResourceMutation({ resource: () => `session:${sid}`, effect: (archived: boolean) => ({ fields: { archived } }), mutationFn: (archived) => api.archiveSession(sid, archived), onSuccess: (_, archived) => { if (archived) showToast(m.session_archived()) }, onError: (e) => showToast(m.session_archive_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
-  const duplicate = useMutation({ mutationFn: () => api.duplicateSession(sid), onSuccess: (r) => { showToast(m.session_duplicated()); invalidate(); void navigate({ to: '/session/$sessionId', params: { sessionId: r.session.session_id } }) }, onError: (e) => showToast(m.session_duplicate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
+  const rename = useResourceMutation({ resource: ({ sid }: { sid: string; title: string }) => `session:${sid}`, effect: ({ title }) => ({ fields: { title } }), mutationFn: ({ sid, title }) => api.renameSession(sid, title), onError: fail })
   const del = useResourceMutation({
-    resource: () => `session:${sid}`,
+    resource: (sid: string) => `session:${sid}`,
     effect: () => ({ remove: true }),
-    mutationFn: () => api.deleteSession(sid),
-    onSuccess: () => {
+    mutationFn: (sid) => api.deleteSession(sid),
+    onSuccess: (_, sid) => {
       discardSession(sid)
       discardStagedFiles(sid)
       qc.setQueriesData<SessionsList>({ predicate: (query) => query.queryKey[0] === 'sessions' && (query.queryKey[1] === 'list' || query.queryKey[1] === 'search') }, (data) => data ? { ...data, sessions: data.sessions.filter((item) => item.session_id !== sid) } : data)
@@ -52,7 +78,62 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
     },
     onError: fail,
   })
-  const move = useResourceMutation({ resource: () => `session:${sid}`, effect: (projectId: string) => ({ fields: { project_id: projectId || null } }), mutationFn: (projectId) => api.moveSession(sid, projectId || null), onError: fail })
+  const move = useResourceMutation({ resource: ({ sid }: { sid: string; projectId: string }) => `session:${sid}`, effect: ({ projectId }) => ({ fields: { project_id: projectId || null } }), mutationFn: ({ sid, projectId }) => api.moveSession(sid, projectId || null), onError: fail })
+  const revoke = useResourceMutation({
+    resource: (sid: string) => `session:${sid}`,
+    effect: () => ({ fields: { share_url: null } }),
+    mutationFn: (sid) => api.revokeShare(sid),
+    onSuccess: () => showToast(m.share_session_revoked()),
+    onError: (e) => showToast(m.share_session_revoke_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
+  })
+  if (!pending || !row) return null
+  const { sid, kind, title, projectId } = pending
+  const close = () => onChange(null)
+  const dismiss = (open: boolean) => { if (!open) close() }
+  const finalFocus = () => currentTrigger(pending) ?? true
+  if (kind === 'rename') return (
+    <Dialog open onOpenChange={dismiss} finalFocus={finalFocus} title={m.session_rename()} description={m.session_rename_desc()}>
+      <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) { rename.mutate({ sid, title: title.trim() }); close() } }} className="flex flex-col gap-3">
+        <TextInput value={title} onChange={(e) => onChange({ ...pending, title: e.target.value })} placeholder={m.session_rename_placeholder()} aria-label={m.session_rename()} maxLength={300} />
+        <div className="flex justify-end gap-2"><Button onClick={close}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
+      </form>
+    </Dialog>
+  )
+  if (kind === 'move') return (
+    <Dialog open onOpenChange={dismiss} finalFocus={finalFocus} title={m.session_move_project()} description={row.project_id ? m.session_move_project_desc_has() : m.session_move_project_desc_none()}>
+      <form onSubmit={(e) => { e.preventDefault(); move.mutate({ sid, projectId }); close() }} className="flex flex-col gap-3">
+        <Select value={projectId} onValueChange={(v) => onChange({ ...pending, projectId: v })} aria-label={m.session_move_project()} className="w-full">
+          <option value="">—</option>
+          {(projects.data?.projects ?? []).map((p) => <option key={p.project_id} value={p.project_id}>{p.name}</option>)}
+        </Select>
+        <div className="flex justify-end gap-2"><Button onClick={close}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
+      </form>
+    </Dialog>
+  )
+  if (kind === 'worktree') return <WorktreeRemoveDialog sessionId={sid} onClose={close} finalFocus={finalFocus} />
+  if (kind === 'revoke') return <ConfirmDialog open onOpenChange={dismiss} finalFocus={finalFocus} title={m.session_share_revoke()} description={m.stop_sharing_session_confirm()} confirmLabel={m.session_share_revoke()} cancelLabel={m.cancel()} danger onConfirm={() => revoke.mutate(sid)} />
+  return <ConfirmDialog open onOpenChange={dismiss} finalFocus={finalFocus} title={m.session_delete_confirm()} description={row.worktree_branch ? m.session_delete_worktree_desc() : m.session_delete_desc()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(sid); if (pending.active) void navigate({ to: '/', search: { action: 'new-chat' } }) }} />
+}
+
+/** Per-row conversation actions (legacy long-press / kebab menu). Every mutation invalidates the session list family. */
+export function SessionContextMenu({ row, active }: { row: SessionRow; active: boolean }) {
+  const open = useContext(OpenAction)
+  // Outside a list, the menu owns its dialogs.
+  if (!open) return <SessionActions rows={[row]}><SessionContextMenu row={row} active={active} /></SessionActions>
+  return <SessionMenu row={row} active={active} open={open} />
+}
+
+function SessionMenu({ row, active, open }: { row: SessionRow; active: boolean; open: (action: PendingAction) => void }) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const ref = useRef<HTMLSpanElement>(null)
+  const sid = row.session_id
+  const openAction = (kind: ActionKind) => open({ sid, kind, active, list: ref.current?.closest('[role="list"]') ?? null, title: row.title, projectId: row.project_id ?? '' })
+  const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.sessions.all }) }
+  // `row` is the displayed row, so a repeated toggle targets the state the user sees.
+  const pin = useSessionPin()
+  const archive = useResourceMutation({ resource: () => `session:${sid}`, effect: (archived: boolean) => ({ fields: { archived } }), mutationFn: (archived) => api.archiveSession(sid, archived), onSuccess: (_, archived) => { if (archived) showToast(m.session_archived()) }, onError: (e) => showToast(m.session_archive_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
+  const duplicate = useMutation({ mutationFn: () => api.duplicateSession(sid), onSuccess: (r) => { showToast(m.session_duplicated()); invalidate(); void navigate({ to: '/session/$sessionId', params: { sessionId: r.session.session_id } }) }, onError: (e) => showToast(m.session_duplicate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const regen = useMutation({ mutationFn: () => api.regenerateTitle(sid), onSuccess: (r) => { showToast(r.title ? m.session_title_regenerated({ title: r.title }) : m.session_title_regenerating()); invalidate() }, onError: (e) => showToast(m.session_title_regenerate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const shareUrl = row.share_url
   /** Copy the server's share URL; when the clipboard refuses, the toast carries the link instead. */
@@ -66,13 +147,6 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
     onSuccess: async (r) => { await copyShareLink(r.share.url); invalidate() },
     onError: (e) => showToast(m.share_session_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
   })
-  const revoke = useResourceMutation({
-    resource: () => `session:${sid}`,
-    effect: () => ({ fields: { share_url: null } }),
-    mutationFn: () => api.revokeShare(sid),
-    onSuccess: () => showToast(m.share_session_revoked()),
-    onError: (e) => showToast(m.share_session_revoke_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
-  })
   const copyLink = () => {
     void navigator.clipboard.writeText(appUrl(`session/${encodeURIComponent(sid)}`).href).then(() => showToast(m.copied()), () => showToast(m.session_link_copy_failed(), 3000, 'error'))
   }
@@ -84,7 +158,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
     a.click()
   }
   return (
-    <span className="contents" onClick={(e) => e.stopPropagation()}>
+    <span ref={ref} className="contents" onClick={(e) => e.stopPropagation()}>
       <Menu
         label={m.session_menu()}
         align="end"
@@ -94,17 +168,17 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           </IconButton>
         }
       >
-        {!row.read_only && <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>}
+        {allowed.rename(row) && <MenuItem onClick={() => openAction('rename')}>{m.session_rename()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
         {row.can_pin && <MenuItem onClick={() => pin.mutate({ id: sid, pinned: !row.pinned, group: row.sidebar_group })}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
-        {!row.read_only && <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>}
+        {allowed.move(row) && <MenuItem onClick={() => openAction('move')}>{m.session_move_project()}</MenuItem>}
         <MenuSeparator />
         <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
         {shareUrl
           ? <>
               <MenuItem onClick={() => { void copyShareLink(shareUrl) }}>{m.session_share_copy_link()}</MenuItem>
               {row.can_share && <MenuItem onClick={() => share.mutate()}>{m.share_session_refresh_snapshot()}</MenuItem>}
-              <MenuItem className="text-error" onClick={() => setDialog({ kind: 'revoke' })}>{m.session_share_revoke()}</MenuItem>
+              <MenuItem className="text-error" onClick={() => openAction('revoke')}>{m.session_share_revoke()}</MenuItem>
             </>
           : row.can_share && <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
         {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
@@ -112,32 +186,10 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         <MenuItem onClick={() => exportAs('markdown')}>{m.session_export_markdown()}</MenuItem>
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
         <MenuSeparator />
-        {row.worktree_branch && !row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'worktree' })}>{m.session_worktree_remove()}</MenuItem>}
+        {allowed.worktree(row) && <MenuItem className="text-error" onClick={() => openAction('worktree')}>{m.session_worktree_remove()}</MenuItem>}
         {row.can_archive && <MenuItem onClick={() => archive.mutate(!row.archived)}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>}
-        {!row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'delete' })}>{m.session_delete()}</MenuItem>}
+        {allowed.delete(row) && <MenuItem className="text-error" onClick={() => openAction('delete')}>{m.session_delete()}</MenuItem>}
       </Menu>
-      {dialog?.kind === 'rename' && (
-        <Dialog open onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_rename()} description={m.session_rename_desc()}>
-          <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) { rename.mutate(title.trim()); setDialog(null) } }} className="flex flex-col gap-3">
-            <TextInput autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={m.session_rename_placeholder()} aria-label={m.session_rename()} maxLength={300} />
-            <div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
-          </form>
-        </Dialog>
-      )}
-      {dialog?.kind === 'move' && (
-        <Dialog open onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_move_project()} description={row.project_id ? m.session_move_project_desc_has() : m.session_move_project_desc_none()}>
-          <form onSubmit={(e) => { e.preventDefault(); move.mutate(projectId); setDialog(null) }} className="flex flex-col gap-3">
-            <Select value={projectId} onValueChange={(v) => setProjectId(v)} aria-label={m.session_move_project()} className="w-full">
-              <option value="">—</option>
-              {(projects.data?.projects ?? []).map((p) => <option key={p.project_id} value={p.project_id}>{p.name}</option>)}
-            </Select>
-            <div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
-          </form>
-        </Dialog>
-      )}
-      {dialog?.kind === 'worktree' && <WorktreeRemoveDialog sessionId={sid} onClose={() => setDialog(null)} />}
-      <ConfirmDialog open={dialog?.kind === 'revoke'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_share_revoke()} description={m.stop_sharing_session_confirm()} confirmLabel={m.session_share_revoke()} cancelLabel={m.cancel()} danger onConfirm={() => revoke.mutate()} />
-      <ConfirmDialog open={dialog?.kind === 'delete'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_delete_confirm()} description={row.worktree_branch ? m.session_delete_worktree_desc() : m.session_delete_desc()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(); if (active) void navigate({ to: '/', search: { action: 'new-chat' } }) }} />
     </span>
   )
 }

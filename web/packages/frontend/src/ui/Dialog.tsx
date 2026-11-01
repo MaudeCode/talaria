@@ -43,6 +43,7 @@ export interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>
   /** A second, destructive way to confirm, beside the main one (TAL-1260: Restore everything). */
   alternate?: { label: string; onConfirm: () => void | Promise<void> } | undefined
+  finalFocus?: DialogProps['finalFocus']
 }
 
 // The confirmed change shows at once (optimistic writes); the dialog never waits for the server.
@@ -52,7 +53,7 @@ function confirmThenClose(confirm: () => void | Promise<void>, close: () => void
 }
 
 /** Destructive confirmation (alert dialog semantics: no outside-click dismissal). */
-export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm, alternate }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm, alternate, finalFocus }: ConfirmDialogProps) {
   const action = (label: string, destructive: boolean | undefined, confirm: () => void | Promise<void>) => (
     <button
       type="button"
@@ -66,7 +67,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
     <BaseAlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseAlertDialog.Portal>
         <BaseAlertDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/50" />
-        <BaseAlertDialog.Popup className="fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
+        <BaseAlertDialog.Popup finalFocus={finalFocus} className="fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
           <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
           {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
