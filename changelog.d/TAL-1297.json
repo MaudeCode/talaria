@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Stopping read-aloud in Talaria Web now silences a reply whose extension voice is still being generated, and stopped or failed clips no longer hold their audio in memory.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
