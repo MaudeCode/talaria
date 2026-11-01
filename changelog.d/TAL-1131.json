@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long model menus in Talaria Web open scrolled to the selected model, keep the search field in place while you scroll, and keep keyboard-highlighted models in view.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

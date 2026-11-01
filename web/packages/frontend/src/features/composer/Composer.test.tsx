@@ -1008,6 +1008,24 @@ describe('Composer', () => {
     expect(getFirstSend()).toBeNull()
   })
 
+  it('keeps the phone settings panel open for presses inside a menu it opened, and closes it for presses elsewhere (TAL-1131)', async () => {
+    window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
+    // jsdom lays nothing out; a measured footer lets the phone fit pass move the chips into the panel.
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(320)
+    renderComposer({ ...writable, is_streaming: false })
+    act(() => screen.getByRole('textbox').focus())
+    const toggle = document.querySelector<HTMLElement>('#composerMobileConfigBtn')!
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.click(within(document.querySelector<HTMLElement>('#composerMobileConfigPanel')!).getByRole('button', { name: /^Reasoning effort:/ }))
+    // The menu is portaled outside the composer box, yet a press in it belongs to the panel that opened it.
+    fireEvent.pointerDown(await screen.findByRole('menuitemradio', { name: 'high' }))
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.pointerDown(document.body)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    width.mockRestore()
+  })
+
   it('keeps a phone composer\'s empty strip while its chips take focus or a tap, and folds it once focus leaves (TAL-698)', async () => {
     window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     renderComposer({ ...writable, is_streaming: false })

@@ -260,10 +260,13 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   }, [fitFooter, readOnly])
   const phone = usePhone()
   const box = useRef<HTMLDivElement>(null)
-  // The overflow panel closes on any pointer-down outside the composer box.
+  // The overflow panel closes on any pointer-down outside the composer box. TAL-1131: a press in a menu the panel opened
+  // is inside: React bubbles it through the portal to the box, which marks it before this document listener runs.
+  const pressedInBox = useRef(false)
   useEffect(() => {
     if (!configOpen) return
-    const on = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setConfigOpen(false) }
+    pressedInBox.current = false
+    const on = () => { if (!pressedInBox.current) setConfigOpen(false); pressedInBox.current = false }
     document.addEventListener('pointerdown', on)
     return () => document.removeEventListener('pointerdown', on)
   }, [configOpen])
@@ -798,7 +801,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         id="composerBox"
         ref={box}
         onFocus={() => { setFocusWithin(true); wake() }}
-        onPointerDown={wake}
+        onPointerDown={() => { pressedInBox.current = true; wake() }}
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
