@@ -7,6 +7,7 @@ import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
 import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
 
@@ -446,7 +447,7 @@ describe('curated and fallback model lists (TAL-799)', () => {
     writeFileSync(join(home, 'config.yaml'), '# cfg\n')
     const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
     const lookups = (provider: string): number => sidecar.calls.filter((c) => c.method === 'providers.model_ids' && (c.params as Json).provider === provider).length
-    return { home, catalog, lookups, tick: (s: number) => { clock += s } }
+    return { home, catalog, sidecar, lookups, tick: (s: number) => { clock += s } }
   }
 
   it('lists the Agent\'s curated ids for a provider without credentials, and never repairs onto them', async () => {
@@ -487,6 +488,56 @@ describe('curated and fallback model lists (TAL-799)', () => {
       expect(lookups('deepseek')).toBe(first + 1)
       expect(catalog.sessionModelRepair(home, 'ds-curated', 'ollama')).toEqual(['ds-curated', 'deepseek'])
       expect(await catalog.liveModels(home, 'deepseek')).toMatchObject({ source: 'live', count: 1 })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  // TAL-981: setup cards for providers without credentials follow the picker, not the frozen tables.
+  const unkeyed = { model: { provider: 'ollama', default: 'llama3.2' }, providers: { ollama: { base_url: 'http://ollama.test/v1' } } }
+
+  it('lists the Agent\'s curated ids on an unkeyed provider card, keeping the static table without a sidecar', async () => {
+    const { home, catalog } = setup(unkeyed, (provider) => (provider === 'anthropic' ? { model_ids: ['claude-fable-5.1', 'claude-opus-5-5', 'claude-haiku-5-5'], fallback: true } : { model_ids: [] }))
+    try {
+      const card = (await catalog.providers(home)).providers.find((p) => p.id === 'anthropic')!
+      expect(card).toMatchObject({ has_key: false, configured: false, models_total: 3 })
+      expect((card.models as Entry[]).map((m) => m.id)).toEqual(['claude-fable-5.1', 'claude-opus-5-5', 'claude-haiku-5-5'])
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: unkeyed }))
+      const offline = new ProviderCatalog({ sidecar: () => null, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      const fallback = (await offline.providers(home)).providers.find((p) => p.id === 'anthropic')!
+      expect((fallback.models as Entry[]).map((m) => m.id)).toEqual(PROVIDER_MODELS.anthropic!.map((m) => m.id))
+      expect(fallback.models_total).toBe(PROVIDER_MODELS.anthropic!.length)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('starts every unconfigured card\'s lookup before any answers', async () => {
+    const reference = setup(unkeyed, () => ({ model_ids: [] }))
+    let expected = 0
+    try {
+      const rows = (await reference.catalog.providers(reference.home)).providers
+      const lookups = new Set(rows.filter((p) => p.configured !== true && p.is_custom !== true && p.is_plugin_provider !== true).map((p) => String(p.id)))
+      expect(lookups.size).toBeGreaterThan(10)
+      for (const id of lookups) expect(reference.lookups(id), id).toBe(1)
+      // The configured Ollama row looks its catalog up in the same batch.
+      expected = reference.sidecar.calls.filter((c) => c.method === 'providers.model_ids').length
+      expect(expected).toBe(lookups.size + 1)
+    } finally {
+      rmSync(reference.home, { recursive: true, force: true })
+    }
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let started = 0
+    const { home, catalog, sidecar } = setup(unkeyed, () => ({ model_ids: [] }))
+    try {
+      sidecar.respond('providers.model_ids', async (p) => { started += 1; await held; return { provider: p.provider, model_ids: [] } })
+      const cards = catalog.providers(home)
+      try {
+        await vi.waitFor(() => { expect(started).toBe(expected) })
+      } finally { release() }
+      await cards
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

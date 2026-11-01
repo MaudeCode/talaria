@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Provider setup cards for providers you have not connected yet list the models Hermes Agent currently offers, matching the model picker, instead of an older built-in list.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
