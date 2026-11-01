@@ -316,6 +316,8 @@ describe('agent session tools under person isolation (TAL-48)', () => {
       const listed = await sidecar.serverRequest('server.session_list', { caller_session_id: 'alicecaller' })
       expect((listed as { result: { sessions: { session_id: string }[] } }).result.sessions.map((row) => row.session_id).sort()).toEqual(['alicecaller', 'alicepeer'])
       expect(await sidecar.serverRequest('server.queue_list', { caller_session_id: 'alicecaller', session_id: 'alicepeer' })).toMatchObject({ result: { session_id: 'alicepeer', pending_steers: [] } })
+      // TAL-1165's session tools follow the same rule: no message reaches Bob's chat.
+      expect(await sidecar.serverRequest('server.session_send', { caller_session_id: 'alicecaller', session_id: 'bobchat', message: 'hello' })).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
       for (const method of ['server.queue_list', 'server.queue_send_now', 'server.queue_withdraw'] as const) {
         for (const session_id of ['bobchat', 'legacychat']) {
           expect(await sidecar.serverRequest(method, { caller_session_id: 'alicecaller', session_id, steer_id: 'steer-x' }), `${method} ${session_id}`).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
