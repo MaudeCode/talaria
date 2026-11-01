@@ -176,7 +176,10 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: bo
 export class BackgroundTaskStore {
   private readonly cache = new Map<string, Receipt[]>()
   private readonly generations = new Map<string, number>()
+  /** TAL-1299: bumped by every cache write or eviction, so a read that started earlier never caches over it. */
+  private readonly epochs = new Map<string, number>()
   generation(sid: string): number { return this.generations.get(sid) ?? 0 }
+  private invalidate(sid: string): void { this.epochs.set(sid, (this.epochs.get(sid) ?? 0) + 1) }
 
   constructor(private readonly documents: DocumentBackend, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>) {}
 
@@ -187,14 +190,21 @@ export class BackgroundTaskStore {
 
   async list(sid: string): Promise<Receipt[]> {
     if (!isSafeSessionId(sid)) return []
-    const cached = this.cache.get(sid)
-    if (cached) return cached
-    const generation = this.generation(sid)
-    let receipts: Receipt[]
-    try { receipts = this.parse((await this.documents.get('background', sid))?.value) } catch { receipts = [] }
-    if (generation !== this.generation(sid)) return []
-    this.cache.set(sid, receipts)
-    return receipts
+    for (;;) {
+      const cached = this.cache.get(sid)
+      if (cached) return cached
+      const generation = this.generation(sid)
+      const epoch = this.epochs.get(sid)
+      let receipts: Receipt[] | null
+      try { receipts = this.parse((await this.documents.get('background', sid))?.value) } catch { receipts = null }
+      if (generation !== this.generation(sid)) return []
+      // A mutation or eviction landed while this read was in flight: use its cache or read the newer document.
+      if (epoch !== this.epochs.get(sid)) continue
+      // A failed read shows as empty but is not cached, so the next read tries storage again.
+      if (!receipts) return []
+      this.cache.set(sid, receipts)
+      return receipts
+    }
   }
 
   async get(sid: string, taskId: string): Promise<Receipt | undefined> { return (await this.list(sid)).find((receipt) => receipt.task_id === taskId) }
@@ -209,7 +219,7 @@ export class BackgroundTaskStore {
       const tasks = this.bounded(receipts)
       return { value: { version: 1, tasks }, result: { tasks, result }, skip: opts.skipUnchanged === true && before === JSON.stringify(tasks) }
     }, { replaceInvalid: true })
-    if (generation === this.generation(sid)) this.cache.set(sid, committed.tasks)
+    if (generation === this.generation(sid)) { this.invalidate(sid); this.cache.set(sid, committed.tasks) }
     return committed.result
   }
 
@@ -245,11 +255,11 @@ export class BackgroundTaskStore {
 
   async sessionIds(): Promise<string[]> { return (await this.documents.list('background')).map((entry) => entry.key).filter(isSafeSessionId) }
 
-  evict(sid: string): void { this.cache.delete(sid) }
+  evict(sid: string): void { this.invalidate(sid); this.cache.delete(sid) }
 
   async delete(sid: string): Promise<void> {
     this.generations.set(sid, this.generation(sid) + 1)
-    this.cache.delete(sid)
+    this.evict(sid)
     try { await this.documents.delete('background', sid) } catch { /* best effort */ }
   }
 

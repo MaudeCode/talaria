@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundActivity, BackgroundTaskStore, backgroundLink, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
 import type { SidecarLike } from '../sidecar/client.js'
+import type { DocumentBackend } from './storage/backend.js'
 
 const dirs: string[] = []
 const tempDir = (): string => { const d = mkdtempSync(join(tmpdir(), 'bg-tasks-')); dirs.push(d); return d }
@@ -224,4 +225,121 @@ it('does not recreate deleted background receipts when an earlier Agent read fin
   await rejected
   expect(await store.list('session')).toEqual([])
   expect(await store.sessionIds()).toEqual([])
+})
+
+/** TAL-1299: a document backend whose next reads can be held after reading, or fail once, on demand. */
+function controlledReads(inner: DocumentBackend) {
+  const held: (() => void)[] = []
+  let hold = 0
+  let fail = 0
+  let reads = 0
+  const backend: DocumentBackend = {
+    get: async (namespace, key, opts) => {
+      reads += 1
+      if (fail > 0) { fail -= 1; throw new Error('Synthetic transient read failure') }
+      const value = await inner.get(namespace, key, opts)
+      if (hold > 0) { hold -= 1; await new Promise<void>((resolve) => { held.push(resolve) }) }
+      return value
+    },
+    put: (namespace, key, value, expected) => inner.put(namespace, key, value, expected),
+    delete: (namespace, key, expected) => inner.delete(namespace, key, expected),
+    list: (namespace) => inner.list(namespace),
+  }
+  return {
+    backend,
+    holdNext: () => { hold += 1 },
+    failNext: () => { fail += 1 },
+    reads: () => reads,
+    held: () => vi.waitFor(() => { expect(held).toHaveLength(1) }),
+    release: () => { held.shift()!() },
+  }
+}
+
+describe('background receipt cache (TAL-1299)', () => {
+  const seeded = async (dir: string, receipts: Parameters<BackgroundTaskStore['update']>[1]): Promise<void> => { await new BackgroundTaskStore(testSessionDocuments(dir), () => 100).update('s', receipts) }
+
+  it('keeps a committed update or mark when an older cold read finishes after it', async () => {
+    const dir = tempDir()
+    await seeded(dir, [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize' }])
+    const reads = controlledReads(testSessionDocuments(dir))
+    const store = new BackgroundTaskStore(reads.backend, () => 200)
+    reads.holdNext()
+    const stale = store.list('s')
+    await reads.held()
+    await store.update('s', [{ task_id: 'bg1', kind: 'background_command', status: 'completed', result: 'the answer' }])
+    reads.release()
+    expect(await stale).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed' })])
+    expect(await store.list('s')).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed' })])
+    expect((await store.get('s', 'bg1'))?.result).toBe('the answer')
+
+    const marked = new BackgroundTaskStore(reads.backend, () => 300)
+    reads.holdNext()
+    const older = marked.list('s')
+    await reads.held()
+    await marked.mark('s', 'bg1', { dismissed_at: 300 })
+    reads.release()
+    await older
+    expect((await marked.get('s', 'bg1'))?.dismissed_at).toBe(300)
+  })
+
+  it('does not let a read held across an evict or delete repopulate obsolete receipts', async () => {
+    const dir = tempDir()
+    await seeded(dir, [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize' }])
+    const reads = controlledReads(testSessionDocuments(dir))
+    const store = new BackgroundTaskStore(reads.backend, () => 200)
+    reads.holdNext()
+    const stale = store.list('s')
+    await reads.held()
+    await seeded(dir, [{ task_id: 'bg1', kind: 'background_command', status: 'completed', result: 'external' }])
+    store.evict('s')
+    reads.release()
+    expect(await stale).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed' })])
+    expect((await store.get('s', 'bg1'))?.result).toBe('external')
+
+    reads.holdNext()
+    const deleted = new BackgroundTaskStore(reads.backend, () => 300)
+    const doomed = deleted.list('s')
+    await reads.held()
+    await deleted.delete('s')
+    reads.release()
+    expect(await doomed).toEqual([])
+    expect(await deleted.list('s')).toEqual([])
+  })
+
+  it('retries storage after a transient read failure instead of caching it as empty', async () => {
+    const dir = tempDir()
+    await seeded(dir, [{ task_id: 'bg1', kind: 'background_command', status: 'completed', result: 'the answer' }])
+    const reads = controlledReads(testSessionDocuments(dir))
+    const store = new BackgroundTaskStore(reads.backend, () => 200)
+    reads.failNext()
+    expect(await store.list('s')).toEqual([])
+    expect((await store.get('s', 'bg1'))?.result).toBe('the answer')
+  })
+
+  it('caches successful reads, empty ones included, and keeps no read state after failure or supersession', async () => {
+    const dir = tempDir()
+    const reads = controlledReads(testSessionDocuments(dir))
+    const store = new BackgroundTaskStore(reads.backend, () => 200)
+    expect(await store.list('empty')).toEqual([])
+    expect(await store.list('empty')).toEqual([])
+    expect(reads.reads()).toBe(1)
+
+    await seeded(dir, [{ task_id: 'bg1', kind: 'background_command', status: 'running' }])
+    reads.failNext()
+    await store.list('s')
+    await store.list('s')
+    await store.list('s')
+    expect(reads.reads()).toBe(3)
+
+    store.evict('s')
+    reads.holdNext()
+    const stale = store.list('s')
+    await reads.held()
+    store.evict('s')
+    reads.release()
+    await stale
+    const settled = reads.reads()
+    await store.list('s')
+    expect(reads.reads()).toBe(settled)
+  })
 })
