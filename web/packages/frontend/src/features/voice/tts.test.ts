@@ -186,6 +186,18 @@ describe('extension speech playback (TAL-1297)', () => {
     expect(revoked).toEqual([FakeAudio.made[0]!.src])
   })
 
+  it('reports a media failure that fires error before play rejects', async () => {
+    const play = deferred<undefined>()
+    FakeAudio.playResult = async () => { await play.promise }
+    const a = await start('First')
+    a.bytes.resolve(new ArrayBuffer(1))
+    await vi.waitFor(() => expect(FakeAudio.made[0]?.play).toHaveBeenCalledOnce())
+    FakeAudio.made[0]!.onerror?.()
+    play.reject(new DOMException('The element has no supported sources.', 'NotSupportedError'))
+    await expect(a.done).rejects.toThrow('no supported sources')
+    expect(revoked).toEqual([FakeAudio.made[0]!.src])
+  })
+
   it('releases the old clip on replacement, and its late events leave the new clip playing', async () => {
     const a = await start('First')
     a.bytes.resolve(new ArrayBuffer(1))

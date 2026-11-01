@@ -54,8 +54,8 @@ export async function speak(text: string): Promise<void> {
     } }
     current = playback
     audio.onended = audio.onerror = playback.release
-    // A Stop during play() rejects it with AbortError; that is the requested silence, not a failure.
-    try { await audio.play() } catch (err) { const stopped = released; playback.release(); if (!stopped) throw err }
+    // A Stop or newer read during play() rejects it with AbortError; that is the requested silence, not a failure.
+    try { await audio.play() } catch (err) { playback.release(); if (turn === generation) throw err }
     return
   }
   if (!('speechSynthesis' in window)) return
