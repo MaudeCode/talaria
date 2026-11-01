@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type DragEvent, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type DragEvent, type KeyboardEvent, type ReactNode, type SetStateAction } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -97,6 +97,12 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // TAL-1606: the tree has one tab stop, the row last focused in this folder. A refresh keeps it on that row; a removed
+  // row passes it to the row now at its index. Opening a folder starts at its first row; Up returns to the folder left.
+  const [cursor, setCursor] = useState({ dir: '.', path: '', index: 0 })
+  const treeRef = useRef<HTMLDivElement>(null)
+  // The row focus was last on, until focus moves to something outside the tree.
+  const focusedRow = useRef<HTMLElement | null>(null)
   const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active, staleTime: 5_000 })
@@ -127,7 +133,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const rename = useResourceMutation({ ...treeWrite, onSuccess: (_, { path, name }) => { relocateDrafts(path, joinPath(parentOf(path), name)); void refresh() }, resource: ({ path, name }: { path: string; name: string }) => [entryResource(workspace, path), entryResource(workspace, joinPath(parentOf(path), name))], readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
   const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file' } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
   const submitName = (kind: 'file' | 'dir', name: string) => { setNotice(null); create.mutate({ resource: newResource(createKind(workspace, dir)), path: joinPath(dir, name), name, isDir: kind === 'dir' }) }
-  const go = (path: string) => { setNotice(null); setDir(path) }
+  const go = (path: string) => { setNotice(null); setCursor({ dir: path, path: dir, index: 0 }); setDir(path) }
   const dropProps = (dest: string) => ({
     onDragOver: (ev: DragEvent) => {
       if (!ev.dataTransfer.types.includes(DRAG_TYPE)) return
@@ -146,6 +152,25 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   })
   // The server orders the listing (symlinks, folders, files); rows render in that order.
   const entries = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
+  const paths = entries.map((e) => e.path ?? joinPath(dir, e.name))
+  const kept = cursor.dir === dir ? paths.indexOf(cursor.path) : -1
+  const activeIndex = kept >= 0 ? kept : Math.min(cursor.dir === dir ? cursor.index : 0, paths.length - 1)
+  // When the focused row leaves (removed, or its folder or file view replaced it) and focus fell to the page, the tab
+  // stop row takes it. Focus the user moved elsewhere stays there.
+  useEffect(() => {
+    const last = focusedRow.current
+    const current = document.activeElement
+    if (!active || !last || last.isConnected || (current && current !== document.body)) return
+    treeRef.current?.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')?.focus()
+  })
+  const onTreeKey = (ev: KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(ev.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+    const at = items.indexOf(ev.target as HTMLElement)
+    const to = at < 0 ? null : ({ ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 } as Record<string, number>)[ev.key]
+    if (to === undefined || to === null) return
+    ev.preventDefault()
+    items[Math.max(0, Math.min(to, items.length - 1))]?.focus()
+  }
   const g = git.data?.git
   const readOnly = managed && (content.data?.read_only !== false || content.isError)
   const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
@@ -219,20 +244,24 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               <IconButton label={m.close()} className="h-5 w-5" onClick={() => setNotice(null)}><X size={12} aria-hidden="true" /></IconButton>
             </div>
           )}
-          <div className="file-tree min-h-0 flex-1 overflow-y-auto p-1" role="tree" aria-label={m.ws_panel_files()}>
+          <div ref={treeRef} className="file-tree min-h-0 flex-1 overflow-y-auto p-1" role="tree" aria-label={m.ws_panel_files()} onKeyDown={onTreeKey} onBlur={(ev) => { if (ev.relatedTarget && !ev.currentTarget.contains(ev.relatedTarget)) focusedRow.current = null }}>
             {listing.isPending && <LoadingState />}
             {listing.isError && <ErrorState error={listing.error} onRetry={() => { void listing.refetch() }} />}
             {listing.isSuccess && entries.length === 0 && <div role="status" className="p-3 text-xs text-muted">{listing.data.unavailable ? m.ws_panel_managed_unavailable() : m.ws_panel_empty()}</div>}
-            {entries.map((e) => {
-              const path = e.path ?? joinPath(dir, e.name)
+            {entries.map((e, i) => {
+              const path = paths[i] ?? ''
               const isDir = !!e.is_dir || e.type === 'dir' || e.type === 'directory'
               const entry: Entry = { path, name: e.name, isDir }
+              const size = !isDir && e.size !== undefined && e.size !== null ? formatBytes(e.size) : ''
+              const tabIndex = i === activeIndex ? 0 : -1
               return (
                 <div key={path} role="none" className={cn('group flex items-center rounded-md hover:bg-hover', e.hidden && 'opacity-60', dropTarget === path && 'bg-accent-bg')} {...(isDir ? dropProps(path) : {})}>
                   <button
                     type="button"
                     role="treeitem"
-                    aria-label={e.name}
+                    aria-label={isDir ? m.ws_panel_entry_folder({ name: e.name }) : size ? m.ws_panel_entry_file_size({ name: e.name, size }) : m.ws_panel_entry_file({ name: e.name })}
+                    tabIndex={tabIndex}
+                    onFocus={(ev) => { focusedRow.current = ev.currentTarget; setCursor({ dir, path, index: i }) }}
                     draggable={!managed}
                     onDragStart={(ev) => { ev.dataTransfer.setData(DRAG_TYPE, path); ev.dataTransfer.effectAllowed = 'move' }}
                     onDragEnd={() => setDropTarget(null)}
@@ -243,14 +272,14 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
                   >
                     {isDir ? <Folder size={14} className="shrink-0 text-accent-text" aria-hidden="true" /> : <FileIcon size={14} className="shrink-0 text-muted" aria-hidden="true" />}
                     <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                    {!isDir && e.size !== undefined && e.size !== null && <span className="text-[10px] text-muted">{formatBytes(e.size)}</span>}
+                    {size && <span className="text-[10px] text-muted">{size}</span>}
                   </button>
                   {!managed && <Menu
                     label={m.more_actions()}
                     align="end"
                     open={menuFor === path}
                     onOpenChange={(o) => setMenuFor(o ? path : null)}
-                    trigger={<IconButton label={m.more_actions()} className="h-6 w-6 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}
+                    trigger={<IconButton label={m.more_actions()} tabIndex={tabIndex} className="h-6 w-6 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}
                   >
                     <MenuItem onClick={() => setPending({ kind: 'rename', entry })}>{m.rename_title()}</MenuItem>
                     <MenuItem onClick={() => op.mutate(() => api.revealEntry(sessionId, path))}>{m.ws_panel_reveal()}</MenuItem>

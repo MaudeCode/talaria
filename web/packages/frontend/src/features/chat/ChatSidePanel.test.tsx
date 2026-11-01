@@ -160,7 +160,7 @@ describe('chat side panel (TAL-373)', () => {
   it('keeps an unsaved Files draft when the panel closes and reopens or another page is shown, without saving (TAL-1576)', async () => {
     vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'original', binary: false, size: 8 })
     const view = render(<Panel />)
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'README.md' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: /^README\.md,/ }))
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Preview' }), ' draft')
     view.rerender(<Panel open={false} />)
@@ -231,7 +231,7 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'agent text', binary: false, size: 10 })
     vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored())
     render(<Panel />)
-    await userEvent.click(await screen.findByRole('treeitem', { name: 'notes.txt' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: /^notes\.txt,/ }))
     await userEvent.type(await screen.findByRole('textbox', { name: 'Preview' }), ' plus my edit')
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
     vi.mocked(api.readFile).mockResolvedValue({ content: 'saved text', binary: false, size: 10 })
