@@ -635,7 +635,8 @@ export const toolsRouter = os.router({
     const sessions = ctx.deps.sessions
     entries = entries.filter((entry) => sessions.personMaySee(entry.owner_person_id))
     const visible = new Set(entries.map((entry) => str(entry.session_id)))
-    const stateRows = async (cutoff: number) => (await stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff)).filter((row) => visible.has(str(row.session_id)) || sessions.personMaySee(null))
+    const foreignOwners = await ctx.deps.sessionStore.foreignOwners()
+    const stateRows = async (cutoff: number) => (await stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff)).filter((row) => visible.has(str(row.session_id)) || sessions.personMaySee(foreignOwners.get(str(row.session_id)) ?? null))
     return buildInsights(entries, input.days, ctx.deps.nowSeconds(), stateRows) as never
   })),
   logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail, signal) as Promise<never>)),

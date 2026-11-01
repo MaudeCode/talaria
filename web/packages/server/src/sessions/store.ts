@@ -8,6 +8,8 @@ import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeS
 import { RevisionConflict, type StorageBackend, type StorageIssue, type SessionChange, type MessageMatch } from './storage/backend.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './storage/search-text.js'
 import type { PersonAccess } from '../auth/person.js'
+import { readDocument, updateDocument } from './storage/document.js'
+import { isDict } from './merge.js'
 export class SessionNotFound extends Error {
   constructor(readonly sid: string) {
     super(`Session not found: ${sid}`)
@@ -115,6 +117,24 @@ export class SessionStore {
   /** The owner every session a request creates is bound to: the request's person, never a client-supplied value. */
   newSessionOwner(): string | null {
     return this.personAccess()?.personId ?? null
+  }
+
+  private foreignOwnerTable: Promise<Map<string, string>> | null = null
+
+  /** TAL-48: the person who created each session the Agent owner holds (a diagnostic chat has no Web document). */
+  foreignOwners(): Promise<Map<string, string>> {
+    this.foreignOwnerTable ??= readDocument(this.deps.storage.documents, 'session-owners', 'owners', { replaceInvalid: true })
+      .then((record) => new Map(Object.entries(isDict(record?.value) ? record.value : {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')))
+      // An unreadable table reads as no owners, which only server owners can see past; the next read retries.
+      .catch(() => { this.foreignOwnerTable = null; return new Map<string, string>() })
+    return this.foreignOwnerTable
+  }
+
+  /** Records `owner` for an Agent-owned session this request just created; durable before the session is exposed. */
+  async recordForeignOwner(sid: string, owner: string | null): Promise<void> {
+    if (!owner) return
+    await updateDocument(this.deps.storage.documents, 'session-owners', 'owners', (raw) => ({ value: { ...(isDict(raw) ? raw : {}), [sid]: owner }, result: undefined }), { replaceInvalid: true })
+    ;(await this.foreignOwners()).set(sid, owner)
   }
 
   private async construct(init: SessionInit, profile: string | null): Promise<Session> {

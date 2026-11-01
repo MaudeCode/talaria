@@ -337,7 +337,13 @@ export class SessionService {
   /** The owner of `sid` lets this request see it, whatever its profile; always true while isolation is off. */
   async personMaySeeSessionId(sid: string): Promise<boolean> {
     if (!this.store.personAccess()) return true
-    try { return this.personMaySee((await this.store.get(sid, { metadataOnly: true })).owner_person_id) } catch { return this.personMaySee(null) }
+    try { return this.personMaySee((await this.store.get(sid, { metadataOnly: true })).owner_person_id) } catch { return this.personMaySeeForeign(sid) }
+  }
+
+  /** A session with no Web document: an Agent-owned chat a person created, else unowned Agent state. */
+  async personMaySeeForeign(sid: string): Promise<boolean> {
+    if (!this.store.personAccess()) return true
+    return this.personMaySee((await this.store.foreignOwners()).get(sid) ?? null)
   }
 
   /** Every session read, write and projection goes through this: the request's person owns it and its profile is active. */
@@ -358,8 +364,8 @@ export class SessionService {
     try {
       session = (await this.store.get(sid, { metadataOnly: true }))
     } catch {
-      // No Web session: an Agent-only (state.db) session or no session at all, which no person owns.
-      return this.personMaySee(null)
+      // No Web session: an Agent-owned chat (its recorded person), Agent state or no session at all (unowned).
+      return this.personMaySeeForeign(sid)
     }
     return this.visibleToRequest(session)
   }
@@ -833,8 +839,8 @@ export class SessionService {
    */
   async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null, reads?: SessionGateReads, opts: { transcript?: boolean } = {}): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid'; summary?: StateDbMessageSummary }> {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
-    // TAL-48: an Agent-only session belongs to no person, so under person isolation only a server owner reaches it.
-    if (!this.personMaySee(null)) return { session: null, reason: 'no_foreign_state' }
+    // TAL-48: an Agent session belongs to the person who created it through Web, else to no person (server owners only).
+    if (!(await this.personMaySeeForeign(sid))) return { session: null, reason: 'no_foreign_state' }
     const profile = this.deps.activeProfile()
     sid = await this.resolveSessionId(sid)
     if (reads?.sid !== sid) reads = this.sessionGateReads(sid)
@@ -870,6 +876,8 @@ export class SessionService {
     const model = transcript?.model && JSON.stringify(transcript.model) !== JSON.stringify(msgs) ? transcript.model : null
     const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.context() : model
     const session = new Session({
+      // A Web-created Agent chat keeps its person when a turn materializes it; Agent state stays unowned.
+      owner_person_id: (await this.store.foreignOwners()).get(sid) ?? null,
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
       pinned: Boolean(meta.pinned), archived: Boolean(meta.archived),
@@ -1284,7 +1292,7 @@ export class SessionService {
       if (!this.visibleToRequest(parent)) return null
       title = parent.title
     } catch {
-      if (!this.personMaySee(null)) return null
+      if (!(await this.personMaySeeForeign(parentId))) return null
       // A read-only foreign parent (a cron run) has no sidecar and opens from the active profile's state.db while it
       // has transcript rows and is not a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui` and `no_foreign_state`).
       const dbPath = this.stateDbPath(null)
@@ -1326,7 +1334,7 @@ export class SessionService {
     const meta = (await reads.meta())
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
-    if (!this.personMaySee(null)) throw new HttpFailure(404, 'Session not found')
+    if (!(await this.personMaySeeForeign(sid))) throw new HttpFailure(404, 'Session not found')
     if (!profileAgnostic && !this.visibleToActiveProfile(profile)) {
       if (profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile })
       throw new HttpFailure(404, 'Session not found')
@@ -1485,8 +1493,9 @@ export class SessionService {
       cliRows = expanded.rows
       if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
     }
+    const foreignOwners = await this.store.foreignOwners()
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
-    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(row.owner_person_id) }))
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(row.owner_person_id ?? foreignOwners.get(str(row.session_id)) ?? null) }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }
 
@@ -1668,7 +1677,7 @@ export class SessionService {
     if (await this.store.wasDeleted(ref.session_id) || await this.store.wasDeleted(ref.tip_session_id)) throw unavailable()
     let local: Session | null = null
     try { local = await this.store.get(ref.tip_session_id, { metadataOnly: !history }) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
-    if (local ? !this.visibleToRequest(local) : !this.personMaySee(null)) throw unavailable()
+    if (local ? !this.visibleToRequest(local) : !(await this.personMaySeeForeign(ref.tip_session_id))) throw unavailable()
     const report = await stateDbSessionReadAsync(emptyLineageReport(ref.tip_session_id), 'stateDbLineageReport', path, ref.tip_session_id)
     if (!report?.found || report.manual_review || report.lineage_key !== ref.session_id || report.tip_session_id !== ref.tip_session_id) throw unavailable()
     const segments = report.segments as Row[]
@@ -1814,6 +1823,8 @@ export class SessionService {
     const route = provider ? this.deps.profileLaunchRoute?.(profile, provider) ?? { provider, baseUrl: null } : null
     const sid = await this.owner.create(profile, typeof body.request_id === 'string' ? body.request_id : null, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
       ...(route ? { provider: route.provider } : {}), ...(route?.baseUrl ? { base_url: route.baseUrl } : {}), ...(toolsets ? { toolsets } : {}) })
+    // TAL-48: the Agent owner holds this chat, so its person is recorded here before anything reads it.
+    await this.store.recordForeignOwner(sid, this.store.newSessionOwner())
     return this.detail(sid, {})
   }
 
