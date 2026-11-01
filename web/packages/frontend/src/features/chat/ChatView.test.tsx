@@ -34,7 +34,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchSession: vi.fn(),
   newSession: vi.fn(),
   fetchSessionYolo: vi.fn(() => Promise.resolve({ yolo_enabled: false })),
-  fetchReasoning: () => Promise.resolve({ reasoning_effort: null }),
+  fetchReasoning: vi.fn(() => Promise.resolve({ reasoning_effort: null })),
   fetchClarifyPending: () => Promise.resolve({ pending: null }),
   fetchAgentHealth: () => Promise.resolve({ available: true }),
   branchSession: vi.fn(() => Promise.resolve({ session_id: 'branched' })),
@@ -225,6 +225,36 @@ it('shows toolsets, YOLO and reasoning choices to the composer before the writes
   await waitFor(() => expect(lastComposer().reasoning).toBe('high'))
   expect(api.setSessionToolsets).toHaveBeenCalledWith('memo-chat', ['web'])
   expect(api.setSessionYolo).toHaveBeenCalledWith('memo-chat', true)
+})
+
+it('reads and writes reasoning per chat, and a late answer never reaches the next chat (TAL-1647)', async () => {
+  const chats = Object.fromEntries(['chat-a', 'chat-b'].map((id) => [id, sessionFixture({ session_id: id, model: 'claude-sonnet-4-6', model_provider: 'anthropic', messages: [{ id: 1, role: 'user', content: 'Persisted question' }, { id: 2, role: 'assistant', content: `Answer ${id}` }] })]))
+  const stored: Record<string, string> = { 'chat-a': 'low', 'chat-b': 'high' }
+  vi.mocked(api.fetchReasoning).mockImplementation((sid) => Promise.resolve({ reasoning_effort: stored[sid] ?? null }))
+  vi.mocked(api.fetchSession).mockImplementation(((sid: string) => Promise.resolve({ session: chats[sid] })) as never)
+  let answer!: (status: object) => void
+  vi.mocked(api.setReasoningEffort).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  for (const session of Object.values(chats)) qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  try {
+    const view = render(<QueryClientProvider client={qc}><ChatView sessionId="chat-a" /></QueryClientProvider>)
+    await screen.findByText('Answer chat-a')
+    await waitFor(() => expect(lastComposer().reasoning).toBe('low'))
+    act(() => { lastComposer().onReasoningChange('medium') })
+    await waitFor(() => expect(lastComposer().reasoning).toBe('medium'))
+    expect(api.fetchReasoning).toHaveBeenCalledWith('chat-a', 'claude-sonnet-4-6', 'anthropic')
+    expect(api.setReasoningEffort).toHaveBeenCalledWith('medium', 'claude-sonnet-4-6', 'anthropic', 'chat-a')
+    view.rerender(<QueryClientProvider client={qc}><ChatView sessionId="chat-b" /></QueryClientProvider>)
+    await screen.findByText('Answer chat-b')
+    await waitFor(() => expect(lastComposer().reasoning).toBe('high'))
+    stored['chat-a'] = 'medium'
+    await act(async () => { answer({ reasoning_effort: 'medium' }); await Promise.resolve() })
+    expect(lastComposer().reasoning).toBe('high')
+    view.rerender(<QueryClientProvider client={qc}><ChatView sessionId="chat-a" /></QueryClientProvider>)
+    await waitFor(() => expect(lastComposer().reasoning).toBe('medium'))
+  } finally {
+    vi.mocked(api.fetchReasoning).mockImplementation(() => Promise.resolve({ reasoning_effort: null }))
+  }
 })
 
 it('rolls a refused YOLO change back and finishes /personality without waiting (TAL-1384)', async () => {

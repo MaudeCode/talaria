@@ -190,10 +190,19 @@ model and receive the actionable error. Global/default model setters are separat
 
 Chat-originated `POST /api/reasoning` effort changes include `session_id`, including
 reset requests with `effort: ""`. The server checks the target's profile and canonical
-writability before writing config. Native and other read-only chats receive HTTP 409
-with `code: reasoning_unsupported`; missing chats receive 404. Neither refusal changes
-profile defaults. Explicit profile settings omit `session_id`. The independent
+writability, then stores the effort on that chat only (TAL-1647): the profile default and
+other chats are unchanged. Native and other read-only chats receive HTTP 409
+with `code: reasoning_unsupported`; missing chats receive 404. Neither refusal writes
+anything. Explicit profile settings omit `session_id`. The independent
 `display: show|hide` preference still writes only the Web display setting.
+
+A chat's stored `reasoning_effort` is on its session row. A new chat starts with its
+profile's default at creation; `null` (a chat from before TAL-1647) inherits the live
+profile default; `""` is the provider default. Duplicates, forks, focused continuations,
+`/background`, `/btw`, and imports of an export keep it; clear keeps it.
+`GET /api/reasoning?session_id=` answers that chat's effort, coerced for the model and
+provider its turns run on, and `chat.start` builds the same value. A chat Web keeps no record
+of (a native chat) reads the profile default for the `model`/`provider` the client sends.
 
 `GET /api/reasoning` advertises `supports_session_scope: true` only with this guard.
 Independently updated clients check that capability before chat effort/reset writes.

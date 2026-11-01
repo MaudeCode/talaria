@@ -92,6 +92,11 @@ describe('contracts package', () => {
     expect(input.safeParse({ effort: 'high', session_id: null }).success).toBe(false)
     expect(ReasoningUnsupportedSchema.parse(fixture.refusal)).toEqual(fixture.refusal)
     expect(settingsContract.reasoning.get['~orpc'].outputSchema!.parse(fixture.status)).toEqual(fixture.status)
+    // TAL-1647: a chat reads its own effort, and its session row carries the stored choice (null inherits the profile).
+    const scoped = shared('fixtures/reasoning-scope.json') as { read: unknown; session: unknown; inherited: unknown }
+    expect(settingsContract.reasoning.get['~orpc'].inputSchema!.parse(scoped.read)).toEqual(scoped.read)
+    expect(settingsContract.reasoning.get['~orpc'].inputSchema!.safeParse({ session_id: '  ' }).success).toBe(false)
+    for (const row of [scoped.session, scoped.inherited]) expect(SessionSchema.pick({ session_id: true, reasoning_effort: true }).parse(row)).toEqual(row)
   })
   it('pins every auxiliary reasoning state and the effort write for every consumer (TAL-1285)', () => {
     const fixture = shared('fixtures/auxiliary-reasoning.json') as Record<string, unknown>

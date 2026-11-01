@@ -81,8 +81,11 @@ export const fetchOpenRouterCostHistory = () => orpc().providers.costHistory({ p
 export const fetchPersonalities = () => orpc().personalities.list()
 /** The server reads `none`, `default`, or `clear` (when no personality has that name) as clearing it. */
 export const setPersonality = (session_id: SessionId, name: string) => orpc().personalities.set({ session_id, name })
-/** Reasoning config shared with the CLI (config.yaml agent.reasoning_effort / display.show_reasoning). */
-export const fetchReasoning = (model?: string | null, provider?: string | null) => orpc().reasoning.get({ ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
+/**
+ * TAL-1647: one chat's reasoning effort, resolved by the server for the model its turns run on. The chat's model rides
+ * along for a chat the server keeps no record of (a native chat), which reads the profile default for that model.
+ */
+export const fetchReasoning = (session_id: SessionId, model?: string | null, provider?: string | null) => orpc().reasoning.get({ session_id, ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 /** `effort: ''` clears the override so the provider default applies. */
 export const setReasoningEffort = (effort: string, model?: string | null, provider?: string | null, session_id?: SessionId) => orpc().reasoning.set({ effort, ...(session_id !== undefined ? { session_id } : {}), ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 export const setReasoningDisplay = (display: 'show' | 'hide') => orpc().reasoning.set({ display })

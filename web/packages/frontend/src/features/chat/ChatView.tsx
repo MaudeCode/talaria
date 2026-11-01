@@ -177,25 +177,26 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }
   const onNewWorktreeChat = (workspace: string | undefined) => { void newWorktreeChat(workspace) }
 
-  // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
-  const reasoningKey = keys.reasoning(session?.model, session?.model_provider)
-  const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
+  // TAL-1647: reasoning effort is each chat's own server state, keyed on the chat and refetched when its model changes.
+  const reasoningKey = keys.reasoning(sessionId, session?.model, session?.model_provider)
+  const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(sessionId ?? '', session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
   const reasoningEffect = useResourceEffects<string | null>()[JSON.stringify(reasoningKey)]
   // The chosen effort shows at once; the server's answer replaces it.
   const reasoning = reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus.data?.reasoning_effort || null
   const reasoningLevels = reasoningStatus.data?.supported_efforts
   const reasoningSupported = reasoningStatus.data?.supports_reasoning_effort !== false || reasoningStatus.data?.supports_thinking_toggle === true
   const reasoningWrite = useResourceMutation({
-    resource: ({ key }: { key: typeof reasoningKey; level: string | null; sid: string | undefined }) => JSON.stringify(key),
+    resource: ({ key }: { key: typeof reasoningKey; level: string | null }) => JSON.stringify(key),
     queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
     effect: ({ level }) => ({ value: level }),
-    mutationFn: ({ key: [, model, provider], level, sid }) => api.setReasoningEffort(level ?? '', model, provider, sid),
+    mutationFn: ({ key: [, sid, model, provider], level }) => api.setReasoningEffort(level ?? '', model, provider, sid ?? undefined),
     onSuccess: (status, { key }) => { qc.setQueryData(key, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) },
     onError: (e) => showErrorToast(e),
   })
   const sendReasoning = reasoningWrite.mutate
-  // Capture the model fields, not the query's escaping key array, so the compiler keeps this handler stable.
-  const setReasoning = (level: string | null) => { sendReasoning({ key: keys.reasoning(session?.model, session?.model_provider), level, sid: sessionId ?? undefined }) }
+  // Capture the chat and model fields, not the query's escaping key array, so the compiler keeps this handler stable; the
+  // answer and the optimistic value stay on the chat that was asked, whichever chat is open when it lands.
+  const setReasoning = (level: string | null) => { sendReasoning({ key: keys.reasoning(sessionId, session?.model, session?.model_provider), level }) }
   // History is projected by the server under the same preference as the live stream.
   const { mutate: setReasoningDisplay } = useResourceMutation({
     resource: () => 'reasoning-display', queryKey: [], readKeys: () => [['reasoning'], keys.sessions.all, ['worklog-history'], keys.settings], effect: (display: 'show' | 'hide') => ({ value: display }),

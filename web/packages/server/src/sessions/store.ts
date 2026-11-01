@@ -23,6 +23,8 @@ export interface SessionStoreDeps {
   events: SessionEventBus
   /** Defaults for a brand-new session (last workspace of the profile, effective default model). */
   defaults: (profile: string | null) => SessionDefaults | Promise<SessionDefaults>
+  /** TAL-1647: the profile's reasoning effort a new chat keeps as its own; `null` when unreadable (the chat inherits). */
+  reasoningDefault?: (profile: string | null) => Promise<string | null>
   activeStreamIds: () => Set<string>
   now: () => number
   log: (line: string) => void
@@ -154,7 +156,7 @@ export class SessionStore {
   }
 
   /** In-memory only until the first message is persisted (Python `new_session`). */
-  async newSession(opts: { sessionId?: string; workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null } = {}): Promise<Session> {
+  async newSession(opts: { sessionId?: string; workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null; reasoningEffort?: string | null } = {}): Promise<Session> {
     const profile = opts.profile ?? null
     const defaults = (await this.deps.defaults(profile))
     const wt = opts.worktree ?? null
@@ -167,6 +169,7 @@ export class SessionStore {
         profile,
         project_id: opts.projectId ?? null,
         personality: null,
+        reasoning_effort: opts.reasoningEffort !== undefined ? opts.reasoningEffort : (await this.deps.reasoningDefault?.(profile)) ?? null,
         worktree_path: wt?.path ?? null,
         worktree_branch: wt?.branch ?? null,
         worktree_repo_root: wt?.repo_root ?? null,

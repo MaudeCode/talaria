@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Each Talaria Web chat now remembers its own reasoning effort; changing it in one chat no longer changes other chats or the profile default.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -67,7 +67,7 @@ import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { StreamSlots } from './api/sse-routes.js'
-import { AgentConfig, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel } from './config/agent-config.js'
+import { AgentConfig, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
@@ -274,6 +274,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       const [bare, modelProvider] = parseProviderQualifiedModel(model) ?? [model || null, provider]
       return { workspace: (await workspaces.lastWorkspace(profile)), model: bare, modelProvider }
     },
+    reasoningDefault: async (profile) => { try { return profileReasoningEffort(await agentConfig.read(profileHome(profile ?? activeProfile()))) } catch { return null } },
     activeStreamIds: () => activeStreamIds,
     now,
     log,

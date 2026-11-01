@@ -278,15 +278,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.supports_thinking_toggle).toBe(false)
   })
 
-  it('allows direct-chat effort and reset but refuses stale or empty targets without config writes', async () => {
+  it('keeps direct-chat effort and reset on the chat and refuses stale or empty targets without config writes', async () => {
     const created = await json(await post(s, '/api/session/new', {}))
-    const sid = (created.session as Json).session_id
+    const sid = String((created.session as Json).session_id)
+    const profileDefault = JSON.stringify(configs.get(s.state)?.agent)
     for (const effort of ['low', '']) {
       const res = await post(s, '/api/reasoning', { session_id: sid, effort })
       expect(res.status).toBe(200)
-      const agent = configs.get(s.state)?.agent as Json
-      if (effort) expect(agent.reasoning_effort).toBe(effort)
-      else expect(agent).not.toHaveProperty('reasoning_effort')
+      expect((await json(res)).reasoning_effort).toBe(effort)
+      // TAL-1647: the chat keeps its own choice; the profile default is untouched.
+      expect(JSON.stringify(configs.get(s.state)?.agent)).toBe(profileDefault)
+      expect((await s.deps.sessionStore.get(sid)).reasoning_effort).toBe(effort)
     }
     for (const [session_id, status] of [['missing-chat', 404], ['', 400], ['   ', 400]] as const) {
       const before = readFileSync(join(s.state, 'config.yaml'), 'utf8')

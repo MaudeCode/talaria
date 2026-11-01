@@ -38,7 +38,7 @@ export const METADATA_FIELDS = [
   'pinned', 'archived', 'project_id', 'profile',
   'input_tokens', 'output_tokens', 'estimated_cost',
   'cache_read_tokens', 'cache_write_tokens',
-  'personality', 'active_stream_id',
+  'personality', 'reasoning_effort', 'active_stream_id',
   'pending_user_message', 'pending_attachments', 'pending_started_at', 'pending_user_source',
   'compression_anchor_visible_idx', 'compression_anchor_message_key',
   'compression_anchor_summary', 'pre_compression_snapshot',
@@ -262,6 +262,8 @@ export class Session {
   cache_read_tokens: number
   cache_write_tokens: number
   personality: unknown
+  /** TAL-1647: this chat's reasoning effort; `null` inherits the profile default, `''` is the provider default. */
+  reasoning_effort: string | null
   active_stream_id: string | null
   pending_user_message: string | null
   pending_attachments: unknown[]
@@ -387,6 +389,8 @@ export class Session {
     this.cache_read_tokens = Number(take('cache_read_tokens', 0) ?? 0) || 0
     this.cache_write_tokens = Number(take('cache_write_tokens', 0) ?? 0) || 0
     this.personality = take('personality', null)
+    const effort = take('reasoning_effort', null)
+    this.reasoning_effort = typeof effort === 'string' ? effort.trim().toLowerCase() : null
     const streamId = take('active_stream_id', null)
     this.active_stream_id = streamId ? str(streamId) : null
     const pending = take('pending_user_message', null)
@@ -560,6 +564,7 @@ export class Session {
       cache_write_tokens: this.cache_write_tokens,
       cache_hit_percent: promptCacheHitPercent(this.cache_read_tokens, this.input_tokens),
       personality: this.personality,
+      reasoning_effort: this.reasoning_effort,
       compression_anchor_summary: this.compression_anchor_summary,
       pre_compression_snapshot: this.pre_compression_snapshot,
       context_engine: this.context_engine,
