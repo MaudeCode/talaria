@@ -1,9 +1,9 @@
 import { testSessionDocuments } from '../test/storage.js'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BackgroundActivity, BackgroundTaskStore, backgroundLink, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
+import { BackgroundActivity, BackgroundTaskStore, backgroundLink, delegationStatus, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { DocumentBackend } from './storage/backend.js'
 
@@ -341,5 +341,25 @@ describe('background receipt cache (TAL-1299)', () => {
     const settled = reads.reads()
     await store.list('s')
     expect(reads.reads()).toBe(settled)
+  })
+})
+
+describe('delegation summary (TAL-1579)', () => {
+  it('maps the sidecar counts to every shared summary state', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/delegation-status.json'), 'utf8')) as Record<string, unknown>
+    const counts = (running: number, awaiting: number, live: boolean) => ({ ledger: 'available' as const, running_count: running, awaiting_delivery_count: awaiting, memory_live: live })
+    const derived = {
+      available_zero: delegationStatus(counts(0, 0, false), { owned: false, hasDelegations: true }),
+      running: delegationStatus(counts(2, 0, true), { owned: false, hasDelegations: true }),
+      awaiting_delivery: delegationStatus(counts(0, 1, false), { owned: false, hasDelegations: false }),
+      running_and_awaiting: delegationStatus(counts(1, 3, true), { owned: false, hasDelegations: true }),
+      unknown: delegationStatus({ ledger: 'unknown', running_count: null, awaiting_delivery_count: null, memory_live: null }, { owned: false, hasDelegations: true }),
+      // The owner's answer wins over anything this process could read.
+      unsupported: delegationStatus(counts(4, 4, true), { owned: true, hasDelegations: true }),
+      hidden: delegationStatus(counts(0, 0, false), { owned: false, hasDelegations: false }),
+    }
+    expect(derived).toEqual(fixture)
+    // Not asked (no sidecar, or the read failed) is unknown, never zero.
+    expect(delegationStatus(null, { owned: false, hasDelegations: true })).toEqual(fixture.unknown)
   })
 })

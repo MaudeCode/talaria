@@ -1,0 +1,9 @@
+{
+  "available_zero": { "availability": "available", "running_count": 0, "awaiting_delivery_count": 0, "memory_live": false, "visible": true, "refresh": false },
+  "running": { "availability": "available", "running_count": 2, "awaiting_delivery_count": 0, "memory_live": true, "visible": true, "refresh": true },
+  "awaiting_delivery": { "availability": "available", "running_count": 0, "awaiting_delivery_count": 1, "memory_live": false, "visible": true, "refresh": true },
+  "running_and_awaiting": { "availability": "available", "running_count": 1, "awaiting_delivery_count": 3, "memory_live": true, "visible": true, "refresh": true },
+  "unknown": { "availability": "unknown", "running_count": null, "awaiting_delivery_count": null, "memory_live": null, "visible": true, "refresh": false },
+  "unsupported": { "availability": "unsupported", "running_count": null, "awaiting_delivery_count": null, "memory_live": null, "visible": true, "refresh": false },
+  "hidden": { "availability": "available", "running_count": 0, "awaiting_delivery_count": 0, "memory_live": false, "visible": false, "refresh": false }
+}

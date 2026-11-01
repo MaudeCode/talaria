@@ -4,6 +4,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import type { DelegationStatus } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { ErrorState, LoadingState } from '../../ui/States'
@@ -31,19 +32,32 @@ export function useHasActiveAgents(sessionId: string, open: boolean): boolean | 
   return query.data?.agents_working ?? false
 }
 
+/** TAL-1579: the server's delegation summary in words; the server decides whether it shows. */
+export function delegationSummary(status: DelegationStatus): string {
+  if (status.availability === 'unsupported') return m.panel_agents_delivery_unsupported()
+  if (status.availability === 'unknown' || status.running_count === null || status.awaiting_delivery_count === null) return m.panel_agents_delivery_unknown()
+  const parts = []
+  if (status.running_count) parts.push(m.panel_agents_delivery_running({ n: status.running_count }))
+  // A dispatch the live registry holds before its ledger row is running, though not yet counted.
+  else if (status.memory_live) parts.push(m.bg_status_running())
+  if (status.awaiting_delivery_count) parts.push(m.panel_agents_delivery_waiting({ n: status.awaiting_delivery_count }))
+  return parts.length ? parts.join(' · ') : m.panel_agents_delivery_none()
+}
+
 export function AgentsPage({ sessionId, active }: { sessionId: string; active: boolean }) {
   const query = useQuery({
     queryKey: keys.backgroundAgents(sessionId),
     queryFn: () => fetchAgents(sessionId),
     enabled: active,
-    refetchInterval: (q) => (active && q.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
+    refetchInterval: (q) => (active && (q.state.data?.tasks.some((t) => t.active) || q.state.data?.delegation_status?.refresh) ? LIVE_REFRESH_MS : false),
   })
   if (query.isPending) return <LoadingState />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />
-  const { tasks, agent_available: available } = query.data
+  const { tasks, agent_available: available, delegation_status: delivery } = query.data
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {!available && <div className="border-b border-border-subtle px-3 py-2 text-xs text-muted" role="status">{m.panel_agents_unavailable()}</div>}
+      {delivery?.visible && <div className="agents-delivery border-b border-border-subtle px-3 py-2 text-xs text-muted" role="status" data-availability={delivery.availability}>{delegationSummary(delivery)}</div>}
       {tasks.length === 0 ? (
         <div className="p-3 text-xs text-muted" role="status">{m.panel_agents_empty()}</div>
       ) : (

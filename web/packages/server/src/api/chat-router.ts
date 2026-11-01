@@ -289,7 +289,10 @@ export const chatRouter = os.router({
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))
       const snapshot = await ctx.deps.background.snapshot(s.session_id, s.profile, { canStop: !(await ctx.deps.sessions.isReadOnly(s)) })
-      return { session_id: s.session_id, ...snapshot, tasks: input.kind ? snapshot.tasks.filter((t) => t.kind === input.kind) : snapshot.tasks }
+      // An owner lookup that fails is unknown, never a direct session (TAL-1579).
+      const owned = await Promise.resolve(ctx.deps.sessions.owner?.isOwned(s.session_id) ?? false).catch(() => null)
+      const delegation_status = await ctx.deps.background.delegationStatus(s.session_id, s.profile, { owned, tasks: snapshot.tasks })
+      return { session_id: s.session_id, ...snapshot, delegation_status, tasks: input.kind ? snapshot.tasks.filter((t) => t.kind === input.kind) : snapshot.tasks }
     })),
     result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))

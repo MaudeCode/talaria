@@ -67235,6 +67235,67 @@
                     },
                     "agents_working": {
                       "type": "boolean"
+                    },
+                    "delegation_status": {
+                      "type": "object",
+                      "properties": {
+                        "availability": {
+                          "enum": [
+                            "available",
+                            "unknown",
+                            "unsupported"
+                          ],
+                          "type": "string"
+                        },
+                        "running_count": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "awaiting_delivery_count": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "memory_live": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "visible": {
+                          "type": "boolean"
+                        },
+                        "refresh": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "availability",
+                        "running_count",
+                        "awaiting_delivery_count",
+                        "memory_live",
+                        "visible",
+                        "refresh"
+                      ]
                     }
                   },
                   "required": [

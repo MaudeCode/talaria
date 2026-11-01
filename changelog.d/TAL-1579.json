@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Agents panel in Talaria Web now shows how many delegated tasks are still running and how many finished results haven't reached the chat yet.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

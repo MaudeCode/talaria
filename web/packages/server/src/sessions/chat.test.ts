@@ -2499,6 +2499,65 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('process.background_list', () => ({ delegations: [], processes: [] }))
   })
 
+  it('summarizes running delegations apart from finished ones awaiting delivery (TAL-1579)', async () => {
+    const sid = await newSession(s)
+    const unit: Json = { delegation_id: 'd-done', origin_ui_session_id: sid, state: 'completed', dispatched_at: 10, completed_at: 20, updated_at: 20, goals: ['Check logs'], child_statuses: ['completed'], has_result: true, live_status: null }
+    sidecar.respond('process.background_list', () => ({ delegations: [unit], processes: [] }) as never)
+    let ledger: SidecarResult<'process.delegation_status'> = { ledger: 'available', running_count: 0, awaiting_delivery_count: 1, memory_live: false }
+    sidecar.respond('process.delegation_status', (params) => { expect(params).toEqual({ profile_home: s.deps.profileHome('default'), session_id: sid }); return ledger })
+    const read = async (query = ''): Promise<Json> => json(await s.get(`/api/background/tasks?session_id=${sid}${query}`))
+    const summary = (fields: Json): Json => ({ availability: 'available', running_count: 0, awaiting_delivery_count: 0, memory_live: false, visible: true, refresh: false, ...fields })
+    const unknown = summary({ availability: 'unknown', running_count: null, awaiting_delivery_count: null, memory_live: null })
+
+    const pending = await read()
+    expect(pending.delegation_status).toEqual(summary({ awaiting_delivery_count: 1, refresh: true }))
+    ledger = { ...ledger, awaiting_delivery_count: 0 }
+    const delivered = await read()
+    // The same task record either way: only the summary tells a waiting completion from a delivered one.
+    expect(delivered.tasks).toEqual(pending.tasks)
+    expect(delivered.delegation_status).toEqual(summary({}))
+    // The Agents page narrows the list to delegations; the summary still counts the session.
+    expect((await read('&kind=delegation')).delegation_status).toEqual(summary({}))
+    ledger = { ledger: 'available', running_count: 2, awaiting_delivery_count: 0, memory_live: true }
+    expect((await read()).delegation_status).toEqual(summary({ running_count: 2, memory_live: true, refresh: true }))
+    // A dispatch the live registry holds before its ledger row: refreshed, never added to the durable count.
+    ledger = { ledger: 'available', running_count: 0, awaiting_delivery_count: 0, memory_live: true }
+    expect((await read()).delegation_status).toEqual(summary({ memory_live: true, refresh: true }))
+
+    ledger = { ledger: 'unknown', running_count: null, awaiting_delivery_count: null, memory_live: null }
+    expect((await read()).delegation_status).toEqual(unknown)
+    sidecar.respond('process.delegation_status', () => { throw new SidecarError('offline', { condition: 'sidecar_unavailable' }) })
+    const offline = await read()
+    expect(offline.delegation_status).toEqual(unknown)
+    expect(offline.tasks).toEqual(pending.tasks)
+
+    // A native-owner session: its owner does not report delivery, so the summary never reads this process's ledger or registry.
+    const asked = sidecar.calls.filter((c) => c.method === 'process.delegation_status').length
+    const owned = vi.spyOn(s.deps.sessions.owner!, 'isOwned').mockImplementation((id) => Promise.resolve(id === sid))
+    try {
+      expect((await read()).delegation_status).toEqual(summary({ availability: 'unsupported', running_count: null, awaiting_delivery_count: null, memory_live: null }))
+      expect(sidecar.calls.filter((c) => c.method === 'process.delegation_status')).toHaveLength(asked)
+    } finally { owned.mockRestore() }
+    // An owner lookup that fails is unknown, and the tasks still list.
+    const failing = vi.spyOn(s.deps.sessions.owner!, 'isOwned').mockRejectedValue(new Error('owner offline'))
+    try {
+      const lookupFailed = await read()
+      expect(lookupFailed.delegation_status).toEqual(unknown)
+      expect(lookupFailed.tasks).toEqual(pending.tasks)
+      expect(sidecar.calls.filter((c) => c.method === 'process.delegation_status')).toHaveLength(asked)
+    } finally { failing.mockRestore() }
+
+    // No delegation record and nothing counted: nothing to show.
+    const quiet = await newSession(s)
+    sidecar.respond('process.background_list', () => ({ delegations: [], processes: [] }))
+    sidecar.respond('process.delegation_status', () => ({ ledger: 'available', running_count: 0, awaiting_delivery_count: 0, memory_live: false }))
+    expect((await json(await s.get(`/api/background/tasks?session_id=${quiet}`))).delegation_status).toEqual(summary({ visible: false }))
+    sidecar.respond('process.delegation_status', () => ({ ledger: 'unknown', running_count: null, awaiting_delivery_count: null, memory_live: null }))
+    expect((await json(await s.get(`/api/background/tasks?session_id=${quiet}`))).delegation_status).toEqual({ ...unknown, visible: false })
+    sidecar.respond('process.delegation_status', undefined)
+    sidecar.respond('process.background_list', undefined)
+  })
+
   it('keeps every piece of background work as one durable record that every client reads (TAL-372)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer to it' }]))

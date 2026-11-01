@@ -198,6 +198,20 @@
       }
     }
   ],
+  "process.delegation_status": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "webui-fixture"
+      },
+      "result": {
+        "ledger": "available",
+        "running_count": 0,
+        "awaiting_delivery_count": 0,
+        "memory_live": false
+      }
+    }
+  ],
   "process.stop": [
     {
       "params": {

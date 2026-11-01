@@ -5,7 +5,7 @@
  * `sessions/_background/<sid>.json`, so reloads, restarts and every client read the same history, and reading never
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
-import type { BackgroundLink, BackgroundTask, SessionActivityPhase, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, BackgroundTask, DelegationStatus, SessionActivityPhase, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -317,6 +317,20 @@ export function withBackgroundLinks<T>(messages: T[], receipts: Receipt[]): T[] 
   })
 }
 
+/**
+ * TAL-1579: the session's delegation summary from the sidecar's counts (null: not asked, or the read failed). Shown while
+ * the session has a delegation record or anything counts; refreshed while work runs or a completion waits for delivery.
+ */
+export function delegationStatus(read: SidecarResult<'process.delegation_status'> | null, opts: { owned: boolean; hasDelegations: boolean }): DelegationStatus {
+  const availability = opts.owned ? 'unsupported' : read?.ledger === 'available' ? 'available' : 'unknown'
+  const counted = availability === 'available' && read !== null
+  const running_count = counted ? read.running_count : null
+  const awaiting_delivery_count = counted ? read.awaiting_delivery_count : null
+  const memory_live = opts.owned ? null : read?.memory_live ?? null
+  const refresh = (running_count ?? 0) > 0 || (awaiting_delivery_count ?? 0) > 0 || memory_live === true
+  return { availability, running_count, awaiting_delivery_count, memory_live, visible: opts.hasDelegations || refresh, refresh }
+}
+
 /** TAL-1305: waits before re-reading after a refresh that could not reach the Agent (a sidecar restart, a busy call). */
 const REFRESH_RETRY_MS = [1_000, 4_000, 15_000]
 
@@ -429,6 +443,20 @@ export class BackgroundActivity {
       : settled === 'failed' || recent.some((task) => task.status === 'failed') ? 'failed'
       : settled === 'cancelled' || recent.some((task) => task.status === 'cancelled') ? 'cancelled' : settled)
     return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
+  }
+
+  /**
+   * TAL-1579: an advisory, read-only summary of the session's delegations. A native-owner session's work runs in its
+   * owner, not in this sidecar, so it reports `unsupported` without reading this process's ledger or registry; an owner
+   * lookup that failed (`owned: null`) reads nothing and is unknown.
+   */
+  async delegationStatus(sid: string, profile: string | null, opts: { owned: boolean | null; tasks: BackgroundTask[] }): Promise<DelegationStatus> {
+    let read: SidecarResult<'process.delegation_status'> | null = null
+    const sidecar = opts.owned === false ? this.deps.sidecar() : null
+    if (sidecar) {
+      try { read = await sidecar.call('process.delegation_status', { profile_home: this.deps.profileHome(profile), session_id: sid }) } catch (error) { this.deps.log(`[webui] WARNING: delegation status for ${sid} unavailable from the Agent: ${(error as Error).message}`) }
+    }
+    return delegationStatus(read, { owned: opts.owned === true, hasDelegations: opts.tasks.some((t) => t.kind === 'delegation') })
   }
 
   /**
