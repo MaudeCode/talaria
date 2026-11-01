@@ -8,6 +8,7 @@ import dataclasses
 import http.server
 import io
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -85,6 +86,65 @@ def test_opencode_go_reads_all_three_windows(monkeypatch):
                           {"rolling": {**window(1), "resetsAt": "soon"}, "weekly": window(1), "monthly": window(1)}):
         _stub_http(monkeypatch, {"usage": usage_payload})
         assert _read("opencode-go")["status"] == "unavailable"
+
+
+def _wire(result: dict) -> dict:
+    """The result as the server sees it: the sidecar's strict encoder, then JavaScript `JSON.parse`, which reads every
+    numeric token as a double, so an integer past float range becomes Infinity."""
+    line = json.dumps({"result": result}, separators=(",", ":"), allow_nan=False)
+    return json.loads(line, parse_int=float)["result"]
+
+
+_HUGE = 10**400
+# Numeric tokens no finite double holds: huge integers either side, the bare literals `json.loads` accepts, nonfinite text.
+_OVERSIZED = [str(_HUGE), str(-_HUGE), "NaN", "Infinity", "-Infinity", '"NaN"', '"Infinity"', '"-inf"', '"1e400"', "true"]
+
+
+def _assert_finite_wire(result: dict) -> dict:
+    def walk(value):
+        if isinstance(value, float):
+            assert math.isfinite(value), result
+        for child in value.values() if isinstance(value, dict) else value if isinstance(value, list) else ():
+            walk(child)
+
+    wire = _wire(result)
+    walk(wire)
+    return wire
+
+
+@pytest.mark.parametrize("bad", _OVERSIZED)
+def test_oversized_balance_numbers_drop_without_hiding_valid_siblings(monkeypatch, bad):
+    """TAL-1655: a number past float range reaches the server as Infinity and fails the balance schema, discarding the
+    whole read. It becomes absent instead, and every finite sibling survives."""
+    def stub(template: str) -> None:
+        _stub_http(monkeypatch, template.replace("@BAD@", bad).encode())
+
+    stub('{"data":{"usage":@BAD@,"limit":100,"limit_remaining":1.7976931348623157e308,"label":"synthetic"}}')
+    result = _read("openrouter")
+    assert result["status"] == "ok"
+    assert _assert_finite_wire(result)["quota"] == {"limit_remaining": 1.7976931348623157e308, "usage": None, "limit": 100}
+
+    stub('{"is_available":true,"balance_infos":[{"currency":"USD","total_balance":@BAD@},'
+         '{"currency":"CNY","total_balance":9007199254740993,"granted_balance":@BAD@,"topped_up_balance":"-2.5"}]}')
+    result = _read("deepseek")
+    assert result["status"] == "ok"
+    assert result["balances"] == [{"currency": "CNY", "total": 9007199254740993, "granted": None, "topped_up": -2.5}]
+    _assert_finite_wire(result)
+
+    # A percent no finite double holds is never read as a 0 or 100 percent window: the response is unrecognized.
+    window = '{"status":"ok","percent":%s,"resetsAt":"2026-10-06T05:00:00Z"}'
+    stub('{"usage":{"rolling":%s,"weekly":%s,"monthly":%s}}' % (window % "@BAD@", window % 0, window % 100))
+    result = _read("opencode-go")
+    assert (result["status"], result["windows"]) == ("unavailable", [])
+    _assert_finite_wire(result)
+
+
+def test_balance_numbers_keep_the_largest_finite_values(monkeypatch):
+    largest = int(sys.float_info.max)
+    _stub_http(monkeypatch, {"data": {"usage": largest, "limit": -largest, "limit_remaining": "1e308"}})
+    result = _read("openrouter")
+    assert result["quota"] == {"limit_remaining": 1e308, "usage": largest, "limit": -largest}
+    assert _assert_finite_wire(result)["quota"]["usage"] == sys.float_info.max
 
 
 def test_http_errors_carry_the_status_and_failures_read_as_unavailable(monkeypatch):

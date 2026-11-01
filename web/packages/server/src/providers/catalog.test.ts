@@ -1,13 +1,14 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
 import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { writeEnvFile } from '../test/env-file.js'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
 
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id?: string; bare_id?: string }
@@ -707,5 +708,55 @@ describe('catalog entries carry their routing provider and bare id', () => {
     const live = (await (await s.get('/api/models/live?provider=gemini')).json()) as { provider: string; models: Entry[] }
     expect(live.provider).toBe('gemini')
     expect(live.models).toContainEqual(expect.objectContaining({ id: 'gemini-2.5-flash', provider_id: 'gemini', bare_id: 'gemini-2.5-flash' }))
+  })
+})
+
+const python = ((): string | null => { try { return execFileSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).trim() } catch { return null } })()
+
+describe.skipIf(!python)('usage.balance numbers on the wire (TAL-1655)', () => {
+  // The real sidecar parser behind a stubbed endpoint, then the sidecar's strict encoder.
+  const read = (provider: string, body: string): unknown => JSON.parse(execFileSync(python!, ['-c', [
+    'import io, json, sys',
+    'sys.path.insert(0, sys.argv[1])',
+    'from talaria_sidecar.methods import usage',
+    'class Response(io.BytesIO):',
+    '    def __enter__(self): return self',
+    '    def __exit__(self, *exc): return False',
+    'usage._open_balance = lambda request, timeout=None: Response(sys.argv[3].encode())',
+    "print(json.dumps(usage.balance(sys.argv[2], credential_id=None, api_key='sk-synthetic'), separators=(',', ':'), allow_nan=False))",
+  ].join('\n'), join(WEB_ROOT, 'sidecar'), provider, body], { encoding: 'utf8' }))
+  const huge = `1${'0'.repeat(400)}`
+
+  it.each([huge, `-${huge}`])('keeps an out-of-range number %# out of an otherwise valid balance read', (bad) => {
+    const parse = (provider: string, body: string) => SIDECAR_METHODS['usage.balance'].result.parse(read(provider, body))
+    expect(parse('openrouter', `{"data":{"usage":${bad},"limit":100,"limit_remaining":42.5}}`)).toMatchObject({ status: 'ok', quota: { usage: null, limit: 100, limit_remaining: 42.5 } })
+    expect(parse('deepseek', `{"is_available":true,"balance_infos":[{"currency":"USD","total_balance":"12.5","granted_balance":${bad},"topped_up_balance":${bad}}]}`))
+      .toMatchObject({ status: 'ok', balances: [{ currency: 'USD', total: 12.5, granted: null, topped_up: null }] })
+  })
+})
+
+describe('OpenRouter cost history arithmetic (TAL-1655)', () => {
+  it('reports no pace when finite daily usage sums past the largest number', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-cost-overflow-'))
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      writeEnvFile(join(home, '.env'), { OPENROUTER_API_KEY: 'sk-synthetic-cost' })
+      mkdirSync(join(home, 'cost-snapshots'))
+      // 1_800_000_000 is 2027-01-15 UTC; the deltas are 1e308, 1e307 (a reset) and 1e308, each finite, their sum not.
+      const snapshots = [{ date: '2027-01-12', used: 0, limit: null }, { date: '2027-01-13', used: 1e308, limit: null }, { date: '2027-01-14', used: 1e307, limit: null }]
+      writeFileSync(join(home, 'cost-snapshots', 'openrouter.json'), JSON.stringify({ provider: 'openrouter', snapshots }))
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'openrouter' } } }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: [], keys: {} }))
+      sidecar.respond('usage.balance', () => ({ status: 'ok', http_status: null, label: null, quota: { usage: 1.1e308, limit: null, limit_remaining: null }, is_available: null, balances: [], windows: [] }))
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => 50, isRootProfileHome: () => true })
+      const history = await catalog.costHistory(home, 'openrouter', 30)
+      expect(history).toMatchObject({ status: 'available', monthly_pace: null, budget_percent: null, budget_level: null, has_enough_data: true })
+      const rows = history.snapshots as Json[]
+      expect(rows.map((r) => r.delta)).toEqual([null, 1e308, 1e307, 1e308])
+      for (const row of rows) expect(Number.isFinite(row.bar_percent)).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })
