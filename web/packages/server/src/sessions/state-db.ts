@@ -1194,12 +1194,12 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
  * TAL-1162: and the transcript reads behind turn history, settlement, and the detail's page tail.
  * TAL-1256: shared cron admission identities and completion links use this same dispatcher.
  */
-export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
+export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, stateDbSessionMessageSummary, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
 type SessionReadName = keyof typeof SESSION_READS
 
 /** Exhaustive policy: authority never waits for transcript materialization; sidebar-scoped probes stay on listing. */
 const SESSION_READ_LANES = {
-  stateDbHasSession: 'authority', stateDbSessionHasMessages: 'authority', stateDbLocalTargetRead: 'authority', stateDbSessionRow: 'authority',
+  stateDbHasSession: 'authority', stateDbSessionHasMessages: 'authority', stateDbSessionMessageSummary: 'authority', stateDbLocalTargetRead: 'authority', stateDbSessionRow: 'authority',
   insightsSessionRows: 'session', countConversationRounds: 'session', stateDbTailToolContent: 'session', stateDbLineageReport: 'session',
   stateDbCronJobIds: 'session', latestCronSessionInfo: 'session', stateDbSessionMessages: 'session', stateDbCompressionLineage: 'session',
   stateDbSessionRead: 'session', stateDbSessionTailRead: 'session', stateDbSettlementRead: 'session',
@@ -1422,6 +1422,64 @@ export function stateDbSessionTailRead(dbPath: string, sid: string, afterId: num
   return readStateDbSession(dbPath, sid, { ...opts, stitch: false, afterId })
 }
 
+/** The sessions whose rows make up `id`'s transcript, in order, and the validated local lineage that names them. */
+function transcriptChain(db: DatabaseSync, id: string, opts: { stitch?: boolean; lineage?: string[] | null }): { local: LocalLineage | undefined; chain: string[] } {
+  // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
+  const local = localLineages(db, id).get(id)
+  const chain = local ? (opts.stitch === false ? [local.ids.at(-1) ?? id] : [...local.context]) : opts.lineage?.length ? [...opts.lineage] : [id]
+  if (!local && !opts.lineage?.length && (opts.stitch ?? true)) {
+    const sessionCols = tableColumns(db, 'sessions')
+    if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
+      const extra = ['model_config', 'session_source'].map((c) => sessionCols.has(c) ? c : `NULL AS ${c}`).join(', ')
+      const select = db.prepare(`SELECT id, source, started_at, parent_session_id, ended_at, end_reason, ${extra} FROM sessions WHERE id = ?`)
+      let current = select.get(id) as Dict | undefined
+      const seen = new Set([id])
+      for (let hop = 0; hop < COMPRESSION_CHAIN_CAP && current; hop += 1) {
+        const parentId = str(current.parent_session_id)
+        if (!parentId || seen.has(parentId)) break
+        const parent = select.get(parentId) as Dict | undefined
+        if (!parent || !isContinuationSession(parent, current)) break
+        chain.unshift(parentId)
+        seen.add(parentId)
+        current = parent
+      }
+    }
+  }
+  return { local, chain }
+}
+
+/** How many rows the stitched transcript of `stateDbSessionRead` holds and its newest timestamp; `reason` when unreadable. */
+export interface StateDbMessageSummary { count: number; last: number | null; reason: string | null }
+
+/**
+ * TAL-1249: the stitched transcript's size and recency without loading it, for a metadata-only detail. A missing
+ * database or messages table is an empty transcript; a failed read is unknown (`reason`), never empty.
+ */
+export function stateDbSessionMessageSummary(dbPath: string, sid: string): StateDbMessageSummary {
+  const empty: StateDbMessageSummary = { count: 0, last: null, reason: null }
+  const id = sid.trim()
+  if (!id || !existsSync(dbPath)) return empty
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch (error) { return { ...empty, reason: stateDbReadFailure(error).reason } }
+  try {
+    const available = tableColumns(db, 'messages')
+    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return empty
+    const { chain } = transcriptChain(db, id, {})
+    const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
+    // A compaction carrier reads as its kept reply plus its summary (`compactionCarrier`).
+    const carriers = available.has('_compressed_summary')
+      ? "SUM(CASE WHEN _compressed_summary = 1 AND role IN ('user', 'assistant') AND substr(content, 1, ?) = ? AND instr(content, ?) > 0 THEN 1 ELSE 0 END)" : '0'
+    const carrierArgs = available.has('_compressed_summary') ? [PRIOR_CONTEXT_HEADER.length + 1, `${PRIOR_CONTEXT_HEADER}\n`, COMPACTION_SUMMARY_DELIMITER] : []
+    const row = db.prepare(`SELECT COUNT(*) AS n, ${carriers} AS carriers, MAX(timestamp) AS last FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause}`)
+      .get(...carrierArgs, ...chain) as { n: number; carriers: number | null; last: number | null }
+    return { count: row.n + (row.carriers ?? 0), last: row.last, reason: null }
+  } catch (error) {
+    return { ...empty, reason: stateDbReadFailure(error).reason }
+  } finally {
+    finishStateDbRead(db)
+  }
+}
+
 function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null; afterId?: number; unidentified?: readonly ReadonlyMap<string, number>[] }): StateDbRead & { anchor?: Dict; requiresFullRead?: boolean } {
   const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null, generation: null }
   const id = sid.trim()
@@ -1433,27 +1491,7 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
     if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
-    // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
-    const local = localLineages(db, id).get(id)
-    const chain = local ? (opts.stitch === false ? [local.ids.at(-1) ?? id] : [...local.context]) : opts.lineage?.length ? [...opts.lineage] : [id]
-    if (!local && !opts.lineage?.length && (opts.stitch ?? true)) {
-      const sessionCols = tableColumns(db, 'sessions')
-      if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
-        const extra = ['model_config', 'session_source'].map((c) => sessionCols.has(c) ? c : `NULL AS ${c}`).join(', ')
-        const select = db.prepare(`SELECT id, source, started_at, parent_session_id, ended_at, end_reason, ${extra} FROM sessions WHERE id = ?`)
-        let current = select.get(id) as Dict | undefined
-        const seen = new Set([id])
-        for (let hop = 0; hop < COMPRESSION_CHAIN_CAP && current; hop += 1) {
-          const parentId = str(current.parent_session_id)
-          if (!parentId || seen.has(parentId)) break
-          const parent = select.get(parentId) as Dict | undefined
-          if (!parent || !isContinuationSession(parent, current)) break
-          chain.unshift(parentId)
-          seen.add(parentId)
-          current = parent
-        }
-      }
-    }
+    const { local, chain } = transcriptChain(db, id, opts)
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     if (opts.afterId !== undefined && !hasId) return { ...none, ok: true }
     const range = opts.afterId === undefined ? '' : ' AND id > ?'

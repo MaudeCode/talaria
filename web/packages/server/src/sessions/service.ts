@@ -25,7 +25,7 @@ import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
+import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbMessageSummary, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -105,6 +105,10 @@ interface SessionGateReads {
   row: () => Promise<ReturnType<typeof stateDbSessionRow>>
   meta: () => Promise<Row | null>
   messages: (stitch: boolean) => Promise<Message[]>
+  /** The stitched transcript read behind `messages(true)`, with whether it succeeded. */
+  transcript: () => Promise<StateDbRead>
+  /** Its size and recency without loading it (TAL-1249). */
+  summary: () => Promise<StateDbMessageSummary>
   existing: () => Promise<Set<string>>
 }
 
@@ -701,9 +705,14 @@ export class SessionService {
     const owners = new Map<string, Promise<Map<string, StateDbSessionSource> | null>>()
     let row: Promise<ReturnType<typeof stateDbSessionRow>> | undefined
     let meta: Promise<Row | null> | undefined
-    let transcript: Promise<Message[]> | undefined
+    let transcript: Promise<StateDbRead> | undefined
+    let summary: Promise<StateDbMessageSummary> | undefined
     let context: Promise<Message[]> | undefined
     let existing: Promise<Set<string>> | undefined
+    const claudeCode = isClaudeCodeSessionId(sid)
+    const read = (): Promise<StateDbRead> => transcript ??= claudeCode
+      ? Promise.resolve({ ...failedStateDbRead(), ok: true, rows: this.deps.claudeCode?.messages(sid) ?? [] })
+      : stateDbSessionReadAsync({ ...failedStateDbRead(), reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionRead', dbPath, sid, { stitch: true })
     return {
       sid,
       owners: (ownerProfile = profile) => {
@@ -713,9 +722,12 @@ export class SessionService {
       },
       row: () => row ??= stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, sid),
       meta: () => meta ??= this.lookupCliMeta(sid),
-      messages: (stitch) => stitch
-        ? transcript ??= isClaudeCodeSessionId(sid) ? Promise.resolve(this.deps.claudeCode?.messages(sid) ?? []) : stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: true })
-        : context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
+      messages: (stitch) => stitch ? read().then((r) => r.rows) : context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
+      transcript: read,
+      // A Claude Code transcript is a local file, not state.db: its size comes from the one read of it.
+      summary: () => summary ??= claudeCode
+        ? read().then((r) => ({ count: r.rows.length, last: r.rows.reduce((last, m) => Math.max(last, Number(m.timestamp) || 0), 0) || null, reason: null }))
+        : stateDbSessionReadAsync({ count: 0, last: null, reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionMessageSummary', dbPath, sid),
       existing: () => existing ??= agentSessionRowsExistingAsync(dbPath, [sid]),
     }
   }
@@ -759,7 +771,7 @@ export class SessionService {
    * a WebUI sidecar. `materialized` sessions are writeable (the caller persists the sidecar), `not_claimable` ones are
    * read-only stubs, `was_webui`/`no_foreign_state`/`invalid_sid` answer 404.
    */
-  async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null, reads?: SessionGateReads): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid' }> {
+  async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null, reads?: SessionGateReads, opts: { transcript?: boolean } = {}): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid'; summary?: StateDbMessageSummary }> {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
     sid = await this.resolveSessionId(sid)
@@ -769,10 +781,14 @@ export class SessionService {
     const subagentChild = stateDbSource === 'subagent'
     const canonical = typeof owners?.get(sid) === 'object'
     if (((await this.indexMarksWasWebui(sid)) || ((await this.store.wasDeleted(sid)) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
-    const msgs = await reads.messages(true)
+    // TAL-1249: `transcript: false` decides from the transcript's size alone (a display read builds no transcript). A
+    // failed read is unknown, never an empty session.
+    const summary = opts.transcript === false ? await reads.summary() : undefined
+    if (summary?.reason) throw new HttpFailure(503, summary.reason)
+    const msgs = summary ? [] : await reads.messages(true)
     const meta: Row = { ...(metaIn ?? (await reads.meta()) ?? {}) }
     // An owner receipt proves a session before its first turn (a fresh diagnostic chat, TAL-1040); a bare row does not.
-    if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
+    if (!(summary ? summary.count : msgs.length) && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
     if (row) {
       if (!meta.source_tag && stateDbSource) meta.source_tag = stateDbSource
       if (!meta.raw_source && stateDbSource) meta.raw_source = stateDbSource
@@ -786,7 +802,7 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || (await this.deps.workspaces.lastWorkspace(profile))
     const defaults = (await this.store.deps.defaults(profile))
-    const context = Array.isArray(meta._lineage_ids) ? await reads.messages(false) : null
+    const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.messages(false) : null
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
@@ -799,7 +815,7 @@ export class SessionService {
       parent_session_id: str(meta.parent_session_id) || null, project_id: str(meta.project_id) || null,
       ...Object.fromEntries(CLI_IDENTITY_FIELDS.filter((k) => meta[k] != null && meta[k] !== '').map((k) => [k, meta[k]])),
     }, defaults)
-    return { session, reason: claimable ? 'materialized' : 'not_claimable' }
+    return { session, reason: claimable ? 'materialized' : 'not_claimable', ...(summary ? { summary } : {}) }
   }
 
   private async mutationTarget(sid: string, verb: string, reads?: SessionGateReads): Promise<Session> {
@@ -1234,18 +1250,19 @@ export class SessionService {
   }
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
-  private async foreignSession(sid: string): Promise<{ synth: Session; meta: Row | null }> {
+  private async foreignSession(sid: string, transcript = true): Promise<{ synth: Session; meta: Row | null; reads: SessionGateReads; summary?: StateDbMessageSummary }> {
     sid = await this.resolveSessionId(sid)
-    const meta = (await this.lookupCliMeta(sid))
+    const reads = this.sessionGateReads(sid)
+    const meta = (await reads.meta())
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
     if (!profileAgnostic && !this.visibleToActiveProfile(profile)) {
       if (profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile })
       throw new HttpFailure(404, 'Session not found')
     }
-    const { session: synth, reason } = (await this.claimOrSynthesizeCliSession(sid, meta))
+    const { session: synth, reason, summary } = (await this.claimOrSynthesizeCliSession(sid, meta, reads, { transcript }))
     if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
-    return { synth, meta }
+    return { synth, meta, reads, ...(summary ? { summary } : {}) }
   }
 
   /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
@@ -1254,19 +1271,33 @@ export class SessionService {
   }
 
   private async foreignSessionDetail(sid: string, loadMessages: boolean, msgLimit: number | null, msgBefore: number | null): Promise<Record<string, unknown>> {
-    const { synth, meta } = (await this.foreignSession(sid))
-    // The same turn projection as a WebUI session: turn ids, tool outcomes, then each completed turn's scene.
-    const msgs = this.foreignMessages(synth.messages, synth, await this.deps.showReasoning?.(synth.profile) ?? true)
-    const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
+    // TAL-1249: the gates and a metadata-only read decide from the transcript's size; only a read with messages loads it.
+    const { synth, meta, reads, summary } = (await this.foreignSession(sid, false))
+    let msgs: Message[] = []
+    let page: Message[] = []
+    let offset = 0
+    if (loadMessages) {
+      const read = await reads.transcript()
+      if (!read.ok && read.reason) throw new HttpFailure(503, read.reason)
+      // The same turn projection as a WebUI session (turn ids, tool outcomes, then each completed turn's scene), over the
+      // whole transcript so every page carries the same values; only the page is then clipped and redacted.
+      msgs = this.foreignMessages(read.rows, synth, await this.deps.showReasoning?.(synth.profile) ?? true)
+      const [rows, start] = messageWindowForDisplay(msgs, msgLimit, msgBefore)
+      page = msgLimit === null ? rows as Message[] : messagesForLimitedPayload(rows)
+      offset = start
+    }
+    const count = loadMessages ? msgs.length : summary?.count ?? 0
+    const lastTs = (loadMessages ? Number(msgs.at(-1)?.timestamp ?? 0) : summary?.last ?? 0) || 0
     const sess: Record<string, unknown> = {
-      session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
+      session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: count,
       created_at: synth.created_at, updated_at: synth.updated_at, last_message_at: meta?.last_message_at || meta?.updated_at || lastTs,
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
-      source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [], transcript_seq: null,
+      source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: page, tool_calls: [], transcript_seq: null,
       assistant_name: this.assistantName(synth), workspace_name: (await this.workspaceNames([synth]))(synth), confirms_deep_truncate: true,
+      _messages_truncated: loadMessages && msgLimit !== null && offset > 0, _messages_offset: offset, _msg_limit_max: MAX_MSG_LIMIT,
     }
-    attachTodoState(sess, msgs)
+    if (loadMessages) attachTodoState(sess, msgs)
     const merged = withSessionWireFlags((await this.ownerLocked([meta ? mergeCliSidebarMetadata(sess, meta) : sess]))[0]!, this.deps.runtime.activeStreamIds)
     const publicRow = redactSessionData(merged, this.deps.redactEnabled())
     return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, synth.profile)
@@ -3082,6 +3113,9 @@ function findLastUserIndex(history: unknown[]): number | null {
 export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
 }
+
+/** A state.db read that failed, as opposed to a missing database (TAL-1249: unknown, never an empty session). */
+const TRANSCRIPT_UNREADABLE = 'The session history could not be read. Please try again in a moment.'
 
 /** A failed state.db read says nothing (TAL-493). */
 function failedStateDbRead(): StateDbRead {

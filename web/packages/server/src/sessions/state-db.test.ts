@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Worker } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
@@ -1364,5 +1365,152 @@ describe('session lineage report', () => {
       res = await s.get('/api/session/lineage/report')
       expect([res.status, await json(res)]).toEqual([400, { error: 'session_id required' }])
     })
+  })
+})
+
+describe('foreign session detail windows (TAL-1249)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+  const canonical = agentSchema.sessions.cli
+  const detail = async (sid: string, query: string): Promise<[number, Json]> => {
+    const res = await s.get(`/api/session?session_id=${sid}${query}`)
+    return [res.status, ((await json(res)).session ?? {}) as Json]
+  }
+  /** The state.db transcript reads (worker requests) and turn projections one request makes. */
+  const observed = async <T>(run: () => Promise<T>): Promise<{ result: T; transcriptReads: string[]; projections: number }> => {
+    const posted = vi.spyOn(Worker.prototype, 'postMessage')
+    const project = vi.spyOn(s.deps.sessions, 'foreignMessages')
+    try {
+      const result = await run()
+      const reads = posted.mock.calls.map(([request]) => (request as { op?: string; read?: string })).filter((call) => call.op === 'session').map((call) => str(call.read))
+      return { result, transcriptReads: reads.filter((r) => ['stateDbSessionRead', 'stateDbSessionMessages'].includes(r)), projections: project.mock.calls.length }
+    } finally { posted.mockRestore(); project.mockRestore() }
+  }
+  const insertRows = (sid: string, rows: { role: string; content: string; ts: number; tool_calls?: unknown; tool_call_id?: string; tool_name?: string }[]): void => {
+    for (const row of rows) {
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_calls, tool_call_id, tool_name) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(sid, row.role, row.content, row.ts, row.tool_calls ? JSON.stringify(row.tool_calls) : null, row.tool_call_id ?? null, row.tool_name ?? null)
+    }
+  }
+  const session = (id: string, source: string, startedAt: number, extra: { parent?: string; ended_at?: number; end_reason?: string; count: number }): void => {
+    db.prepare('INSERT INTO sessions (id, source, started_at, title, model, message_count, parent_session_id, ended_at, end_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, source, startedAt, `${id} title`, 'fixture-model', extra.count, extra.parent ?? null, extra.ended_at ?? null, extra.end_reason ?? null)
+  }
+  const call = (id: string, name: string): unknown => [{ id, type: 'function', function: { name, arguments: '{}' } }]
+
+  beforeAll(async () => {
+    s = await bootTestServer({ sidecar: new FakeSidecar() })
+    db = openStateDb(join(s.state, 'state.db'))
+    db.exec(agentSchema.schema.join('\n'))
+    for (const sql of agentSchema.inserts) db.exec(sql)
+    await s.deps.settings.save({ show_cli_sessions: true })
+    // A CLI conversation the Agent closed: a todo write, a large tool result with a credential, and turns across pages.
+    session('f-cli', 'cli', 1000, { ended_at: 1011, end_reason: 'cli_close', count: 10 })
+    insertRows('f-cli', [
+      { role: 'user', content: 'Plan the release', ts: 1001 },
+      { role: 'assistant', content: '', ts: 1002, tool_calls: call('call-todo', 'todo') },
+      { role: 'tool', content: JSON.stringify({ todos: [{ id: '1', content: 'ship it', status: 'in_progress' }] }), ts: 1003, tool_call_id: 'call-todo', tool_name: 'todo' },
+      { role: 'assistant', content: 'Planned.', ts: 1004 },
+      { role: 'user', content: `Read the log with ${secret}`, ts: 1005 },
+      { role: 'assistant', content: '', ts: 1006, tool_calls: call('call-log', 'read_file') },
+      { role: 'tool', content: `${'log line\n'.repeat(800)}${secret}`, ts: 1007, tool_call_id: 'call-log', tool_name: 'read_file' },
+      { role: 'assistant', content: 'Log read.', ts: 1008 },
+      { role: 'user', content: 'Thanks', ts: 1009 },
+      { role: 'assistant', content: 'Done.', ts: 1010 },
+    ])
+    // A delegated child: display-only.
+    session('f-sub', 'subagent', 1100, { parent: 'f-cli', count: 3 })
+    insertRows('f-sub', [{ role: 'user', content: 'Sub task', ts: 1101 }, { role: 'assistant', content: 'Sub working', ts: 1102 }, { role: 'assistant', content: 'Sub done', ts: 1103 }])
+    // A compression continuation: the tip's transcript starts in its parent.
+    session('f-root', 'cli', 2000, { ended_at: 2003, end_reason: 'compression', count: 3 })
+    insertRows('f-root', [{ role: 'user', content: 'Root one', ts: 2001 }, { role: 'assistant', content: 'Root two', ts: 2002 }, { role: 'user', content: 'Root three', ts: 2003 }])
+    session('f-tip', 'cli', 2003, { parent: 'f-root', count: 3 })
+    insertRows('f-tip', [{ role: 'assistant', content: 'Tip one', ts: 2004 }, { role: 'user', content: 'Tip two', ts: 2005 }, { role: 'assistant', content: 'Tip three', ts: 2006 }])
+    // A row whose transcript is empty, and a deleted Web chat whose state.db rows outlive it.
+    session('f-empty', 'cli', 3000, { count: 0 })
+    session('f-gone', 'webui', 3100, { count: 2 })
+    insertRows('f-gone', [{ role: 'user', content: 'Deleted', ts: 3101 }, { role: 'assistant', content: 'Gone', ts: 3102 }])
+    await s.deps.sessionStore.recordDeletedTombstone('f-gone')
+  })
+  afterAll(async () => { db.close(); await s.close() })
+
+  it.each(['f-cli', 'f-sub', 'f-tip', canonical])('answers messages=0 for %s from metadata alone, with the full read\'s count, recency and ownership', async (sid) => {
+    const [fullStatus, full] = await detail(sid, '&messages=1')
+    expect(fullStatus).toBe(200)
+    expect((full.messages as Json[]).length).toBeGreaterThanOrEqual(3)
+    const { result: [status, meta], transcriptReads, projections } = await observed(() => detail(sid, '&messages=0'))
+    expect(status).toBe(200)
+    expect(meta.messages).toEqual([])
+    expect(transcriptReads).toEqual([])
+    expect(projections).toBe(0)
+    for (const key of ['message_count', 'last_message_at', 'read_only', 'read_only_reason', 'is_cli_session', 'source_tag', 'title', 'profile']) expect(meta[key], key).toEqual(full[key])
+    expect(await s.deps.sessionStore.exists(sid)).toBe(false)
+  })
+
+  it.each([['f-cli', 2], ['f-tip', 2], ['f-cli', 1]] as const)('pages %s with msg_limit=%i consistently with the full read', async (sid, limit) => {
+    const [, full] = await detail(sid, '&messages=1')
+    const all = full.messages as Json[]
+    let before: number | null = null
+    const covered: Json[] = []
+    for (let page = 0; page < all.length + 1; page += 1) {
+      const [status, window] = await detail(sid, `&messages=1&msg_limit=${String(limit)}${before === null ? '' : `&msg_before=${String(before)}`}`)
+      expect(status).toBe(200)
+      const rows = window.messages as Json[]
+      const offset = Number(window._messages_offset)
+      expect(rows.length).toBeLessThan(all.length)
+      expect(offset + rows.length).toBe(before ?? all.length)
+      expect(window._messages_truncated).toBe(offset > 0)
+      expect(window.message_count).toBe(full.message_count)
+      expect(window.last_message_at).toBe(full.last_message_at)
+      expect(window.todo_state).toEqual(full.todo_state)
+      for (const [i, row] of rows.entries()) {
+        const same = all[offset + i]!
+        expect([row.timestamp, row.role, row._turn_id], String(offset + i)).toEqual([same.timestamp, same.role, same._turn_id])
+        if (row.role === 'tool' && str(same.content).length > 4096) expect(row._content_truncated).toBe(true)
+        else expect(row.content).toEqual(same.content)
+      }
+      expect(JSON.stringify(rows)).not.toContain(secret)
+      covered.unshift(...rows)
+      if (offset === 0) break
+      before = offset
+    }
+    expect(covered.map((m) => m.timestamp)).toEqual(all.map((m) => m.timestamp))
+    expect(await s.deps.sessionStore.exists(sid)).toBe(false)
+  })
+
+  it('keeps the full read\'s todo list and tool outcome on a page without them', async () => {
+    const [, full] = await detail('f-cli', '&messages=1')
+    expect((full.todo_state as Json).todos).toHaveLength(1)
+    const [, page] = await detail('f-cli', '&messages=1&msg_limit=1')
+    expect((page.messages as Json[]).map((m) => m.content)).toEqual(['Done.'])
+    expect(page.todo_state).toEqual(full.todo_state)
+  })
+
+  it.each(['&messages=0', '&messages=1', '&messages=1&msg_limit=2'])('answers 404 for an empty or tombstoned row and keeps refusing claims (%s)', async (query) => {
+    expect((await detail('f-empty', query))[0]).toBe(404)
+    expect((await detail('f-gone', query))[0]).toBe(404)
+    const [, sub] = await detail('f-sub', query)
+    expect(sub).toMatchObject({ read_only: true, is_cli_session: false })
+    const [, owned] = await detail(canonical, query)
+    expect(owned.read_only).toBe(true)
+    expect(owned.read_only_reason).toContain('gateway')
+    for (const sid of ['f-empty', 'f-gone', 'f-sub', canonical]) expect(await s.deps.sessionStore.exists(sid)).toBe(false)
+    // Another profile's row answers 409 before any transcript read.
+    const lookup = vi.spyOn(s.deps.sessions as unknown as { lookupCliMeta: (sid: string) => Promise<Json | null> }, 'lookupCliMeta').mockResolvedValue({ session_id: 'f-cli', profile: 'other', source_tag: 'cli' })
+    try {
+      const { result: [status], transcriptReads, projections } = await observed(() => detail('f-cli', query))
+      expect([status, transcriptReads, projections]).toEqual([409, [], 0])
+    } finally { lookup.mockRestore() }
+  })
+
+  it.each(['&messages=0', '&messages=1', '&messages=1&msg_limit=2'])('answers an unreadable state.db as unknown, never as an empty or missing session (%s)', async (query) => {
+    const other = await bootTestServer()
+    try {
+      mkdirSync(join(other.state, 'state.db'))
+      const res = await other.get(`/api/session?session_id=f-cli${query}`)
+      expect(res.status).toBe(503)
+      expect(await other.deps.sessionStore.exists('f-cli')).toBe(false)
+    } finally { await other.close() }
   })
 })
