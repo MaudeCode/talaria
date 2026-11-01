@@ -2781,10 +2781,16 @@ export class SessionService {
     // TAL-1073: a draft whose owner is gone (an earlier failed or interrupted delete) is retried here; it is not a session.
     for (const sid of await this.store.deps.drafts.ids()) {
       if (removed.has(sid)) continue
-      await this.store.withLock(sid, async () => {
-        if (this.store.sessions.has(sid) || (await existsSessionFile(this.store, sid))) return
+      const aborted = await this.store.withLock(sid, async () => {
+        if (this.store.sessions.has(sid)) return false
+        // Strict: an unreadable session directory is not proof the owner is gone, so the sweep stops instead.
+        let owners: Set<string>
+        try { owners = await this.store.persistedIds({ strict: true }) } catch { return true }
+        if (owners.has(sid)) return false
         try { await this.store.deps.drafts.delete(sid) } catch { draftDeleteFailed = true }
+        return false
       })
+      if (aborted) { draftDeleteFailed = true; break }
     }
     let rewroteIndex = false
     try {

@@ -3313,6 +3313,18 @@ describe('session draft deletion (TAL-1073)', () => {
     } finally { s.deps.registry.liveIds.delete('tal1073-run') }
   })
 
+  it('keeps every draft and reports failure when the session directory cannot be listed', async () => {
+    const dir = sessionDirectory(s.deps.sessionStore)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'tal1073-unlisted.json'), JSON.stringify({ session_id: 'tal1073-unlisted', title: 'Kept', messages: [{ role: 'user', content: 'hi' }], created_at: 1, updated_at: 1 }))
+    writeDraftFile('tal1073-unlisted', 'unlisted text')
+    // Simulate EACCES on the session directory: a lenient listing reads as empty, a strict one throws.
+    const store = s.deps.sessionStore
+    vi.spyOn(store, 'persistedIds').mockImplementation((opts = {}) => opts.strict ? Promise.reject(Object.assign(new Error('synthetic EACCES'), { code: 'EACCES' })) : Promise.resolve(new Set<string>()))
+    expect(await call('/api/sessions/cleanup_zero_message')).toEqual([500, { error: 'Failed to delete session data' }])
+    expect([existsSync(join(dir, 'tal1073-unlisted.json')), draftText('tal1073-unlisted')]).toEqual([true, 'unlisted text'])
+  })
+
   it('keeps live owners\' drafts and removes only orphans, even with a corrupt index', async () => {
     const dir = sessionDirectory(s.deps.sessionStore)
     mkdirSync(dir, { recursive: true })
