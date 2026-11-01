@@ -104,6 +104,7 @@ export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: strin
 export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
+export const fetchSessionSkills = (id: SessionId) => orpc().session.skills({ session_id: id })
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
 export const fetchWebPushStatus = (endpoint?: string) => orpc().webPush.status(endpoint ? { endpoint } : {})
 export const subscribeWebPush = (endpoint: string, keys: { p256dh: string; auth: string }) => orpc().webPush.subscribe({ endpoint, keys })

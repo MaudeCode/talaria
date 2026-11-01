@@ -1,5 +1,5 @@
 /**
- * TAL-373: the chat's right panel, a page host with Files, Agents and (TAL-571) Checkpoints. A later page (a terminal, say) is one more entry in
+ * TAL-373: the chat's right panel, a page host with Files, Agents, (TAL-571) Checkpoints and (TAL-1649) Skills. A later page (a terminal, say) is one more entry in
  * `pages`. The user's tab choice persists; when a session's panel first opens it shows Agents if agents are running or
  * need attention, else the last chosen page, and nothing switches it after that.
  */
@@ -10,6 +10,7 @@ import { PanelPageHost, type PanelPage } from '../../shell/PanelPageHost'
 import { FilesPage, type RestoredFiles } from '../workspace/FilesPage'
 import { CheckpointsPage } from '../workspace/CheckpointsPage'
 import { AgentsPage, useHasActiveAgents } from '../background/AgentsPage'
+import { SessionSkillsPage } from '../skills/SessionSkillsPage'
 
 const PAGE_KEY = 'talaria-right-panel-page'
 
@@ -27,6 +28,7 @@ export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }:
     { id: 'files', label: m.ws_panel_files(), render: (active) => <FilesPage workspace={workspace} sessionId={sessionId} active={active} restored={restored} /> },
     { id: 'agents', label: m.panel_agents(), render: (active) => <AgentsPage sessionId={sessionId} active={active} /> },
     { id: 'checkpoints', label: m.checkpoint_title(), render: (active) => <CheckpointsPage workspace={workspace} sessionId={sessionId} active={active} onRestored={(paths, restoredIn) => setRestored((r) => ({ seq: (r?.seq ?? 0) + 1, paths, workspace: restoredIn }))} /> },
+    { id: 'skills', label: m.tab_skills(), render: (active) => <SessionSkillsPage sessionId={sessionId} active={active} /> },
   ]
   return (
     <PanelPageHost

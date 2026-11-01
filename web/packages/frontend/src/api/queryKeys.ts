@@ -29,6 +29,8 @@ export const keys = {
     status: (id: string) => ['sessions', 'status', id] as const,
     contextDetail: (id: string, identity: string) => ['sessions', 'context-detail', id, identity] as const,
     usage: (id: string) => ['sessions', 'usage', id] as const,
+    /** TAL-1649: refreshed with the session's other per-session reads when its turn settles. */
+    skills: (id: string) => ['sessions', 'skills', id] as const,
     worktree: (id: string) => ['sessions', 'worktree', id] as const,
     search: (q: string, filters: object) => ['sessions', 'search', q, filters] as const,
   },
