@@ -1575,6 +1575,18 @@ describe('Agent checkout updates', () => {
     expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ current_version: head.slice(0, 12) })
   })
 
+  it('private Agent remote credentials never enter update status (TAL-1664)', async () => {
+    const a = agentInstall()
+    git(a.agent, 'fetch', 'origin', '--tags')
+    git(a.agent, 'remote', 'set-url', 'origin', 'https://x-access-token:synthetic-secret@github.com/MaudeCode/agent.git')
+    const offline: GitRun = (args, cwd, timeout) => args[0] === 'fetch' ? Promise.resolve({ ok: true, out: '' }) : runGit(args, cwd, timeout)
+    const result = await checkAgentUpdate(a.agent, offline)
+    expect(result).toMatchObject({ repo_url: 'https://github.com/MaudeCode/agent', compare_url: `https://github.com/MaudeCode/agent/compare/${a.v1}...${a.v2}` })
+    expect((result.versions as Dict[])[0]).toMatchObject({ release_url: 'https://github.com/MaudeCode/agent/releases/tag/v2.0.0' })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret')
+    expect(JSON.stringify(updateTargetView('agent', result, false))).not.toContain('synthetic-secret')
+  })
+
   it('an unavailable commit count stays unknown and Stable never falls back to a branch', async () => {
     const a = agentInstall()
     const unreadable: GitRun = (args, cwd, timeout) => args[0] === 'rev-list' ? Promise.resolve({ ok: false, out: 'unreadable' }) : runGit(args, cwd, timeout)

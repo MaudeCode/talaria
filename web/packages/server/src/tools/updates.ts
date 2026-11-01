@@ -169,6 +169,11 @@ function normalizeRemoteUrl(remote: string): string {
   let url = remote.trim()
   if (!url) return url
   if (url.startsWith('git@')) url = url.replace(':', '/').replace('git@', 'https://')
+  // TAL-1664: every Agent remote consumer reads this URL, so credentials in its userinfo stop here.
+  if (URL.canParse(url)) {
+    const parsed = new URL(url)
+    if (parsed.username || parsed.password) { parsed.username = ''; parsed.password = ''; url = parsed.href }
+  }
   url = url.replace(/\/+$/, '')
   if (url.endsWith('.git')) url = url.slice(0, -4)
   return url.replace(/\/+$/, '')
