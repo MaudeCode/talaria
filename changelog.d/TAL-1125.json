@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Codex usage limits that last 24 hours, or a weekly limit Codex reports alone, now show their real length and no longer get a 5-hour pace or forecast.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

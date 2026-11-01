@@ -73865,7 +73865,8 @@
                                 "type": "object",
                                 "properties": {
                                   "label": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The provider label; a generic \"Session\"/\"Weekly\" its provider duration contradicts names that duration instead (`24-hour`)."
                                   },
                                   "used_percent": {
                                     "anyOf": [
@@ -73917,7 +73918,7 @@
                                         "type": "null"
                                       }
                                     ],
-                                    "description": "The provider value, else 5h or weekly from the label; null when unknown."
+                                    "description": "The provider duration (`window_seconds`, else `limit_window_seconds`), which outranks the label; else 5h or weekly from the label; null when unknown."
                                   },
                                   "pace": {
                                     "anyOf": [
@@ -74437,7 +74438,8 @@
                               "type": "object",
                               "properties": {
                                 "label": {
-                                  "type": "string"
+                                  "type": "string",
+                                  "description": "The provider label; a generic \"Session\"/\"Weekly\" its provider duration contradicts names that duration instead (`24-hour`)."
                                 },
                                 "used_percent": {
                                   "anyOf": [
@@ -74489,7 +74491,7 @@
                                       "type": "null"
                                     }
                                   ],
-                                  "description": "The provider value, else 5h or weekly from the label; null when unknown."
+                                  "description": "The provider duration (`window_seconds`, else `limit_window_seconds`), which outranks the label; else 5h or weekly from the label; null when unknown."
                                 },
                                 "pace": {
                                   "anyOf": [

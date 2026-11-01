@@ -331,6 +331,40 @@ def _anthropic_usage(token: str):
     return agent_usage._snapshot("anthropic", "oauth_usage_api", windows, details)
 
 
+# The Agent's Codex window order and labels (`agent.account_usage._codex_window_labels`): a published duration names the
+# window, else its position does.
+_CODEX_WINDOWS = (("primary_window", "Session"), ("secondary_window", "Weekly"))
+_CODEX_LABELS_BY_SECONDS = {18000: "Session", 604800: "Weekly"}
+
+
+def _duration(value: Any) -> int | float | None:
+    """A provider-published window length: a finite positive JSON number, never a boolean or a numeric string."""
+    seconds = _number(value) if isinstance(value, (int, float)) else None  # `_number` drops booleans, NaN and past-float integers
+    return seconds if seconds is not None and seconds > 0 else None
+
+
+def _backfill_codex_durations(windows: list[dict], raw: Any) -> None:
+    """TAL-1125: give each Codex window the ``limit_window_seconds`` of its counterpart in the same usage response.
+
+    The Agent's windows carry no duration, and it labels one it does not recognise (a 24-hour limit) by position, so
+    both windows can read "Session". Rebuild the Agent's window list from ``raw`` and join by position, only where the
+    labels agree; a mismatch leaves the duration unknown rather than handing one window's duration to another.
+    """
+    rate_limit = raw.get("rate_limit") if isinstance(raw, dict) else None
+    if not isinstance(rate_limit, dict):
+        return
+    counterparts = []
+    for key, positional in _CODEX_WINDOWS:
+        window = rate_limit.get(key)
+        if not isinstance(window, dict) or window.get("used_percent") is None:
+            continue  # the Agent skips a window without usage
+        seconds = _duration(window.get("limit_window_seconds"))
+        counterparts.append((_CODEX_LABELS_BY_SECONDS.get(int(seconds), positional) if seconds is not None else positional, seconds))
+    for window, (label, seconds) in zip(windows, counterparts):
+        if _duration(window.get("limit_window_seconds")) is None and seconds is not None and str(window.get("label") or "").strip().lower() == label.lower():
+            window["limit_window_seconds"] = seconds
+
+
 @functools.cache
 def _reads_read_only(fetch) -> bool:
     """Agent v0.21.6+: ``fetch_account_usage(read_only=, identity_id=)`` reads one pool account without refreshing or
@@ -376,6 +410,10 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
         return None
     row.setdefault("provider", provider)
     row["windows"] = [w for w in (row.get("windows") or []) if isinstance(w, dict)]
+    # The provider's response body serves only the duration backfill; it never leaves the sidecar.
+    raw = row.pop("raw", None)
+    if provider == "openai-codex":
+        _backfill_codex_durations(row["windows"], raw)
     row["details"] = list(row.get("details") or [])
     # The Agent's `available` is a property, which `_plain` (asdict/vars) never sees; read it off the snapshot.
     row["available"] = bool(getattr(snapshot, "available", row.get("available")))

@@ -757,8 +757,9 @@ export const QuotaForecastSchema = z.looseObject({
   depletion_margin_minutes: NullableNumber.describe('Projected empty minus reset, in minutes; negative empties early, null when no depletion is projected.'),
 })
 export const QuotaWindowSchema = z.looseObject({
-  label: z.string(), used_percent: NullableNumber, remaining_percent: NullableNumber, reset_at: NullableString.describe('ISO-8601 UTC.'), detail: NullableString,
-  window_seconds: NullableNumber.describe('The provider value, else 5h or weekly from the label; null when unknown.'),
+  label: z.string().describe('The provider label; a generic "Session"/"Weekly" its provider duration contradicts names that duration instead (`24-hour`).'),
+  used_percent: NullableNumber, remaining_percent: NullableNumber, reset_at: NullableString.describe('ISO-8601 UTC.'), detail: NullableString,
+  window_seconds: NullableNumber.describe('The provider duration (`window_seconds`, else `limit_window_seconds`), which outranks the label; else 5h or weekly from the label; null when unknown.'),
   pace: QuotaPaceSchema.nullable().describe('Null for a window without a future reset, a usage value, or a 5h/weekly length.'),
   forecast: QuotaForecastSchema.nullable(),
   projection_eligible: z.boolean().optional().describe('TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset).'),

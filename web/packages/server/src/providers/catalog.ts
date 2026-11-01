@@ -258,6 +258,27 @@ function roundTo(value: number, digits: number): number {
 
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
+/**
+ * TAL-1125: the provider-published window length, `window_seconds` else the Agent/Codex `limit_window_seconds`: a
+ * finite positive number, truncated like the Agent's label lookup (`int(seconds)`). Anything else is unknown.
+ */
+function providerWindowSeconds(entry: Dict): number | null {
+  for (const value of [entry.window_seconds, entry.limit_window_seconds]) {
+    const seconds = finite(value)
+    if (seconds !== null && seconds >= 1) return Math.trunc(seconds)
+  }
+  return null
+}
+
+/** The label for a window length the generic "Session"/"Weekly" label contradicts. */
+function durationLabel(seconds: number): string {
+  if (seconds === FIVE_HOUR_WINDOW_S) return 'Session'
+  if (seconds === WEEK_WINDOW_S) return 'Weekly'
+  if (seconds % 3600 === 0 && seconds < 48 * 3600) return `${seconds / 3600}-hour`
+  if (seconds % 86_400 === 0) return `${seconds / 86_400}-day`
+  return 'Usage limit'
+}
+
 /** ISO-8601 UTC for epoch seconds, without a `.000` fraction. */
 export const isoAt = (seconds: number): string => new Date(seconds * 1000).toISOString().replace('.000Z', 'Z')
 
@@ -297,8 +318,12 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
   const windows: QuotaWindow[] = []
   for (const entry of Array.isArray(raw) ? raw : []) {
     if (!isDict(entry)) continue
-    const label = str(entry.label).trim()
-    if (!label) continue
+    const providedSeconds = providerWindowSeconds(entry)
+    const rawLabel = str(entry.label).trim()
+    if (!rawLabel) continue
+    // A positional "Session"/"Weekly" (Codex labels an unrecognised length by position) names the actual length.
+    const generic = rawLabel.toLowerCase() === 'session' ? FIVE_HOUR_WINDOW_S : rawLabel.toLowerCase() === 'weekly' ? WEEK_WINDOW_S : null
+    const label = generic !== null && providedSeconds !== null && providedSeconds !== generic ? durationLabel(providedSeconds) : rawLabel
     const usedRaw = finite(entry.used_percent)
     const remainingRaw = finite(entry.remaining_percent)
     const clamp = (v: number): number => Math.min(Math.max(v, 0), 100)
@@ -308,7 +333,6 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
     const resetMs = resetAt === null ? null : Date.parse(resetAt)
     const minutesToReset = resetMs === null ? null : Math.max(0, roundTo((resetMs - nowMs) / 60_000, 0))
     const lower = label.toLowerCase()
-    const providedSeconds = finite(entry.window_seconds)
     const windowSeconds = providedSeconds
       ?? (lower.includes('week') ? WEEK_WINDOW_S
         : lower.includes('5h') ? FIVE_HOUR_WINDOW_S
@@ -339,7 +363,9 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
     })
   }
   const index = (match: (w: QuotaWindow) => boolean): number | null => { const i = windows.findIndex(match); return i < 0 ? null : i }
-  const labelHas = (needle: string) => (w: QuotaWindow): boolean => w.label.toLowerCase().includes(needle)
+  // A window whose known length is neither 5h nor weekly is never the session, weekly or pace window, whatever its label.
+  const pacedLength = (w: QuotaWindow): boolean => w.window_seconds === null || w.window_seconds === FIVE_HOUR_WINDOW_S || w.window_seconds === WEEK_WINDOW_S
+  const labelHas = (needle: string) => (w: QuotaWindow): boolean => pacedLength(w) && w.label.toLowerCase().includes(needle)
   const knownPace = (w: QuotaWindow): boolean => w.window_seconds === FIVE_HOUR_WINDOW_S || w.window_seconds === WEEK_WINDOW_S || ['week', 'session', '5h'].some((n) => labelHas(n)(w))
   return {
     windows,
