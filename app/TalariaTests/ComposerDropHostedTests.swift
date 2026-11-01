@@ -85,6 +85,23 @@ final class ComposerDropHostedTests: XCTestCase {
         XCTAssertTrue(landed, "Draft was \(String(describing: composerDraftText(in: window)))")
     }
 
+    /// The chat holds its composer transparent until its first appearance completes, while its editor already takes
+    /// typing, and SwiftUI targets no drop at a transparent view: on a slow runner the first drop came then and proposed
+    /// .cancel (TAL-1662). Hiding the chat for a moment stands in for that fade; the drop waits for the composer to take it.
+    func testADropWaitsForTheComposerToBecomeItsTarget() async throws {
+        let window = try await hostFixtureChat(size: HostedSize.padLandscape)
+        try await typeIntoComposer("Hello", in: window)
+        let chat = try XCTUnwrap(window.rootViewController?.view)
+        chat.alpha = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { chat.alpha = 1 }
+
+        let operation = try await drop([textProvider(" world")], in: window)
+
+        XCTAssertEqual(operation, .copy)
+        let landed = await awaitCondition { self.composerDraftText(in: window) == "Hello world" }
+        XCTAssertTrue(landed, "Draft was \(String(describing: composerDraftText(in: window)))")
+    }
+
     private func assertDropsLand(size: CGSize) async throws {
         let window = try await hostFixtureChat(size: size)
         try await typeIntoComposer("Hello world", in: window)
@@ -149,34 +166,60 @@ final class ComposerDropHostedTests: XCTestCase {
         // so a drop on the composer follows it.
         settle(0.3)
         let aim = { try point ?? self.composerCentre(in: window) }
+        // The chat holds its composer transparent until its first appearance completes, while its editor is already laid
+        // out and takes typing; SwiftUI targets no drop at a transparent view, so a drop then proposes .cancel (TAL-1662).
+        let ready = await awaitCondition { (try? aim()).map { self.proposal(for: providers, at: $0, in: window) != .cancel } ?? false }
+        XCTAssertTrue(ready, "No drop destination answered at \(String(describing: try? aim()))")
         let start = try aim()
         let session = HostedDropSession(providers: providers, window: window) { (try? aim()) ?? start }
-        var view = window.hitTest(start, with: nil)
+        guard let (interaction, delegate) = dropTarget(for: session, at: start, in: window) else { return .cancel }
+        delegate.dropInteraction?(interaction, sessionDidEnter: session)
+        settle()
+        await hovering?()
+        let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
+        settle()
+        if let hoverScreenshot {
+            settle(0.3)
+            attachHostedScreenshot(window, name: hoverScreenshot)
+        }
+        if operation == .copy || operation == .move {
+            delegate.dropInteraction?(interaction, performDrop: session)
+        } else {
+            delegate.dropInteraction?(interaction, sessionDidExit: session)
+        }
+        delegate.dropInteraction?(interaction, sessionDidEnd: session)
+        settle()
+        return operation
+    }
+
+    /// The drop interaction UIKit hands `session` at `point`: the first that takes it on the view under the point or its
+    /// nearest ancestor.
+    private func dropTarget(
+        for session: UIDropSession,
+        at point: CGPoint,
+        in window: UIWindow
+    ) -> (UIDropInteraction, UIDropInteractionDelegate)? {
+        var view = window.hitTest(point, with: nil)
         while let candidate = view {
             for case let interaction as UIDropInteraction in candidate.interactions {
                 guard let delegate = interaction.delegate,
                       delegate.dropInteraction?(interaction, canHandle: session) ?? true else { continue }
-                delegate.dropInteraction?(interaction, sessionDidEnter: session)
-                settle()
-                await hovering?()
-                let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
-                settle()
-                if let hoverScreenshot {
-                    settle(0.3)
-                    attachHostedScreenshot(window, name: hoverScreenshot)
-                }
-                if operation == .copy || operation == .move {
-                    delegate.dropInteraction?(interaction, performDrop: session)
-                } else {
-                    delegate.dropInteraction?(interaction, sessionDidExit: session)
-                }
-                delegate.dropInteraction?(interaction, sessionDidEnd: session)
-                settle()
-                return operation
+                return (interaction, delegate)
             }
             view = candidate.superview
         }
-        return .cancel
+        return nil
+    }
+
+    /// The operation a drop of `providers` at `point` would propose, entered and left without dropping.
+    private func proposal(for providers: [NSItemProvider], at point: CGPoint, in window: UIWindow) -> UIDropOperation {
+        let session = HostedDropSession(providers: providers, window: window) { point }
+        guard let (interaction, delegate) = dropTarget(for: session, at: point, in: window) else { return .cancel }
+        delegate.dropInteraction?(interaction, sessionDidEnter: session)
+        let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
+        delegate.dropInteraction?(interaction, sessionDidExit: session)
+        delegate.dropInteraction?(interaction, sessionDidEnd: session)
+        return operation
     }
 
     /// Makes `change` and reports whether the keyboard then posted `notification`; a hardware keyboard posts none.
