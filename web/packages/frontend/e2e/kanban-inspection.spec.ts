@@ -80,7 +80,7 @@ test('timeline and accessible relationships share the server projection and exis
     await expect(page.getByRole('dialog', { name: 'Operations audit', exact: true })).toBeVisible()
     await choose('Column', 'todo')
     await expect(page.getByRole('dialog').getByRole('combobox', { name: 'Column' })).toContainText('todo')
-    expect(sidecar.calls.filter(c => c.method === 'kanban.patch_task').at(-1)?.params).toMatchObject({ board: 'ops', task_id: 'plan' })
+    await expect.poll(() => sidecar.calls.filter(c => c.method === 'kanban.patch_task').at(-1)?.params).toMatchObject({ board: 'ops', task_id: 'plan' })
     await page.screenshot({ path: testInfo.outputPath(`detail-${testInfo.project.name}.png`) })
     const reconciled = page.waitForResponse(r => r.url().includes('/api/kanban/inspection') && r.request().method() === 'GET')
     held.resolve(undefined)
