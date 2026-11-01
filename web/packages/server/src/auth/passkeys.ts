@@ -17,6 +17,8 @@ const CHALLENGE_TTL_S = 90
 const MAX_CHALLENGES = 128
 const MAX_PER_CONTEXT = 8
 const RP_NAME = 'Talaria Web'
+/** WebAuthn attestation objects and COSE keys nest a few levels; anything deeper is hostile. */
+const MAX_CBOR_DEPTH = 16
 
 const b64u = (b: Buffer): string => b.toString('base64url')
 const b64uDecode = (v: unknown): Buffer => Buffer.from(str(v).trim(), 'base64url')
@@ -24,7 +26,7 @@ const b64uDecode = (v: unknown): Buffer => Buffer.from(str(v).trim(), 'base64url
 interface Credential { id: string; label: string; public_key_pem: string; sign_count: number; created_at: number; last_used_at: number | null }
 interface Challenge { kind: string; rp_id: string; origin: string; ts: number }
 
-/** Minimal CBOR decoder (major types 0-5, 7 simple values); indefinite lengths are rejected. */
+/** Minimal CBOR decoder (major types 0-5, 7 simple values); indefinite lengths are rejected. Malformed input always throws PasskeyError. */
 export function cborDecode(data: Buffer): unknown {
   let pos = 0
   const read = (n: number): Buffer => { if (pos + n > data.length) throw new PasskeyError('Malformed CBOR data'); const out = data.subarray(pos, pos + n); pos += n; return out }
@@ -36,20 +38,23 @@ export function cborDecode(data: Buffer): unknown {
     if (addl === 27) return Number(read(8).readBigUInt64BE(0))
     throw new PasskeyError('Indefinite CBOR values are not supported')
   }
-  const item = (): unknown => {
+  const item = (depth: number): unknown => {
+    if (depth > MAX_CBOR_DEPTH) throw new PasskeyError('Malformed CBOR data')
     const initial = read(1)[0] ?? 0
     const major = initial >> 5
     const v = val(initial & 0x1f)
+    // Every contained item takes at least one byte, so a longer declared length cannot fit.
+    if ((major === 4 || major === 5) && v * (major === 5 ? 2 : 1) > data.length - pos) throw new PasskeyError('Malformed CBOR data')
     if (major === 0) return v
     if (major === 1) return -1 - v
     if (major === 2) return Buffer.from(read(v))
     if (major === 3) return read(v).toString('utf8')
-    if (major === 4) return Array.from({ length: v }, () => item())
-    if (major === 5) { const m = new Map<unknown, unknown>(); for (let i = 0; i < v; i += 1) { const k = item(); m.set(k, item()) } return m }
+    if (major === 4) return Array.from({ length: v }, () => item(depth + 1))
+    if (major === 5) { const m = new Map<unknown, unknown>(); for (let i = 0; i < v; i += 1) { const k = item(depth + 1); m.set(k, item(depth + 1)) } return m }
     if (major === 7) { if (v === 20) return false; if (v === 21) return true; if (v === 22) return null }
     throw new PasskeyError('Unsupported CBOR data')
   }
-  const value = item()
+  const value = item(1)
   if (pos !== data.length) throw new PasskeyError('Trailing CBOR data')
   return value
 }

@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Registering a passkey with malformed data now reports the problem instead of a server error, and saves nothing.", "highlight": false, "components": ["web"]}]
+}

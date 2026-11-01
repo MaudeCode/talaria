@@ -286,9 +286,9 @@ async function oidcCall<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function passkeyCall<T>(fn: () => T): T {
+async function passkeyCall<T>(fn: () => Promise<T>): Promise<T> {
   try {
-    return fn()
+    return await fn()
   } catch (error) {
     if (error instanceof PasskeyRateLimitError) throw new HttpError(429, error.message)
     if (error instanceof PasskeyError) throw new HttpError(400, error.message)

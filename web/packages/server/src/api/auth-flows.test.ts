@@ -331,6 +331,25 @@ describe('passkeys', () => {
   })
 })
 
+describe('malformed passkey registration', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSKEY: '1' } }) })
+  afterAll(() => s.close())
+
+  it.each([
+    ['deep nesting', Buffer.alloc(200_000, 0x81)],
+    ['an oversized array length', Buffer.from('9bffffffffffffffff', 'hex')],
+  ])('answers an attestation object with %s with 400 and stores nothing', async (_shape, attestation) => {
+    const origin = s.base
+    const options = (await json(await post(s, '/api/auth/passkey/register/options', {}, { origin }))).publicKey as Json
+    const payload = new FakeAuthenticator().register(options, origin)
+    const res = await post(s, '/api/auth/passkey/register', { ...payload, response: { ...(payload.response as Json), attestationObject: b64u(attestation) } }, { origin })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Malformed CBOR data')
+    expect(await json(await s.get('/api/auth/passkeys'))).toEqual({ credentials: [] })
+  })
+})
+
 describe('passkey flag off', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
