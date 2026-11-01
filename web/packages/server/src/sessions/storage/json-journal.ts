@@ -101,7 +101,13 @@ export class JsonJournal implements JournalBackend {
     try {
       live = await open(this.pathFor(sessionId, runId), fsConstants.O_RDONLY | (pin ? NOFOLLOW ?? 0 : 0))
       liveStat = await live.stat({ bigint: true })
-    } catch { await live?.close().catch(() => undefined); live = null; liveStat = null }
+    } catch (error) {
+      await live?.close().catch(() => undefined)
+      // Only a missing journal is absent; any other failure could hide rows already persisted past the archive.
+      if (!['ENOENT', 'ENOTDIR'].includes(String((error as NodeJS.ErrnoException).code))) throw error
+      live = null
+      liveStat = null
+    }
     let archive: FileHandle | null
     try { archive = await this.openArchive(sessionId, runId) } catch (error) { await live?.close(); throw error }
     return { archive, live, liveStat, close: async () => { await archive?.close(); await live?.close() } }
@@ -586,7 +592,7 @@ export class JsonJournal implements JournalBackend {
     for (const runId of [...new Set(runIds)].sort()) {
       try { validateId(runId, 'run_id') } catch { continue }
       let files: RunFiles
-      try { files = await this.openRun(sid, runId) } catch { return result('replay_archive_unreadable') }
+      try { files = await this.openRun(sid, runId) } catch { return result('replay_unreadable') }
       try {
         let raw: Buffer
         let st: BigIntStats
@@ -616,7 +622,7 @@ export class JsonJournal implements JournalBackend {
         if (!Number.isFinite(createdAt)) createdAt = Number(st.mtimeMs) / 1000
         runs.push({ createdAt, runId, events })
       } catch (error) {
-        if (error instanceof JournalArchiveError) return result('replay_archive_unreadable')
+        if (error instanceof JournalArchiveError) return result('replay_unreadable')
         continue
       } finally { await files.close() }
     }

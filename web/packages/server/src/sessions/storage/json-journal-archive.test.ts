@@ -161,7 +161,7 @@ describe('run-journal archival', () => {
     if (damage === 'symlinked') { fs.renameSync(archive, `${archive}.real`); fs.symlinkSync(`${archive}.real`, archive) }
     await expect(journal.readRunEvents('session', 'run')).rejects.toBeInstanceOf(JournalArchiveError)
     await expect(journal.writer('session', 'run'), 'no new sequence starts over untrusted history').rejects.toBeInstanceOf(JournalArchiveError)
-    expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_archive_unreadable')
+    expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_unreadable')
     if (damage === 'contradicted') {
       fs.utimesSync(journal.pathFor('session', 'run'), old, old)
       expect((await sweep(journal)).pruned, 'archival never merges contradicting copies').toBe(0)
@@ -209,6 +209,22 @@ describe('run-journal archival', () => {
     expect(fs.existsSync(path), 'the live journal stays').toBe(true)
     expect(fs.existsSync(journal.archivePathFor('session', 'run'))).toBe(false)
     expect(await journal.readRunEvents('session', 'run')).toEqual(before)
+  })
+
+  it('refuses a run whose live continuation cannot be opened instead of reading only its archive', async () => {
+    const journal = fixture()
+    await writeRun(journal, 'session', 'run')
+    await sweep(journal)
+    const writer = await journal.writer('session', 'run')
+    await writer.appendSseEvent('token', { text: 'continuation' })
+    await writer.close()
+    const real = await vi.importActual<typeof fsp>('node:fs/promises')
+    const path = journal.pathFor('session', 'run')
+    vi.mocked(fsp.open).mockImplementation(async (file, ...rest) => (file === path ? Promise.reject(Object.assign(new Error('EIO'), { code: 'EIO' })) : real.open(file, ...rest)))
+    await expect(journal.writer('session', 'run'), 'a writer never resumes behind persisted rows').rejects.toMatchObject({ code: 'EIO' })
+    await expect(journal.readRunEvents('session', 'run')).rejects.toMatchObject({ code: 'EIO' })
+    vi.mocked(fsp.open).mockImplementation(real.open)
+    expect((await journal.readRunEvents('session', 'run')).map((e) => e.seq)).toEqual([1, 2, 3, 4])
   })
 
   it('never reads a run as empty while retention archives it', async () => {
