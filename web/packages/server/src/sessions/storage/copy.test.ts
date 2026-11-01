@@ -43,7 +43,13 @@ async function seed(store: StorageBackend): Promise<void> {
   await settled.append({ event: 'token', payload: { text: 'old' }, created_at: 1 }, { terminal: false })
   await settled.append({ event: 'done', payload: {}, created_at: 2 }, { terminal: true })
   await settled.close()
-  expect(await journals.prune(Date.now() / 1000 + 1)).toBe(1)
+  const archived = await journals.open('alpha', 'run-archived', { durability: 'eager' })
+  await archived.append({ event: 'token', payload: { text: 'kept' }, created_at: 1 }, { terminal: false })
+  await archived.append({ event: 'done', payload: {}, created_at: 2 }, { terminal: true })
+  await archived.close()
+  expect(await journals.prune(Date.now() / 1000 + 1)).toBe(2)
+  // The JSON backend archives both; dropping one archive leaves the summary-only history an earlier release pruned.
+  if (store instanceof JsonStorage) unlinkSync(join(store.directory, '_run_journal', 'alpha', '_archive', 'run-old.jsonl.gz'))
   const live = await journals.open('alpha', 'run-live', { durability: 'eager' })
   await live.append({ event: 'token', payload: { text: 'live' }, created_at: 3 }, { terminal: false })
   await live.close()
@@ -66,6 +72,7 @@ async function contents(store: StorageBackend) {
   items.streams = await journals.streams('alpha')
   items.live = await journals.readRunEvents('alpha', 'run-live')
   items.pruned = await journals.summary('alpha', 'run-old')
+  items.archived = { rows: await journals.readRunEvents('alpha', 'run-archived'), summary: await journals.summary('alpha', 'run-archived') }
   return items
 }
 
@@ -81,6 +88,7 @@ it('copies a JSON store to SQLite, verifies it, and copies nothing on a re-run',
   const expected = await contents(json)
   expect(expected['beta.bak']).toMatchObject({ messages: rows('beta', 5) })
   expect(expected.pruned).toMatchObject({ journal_pruned: true, terminal: true })
+  expect((expected.archived as { rows: unknown[] }).rows, 'archived rows copy as rows').toHaveLength(2)
   expect(await contents(sqlite)).toEqual(expected)
 
   expect(await copyStorage(json, sqlite)).toEqual({ copied: 0, unchanged: first.copied + first.unchanged, failures: [] })

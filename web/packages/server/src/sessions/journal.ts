@@ -166,10 +166,9 @@ export function staleInterruptedEvent(summary: RunSummary, sessionId: string, ru
 
 /** Retention for `pruneSettled`: `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) and `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3), unless the caller overrides them. */
 export function pruneRetention(env: Record<string, string | undefined>, opts: PruneOptions): { retention: number; keep: number; now: number; cutoff: number } {
-  const days = Number.parseFloat(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
-  const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
-  const keepEnv = Number.parseInt(env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
-  const keep = opts.keepRecent ?? (Number.isFinite(keepEnv) ? Math.max(0, keepEnv) : 3)
+  const policy = retentionPolicy(env)
+  const retention = opts.retentionSeconds ?? policy.retentionSeconds
+  const keep = opts.keepRecent ?? policy.keepRecent
   const now = opts.now ?? Date.now() / 1000
   return { retention, keep, now, cutoff: now - retention }
 }
