@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Security", "summary": "Sign-in, uploads and recordings are never forwarded when a server redirects them to a different address.", "highlight": false}]
+}

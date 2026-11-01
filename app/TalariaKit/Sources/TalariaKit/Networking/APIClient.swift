@@ -495,6 +495,8 @@ struct EmptyBody: Encodable {}
 ///
 /// Same-origin → same-origin redirects keep the headers (a proxy path rewrite
 /// still needs them); a request with no custom headers is left byte-identical.
+/// A cross-origin hop is followed only as a bodiless GET or HEAD; any other
+/// method, body, or body stream is refused rather than replayed (TAL-1406).
 /// Only `willPerformHTTPRedirection` is implemented, so every other delegate
 /// responsibility (TLS trust, auth challenges) falls back to `URLSession`'s
 /// default handling — unchanged from when these sessions had no delegate.
@@ -523,6 +525,18 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         guard let destination = request.url,
               !APIClient.isSameOrigin(destination, as: baseURL) else {
             completionHandler(request)
+            return
+        }
+
+        // Cross-origin hop that would replay a request body (a 307/308 keeps the
+        // method and body: a sign-in password, OIDC code, upload, or recording).
+        // Refuse it, so `URLSession` delivers the 3xx itself and nothing reaches
+        // the other origin; callers see their usual non-2xx `APIError.http`.
+        let method = request.httpMethod?.uppercased() ?? "GET"
+        guard method == "GET" || method == "HEAD",
+              request.httpBody == nil,
+              request.httpBodyStream == nil else {
+            completionHandler(nil)
             return
         }
 

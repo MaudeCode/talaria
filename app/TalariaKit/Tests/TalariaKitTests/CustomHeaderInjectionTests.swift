@@ -555,8 +555,27 @@ final class CrossOriginRedirectHeaderTests: XCTestCase {
         destination: String,
         requestHeaders: [String: String]
     ) throws -> URLRequest {
+        try XCTUnwrap(
+            redirectDecision(guardHeaders: guardHeaders, destination: destination, requestHeaders: requestHeaders),
+            "guard refused the redirect"
+        )
+    }
+
+    /// The guard's raw decision: `nil` means it refused the hop, so `URLSession`
+    /// delivers the 3xx itself instead of sending anything to `destination`.
+    private func redirectDecision(
+        guardHeaders: [CustomHeader] = [],
+        destination: String,
+        method: String = "GET",
+        body: Data? = nil,
+        bodyStream: InputStream? = nil,
+        requestHeaders: [String: String] = [:]
+    ) throws -> URLRequest? {
         let stripper = CrossOriginHeaderStripper(baseURL: baseURL, customHeaderProvider: { guardHeaders })
         var newRequest = URLRequest(url: try XCTUnwrap(URL(string: destination)))
+        newRequest.httpMethod = method
+        if let body { newRequest.httpBody = body }
+        if let bodyStream { newRequest.httpBodyStream = bodyStream }
         for (name, value) in requestHeaders {
             newRequest.setValue(value, forHTTPHeaderField: name)
         }
@@ -565,11 +584,14 @@ final class CrossOriginRedirectHeaderTests: XCTestCase {
         )
         let dummy = URLSession(configuration: .ephemeral)
         let task = dummy.dataTask(with: try XCTUnwrap(URL(string: "https://example.test")))
+        var called = false
         var result: URLRequest?
         stripper.urlSession(dummy, task: task, willPerformHTTPRedirection: response, newRequest: newRequest) {
+            called = true
             result = $0
         }
-        return try XCTUnwrap(result, "guard did not call the completion handler")
+        XCTAssertTrue(called, "guard did not call the completion handler")
+        return result
     }
 
     // AC1: same-origin → cross-origin carries none of the custom headers.
@@ -643,5 +665,155 @@ final class CrossOriginRedirectHeaderTests: XCTestCase {
         let secondHop = try XCTUnwrap(RedirectingMockURLProtocol.secondHopRequest)
         XCTAssertEqual(secondHop.url?.host, "third-party.example")
         XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Api-Key"))
+    }
+
+    // MARK: Request bodies never follow a cross-origin redirect (TAL-1406)
+
+    /// A client on the default sessions (so the production redirect guard is
+    /// installed) with a test-owned cookie jar, which also disables persistence.
+    private func loopbackClient(
+        _ server: LoopbackHTTPServer,
+        customHeaders: [CustomHeader] = []
+    ) -> APIClient {
+        APIClient(baseURL: server.baseURL, cookieStorage: HTTPCookieStorage(), customHeaderProvider: { customHeaders })
+    }
+
+    private func assertHTTPError(_ error: Error, status: Int, file: StaticString = #filePath, line: UInt = #line) {
+        guard case APIError.http(let statusCode, _) = error else {
+            return XCTFail("expected APIError.http(\(status)), got \(error)", file: file, line: line)
+        }
+        XCTAssertEqual(statusCode, status, file: file, line: line)
+    }
+
+    func testCrossOriginTemporaryAndPermanentRedirectsNeverForwardLoginBody() async throws {
+        for status in [307, 308] {
+            let destination = try LoopbackHTTPServer { _ in .json(#"{"ok":true}"#) }
+            let origin = try LoopbackHTTPServer { _ in .redirect(status, to: destination.url("/capture")) }
+
+            do {
+                _ = try await loopbackClient(origin).login(password: "synthetic-password-1406")
+                XCTFail("\(status): login followed the cross-origin redirect")
+            } catch {
+                assertHTTPError(error, status: status)
+            }
+
+            XCTAssertEqual(origin.requests.map(\.path), ["/api/auth/login"], "\(status)")
+            XCTAssertEqual(
+                destination.requests.map { "\($0.method) \($0.path) \(String(decoding: $0.body, as: UTF8.self))" },
+                [],
+                "\(status): the destination origin received the redirected request"
+            )
+        }
+    }
+
+    func testSameOriginTemporaryAndPermanentRedirectsKeepLoginBody() async throws {
+        for status in [307, 308] {
+            let server = try LoopbackHTTPServer { request in
+                request.path == "/api/auth/login"
+                    ? .redirect(status, to: URL(string: "/api/auth/login-final")!)
+                    : .json(#"{"ok":true}"#)
+            }
+
+            let response = try await loopbackClient(server).login(password: "synthetic-password-1406")
+
+            XCTAssertEqual(response.ok, true, "\(status)")
+            let final = try XCTUnwrap(server.requests.last, "\(status)")
+            XCTAssertEqual(final.path, "/api/auth/login-final", "\(status)")
+            XCTAssertEqual(final.method, "POST", "\(status)")
+            XCTAssertEqual(String(decoding: final.body, as: UTF8.self), #"{"password":"synthetic-password-1406"}"#)
+        }
+    }
+
+    func testCrossOriginGETRedirectFollowsWithoutConfiguredHeaders() async throws {
+        let destination = try LoopbackHTTPServer { _ in LoopbackHTTPServer.Response(status: 200, body: Data("img".utf8)) }
+        let origin = try LoopbackHTTPServer { _ in .redirect(302, to: destination.url("/image.png")) }
+        let client = loopbackClient(origin, customHeaders: [CustomHeader(name: "X-Api-Key", value: "k1")])
+
+        let data = try await client.downloadData(
+            from: origin.url("/api/media"),
+            using: client.session,
+            mapsUnauthorized: false
+        )
+
+        XCTAssertEqual(data, Data("img".utf8))
+        XCTAssertEqual(origin.requests.first?.header("X-Api-Key"), "k1")
+        let hop = try XCTUnwrap(destination.requests.first)
+        XCTAssertEqual(hop.method, "GET")
+        XCTAssertNil(hop.header("X-Api-Key"))
+        XCTAssertNil(hop.header(AppConfig.clientIdentityHeaderName))
+    }
+
+    func testRefusesCrossOriginRedirectCarryingBodyBearingMethod() throws {
+        for method in ["POST", "PUT", "PATCH", "DELETE"] {
+            XCTAssertNil(
+                try redirectDecision(destination: "https://third-party.example/capture", method: method),
+                method
+            )
+        }
+    }
+
+    func testRefusesCrossOriginRedirectCarryingBodyOrBodyStream() throws {
+        XCTAssertNil(try redirectDecision(destination: "https://third-party.example/x", body: Data("secret".utf8)))
+        XCTAssertNil(try redirectDecision(
+            destination: "https://third-party.example/x",
+            bodyStream: InputStream(data: Data("secret".utf8))
+        ))
+    }
+
+    func testRefusesBodyRedirectWhenSchemeHostOrPortChanges() throws {
+        for destination in ["http://example.test/api", "https://other.test/api", "https://example.test:8443/api"] {
+            XCTAssertNil(try redirectDecision(destination: destination, method: "POST"), destination)
+        }
+    }
+
+    func testKeepsSameOriginBodyRedirectAndBodilessCrossOriginRedirect() throws {
+        let sameOrigin = try XCTUnwrap(try redirectDecision(
+            destination: "https://example.test:443/api/auth/login-final",
+            method: "POST",
+            body: Data("secret".utf8)
+        ))
+        XCTAssertEqual(sameOrigin.httpMethod, "POST")
+        XCTAssertEqual(sameOrigin.httpBody, Data("secret".utf8))
+
+        for method in ["GET", "HEAD"] {
+            let followed = try redirectDecision(
+                guardHeaders: [CustomHeader(name: "X-Api-Key", value: "k1")],
+                destination: "https://third-party.example/image.png",
+                method: method,
+                requestHeaders: ["X-Api-Key": "k1", "Cookie": "session=s1", AppConfig.clientIdentityHeaderName: "{}"]
+            )
+            let request = try XCTUnwrap(followed, method)
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Api-Key"), method)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"), method)
+            XCTAssertNil(request.value(forHTTPHeaderField: AppConfig.clientIdentityHeaderName), method)
+        }
+    }
+
+    // The URLProtocol adapter (SSE / Kanban streams) delegates to the same guard.
+    // Bodiless POST: the adapter's inner session cannot replay a body stream, so
+    // the method alone must be enough to refuse the hop.
+    func testURLProtocolAdapterRefusesCrossOriginNonGETRedirect() async throws {
+        let destination = try LoopbackHTTPServer { _ in .json("{}") }
+        let origin = try LoopbackHTTPServer { _ in .redirect(307, to: destination.url("/capture")) }
+        let configuration = URLSessionConfiguration.ephemeral
+        let policyHeader = CrossOriginRedirectGuardURLProtocol.register(
+            configuration: configuration,
+            baseURL: origin.baseURL,
+            customHeaders: [],
+            builtInHeaders: [:]
+        )
+        defer { CrossOriginRedirectGuardURLProtocol.unregister(policyHeader) }
+        configuration.protocolClasses = [CrossOriginRedirectGuardURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: origin.url("/api/stream"))
+        request.httpMethod = "POST"
+        request.setValue("1", forHTTPHeaderField: policyHeader)
+
+        let (_, response) = try await session.data(for: request)
+
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 307)
+        XCTAssertEqual(origin.requests.map(\.path), ["/api/stream"])
+        XCTAssertTrue(destination.requests.isEmpty)
     }
 }
