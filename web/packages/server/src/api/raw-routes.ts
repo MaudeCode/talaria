@@ -365,7 +365,7 @@ async function handleSessionExport(ctx: RequestContext): Promise<void> {
   } catch {
     throw new HttpError(404, 'Session not found')
   }
-  if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
+  if (!ctx.deps.sessions.visibleToRequest(session)) throw new HttpError(404, 'Session not found')
   // Python `public_session_projection(s.__dict__)`: the whole session document (tool_calls, context_messages, ...) redacted.
   const safe = await ctx.deps.sessions.publicSessionDocument(session)
   let payload: string
@@ -443,7 +443,7 @@ async function uploadSessionVisible(ctx: RequestContext, sessionId: string): Pro
     await ctx.json({ error: 'Session not found' }, { status: 404 })
     return false
   }
-  if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) {
+  if (!ctx.deps.sessions.visibleToRequest(session)) {
     await ctx.json({ error: 'Session not found' }, { status: 404 })
     return false
   }

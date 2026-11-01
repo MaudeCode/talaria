@@ -186,3 +186,46 @@ describe('new-chat conversation references', () => {
     expect(result.sessions.map((row) => row.session_id)).toEqual(['first'])
   })
 })
+
+describe('referenced creation under person isolation (TAL-48)', () => {
+  it('never hands one person\'s referenced chat to another who replays its creation', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ sidecar: null, env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    try {
+      const signIn = (subject: string) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+      }
+      const alice = signIn('alice')
+      const bob = signIn('bob')
+      const aliceId = ((await (await s.get('/api/auth/status', { headers: alice })).json()) as { person: { id: string } }).person.id
+      // Alice's own earlier chat, which she references.
+      const db = openStateDb(join(s.state, 'state.db'))
+      db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, started_at REAL, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL, display_metadata TEXT)')
+      db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, NULL, NULL, NULL)').run('alicesource', 'webui', 'Alice source', 100)
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_metadata) VALUES (?, ?, ?, ?, ?)').run('alicesource', 'user', 'private', 101, JSON.stringify({ data_use: ['no_training'] }))
+      db.close()
+      const source = await s.deps.sessionStore.newSession({ profile: 'default' })
+      source.session_id = 'alicesource'
+      source.owner_person_id = aliceId
+      source.messages = [{ role: 'user', content: 'Earlier question' }]
+      await s.deps.sessionStore.save(source)
+
+      const body = JSON.stringify({ source_references: [ref('alicesource')], request_id: 'shared-receipt' })
+      const created = await s.get('/api/session/new', { method: 'POST', headers: alice, body })
+      expect(created.status, await created.clone().text()).toBe(200)
+      const aliceChat = SessionEnvelopeSchema.parse(await created.json()).session.session_id
+      const replay = await s.get('/api/session/new', { method: 'POST', headers: bob, body })
+      if (replay.status === 200) expect(SessionEnvelopeSchema.parse(await replay.json()).session.session_id).not.toBe(aliceChat)
+      else expect(replay.status).toBe(409)
+      // Alice's own retry still converges on her chat.
+      const retry = await s.get('/api/session/new', { method: 'POST', headers: alice, body })
+      expect(SessionEnvelopeSchema.parse(await retry.json()).session.session_id).toBe(aliceChat)
+    } finally {
+      await s.close()
+    }
+  })
+})

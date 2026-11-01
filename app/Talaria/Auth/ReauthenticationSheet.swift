@@ -83,9 +83,11 @@ struct ReauthenticationSheet: View {
                             Text(serverHost).font(AppFont.footnote()).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Your session expired. Sign in again.")
-                        .font(AppFont.subheadline())
-                        .foregroundStyle(.secondary)
+                    if !authManager.reauthenticationIsVoluntary {
+                        Text("Your session expired. Sign in again.")
+                            .font(AppFont.subheadline())
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 if showsPassword {
@@ -175,6 +177,10 @@ struct ReauthenticationSheet: View {
             }
 
             HStack(spacing: 24) {
+                if authManager.reauthenticationIsVoluntary {
+                    Button("Cancel") { authManager.cancelVoluntaryReauthentication() }
+                        .foregroundStyle(.secondary)
+                }
                 if authManager.servers.count > 1 {
                     Menu("Switch Server") {
                         ForEach(authManager.servers.filter { $0.id != server.absoluteString }) { account in

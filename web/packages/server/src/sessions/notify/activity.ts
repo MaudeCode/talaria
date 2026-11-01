@@ -39,6 +39,8 @@ export interface ActivityState {
   updatedAt: number
   deepLink: string
   alertEligible: boolean
+  /** TAL-48: the session's person under person isolation; channels never send it, they filter by it. */
+  ownerPersonId: string | null
 }
 
 type TrackedRun = ActiveRun & { relay_phase?: string; terminal_at?: number }
@@ -117,7 +119,7 @@ export class ActivityStates {
       if (run.phase === 'settled' && !run.stream_id) phase = snapshot?.activity_phase ?? 'stale'
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible })
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ownerPersonId: session.owner_person_id })
     }
     return states
   }

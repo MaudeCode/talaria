@@ -58,6 +58,15 @@ struct ServerDetailView: View {
                 }
 
                 SettingsCard(title: isActive ? String(localized: "Account") : String(localized: "Remove Server")) {
+                    // TAL-48: a server that keeps sessions per person names who is signed in.
+                    if isActive, let person = authManager.activePerson {
+                        SettingsInfoRow(title: String(localized: "Signed In As"), value: personName(person))
+                        SettingsButton(String(localized: "Sign In Again")) {
+                            authManager.reauthenticateActivePerson()
+                        }
+                        SettingsDivider()
+                    }
+
                     SettingsFootnote(removeFootnote)
 
                     SettingsButton(removeButtonTitle, role: .destructive, isLoading: isRemoving) {
@@ -87,6 +96,9 @@ struct ServerDetailView: View {
         .onChange(of: initials) { persistIdentity() }
         .onChange(of: colorHex) { persistIdentity() }
         .onDisappear { authManager.flushServerIdentityEdits() }
+        .task(id: "\(account.id)#\(authManager.authenticatedIdentityRevision)") {
+            if isActive { await authManager.refreshActivePerson() }
+        }
         .identitySaveErrorInset(authManager)
         .alert(removeAlertTitle, isPresented: $isConfirmingRemove) {
             Button("Cancel", role: .cancel) {}
@@ -110,6 +122,13 @@ struct ServerDetailView: View {
             }
         } message: {
             Text(removeAlertMessage)
+        }
+    }
+
+    private func personName(_ person: AuthManager.ActivePerson) -> String {
+        switch person {
+        case .signedIn(let displayName): displayName
+        case .unidentified: String(localized: "Not identified")
         }
     }
 

@@ -262,3 +262,43 @@ it('accepts immediate Pause from the Start acknowledgement despite receipt-only 
   expect(pause.status).toBe(200)
   expect((await read()).phase).toBe('paused')
 })
+
+it('runs a queue with its creator\'s person authority once person isolation is on (TAL-48)', async () => {
+  const issuer = 'https://identity.invalid'
+  const sidecar = new FakeSidecar()
+  const started: string[] = []
+  sidecar.respond('chat.start', (params) => { started.push(params.session_id); return completed(params) })
+  server = await bootTestServer({ sidecar, env: {
+    HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified',
+    HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+  }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+  const cookie = server.deps.auth.createSession({ authType: 'oidc', username: 'alice', oidcBinding: { issuer, subject: 'alice' } })
+  const headers = { cookie: `${server.deps.auth.cookieName()}=${cookie}`, origin: server.base, 'X-Hermes-CSRF-Token': server.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+  // Saved before isolation: Alice may queue the shared (unowned) chats then.
+  const legacy = await Promise.all([0, 1].map(() => server!.deps.sessionStore.newSession({ profile: 'default' })))
+  const created = await server.get('/api/prompt-queues', { method: 'POST', headers, body: JSON.stringify({ request_id: 'pre-isolation', cards: legacy.map((s, i) => ({ session_id: s.session_id, project_id: null, text: `Legacy prompt ${i}` })) }) })
+  expect(created.status).toBe(200)
+  const run = await created.json() as PromptQueueRun
+  // The operator turns isolation on: those chats now reach owners only, and Alice is not one.
+  server.deps.config.env.HERMES_WEBUI_PERSON_ISOLATION = '1'
+  expect((await server.get(`/api/prompt-queues/${run.id}/action`, { method: 'POST', headers, body: JSON.stringify({ revision: run.revision, action: 'start' }) })).status).toBe(200)
+  await server.deps.promptQueues.settled()
+  const after = (await (await server.get('/api/prompt-queues', { headers })).json() as { runs: PromptQueueRun[] }).runs[0]!
+  // The worker acts as Alice, so the unowned chat refuses the card instead of admitting her prompt.
+  expect(after.cards[0]!.status).toBe('refused')
+  expect(after.phase).toBe('refused')
+  expect(started).toEqual([])
+})
+
+it('runs queues as before on a server without sign-in, even with person isolation set (TAL-48)', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completed)
+  server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PERSON_ISOLATION: '1' } })
+  const sessions = await Promise.all([0, 1].map(() => server!.deps.sessionStore.newSession({ profile: 'default' })))
+  const created = await post('/api/prompt-queues', { request_id: 'no-auth', cards: sessions.map((s, i) => ({ session_id: s.session_id, project_id: null, text: `Prompt ${i}` })) })
+  expect(created.status).toBe(200)
+  const run = await created.json() as PromptQueueRun
+  const current = await act(run, 'start')
+  expect(current.phase).not.toBe('refused')
+  expect(current.cards[0]!.status).not.toBe('refused')
+})

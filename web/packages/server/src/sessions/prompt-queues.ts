@@ -9,9 +9,11 @@ import { HttpFailure } from './service.js'
 import { startSessionChat } from './admission.js'
 import { isSafeSessionId } from './session.js'
 import { str } from '../util.js'
+import { personIsolationActive, type PersonAccess } from '../auth/person.js'
 
 type Scope = Pick<UpdateNotificationScope, 'profile' | 'owner'>
-interface Stored { owner: string; run: PromptQueueRun }
+/** `person`: the creator's session authority under person isolation (TAL-48), which the detached worker acts with. */
+interface Stored { owner: string; run: PromptQueueRun; person?: PersonAccess }
 const namespace = 'prompt-queues'
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 const terminal = new Set(['completed', 'failed', 'refused'])
@@ -38,7 +40,10 @@ export class PromptQueues {
   private parse(raw: unknown): Stored {
     if (!raw || typeof raw !== 'object' || typeof (raw as Stored).owner !== 'string') throw new Error('Invalid prompt queue document')
     const saved = raw as Stored
-    return { owner: saved.owner, run: PromptQueueRunSchema.parse(saved.run) }
+    const person = saved.person
+    const access = person && typeof person === 'object' && (person.personId === null || typeof person.personId === 'string') && typeof person.serverOwner === 'boolean'
+      ? { personId: person.personId, serverOwner: person.serverOwner } : null
+    return { owner: saved.owner, run: PromptQueueRunSchema.parse(saved.run), ...(access ? { person: access } : {}) }
   }
   private owned(saved: Stored, scope: Scope): void {
     if (saved.owner !== scope.owner || saved.run.profile !== scope.profile) throw new HttpFailure(404, 'Queue not found')
@@ -115,7 +120,8 @@ export class PromptQueues {
         if (JSON.stringify(saved.run.cards.map(({ session_id, project_id, text }) => ({ session_id, project_id, text }))) !== JSON.stringify(inputs)) throw new HttpFailure(409, 'This queue creation identity was already used')
         return { value: saved, result: view(saved.run), skip: true }
       }
-      return { value: { owner: scope.owner, run }, result: run }
+      const person = this.deps().requestScope.getStore()?.personAccess
+      return { value: { owner: scope.owner, run, ...(person ? { person } : {}) }, result: run }
     })
   }
 
@@ -170,7 +176,9 @@ export class PromptQueues {
 
   private async tick(id: string): Promise<void> {
     const saved = await this.load(id)
-    await this.deps().requestScope.run({ requestProfile: saved.run.profile, notificationOwner: saved.owner }, async () => {
+    // TAL-48: the worker acts with its creator's person authority; a queue saved without one reaches no person's session.
+    const personAccess = await personIsolationActive(this.deps().config.env, this.deps().auth) ? saved.person ?? { personId: null, serverOwner: false } : undefined
+    await this.deps().requestScope.run({ requestProfile: saved.run.profile, notificationOwner: saved.owner, ...(personAccess ? { personAccess } : {}) }, async () => {
       for (let count = 0; count <= saved.run.cards.length && !this.stopped; count += 1) {
         const { run } = await this.load(id)
         const card = run.cards[run.current_step]

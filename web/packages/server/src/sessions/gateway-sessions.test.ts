@@ -1872,3 +1872,45 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect(sidecar.calls.some((c) => c.method === 'gateway.create')).toBe(false)
   })
 })
+
+describe('diagnostic chats under person isolation (TAL-48)', () => {
+  it('belong to the person who started them, not to other people or owners', async () => {
+    const issuer = 'https://identity.invalid'
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = openStateDb(join(s.state, 'state.db'))
+    try {
+      db.exec(fixture.schema.join('\n'))
+      for (const sql of fixture.inserts) db.exec(sql)
+      const created = fixture.diagnostic.safe
+      const fresh = snapshot({ session_id: created, stored_session_id: created, messages: [], message_count: 0, revision: 1, execution_generation: 0, info: { model: 'fixture', source: 'cli' } })
+      sidecar.respond('gateway.session', () => attached(fresh))
+      sidecar.respond('gateway.create', () => attached(fresh))
+      const signIn = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+      }
+      const alice = signIn('alice')
+      const bob = signIn('bob')
+      const start = (headers: Record<string, string>) => s.get('/api/session/new', { method: 'POST', headers, body: JSON.stringify({ execution_mode: 'safe', model: 'fixture', request_id: 'shared-retry' }) })
+      const response = await start(alice)
+      expect(response.status, await response.clone().text()).toBe(200)
+      expect(SessionEnvelopeSchema.parse(await response.json()).session.session_id).toBe(created)
+      expect((await s.get(`/api/session?session_id=${created}`, { headers: alice })).status).toBe(200)
+      for (const other of [bob, signIn('olive', true)]) expect((await s.get(`/api/session?session_id=${created}`, { headers: other })).status).toBe(404)
+      // The same request id from Bob is a different creation, and even an owner answering with Alice's chat never hands it over.
+      expect((await start(bob)).status).toBe(404)
+      const keys = sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => (c.params as { request_id: string }).request_id)
+      expect(keys).toHaveLength(2)
+      expect(keys[0]).not.toBe(keys[1])
+      expect((await s.get(`/api/session?session_id=${created}`, { headers: alice })).status).toBe(200)
+      expect((await s.get(`/api/session?session_id=${created}`, { headers: bob })).status).toBe(404)
+    } finally {
+      db.close()
+      await s.close()
+    }
+  })
+})

@@ -31,6 +31,12 @@ public struct AuthStatusResponse: Decodable {
     /// request (Cloudflare Access, Authentik). Present only when that mode is
     /// on, so nil means "not that kind of server".
     public let trustedAuthEnabled: Bool?
+    /// TAL-48: the server keeps each person's sessions to that person. Older
+    /// servers omit it and stay single-user, so nil means no identity UI.
+    public let personIsolation: PersonIsolationCapability?
+    /// The person the server derived from this login. With isolation on, nil
+    /// means the login carries no person (the user should sign in again).
+    public let person: ServerPerson?
 
     /// The server already considers this client signed in. Trusted-header
     /// deployments authenticate at the proxy, so there is no credential for the
@@ -46,7 +52,9 @@ public struct AuthStatusResponse: Decodable {
         oidcEnabled: Bool? = nil,
         oidcNativeHandoffEnabled: Bool? = nil,
         oidcUnavailable: Bool? = nil,
-        trustedAuthEnabled: Bool? = nil
+        trustedAuthEnabled: Bool? = nil,
+        personIsolation: PersonIsolationCapability? = nil,
+        person: ServerPerson? = nil
     ) {
         self.authEnabled = authEnabled
         self.loggedIn = loggedIn
@@ -57,6 +65,30 @@ public struct AuthStatusResponse: Decodable {
         self.oidcNativeHandoffEnabled = oidcNativeHandoffEnabled
         self.oidcUnavailable = oidcUnavailable
         self.trustedAuthEnabled = trustedAuthEnabled
+        self.personIsolation = personIsolation
+        self.person = person
+    }
+}
+
+/// `person_isolation` in `/api/auth/status` (TAL-48).
+public struct PersonIsolationCapability: Decodable, Equatable, Sendable {
+    public let version: Int?
+    public let enabled: Bool?
+
+    public init(version: Int? = nil, enabled: Bool? = nil) {
+        self.version = version
+        self.enabled = enabled
+    }
+}
+
+/// `person` in `/api/auth/status`: an opaque id and a display name, nothing else.
+public struct ServerPerson: Decodable, Equatable, Sendable {
+    public let id: String?
+    public let displayName: String?
+
+    public init(id: String? = nil, displayName: String? = nil) {
+        self.id = id
+        self.displayName = displayName
     }
 }
 

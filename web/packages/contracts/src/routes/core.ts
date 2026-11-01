@@ -31,6 +31,16 @@ export const AuthStatusSchema = z.object({
   auth_type: z.string().optional(),
   user: NullableString.optional(),
   bound_profile: NullableString.optional(),
+  /**
+   * TAL-48: the per-person session-ownership capability. `enabled` means each person's sessions are visible only to
+   * that person; older servers omit it and stay single-user.
+   */
+  person_isolation: z.object({ version: z.number().int(), enabled: z.boolean() }).optional(),
+  /**
+   * The signed-in person the server derived from a validated login: an opaque `id` and a display name, nothing else.
+   * Null while isolation is on and this login carries no person (sign in with SSO again); omitted while isolation is off.
+   */
+  person: z.object({ id: z.string(), display_name: z.string() }).nullable().optional(),
 })
 export type AuthStatus = z.infer<typeof AuthStatusSchema>
 

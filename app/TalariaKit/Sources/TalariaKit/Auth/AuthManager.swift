@@ -76,6 +76,23 @@ public final class AuthManager {
     public private(set) var authenticatedIdentityRevision = 0
     public private(set) var reauthenticationOffersSSO = false
     public private(set) var reauthenticationOffersPassword = true
+    /// The user chose to sign in again (TAL-48): the session is intact, so the
+    /// sheet says nothing expired and can be cancelled.
+    public private(set) var reauthenticationIsVoluntary = false
+    /// TAL-48: who the active server says is signed in, when it keeps sessions
+    /// per person; nil for a single-user server or before the first probe.
+    public var activePerson: ActivePerson? {
+        guard let answer = personAnswer, answer.server == state.server else { return nil }
+        return Self.activePerson(from: answer.status)
+    }
+    /// The last person probe, kept with its server so another server never shows it.
+    private var personAnswer: (server: URL, status: AuthStatusResponse)?
+
+    public enum ActivePerson: Equatable, Sendable {
+        case signedIn(displayName: String)
+        /// The server isolates sessions per person but this login has none.
+        case unidentified
+    }
     @ObservationIgnored private(set) var recoveryTask: Task<Void, Never>?
     private var recoveryID = UUID()
     private let mutationBlockID = UUID()
@@ -89,10 +106,12 @@ public final class AuthManager {
         recoveryTask?.cancel()
         recoveryTask = nil
         pendingReauthentication = nil
+        reauthenticationIsVoluntary = false
         APIClient.setReauthenticationRequired(nil, owner: mutationBlockID)
     }
 
-    private func requireReauthentication(for server: URL, status: AuthStatusResponse?) {
+    private func requireReauthentication(for server: URL, status: AuthStatusResponse?, voluntary: Bool = false) {
+        reauthenticationIsVoluntary = voluntary
         let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
         // Without a successful capability probe, keep retry/header repair available.
         reauthenticationOffersSSO = status != nil && status?.oidcEnabled != false
@@ -104,6 +123,42 @@ public final class AuthManager {
         }
         pendingReauthentication = server
         APIClient.setReauthenticationRequired(server, owner: mutationBlockID)
+    }
+
+    /// Re-reads the active server's person (TAL-48). An unreachable server keeps
+    /// the last answer; a session it no longer accepts goes through the normal
+    /// unauthorized recovery.
+    public func refreshActivePerson() async {
+        guard case .loggedIn(let server) = state else { return }
+        let client = probeClientFactory(server, currentCustomHeaders, cookieStorageProvider(server))
+        let status: AuthStatusResponse
+        do {
+            status = try await client.authStatus()
+        } catch {
+            handleAPIError(error, server: server)
+            return
+        }
+        guard state == .loggedIn(server: server) else { return }
+        personAnswer = (server, status)
+    }
+
+    static func activePerson(from status: AuthStatusResponse) -> ActivePerson? {
+        guard status.personIsolation?.enabled == true else { return nil }
+        if let name = status.person?.displayName, !name.isEmpty { return .signedIn(displayName: name) }
+        return .unidentified
+    }
+
+    /// Recovery for a missing or wrong person: the server's normal sign-in sheet,
+    /// so the new login decides who the person is.
+    public func reauthenticateActivePerson() {
+        guard case .loggedIn(let server) = state, pendingReauthentication == nil else { return }
+        requireReauthentication(for: server, status: personAnswer?.server == server ? personAnswer?.status : nil, voluntary: true)
+    }
+
+    /// Cancels a sign-in the user started; the existing session stays as it was.
+    public func cancelVoluntaryReauthentication() {
+        guard reauthenticationIsVoluntary, pendingReauthentication != nil, recoveryTask == nil else { return }
+        finishRecovery()
     }
 
     /// Observable snapshot of every configured server, mirrored from the
@@ -374,6 +429,13 @@ public final class AuthManager {
             }
 
             do {
+                // TAL-48: a login with no SSO identity replaces an SSO one only after that identity's local state is gone.
+                try await resetProfileScopedStateIfChanged(nil, for: serverURL)
+                guard canCommit() else {
+                    _ = try? await client.logout()
+                    clearSessionCookies(for: serverURL)
+                    return nil
+                }
                 try completeConfiguration(
                     serverURL,
                     previousServerID: previousServerID,
@@ -415,7 +477,8 @@ public final class AuthManager {
             let activeProfile = try await authenticateWithOIDC(
                 client: client,
                 serverURL: serverURL,
-                cookieStorage: cookies
+                cookieStorage: cookies,
+                replacingSignedInSession: reauthenticationIsVoluntary && pendingReauthentication == serverURL
             )
             func abandonSession() async {
                 _ = try? await client.logout()
@@ -529,6 +592,7 @@ public final class AuthManager {
                 retainedPassword = password
             }
 
+            try await resetProfileScopedStateIfChanged(nil, for: serverURL)
             try completeAddedServer(
                 serverURL,
                 headers: newHeaders,
@@ -599,7 +663,8 @@ public final class AuthManager {
     private func authenticateWithOIDC(
         client: any AuthAPIClient,
         serverURL: URL,
-        cookieStorage: HTTPCookieStorage
+        cookieStorage: HTTPCookieStorage,
+        replacingSignedInSession: Bool = false
     ) async throws -> String {
         var startedFlow: (id: String, state: String)?
         var attemptedExchange = false
@@ -609,7 +674,8 @@ public final class AuthManager {
             guard status.oidcNativeHandoffEnabled == true else {
                 throw OIDCSignInError.incompatibleServer
             }
-            guard !status.isAlreadySignedIn else { throw OIDCSignInError.unavailable }
+            // A user-chosen Sign In Again (TAL-48) replaces a session that is still valid.
+            guard !status.isAlreadySignedIn || replacingSignedInSession else { throw OIDCSignInError.unavailable }
 
             let callbackScheme = TalariaDeepLink.scheme
             var flow = try NativeOIDCFlow.make(callbackScheme: callbackScheme)
@@ -640,7 +706,8 @@ public final class AuthManager {
                 codeVerifier: flow.codeVerifier
             )
             guard response.ok == true else { throw APIError.unauthorized }
-            guard try await client.authStatus().isAlreadySignedIn else {
+            let signedIn = try await client.authStatus()
+            guard signedIn.isAlreadySignedIn else {
                 throw APIError.unauthorized
             }
             startedFlow = nil
@@ -648,7 +715,8 @@ public final class AuthManager {
             // that before anything is committed, never a local default or cached
             // selection (TAL-131). This response may also set `hermes_profile`,
             // so callers persist cookies only after it returns.
-            return try Self.authorizedProfileName(from: try await client.profiles())
+            let profile = try Self.authorizedProfileName(from: try await client.profiles())
+            return Self.authenticatedIdentity(profile: profile, status: signedIn)
         } catch {
             if let startedFlow {
                 _ = try? await client.cancelNativeOIDC(
@@ -662,6 +730,15 @@ public final class AuthManager {
             }
             throw error
         }
+    }
+
+    /// The sign-in marker `resetProfileScopedStateIfChanged` compares: the
+    /// authorized profile, plus the person on a server that keeps sessions per
+    /// person (TAL-48), so signing in as someone else purges the previous
+    /// person's cache, drafts and views exactly like a profile change.
+    nonisolated static func authenticatedIdentity(profile: String, status: AuthStatusResponse) -> String {
+        guard status.personIsolation?.enabled == true, let person = status.person?.id, !person.isEmpty else { return profile }
+        return "\(profile)\n\(person)"
     }
 
     /// The `active` profile from `GET /api/profiles`, accepted only when it is a
@@ -682,7 +759,9 @@ public final class AuthManager {
     /// `resetServerScopedState`), the App Intents profile picker cache, and the
     /// quota widget snapshot (TAL-131). A purge failure propagates so the caller
     /// aborts the sign-in; the old marker stays, so the next sign-in retries.
-    private func resetProfileScopedStateIfChanged(_ profile: String, for server: URL) async throws {
+    /// `nil` is a login with no SSO identity (password, trusted header): it purges
+    /// whatever an earlier SSO identity left, the same way a different one does.
+    private func resetProfileScopedStateIfChanged(_ profile: String?, for server: URL) async throws {
         let scope = server.absoluteString
         guard (try? keychain.load(.authenticatedProfile, scope: scope)) != profile else { return }
         try await resetServerScopedState(server)

@@ -41,7 +41,7 @@ export async function gitSession(ctx: RequestContext, sid: unknown): Promise<{ s
   } catch {
     throw new HttpError(404, 'Session not found')
   }
-  if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
+  if (!ctx.deps.sessions.visibleToRequest(session)) throw new HttpError(404, 'Session not found')
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, { code: REMOTE_WORKSPACE_UNSUPPORTED_CODE })
   return { session, workspace: session.workspace }
 }
@@ -266,7 +266,7 @@ export const gitRouter = os.router({
       } catch {
         throw new HttpError(404, 'Session not found')
       }
-      if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
+      if (!ctx.deps.sessions.visibleToRequest(session)) throw new HttpError(404, 'Session not found')
       try {
         return await ctx.deps.uploads.rollback(sessionId, tokens)
       } catch (error) {

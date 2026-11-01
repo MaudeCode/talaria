@@ -14,6 +14,8 @@ const formats: Record<string, Format> = {
   drafts: { directory: 'sessions/_drafts' },
   shares: { directory: 'shares', indent: 2, secret: true },
   'held-wakeups': { files: { held: 'sessions/_wakeup_held.json' } },
+  // TAL-48: the person who created each Agent-owned session, which has no Web session document to carry it.
+  'session-owners': { files: { owners: 'sessions/_person_owners.json' } },
   projects: { files: { projects: 'projects.json' }, indent: 2 },
   settings: { files: { settings: 'settings.json' }, indent: 2 },
   auth: { files: { sessions: '.sessions.json', 'login-attempts': '.login_attempts.json', 'pbkdf2-key': '.pbkdf2_key', 'signing-key': '.signing_key' }, secret: true },

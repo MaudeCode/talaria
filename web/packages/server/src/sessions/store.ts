@@ -7,6 +7,9 @@ import { withBackgroundDisplayKinds } from './background-updates.js'
 import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeSessionId, Session, type SessionDefaults, type SessionInit, type Message } from './session.js'
 import { RevisionConflict, type StorageBackend, type StorageIssue, type SessionChange, type MessageMatch } from './storage/backend.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './storage/search-text.js'
+import type { PersonAccess } from '../auth/person.js'
+import { readDocument, updateDocument } from './storage/document.js'
+import { isDict } from './merge.js'
 export class SessionNotFound extends Error {
   constructor(readonly sid: string) {
     super(`Session not found: ${sid}`)
@@ -26,6 +29,8 @@ export interface SessionStoreDeps {
   cacheMax: () => number
   /** TAL-372: a deleted session's other in-memory state goes with it. */
   onDeleted?: (sid: string) => void | Promise<void>
+  /** TAL-48: the current request's session authority; absent or undefined while person isolation is off. */
+  personAccess?: () => PersonAccess | undefined
 }
 
 
@@ -104,6 +109,43 @@ export class SessionStore {
 
   // ── creation / resolution ────────────────────────────────────────────────
 
+  /** TAL-48: the request's session authority (undefined: isolation off, or no request in scope). */
+  personAccess(): PersonAccess | undefined {
+    return this.deps.personAccess?.()
+  }
+
+  /** The owner every session a request creates is bound to: the request's person, never a client-supplied value. */
+  newSessionOwner(): string | null {
+    return this.personAccess()?.personId ?? null
+  }
+
+  private foreignOwnerTable: Promise<Map<string, string>> | null = null
+
+  /** TAL-48: the person who created each session the Agent owner holds (a diagnostic chat has no Web document). */
+  foreignOwners(): Promise<Map<string, string>> {
+    this.foreignOwnerTable ??= readDocument(this.deps.storage.documents, 'session-owners', 'owners', { replaceInvalid: true })
+      .then((record) => new Map(Object.entries(isDict(record?.value) ? record.value : {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')))
+      // An unreadable table reads as no owners, which only server owners can see past; the next read retries.
+      .catch(() => { this.foreignOwnerTable = null; return new Map<string, string>() })
+    return this.foreignOwnerTable
+  }
+
+  /**
+   * Records `owner` for an Agent-owned session this request created or retried; durable before the session is exposed.
+   * False when the session already belongs to someone else: ownership is never reassigned.
+   */
+  async recordForeignOwner(sid: string, owner: string | null): Promise<boolean> {
+    if (!owner) return !(await this.foreignOwners()).has(sid)
+    const recorded = await updateDocument(this.deps.storage.documents, 'session-owners', 'owners', (raw) => {
+      const table = isDict(raw) ? raw : {}
+      const existing = table[sid]
+      if (typeof existing === 'string' && existing) return { value: table, result: existing === owner, skip: true }
+      return { value: { ...table, [sid]: owner }, result: true }
+    }, { replaceInvalid: true })
+    if (recorded) (await this.foreignOwners()).set(sid, owner)
+    return recorded
+  }
+
   private async construct(init: SessionInit, profile: string | null): Promise<Session> {
     const session = new Session(init, (await this.deps.defaults(profile)))
     // New-session defaults must not replace the title supplied by the read projection.
@@ -130,6 +172,7 @@ export class SessionStore {
         worktree_repo_root: wt?.repo_root ?? null,
         worktree_created_at: wt?.created_at ?? null,
         enabled_toolsets: opts.enabledToolsets ?? null,
+        owner_person_id: this.newSessionOwner(),
       },
       defaults,
     )

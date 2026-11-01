@@ -392,6 +392,8 @@ export interface ListParams {
   pruneOrphanedImports?: (rows: Row[]) => Promise<Set<string>>
   /** The sidebar's `allSessions` rows when the caller already read them for its state.db lookups (TAL-920). */
   webuiRows?: Row[]
+  /** TAL-48: the request may see this row (`SessionService.personMaySee` on its owner); omitted when isolation is off. */
+  rowVisible?: (row: Row) => boolean
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -797,7 +799,9 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   if (params.requestVisibilityOverrides) {
     webuiSessions = webuiSessions.filter((r) => !hideFromDefaultSidebar(r, { showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions }))
   }
-  const merged = [...webuiSessions, ...dedupedCli].sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
+  // TAL-48: person isolation drops other people's rows (and, for non-owners, unowned ones) before any count.
+  const rowVisible = params.rowVisible ?? (() => true)
+  const merged = [...webuiSessions, ...dedupedCli].filter(rowVisible).sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
   let scoped: Row[]
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged

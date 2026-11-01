@@ -1707,3 +1707,138 @@ describe('subagent sessions nest under their parent (TAL-1151)', () => {
     expect(Object.keys(links(children))).not.toContain('sub-cli')
   })
 })
+
+describe('gateway session feeds under person isolation (TAL-48)', () => {
+  it('names only sessions the signed-in person may see, initially and live', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ gatewayPollMs: 100, env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = createStateDb(join(s.state, 'state.db'))
+    try {
+      await s.deps.settings.save({ show_cli_sessions: true })
+      insertSession(db, { id: 'tg-shared', source: 'telegram', started_at: 500, title: 'Shared gateway chat', messages: [['user', 501]], chat_id: 'c-1' })
+      const headers = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}` }
+      }
+      const rows = (frames: { event?: string; data?: unknown }[]) => frames.filter((f) => f.event === 'sessions_changed').flatMap((f) => ((f.data as Json).sessions as Json[] | undefined ?? []).map((r) => r.session_id))
+      const owner = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: headers('olive', true), timeoutMs: 3000 })
+      expect(rows(owner)).toContain('tg-shared')
+      const alice = headers('alice')
+      for (const path of ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1']) {
+        // The initial gateway snapshot omits the unowned Agent chat.
+        const seen = await s.sse(path, (f) => f.event === 'sessions_changed' && (f.data as Json).stream !== 'sessions', { headers: alice, timeoutMs: 2500 })
+        expect(seen.some((f) => f.event === 'sessions_changed'), path).toBe(true)
+        expect(rows(seen), path).not.toContain('tg-shared')
+      }
+      // A live insert reaching the watcher is withheld too.
+      const live = s.sse('/api/sessions/gateway/stream', () => false, { headers: alice, timeoutMs: 2000 })
+      await new Promise((r) => setTimeout(r, 150))
+      insertSession(db, { id: 'tg-live', source: 'telegram', started_at: 600, title: 'Live gateway chat', messages: [['user', 601]], chat_id: 'c-2' })
+      const liveRows = rows(await live)
+      expect(liveRows).not.toContain('tg-live')
+      expect(liveRows).not.toContain('tg-shared')
+    } finally {
+      db.close()
+      s.deps.gatewayWatchers.stopAll()
+      await s.close()
+    }
+  })
+})
+
+describe('lineage continuations under person isolation (TAL-48)', () => {
+  it('give a compressed Web chat\'s Agent tip to the chat\'s person, not to other server owners', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ gatewayPollMs: 100, env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = createStateDb(join(s.state, 'state.db'))
+    try {
+      await s.deps.settings.save({ show_cli_sessions: true })
+      const headers = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}` }
+      }
+      const alice = headers('alice')
+      const olive = headers('olive', true)
+      const aliceId = ((await (await s.get('/api/auth/status', { headers: alice })).json()) as { person: { id: string } }).person.id
+      // Alice's Web chat was compressed: its Web document keeps the root id, the Agent continues under a new tip id.
+      const chat = await s.deps.sessionStore.newSession({ profile: 'default' })
+      chat.owner_person_id = aliceId
+      chat.messages.push({ role: 'user', content: 'private', timestamp: 300 })
+      await s.deps.sessionStore.save(chat)
+      insertSession(db, { id: chat.session_id, source: 'webui', started_at: 300, title: 'Private chat', messages: [['user', 301]], ended_at: 310, end_reason: 'compression' })
+      insertSession(db, { id: 'alicetip0001', source: 'webui', started_at: 310.2, parent: chat.session_id, title: 'Private chat', messages: [['user', 311]] })
+
+      expect((await s.get('/api/session?session_id=alicetip0001', { headers: olive })).status).toBe(404)
+      const ids = (frames: { event?: string; data?: unknown }[]) => frames.filter((f) => f.event === 'sessions_changed').flatMap((f) => ((f.data as Json).sessions as Json[] | undefined ?? []).map((r) => r.session_id))
+      const feed = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: olive, timeoutMs: 3000 })
+      expect(ids(feed)).not.toContain('alicetip0001')
+      expect(await s.deps.sessions.foreignOwnerOf('alicetip0001')).toBe(aliceId)
+      // A mutation that materializes the tip as a Web document keeps it Alice's.
+      const cookie = s.deps.auth.createSession({ authType: 'oidc', username: 'alice', oidcBinding: { issuer, subject: 'alice' } })
+      const write = { cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+      const renamed = await s.get('/api/session/rename', { method: 'POST', headers: write, body: JSON.stringify({ session_id: 'alicetip0001', title: 'Renamed' }) })
+      expect(renamed.status, await renamed.clone().text()).toBe(200)
+      expect((await s.deps.sessionStore.get('alicetip0001', { metadataOnly: true })).owner_person_id).toBe(aliceId)
+      expect((await s.get('/api/session?session_id=alicetip0001', { headers: olive })).status).toBe(404)
+    } finally {
+      db.close()
+      s.deps.gatewayWatchers.stopAll()
+      await s.close()
+    }
+  })
+})
+
+describe('delegated subagents under person isolation (TAL-48)', () => {
+  it('belong to the person whose chat delegated them, through nested delegations', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = createStateDb(join(s.state, 'state.db'))
+    try {
+      await s.deps.settings.save({ show_cli_sessions: true })
+      const headers = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}` }
+      }
+      const alice = headers('alice')
+      const olive = headers('olive', true)
+      const aliceId = ((await (await s.get('/api/auth/status', { headers: alice })).json()) as { person: { id: string } }).person.id
+      await s.deps.sessionStore.save(new Session({ session_id: 'aliceparent', title: 'Alice plan', owner_person_id: aliceId, messages: [{ role: 'user', content: 'go', timestamp: 1001 }] }, { workspace: s.state, model: null }))
+      insertSession(db, { id: 'aliceparent', source: 'webui', started_at: 1000, title: 'Alice plan', messages: [['user', 1001]] })
+      insertSession(db, { id: 'subalice', source: 'subagent', started_at: 1003, title: 'Alice worker', parent: 'aliceparent', messages: [['user', 1004], ['assistant', 1005]] })
+      insertSession(db, { id: 'subalicenested', source: 'subagent', started_at: 1006, title: 'Alice nested', parent: 'subalice', messages: [['user', 1007], ['assistant', 1008]] })
+      insertSession(db, { id: 'clihost', source: 'cli', started_at: 1100, title: 'CLI host', messages: [['user', 1101], ['assistant', 1102]] })
+      insertSession(db, { id: 'subcli', source: 'subagent', started_at: 1103, parent: 'clihost', messages: [['user', 1104], ['assistant', 1105]] })
+      s.deps.cliSessions.invalidate()
+      // The sidebar reads a bounded window of Agent rows; here the nested worker's parent falls outside it.
+      const read = s.deps.sessions.deps.cliSessions
+      s.deps.sessions.deps.cliSessions = async (profile, opts) => {
+        const result = await read(profile, opts)
+        return opts.sessionIds ? result : { ...result, rows: result.rows.filter((row) => row.session_id !== 'subalice') }
+      }
+
+      for (const sid of ['subalice', 'subalicenested']) {
+        expect((await s.get(`/api/session?session_id=${sid}&messages=0`, { headers: olive })).status, sid).toBe(404)
+        expect((await s.get(`/api/session?session_id=${sid}&messages=0`, { headers: alice })).status, sid).toBe(200)
+      }
+      const listed = async (h: Record<string, string>) => ((await (await s.get('/api/sessions', { headers: h })).json()) as { sessions: { session_id: string }[] }).sessions.map((r) => r.session_id)
+      const aliceRows = await listed(alice)
+      const oliveRows = await listed(olive)
+      expect(aliceRows).toEqual(expect.arrayContaining(['aliceparent', 'subalicenested']))
+      expect(aliceRows).not.toContain('subcli')
+      expect(oliveRows).toEqual(expect.arrayContaining(['clihost', 'subcli']))
+      for (const sid of ['aliceparent', 'subalice', 'subalicenested']) expect(oliveRows).not.toContain(sid)
+    } finally {
+      db.close()
+      s.deps.gatewayWatchers.stopAll()
+      await s.close()
+    }
+  })
+})
