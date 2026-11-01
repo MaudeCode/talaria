@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import { appUrl } from '../../lib/appRoot'
 import { Button } from '../../ui/Button'
 import { ErrorState, formatBytes, formatDate, LoadingState } from '../../ui/States'
-import { fetchMeshyDetails, saveMeshyFormat, saveMeshyImages } from '../../api/endpoints'
+import { fetchMeshyDetails, saveMeshyFormat, saveMeshyImages } from './api'
 import { ModelViewer } from './ModelViewer'
 
 export const MESHY_QUERY_ROOT = ['meshy'] as const

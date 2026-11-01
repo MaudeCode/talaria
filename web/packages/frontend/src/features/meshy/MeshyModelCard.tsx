@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { DisplayMedia, MeshyTask } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import { ErrorState, LoadingState } from '../../ui/States'
-import { fetchMeshyCard } from '../../api/endpoints'
+import { fetchMeshyCard } from './api'
 import { returnToComposer } from '../composer/composerReturn'
 import { MESHY_QUERY_ROOT, MeshyItemView } from './MeshyItemView'
 

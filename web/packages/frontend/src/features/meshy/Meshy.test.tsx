@@ -5,9 +5,9 @@ import type { DisplayMedia, MeshyCard, MeshyItem } from '@maudecode/talaria-web-
 import { queryWrapper } from '../../test/fixtures'
 
 vi.mock('@google/model-viewer', () => ({}))
-vi.mock('../../api/endpoints', () => ({ fetchMeshyCard: vi.fn(), fetchMeshyDetails: vi.fn(), saveMeshyFormat: vi.fn(), saveMeshyImages: vi.fn() }))
+vi.mock('./api', () => ({ fetchMeshyCard: vi.fn(), fetchMeshyDetails: vi.fn(), saveMeshyFormat: vi.fn(), saveMeshyImages: vi.fn() }))
 vi.mock('../composer/composerReturn', () => ({ returnToComposer: vi.fn() }))
-import * as api from '../../api/endpoints'
+import * as api from './api'
 import { returnToComposer } from '../composer/composerReturn'
 import { MeshyModelCard } from './MeshyModelCard'
 import { MeshyItemView } from './MeshyItemView'

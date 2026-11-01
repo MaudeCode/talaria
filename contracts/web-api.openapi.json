@@ -96769,7 +96769,7 @@
     "/api/meshy/overview": {
       "get": {
         "operationId": "meshy.overview",
-        "summary": "Recent generations, saved models and image sets, running tasks and the balance, each asset behind an owner/profile/revision-bound grant. `availability` names missing-key, plugin and old-Agent states.",
+        "summary": "Meshy gallery for the active profile (TAL-1514).",
         "tags": [
           "tools"
         ],
@@ -97370,7 +97370,7 @@
     "/api/meshy/card": {
       "get": {
         "operationId": "meshy.card",
-        "summary": "Resolve a `model` media ref. The server finds the directive again in that session's assistant text, then admits only what the native inventory lists; 404 when the session or directive is not found.",
+        "summary": "Resolve a model media ref found in its session assistant text.",
         "tags": [
           "tools"
         ],
@@ -97765,7 +97765,7 @@
     "/api/meshy/task": {
       "get": {
         "operationId": "meshy.task",
-        "summary": "One task as a full snapshot; poll until `terminal`.",
+        "summary": "One Meshy task snapshot; poll until terminal.",
         "tags": [
           "tools"
         ],
@@ -97901,7 +97901,7 @@
     "/api/meshy/details": {
       "get": {
         "operationId": "meshy.details",
-        "summary": "Download formats, follow-up drafts and \"Made from\" for a task. `beside`: a model asset url from this owner, to list formats saved next to it.",
+        "summary": "Formats, follow-up drafts and provenance of a task.",
         "tags": [
           "tools"
         ],
@@ -98290,7 +98290,7 @@
     "/api/meshy/save": {
       "post": {
         "operationId": "meshy.save",
-        "summary": "Explicitly download one format Meshy already produced (no credits). Never overwrites another file; an unknown outcome says so and is never retried.",
+        "summary": "Explicitly download one existing format. Never overwrites.",
         "tags": [
           "tools"
         ],
@@ -98398,7 +98398,7 @@
     "/api/meshy/save-images": {
       "post": {
         "operationId": "meshy.saveImages",
-        "summary": "Explicitly download every image of an image task. A partial set reports `complete: false` with what arrived; retrying resumes.",
+        "summary": "Explicitly download an image set; reports partial sets.",
         "tags": [
           "tools"
         ],
@@ -106299,8 +106299,7 @@
                             "type": "string"
                           },
                           "native_view": {
-                            "const": "meshy_gallery",
-                            "description": "TAL-1514: an Agent plugin the app renders with its own view instead of a panel document."
+                            "const": "meshy_gallery"
                           }
                         },
                         "required": [
