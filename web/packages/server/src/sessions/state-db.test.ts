@@ -1705,3 +1705,43 @@ describe('subagent sessions nest under their parent (TAL-1151)', () => {
     expect(Object.keys(links(children))).not.toContain('sub-cli')
   })
 })
+
+describe('gateway session feeds under person isolation (TAL-48)', () => {
+  it('names only sessions the signed-in person may see, initially and live', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ gatewayPollMs: 100, env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = createStateDb(join(s.state, 'state.db'))
+    try {
+      await s.deps.settings.save({ show_cli_sessions: true })
+      insertSession(db, { id: 'tg-shared', source: 'telegram', started_at: 500, title: 'Shared gateway chat', messages: [['user', 501]], chat_id: 'c-1' })
+      const headers = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}` }
+      }
+      const rows = (frames: { event?: string; data?: unknown }[]) => frames.filter((f) => f.event === 'sessions_changed').flatMap((f) => ((f.data as Json).sessions as Json[] | undefined ?? []).map((r) => r.session_id))
+      const owner = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: headers('olive', true), timeoutMs: 3000 })
+      expect(rows(owner)).toContain('tg-shared')
+      const alice = headers('alice')
+      for (const path of ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1']) {
+        // The initial gateway snapshot omits the unowned Agent chat.
+        const seen = await s.sse(path, (f) => f.event === 'sessions_changed' && (f.data as Json).stream !== 'sessions', { headers: alice, timeoutMs: 2500 })
+        expect(seen.some((f) => f.event === 'sessions_changed'), path).toBe(true)
+        expect(rows(seen), path).not.toContain('tg-shared')
+      }
+      // A live insert reaching the watcher is withheld too.
+      const live = s.sse('/api/sessions/gateway/stream', () => false, { headers: alice, timeoutMs: 2000 })
+      await new Promise((r) => setTimeout(r, 150))
+      insertSession(db, { id: 'tg-live', source: 'telegram', started_at: 600, title: 'Live gateway chat', messages: [['user', 601]], chat_id: 'c-2' })
+      const liveRows = rows(await live)
+      expect(liveRows).not.toContain('tg-live')
+      expect(liveRows).not.toContain('tg-shared')
+    } finally {
+      db.close()
+      s.deps.gatewayWatchers.stopAll()
+      await s.close()
+    }
+  })
+})

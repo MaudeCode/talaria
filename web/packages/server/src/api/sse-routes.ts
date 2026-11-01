@@ -15,7 +15,7 @@ import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
 import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
-import { str } from '../util.js'
+import { filterAsync, str } from '../util.js'
 import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
 import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 
@@ -447,8 +447,14 @@ export async function gatewayProbePayload(ctx: RequestContext, watcher: GatewayW
 const truthyQuery = (value: string | null): boolean => ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase())
 const MERGED_SIDEBAR_DRAIN_MS = 250
 
-function initialGatewaySessions(ctx: RequestContext): Promise<Record<string, unknown>[]> {
-  return ctx.deps.cliSessions.load(ctx.deps.activeProfile(), {})
+async function initialGatewaySessions(ctx: RequestContext): Promise<Record<string, unknown>[]> {
+  return visibleGatewayRows(ctx, await ctx.deps.cliSessions.load(ctx.deps.activeProfile(), {}))
+}
+
+/** TAL-48: the gateway feeds name only sessions the request's person may see, like `/api/sessions`. */
+async function visibleGatewayRows(ctx: RequestContext, rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  if (!ctx.personAccess) return rows
+  return filterAsync(rows, (row) => ctx.deps.sessions.personMaySeeSessionId(str(row.session_id)))
 }
 
 /** Wait for the next session event, or null after `waitMs` / request abort. */
@@ -498,7 +504,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
             if (gatewaySub.ended || !watcher?.isAlive() || abort.signal.aborted) return
             break
           }
-          sse.event(pending.type, { ...pending, stream: 'gateway' })
+          sse.event(pending.type, { ...pending, sessions: await visibleGatewayRows(ctx, pending.sessions), stream: 'gateway' })
           lastWrite = Date.now()
         }
       }
@@ -550,7 +556,7 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
       if (!(await sse.ready())) return
       const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
       if (sse.isClosed) return
-      if (event) { sse.event(event.type, event); continue }
+      if (event) { sse.event(event.type, { ...event, sessions: await visibleGatewayRows(ctx, event.sessions) }); continue }
       // The watcher stopped (a profile switch swapped it) or dropped this slow subscriber: end the response so
       // EventSource reconnects.
       if (sub.ended || !watcher.isAlive()) return
