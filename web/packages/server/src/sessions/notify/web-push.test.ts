@@ -240,3 +240,36 @@ describe('live logins', () => {
     expect([...live].sort()).toEqual([loginHash('password-token'), loginHash('oidc-current')].sort())
   })
 })
+
+describe('Web Push under person isolation (TAL-48)', () => {
+  it('alerts only the person whose session needs them', async () => {
+    const issuer = 'https://identity.invalid'
+    const server = await bootTestServer({ env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    try {
+      const push = stubPushService(server)
+      const signIn = (subject: string) => {
+        const cookie = server.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject } })
+        return { cookie: `${server.deps.auth.cookieName()}=${cookie}`, origin: server.base, 'X-Hermes-CSRF-Token': server.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+      }
+      const alice = signIn('alice')
+      const bob = signIn('bob')
+      const keys = browserKeys()
+      for (const [headers, endpoint] of [[alice, 'https://push.example/send/alice'], [bob, 'https://push.example/send/bob']] as const) {
+        expect((await server.get(PUSH_PATH, { method: 'POST', headers, body: JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }) })).status).toBe(200)
+      }
+      const created = await server.get('/api/session/new', { method: 'POST', headers: alice, body: '{}' })
+      const sid = String(((await created.json()) as { session: { session_id: string } }).session.session_id)
+      server.deps.registry.activeRuns.set('stream-alice', { stream_id: 'stream-alice', session_id: sid, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      const settle = async (): Promise<void> => { server.deps.notifications.changed(); await server.deps.webPush.idle() }
+      await settle()
+      server.deps.pending.submitApproval(sid, { request_id: 'r-alice', tool: 'shell' })
+      await settle()
+      expect(push.pushes.map((p) => p.url)).toEqual(['https://push.example/send/alice'])
+    } finally {
+      await server.close()
+    }
+  })
+})
