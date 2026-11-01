@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Clearing, undoing, or truncating a chat no longer brings back an old task list, and a reload during a run shows the run's current tasks.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

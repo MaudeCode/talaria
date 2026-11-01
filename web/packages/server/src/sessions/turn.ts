@@ -1581,7 +1581,8 @@ export class TurnRunner {
     const usage = this.liveUsage.get(streamId)
     if (usage) Object.assign(s, usage)
     const todos = this.liveTodos.get(streamId)
-    if (todos) s.extra[UNSETTLED_TODO_KEY] = todos
+    // TAL-1121: the turn id lets a later history cut tell whether this turn's rows survived it.
+    if (todos) s.extra[UNSETTLED_TODO_KEY] = { ...todos, turn_id: streamId }
   }
 
   private async teardown(sessionId: string, streamId: string): Promise<void> {
@@ -2147,6 +2148,11 @@ export class TurnRunner {
   private pendingSteerView(r: SteerRecord): PendingSteer {
     const open = r.state === 'pending'
     return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, actions: { edit: open, cancel: open, send_now: open && r.can_redirect } }
+  }
+
+  /** TAL-397: the todo list the running turn last wrote, before its tool row settles; a cancelled turn keeps it too. */
+  liveTodoState(streamId: string): Record<string, unknown> | null {
+    return this.liveTodos.get(streamId) ?? null
   }
 
   liveToolProgress(streamId: string): Record<string, unknown>[] {
