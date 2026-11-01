@@ -137,12 +137,19 @@ describe('buildShareSnapshot inline data', () => {
     expect(text).not.toContain('MEDIA:')
   })
 
-  it('still masks local paths and drops tool output around the scrub', () => {
-    const shared = snapshot(`see ${join(root, 'notes.txt')} and data:image/png;base64,${payload}`)
+  it('still masks local paths and drops tool output and reasoning around the scrub', () => {
+    const shared = buildShareSnapshot(new Session({ title: 'Mixed', messages: [] }, { workspace: root, model: null }), [
+      { role: 'user', content: `see ${join(root, 'notes.txt')} and data:image/png;base64,${payload}` },
+      { role: 'tool', content: 'TAL1600-TOOL-OUTPUT' },
+      { role: 'assistant', content: '<think>TAL1600-REASONING</think>The answer.', reasoning: 'TAL1600-REASONING-FIELD' },
+    ], { hermesHome: join(root, '.hermes'), attachmentRoot: root, home: root })
     const text = JSON.stringify(shared)
     expect(text).not.toContain(root)
     expect(text).toContain('[redacted-path]')
     expect(leaks(text, payload)).toBe(false)
+    expect(text).not.toContain('TAL1600-TOOL-OUTPUT')
+    expect(text).not.toContain('TAL1600-REASONING')
+    expect(text).toContain('The answer.')
   })
 
   it('stays linear on long malformed repeated input', () => {
