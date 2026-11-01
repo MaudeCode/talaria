@@ -179,7 +179,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   // TAL-1647: reasoning effort is each chat's own server state, keyed on the chat and refetched when its model changes.
   const reasoningKey = keys.reasoning(sessionId, session?.model, session?.model_provider)
-  const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(sessionId ?? ''), enabled: !!sessionId, staleTime: 30_000 })
+  const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(sessionId ?? '', session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
   const reasoningEffect = useResourceEffects<string | null>()[JSON.stringify(reasoningKey)]
   // The chosen effort shows at once; the server's answer replaces it.
   const reasoning = reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus.data?.reasoning_effort || null

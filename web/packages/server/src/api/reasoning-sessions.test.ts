@@ -107,6 +107,10 @@ describe('per-chat reasoning effort', () => {
     session.model_provider = 'openai'
     await s.deps.sessionStore.save(session)
     expect(await effortOf(sid)).toMatchObject({ reasoning_effort: 'xhigh', supported_efforts: [], supports_reasoning_effort: false })
+    // The request's model is ignored for a recorded chat, and used for one Web keeps no record of.
+    expect((await json(await s.get(`/api/reasoning?session_id=${sid}&model=claude-sonnet-4-6&provider=anthropic`))).supported_efforts).toEqual([])
+    expect(await json(await s.get('/api/reasoning?session_id=native-chat&model=gpt-4o&provider=openai'))).toMatchObject({ reasoning_effort: 'high', supported_efforts: [] })
+    expect(await json(await s.get('/api/reasoning?session_id=native-chat&model=claude-sonnet-4-6&provider=anthropic'))).toMatchObject({ reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'] })
   })
 
   it('snapshots each profile default separately and keeps profile settings writes', async () => {

@@ -242,6 +242,7 @@ it('reads and writes reasoning per chat, and a late answer never reaches the nex
     await waitFor(() => expect(lastComposer().reasoning).toBe('low'))
     act(() => { lastComposer().onReasoningChange('medium') })
     await waitFor(() => expect(lastComposer().reasoning).toBe('medium'))
+    expect(api.fetchReasoning).toHaveBeenCalledWith('chat-a', 'claude-sonnet-4-6', 'anthropic')
     expect(api.setReasoningEffort).toHaveBeenCalledWith('medium', 'claude-sonnet-4-6', 'anthropic', 'chat-a')
     view.rerender(<QueryClientProvider client={qc}><ChatView sessionId="chat-b" /></QueryClientProvider>)
     await screen.findByText('Answer chat-b')

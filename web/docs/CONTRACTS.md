@@ -201,7 +201,8 @@ profile's default at creation; `null` (a chat from before TAL-1647) inherits the
 profile default; `""` is the provider default. Duplicates, forks, focused continuations,
 `/background`, `/btw`, and imports of an export keep it; clear keeps it.
 `GET /api/reasoning?session_id=` answers that chat's effort, coerced for the model and
-provider its turns run on, and `chat.start` builds the same value.
+provider its turns run on, and `chat.start` builds the same value. A chat Web keeps no record
+of (a native chat) reads the profile default for the `model`/`provider` the client sends.
 
 `GET /api/reasoning` advertises `supports_session_scope: true` only with this guard.
 Independently updated clients check that capability before chat effort/reset writes.
