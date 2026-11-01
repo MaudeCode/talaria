@@ -9,7 +9,9 @@ and still returns (a result with ``status: "cancelled"`` or a CANCELLED error).
 Cancellation never takes a slot, so it always reaches the call it targets.
 The reader loop routes a request by its leading ``jsonrpc``/``id``/``method``
 members and leaves the full parse to the call's worker, so a multi-MB body
-(a ``chat.start`` history) never delays the requests read after it.
+(a ``chat.start`` history) never delays the requests read after it. The worker
+decodes member by member because CPython's C JSON scanner holds the GIL for a
+whole call: one ``json.loads`` of the body would stall every thread anyway.
 
 The sidecar can also ask the server (TAL-1164): ``call_server`` writes a ``server.*`` request with an ``s:`` string id
 on stdout and waits for the server's reply on stdin. It times out, and closing the channel fails every waiting call.
@@ -52,6 +54,12 @@ SERVER_CALL_TIMEOUT = 30.0
 _PEEK_BYTES = 256
 _HEAD_MEMBER = re.compile(rb'\s*"([A-Za-z_]+)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+)\s*([,}])')
 
+# Containers this many levels deep are walked member by member (request → params → each params value's members, so
+# every history message is one C decode); the GIL can pass to other threads between members.
+_WALK_DEPTH = 3
+_SPACE = re.compile(r"[ \t\n\r]*")
+_DECODER = json.JSONDecoder()
+
 # The server channel the running process serves; ``call_server`` asks through it.
 _ACTIVE: "RpcServer | None" = None
 
@@ -78,6 +86,47 @@ def _peek_head(raw: bytes) -> dict | None:
     if head.get("jsonrpc") == "2.0" and isinstance(head.get("method"), str) and type(head.get("id")) in (int, str):
         return head
     return None
+
+
+def _decode_value(text: str, idx: int, depth: int) -> tuple[Any, int]:
+    """One JSON value at ``idx`` (no leading space) and the index after it, decoded exactly as ``json.loads`` would."""
+    opener = text[idx:idx + 1]
+    if depth and opener in ("{", "["):
+        closer = "}" if opener == "{" else "]"
+        container: Any = {} if opener == "{" else []
+        idx = _SPACE.match(text, idx + 1).end()
+        if text[idx:idx + 1] == closer:
+            return container, idx + 1
+        while True:
+            if opener == "{":
+                if text[idx:idx + 1] != '"':
+                    raise json.JSONDecodeError("Expecting property name enclosed in double quotes", text, idx)
+                key, idx = json.decoder.scanstring(text, idx + 1)
+                idx = _SPACE.match(text, idx).end()
+                if text[idx:idx + 1] != ":":
+                    raise json.JSONDecodeError("Expecting ':' delimiter", text, idx)
+                container[key], idx = _decode_value(text, _SPACE.match(text, idx + 1).end(), depth - 1)
+            else:
+                value, idx = _decode_value(text, idx, depth - 1)
+                container.append(value)
+            idx = _SPACE.match(text, idx).end()
+            delimiter = text[idx:idx + 1]
+            if delimiter == closer:
+                return container, idx + 1
+            if delimiter != ",":
+                raise json.JSONDecodeError("Expecting ',' delimiter", text, idx)
+            idx = _SPACE.match(text, idx + 1).end()
+    return _DECODER.raw_decode(text, idx)
+
+
+def _loads_yielding(raw: bytes) -> Any:
+    """``json.loads`` for a request line that lets other threads run while a multi-MB body decodes."""
+    text = raw.decode("utf-8")
+    value, end = _decode_value(text, _SPACE.match(text).end(), _WALK_DEPTH)
+    end = _SPACE.match(text, end).end()
+    if end != len(text):
+        raise json.JSONDecodeError("Extra data", text, end)
+    return value
 
 
 def call_server(method: str, params: dict, *, timeout: float | None = None):
@@ -405,7 +454,7 @@ class RpcServer:
     def _parse_body(self, raw: bytes, head: dict, ctx: CallContext | None) -> dict | None:
         """Parse a peeked request on its worker; an unusable body is answered under the peeked id."""
         try:
-            request = json.loads(raw)
+            request = _loads_yielding(raw)
         except (ValueError, RecursionError):
             code, message = PARSE_ERROR, "invalid JSON"
         else:

@@ -203,56 +203,73 @@ def test_unbuffered_input_preserves_a_large_utf8_frame_across_os_reads() -> None
 
 
 def test_a_huge_request_body_parses_on_its_worker_so_the_next_call_is_answered_first(monkeypatch) -> None:
-    """A multi-MB chat.start history must not hold up dispatch of the requests read after it (TAL-1228)."""
-    from talaria_sidecar import rpc
-    real_loads, release, parsed = json.loads, threading.Event(), threading.Event()
+    """A multi-MB chat.start history must not hold up a request that arrives while it parses (TAL-1228).
 
-    def slow_loads(text, *args, **kwargs):
+    Decoding is real. Each call into CPython's C JSON scanner is slowed in proportion to the text it consumes and keeps
+    the GIL meanwhile, as the scanner itself does, so one decode over the whole body stalls every thread for the whole
+    parse whichever thread runs it. GC stays off: its heap-wide pauses hit every thread and would only blur the timing.
+    """
+    import ctypes
+    import gc
+    import time
+    hold_gil = ctypes.PyDLL(None).usleep  # a PyDLL call never releases the GIL
+    real_raw_decode = json.JSONDecoder.raw_decode
+    decoding = threading.Event()
+
+    def slow_raw_decode(self, text, idx=0):
         if len(text) > 1_000_000:
-            release.wait(10)  # stands in for a slow multi-MB parse
-            try:
-                return real_loads(text, *args, **kwargs)
-            finally:
-                parsed.set()
-        return real_loads(text, *args, **kwargs)
+            decoding.set()
+        value, end = real_raw_decode(self, text, idx)
+        hold_gil(int((end - idx) * 0.025))  # 25 ns per character
+        return value, end
 
-    monkeypatch.setattr(rpc, 'json', type('SlowJson', (), {'loads': staticmethod(slow_loads), 'dumps': staticmethod(json.dumps)}))
-    history = [{'role': 'user', 'content': 'synthetic ' * 100_000} for _ in range(20)]
-    big = {'jsonrpc': '2.0', 'id': 1, 'method': 'chat.start', 'params': {'session_id': 'synthetic', 'conversation_history': history},
-           'trace_id': '22222222-2222-4222-8222-222222222222'}
-    small = {'jsonrpc': '2.0', 'id': 2, 'method': 'models.list', 'params': {}}
+    history = [{'role': 'tool', 'tool_call_id': f'call-{n}', 'content': [{'type': 'text', 'text': f'line {k}'} for k in range(100)]}
+               for n in range(7000)]
+    big = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'chat.start', 'params': {'session_id': 'synthetic', 'conversation_history': history},
+                      'trace_id': '22222222-2222-4222-8222-222222222222'})
+    small = json.dumps({'jsonrpc': '2.0', 'id': 2, 'method': 'models.list', 'params': {}})
+    assert len(big) > 20_000_000
+    big_line, small_line = (big + '\n').encode(), (small + '\n').encode()
+    del history, big
     read_fd, write_fd = os.pipe()
     output = io.BytesIO()
-    answered, parse_done_at_answer = threading.Event(), []
-    server = RpcServer({'chat.start': lambda ctx, params: {'turns': len(params['conversation_history'])},
+    marks: dict[str, float] = {}
+    server = RpcServer({'chat.start': lambda ctx, params: marks.setdefault('parsed', time.perf_counter()) and {'turns': len(params['conversation_history'])},
                         'models.list': lambda ctx, params: {'models': []}}, stdin=os.fdopen(read_fd, 'rb'), stdout=output)
     write = server._write
 
     def observe(message):
         if message.get('id') == 2:
-            parse_done_at_answer.append(parsed.is_set())
-            answered.set()
+            marks['answered'] = time.perf_counter()
         write(message)
 
     server._write = observe
     reader = threading.Thread(target=server.serve_forever, daemon=True)
-    reader.start()
-    writer = threading.Thread(target=lambda: (os.write(write_fd, (json.dumps(big) + '\n' + json.dumps(small) + '\n').encode()), os.close(write_fd)), daemon=True)
-    writer.start()
+    monkeypatch.setattr(json.JSONDecoder, 'raw_decode', slow_raw_decode)
+    gc_enabled = gc.isenabled()
+    gc.disable()
     try:
-        assert answered.wait(3), 'models.list waited behind the chat.start body parse'
-        assert parse_done_at_answer == [False]
+        reader.start()
+        began = time.perf_counter()
+        with os.fdopen(write_fd, 'wb') as pipe:
+            pipe.write(big_line)
+            pipe.flush()
+            assert decoding.wait(20)  # models.list arrives once the chat.start body is being parsed
+            pipe.write(small_line)
+        reader.join(20)
+        for _ in range(2000):
+            if len(output.getvalue().splitlines()) == 2:
+                break
+            threading.Event().wait(0.01)
     finally:
-        release.set()
-        writer.join(5)
-        reader.join(5)
-    for _ in range(300):
-        replies = {json.loads(raw)['id']: json.loads(raw) for raw in output.getvalue().splitlines()}
-        if len(replies) == 2:
-            break
-        threading.Event().wait(0.01)
-    assert replies[1]['result'] == {'turns': 20}
+        if gc_enabled:
+            gc.enable()
+        monkeypatch.undo()
+    replies = {json.loads(raw)['id']: json.loads(raw) for raw in output.getvalue().splitlines()}
+    assert replies[1]['result'] == {'turns': 7000}
     assert replies[2]['result'] == {'models': []}
+    answered, parsed = marks['answered'] - began, marks['parsed'] - began
+    assert answered < parsed / 2, f'models.list answered at {answered * 1000:.0f} ms; the chat.start body finished parsing at {parsed * 1000:.0f} ms'
 
 
 def _serve_lines(lines: list[bytes], methods: dict) -> list[dict]:
@@ -288,5 +305,36 @@ def test_a_routed_chat_start_keeps_the_trace_and_session_identity_from_its_body(
     trace = '33333333-3333-4333-8333-333333333333'
     line = json.dumps({'jsonrpc': '2.0', 'id': 9, 'method': 'chat.start', 'params': {'session_id': 'synthetic'}, 'trace_id': trace}).encode()
     assert _serve_lines([line], {'chat.start': lambda ctx, params: {'status': 'completed'}})[0]['result'] == {'status': 'completed'}
-    records = [json.loads(r.message) for r in caplog.records if r.message.startswith('{"event":"chat_start_timing"')]
+    for _ in range(300):  # the terminal record follows the reply
+        records = [json.loads(r.message) for r in caplog.records if r.message.startswith('{"event":"chat_start_timing"')]
+        if records:
+            break
+        threading.Event().wait(0.01)
     assert [(r['trace_id'], r['rpc_id'], 'session_key' in r) for r in records] == [(trace, 9, True)]
+
+
+@pytest.mark.parametrize('line', [
+    '{"jsonrpc":"2.0","id":1,"method":"m","params":{"a":[1,2.5,-3e2,true,false,null],"b":{"c":[{"d":"\\u00e9\\n"}],"e":[]},"f":{}}}',
+    ' { "id" : "x" , "params" : { "h" : [ [ [ 1 ] , { } ] , "s" ] , "dup" : 1 , "dup" : 2 } } ',
+    '{"params":{"n":NaN,"i":-Infinity,"deep":[[[[[[{"k":[1]}]]]]]]}}',
+    '[{"a":1},[2,[3]],"t"]',
+    '"just a string"',
+    '{"params":{"emoji":"🌲","esc":"\\ud83c\\udf32"}}',
+])
+def test_the_yielding_decoder_matches_json_loads(line) -> None:
+    from talaria_sidecar.rpc import _loads_yielding
+    assert _loads_yielding(line.encode()) == json.loads(line) or line.find('NaN') >= 0
+    if 'NaN' in line:
+        assert json.dumps(_loads_yielding(line.encode())) == json.dumps(json.loads(line))
+
+
+@pytest.mark.parametrize('line', [
+    '{"params":{"a":1,}}', '{"params":[1,]}', '{"params":{"a" 1}}', '{"params":{a:1}}', '{"params":[1 2]}',
+    '{"params":{"a":1}} x', '{"params":{"a":"\x01"}}', '{"params":{"a":[1}}', '{"params":', '', '{"id":1}{"id":2}',
+])
+def test_the_yielding_decoder_rejects_what_json_loads_rejects(line) -> None:
+    from talaria_sidecar.rpc import _loads_yielding
+    with pytest.raises(ValueError):
+        json.loads(line)
+    with pytest.raises(ValueError):
+        _loads_yielding(line.encode())
