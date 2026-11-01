@@ -559,6 +559,25 @@ def _writer_ledger(root, identity):
     return found
 
 
+def _unverified_baseline(records, root, baseline):
+    """Why the confirmed baseline cannot vouch for restarting on this checkout now, or ''.
+
+    Local edits are the native pause baseline (HEAD plus each tracked change's bytes), not unsafe
+    source: a baseline is safe when it is whole and still byte-identical. Dependency and recovery
+    debt are judged separately, because native tree_is_whole accepts an at-HEAD baseline before
+    its dependency-currency branch.
+    """
+    digests = baseline.get('dirty_digests')
+    # A None digest is a deleted path; one that still exists was unreadable when it was recorded.
+    if not isinstance(digests, dict) or any(path not in digests or (digests[path] is None and os.path.lexists(root / path))
+                                            for path in baseline['dirty_at_pause']):
+        return 'its local edits have unknown bytes.'
+    if records.tree_state(root) != baseline:
+        return 'the Agent revision or local edits changed after confirmation. Check for updates and confirm again.'
+    whole, why = records.tree_is_whole({'baselines': [baseline]}, root)
+    return '' if whole else why + '.'
+
+
 def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None, operation=None):
     if os.name not in {"posix", "nt"}:
         raise RuntimeError("A cooperative Agent writer lease is unavailable on this platform; source was not changed.")
@@ -662,9 +681,12 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
             send({'ok': False, 'detail': 'Active dashboard work may be interrupted by a graceful refresh.',
                   'refresh_confirmation': {'binding': binding, 'services': [services._name(e) for e in legacy]}})
             return
-        if legacy and (recovery_only or bootstrap_repair or initial_tree['dirty_at_pause']
+        if legacy and (recovery_only or bootstrap_repair or recovery.state.get('sync_failed')
+                       or (recovery.state.get('transaction') or {}).get('dependencies_verified') is False
                        or (root / '.interrupted').exists()):
             raise RuntimeError('The installed Agent source/dependencies are not safe for a legacy refresh; repair remains owed.')
+        if legacy and (why := _unverified_baseline(records, root, initial_tree)):
+            raise RuntimeError('The installed Agent source is not safe for a legacy refresh: ' + why)
         gateway_entries = [e for e in entries if not e.get('purpose')]
         backend_entries = [e for e in entries if e.get('purpose') in {'serve', 'dashboard'}]
         token = pause._empty_token()
@@ -689,6 +711,9 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
             if not whole:
                 raise RuntimeError('Legacy refresh requires verified current source/dependencies: ' + why)
             for entry in legacy:
+                # Consent vouches only for the confirmed HEAD and local-edit bytes, rechecked before each signal.
+                if why := _unverified_baseline(records, root, initial_tree):
+                    raise RuntimeError('The installed Agent source is not safe for a legacy refresh: ' + why)
                 recovery.prepare([entry], token)
                 recovery.refresh(entry, stopped, _writer_ledger)
             # Bootstrap is bounded to the consented incarnations; every successor now uses the normal fence.

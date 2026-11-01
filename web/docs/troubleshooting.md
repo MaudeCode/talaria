@@ -339,7 +339,9 @@ obligation and never reports installed success before restoration is verified.
 
 Authentication failures, a generic 404, foreign listener, unknown ownership,
 changed service configuration, unsafe source/dependencies or missing modern
-APIs remain refusals. Keep authentication, ledger and recovery records intact.
+APIs remain refusals. Intact local edits in the Agent checkout do not block the
+refresh: a normal update restores them afterward, or keeps them with a conflict
+note. Edits changed after confirmation require a fresh confirmation. Keep authentication, ledger and recovery records intact.
 Do not bypass custody checks, force-kill a service or rewrite its configuration
 to clear a refusal. Safe sibling services can recover independently.
 

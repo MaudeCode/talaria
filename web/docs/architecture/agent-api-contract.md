@@ -293,8 +293,19 @@ requires OS socket ownership for the exact backend PID, its native birth/ledger
 identity, canonical home/profile, supervisor ancestry, original endpoint and
 configuration digest. Linux uses the process's socket inodes; macOS uses the OS
 listener inventory. Unknown, foreign, manual, Desktop and ambiguous owners still
-refuse. A clean installed source baseline and usable current dependencies are
+refuse. A whole installed source baseline and usable current dependencies are
 required; bootstrap never changes Agent source or service configuration.
+Intact local edits are part of that baseline, not unsafe source: the native
+pause baseline records HEAD and the bytes of every tracked change, and the
+refresh proceeds when native `tree_is_whole` accepts it and HEAD and those bytes
+are unchanged since confirmation, rechecked before each interruption signal.
+Unknown edit bytes refuse. A whole baseline is not dependency evidence, because
+native `tree_is_whole` accepts an at-HEAD baseline before its dependency-currency
+check: retained dependency repair, unverified transaction dependencies, a
+bootstrap or runtime-import repair, an interrupted pull and unresolved
+native/companion recovery each still refuse with their reason. Normal updates
+then preserve the edits through the existing autostash and restore; force
+discards them as before.
 
 The first apply/force request returns `refresh_confirmation` with the service
 names and a private single-use token. The existing confirmation dialog warns
