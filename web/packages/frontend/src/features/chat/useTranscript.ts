@@ -11,6 +11,7 @@ import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 import { SessionSchema, type Message, type Session } from '../../contracts'
 import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, teardown, useStreamContext } from '../../stream/connection'
+import { discardStagedFiles } from '../composer/useDraft'
 import { getStreamState, useLiveTurn } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
 import { openSessionStream } from '../../api/sse'
@@ -64,7 +65,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
         if (!signal.aborted) reconcileSession(sid, result.session, expectedStreamId)
         return result
       } catch (error) {
-        if (!signal.aborted && error && typeof error === 'object' && 'status' in error && error.status === 404) discardSession(sid)
+        if (!signal.aborted && error && typeof error === 'object' && 'status' in error && error.status === 404) { discardSession(sid); discardStagedFiles(sid) }
         throw error
       }
     },

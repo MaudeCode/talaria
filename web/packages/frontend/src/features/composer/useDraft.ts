@@ -1,4 +1,5 @@
-import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import type { PendingFile } from './Attachments'
 import * as api from '../../api/endpoints'
 import { isApiError } from '../../contracts/common'
 import { readPersistedJson, writePersistedJson, removePersisted } from '../../lib/persisted'
@@ -152,4 +153,91 @@ export function useDraftPersistence(sessionId: string | null, text: string, sync
 export function clearDraft(sessionId: string, syncServer = true): void {
   if (syncServer) publish(sessionId, '')
   else removePersisted(key(sessionId))
+}
+
+/**
+ * Each composer identity's staged files, kept for this page so leaving a chat and coming back restores the exact Files,
+ * their upload state and retry actions (TAL-1074). Browser File objects cannot be stored, so a reload ends them. A tray
+ * leaves the map once it empties (send, removal), its session is deleted, or auth or profile context is discarded.
+ * `attempts` holds each chip's upload in flight: a receipt whose attempt is gone (chip removed, sent, tray discarded)
+ * is rolled back by its uploader instead of applied.
+ */
+interface Tray { sessionId: string | null; files: PendingFile[]; attempts: Map<string, object> }
+const trays = new Map<string, Tray>()
+const trayListeners = new Set<() => void>()
+const NO_FILES: PendingFile[] = []
+/** Advances on every auth or profile reset: a setter captured before it (a send settling late) writes nothing. */
+let trayGeneration = 0
+const subscribeTrays = (changed: () => void) => { trayListeners.add(changed); return () => { trayListeners.delete(changed) } }
+function writeTray(id: string, tray: Tray): void {
+  // Attempts follow their chips: a key no longer staged fences its late receipt.
+  for (const k of tray.attempts.keys()) if (!tray.files.some((f) => f.key === k)) tray.attempts.delete(k)
+  if (tray.files.length) trays.set(id, tray)
+  else trays.delete(id)
+  for (const changed of trayListeners) changed()
+}
+
+/** The staged files of one composer identity; an update made after the composer moved on still lands on that identity. */
+export function useStagedFiles(id: string, sessionId: string | null) {
+  const files = useSyncExternalStore(subscribeTrays, () => trays.get(id)?.files ?? NO_FILES, () => NO_FILES)
+  const generation = useSyncExternalStore(subscribeTrays, () => trayGeneration, () => trayGeneration)
+  const setFiles = (update: SetStateAction<PendingFile[]>) => {
+    if (generation !== trayGeneration) return
+    const tray = trays.get(id)
+    const current = tray?.files ?? NO_FILES
+    const next = typeof update === 'function' ? update(current) : update
+    if (next !== current) writeTray(id, { sessionId: tray?.sessionId ?? sessionId, files: next, attempts: tray?.attempts ?? new Map<string, object>() })
+  }
+  return [files, setFiles] as const
+}
+
+/** Starts a chip's upload attempt on its identity's tray. */
+export function beginUpload(id: string, fileKey: string): object {
+  const attempt = {}
+  trays.get(id)?.attempts.set(fileKey, attempt)
+  return attempt
+}
+
+/** Applies a finished upload to whichever tray holds its attempt now; false when its chip is gone and the result is stale. */
+export function finishUpload(fileKey: string, attempt: object, patch: Partial<PendingFile>): boolean {
+  for (const [id, tray] of trays) {
+    if (tray.attempts.get(fileKey) !== attempt) continue
+    tray.attempts.delete(fileKey)
+    writeTray(id, { ...tray, files: tray.files.map((f) => f.key === fileKey ? { ...f, ...patch } : f) })
+    return true
+  }
+  return false
+}
+
+/**
+ * A tray staged before its identity was known (the transcript was loading) joins the identity that arrived. A file staged
+ * on both keeps the arrived identity's chip; the other copy's receipt is returned for rollback, and its late one is fenced.
+ */
+export function moveStagedFiles(from: string, to: string): string[] {
+  const source = trays.get(from)
+  if (!source || from === to) return []
+  trays.delete(from)
+  const target = trays.get(to)
+  const duplicate = (f: PendingFile) => !!target?.files.some((t) => t.key === f.key)
+  const files = [...(target?.files ?? []), ...source.files.filter((f) => !duplicate(f))]
+  const joined = [...source.attempts].filter(([k]) => !target?.files.some((t) => t.key === k))
+  writeTray(to, { sessionId: target?.sessionId ?? source.sessionId, files, attempts: new Map([...(target?.attempts ?? []), ...joined]) })
+  return source.files.flatMap((f) => duplicate(f) && f.upload?.rollback_token ? [f.upload.rollback_token] : [])
+}
+
+/** Drops one identity's tray without rolling anything back: its composer is gone for good, or the session no longer exists. */
+export function dropStagedFiles(id: string): void {
+  if (trays.has(id)) writeTray(id, { sessionId: null, files: NO_FILES, attempts: new Map<string, object>() })
+}
+
+/** A deleted session's staged files go with it. */
+export function discardStagedFiles(sessionId: string): void {
+  for (const [id, tray] of trays) if (tray.sessionId === sessionId) dropStagedFiles(id)
+}
+
+/** Auth or profile changes cannot hand another identity staged files. */
+export function resetStagedFiles(): void {
+  trayGeneration++
+  trays.clear()
+  for (const changed of trayListeners) changed()
 }

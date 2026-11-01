@@ -1,6 +1,7 @@
 import { useResourceMutation } from './useResourceMutation'
 import { useSessionPin } from './useSessionPin'
 import { discardSession } from '../../stream/connection'
+import { discardStagedFiles } from '../composer/useDraft'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
@@ -44,6 +45,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
     mutationFn: () => api.deleteSession(sid),
     onSuccess: () => {
       discardSession(sid)
+      discardStagedFiles(sid)
       qc.setQueriesData<SessionsList>({ predicate: (query) => query.queryKey[0] === 'sessions' && (query.queryKey[1] === 'list' || query.queryKey[1] === 'search') }, (data) => data ? { ...data, sessions: data.sessions.filter((item) => item.session_id !== sid) } : data)
       qc.removeQueries({ predicate: (query) => query.queryKey[0] === 'sessions' && query.queryKey[1] !== 'list' && query.queryKey[1] !== 'search' && query.queryKey[2] === sid })
       showToast(m.session_deleted())

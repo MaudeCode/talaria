@@ -139,7 +139,119 @@ describe('Composer', () => {
     expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['removed-receipt'])
   })
 
-  it.each(['session', 'owner', 'attachment refusal', 'capability refusal'].flatMap((replacement) => [false, true].map((completedBeforeReplacement) => ({ replacement, completedBeforeReplacement }))))('clears attachment identity on $replacement (completed: $completedBeforeReplacement) and rolls back its receipt', async ({ replacement, completedBeforeReplacement }) => {
+  it('keeps each chat\'s failed, pending and completed files with its text across A -> B -> A (TAL-1074)', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    const receipt = (name: string) => ({ filename: name, path: `/synthetic/${name}`, size: 1, mime: 'text/plain', rollback_token: `receipt-${name}` })
+    vi.mocked(api.uploadFile).mockImplementation((_id, file) => file.name === 'failed.txt' ? Promise.reject(new Error('synthetic offline')) : file.name === 'pending.txt' ? pending.promise : Promise.resolve(receipt(file.name)))
+    const a = { ...writable, session_id: 'a', is_streaming: false }
+    const b = { ...writable, session_id: 'b', is_streaming: false }
+    const view = renderComposer(a)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'Text for A')
+    const picked = ['failed.txt', 'pending.txt', 'done.txt'].map((name) => new File(['x'], name, { type: 'text/plain', lastModified: 1 }))
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: picked } })
+    await screen.findByRole('button', { name: 'Retry failed.txt' })
+    await waitFor(() => expect(document.querySelectorAll('.attach-tray [data-status="done"]')).toHaveLength(1))
+    view.rerenderSession(b)
+    await waitFor(() => expect(box).toHaveValue(''))
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    // A's upload finishes while B is shown: B never receives it, and A keeps it.
+    await act(async () => { pending.resolve(receipt('pending.txt')); await pending.promise })
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    view.rerenderSession(a)
+    await waitFor(() => expect(box).toHaveValue('Text for A'))
+    const tray = screen.getByRole('list', { name: 'Attachments' })
+    expect([...tray.querySelectorAll('li')].map((li) => `${li.querySelector('span')?.textContent}:${li.getAttribute('data-status')}`)).toEqual(['failed.txt:error', 'pending.txt:done', 'done.txt:done'])
+    expect(screen.getByText('synthetic offline')).toBeInTheDocument()
+    // The failed file uploads again from the same File, without picking it again.
+    vi.mocked(api.uploadFile).mockResolvedValueOnce(receipt('failed.txt'))
+    await userEvent.click(screen.getByRole('button', { name: 'Retry failed.txt' }))
+    await waitFor(() => expect(tray.querySelectorAll('[data-status="done"]')).toHaveLength(3))
+    expect(vi.mocked(api.uploadFile).mock.calls.at(-1)).toEqual(['a', picked[0]])
+    expect(api.rollbackUpload).not.toHaveBeenCalled()
+    vi.mocked(api.startChat).mockResolvedValueOnce({ stream_id: 'run-a', session_id: 'a' })
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(api.startChat).toHaveBeenCalledOnce())
+    expect(vi.mocked(api.startChat).mock.calls[0]?.[0]).toMatchObject({ message: 'Text for A', attachments: ['failed.txt', 'pending.txt', 'done.txt'].map(receipt) })
+    // A sent tray is released: leaving and returning shows nothing.
+    view.rerenderSession(b)
+    view.rerenderSession(a)
+    expect(document.querySelector('.attach-tray')).toBeNull()
+  })
+
+  it('returns a send refused while another chat is shown to its own chat with its files, next to files staged since (TAL-1074)', async () => {
+    const start = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValueOnce(start.promise)
+    vi.mocked(api.uploadFile).mockImplementation((_id, file) => Promise.resolve({ filename: file.name, path: `/synthetic/${file.name}`, size: 1, mime: 'text/plain', rollback_token: `receipt-${file.name}` }))
+    const a = { ...writable, session_id: 'a', is_streaming: false }
+    const b = { ...writable, session_id: 'b', is_streaming: false }
+    const view = renderComposer(a)
+    const box = screen.getByRole('textbox')
+    const input = document.querySelector<HTMLInputElement>('#fileInput')!
+    fireEvent.change(input, { target: { files: [new File(['x'], 'sent.txt', { type: 'text/plain', lastModified: 1 })] } })
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    await userEvent.type(box, 'Refused{Enter}')
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    fireEvent.change(input, { target: { files: [new File(['y'], 'newer.txt', { type: 'text/plain', lastModified: 1 })] } })
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    view.rerenderSession(b)
+    await act(async () => { start.resolve({ ok: false, reason: 'Admission refused' }); await start.promise })
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    expect(box).toHaveValue('')
+    view.rerenderSession(a)
+    await waitFor(() => expect(box).toHaveValue('Refused'))
+    expect([...screen.getByRole('list', { name: 'Attachments' }).querySelectorAll('li span:first-of-type')].map((span) => span.textContent)).toEqual(['newer.txt', 'sent.txt'])
+    expect(api.rollbackUpload).not.toHaveBeenCalled()
+  })
+
+  it('restores an attachment-only draft after the composer unmounts, keeps an offscreen completion, and fences a newer removal (TAL-1074)', async () => {
+    const first = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    const second = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    vi.mocked(api.uploadFile).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const a = { ...writable, session_id: 'a', is_streaming: false }
+    const view = renderComposer(a)
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: ['shot.png', 'later.png'].map((name) => new File(['x'], name, { type: 'image/png', lastModified: 1 })) } })
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(2))
+    view.unmount()
+    await act(async () => { first.resolve({ filename: 'shot.png', path: '/synthetic/shot.png', size: 1, mime: 'image/png', rollback_token: 'shot-receipt' }); await first.promise })
+    const back = renderComposer(a)
+    await waitFor(() => expect(document.querySelectorAll('.attach-tray [data-status]')).toHaveLength(2))
+    expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull()
+    expect(document.querySelector('.attach-tray [data-status="uploading"]')).not.toBeNull()
+    // Removed after returning: the late receipt is rolled back exactly once and never brings the chip back.
+    await userEvent.click(screen.getByRole('button', { name: 'Remove later.png' }))
+    await act(async () => { second.resolve({ filename: 'later.png', path: '/synthetic/later.png', size: 1, mime: 'image/png', rollback_token: 'later-receipt' }); await second.promise })
+    expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('a', ['later-receipt'])
+    expect(document.querySelectorAll('.attach-tray [data-status]')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
+    // Logout or a profile switch discards the page's staged files.
+    back.unmount()
+    resetConnectionsForTests()
+    renderComposer(a)
+    expect(document.querySelector('.attach-tray')).toBeNull()
+  })
+
+  it('does not bring back a discussion send refused after auth or profile teardown (TAL-1074)', async () => {
+    const sent = deferred<boolean>()
+    const room = { identity: 'room-a', maxUploadBytes: 1_000_000, maxAttachments: 4, canSend: true, onSend: vi.fn(() => sent.promise), onUpload: vi.fn((file: File) => Promise.resolve({ attachment_id: file.name } as never)) }
+    const tree = () => (
+      <QueryClientProvider client={new QueryClient()}>
+        <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer room={room} settings={undefined} /></BootstrapContext.Provider>
+      </QueryClientProvider>
+    )
+    const view = render(tree())
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [new File(['x'], 'kept.txt', { type: 'text/plain', lastModified: 1 })] } })
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(room.onSend).toHaveBeenCalledOnce()
+    view.unmount()
+    resetConnectionsForTests()
+    await act(async () => { sent.resolve(false); await sent.promise })
+    render(tree())
+    expect(document.querySelector('.attach-tray')).toBeNull()
+  })
+
+  it.each(['session', 'owner', 'attachment refusal', 'capability refusal'].flatMap((replacement) => [false, true].map((completedBeforeReplacement) => ({ replacement, completedBeforeReplacement }))))('leaves attachment identity on $replacement (completed: $completedBeforeReplacement), rolling back only a refused receipt', async ({ replacement, completedBeforeReplacement }) => {
     const upload = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
     const receipt = { filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png', rollback_token: 'obsolete-receipt' }
     vi.mocked(api.uploadFile).mockReturnValue(upload.promise)
@@ -153,7 +265,9 @@ describe('Composer', () => {
       ...(replacement.endsWith('refusal') ? { owner_attachment: { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } } : {}) })
     if (!completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
     expect(document.querySelector('.attach-tray')).toBeNull()
-    expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['obsolete-receipt'])
+    // Another chat or owner never shows the file; it stays staged for its own identity (TAL-1074). A refusal drops it.
+    if (replacement.endsWith('refusal')) expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['obsolete-receipt'])
+    else expect(api.rollbackUpload).not.toHaveBeenCalled()
     expect(api.uploadFile).toHaveBeenCalledOnce()
     if (replacement === 'capability refusal') expect(screen.getByRole('textbox')).toHaveValue('Keep newer text')
   })

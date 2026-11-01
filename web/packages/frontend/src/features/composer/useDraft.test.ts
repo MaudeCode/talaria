@@ -5,7 +5,8 @@ import { useState } from 'react'
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
-import { readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
+import { beginUpload, discardStagedFiles, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, resetStagedFiles, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
+import type { PendingFile } from './Attachments'
 
 describe('useDraftPersistence', () => {
   it('keeps native owner drafts local and scoped without writing an opaque key to the API', () => {
@@ -407,5 +408,64 @@ describe('rejected saves, and the revision watermark (TAL-564)', () => {
     vi.advanceTimersByTime(300)
     const stored = JSON.parse(localStorage.getItem('hermes-draft:s1')!) as { revision: number }
     expect(stored.revision).toBeGreaterThan(ahead)
+  })
+})
+
+describe('staged files (TAL-1074)', () => {
+  const pending = (name: string): PendingFile => ({ key: name, file: new File(['x'], name), status: 'uploading' })
+  beforeEach(() => { resetStagedFiles() })
+
+  it('keeps each identity apart, lands a late result on the tray holding its chip, and fences a removed chip', () => {
+    const a = renderHook(() => useStagedFiles('a', 'sa'))
+    const b = renderHook(() => useStagedFiles('b', 'sb'))
+    act(() => { a.result.current[1]([pending('one'), pending('two')]) })
+    const one = beginUpload('a', 'one')
+    const two = beginUpload('a', 'two')
+    expect(b.result.current[0]).toEqual([])
+    act(() => { a.result.current[1]((files) => files.filter((f) => f.key !== 'two')) })
+    let applied = false
+    act(() => { applied = finishUpload('two', two, { status: 'done' }) })
+    expect(applied).toBe(false)
+    act(() => { applied = finishUpload('one', one, { status: 'done' }) })
+    expect(applied).toBe(true)
+    expect(a.result.current[0].map((f) => `${f.key}:${f.status}`)).toEqual(['one:done'])
+    // Applied once: a repeated result for the same attempt is stale.
+    expect(finishUpload('one', one, { status: 'error' })).toBe(false)
+  })
+
+  it('moves a tray staged before its identity arrived, keeping the arrived copy of a duplicate and fencing the other', () => {
+    const loading = renderHook(() => useStagedFiles('session:s', 's'))
+    const owner = renderHook(() => useStagedFiles('owner-key', 's'))
+    act(() => { owner.result.current[1]([pending('same')]) })
+    act(() => { loading.result.current[1]([{ ...pending('done'), status: 'done', upload: { filename: 'done', path: '/synthetic/done', size: 1, mime: 'text/plain', rollback_token: 'dup-receipt' } }, pending('same'), pending('early')]) })
+    act(() => { owner.result.current[1]((files) => [...files, { ...pending('done'), status: 'done' }]) })
+    const duplicate = beginUpload('session:s', 'same')
+    const early = beginUpload('session:s', 'early')
+    let dropped: string[] = []
+    act(() => { dropped = moveStagedFiles('session:s', 'owner-key') })
+    expect(dropped).toEqual(['dup-receipt'])
+    expect(loading.result.current[0]).toEqual([])
+    expect(owner.result.current[0].map((f) => f.key)).toEqual(['same', 'done', 'early'])
+    expect(finishUpload('same', duplicate, { status: 'done' })).toBe(false)
+    expect(finishUpload('early', early, { status: 'done' })).toBe(true)
+  })
+
+  it('releases trays when emptied, dropped, their session is deleted, or context is reset', () => {
+    const hooks = ['a', 'b', 'c', 'd'].map((id) => renderHook(() => useStagedFiles(id, `s-${id}`)))
+    act(() => { for (const hook of hooks) hook.result.current[1]([pending('f')]) })
+    const fenced = beginUpload('a', 'f')
+    act(() => { hooks[0]!.result.current[1]([]) })
+    act(() => { dropStagedFiles('b') })
+    act(() => { discardStagedFiles('s-c') })
+    expect(hooks.map((hook) => hook.result.current[0].length)).toEqual([0, 0, 0, 1])
+    expect(finishUpload('f', fenced, { status: 'done' })).toBe(false)
+    const stale = hooks[3]!.result.current[1]
+    act(() => { resetStagedFiles() })
+    expect(hooks[3]!.result.current[0]).toEqual([])
+    // A setter captured before the reset writes nothing; one from a render after it works again.
+    act(() => { stale([pending('late')]) })
+    expect(hooks[3]!.result.current[0]).toEqual([])
+    act(() => { hooks[3]!.result.current[1]([pending('fresh')]) })
+    expect(hooks[3]!.result.current[0].map((f) => f.key)).toEqual(['fresh'])
   })
 })

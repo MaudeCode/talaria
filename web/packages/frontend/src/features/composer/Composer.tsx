@@ -16,7 +16,7 @@ import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
 import { ContextRing, type ContextFigures } from './chips'
 import { ComposerControls, hideComposerControl } from './ComposerControls'
-import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
+import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
 import { useExecutionModesQuery, useTranscribeCapabilityQuery } from '../../app/queries'
@@ -163,7 +163,17 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const localStateId = room ? `group:${room.identity}` : composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [draftIdentity, setDraftIdentity] = useState(localStateId)
-  const [files, setFiles] = useState<PendingFile[]>([])
+  // Staged files belong to the composer identity, so leaving a chat and coming back restores them (TAL-1074). Before the
+  // identity is known they wait under the selected session's id; the empty chat's tray ends with this composer.
+  const [unsavedTray] = useState(() => `unsaved:${randomHex()}`)
+  const trayId = localStateId ?? (sessionId ? `session:${sessionId}` : unsavedTray)
+  const [files, setFiles] = useStagedFiles(trayId, sessionId)
+  useLayoutEffect(() => {
+    if (!sessionId || !localStateId) return
+    const duplicates = moveStagedFiles(`session:${sessionId}`, localStateId)
+    if (duplicates.length) void api.rollbackUpload(sessionId, duplicates).catch(() => undefined)
+  }, [sessionId, localStateId])
+  useEffect(() => () => dropStagedFiles(unsavedTray), [unsavedTray])
   const intent = useTurnIntent(sessionId)
   const sending = !!intent.send
   const submitting = useRef(false)
@@ -303,11 +313,9 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   useEffect(() => onComposerRestRequest(() => { if (!restBlocked.current()) setRestRequested(true) }), [])
   const wake = () => { if (restRequested) setRestRequested(false) }
 
-  // Session change resets the draft and tray, unless this session's composer just adopted a hand-off (below); the
-  // guard also keeps StrictMode's effect replay from wiping the adopted state.
+  // Session change loads the next identity's draft, unless this session's composer just adopted a hand-off (below); the
+  // guard also keeps StrictMode's effect replay from wiping the adopted text.
   const adopted = useRef<string | null>(null)
-  // Each chip's upload in flight; a receipt whose attempt is gone (chip removed, tray reset) is rolled back.
-  const inflight = useRef(new Map<string, object>())
   const previousIdentity = useRef({ sessionId, localStateId })
   useEffect(() => {
     const previous = previousIdentity.current
@@ -322,13 +330,14 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         setRestRequested(false)
       }
     }
-    if (!attachmentsSupported || (changedIdentity && !loadedIdentity && !adoptedIdentity)) {
-      const receipts = [...new Set(files.flatMap((file) => file.upload?.rollback_token ? [file.upload.rollback_token] : []))]
-      if (previous.sessionId && receipts.length) void api.rollbackUpload(previous.sessionId, receipts).catch(() => undefined)
-      if (files.length) setFiles([])
-      inflight.current.clear()
-    }
-  }, [sessionId, localStateId, attachmentsSupported, files])
+  }, [sessionId, localStateId])
+  // An identity that cannot attach drops its staged files and rolls back their receipts.
+  useEffect(() => {
+    if (attachmentsSupported || files.length === 0) return
+    const receipts = [...new Set(files.flatMap((file) => file.upload?.rollback_token ? [file.upload.rollback_token] : []))]
+    if (sessionId && receipts.length) void api.rollbackUpload(sessionId, receipts).catch(() => undefined)
+    setFiles([])
+  }, [attachmentsSupported, files, sessionId, setFiles])
 
   // Autosize.
   useEffect(() => {
@@ -344,42 +353,25 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const draft = useRef(text)
   useLayoutEffect(() => { draft.current = text })
   const maxBytes = room?.maxUploadBytes ?? bootstrap.max_upload_bytes
-  useEffect(() => { const attempts = inflight.current; return () => { attempts.clear() } }, [])
   const upload = (key: string, file: File) => {
+    // The result lands on the tray that holds the chip now, shown or not; a chat chip that is gone rolls its receipt back.
     if (room) {
-      const attempt = {}
-      inflight.current.set(key, attempt)
-      void room.onUpload(file).then((receipt) => {
-        if (inflight.current.get(key) !== attempt) return
-        inflight.current.delete(key)
-        setFiles((prev) => prev.map((p) => p.key === key ? { ...p, status: 'done', groupAttachment: receipt } : p))
-      }, (error: unknown) => {
-        if (inflight.current.get(key) !== attempt) return
-        inflight.current.delete(key)
-        setFiles((prev) => prev.map((p) => p.key === key ? { ...p, status: 'error', error: error instanceof Error ? error.message : String(error) } : p))
-      })
+      const attempt = beginUpload(trayId, key)
+      void room.onUpload(file).then((receipt) => { finishUpload(key, attempt, { status: 'done', groupAttachment: receipt }) },
+        (error: unknown) => { finishUpload(key, attempt, { status: 'error', error: error instanceof Error ? error.message : String(error) }) })
       return
     }
     if (!sessionId) return
     const scope = getStreamContext()
-    const attempt = {}
-    inflight.current.set(key, attempt)
+    const attempt = beginUpload(trayId, key)
     void api.uploadFile(sessionId, file).then(
       (receipt) => {
         if (scope !== getStreamContext()) return
-        if (inflight.current.get(key) !== attempt) {
-          if (receipt.rollback_token) void api.rollbackUpload(sessionId, [receipt.rollback_token]).catch(() => undefined)
-          return
-        }
-        inflight.current.delete(key)
-        setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'done', upload: receipt } : p)))
+        if (!finishUpload(key, attempt, { status: 'done', upload: receipt }) && receipt.rollback_token) void api.rollbackUpload(sessionId, [receipt.rollback_token]).catch(() => undefined)
       },
       (e: unknown) => {
         if (scope !== getStreamContext()) return
-        if (inflight.current.get(key) !== attempt) return
-        inflight.current.delete(key)
-        setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'error', error: e instanceof Error ? e.message : String(e) } : p)))
-        showToast(m.composer_upload_failed({ name: file.name }), 4000, 'error')
+        if (finishUpload(key, attempt, { status: 'error', error: e instanceof Error ? e.message : String(e) })) showToast(m.composer_upload_failed({ name: file.name }), 4000, 'error')
       },
     )
   }
@@ -453,12 +445,11 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     setText((current) => current.trim() ? `${current}\n\n${sent.text}` : sent.text)
     const restored = sent.files
     setFiles((current) => [...current, ...restored.filter((file) => !current.some((f) => f.key === file.key))])
-  }, [intent.send, sessionId, files])
+  }, [intent.send, sessionId, files, setFiles])
 
   const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
-    inflight.current.delete(key)
     // Removed before the new chat exists: the file must not ride the hand-off into it.
     if (handoff) handoff.files = handoff.files.filter((file) => fileKey(file) !== key)
     if (f?.upload?.rollback_token && sessionId) void api.rollbackUpload(sessionId, [f.upload.rollback_token]).catch(() => undefined)

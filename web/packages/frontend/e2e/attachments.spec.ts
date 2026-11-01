@@ -273,3 +273,43 @@ test('clicking a sent image opens it enlarged, the arrow keys step through the m
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
+
+test('staged files and their retry stay with their chat when another chat opens and the first returns (TAL-1074)', async ({ page, errors }, info) => {
+  const uploads: string[] = []
+  let offline = true
+  await page.route('**/api/session?**', (route) => {
+    const sid = new URL(route.request().url()).searchParams.get('session_id') ?? ''
+    return route.fulfill({ json: { session: { session_id: sid, title: sid, messages: [] } } })
+  })
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/upload**', async (route) => {
+    const filename = uploadName(route.request())
+    uploads.push(`${new URL(route.request().url()).searchParams.get('session_id') ?? ''}/${filename}`)
+    if (filename === 'offline.txt' && offline) { await route.fulfill({ status: 500, json: { error: 'synthetic upload failure' } }); return }
+    await route.fulfill({ json: { filename, path: `/tmp/${filename}`, size: PNG.length, mime: filename.endsWith('.png') ? 'image/png' : 'text/plain', is_image: filename.endsWith('.png') } })
+  })
+  const shot = async (name: string) => { if (process.env.TAL1074_SHOTS) await page.screenshot({ path: `${process.env.TAL1074_SHOTS}/${name}-${info.project.name}.png` }) }
+  const open = (sid: string) => page.evaluate((path) => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, `/session/${sid}`)
+  await page.goto('/session/chat-a')
+  await page.locator('#msg').fill('Notes for chat A')
+  await page.locator('#fileInput').setInputFiles([image('shot.png'), { name: 'offline.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') }])
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
+  await expect(chips(page).and(page.locator('[data-status="error"]'))).toHaveCount(1)
+  await shot('1-chat-a-staged')
+  await open('chat-b')
+  await expect(page).toHaveURL(/\/session\/chat-b$/)
+  await expect(page.locator('#msg')).toHaveValue('')
+  await expect(chips(page)).toHaveCount(0)
+  await shot('2-chat-b-empty')
+  await open('chat-a')
+  await expect(page.locator('#msg')).toHaveValue('Notes for chat A')
+  await shot('3-chat-a-restored')
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Retry offline.txt' })).toBeVisible()
+  offline = false
+  await page.getByRole('button', { name: 'Retry offline.txt' }).click()
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(2)
+  expect(uploads.toSorted()).toEqual(['chat-a/offline.txt', 'chat-a/offline.txt', 'chat-a/shot.png'])
+  // The synthetic offline upload is the only expected failure.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/api\/upload|status of 500/.test(e)))
+})
