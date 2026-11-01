@@ -890,22 +890,28 @@ export class ProviderCatalog {
       const id = known.has(identity) ? identity : key
       if (!pluginIds.has(id)) known.add(id)
     }
-    const rows: Dict[] = []
+    const probed: { pid: string; probe: KeyProbe; configured: boolean; lookup: boolean }[] = []
     for (const pid of [...known].sort()) {
       const probe = await this.probeKey(profileHome, pid, config, envValues, pooled, pool.value?.keys ?? {})
       authoritative &&= probe.authoritative
       if (pid === 'openai' && !probe.hasKey && looksLikeCodexOauthToken(str(envValues[providerEnvVar('openai') ?? ''] ?? this.deps.env.OPENAI_API_KEY))) continue
       const configured = probe.hasKey || selfHostedEndpoint(pid, config)
+      // Python: the card prefers the live catalog for every keyed provider (exactly like the picker), keeping the
+      // static list as the cold/failed-probe fallback. TAL-981: an unkeyed card lists the Agent's curated ids, as the
+      // picker does since TAL-799. Every lookup starts before any is awaited, so a cold cache costs one round trip.
+      const lookup = !configured || probe.isOauth || pid === 'lmstudio' || pid === 'nous' || !BESPOKE_CATALOG_PROVIDERS.has(pid)
+      probed.push({ pid, probe, configured, lookup })
+    }
+    const lives = await Promise.all(probed.map((p) => (p.lookup ? this.liveModelIds(profileHome, p.pid, { source }) : Promise.resolve([]))))
+    const rows: Dict[] = []
+    for (const [i, { pid, probe, configured }] of probed.entries()) {
+      const live = lives[i]!
       let models: ModelEntry[] = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       let modelsTotal = models.length
-      // Python: the card prefers the live catalog for every keyed provider (exactly like the picker), keeping the
-      // static list as the cold/failed-probe fallback; Nous renders a featured subset with the full count.
-      if (configured && (probe.isOauth || pid === 'lmstudio' || pid === 'nous' || !BESPOKE_CATALOG_PROVIDERS.has(pid))) {
-        const live = await this.liveModelIds(profileHome, pid, { source })
-        if (live.length) {
-          models = pid === 'nous' ? live.slice(0, 25).map((id) => ({ id: `@nous:${id}`, label: `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` })) : live.map((id) => ({ id, label: labelForModel(id, []) }))
-          modelsTotal = live.length
-        }
+      // Nous renders a featured subset with the full count.
+      if (live.length) {
+        models = pid === 'nous' ? live.slice(0, 25).map((id) => ({ id: `@nous:${id}`, label: `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` })) : live.map((id) => ({ id, label: labelForModel(id, []) }))
+        modelsTotal = live.length
       }
       const providerCfg = dict(providersCfg[pid] ?? providersCfg[Object.keys(providersCfg).find((k) => providerIdentity(k) === providerIdentity(pid)) ?? ''])
       // Python: `providers.<id>.models` from config.yaml reach the card (alias-aware), minus ids already published.
