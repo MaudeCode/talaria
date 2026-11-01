@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Public shares leave out an image that grows past the size limit while the share is created.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
