@@ -40,8 +40,6 @@ public final class FeedbackComposer {
     /// What this server accepts; nil until loaded, and attaching stays hidden unless `enabled`.
     public private(set) var attachmentOptions: FeedbackOptions.Attachments?
     public private(set) var attachments: [FeedbackAttachment]
-    /// A PNG of the screen behind the sheet, offered for the user to include; never attached by default.
-    public private(set) var currentScreen: Data?
     public private(set) var attachmentError: SettingsErrorText?
     public let confirmation = GitActionToastState()
     public let server: URL?
@@ -148,13 +146,6 @@ public final class FeedbackComposer {
         }
     }
 
-    /// The Current screen offer in the same strip form, until the user includes it.
-    public var currentScreenOffer: PendingAttachment? {
-        guard let currentScreen, remainingAttachmentSlots > 0 else { return nil }
-        return PendingAttachment(id: Self.currentScreenOfferID, name: String(localized: "Current screen"), path: "",
-                                 mime: "image/png", isImage: true, thumbnailData: currentScreen)
-    }
-
     public var validationError: SettingsErrorText? {
         if draft.title.utf16.count > 120 {
             return SettingsErrorText(String(localized: "Title must be 120 characters or fewer."))
@@ -180,19 +171,6 @@ public final class FeedbackComposer {
         guard let options = try? await loadOptions() else { return }
         guard isCurrent else { return }
         attachmentOptions = options.attachments
-    }
-
-    /// Records the screen behind the sheet as an offer; it is attached only through `includeCurrentScreen`.
-    public func offerCurrentScreen(_ png: Data?) {
-        guard isEditable else { return }
-        currentScreen = png
-    }
-
-    @discardableResult
-    public func includeCurrentScreen() -> Task<Void, Never>? {
-        guard let png = currentScreen, remainingAttachmentSlots > 0 else { return nil }
-        currentScreen = nil
-        return addImage(png, isScreenCapture: true)
     }
 
     /// Re-encodes a picked photo (JPEG) or the screen capture (PNG) without metadata, then stages it.
@@ -408,7 +386,6 @@ public final class FeedbackComposer {
         attachments = []
         uploadPhases = [:]
         thumbnails = [:]
-        currentScreen = nil
         attachmentError = nil
         try? FileManager.default.removeItem(at: stagingDirectory)
     }
@@ -450,8 +427,6 @@ public final class FeedbackComposer {
         let name = (server?.absoluteString ?? "disconnected").addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "server"
         return root.appendingPathComponent(name, isDirectory: true)
     }
-
-    private static let currentScreenOfferID = UUID()
 
     private static func displayName(for attachment: FeedbackAttachment) -> String {
         switch attachment.contentType {

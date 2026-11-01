@@ -273,8 +273,6 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertFalse(disabled.attachmentsEnabled)
         XCTAssertEqual(disabled.remainingAttachmentSlots, 0)
         XCTAssertNil(disabled.addImage(photo))
-        disabled.offerCurrentScreen(photo)
-        XCTAssertNil(disabled.currentScreenOffer)
 
         let imagesOnly = await attachmentComposer(root: root, options: options(videoAllowed: false))
         XCTAssertTrue(imagesOnly.attachmentsEnabled)
@@ -283,29 +281,10 @@ final class FeedbackComposerTests: XCTestCase {
 
         let capped = await attachmentComposer(root: root, options: options(maxCount: 2))
         await capped.addImage(photo)?.value
-        capped.offerCurrentScreen(photo)
-        XCTAssertNotNil(capped.currentScreenOffer)
-        await capped.includeCurrentScreen()?.value
+        await capped.addImage(try XCTUnwrap(TestImages.pngData(width: 30, height: 60)), isScreenCapture: true)?.value
         XCTAssertEqual(capped.attachments.map(\.contentType), ["image/jpeg", "image/png"])
         XCTAssertEqual(capped.remainingAttachmentSlots, 0)
         XCTAssertNil(capped.addImage(photo), "maxCount bounds the attachments")
-        capped.offerCurrentScreen(photo)
-        XCTAssertNil(capped.currentScreenOffer, "A full report offers no screen capture")
-    }
-
-    func testCurrentScreenIsOnlyAnOfferUntilIncluded() async throws {
-        let root = try stagingRoot()
-        var requests: [FeedbackRequest] = []
-        let model = await attachmentComposer(root: root, submit: { request in
-            requests.append(request)
-            return FeedbackResult(status: "sent", reportId: "synthetic-report")
-        })
-        model.offerCurrentScreen(try XCTUnwrap(TestImages.pngData(width: 30, height: 60)))
-        XCTAssertNotNil(model.currentScreenOffer)
-        XCTAssertTrue(model.attachments.isEmpty, "The screen capture is never attached by default")
-        fill(model)
-        try await XCTUnwrap(model.send()).value
-        XCTAssertNil(requests.first?.attachmentIds)
     }
 
     func testPhotosAreReencodedWithoutLocationAndCapped() async throws {
@@ -316,8 +295,7 @@ final class FeedbackComposerTests: XCTestCase {
             return .init(attachmentId: UUID(), contentType: type, bytes: data.count)
         })
         await model.addImage(try XCTUnwrap(TestImages.jpegDataWithLocation(width: 4_000, height: 3_000)))?.value
-        model.offerCurrentScreen(try XCTUnwrap(TestImages.pngData(width: 3_000, height: 6_000)))
-        await model.includeCurrentScreen()?.value
+        await model.addImage(try XCTUnwrap(TestImages.pngData(width: 3_000, height: 6_000)), isScreenCapture: true)?.value
         XCTAssertEqual(uploads.map(\.type), ["image/jpeg", "image/png"])
         for upload in uploads {
             let source = try XCTUnwrap(CGImageSourceCreateWithData(upload.data as CFData, nil))
@@ -436,7 +414,6 @@ final class FeedbackComposerTests: XCTestCase {
         let storage = defaults()
         let model = await attachmentComposer(storage: storage, root: root)
         await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
-        model.offerCurrentScreen(try XCTUnwrap(TestImages.pngData(width: 30, height: 60)))
         XCTAssertFalse(stagedFiles(in: root).isEmpty)
         let cacheRoot = root.appendingPathComponent("cache")
         let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
@@ -446,7 +423,6 @@ final class FeedbackComposerTests: XCTestCase {
             defaults: storage, responseCacheRoot: cacheRoot)
         try await reset(server)
         XCTAssertTrue(model.attachments.isEmpty)
-        XCTAssertNil(model.currentScreenOffer)
         XCTAssertEqual(stagedFiles(in: root).filter { !$0.hasPrefix("cache") }, [], "The previous identity's files must be removed")
         let current = await attachmentComposer(storage: storage, root: root)
         XCTAssertTrue(current.attachments.isEmpty)

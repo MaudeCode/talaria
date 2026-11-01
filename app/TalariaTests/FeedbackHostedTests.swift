@@ -37,23 +37,17 @@ final class FeedbackHostedTests: XCTestCase {
         }
     }
 
-    func testCurrentScreenIsOfferedButAttachedOnlyWhenTapped() async throws {
+    func testOpeningTheSheetOffersNoScreenCapture() async throws {
         let model = model(attachments: true)
-        model.edit { $0.title = "Synthetic report"; $0.body = "Synthetic details" }
         let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
         HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
-        let add = try await requireElement(in: window, label: "Add Current screen")
-        XCTAssertNotNil(model.currentScreenOffer, "Opening the sheet captures the screen behind it")
-        XCTAssertTrue(model.attachments.isEmpty, "The capture can show chat content, so it is never attached by default")
         _ = try await requireElement(in: window, label: "Add Photo or Video")
-        attachHostedScreenshot(window, name: "feedback-current-screen-offer")
-        HostedAccessibility.activate(add)
-        let attached = await awaitCondition { model.attachments.first?.attachmentId != nil }
-        XCTAssertTrue(attached)
-        XCTAssertEqual(model.attachments.map(\.contentType), ["image/png"])
-        XCTAssertNil(model.currentScreenOffer)
-        _ = try await requireElement(in: window, label: "Remove attachment Current screen")
-        attachHostedScreenshot(window, name: "feedback-current-screen-attached")
+        attachHostedScreenshot(window, name: "feedback-no-screen-offer")
+        let offer = await awaitElement(in: window, timeout: 1) {
+            $0.accessibilityLabel == "Add Current screen" || HostedAccessibility.identifier(of: $0) == "composer-attachment-strip"
+        }
+        XCTAssertNil(offer, "The sheet must not offer the screen behind it, nor show an empty attachment strip")
+        XCTAssertTrue(model.attachments.isEmpty)
     }
 
     func testAttachingIsHiddenWhenTheServerDisablesIt() async throws {
@@ -64,7 +58,7 @@ final class FeedbackHostedTests: XCTestCase {
         let loaded = await awaitCondition { model.attachmentOptions != nil }
         XCTAssertTrue(loaded)
         let attachControl = await awaitElement(in: window, timeout: 1) {
-            ($0.accessibilityLabel ?? "").hasPrefix("Add Photo") || $0.accessibilityLabel == "Add Current screen"
+            ($0.accessibilityLabel ?? "").hasPrefix("Add Photo")
         }
         XCTAssertNil(attachControl)
     }

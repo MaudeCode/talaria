@@ -4,13 +4,11 @@ import TalariaKit
 
 /// A pending photo in the composer's attachment strip (TAL-634): just its thumbnail, which opens the
 /// preview, with a small remove badge on the corner. No name and no background of its own.
-/// An offer (feedback's Current screen, TAL-1597) is not attached yet: its badge is a plus and tapping adds it.
 struct ComposerAttachmentThumbnailView: View {
     let attachment: PendingAttachment
     let onRemove: () -> Void
     /// Nil when there is no preview to open.
     let onOpen: (() -> Void)?
-    var isOffer = false
 
     @Environment(\.retryPendingAttachment) private var retry
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -18,7 +16,7 @@ struct ComposerAttachmentThumbnailView: View {
 
     var body: some View {
         Button {
-            if !isOffer, case .failed = attachment.uploadPhase { retry(attachment.id) } else { onOpen?() }
+            if case .failed = attachment.uploadPhase { retry(attachment.id) } else { onOpen?() }
         } label: {
             thumbnail
         }
@@ -27,8 +25,8 @@ struct ComposerAttachmentThumbnailView: View {
         .overlay(alignment: .bottom) { ComposerAttachmentUploadStatus(attachment: attachment).allowsHitTesting(false).accessibilityHidden(true) }
         .accessibilityLabel(photoActionLabel)
         .overlay(alignment: .topTrailing) {
-            Button(action: isOffer ? { onOpen?() } : onRemove) {
-                Image(systemName: isOffer ? "plus" : "xmark")
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(Color(.label))
                     .frame(width: 16, height: 16)
@@ -39,8 +37,6 @@ struct ComposerAttachmentThumbnailView: View {
             .buttonStyle(.plain)
             .offset(x: RTLLayout.horizontalOffset(5, isRightToLeft: layoutDirection == .rightToLeft), y: -5)
             .accessibilityLabel("Remove attachment \(attachment.name)")
-            // An offer's badge repeats the thumbnail's own Add action.
-            .accessibilityHidden(isOffer)
         }
         // The badge pokes past the corner; the padding keeps it inside the strip.
         .padding(.top, 5)
@@ -48,7 +44,6 @@ struct ComposerAttachmentThumbnailView: View {
     }
 
     private var photoActionLabel: String {
-        if isOffer { return String(localized: "Add \(attachment.name)") }
         switch attachment.uploadPhase {
         case .failed(let error): return String(localized: "Retry upload \(attachment.name). \(error)")
         case .staged, .uploading: return String(localized: "Uploading \(attachment.name)")

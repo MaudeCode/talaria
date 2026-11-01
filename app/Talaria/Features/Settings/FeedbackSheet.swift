@@ -87,11 +87,9 @@ struct FeedbackSheet: View {
 
     private var attachmentSection: some View {
         Section {
-            if !model.pendingAttachments.isEmpty || model.currentScreenOffer != nil {
+            if !model.pendingAttachments.isEmpty {
                 ComposerAttachmentStripView(
                     photos: model.pendingAttachments,
-                    offer: model.currentScreenOffer,
-                    onAcceptOffer: { model.includeCurrentScreen() },
                     hangsFromCard: false,
                     onRemove: { model.removeAttachment($0) },
                     onPreview: { attachment in
@@ -152,10 +150,6 @@ extension View {
             if isEnabled { model?.isPresented = value }
         }), onDismiss: onDismiss) {
             if let model { FeedbackSheet(model: model) }
-        }
-        // Captured before the sheet draws over it; offered to the user, never attached by default.
-        .onChange(of: isEnabled && model?.isPresented == true) { _, presented in
-            if presented { model?.offerCurrentScreen(UIApplication.shared.keyWindowPNG()) }
         }
         .overlay(alignment: .top) {
             if isEnabled, let model { GitActionToastOverlay(state: model.confirmation) }

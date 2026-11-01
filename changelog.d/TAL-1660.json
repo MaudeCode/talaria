@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Send Feedback no longer suggests attaching the current screen; add photos or videos yourself when you want them.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
