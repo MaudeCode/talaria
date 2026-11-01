@@ -14,7 +14,7 @@ import { PasskeyStore } from './auth/passkeys.js'
 import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { ActivityStates } from './sessions/notify/activity.js'
 import { NotificationHub } from './sessions/notify/channel.js'
-import { loginHash, WebPushChannel } from './sessions/notify/web-push.js'
+import { liveLoginHashes, WebPushChannel } from './sessions/notify/web-push.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
@@ -512,7 +512,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p),
   })
-  const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => new Set(auth.liveTokens().map(loginHash)), env, now, log })
+  const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }), profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } }, env, now, log })
   const notifications = new NotificationHub(activity, [relay, webPush], events)
   const turns = new TurnRunner({
     notifications: updateNotifications,

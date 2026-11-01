@@ -459,10 +459,10 @@ export class AuthStore {
     if (changed) this.persistSessions()
   }
 
-  /** Tokens of the unexpired login sessions; state a login created ends with it. */
-  liveTokens(): string[] {
+  /** The unexpired login sessions; state a login created ends with it. */
+  liveSessions(): SessionInfo[] {
     this.pruneExpiredSessions()
-    return Object.keys(this.sessions)
+    return Object.keys(this.sessions).flatMap((token) => this.infoFor(token) ?? [])
   }
 
   verifySession(cookieValue: string | null | undefined): boolean {
@@ -492,7 +492,10 @@ export class AuthStore {
   getSessionInfo(cookieValue: string | null | undefined): SessionInfo | null {
     if (!this.verifySession(cookieValue)) return null
     const token = AuthStore.tokenFromCookieValue(cookieValue)
-    if (!token) return null
+    return token ? this.infoFor(token) : null
+  }
+
+  private infoFor(token: string): SessionInfo | null {
     const record = this.sessions[token]
     const expiry = sessionExpiry(record)
     if (expiry === null) return null

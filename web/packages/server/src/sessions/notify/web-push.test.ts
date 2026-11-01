@@ -2,6 +2,7 @@ import { createDecipheriv, createECDH, createPublicKey, hkdfSync, randomBytes, v
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { PinnedInit } from '../../http/pinned.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../../test/harness.js'
+import { liveLoginHashes, loginHash } from './web-push.js'
 
 type Json = Record<string, unknown>
 const ENDPOINT = 'https://push.example/send/subscription-1'
@@ -164,6 +165,18 @@ describe('Web Push channel', () => {
     s.deps.registry.activeRuns.delete('stream-gone')
   })
 
+  it('deletes a subscription whose profile no longer exists', async () => {
+    expect((await send(s, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys: { p256dh: keys.p256dh, auth: keys.auth } })).status).toBe(200)
+    const documents = s.deps.sessionStore.deps.storage.documents
+    const stored = (await documents.get('web-push-subscriptions', 'subscriptions'))!
+    const value = stored.value as { subscriptions: { endpoint: string; profile: string }[] }
+    for (const sub of value.subscriptions) if (sub.endpoint === ENDPOINT) sub.profile = 'deleted-profile'
+    await documents.put('web-push-subscriptions', 'subscriptions', value, stored.revision)
+    await settle()
+    const after = (await documents.get('web-push-subscriptions', 'subscriptions'))!.value as { subscriptions: { endpoint: string }[] }
+    expect(after.subscriptions.map((sub) => sub.endpoint)).not.toContain(ENDPOINT)
+  })
+
   it('unsubscribes this browser', async () => {
     expect((await send(s, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys: { p256dh: keys.p256dh, auth: keys.auth } })).status).toBe(200)
     expect(await json(await send(s, 'DELETE', PUSH_PATH, { endpoint: ENDPOINT }))).toEqual({ ok: true })
@@ -213,5 +226,17 @@ describe('Web Push and login sessions', () => {
     expect((await send(s, 'POST', '/api/auth/logout', undefined, { cookie })).status).toBe(200)
     await s.deps.webPush.idle()
     expect(push.pushes.filter((p) => p.url === endpoint)).toHaveLength(1)
+  })
+})
+
+describe('live logins', () => {
+  it('counts a login only while its OIDC mapping and profile binding are current', async () => {
+    const sessions = [
+      { token: 'password-token', auth_type: 'password' },
+      { token: 'oidc-current', auth_type: 'oidc', oidc_mapping_fingerprint: 'current' },
+      { token: 'oidc-revoked', auth_type: 'oidc', oidc_mapping_fingerprint: 'revoked' },
+    ]
+    const live = await liveLoginHashes({ liveSessions: () => sessions }, { sessionBindingIsCurrent: (info) => Promise.resolve(info.oidc_mapping_fingerprint === 'current') })
+    expect([...live].sort()).toEqual([loginHash('password-token'), loginHash('oidc-current')].sort())
   })
 })

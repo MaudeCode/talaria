@@ -39,8 +39,10 @@ export interface WebPushDeps {
   activity: ActivityStates
   lookup: () => DnsLookup
   fetch: () => PinnedFetch
-  /** Hashes of the live login sessions; a subscription created by a login that is gone is deleted. */
-  liveLogins: () => Set<string>
+  /** Hashes of the live login sessions (`liveLoginHashes`); a subscription created by a login that is gone is deleted. */
+  liveLogins: () => Promise<Set<string>>
+  /** A deleted profile's subscriptions are deleted with it. */
+  profileExists: (profile: string) => boolean
   env: Record<string, string | undefined>
   now: () => number
   log: (line: string) => void
@@ -51,6 +53,19 @@ export interface WebPushRequester { profile: string; login: string | null; origi
 
 /** Hash of a login token, so the subscription file never holds a credential. */
 export const loginHash = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex')
+
+/**
+ * Hashes of the logins a request would still accept: unexpired, and for OIDC with the identity mapping and
+ * profile binding `ensureTrustedAuthSession` checks, so a revoked user stops receiving alerts without a request.
+ */
+export async function liveLoginHashes<T extends { token: string; auth_type?: unknown }>(auth: { liveSessions: () => readonly T[] }, oidc: { sessionBindingIsCurrent: (info: T) => Promise<boolean> }): Promise<Set<string>> {
+  const live = new Set<string>()
+  for (const info of auth.liveSessions()) {
+    if (info.auth_type === 'oidc' && !(await oidc.sessionBindingIsCurrent(info).catch(() => false))) continue
+    live.add(loginHash(info.token))
+  }
+  return live
+}
 
 const parse = (raw: unknown): Subscription[] => raw === undefined || raw === null ? [] : SubscriptionsSchema.parse(raw).subscriptions
 
@@ -164,10 +179,11 @@ export class WebPushChannel implements NotificationChannel {
   private async pass(): Promise<void> {
     let subs = await this.subscriptions()
     if (!subs.length && !this.lastPhase.size) return
-    const live = this.deps.liveLogins()
-    if (subs.some((s) => s.login !== null && !live.has(s.login))) {
-      await this.mutate((all) => { for (let i = all.length - 1; i >= 0; i--) if (all[i]!.login !== null && !live.has(all[i]!.login!)) all.splice(i, 1) })
-      subs = subs.filter((s) => s.login === null || live.has(s.login))
+    const live = await this.deps.liveLogins()
+    const valid = (s: Subscription): boolean => (s.login === null || live.has(s.login)) && this.deps.profileExists(s.profile)
+    if (subs.some((s) => !valid(s))) {
+      await this.mutate((all) => { for (let i = all.length - 1; i >= 0; i--) if (!valid(all[i]!)) all.splice(i, 1) })
+      subs = subs.filter(valid)
     }
     const profiles = new Set(subs.map((s) => s.profile))
     for (const profile of this.lastPhase.keys()) if (!profiles.has(profile)) this.lastPhase.delete(profile)
@@ -202,7 +218,7 @@ export class WebPushChannel implements NotificationChannel {
   }
 
   private async stillSubscribed(sub: Subscription): Promise<boolean> {
-    if (sub.login !== null && !this.deps.liveLogins().has(sub.login)) return false
+    if ((sub.login !== null && !(await this.deps.liveLogins()).has(sub.login)) || !this.deps.profileExists(sub.profile)) return false
     return (await this.subscriptions()).some((s) => s.endpoint === sub.endpoint && s.profile === sub.profile && s.login === sub.login)
   }
 
