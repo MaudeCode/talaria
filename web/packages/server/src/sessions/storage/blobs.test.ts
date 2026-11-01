@@ -45,10 +45,10 @@ it('refuses malformed copy-blobs arguments before touching any store', async () 
 })
 
 // ── S3, against MinIO or any S3-compatible endpoint ──
-const endpoint = (process.env.TALARIA_TEST_S3_ENDPOINT ?? '').trim()
+const endpoint = (process.env.TALARIA_TEST_BLOB_ENDPOINT ?? '').trim()
 // CI never passes without the S3 suite: a missing endpoint there is a configuration error, not a skip.
-if (!endpoint && process.env.CI === 'true') throw new Error('TALARIA_TEST_S3_ENDPOINT must be set in CI; the S3 blob suite refuses to skip')
-if (!endpoint) console.warn('[blobs.test] Skipping the S3 blob suite: set TALARIA_TEST_S3_ENDPOINT (and AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) to run it against MinIO.')
+if (!endpoint && process.env.CI === 'true') throw new Error('TALARIA_TEST_BLOB_ENDPOINT must be set in CI; the S3 blob suite refuses to skip')
+if (!endpoint) console.warn('[blobs.test] Skipping the S3 blob suite: set TALARIA_TEST_BLOB_ENDPOINT (and AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) to run it against MinIO.')
 
 const credentials = { accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '', secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '' }
 const admin = endpoint ? new S3Client({ endpoint, forcePathStyle: true, region: 'us-east-1', credentials }) : null
@@ -73,7 +73,7 @@ async function s3Store(prefix: string, cacheDir: string, cacheMaxBytes = 64 * 10
   return new S3BlobStore({ endpoint, bucket, prefix, forcePathStyle: true, region: 'us-east-1', credentials, cacheDir, cacheMaxBytes })
 }
 
-describe.skipIf(!endpoint)(endpoint ? 'S3 blob store' : 'S3 blob store (skipped: TALARIA_TEST_S3_ENDPOINT is not set)', () => {
+describe.skipIf(!endpoint)(endpoint ? 'S3 blob store' : 'S3 blob store (skipped: TALARIA_TEST_BLOB_ENDPOINT is not set)', () => {
   runBlobStoreConformance('S3', async () => {
     const prefix = `conformance-${randomBytes(4).toString('hex')}`
     const state = temp('s3')

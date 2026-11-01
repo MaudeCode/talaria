@@ -67,7 +67,7 @@ jobs:
 
       - name: Contracts and server Vitest
         env:
-          TALARIA_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+          TALARIA_TEST_BLOB_ENDPOINT: http://127.0.0.1:9000
           AWS_ACCESS_KEY_ID: talaria-ci
           AWS_SECRET_ACCESS_KEY: talaria-ci-synthetic
           AWS_REGION: us-east-1
