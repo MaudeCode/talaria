@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Agent update errors no longer show passwords or tokens from a credentialed remote, including when Git reports a repository lock.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

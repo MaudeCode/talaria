@@ -136,24 +136,34 @@ async function runSelfCheck(candidate: string, timeoutMs: number): Promise<GitOu
 
 export const isGitLockError = (output: string): boolean => { const l = output.toLowerCase(); return GIT_LOCK_SIGNATURES.some((s) => l.includes(s)) }
 
-/** Python `_sanitize_git_diagnostic`: strip URL userinfo, GitHub token shapes, and secret query values. */
+/**
+ * Python `_sanitize_git_diagnostic`: strip URL userinfo, GitHub token shapes, and secret query values, then bound the
+ * redacted text. A quote inside a secret stays part of it (TAL-1025); only a quote that closes the text, before any trailing punctuation, ends it.
+ */
 export function sanitizeGitDiagnostic(output: string, limit = 300): string {
-  let s = output.replace(/([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/@\s'"]+)@/g, '$1<redacted>@')
+  let s = output.replace(/([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/@\s]+)@/g, '$1<redacted>@')
   s = s.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '<redacted>')
-  s = s.replace(/([?&](?:access_token|oauth_token|private_token|client_secret|app_secret|api[_-]?key|token|password|secret|auth|key)=)[^&\s'"]+/gi, '$1<redacted>').trim()
+  s = s.replace(/([?&](?:access_token|oauth_token|private_token|client_secret|app_secret|api[_-]?key|token|password|secret|auth|key)=)(?:[^&\s'"]|['"](?![:;,.)\]>]*(?:\s|$)))+/gi, '$1<redacted>').trim()
   return s.length > limit ? `${s.slice(0, limit).trimEnd()}…` : s
 }
 
 /** `runGit`'s marker when its own deadline killed git; libcurl's "Operation timed out after N milliseconds" stays a network failure. */
 const GIT_DEADLINE = /^git .+ timed out after (\d+(?:\.\d+)?)s$/
 
-function fetchFailureMessage(out: string, network: string): string {
-  const deadline = GIT_DEADLINE.exec(out.trim())
-  if (deadline) return `The update check timed out after ${deadline[1] ?? ''}s. Try again.`
+/**
+ * TAL-1025: the one exit for every failed Agent Git step. Classification reads the raw output; the payload carries only
+ * its sanitized, bounded diagnostic. `network` marks a fetch, whose deadline and connectivity failures get their own wording.
+ */
+function gitFailure(label: string, out: string, network?: string): { message: string; lock_conflict?: true } {
   const detail = sanitizeGitDiagnostic(out)
-  if (!detail) return network
-  const lower = detail.toLowerCase()
-  return NETWORK_FAILURES.some((s) => lower.includes(s)) ? network : `fetch failed: ${detail}`
+  if (isGitLockError(out)) return { message: `${label} due to a repository lock: ${detail}`, lock_conflict: true }
+  if (network !== undefined) {
+    const deadline = GIT_DEADLINE.exec(out.trim())
+    if (deadline) return { message: `The update check timed out after ${deadline[1] ?? ''}s. Try again.` }
+    const lower = detail.toLowerCase()
+    if (!detail || NETWORK_FAILURES.some((s) => lower.includes(s))) return { message: network }
+  }
+  return { message: detail ? `${label}: ${detail}` : label }
 }
 
 /** One delayed retry absorbs a transient network blip; a lock conflict is not transient. */
@@ -913,8 +923,7 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
   const fetched = await fetchWithRetry(git, ['fetch', 'origin', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
-    const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
-    return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
+    return { name: 'agent', channel, behind: null, error: gitFailure('fetch failed', fetched.out).message, stale_check: true, dirty: await isDirty(path, git) }
   }
   try {
     const pending = await pendingAutostashes(path, git)
@@ -1011,10 +1020,7 @@ async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: 
 export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
-  if (!fetched.ok) {
-    if (isGitLockError(fetched.out)) return { ok: false, message: `Fetch failed due to a repository lock: ${fetched.out.trim()}`, lock_conflict: true }
-    return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
-  }
+  if (!fetched.ok) return { ok: false, ...gitFailure('fetch failed', fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
   let info: Dict
   try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
   if (info.current_sha === info.latest_sha) {
@@ -1038,10 +1044,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
     const revision = str(info.latest_sha)
     await recoverInterruptedAutostash(path, git)
     const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
-    if (!status.ok) {
-      if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
-      return { ok: false, message: `Failed to inspect repo status: ${status.out.slice(0, 200)}` }
-    }
+    if (!status.ok) return { ok: false, ...gitFailure('Failed to inspect repo status', status.out) }
     if (status.out.split('\n').some((line) => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(line.slice(0, 2)))) {
       return { ok: false, message: `The local agent repo has unresolved merge conflicts. To reset to the latest remote version run: git -C ${path} checkout . && git -C ${path} pull --ff-only`, conflict: true }
     }
@@ -1057,8 +1060,8 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
       const restored = saved ? await restoreLocalChanges(path, git, saved) : null
       const note = restored ? ` ${restored.note}` : ''
       const conflict = restored && !restored.applied ? { stash_conflict: true } : {}
-      if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true, ...conflict }
-      return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
+      const failure = gitFailure('Pull failed', pulled.out)
+      return { ok: false, ...failure, message: `${failure.message}.${note}`, ...conflict }
     }
     const restored = saved ? await restoreLocalChanges(path, git, saved) : null
     const verified = await verifiedAgentIdentity(path, revision, git)
@@ -1149,7 +1152,7 @@ async function recoverInterruptedAutostash(path: string, git: GitRun, requireRes
 export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
-  if (!fetched.ok) return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your connection.') }
+  if (!fetched.ok) return { ok: false, ...gitFailure('fetch failed', fetched.out, 'Could not reach the remote repository. Check your connection.') }
   let info: Dict
   try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
   const ref = str(info.branch)
@@ -1160,7 +1163,7 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   return withAgentMutation(path, info, git, policy, async (git) => {
     await git(['checkout', '.'], path)
     const cleaned = await git(['clean', '-fd'], path)
-    if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${cleaned.out}`)
+    if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${sanitizeGitDiagnostic(cleaned.out)}`)
     if (!(await git(['reset', '--hard', revision], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
     const verified = await verifiedAgentIdentity(path, revision, git)
     if (!verified) return { ok: false, message: 'The Agent force update completed, but the installed revision could not be verified.', target: 'agent' }
