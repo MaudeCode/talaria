@@ -1,10 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { sessionPath } from '../test/storage.js'
 import { str } from '../util.js'
 
 type Json = Record<string, unknown>
@@ -31,7 +30,12 @@ describe('per-chat reasoning effort', () => {
   }
   const newChat = async (headers: Record<string, string> = {}): Promise<string> => String(((await json(await post(s, '/api/session/new', {}, headers))).session as Json).session_id)
   const effortOf = async (sid: string, headers: Record<string, string> = {}): Promise<Json> => json(await s.get(`/api/reasoning?session_id=${sid}`, { headers }))
-  const persisted = (sid: string): Json => JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as Json
+  /** The stored record, through whichever storage backend the run selects (TAL-1066). */
+  const persisted = async (sid: string): Promise<Json> => {
+    const stored = await s.deps.sessionStore.deps.storage.sessions.readDocument(sid)
+    if (!stored) throw new Error(`session ${sid} is not stored`)
+    return { ...stored.doc, messages: stored.messages }
+  }
   const reload = (sid: string): void => { s.deps.sessionStore.sessions.delete(sid) }
   const turnReasoning = async (sid: string, headers: Record<string, string> = {}): Promise<unknown> => {
     let seen: Json = {}
@@ -70,7 +74,7 @@ describe('per-chat reasoning effort', () => {
     expect((await effortOf(b)).reasoning_effort).toBe('high')
     expect(configs.get(s.state)?.agent).toEqual({ reasoning_effort: 'high' })
     expect((await json(await s.get('/api/reasoning'))).reasoning_effort).toBe('high')
-    expect(persisted(a).reasoning_effort).toBe('low')
+    expect((await persisted(a)).reasoning_effort).toBe('low')
     reload(a)
     expect((await effortOf(a)).reasoning_effort).toBe('low')
     expect((await json(await s.get(`/api/session?session_id=${a}`))).session).toMatchObject({ reasoning_effort: 'low' })
@@ -100,7 +104,7 @@ describe('per-chat reasoning effort', () => {
   it('recomputes supported and effective levels for the chat model on the server', async () => {
     const sid = await newChat()
     await post(s, '/api/reasoning', { session_id: sid, effort: 'xhigh' })
-    expect(persisted(sid).reasoning_effort).toBe('xhigh')
+    expect((await persisted(sid)).reasoning_effort).toBe('xhigh')
     expect(await effortOf(sid)).toMatchObject({ reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true })
     const session = await s.deps.sessionStore.get(sid)
     session.model = 'gpt-4o'
@@ -130,7 +134,7 @@ describe('per-chat reasoning effort', () => {
       // Another profile's chat is not a target from here.
       expect((await post(s, '/api/reasoning', { session_id: work, effort: 'low' })).status).toBe(404)
       expect((await s.get(`/api/reasoning?session_id=${work}`)).status).toBe(404)
-      expect(persisted(work).reasoning_effort).toBe('medium')
+      expect((await persisted(work)).reasoning_effort).toBe('medium')
       // No session_id stays the profile setting.
       expect((await post(s, '/api/reasoning', { effort: 'medium' }, { cookie })).status).toBe(200)
       expect(configs.get(profileHome())?.agent).toEqual({ reasoning_effort: 'medium' })
@@ -145,15 +149,15 @@ describe('per-chat reasoning effort', () => {
     await post(s, '/api/reasoning', { session_id: sid, effort: 'low' })
     await turnReasoning(sid)
     const dup = String(((await json(await post(s, '/api/session/duplicate', { session_id: sid }))).session as Json).session_id)
-    expect(persisted(dup).reasoning_effort).toBe('low')
+    expect((await persisted(dup)).reasoning_effort).toBe('low')
     for (const keep of [null, 1]) {
       const fork = String((await json(await post(s, '/api/session/branch', { session_id: sid, keep_count: keep }))).session_id)
-      expect(persisted(fork).reasoning_effort).toBe('low')
+      expect((await persisted(fork)).reasoning_effort).toBe('low')
     }
     const exported = await json(await s.get(`/api/session/export?session_id=${sid}`))
     expect(exported.reasoning_effort).toBe('low')
     const imported = String(((await json(await post(s, '/api/session/import', exported))).session as Json).session_id)
-    expect(persisted(imported).reasoning_effort).toBe('low')
+    expect((await persisted(imported)).reasoning_effort).toBe('low')
     const plain = String(((await json(await post(s, '/api/session/import', { messages: [] }))).session as Json).session_id)
     expect((await effortOf(plain)).reasoning_effort).toBe('high')
     const exhausted = await s.deps.sessionStore.get(sid)
@@ -163,10 +167,10 @@ describe('per-chat reasoning effort', () => {
     const recovery = await post(s, '/api/session/compression-recovery/start', { session_id: sid })
     expect(recovery.status).toBe(200)
     const child = String(((await json(recovery)).session as Json).session_id)
-    expect(persisted(child).reasoning_effort).toBe('low')
+    expect((await persisted(child)).reasoning_effort).toBe('low')
     expect((await post(s, '/api/session/clear', { session_id: sid })).status).toBe(200)
-    expect(persisted(sid).reasoning_effort).toBe('low')
-    expect((persisted(sid).messages as Json[]).filter((m) => m.role === 'user' || m.role === 'assistant')).toEqual([])
+    expect((await persisted(sid)).reasoning_effort).toBe('low')
+    expect(((await persisted(sid)).messages as Json[]).filter((m) => m.role === 'user' || m.role === 'assistant')).toEqual([])
   })
 
   it('preserves shares and drafts across concurrent reasoning writes', async () => {
@@ -179,7 +183,7 @@ describe('per-chat reasoning effort', () => {
     ])
     expect(writes.map((r) => r.status)).toEqual([200, 200, 200])
     reload(sid)
-    const doc = persisted(sid)
+    const doc = (await persisted(sid))
     expect(doc.reasoning_effort).toBe('low')
     expect(doc.share_token).toBeTruthy()
     expect((await json(await s.get(`/api/session/draft?session_id=${sid}`))).draft).toMatchObject({ text: 'draft text' })
