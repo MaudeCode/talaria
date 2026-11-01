@@ -315,7 +315,13 @@ def register(registry) -> None:
 
     @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:
-        return write_config(config_path_param(params), params.get("config"), profile_home=profile_home_param(params))
+        from .profiles import invalidate_skill_stats
+
+        home = profile_home_param(params)
+        try:
+            return write_config(config_path_param(params), params.get("config"), profile_home=home)
+        finally:
+            invalidate_skill_stats(home)  # the disabled-skill set lives in config.yaml
 
     @registry.method("config.env_write")
     def env_write_(ctx: CallContext, params: dict) -> dict:

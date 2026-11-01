@@ -287,6 +287,8 @@ export const PROFILES_METHODS = {
   'profiles.delete': { params: BaseHomeParams.extend({ name: z.string().min(1) }), result: z.object({ ok: z.literal(true) }) },
   'profiles.runtime_env': { params: ProfileHomeParams.extend({ protected_keys: z.array(z.string()).optional() }), result: z.object({ env: z.record(z.string(), z.string()) }) },
   'profiles.skills_stats': { params: ProfileHomeParams, result: z.object({ enabled: z.number().int(), total: z.number().int() }) },
+  /** TAL-1578: the server's own skill file writes end the home's cached `profiles.skills_stats` count at once. */
+  'profiles.skills_stats_invalidate': { params: ProfileHomeParams, result: z.object({ ok: z.literal(true) }) },
 } as const
 
 // ── skills ─────────────────────────────────────────────────────────────

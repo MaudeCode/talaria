@@ -1,0 +1,1 @@
+{"entries":[{"category":"Fixed","summary":"Profile lists with large skill libraries no longer reread every skill on each refresh.","highlight":false,"components":["web"]}]}

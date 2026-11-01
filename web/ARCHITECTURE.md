@@ -307,6 +307,14 @@ that snapshot for fallback routes, prefill, request options, provider routing an
 Mutable options retained by the Agent are copied so it cannot modify the shared read-only config.
 Standalone helper callers still load their own config.
 
+Profile skill counts (`profiles.list` rows and isolated-mode `profiles.skills_stats`) share one cached count per
+canonical profile home, at most 64 homes. A count stays fresh for 30 seconds on a monotonic clock, and concurrent
+misses for one home share one walk of its skill tree. Talaria's own writes end a home's count at once: `config.set`
+(skill toggles), profile create and delete, approved skill writes, profile imports, and the server's skill save and
+delete through `profiles.skills_stats_invalidate`. An invalidation fences any walk in flight, which then answers
+its caller but never publishes. Edits Talaria does not make itself (the Hermes CLI, the Agent's skill tools during
+a turn, or direct file changes) appear on the first read after the 30-second window.
+
 After automatic compression, `chat.start` returns capped model context separately from the full visible
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output
 budget is exhausted. Skill bodies still spend that budget; inline slash-skill user messages remain intact.

@@ -19,6 +19,7 @@ from pathlib import Path
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
+from .profiles import invalidate_skill_stats
 
 KINDS = ("skills", "memory")
 # The Agent names records ``uuid4().hex[:8]`` and builds their path from the id; anything else could leave the pending dir.
@@ -175,7 +176,12 @@ def register(registry) -> None:
         def handler(ctx: CallContext, params: dict, verb: str = verb) -> dict:
             kind = _kind(params)
             writes = list(params.get("writes") or [])
-            with scoped_home(profile_home_param(params)):
-                return review(kind, verb, writes)
+            home = profile_home_param(params)
+            try:
+                with scoped_home(home):
+                    return review(kind, verb, writes)
+            finally:
+                if kind == "skills" and verb == "approve":
+                    invalidate_skill_stats(home)
 
         registry.method(f"write_approval.{verb}")(handler)

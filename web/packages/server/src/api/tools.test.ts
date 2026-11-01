@@ -93,8 +93,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(usage.unique_skills_used).toBe(1)
     expect((usage.usage as Json).alpha).toMatchObject({ use_count: 2, view_count: 1, patch_count: 0, last_used: 'x' })
     expect(usage.skill_names).toEqual(['alpha', 'beta'])
+    const forgotten = () => sidecar.calls.filter((c) => c.method === 'profiles.skills_stats_invalidate').map((c) => c.params)
+    const before = forgotten().length
     res = await post(s, '/api/skills/save', { name: 'My Skill', content: '---\nname: my-skill\n---\n# hi', category: 'custom' })
     expect(res.status).toBe(200)
+    // TAL-1578: the sidecar's cached skill count for this home ends with the write.
+    expect(forgotten().slice(before)).toEqual([{ profile_home: s.state }])
     const saved = await json(res)
     expect(saved.name).toBe('my-skill')
     expect(readFileSync(String(saved.path), 'utf8')).toContain('# hi')
@@ -121,6 +125,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(400)
     res = await post(s, '/api/skills/delete', { name: 'my-skill' })
     expect(await json(res)).toEqual({ ok: true, name: 'my-skill' })
+    expect(forgotten().slice(before)).toEqual([{ profile_home: s.state }, { profile_home: s.state }])
     expect(existsSync(join(s.state, 'skills', 'custom', 'my-skill'))).toBe(false)
     res = await post(s, '/api/skills/delete', { name: 'my-skill' })
     expect(res.status).toBe(404)

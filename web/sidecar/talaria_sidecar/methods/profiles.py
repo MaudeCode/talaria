@@ -13,6 +13,9 @@ import logging
 import os
 import re
 import shutil
+import threading
+import time
+from collections import OrderedDict
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
@@ -92,6 +95,58 @@ def skills_stats(profile_dir: Path) -> tuple[int, int]:
         except Exception:  # noqa: BLE001
             continue
     return enabled, compatible
+
+
+# TAL-1578: ``skills_stats`` walks and parses the whole skill tree, and every profile row and isolated-mode inventory
+# asks for it. One count per canonical home is reused for ``_STATS_TTL`` seconds (a monotonic clock), concurrent misses
+# for one home share one walk, and Talaria's own skill/config/profile writes call ``invalidate_skill_stats``. A Hermes
+# CLI or filesystem edit shows up on the first read after the window. A walk raced by an invalidation never publishes.
+_STATS_TTL = 30.0
+_STATS_MAX = 64
+_stats_clock = time.monotonic
+_stats_lock = threading.Lock()
+_stats: OrderedDict[str, tuple[float, tuple[int, int]]] = OrderedDict()
+_stats_flights: dict[str, threading.Event] = {}
+
+
+def cached_skills_stats(profile_dir: Path) -> tuple[int, int]:
+    key = os.path.realpath(profile_dir)
+    while True:
+        with _stats_lock:
+            hit = _stats.get(key)
+            if hit is not None and _stats_clock() - hit[0] < _STATS_TTL:
+                _stats.move_to_end(key)
+                return hit[1]
+            flight = _stats_flights.get(key)
+            if flight is None:
+                flight = _stats_flights[key] = threading.Event()
+                started = _stats_clock()
+                break
+        flight.wait()
+    try:
+        value = skills_stats(profile_dir)
+        with _stats_lock:
+            if _stats_flights.get(key) is flight:
+                _stats[key] = (started, value)
+                _stats.move_to_end(key)
+                while len(_stats) > _STATS_MAX:
+                    _stats.popitem(last=False)
+        return value
+    finally:
+        with _stats_lock:
+            if _stats_flights.get(key) is flight:
+                del _stats_flights[key]
+        flight.set()
+
+
+def invalidate_skill_stats(profile_dir: Path) -> None:
+    """Forget the home's count and fence off any walk in flight; its waiters start a fresh one."""
+    key = os.path.realpath(profile_dir)
+    with _stats_lock:
+        _stats.pop(key, None)
+        flight = _stats_flights.pop(key, None)
+    if flight is not None:
+        flight.set()
 
 
 def _visible(profile_dir: Path) -> bool:
@@ -199,7 +254,7 @@ def _row(home: Path, name: str, is_default: bool) -> dict:
     except Exception:  # noqa: BLE001
         model, provider = None, None
     mode = gateway_mode(home, name, is_default)
-    enabled, total = skills_stats(home)
+    enabled, total = cached_skills_stats(home)
     return {
         "name": name, "path": str(home), "is_default": is_default, "gateway_running": mode in GATEWAY_RUNNING_MODES, "gateway_mode": mode,
         "model": model, "provider": provider,
@@ -343,6 +398,7 @@ def register(registry) -> None:
         base = profile_home_param(params, "base_home")
         name = str(params.get("name") or "").strip()
         path = create_profile(base, name, clone_from=params.get("clone_from"), clone_config=bool(params.get("clone_config", False)))
+        invalidate_skill_stats(path)
         rows = list_profiles(base)
         row = next((r for r in rows if r["name"] == name), None) or _row(path, name, False)
         return {"profile": row}
@@ -354,9 +410,13 @@ def register(registry) -> None:
         # Idle cached agents end their memory sessions while the profile's home still exists.
         from .chat import forget_profile_hooks, release_profile_agents
 
-        with release_profile_agents(base_home / "profiles" / name):
-            forget_profile_hooks(base_home / "profiles" / name)
-            delete_profile(base_home, name)
+        home = Path(os.path.realpath(base_home / "profiles" / name))
+        try:
+            with release_profile_agents(base_home / "profiles" / name):
+                forget_profile_hooks(base_home / "profiles" / name)
+                delete_profile(base_home, name)
+        finally:
+            invalidate_skill_stats(home)
         return {"ok": True}
 
     @registry.method("profiles.runtime_env")
@@ -366,5 +426,10 @@ def register(registry) -> None:
 
     @registry.method("profiles.skills_stats")
     def stats(ctx: CallContext, params: dict) -> dict:
-        enabled, total = skills_stats(profile_home_param(params))
+        enabled, total = cached_skills_stats(profile_home_param(params))
         return {"enabled": enabled, "total": total}
+
+    @registry.method("profiles.skills_stats_invalidate", requires_agent=False)
+    def stats_invalidate(ctx: CallContext, params: dict) -> dict:
+        invalidate_skill_stats(profile_home_param(params))
+        return {"ok": True}
