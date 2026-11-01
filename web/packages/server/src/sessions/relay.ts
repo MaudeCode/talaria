@@ -16,12 +16,14 @@ import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { FEEDBACK_ATTACHMENT_LIMITS, type SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import type { BackgroundActivity } from './background-tasks.js'
-import type { ActiveRun, StreamRegistry } from './streams.js'
+import type { StreamRegistry } from './streams.js'
 import type { PendingPrompts } from './pending.js'
 import type { Session } from './session.js'
 import type { SessionPrefixIndex } from './prefix-index.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
+import { ActivityStates, hasSessionData } from './notify/activity.js'
+import type { NotificationChannel } from './notify/channel.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
 export const PRESENCE_MAX_LEASES = 256
@@ -29,7 +31,6 @@ export const PRESENCE_MAX_LEASES = 256
 export const PRESENCE_FENCE_SECONDS = 15 * 60
 const PRESENCE_TAB_RE = /^[A-Za-z0-9_-]{8,64}$/
 const DEFAULT_RELAY_URL = 'https://relay.talaria.kil.dev'
-const TERMINAL_RETENTION_S = 15 * 60
 const REQUEST_TIMEOUT_MS = 10_000
 // Sessions started longer ago than this are never announced, which bounds the started ledger.
 const STARTED_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -111,12 +112,6 @@ const DeletedViewSchema = z.object({
 type DeletedView = z.infer<typeof DeletedViewSchema>
 interface QueuedView { profile: string | null; through: number; deleted?: DeletedView }
 const DeletedViewsSchema = z.object({ version: z.literal(1), views: z.array(DeletedViewSchema) })
-
-// A staged deletion cannot clear a session that survived a failed removal or a restart before removal.
-async function hasSessionData(store: SessionStore, sid: string): Promise<boolean> {
-  if (store.sessions.has(sid)) return true
-  return (await store.exists(sid))
-}
 
 function parseDeletedViews(raw: unknown): DeletedView[] { return raw === undefined ? [] : DeletedViewsSchema.parse(raw).views }
 
@@ -216,6 +211,8 @@ export interface RelayPublisherDeps {
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
   /** The profile's messageful Agent `state.db` sessions (`readImportableAgentSessionRows`). */
   agentSessions: (profile: string) => Promise<Record<string, unknown>[]>
+  /** Shared with the other notification channels; a standalone publisher tracks its own. */
+  activity?: ActivityStates
   fetch: () => typeof fetch
   now: () => number
   log: (line: string) => void
@@ -231,7 +228,7 @@ export class RelayPublisher {
   private key!: KeyObject
   private startedUnsupportedLogged = false
   private lastRevision = 0
-  private terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
+  private readonly activity: ActivityStates
   private readonly disabledProfiles = new Set<string>()
   private readonly views = new Map<string, QueuedView>()
   private viewedUnsupportedLogged = false
@@ -243,7 +240,7 @@ export class RelayPublisher {
   private timer: NodeJS.Timeout | null = null
   private failures = 0
 
-  constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) {}
+  constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) { this.activity = deps.activity ?? new ActivityStates(deps) }
 
   async initialize(): Promise<void> {
     this.key = await loadKey(this.deps.documents, this.config)
@@ -253,7 +250,7 @@ export class RelayPublisher {
 
   /** Carry unpublished terminal state, queued views, and the revision floor from the publisher being replaced. */
   inherit(previous: RelayPublisher): void {
-    for (const [sid, run] of previous.terminal) this.terminal.set(sid, run)
+    this.activity.inherit(previous.activity)
     for (const [sid, view] of previous.views) this.views.set(sid, view)
     this.lastRevision = Math.max(this.lastRevision, previous.lastRevision)
   }
@@ -276,11 +273,7 @@ export class RelayPublisher {
   }
 
   noteTerminal(streamId: string, phase: string): void {
-    const run = this.deps.registry.activeRuns.get(streamId)
-    const sid = str(run?.session_id).trim()
-    if (!run || !sid) return
-    this.terminal.set(sid, { ...run, relay_phase: phase, terminal_at: this.deps.now() })
-    this.changed()
+    if (this.activity.noteTerminal(streamId, phase)) this.changed()
   }
 
   /** Queue a viewed acknowledgement; the loop sends it after the snapshot carrying the session's terminal state. */
@@ -380,56 +373,13 @@ export class RelayPublisher {
     }
   }
 
-  /** Python `build_states`: one row per session with a live or recently terminal run in this profile. */
+  /** Python `build_states`: the shared activity rows, numbered with this relay's revisions. */
   async buildStates(profile: string): Promise<RelayState[]> {
-    const cutoff = this.deps.now() - TERMINAL_RETENTION_S
-    const backgroundIds = new Set<string>()
-    for (const sid of await this.deps.background?.sessionIds() ?? []) {
-      if ((await this.deps.background!.receipts(sid)).some((receipt) => ['running', 'attention', 'unknown'].includes(receipt.status) || (receipt.completed_at ?? 0) >= cutoff)) backgroundIds.add(sid)
-    }
-    for (const [sid, run] of this.terminal) if (run.terminal_at < cutoff && !backgroundIds.has(sid)) this.terminal.delete(sid)
-    const bySession = new Map<string, ActiveRun & { relay_phase?: string; terminal_at?: number }>()
-    for (const run of this.deps.registry.activeRuns.values()) {
-      if ((run as { health_only?: boolean }).health_only) continue
-      const sid = run.session_id.trim()
-      if (!sid) continue
-      const current = bySession.get(sid)
-      if (!current || run.started_at > current.started_at) bySession.set(sid, run)
-    }
-    for (const [sid, run] of this.terminal) if (!bySession.has(sid)) bySession.set(sid, run)
-    for (const sid of backgroundIds) {
-      if (bySession.has(sid) || !await hasSessionData(this.deps.store, sid)) continue
-      const session = await this.deps.store.get(sid)
-      const latest = this.deps.activitySummary?.(session)
-      const terminal = latest?.terminalState ?? null
-      const relay_phase = terminal === null ? undefined : terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'
-      bySession.set(sid, { session_id: sid, stream_id: latest?.turnId ?? '', started_at: latest?.timestamp ?? 0, phase: 'settled', workspace: session.workspace, model: session.model, provider: session.model_provider, ephemeral: false,
-        ...(relay_phase ? { relay_phase, terminal_at: Number(latest?.timestamp) || session.updated_at } : {}) })
-    }
-    const alertEligible = this.alertEligibilitySupported ? !this.deps.presence.has(profile) : true
-    const states: RelayState[] = []
-    for (const [sid, run] of bySession) {
-      if (run.activity_parent_session_id) continue
-      let session
-      try { session = (await this.deps.store.get(sid, { metadataOnly: true })) } catch { continue }
-      if (!this.deps.profilesMatch(session.profile, profile)) continue
-      const revision = 0
-      let phase = run.relay_phase ?? 'running'
-      if (!['completed', 'failed', 'cancelled'].includes(phase) && this.deps.pending.approvalPending(sid).pending) phase = 'waiting_for_approval'
-      if (phase === 'running' && this.deps.pending.clarifyPending(sid).pending) phase = 'waiting_for_input'
-      if (phase === 'running' && run.phase.endsWith('starting')) phase = 'starting'
-      const snapshot = await this.deps.background?.snapshot(sid, session.profile, { ...(run.relay_phase ? { excludeStreamId: run.stream_id, terminalPhase: run.relay_phase as SessionActivityPhase } : {}) })
-      if ([...this.deps.registry.activeRuns.values()].some((current) => current.session_id === sid && current.stream_id !== run.stream_id && current.started_at >= run.started_at)) { this.changed(); continue }
-      try {
-        if (!this.deps.profilesMatch((await this.deps.store.get(sid, { metadataOnly: true })).profile, profile)) continue
-      } catch { continue }
-      if (run.phase === 'settled' && !run.stream_id) phase = snapshot?.activity_phase ?? 'stale'
-      // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
-      const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
-      const state: RelayState = { sessionId: sid, streamId: run.stream_id || null, eventId: `snapshot:${String(revision)}:${sid}`, revision, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}` }
-      if (!alertEligible) state.alertEligible = false
-      states.push(state)
-    }
+    const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() })).map((row) => {
+      const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink }
+      if (this.alertEligibilitySupported && !row.alertEligible) state.alertEligible = false
+      return state
+    })
     if (states.length) {
       const revisions = await this.reserveRevisions(states.length)
       for (const [index, state] of states.entries()) {
@@ -615,15 +565,14 @@ export interface RelayServiceDeps extends RelayPublisherDeps {
   events: SessionEventBus
   env: Record<string, string | undefined>
   canonicalProfile: (profile: string) => string
-  addListener: (listener: () => void) => () => void
 }
 
 /** Owns the current publisher and the pairing state machine (Python module-level `_publisher` and friends). */
-export class RelayService {
+export class RelayService implements NotificationChannel {
+  readonly id = 'relay'
   readonly presence: PresenceLeases
   private publisher: RelayPublisher | null = null
   private candidate: RelayPublisher | null = null
-  private unsubscribe: (() => void) | null = null
   private pairing: Promise<unknown> = Promise.resolve()
   private readonly clearedDeleted = new Set<string>()
 
@@ -657,14 +606,13 @@ export class RelayService {
     const previous = this.publisher
     this.publisher = null
     this.candidate = null
-    this.unsubscribe?.()
-    this.unsubscribe = null
     previous?.stop()
   }
 
+  /** The notification hub forwards every session event; only the adopted publisher republishes. */
+  changed(): void { this.publisher?.changed() }
+
   private adopt(candidate: RelayPublisher, previous: RelayPublisher | null): void {
-    this.unsubscribe?.()
-    this.unsubscribe = this.deps.addListener(() => { candidate.changed() })
     this.publisher = candidate
     this.candidate = null
     if (previous) { candidate.inherit(previous); previous.stop() }
@@ -708,13 +656,8 @@ export class RelayService {
     publisher?.changed()
   }
 
-  /** Terminal turn events reach the relay even mid-swap (Python `note_talaria_terminal`). */
+  /** The hub records the finished run in the shared activity and republishes; this adds the Web completion projection. */
   noteTerminal(streamId: string, phase: string): void {
-    if (!['completed', 'failed', 'cancelled'].includes(phase)) return
-    const publisher = this.publisher ?? this.candidate
-    publisher?.noteTerminal(streamId, phase)
-    const current = this.publisher ?? this.candidate
-    if (current && current !== publisher) current.noteTerminal(streamId, phase)
     const run = this.deps.registry.activeRuns.get(streamId)
     if (phase !== 'completed' || !run || run.ephemeral || (run as { health_only?: boolean }).health_only) return
     // Capture the run before teardown; this never materializes an owner-managed session.

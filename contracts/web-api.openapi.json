@@ -45574,6 +45574,339 @@
         }
       }
     },
+    "/api/notifications/web-push": {
+      "get": {
+        "operationId": "webPush.status",
+        "summary": "The VAPID public key and, for this browser's endpoint in the active profile, its alert preferences.",
+        "tags": [
+          "notifications"
+        ],
+        "parameters": [
+          {
+            "name": "endpoint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "public_key": {
+                      "type": "string"
+                    },
+                    "subscription": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "preferences": {
+                              "type": "object",
+                              "properties": {
+                                "notify_on_approval": {
+                                  "type": "boolean"
+                                },
+                                "notify_on_input": {
+                                  "type": "boolean"
+                                },
+                                "notify_on_completion": {
+                                  "type": "boolean"
+                                },
+                                "notify_on_failure": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "notify_on_approval",
+                                "notify_on_input",
+                                "notify_on_completion",
+                                "notify_on_failure"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "preferences"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "public_key",
+                    "subscription"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/web-push/subscriptions": {
+      "post": {
+        "operationId": "webPush.subscribe",
+        "summary": "Save or update this browser's push subscription; a non-HTTPS endpoint or one on a private address is refused with 400.",
+        "tags": [
+          "notifications"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "keys": {
+                    "type": "object",
+                    "properties": {
+                      "p256dh": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "auth": {
+                        "type": "string",
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "p256dh",
+                      "auth"
+                    ]
+                  },
+                  "preferences": {
+                    "type": "object",
+                    "properties": {
+                      "notify_on_approval": {
+                        "type": "boolean"
+                      },
+                      "notify_on_input": {
+                        "type": "boolean"
+                      },
+                      "notify_on_completion": {
+                        "type": "boolean"
+                      },
+                      "notify_on_failure": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "notify_on_approval",
+                      "notify_on_input",
+                      "notify_on_completion",
+                      "notify_on_failure"
+                    ]
+                  }
+                },
+                "required": [
+                  "endpoint",
+                  "keys"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "preferences": {
+                      "type": "object",
+                      "properties": {
+                        "notify_on_approval": {
+                          "type": "boolean"
+                        },
+                        "notify_on_input": {
+                          "type": "boolean"
+                        },
+                        "notify_on_completion": {
+                          "type": "boolean"
+                        },
+                        "notify_on_failure": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "notify_on_approval",
+                        "notify_on_input",
+                        "notify_on_completion",
+                        "notify_on_failure"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "preferences"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "webPush.update",
+        "summary": "Update the alert preferences of this browser's push subscription.",
+        "tags": [
+          "notifications"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "preferences": {
+                    "type": "object",
+                    "properties": {
+                      "notify_on_approval": {
+                        "type": "boolean"
+                      },
+                      "notify_on_input": {
+                        "type": "boolean"
+                      },
+                      "notify_on_completion": {
+                        "type": "boolean"
+                      },
+                      "notify_on_failure": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "notify_on_approval",
+                      "notify_on_input",
+                      "notify_on_completion",
+                      "notify_on_failure"
+                    ]
+                  }
+                },
+                "required": [
+                  "endpoint",
+                  "preferences"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "preferences": {
+                      "type": "object",
+                      "properties": {
+                        "notify_on_approval": {
+                          "type": "boolean"
+                        },
+                        "notify_on_input": {
+                          "type": "boolean"
+                        },
+                        "notify_on_completion": {
+                          "type": "boolean"
+                        },
+                        "notify_on_failure": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "notify_on_approval",
+                        "notify_on_input",
+                        "notify_on_completion",
+                        "notify_on_failure"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "preferences"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webPush.unsubscribe",
+        "summary": "Remove this browser's push subscription.",
+        "tags": [
+          "notifications"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "endpoint"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces": {
       "get": {
         "operationId": "workspaces.list",

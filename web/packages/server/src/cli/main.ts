@@ -63,7 +63,7 @@ async function serve(args: string[]): Promise<number> {
   retirement.attach(running.close)
   if (process.connected) process.send?.('ready')
   await starting
-  await deps.relay.start()
+  await deps.notifications.start()
   // A shutdown already stopped the background work; never restart it behind the close.
   if (!retirement.retiring) {
     deps.completions.start()

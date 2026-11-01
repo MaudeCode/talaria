@@ -12,6 +12,9 @@ import { AuthStore } from './auth/store.js'
 import { OidcService } from './auth/oidc.js'
 import { PasskeyStore } from './auth/passkeys.js'
 import { PresenceLeases, RelayService } from './sessions/relay.js'
+import { ActivityStates } from './sessions/notify/activity.js'
+import { NotificationHub } from './sessions/notify/channel.js'
+import { loginHash, WebPushChannel } from './sessions/notify/web-push.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
@@ -332,7 +335,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     backgroundReceipts: async (sid) => (await background.receipts(sid)),
     backgroundPending: async (sid) => (await completions.pendingDelegations(sid)),
     journal,
-    clearRelayCompletions: async (sid, profile) => { (await relay.clearDeleted(sid, profile)) },
+    clearRelayCompletions: async (sid, profile) => { (await notifications.clearDeleted(sid, profile)) },
     store,
     cliSessions: async (profile, o) => (await cliSessions.read(profile, o)),
     claudeCode: new ClaudeCodeSessionSource(() => claudeCodeProjectsDir(env, home)),
@@ -501,12 +504,16 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
+  const presence = new PresenceLeases(now)
+  const activity = new ActivityStates({ registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, profilesMatch, now })
   const relay = new RelayService({
     events,
-    registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
+    registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, activity, profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
-    documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
+    documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p),
   })
+  const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => new Set(auth.liveTokens().map(loginHash)), env, now, log })
+  const notifications = new NotificationHub(activity, [relay, webPush], events)
   const turns = new TurnRunner({
     notifications: updateNotifications,
     notificationOwner: () => {
@@ -516,7 +523,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     store,
     service: () => sessions,
     events,
-    onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
+    onTerminal: (streamId, phase) => { notifications.noteTerminal(streamId, phase) },
     onTurnStart: () => { completions.wake() },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     onBackgroundWork: (sessionId, profile) => { background.refresh(sessionId, profile); completions.wake() },
@@ -775,6 +782,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     cliSessions,
     gatewayWatchers,
     relay,
+    webPush,
+    notifications,
     oidc,
     passkeys,
     nativeOidcLimiter: new WindowLimiter(60, 10, now),

@@ -1,0 +1,304 @@
+{
+  "version": 1,
+  "vectors": [
+    {
+      "name": "first publication never alerts",
+      "previous": null,
+      "next": "waiting_for_approval",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "first terminal publication never alerts",
+      "previous": null,
+      "next": "completed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "running to approval",
+      "previous": "running",
+      "next": "waiting_for_approval",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "approval"
+    },
+    {
+      "name": "starting to approval",
+      "previous": "starting",
+      "next": "waiting_for_approval",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "approval"
+    },
+    {
+      "name": "running to input",
+      "previous": "running",
+      "next": "waiting_for_input",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "input"
+    },
+    {
+      "name": "approval to input",
+      "previous": "waiting_for_approval",
+      "next": "waiting_for_input",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "input"
+    },
+    {
+      "name": "running to completed",
+      "previous": "running",
+      "next": "completed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "completion"
+    },
+    {
+      "name": "approval to completed",
+      "previous": "waiting_for_approval",
+      "next": "completed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "completion"
+    },
+    {
+      "name": "running to failed",
+      "previous": "running",
+      "next": "failed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "failure"
+    },
+    {
+      "name": "input to failed",
+      "previous": "waiting_for_input",
+      "next": "failed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "failure"
+    },
+    {
+      "name": "unchanged approval",
+      "previous": "waiting_for_approval",
+      "next": "waiting_for_approval",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "unchanged completed",
+      "previous": "completed",
+      "next": "completed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "running to cancelled",
+      "previous": "running",
+      "next": "cancelled",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "starting to running",
+      "previous": "starting",
+      "next": "running",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "approval back to running",
+      "previous": "waiting_for_approval",
+      "next": "running",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "running to stale",
+      "previous": "running",
+      "next": "stale",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "ineligible approval",
+      "previous": "running",
+      "next": "waiting_for_approval",
+      "alertEligible": false,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "ineligible completion",
+      "previous": "running",
+      "next": "completed",
+      "alertEligible": false,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "approval disabled",
+      "previous": "running",
+      "next": "waiting_for_approval",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": false,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "input disabled",
+      "previous": "running",
+      "next": "waiting_for_input",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": false,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "completion disabled",
+      "previous": "running",
+      "next": "completed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": false,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "failure disabled",
+      "previous": "running",
+      "next": "failed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": false
+      },
+      "expected": null
+    },
+    {
+      "name": "another kind disabled still alerts",
+      "previous": "running",
+      "next": "failed",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": false,
+        "notify_on_failure": true
+      },
+      "expected": "failure"
+    }
+  ]
+}

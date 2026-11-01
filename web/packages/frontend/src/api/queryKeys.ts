@@ -21,6 +21,7 @@ export const keys = {
   transcribeCapability: ['transcribe', 'capability'] as const,
   feedbackDiagnostics: ['feedback', 'diagnostics'] as const,
   feedbackOptions: ['feedback', 'options'] as const,
+  webPush: ['notifications', 'web-push'] as const,
   sessions: {
     all: ['sessions'] as const,
     list: (params: Record<string, string | boolean | number | undefined>) => ['sessions', 'list', params] as const,

@@ -459,6 +459,12 @@ export class AuthStore {
     if (changed) this.persistSessions()
   }
 
+  /** Tokens of the unexpired login sessions; state a login created ends with it. */
+  liveTokens(): string[] {
+    this.pruneExpiredSessions()
+    return Object.keys(this.sessions)
+  }
+
   verifySession(cookieValue: string | null | undefined): boolean {
     if (!cookieValue) return false
     const parts = splitSigned(cookieValue)

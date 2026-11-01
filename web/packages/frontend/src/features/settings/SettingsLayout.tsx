@@ -10,14 +10,16 @@ import { cn } from '../../ui/cn'
 import { SettingsSectionSchema, type SettingsSection as Section } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import { MessageSquare, AudioLines, SunMedium, SlidersHorizontal, Key, Cpu, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
+import { webPushSupported } from './NotificationsSection'
+import { MessageSquare, AudioLines, Bell, SunMedium, SlidersHorizontal, Key, Cpu, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
 
-const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, auxiliary: Cpu, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
+const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, notifications: Bell, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, auxiliary: Cpu, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
 
 export const SECTION_LABEL: Record<Section, () => string> = {
   appearance: () => m.settings_section_appearance_title(),
   conversation: () => m.settings_section_conversation_title(),
   speech: () => m.settings_section_speech_title(),
+  notifications: () => m.settings_section_notifications_title(),
   preferences: () => m.settings_section_preferences_title(),
   providers: () => m.settings_section_providers_title(),
   auxiliary: () => m.settings_label_auxiliary_models(),
@@ -38,7 +40,7 @@ function SectionMenu() {
       <PanelHead title={m.tab_settings()} />
       <nav className="side-menu flex flex-col gap-px p-2 overflow-visible min-h-0" id="settingsMenu" aria-label={m.tab_settings()}>
         <div className="settings-menu-items flex flex-col gap-0.5 min-h-0 flex-1 overflow-y-auto">
-          {SettingsSectionSchema.options.filter((section) => section !== 'connectors' || connectors).map((section) => {
+          {SettingsSectionSchema.options.filter((section) => (section !== 'connectors' || connectors) && (section !== 'notifications' || webPushSupported())).map((section) => {
             const active = params.section === section
             const Icon = SECTION_ICON[section]
             return (

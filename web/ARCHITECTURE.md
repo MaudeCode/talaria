@@ -61,6 +61,7 @@ hand-written endpoint schemas.
 | Providers | `providers/*` | model catalogs, quotas, OAuth device flows, TTS |
 | Profiles | `profiles/*`, `settings.ts`, `onboarding.ts` | profile homes, `config.yaml` and `.env` writes, settings defaults and migrations |
 | Relay | `sessions/relay.ts` | Talaria Relay pairing, presence leases, Ed25519-signed publisher |
+| Notifications | `sessions/notify/` | Shared activity rows (`activity.ts`), the channel port and hub (`channel.ts`), the alert rule shared with the relay (`alerts.ts`, pinned by `contracts/fixtures/notification-alerts.json`), and browser Web Push (`web-push.ts`; `TALARIA_WEB_PUSH_SUBJECT` overrides the VAPID subject) |
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 

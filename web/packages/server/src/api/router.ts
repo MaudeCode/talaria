@@ -10,6 +10,8 @@ import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfi
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
 import { PasskeyError, PasskeyRateLimitError, rpContext } from '../auth/passkeys.js'
 import { requestBaseUrl } from './auth-raw.js'
+import { AuthStore } from '../auth/store.js'
+import { loginHash } from '../sessions/notify/web-push.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { throttleClientIp } from '../http/origin.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
@@ -178,6 +180,8 @@ export const coreRouter = os.router({
       const auth = ctx.deps.auth
       const sessionInfo = await ensureTrustedAuthSession(ctx)
       const cookieVal = ctx.trusted.cookieValue ?? ctx.authCookie()
+      const token = AuthStore.tokenFromCookieValue(cookieVal)
+      if (token) await ctx.deps.webPush.forgetLogin(loginHash(token))
       if (cookieVal) await auth.revokeSession(cookieVal)
       const payload: { ok: true; trusted_logout_url?: string } = { ok: true }
       if (sessionInfo?.auth_type === 'trusted') {

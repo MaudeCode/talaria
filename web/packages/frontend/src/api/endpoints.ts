@@ -10,7 +10,7 @@ import { orpc, timeout } from './orpc'
 import type { GroupOperation } from '@maudecode/talaria-web-contracts'
 
 import type { OwnerActionRequest, AgentImportSource } from '@maudecode/talaria-web-contracts'
-import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
+import type { OutboundDraftAction, OutboundDraftRef, WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
@@ -105,6 +105,10 @@ export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
+export const fetchWebPushStatus = (endpoint?: string) => orpc().webPush.status(endpoint ? { endpoint } : {})
+export const subscribeWebPush = (endpoint: string, keys: { p256dh: string; auth: string }) => orpc().webPush.subscribe({ endpoint, keys })
+export const updateWebPush = (endpoint: string, preferences: WebPushPreferences) => orpc().webPush.update({ endpoint, preferences })
+export const unsubscribeWebPush = (endpoint: string) => orpc().webPush.unsubscribe({ endpoint })
 export const fetchSourceReferences = (q: string, signal?: AbortSignal) => orpc().sessions.references({ q }, { signal: timeout(30_000, signal) })
 export const newSession = (body: z.infer<typeof SessionNewRequestSchema>) => orpc().session.new(body)
 export const fetchExecutionModes = () => orpc().session.executionModes({})

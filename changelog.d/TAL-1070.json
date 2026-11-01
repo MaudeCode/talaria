@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Turn on browser notifications in Settings to hear when a chat needs approval or input, completes, or fails while no Talaria tab is open; selecting one opens the chat.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "Browser notifications",
+        "description": "Get an alert in this browser when a chat needs you or finishes, even with Talaria closed.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}
