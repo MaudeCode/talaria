@@ -560,6 +560,26 @@ export class TurnRunner {
     return this.workers.get(streamId) ?? Promise.resolve()
   }
 
+  /**
+   * TAL-1165: how a wait on `streamId`'s run ended: the run's worker finished (`ended`), `timeoutMs` passed, or the
+   * waiting turn `callerStreamId` was stopped or ended first (`cancelled`). It listens to the workers and the Stop
+   * signal; nothing polls.
+   */
+  async waitForRun(streamId: string, timeoutMs: number, callerStreamId: string | null): Promise<'ended' | 'timeout' | 'cancelled'> {
+    const done = new AbortController()
+    const stop = callerStreamId ? this.abortControllers.get(callerStreamId)?.signal : undefined
+    try {
+      return await Promise.race([
+        this.finished(streamId).then((): 'ended' => 'ended'),
+        new Promise<'timeout'>((resolve) => { const timer = setTimeout(() => { resolve('timeout') }, timeoutMs); done.signal.addEventListener('abort', () => { clearTimeout(timer) }, { once: true }) }),
+        ...(callerStreamId ? [this.finished(callerStreamId).then((): 'cancelled' => 'cancelled')] : []),
+        ...(stop ? [new Promise<'cancelled'>((resolve) => { if (stop.aborted) resolve('cancelled'); else stop.addEventListener('abort', () => { resolve('cancelled') }, { once: true, signal: done.signal }) })] : []),
+      ])
+    } finally {
+      done.abort()
+    }
+  }
+
   /** Python `_checkpoint_user_message_for_eager_session_save`. */
   private checkpointUserMessage(s: Session, msg: string, attachments: Record<string, unknown>[], startedAt: number | null, source: string, turnId: string): void {
     const latest = s.messages[s.messages.length - 1]

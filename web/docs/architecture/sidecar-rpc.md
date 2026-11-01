@@ -21,6 +21,29 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v71 adds the toolset's session tools (TAL-1165), each a `server.*` method
+that calls the service behind a route. `session_new` (`server.session_new`)
+creates a chat in the caller's profile as `POST /api/session/new` does with an
+empty body (the profile's default model and workspace; no worktree), applies an
+optional title, and starts its first turn as `/api/chat/start` does.
+`session_send` (`server.session_send`) gives a running target the message as a
+pending steer through `/api/chat/steer`'s path (`outcome: queued`, with its
+`steer_id`) and starts a turn on an idle one (`started`); a running turn that
+refuses the steer is an error, never a second turn. `session_wait`
+(`server.session_wait`) waits on the target's current run through the turn
+runner's worker and Stop signal, not by polling: `ended`, `not_running`,
+`timeout` (`timeout_s`, default 300, at most 600) or `cancelled` when the
+caller's own turn is stopped or ends first. It answers the target's activity
+phase and its last assistant reply, cut to 4,000 characters (`truncated`). The
+sidecar's call outlasts `timeout_s` by the usual 30 seconds, and the tool
+registers that budget as its Agent `execution_timeout` so the Agent's generic
+420-second tool deadline never cuts it short. `session_interrupt`
+(`server.session_interrupt`) answers what `/api/chat/cancel` answers for the
+target's running turn, or `cancelled: false` when none runs. Targets follow the
+queue tools' rules, and a view-only subagent child is `read_only` for both
+families. A route's refusal reaches the agent with its `code` as the condition
+(`refused` without one).
+
 RPC v70 adds `mcp.probe_targets` (TAL-1565). The server passes its profile's
 enabled MCP servers; the sidecar renders each remote server's `url` and string
 `headers` with the Agent's own `${VAR}` rules inside that profile's secret

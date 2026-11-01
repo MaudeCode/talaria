@@ -16,7 +16,7 @@ import { str } from '../util.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { StartTurnOptions, TurnFailure } from '../sessions/turn.js'
 
-import { startSessionChat, requireField, startPayload, expandPromptBuiltin } from '../sessions/admission.js'
+import { startSessionChat, requireField, startPayload, cancelSessionStream, steerSessionChat } from '../sessions/admission.js'
 export { normalizeChatAttachments } from '../sessions/admission.js'
 
 const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -120,16 +120,7 @@ export const chatRouter = os.router({
       if (steerId && !STEER_ID_RE.test(steerId)) throw new HttpError(400, 'steer_id must be 1-128 URL-safe characters')
       if (!steerId) steerId = `steer-${randomUUID()}`
       if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
-      const active = ctx.deps.registry.activeRunStreamForSession(sid)
-      if (active && ctx.deps.registry.activeRuns.get(active)?.origin === 'background') {
-        const started = await startChat(ctx, { session_id: sid, message: text })
-        return { accepted: true, fallback: null, stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: steerId, started_turn: started }
-      }
-      // TAL-817: a prompt built-in steers with its expansion; the steer still shows as typed. A missing session is the steer's to report.
-      let target: Session | null = null
-      try { target = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { target = null }
-      const prompt = target ? await expandPromptBuiltin(ctx.deps, target, text, undefined) : null
-      return (await ctx.deps.turns.steer(sid, prompt ?? text, display || (prompt === null ? '' : text), steerId)) as { accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }
+      return steerSessionChat(ctx.deps, sid, text, display, steerId, (body) => startChat(ctx, body))
     })),
     // TAL-424: Edit, Cancel and Send now on a pending steer; unknown or already-taken steers answer false.
     steerWithdraw: os.chat.steerWithdraw.handler(({ input, context: { ctx } }) => run(async () => {
@@ -145,10 +136,7 @@ export const chatRouter = os.router({
       if (!streamId) throw new HttpError(400, 'stream_id required')
       const resolved = await resolveStreamOwner(ctx, streamId)
       if (!(await streamVisibleToRequest(ctx, streamId, resolved))) throw new HttpError(404, 'Session not found')
-      const sid = resolved.owner
-      const { cancelled, withdrawn } = await ctx.deps.turns.cancel(streamId)
-      const activity_phase = sid ? await ctx.deps.background.activityPhase(sid, ctx.deps.activeProfile(), cancelled ? { excludeStreamId: streamId, terminalPhase: 'cancelled' } : {}) : undefined
-      return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn, ...(activity_phase ? { activity_phase } : {}) }
+      return cancelSessionStream(ctx.deps, streamId, resolved.owner)
     })),
     streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)

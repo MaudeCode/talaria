@@ -210,5 +210,60 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
         ("queue_list", "talaria", "queue_list"),
         ("queue_send_now", "talaria", "queue_send_now"),
         ("queue_withdraw", "talaria", "queue_withdraw"),
+        ("session_new", "talaria", "session_new"),
+        ("session_send", "talaria", "session_send"),
+        ("session_wait", "talaria", "session_wait"),
+        ("session_interrupt", "talaria", "session_interrupt"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
+    # session_wait outlasts the Agent's generic tool deadline by its own longest wait plus the server call's margin.
+    assert {r["name"]: r.get("execution_timeout") for r in registered if "execution_timeout" in r} == {"session_wait": 630.0}
+
+
+@pytest.mark.parametrize(("tool", "method", "index"), [
+    ("session_new", "server.session_new", 0),
+    ("session_send", "server.session_send", 0),
+    ("session_send", "server.session_send", 1),
+    ("session_wait", "server.session_wait", 0),
+    ("session_wait", "server.session_wait", 1),
+    ("session_interrupt", "server.session_interrupt", 0),
+])
+def test_session_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, index) -> None:
+    """TAL-1165: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    recorded = SERVER_FIXTURES[method][index]
+    handler = getattr(talaria_toolset, tool)
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261020_130000_tip")))
+    sent: list[tuple[str, dict, float | None]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params, timeout)) or recorded["result"])
+    args = {key: f"  {value}  " if isinstance(value, str) else value for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(handler(args, session_id="20261020_130000_tip")) == recorded["result"]
+    timeout = recorded["params"]["timeout_s"] + rpc.SERVER_CALL_TIMEOUT if tool == "session_wait" else None
+    assert sent == [(method, recorded["params"], timeout)]
+    assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
+
+    # A missing required string never reaches the server; the server's refusal reaches the agent with its condition.
+    for missing in [key for key, value in args.items() if isinstance(value, str) and key != "title"]:
+        assert json.loads(handler({k: v for k, v in args.items() if k != missing}, session_id="20261020_130000_tip")) == {"error": f"{missing} is required", "condition": "invalid_params"}
+    assert len(sent) == 1
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("Read-only imported sessions cannot be modified from WebUI", condition="read_only")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(handler(args, session_id="20261020_130000_tip")) == {"error": "Read-only imported sessions cannot be modified from WebUI", "condition": "read_only"}
+    assert json.loads(handler(args))["condition"] == "caller_unknown"
+
+
+def test_session_wait_clamps_its_timeout_and_session_new_drops_a_blank_title(monkeypatch) -> None:
+    sent: list[tuple[dict, float | None]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((params, timeout)) or {})
+    for timeout_s, expected in ((None, 300), (5000, 600), (0, 1), (True, 300), ("90", 300), (42.9, 42), (float("nan"), 300), (float("inf"), 300)):
+        talaria_toolset.session_wait({"session_id": "s1", **({} if timeout_s is None else {"timeout_s": timeout_s})}, session_id="caller")
+        assert sent[-1] == ({"caller_session_id": "caller", "session_id": "s1", "timeout_s": expected}, expected + rpc.SERVER_CALL_TIMEOUT)
+    talaria_toolset.session_new({"message": "go", "title": "   "}, session_id="caller")
+    assert sent[-1] == ({"caller_session_id": "caller", "message": "go"}, None)
