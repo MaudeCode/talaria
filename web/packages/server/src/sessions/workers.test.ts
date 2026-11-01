@@ -408,7 +408,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     ledger()
     const consumed: string[] = []
     sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
-    // The Agent marks a process consumed (wait/log) or poll-observed only after its completion event was drained.
+    // The Agent marks a process consumed (wait/log) only after its completion event was drained.
     const awaited = new Set<string>()
     sidecar.respond('process.consumed', (params) => ({ consumed: params.process_ids.filter((id) => awaited.has(id)) }))
     const completion = (id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: `run ${id}`, exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
@@ -441,6 +441,52 @@ describe('async delegation delivery claims (TAL-459)', () => {
       registry.activeRuns.delete('held')
       expect(await drain.drainDeferred(sid)).toBe(1)
       expect(attempts[1]).toContain('Background process proc_watched matched watch pattern "ERR"')
+    } finally {
+      drain.stop()
+    }
+  })
+
+  it('still wakes with the full completion of a process the agent only previewed with poll (TAL-1560)', async () => {
+    const sid = await newSid()
+    ledger()
+    const consumed: string[] = []
+    sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
+    // The Agent's registry: poll() records a short-tail preview, wait/log marks the full result consumed. Only the public
+    // `is_completion_consumed` answers `process.consumed`; a poll preview never suppresses the autonomous delivery.
+    const agent = { completionConsumed: new Set<string>(), pollObserved: new Set<string>() }
+    sidecar.respond('process.consumed', (params) => ({ consumed: params.process_ids.filter((id) => agent.completionConsumed.has(id)) }))
+    const output = `IMPORTANT PREFIX: migration 0042 failed\n${'filler line\n'.repeat(80)}tail: exit 1`
+    const completion = (id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: 'make migrate', exit_code: 1, output, origin_ui_session_id: sid, consumed: false })
+    const statuses: (number | 'raise')[] = ['raise', 409, 503, 200]
+    const attempts: string[] = []
+    const { drain, registry } = turnDrain((prompt) => {
+      attempts.push(prompt)
+      const status = statuses.shift()!
+      if (status === 'raise') throw new Error('provider offline')
+      return status === 200 ? { stream_id: 'wake' } : { _status: status }
+    })
+    holdTurn(registry, sid)
+    try {
+      expect(await drain.processOne(completion('proc_polled'))).toBe(true)
+      agent.pollObserved.add('proc_polled')
+      registry.activeRuns.delete('held')
+      // Raised, busy and failed starts keep the full result retryable; nothing is consumed before admission.
+      for (let i = 0; i < 3; i += 1) {
+        expect(await drain.drainDeferred(sid)).toBe(0)
+        expect(drain.deferredCount(sid)).toBe(1)
+        expect(consumed).toEqual([])
+      }
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(attempts).toHaveLength(4)
+      for (const prompt of attempts) {
+        expect(prompt).toContain('Background process proc_polled completed (exit_code=1)')
+        expect(prompt).toContain('IMPORTANT PREFIX: migration 0042 failed')
+        expect(prompt).toContain('tail: exit 1')
+      }
+      expect(consumed).toEqual(['proc_polled'])
+      expect(drain.deferredCount(sid)).toBe(0)
+      expect(await drain.drainDeferred(sid)).toBe(0)
+      expect(attempts, 'the admitted completion is never delivered twice').toHaveLength(4)
     } finally {
       drain.stop()
     }

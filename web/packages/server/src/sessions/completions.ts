@@ -96,7 +96,7 @@ export function deliveryKey(evt: Dict, processId: string): string {
   return !processId || deliveredPerProcess(evt) ? processId : `${processId}:${str(evt.type)}:${randomUUID()}`
 }
 
-/** Only a process's exit is consumed by the agent's own wait or poll (TAL-532); its watch events and delegations are not. */
+/** Only a process's exit is consumed by the agent's own wait or log (TAL-532); its watch events and delegations are not. */
 const isCompletion = (e: Deferred): boolean => Boolean(e.process_id) && str(e.event?.type ?? 'completion') === 'completion'
 
 export class CompletionDrain {
@@ -661,7 +661,8 @@ export class CompletionDrain {
   }
 
   /**
-   * TAL-532: the deferred process completions the agent already holds from its own turn (wait/log or poll). Checked at
+   * TAL-532: the deferred process completions the agent already consumed in its own turn via wait/log; a poll preview
+   * shows only a short tail and still wakes with the full result (TAL-1560). Checked at
    * delivery, not drain: the completion is usually drained seconds before the agent's wait returns. Only completions:
    * consuming the exit says nothing about a watch match or notice, and async delegations settle in their delivery ledger.
    * A failed check delivers everything rather than lose a result.

@@ -9,10 +9,20 @@ import pytest
 from talaria_sidecar.methods import process
 
 
-def test_consumed_or_poll_observed_processes_are_reported(monkeypatch: pytest.MonkeyPatch) -> None:
-    registry = SimpleNamespace(is_completion_consumed=lambda pid: pid == "waited", _poll_observed={"polled"})
+def test_only_wait_or_log_consumed_processes_are_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TAL-1560: a poll preview saw only a short tail, so it leaves the full completion to the autonomous wakeup."""
+    registry = SimpleNamespace(is_completion_consumed=lambda pid: pid == "waited", _poll_observed={"polled", "waited"})
     monkeypatch.setattr(process, "_registry", lambda: registry)
-    assert process.consumed_ids(["waited", "polled", "sibling"]) == ["waited", "polled"]
+    assert process.consumed_ids(["waited", "polled", "sibling"]) == ["waited"]
+
+
+def test_a_failed_consumed_read_reports_nothing_for_that_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    def consumed(pid: str) -> bool:
+        if pid == "broken":
+            raise RuntimeError("registry unavailable")
+        return pid == "waited"
+    monkeypatch.setattr(process, "_registry", lambda: SimpleNamespace(is_completion_consumed=consumed))
+    assert process.consumed_ids(["broken", "waited"]) == ["waited"]
 
 
 def test_no_registry_reports_nothing_consumed(monkeypatch: pytest.MonkeyPatch) -> None:
