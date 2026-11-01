@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { McpCostPolicySchema } from '@maudecode/talaria-web-contracts'
+import { McpCostPolicySchema, type McpEventsSchema } from '@maudecode/talaria-web-contracts'
+import type { z } from 'zod'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,6 +12,7 @@ const enabled: Record<string, boolean> = { github: true }
 const TOOLS = [{ name: 'create_issue', server: 'github', description: 'Open an issue', status: 'active' }, { name: 'list_pulls', server: 'github', description: 'List pull requests', status: 'active' }]
 vi.mock('../../api/endpoints', () => ({
   saveMcpCostPolicy: vi.fn(),
+  saveMcpEvents: vi.fn(),
   fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, reload_required: true, servers: Object.entries(enabled).map(([name, on]) => ({ name, transport: 'stdio', enabled: on, status: on ? 'active' : 'disabled', can_toggle: true, health: on ? 'unhealthy' : 'not_checked', tool_count: on ? 2 : null })) })),
   fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: TOOLS.filter((t) => !q || t.name.includes(q)), total: TOOLS.length })),
   toggleMcpServer: vi.fn((name: string, on: boolean) => { enabled[name] = on; return Promise.resolve({ ok: true, name, enabled: on }) }),
@@ -93,4 +95,42 @@ describe('McpSection', () => {
     } finally { vi.mocked(api.fetchMcpServers).mockImplementation(original) }
   })
 
+  it('shows native event states and rolls a refused optimistic opt-in back (TAL-1510)', async () => {
+    const cases = Object.fromEntries((JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/mcp-events.json'), 'utf8')) as { cases: { name: string; expected: z.infer<typeof McpEventsSchema> }[] }).cases.map((c) => [c.name, c.expected]))
+    const original = vi.mocked(api.fetchMcpServers).getMockImplementation()!
+    let pushEvents = cases.opt_out!
+    vi.mocked(api.fetchMcpServers).mockImplementation(() => Promise.resolve({ servers: [
+      { name: 'pending', events: cases.opt_in_without_public_url },
+      { name: 'hooks', events: pushEvents },
+      { name: 'legacy', events: cases.older_agent },
+    ] }))
+    let settle: { resolve: () => void; reject: (error: Error) => void } = { resolve: () => undefined, reject: () => undefined }
+    vi.mocked(api.saveMcpEvents).mockImplementation(() => new Promise((done, fail) => { settle = { resolve: () => done({ ok: true, server: { name: 'hooks' } }), reject: fail } }))
+    try {
+      renderMcp()
+      const pendingRow = (await screen.findByText('pending')).closest('li')!
+      expect(within(pendingRow).getByText('Needs HTTPS public URL')).toBeInTheDocument()
+      const legacyRow = screen.getByText('legacy').closest('li')!
+      expect(within(legacyRow).queryByText('Events')).not.toBeInTheDocument()
+      const hooksRow = screen.getByText('hooks').closest('li')!
+      expect(within(hooksRow).queryByText('Off')).not.toBeInTheDocument()
+      await userEvent.click(within(hooksRow).getByText('Events'))
+      const toggle = within(hooksRow).getByRole('switch', { name: 'Experimental events for hooks' })
+      expect(toggle).not.toBeChecked()
+      await userEvent.click(toggle)
+      expect(toggle).toBeChecked()
+      expect(api.saveMcpEvents).toHaveBeenLastCalledWith('hooks', true)
+      settle.reject(new Error('refused'))
+      await waitFor(() => expect(toggle).not.toBeChecked())
+      expect(showToast).toHaveBeenLastCalledWith("Couldn't change MCP events.", 5000, 'error')
+
+      await userEvent.click(toggle)
+      expect(toggle).toBeChecked()
+      pushEvents = cases.connected_subscription!
+      settle.resolve()
+      await waitFor(() => expect(within(hooksRow).getByText('Subscribed')).toBeInTheDocument())
+      expect(within(hooksRow).getByText('1 active · 1 paused')).toBeInTheDocument()
+      expect(toggle).toBeChecked()
+    } finally { vi.mocked(api.fetchMcpServers).mockImplementation(original) }
+  })
 })

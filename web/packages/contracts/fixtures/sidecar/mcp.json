@@ -61,5 +61,35 @@
         ]
       }
     }
+  ],
+  "mcp.events": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "servers": {
+          "events": {
+            "command": "never-spawn",
+            "events": true
+          }
+        }
+      },
+      "result": {
+        "supported": true,
+        "callback": "missing",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 0,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      }
+    }
   ]
 }

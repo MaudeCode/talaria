@@ -13,6 +13,8 @@ type Json = Record<string, unknown>
 useJsonStorage()
 
 describe('project bindings', () => {
+  // `stored()` reads projects.json directly, which only the JSON backend writes.
+  useJsonStorage()
   let s: TestServer
   let a: string
   let b: string

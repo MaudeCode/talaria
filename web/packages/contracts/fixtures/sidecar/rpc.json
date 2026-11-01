@@ -86,6 +86,7 @@
           "kanban.task_log",
           "kanban.unlink",
           "kanban.update_board",
+          "mcp.events",
           "mcp.registry_tools",
           "mcp.reload",
           "mcp.status",

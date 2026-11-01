@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Added", "summary": "Settings > MCP Servers can turn on the Hermes Agent's experimental MCP events for a server and shows whether its event subscriptions are active, overdue for refresh, or lapsed.", "highlight": false, "components": ["web"]}]
+}

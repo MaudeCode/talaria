@@ -101,6 +101,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("mcp.probe_targets", {"profile_home": "{home}", "servers": {"remote": {"url": "https://mcp.invalid/mcp", "headers": {"Authorization": "Bearer ${TALARIA_SCENARIO_UNSET}", "X-Literal": "literal-value"}}, "local": {"command": "never-spawn"}}}),
     ("mcp.status", {"profile_home": "{home}"}),
     ("mcp.registry_tools", {"profile_home": "{home}"}),
+    ("mcp.events", {"profile_home": "{home}", "servers": {"events": {"command": "never-spawn", "events": True}}}),
     ("stt.capability", {"profile_home": "{home}"}),
     ("stt.warm", {"profile_home": "{home}"}),
     ("usage.account", {"profile_home": "{home}", "provider": "zai"}),

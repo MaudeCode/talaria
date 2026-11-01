@@ -1,0 +1,537 @@
+{
+  "description": "TAL-1510: sidecar mcp.events data for one server named `events`, its config.yaml entry and mcp.status runtime entry, and the server-derived McpServer.events view. `data: null` is a sidecar that could not answer.",
+  "cases": [
+    {
+      "name": "older_agent",
+      "config": {
+        "command": "events-mcp"
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": false,
+        "callback": "missing",
+        "servers": []
+      },
+      "expected": {
+        "supported": false,
+        "enabled": false,
+        "can_edit": false,
+        "state": "unsupported",
+        "detail": "",
+        "utilities": 0,
+        "counts": [],
+        "show_state": false,
+        "show_panel": false
+      }
+    },
+    {
+      "name": "older_agent_opted_in",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": false,
+        "callback": "missing",
+        "servers": []
+      },
+      "expected": {
+        "supported": false,
+        "enabled": true,
+        "can_edit": true,
+        "state": "unsupported",
+        "detail": "",
+        "utilities": 0,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "opt_out",
+      "config": {
+        "command": "events-mcp"
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 0,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": false,
+        "can_edit": true,
+        "state": "off",
+        "detail": "",
+        "utilities": 0,
+        "counts": [],
+        "show_state": false,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "opt_in_without_public_url",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "missing",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 3,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "needs_public_url",
+        "detail": "",
+        "utilities": 3,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "opt_in_with_http_public_url",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "not_https",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 3,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "invalid_public_url",
+        "detail": "",
+        "utilities": 3,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "utilities_without_subscriptions",
+      "config": {
+        "command": "events-mcp",
+        "events": "yes"
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 3,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "ready",
+        "detail": "",
+        "utilities": 3,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "connected_subscription",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 3,
+            "subscriptions": {
+              "active": 1,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 1
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "subscribed",
+        "detail": "",
+        "utilities": 3,
+        "counts": [
+          {
+            "state": "active",
+            "count": 1
+          },
+          {
+            "state": "paused",
+            "count": 1
+          }
+        ],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "idle_lazy_server",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": false,
+        "status": "lazy",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 0,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "unavailable",
+        "detail": "",
+        "utilities": 0,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "idle_lazy_refresh_overdue",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": false,
+        "status": "lazy",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 0,
+            "subscriptions": {
+              "active": 1,
+              "refresh_overdue": 1,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "refresh_overdue",
+        "detail": "",
+        "utilities": 0,
+        "counts": [
+          {
+            "state": "active",
+            "count": 1
+          },
+          {
+            "state": "refresh_overdue",
+            "count": 1
+          }
+        ],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "idle_lazy_lapse",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": false,
+        "status": "lazy",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 0,
+            "subscriptions": {
+              "active": 1,
+              "refresh_overdue": 1,
+              "lapsed": 1,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "lapsed",
+        "detail": "",
+        "utilities": 0,
+        "counts": [
+          {
+            "state": "active",
+            "count": 1
+          },
+          {
+            "state": "refresh_overdue",
+            "count": 1
+          },
+          {
+            "state": "lapsed",
+            "count": 1
+          }
+        ],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "revoked_subscription",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 3,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "ready",
+        "detail": "",
+        "utilities": 3,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "connect_failure",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": false,
+        "status": "failed",
+        "error": "connect refused: Authorization: Bearer synthetic-secret-token"
+      },
+      "data": {
+        "supported": true,
+        "callback": "ready",
+        "servers": [
+          {
+            "name": "events",
+            "utilities": 0,
+            "subscriptions": {
+              "active": 0,
+              "refresh_overdue": 0,
+              "lapsed": 0,
+              "pending": 0,
+              "paused": 0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "enabled": true,
+        "can_edit": true,
+        "state": "unavailable",
+        "detail": "connect refused: [REDACTED CREDENTIAL]",
+        "utilities": 0,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "native_error",
+      "config": {
+        "command": "events-mcp",
+        "events": true
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": null,
+      "expected": {
+        "supported": false,
+        "enabled": true,
+        "can_edit": true,
+        "state": "error",
+        "detail": "",
+        "utilities": 0,
+        "counts": [],
+        "show_state": true,
+        "show_panel": true
+      }
+    },
+    {
+      "name": "native_error_opted_out",
+      "config": {
+        "command": "events-mcp"
+      },
+      "runtime": {
+        "connected": true,
+        "status": "connected",
+        "tools": 4
+      },
+      "data": null,
+      "expected": {
+        "supported": false,
+        "enabled": false,
+        "can_edit": false,
+        "state": "off",
+        "detail": "",
+        "utilities": 0,
+        "counts": [],
+        "show_state": false,
+        "show_panel": false
+      }
+    }
+  ]
+}

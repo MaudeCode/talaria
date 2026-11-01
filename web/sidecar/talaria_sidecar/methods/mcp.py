@@ -121,6 +121,66 @@ def cost_policies(servers: dict) -> dict:
     return {"supported": True, "policies": rows}
 
 
+# A refresh is due at 80% of the grant and the native loop wakes for it; past this grace it is overdue.
+_REFRESH_GRACE_S = 120.0
+_NO_SUBSCRIPTIONS = {"active": 0, "refresh_overdue": 0, "lapsed": 0, "pending": 0, "paused": 0}
+
+
+def _grant_expiry(state: dict) -> float:
+    """Epoch seconds the grant expires; ``inf`` for a no-expiry grant, 0 without a readable one."""
+    from datetime import datetime
+
+    if state.get("refresh_before") is None:
+        return float("inf")
+    try:
+        return datetime.fromisoformat(str(state["refresh_before"])).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _subscription_state(route: dict, state: dict, now: float) -> str:
+    from tools.mcp_tool_events import _refresh_due_at
+
+    if route.get("enabled", True) is False:
+        return "paused"
+    if not isinstance(state.get("granted_at"), (int, float)):
+        return "pending"
+    if _grant_expiry(state) <= now:
+        return "lapsed"
+    return "refresh_overdue" if _refresh_due_at(state) + _REFRESH_GRACE_S <= now else "active"
+
+
+def events(servers: dict, now: float | None = None) -> dict:
+    """The native events opt-in owner's durable state, counted per server; never secrets, routes, grants or cursors.
+
+    Reads the webhook route store and ``mcp_event_subscriptions.json`` of the scoped profile, plus this runtime's
+    registry for the event utilities. Utilities are counted by their registered names, not the server's parsed
+    capabilities: the SDK drops the ``events`` capability, so it cannot say whether a server offers them."""
+    import time
+
+    try:
+        from hermes_cli.webhook import _get_webhook_config, _load_subscriptions
+        from tools.mcp_tool_events import EVENT_UTILITY_KEYS, _load_state, _server_routes
+        from tools.mcp_tool_schema import mcp_prefixed_tool_name
+    except (ImportError, AttributeError):
+        return {"supported": False, "callback": "missing", "servers": []}
+    webhook = _get_webhook_config()
+    url = (webhook.get("extra") or {}).get("public_url") or webhook.get("public_url") or ""
+    url = url.strip() if isinstance(url, str) else ""
+    callback = "ready" if url.startswith("https://") else "not_https" if url else "missing"
+    routes, states = _load_subscriptions(), _load_state()
+    registered = {tool["name"]: tool["server"] for tool in registry_tools()}
+    now = time.time() if now is None else now
+    rows = []
+    for name in sorted(servers):
+        counts = dict(_NO_SUBSCRIPTIONS)
+        for route_name, route in _server_routes(routes, name).items():
+            counts[_subscription_state(route, states.get(route_name, {}), now)] += 1
+        utilities = sum(1 for key in EVENT_UTILITY_KEYS if registered.get(mcp_prefixed_tool_name(name, key)) == name)
+        rows.append({"name": name, "utilities": utilities, "subscriptions": counts})
+    return {"supported": True, "callback": callback, "servers": rows}
+
+
 def register(registry_) -> None:
     @registry_.method("mcp.cost_policies")
     def policies(ctx: CallContext, params: dict) -> dict:
@@ -137,6 +197,12 @@ def register(registry_) -> None:
     def status_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"servers": status()}
+
+    @registry_.method("mcp.events")
+    def events_(ctx: CallContext, params: dict) -> dict:
+        servers = params.get("servers")
+        with scoped_home(profile_home_param(params)):
+            return events(servers if isinstance(servers, dict) else {})
 
     @registry_.method("mcp.registry_tools")
     def tools(ctx: CallContext, params: dict) -> dict:

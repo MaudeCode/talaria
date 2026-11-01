@@ -8,7 +8,7 @@ import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import type { z } from 'zod'
-import type { McpCostPatchSchema, McpCostPolicySchema } from '@maudecode/talaria-web-contracts'
+import type { McpCostPatchSchema, McpCostPolicySchema, McpEventsSchema } from '@maudecode/talaria-web-contracts'
 import { Badge } from '../../ui/Badge'
 import { FieldRow, HelpTip, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -27,6 +27,23 @@ const HEALTH: Record<string, { label: () => string; tone: string }> = {
   needs_auth: { label: m.mcp_health_needs_auth, tone: 'border-warning/50 text-warning' },
 }
 
+type McpEvents = z.infer<typeof McpEventsSchema>
+const EVENT_STATE: Record<McpEvents['state'], { label: () => string; tone: string }> = {
+  unsupported: { label: m.mcp_events_state_unsupported, tone: 'border-border text-muted' },
+  off: { label: m.mcp_events_state_off, tone: 'border-border text-muted' },
+  needs_public_url: { label: m.mcp_events_state_needs_public_url, tone: 'border-warning/50 text-warning' },
+  invalid_public_url: { label: m.mcp_events_state_invalid_public_url, tone: 'border-warning/50 text-warning' },
+  unavailable: { label: m.mcp_events_state_unavailable, tone: 'border-warning/50 text-warning' },
+  ready: { label: m.mcp_events_state_ready, tone: 'border-border text-muted' },
+  subscribed: { label: m.mcp_events_state_subscribed, tone: 'border-success/50 text-success' },
+  refresh_overdue: { label: m.mcp_events_state_refresh_overdue, tone: 'border-warning/50 text-warning' },
+  lapsed: { label: m.mcp_events_state_lapsed, tone: 'border-error/50 text-error' },
+  error: { label: m.mcp_events_state_error, tone: 'border-error/50 text-error' },
+}
+const EVENT_COUNTS: Record<McpEvents['counts'][number]['state'], (v: { n: string }) => string> = {
+  active: m.mcp_events_count_active, refresh_overdue: m.mcp_events_count_refresh_overdue, lapsed: m.mcp_events_count_lapsed, pending: m.mcp_events_count_pending, paused: m.mcp_events_count_paused,
+}
+
 function StatusBadge({ status }: { status: string | undefined }) {
   const known = STATUS[status ?? '']
   return <Badge tone={known?.tone ?? 'border-border text-muted'}>{known ? known.label() : status ?? m.mcp_status_unknown()}</Badge>
@@ -39,6 +56,13 @@ export function McpSection({ heading }: { heading: string }) {
   // A cold health cache answers `health_pending`; re-read until the server's probes settle.
   const servers = useQuery({ queryKey: keys.mcp.servers, queryFn: api.fetchMcpServers, staleTime: 30_000, refetchInterval: (s) => (s.state.data?.health_pending ? 2500 : false) })
   const tools = useQuery({ queryKey: [...keys.mcp.tools, q], queryFn: () => api.fetchMcpTools(q), staleTime: 30_000, placeholderData: keepPreviousData })
+  const saveEvents = useResourceMutation({
+    resource: ({ name }: { name: string; events: boolean }) => `mcp-events:${name}`,
+    effect: ({ events }) => ({ value: events }),
+    queryKey: keys.mcp.all,
+    mutationFn: ({ name, events }: { name: string; events: boolean }) => api.saveMcpEvents(name, events),
+    onError: () => showToast(m.mcp_events_save_failed(), 5000, 'error'),
+  })
   const toggle = useResourceMutation({
     resource: ({ name }: { name: string; enabled: boolean }) => `mcp:${name}`,
     effect: ({ enabled }) => ({ value: enabled }),
@@ -54,7 +78,7 @@ export function McpSection({ heading }: { heading: string }) {
         <h2 id="systemMcpHeading" className={heading}>{m.mcp_servers_title()}<HelpTip label={m.field_help_about({ label: m.mcp_servers_title() })}>{m.mcp_servers_desc()}{servers.data?.reload_required ? ` ${m.mcp_reload_hint()}` : ''}</HelpTip></h2>
         {servers.isPending ? <LoadingState /> : servers.isError && !servers.data ? <ErrorState error={servers.error} onRetry={() => { void servers.refetch() }} /> : servers.data.servers.length === 0 ? <EmptyState>{m.mcp_no_servers()}</EmptyState> : (
           <ul className="flex flex-col divide-y divide-border-subtle">
-            {servers.data.servers.map((s) => <McpServerRow key={s.name} server={s} effect={effects[`mcp:${s.name}`]} toggleSupported={servers.data.toggle_supported === true} onToggle={toggle.mutate} />)}
+            {servers.data.servers.map((s) => <McpServerRow key={s.name} server={s} effect={effects[`mcp:${s.name}`]} eventsEffect={effects[`mcp-events:${s.name}`]} toggleSupported={servers.data.toggle_supported === true} onToggle={toggle.mutate} onEvents={saveEvents.mutate} />)}
           </ul>
         )}
       </section>
@@ -80,13 +104,17 @@ function McpToolSearch({ onSearch }: { onSearch: (query: string) => void }) {
   return <TextInput type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.mcp_tools_search()} aria-label={m.mcp_tools_search()} title={m.mcp_tools_search_placeholder()} autoComplete="off" />
 }
 
-const McpServerRow = memo(function McpServerRow({ server: s, effect, toggleSupported, onToggle }: {
+const McpServerRow = memo(function McpServerRow({ server: s, effect, eventsEffect, toggleSupported, onToggle, onEvents }: {
   server: Awaited<ReturnType<typeof api.fetchMcpServers>>['servers'][number]
   effect: ResourceEffect<boolean> | undefined
+  eventsEffect: ResourceEffect<boolean> | undefined
   toggleSupported: boolean
   onToggle: (value: { name: string; enabled: boolean }) => void
+  onEvents: (value: { name: string; events: boolean }) => void
 }) {
   const health = HEALTH[s.health ?? '']
+  const events = s.events
+  const eventState = events?.show_state ? EVENT_STATE[events.state] : undefined
   return (
     <li className="py-2" data-mcp-server={s.name}>
       <div className="flex items-center gap-3">
@@ -96,6 +124,7 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, toggleSuppo
             {s.transport && <span className="text-[11px] text-muted">{s.transport}</span>}
             <StatusBadge status={s.status} />
             {health && <Badge tone={health.tone} title={s.health_detail}>{health.label()}</Badge>}
+            {eventState && <Badge tone={eventState.tone} title={events?.detail || undefined}>{eventState.label()}</Badge>}
           </div>
           {typeof s.tool_count === 'number' && <div className="text-[11px] text-muted">{m.mcp_tool_count({ a0: String(s.tool_count) })}</div>}
         </div>
@@ -103,10 +132,27 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, toggleSuppo
           <ResourceSwitch effect={effect} checked={s.enabled !== false} onCheckedChange={(enabled) => onToggle({ name: s.name, enabled })} aria-label={s.name} />
         )}
       </div>
+      {events?.show_panel && <McpEventsPanel name={s.name} events={events} effect={eventsEffect} onChange={onEvents} />}
       {s.cost_policy && <details className="mt-2 text-sm"><summary className="cursor-pointer text-muted">{m.mcp_cost_title()}</summary><McpCostEditor key={s.cost_policy.revision} policy={s.cost_policy} /></details>}
     </li>
   )
 })
+
+/** TAL-1510: the experimental events opt-in and the server's native subscription status for one row. */
+function McpEventsPanel({ name, events, effect, onChange }: { name: string; events: McpEvents; effect: ResourceEffect<boolean> | undefined; onChange: (value: { name: string; events: boolean }) => void }) {
+  return <details className="mt-2 text-sm" data-mcp-events={name}>
+    <summary className="cursor-pointer text-muted">{m.mcp_events_title()}</summary>
+    <div className="mt-2 flex min-w-0 flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-text">{m.mcp_events_switch()}</span>
+        <HelpTip label={m.field_help_about({ label: m.mcp_events_switch() })}>{m.mcp_events_help()}</HelpTip>
+        <ResourceSwitch effect={effect} checked={events.enabled} disabled={!events.can_edit} onCheckedChange={(on) => onChange({ name, events: on })} aria-label={m.mcp_events_switch_label({ name })} />
+      </div>
+      {events.counts.length > 0 && <p className="text-xs text-muted">{events.counts.map(({ state, count }) => EVENT_COUNTS[state]({ n: count.toLocaleString() })).join(' · ')}</p>}
+      {events.detail && <p className="text-xs break-words text-muted">{events.detail}</p>}
+    </div>
+  </details>
+}
 
 type CostPatch = z.infer<typeof McpCostPatchSchema>
 type CostPolicy = z.infer<typeof McpCostPolicySchema>

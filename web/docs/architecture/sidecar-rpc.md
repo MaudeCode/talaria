@@ -21,6 +21,16 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v73 adds `mcp.events` (TAL-1510): the installed Agent's MCP events support,
+whether `platforms.webhook.extra.public_url` is an https origin, and per server the
+registered event utilities and the durable subscription records counted by state
+(`active`, `refresh_overdue`, `lapsed`, `pending`, `paused`). Utilities are counted
+by registered name, since the SDK drops the `events` capability. Route names,
+secrets, grants and cursors stay in the sidecar. The server derives each MCP row's
+`events` view from it; `PUT /api/mcp/servers/{name}` with `{events}` alone sets or
+removes only that key. An Agent without `tools.mcp_tool_events` answers
+`supported: false`.
+
 RPC v72 adds `profiles.skills_stats_invalidate` (TAL-1578). The sidecar caches each
 profile home's `profiles.skills_stats` count for 30 seconds; the server calls this after
 its own skill save or delete so the next count walks the skill tree again.

@@ -2847,6 +2847,13 @@
         ""
       ]
     },
+    "tests/test_mcp_events.py::test_native_mcp_events_utilities_consent_and_subscription_state": {
+      "layer": "compatibility",
+      "reason": "Installed Agent MCP events owner (TAL-1510): real discovery against a test-owned stub stdio server registers the event utilities without an advertised capability, they dispatch through the native consent gate with a synthetic answer, and native route/grant writes drive subscribe, refresh, lapse and revoke observations. No public endpoint, webhook delivery or external subscription; older Agents must report unsupported. Boundary fakes cannot establish native API compatibility.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_config_write.py::test_native_delegation_settings_and_lossless_routes": {
       "layer": "compatibility",
       "reason": "Real installed Agent delegation registry, backend selection, native route keys/parsers and managed refusal in a disposable interpreter. Synthetic registered providers never execute; socket connections are forbidden. Boundary fakes cannot establish native API compatibility.",
