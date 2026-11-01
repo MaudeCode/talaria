@@ -101,3 +101,55 @@ export function summaryFromEvents(sessionId: string, runId: string, events: Jour
     last_event: last?.event ?? null,
   }
 }
+
+/** Rows that ask the user something; a replay withholds one once its own run proves it settled (TAL-1561). */
+const REPLAY_PROMPT_EVENTS = new Set(['approval', 'clarify'])
+
+type RowSource = AsyncIterator<JournalEvent> | Iterator<JournalEvent>
+/** A journal row, or a live frame read back as one (its run and journal seq). */
+export type PromptRow = Pick<JournalEvent, 'event' | 'seq' | 'run_id' | 'payload'>
+
+/**
+ * Replay visibility for prompt rows: a reconnecting client must not re-open a prompt its run already settled. Evidence is
+ * same-run only (seqs are causal within a run, not across runs): a later terminal row settles every prompt before it, and a
+ * later `clarify` tool completion settles a question (the Agent never runs `clarify` in parallel) but never an approval,
+ * whose queue writes no per-entry settlement row. Pending prompts, rows without a positive seq and run, and evidence
+ * without a readable tool name stay visible.
+ *
+ * `rows(prompt)` reads the prompt's run forward from it, inside the caller's own replay window (a paged journal read or
+ * the rows already in memory); each run is walked at most once and leaves only two seqs behind. `liveRun` names a run
+ * known not to have ended, so its approvals stay visible without reading ahead.
+ */
+export class PromptReplayFilter {
+  private readonly runs = new Map<string, { rows: RowSource; done: boolean; terminal: number; clarified: number }>()
+
+  constructor(private readonly rows: (prompt: PromptRow) => RowSource, private readonly liveRun: string | null = null) {}
+
+  async visible(entry: PromptRow): Promise<boolean> {
+    if (!REPLAY_PROMPT_EVENTS.has(entry.event) || !Number.isSafeInteger(entry.seq) || entry.seq <= 0 || !entry.run_id) return true
+    const clarify = entry.event === 'clarify'
+    if (clarify && isRecord(entry.payload) && entry.payload.status === 'resolved') return true
+    if (!clarify && entry.run_id === this.liveRun) return true
+    let run = this.runs.get(entry.run_id)
+    if (!run) this.runs.set(entry.run_id, run = { rows: this.rows(entry), done: false, terminal: 0, clarified: 0 })
+    for (;;) {
+      if (run.terminal > entry.seq || (clarify && run.clarified > entry.seq)) return false
+      if (run.done) return true
+      const next = await run.rows.next()
+      if (next.done) { run.done = true; continue }
+      const row = next.value
+      if (row.run_id !== entry.run_id || !Number.isSafeInteger(row.seq)) continue
+      if (row.terminal && TERMINAL_SSE_EVENTS.has(row.event)) run.terminal = Math.max(run.terminal, row.seq)
+      else if (row.event === 'tool_complete' && isRecord(row.payload) && row.payload.name === 'clarify') run.clarified = Math.max(run.clarified, row.seq)
+    }
+  }
+
+  async close(): Promise<void> { for (const run of this.runs.values()) await run.rows.return?.() }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+/** The rows of `events` after `prompt` in its run: `PromptReplayFilter` evidence from a replay already in memory. */
+export function* runRowsAfter(prompt: PromptRow, ...events: readonly JournalEvent[][]): Generator<JournalEvent> {
+  for (const list of events) for (const row of list) if (row.run_id === prompt.run_id && row.seq > prompt.seq) yield row
+}

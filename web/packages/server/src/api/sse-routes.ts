@@ -8,7 +8,7 @@ import { reasoningProjection } from '../sessions/reasoning-display.js'
  * `_handle_session_events_stream`, `_handle_session_run_journal_stream_for_session`).
  */
 import type { RequestContext } from '../http/context.js'
-import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal } from '../sessions/journal.js'
+import { parseRunJournalEventId, PromptReplayFilter, runRowsAfter, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal } from '../sessions/journal.js'
 import type { SessionJournalReplay } from '../sessions/storage/backend.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
@@ -218,14 +218,18 @@ async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: s
   if (!summary) return { found: false, terminal: false }
   let terminal = false
   const legacy = new LegacyToolIds(ctx.deps.journal)
+  const maxSeq = opts.maxSeq ?? null
+  const prompts = new PromptReplayFilter((prompt) => ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq: prompt.seq, maxSeq }), summary.terminal ? null : streamId)
   try {
-    for await (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
+    for await (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq })) {
       if (!(await sse.ready())) return { found: true, terminal }
+      if (!(await prompts.visible(entry))) continue
       sse.event(entry.event || 'message', (await publicJournalPayload(ctx, entry, legacy)), entry.event_id)
       if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
     }
   } finally {
     await legacy.close()
+    await prompts.close()
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {
     const stale = (await ctx.deps.journal.staleInterruptedEvent(summary.session_id, streamId, afterSeq, ctx.deps.auth.now()))
@@ -276,21 +280,39 @@ async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSu
   return true
 }
 
-async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null, sessionId: string): Promise<void> {
-  for (;;) {
-    if (!(await sse.ready())) return
-    const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
-    if (sse.isClosed) return
-    if (!item) { sse.comment('heartbeat'); continue }
-    const [event, data, eventId, redacted] = item
-    const seq = sameRunSeq(eventId, streamId)
-    if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, async (gap) => { await replayRunJournal(ctx, sse, streamId, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) }))) return
-    if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
+/**
+ * The prompt policy for frames a subscriber starts with: a live channel buffers frames while no tab is attached, and a new
+ * subscriber receives them (every journaled frame at or below the subscribe snapshot), so they are a replay too.
+ */
+function bufferedPrompts(ctx: RequestContext, sessionId: string, streamId: string, snapshotSeq: number | null): { visible: (event: string, payload: unknown, seq: number | null) => Promise<boolean>; close: () => Promise<void> } {
+  const prompts = new PromptReplayFilter((prompt) => ctx.deps.journal.iterRunEvents(sessionId, streamId, { afterSeq: prompt.seq, maxSeq: snapshotSeq }))
+  return {
+    visible: async (event, payload, seq) => snapshotSeq === null || seq === null || seq > snapshotSeq || prompts.visible({ event, payload, seq, run_id: streamId }),
+    close: () => prompts.close(),
+  }
+}
+
+async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null, sessionId: string, snapshotSeq: number | null): Promise<void> {
+  const buffered = bufferedPrompts(ctx, sessionId, streamId, snapshotSeq)
+  try {
+    for (;;) {
+      if (!(await sse.ready())) return
+      const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+      if (sse.isClosed) return
+      if (!item) { sse.comment('heartbeat'); continue }
+      const [event, data, eventId, redacted] = item
+      const seq = sameRunSeq(eventId, streamId)
+      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, async (gap) => { await replayRunJournal(ctx, sse, streamId, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) }))) return
+      if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
+        if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
+        continue
+      }
+      if (!(await buffered.visible(event, data, seq))) continue
+      sse.event(event, publicFramePayload(ctx, event, data, redacted), eventId)
       if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
-      continue
     }
-    sse.event(event, publicFramePayload(ctx, event, data, redacted), eventId)
-    if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
+  } finally {
+    await buffered.close()
   }
 }
 
@@ -344,7 +366,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
       if (terminalReplayed) return
       if (afterSeq > 0 && (snapshotCutoff === null || afterSeq <= snapshotCutoff)) replayCutoffSeq = replayCutoffSeq === null ? afterSeq : Math.max(replayCutoffSeq, afterSeq)
     }
-    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq, owner ?? '')
+    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq, owner ?? '', sameRunSeq(snapshot.last_event_id, streamId))
   } finally {
     channel.unsubscribe(sub)
     sse.end()
@@ -543,7 +565,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const sent = new Set<string>()
   const sentOrder: string[] = []
   const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
-  const emitReplay = async (events: Iterable<JournalEvent> | AsyncIterable<JournalEvent>, streamId: string | null, cutoff: number | null): Promise<void> => {
+  const emitReplay = async (events: Iterable<JournalEvent> | AsyncIterable<JournalEvent>, streamId: string | null, cutoff: number | null, prompts: PromptReplayFilter): Promise<void> => {
     const legacy = new LegacyToolIds(ctx.deps.journal)
     try {
       for await (const entry of events) {
@@ -551,11 +573,13 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
         const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
         if (cutoff !== null && seq !== null && seq > cutoff) continue
         if (entry.event_id && sent.has(entry.event_id)) continue
+        if (!(await prompts.visible(entry))) continue
         sse.event(entry.event || 'message', (await publicJournalPayload(ctx, entry, legacy)), entry.event_id)
         if (entry.event_id) note(entry.event_id)
       }
     } finally {
       await legacy.close()
+      await prompts.close()
     }
   }
   const snapshot = async (activeStreamId: string | null): Promise<void> => {
@@ -571,6 +595,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     return { sub, streamId, snapshot: snap }
   }
   let attached = attach()
+  let buffered: ReturnType<typeof bufferedPrompts> | null = null
   try {
     let replay: SessionJournalReplay | null = null
     if (resumeEventId) {
@@ -578,7 +603,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       if (replay.status !== 'ok') (await snapshot(attached.streamId))
     }
     if (!attached.sub) {
-      if (replay?.status === 'ok') await emitReplay(replay.events, attached.streamId, null)
+      if (replay?.status === 'ok') { const { events } = replay; await emitReplay(events, attached.streamId, null, new PromptReplayFilter((prompt) => runRowsAfter(prompt, events))) }
       for (;;) {
         if (!(await sse.ready())) return
         attached = attach()
@@ -596,12 +621,15 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       cutoff = sameRunSeq(attached.snapshot.last_event_id, streamId)
       const tail = await replay.readActiveTail?.(streamId)
       if (tail?.status === 'ok') {
-        await emitReplay(replay.events, streamId, cutoff)
-        await emitReplay(tail.events, streamId, cutoff)
+        // Settlement evidence comes from the rows this replay already holds, never another journal read.
+        const { events } = replay
+        await emitReplay(events, streamId, cutoff, new PromptReplayFilter((prompt) => runRowsAfter(prompt, events, tail.events)))
+        await emitReplay(tail.events, streamId, cutoff, new PromptReplayFilter((prompt) => runRowsAfter(prompt, tail.events)))
       }
       else (await snapshot(streamId))
     }
     replay = null
+    buffered = bufferedPrompts(ctx, sessionId, streamId, sameRunSeq(attached.snapshot.last_event_id, streamId))
     for (;;) {
       if (!(await sse.ready())) return
       const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
@@ -609,15 +637,17 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       if (!item) { sse.comment('keepalive'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
-      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, async (gap) => { await emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null); }))) return
+      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, async (gap) => { await emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null, new PromptReplayFilter((prompt) => ctx.deps.journal.iterRunEvents(sessionId, streamId, { afterSeq: prompt.seq, maxSeq: gap.maxSeq }), streamId)); }))) return
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
+      if (!(await buffered.visible(event, data, seq))) continue
       sse.event(event, publicFramePayload(ctx, event, data, redacted), eventId)
       if (eventId) note(eventId)
       if (terminal) return
     }
   } finally {
+    await buffered?.close()
     if (attached.sub && attached.streamId) ctx.deps.registry.peek(attached.streamId)?.unsubscribe(attached.sub)
     sse.end()
   }

@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
 
 const io = vi.hoisted(() => ({ full: [] as string[], asyncFull: [] as string[], tails: [] as { path: string; position: number }[] }))
 vi.mock('node:fs', async (original) => {
@@ -123,4 +124,88 @@ it('filters coalesced Web audio instructions to the SSE request profile and neve
   const reconnect = await s.sse('/api/sessions/events', () => true)
   expect(reconnect[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
   expect(reconnect[0]?.data).not.toHaveProperty('web_audio')
+})
+
+// TAL-1561: a replay never re-opens a prompt its own run already settled.
+const clarifyTool = { name: 'clarify', tid: 'call-clarify', args: { question: 'Which?' } }
+const clarifyDone = { name: 'clarify', tid: 'call-clarify', preview: '{"outcome": "submitted"}' }
+const question = (id: string) => ({ clarify_id: id, question: `Question ${id}?`, choices_offered: ['A', 'B'], kind: 'clarify', pending_count: 1 })
+const approval = (id: string, pending = 1) => ({ approval_id: id, request_id: id, command: 'rm -rf /tmp/probe', description: 'delete', pending_count: pending })
+
+async function writeRun(s: TestServer, sid: string, runId: string, rows: [string, unknown][], createdAt: number, live?: StreamChannel): Promise<void> {
+  const writer = await s.deps.journal.writer(sid, runId)
+  for (const [index, [event, payload]] of rows.entries()) {
+    const row = await writer.appendSseEvent(event, payload, { createdAt: createdAt + index })
+    live?.put([event, row.payload, row.event_id])
+  }
+  await writer.close()
+}
+
+function liveRun(s: TestServer, sid: string, streamId: string): StreamChannel {
+  const channel = s.deps.registry.create(streamId, sid)
+  s.deps.registry.registerActiveRun({ stream_id: streamId, session_id: sid, started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
+  return channel
+}
+
+it.each(['done', 'cancel', 'apperror'])('chat replay of a run that ended with %s omits its settled approval and clarify', async (terminal) => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  await writeRun(s, sid, 'ended', [['token', { text: 'hi' }], ['tool', clarifyTool], ['clarify', question('q1')], ['tool_complete', clarifyDone], ['approval', approval('a1', 2)], [terminal, terminal === 'apperror' ? { message: 'boom' } : {}]], 1)
+  const frames = await s.sse('/api/chat/stream?stream_id=ended&after_seq=0', () => false, { timeoutMs: 2000 })
+  expect(frames.map((f) => [f.event, f.id])).toEqual([['token', 'ended:1'], ['tool', 'ended:2'], ['tool_complete', 'ended:4'], [terminal, 'ended:6']])
+})
+
+// `journal`: another tab was attached, so the reconnecting tab replays the journal; `buffer`: no tab was, so the channel
+// buffered the frames for the next subscriber.
+it.each(['journal', 'buffer'])('chat %s replay of an active run omits a settled clarify but keeps a pending approval, a later question and unproven prompts', async (source) => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  const channel = liveRun(s, sid, 'live')
+  const [otherTab] = channel.subscribeWithSnapshot()
+  if (source === 'buffer') channel.unsubscribe(otherTab)
+  // A completion without a readable tool name proves nothing about the question before it.
+  await writeRun(s, sid, 'live', [['tool', clarifyTool], ['clarify', question('q1')], ['tool_complete', clarifyDone], ['approval', approval('a1', 2)], ['tool', clarifyTool], ['clarify', question('q2')], ['tool_complete', { preview: 'unnamed' }]], 1, channel)
+  channel.unsubscribe(otherTab)
+  const replay = vi.spyOn(s.deps.journal, 'iterRunEvents')
+  const frames = await s.sse('/api/chat/stream?stream_id=live&after_seq=0', (f) => f.id === 'live:7', { timeoutMs: 2000 })
+  expect(frames.map((f) => [f.event, f.id])).toEqual([['tool', 'live:1'], ['tool_complete', 'live:3'], ['approval', 'live:4'], ['tool', 'live:5'], ['clarify', 'live:6'], ['tool_complete', 'live:7']])
+  expect(frames.find((f) => f.event === 'approval')?.data).toMatchObject({ approval_id: 'a1', pending_count: 2 })
+  expect(frames.find((f) => f.event === 'clarify')?.data).toMatchObject({ clarify_id: 'q2' })
+  // The frames came through the path under test, and the settlement lookahead read only the replay's own window.
+  const windows = replay.mock.calls.map((call) => call[2])
+  expect(windows.some((w) => w?.afterSeq === 0 && w.maxSeq === 7)).toBe(source === 'journal')
+  expect(windows).toContainEqual({ afterSeq: 2, maxSeq: 7 })
+})
+
+it('per-session journal replay settles prompts only from their own run', async () => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  await writeRun(s, sid, 'past', [['token', { text: 'cursor' }], ['done', {}]], 1)
+  await writeRun(s, sid, 'errored', [['approval', approval('a0')], ['tool', clarifyTool], ['clarify', question('q0')], ['tool_complete', clarifyDone], ['apperror', { message: 'boom' }]], 10)
+  const channel = liveRun(s, sid, 'active')
+  // Seqs 2 and 3 sit below the errored run's settlement rows; another run's evidence never settles them.
+  await writeRun(s, sid, 'active', [['token', { text: 'working' }], ['clarify', question('q7')], ['approval', approval('a2', 2)]], 20, channel)
+  const frames = await s.sse(`/api/sessions/${sid}/events`, (f) => f.id === 'active:3', { headers: { 'Last-Event-ID': 'past:1' }, timeoutMs: 2000 })
+  expect(frames.filter((f) => f.id).map((f) => [f.event, f.id])).toEqual([['done', 'past:2'], ['tool', 'errored:2'], ['tool_complete', 'errored:4'], ['apperror', 'errored:5'], ['token', 'active:1'], ['clarify', 'active:2'], ['approval', 'active:3']])
+})
+
+it.each(['chat', 'session'])('%s stream backfill of dropped frames omits a settled clarify', async (kind) => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  const channel = liveRun(s, sid, 'live')
+  let subscribed!: (sub: StreamSubscriber) => void
+  const attached = new Promise<StreamSubscriber>((resolve) => { subscribed = resolve })
+  const subscribe = channel.subscribeWithSnapshot.bind(channel)
+  vi.spyOn(channel, 'subscribeWithSnapshot').mockImplementation(() => { const result = subscribe(); subscribed(result[0]); return result })
+  const received = s.sse(kind === 'chat' ? '/api/chat/stream?stream_id=live' : `/api/sessions/${sid}/events`, (f) => f.id === 'live:5', { timeoutMs: 2000 })
+  const sub = await attached
+  await writeRun(s, sid, 'live', [['tool', clarifyTool], ['clarify', question('q1')], ['tool_complete', clarifyDone], ['approval', approval('a1')]], 1)
+  // The bounded queue dropped rows 1-4 while the writer waited on a slow reader; row 5 arrives live.
+  sub.gap = { firstEventId: 'live:1', unjournaled: false, dropped: 4, signals: new Map() }
+  const writer = await s.deps.journal.writer(sid, 'live')
+  const row = await writer.appendSseEvent('token', { text: 'after' })
+  await writer.close()
+  channel.put(['token', row.payload, row.event_id])
+  const frames = await received
+  expect(frames.filter((f) => f.id).map((f) => [f.event, f.id])).toEqual([['tool', 'live:1'], ['tool_complete', 'live:3'], ['approval', 'live:4'], ['token', 'live:5']])
 })
