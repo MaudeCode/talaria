@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ReactNode } from 'react'
+import { useState, type Dispatch, type DragEvent, type ReactNode, type SetStateAction } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -34,16 +34,28 @@ interface Entry { path: string; name: string; isDir: boolean }
 const entryResource = (workspace: string, path: string) => JSON.stringify(['file', workspace, path])
 const contentResource = (workspace: string, path: string) => JSON.stringify(['file-content', workspace, path])
 const createKind = (workspace: string, dir: string) => JSON.stringify(['file-new', workspace, dir])
+/** One unsaved draft per session, source, workspace and file, so a draft never reaches the same name elsewhere. */
+const draftKey = (sessionId: string, source: 'workspace' | 'managed', workspace: string, path: string) => JSON.stringify([sessionId, source, workspace, path])
+type Drafts = Record<string, string>
 type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename'; entry: Entry } | { kind: 'delete'; entry: Entry } | null
 
-/** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder, preview and draft
- * stay while another page is shown; it fetches only while `active`. */
 /** Files a checkpoint restore rewrote; `seq` tells one restore from the next. */
 export interface RestoredFiles { seq: number; paths: string[] }
 
+/** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder and preview stay
+ * while another page is shown; it fetches only while `active`. Unsaved drafts live here, above the per-workspace
+ * remount, so a workspace switch, Back or another file keeps them until Save or Cancel (TAL-1576). */
 export function FilesPage({ workspace, sessionId, active, restored = null }: { workspace: string | null | undefined; sessionId: string; active: boolean; restored?: RestoredFiles | null }) {
   const [source, setSource] = useState<'workspace' | 'managed'>('workspace')
   const [managedOpened, setManagedOpened] = useState(false)
+  const [drafts, setDrafts] = useState<Drafts>({})
+  // TAL-571: a restore rewrote these files; a draft of one would put the pre-restore text back on Save, so it goes.
+  const [seenRestore, setSeenRestore] = useState(restored?.seq)
+  if (restored && restored.seq !== seenRestore) {
+    setSeenRestore(restored.seq)
+    const rewritten = new Set(restored.paths.map((path) => draftKey(sessionId, 'workspace', workspace ?? '', path)))
+    setDrafts((d) => Object.fromEntries(Object.entries(d).filter(([key]) => !rewritten.has(key))))
+  }
   const sources: ('workspace' | 'managed')[] = managedOpened ? ['workspace', 'managed'] : ['workspace']
   const sourceControl = <Select aria-label={m.ws_panel_source()} value={source} onValueChange={(value) => { setSource(value as 'workspace' | 'managed'); if (value === 'managed') setManagedOpened(true) }}>
     <option value="workspace">{m.ws_panel_workspace_source()}</option>
@@ -53,12 +65,12 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
     {sources.map((owner) => <div key={owner} hidden={source !== owner} className={cn('min-h-0 flex-1 flex-col', source === owner && 'flex')}>
       {owner === 'workspace' && !workspace
         ? <><div className="border-b border-border-subtle px-3 py-1">{sourceControl}</div><div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div></>
-        : <WorkspaceFiles key={owner === 'managed' ? sessionId : workspace} workspace={owner === 'managed' ? JSON.stringify(['managed', sessionId]) : workspace ?? ''} sessionId={sessionId} source={owner} sourceControl={sourceControl} active={active && source === owner} restored={owner === 'workspace' ? restored : null} />}
+        : <WorkspaceFiles key={owner === 'managed' ? sessionId : workspace} workspace={owner === 'managed' ? JSON.stringify(['managed', sessionId]) : workspace ?? ''} sessionId={sessionId} source={owner} sourceControl={sourceControl} active={active && source === owner} drafts={drafts} setDrafts={setDrafts} />}
     </div>)}
   </>
 }
 
-function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, restored }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; restored: RestoredFiles | null }) {
+function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, drafts, setDrafts }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; drafts: Drafts; setDrafts: Dispatch<SetStateAction<Drafts>> }) {
   const managed = source === 'managed'
   const sourceArgs: [] | ['managed'] = managed ? ['managed'] : []
   const qc = useQueryClient()
@@ -66,19 +78,25 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, r
   const [showHidden, setShowHidden] = useState(false)
   const [file, setFile] = useState<string | null>(null)
   // The draft belongs to the file it was typed in, so a save that finishes later never clears another file's edits.
-  const [draftOf, setDraftOf] = useState<{ path: string; text: string } | null>(null)
-  const draft = draftOf?.path === file ? draftOf.text : null
-  const setDraft = (text: string | null) => setDraftOf(text === null || file === null ? null : { path: file, text })
+  const keyOf = (path: string) => draftKey(sessionId, source, workspace, path)
+  const draft = file === null ? null : drafts[keyOf(file)] ?? null
+  // Sets or (null) clears one draft; with `ifText`, only while it still holds that text, so a save never clears newer edits.
+  const putDraft = (path: string, text: string | null, ifText?: string) => setDrafts((d) => {
+    const key = keyOf(path)
+    if (ifText !== undefined && d[key] !== ifText) return d
+    return text === null ? Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)) : { ...d, [key]: text }
+  })
+  const setDraft = (text: string | null) => { if (file !== null) putDraft(file, text) }
+  // A renamed or moved entry takes its drafts (a folder, its files' drafts) to the new path; a deleted one drops them.
+  const relocateDrafts = (from: string, to: string | null) => setDrafts((d) => Object.fromEntries(Object.entries(d).flatMap(([key, text]) => {
+    const [s, src, ws, path = ''] = JSON.parse(key) as string[]
+    if (s !== sessionId || src !== source || ws !== workspace || (path !== from && !path.startsWith(`${from}/`))) return [[key, text]]
+    return to === null ? [] : [[keyOf(to + path.slice(from.length)), text]]
+  })))
   const [pending, setPending] = useState<Pending>(null)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  // TAL-571: a restore rewrote these files; a draft of one would put the pre-restore text back on Save, so it goes.
-  const [seenRestore, setSeenRestore] = useState(restored?.seq)
-  if (restored && restored.seq !== seenRestore) {
-    setSeenRestore(restored.seq)
-    if (file && restored.paths.includes(file)) setDraft(null)
-  }
   const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active, staleTime: 5_000 })
@@ -89,7 +107,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, r
     queryKey: keys.files.contents(workspace), readKeys: ({ path }) => [{ queryKey: keys.files.content(workspace, path), exact: true }],
     effect: ({ text }) => ({ value: text }),
     mutationFn: ({ path, text }) => api.saveFile(sessionId, path, text, ...sourceArgs),
-    onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); setDraftOf((d) => d?.path === path && d.text === text ? null : d) },
+    onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); putDraft(path, null, text) },
     onError: (e) => showErrorToast(e),
   })
   // A path can now name another file (rename, move, delete then create), so cached contents are dropped, not just marked stale.
@@ -105,8 +123,8 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, r
   // A rename owns its old and new paths, so an action on the renamed row waits for it instead of racing it.
   const treeWrite = { queryKey: keys.files.lists(workspace), onError: (e: unknown) => setNotice(errorText(e)), onSuccess: () => { void refresh() } }
   const folders = (...paths: string[]) => paths.map((path) => keys.files.dir(workspace, path))
-  const remove = useResourceMutation({ ...treeWrite, resource: ({ path }: { path: string; to?: string; call: () => Promise<unknown> }) => entryResource(workspace, path), readKeys: ({ path, to }) => folders(parentOf(path), ...(to === undefined ? [] : [to])), effect: () => ({ remove: true }), mutationFn: ({ call }) => call() })
-  const rename = useResourceMutation({ ...treeWrite, resource: ({ path, name }: { path: string; name: string }) => [entryResource(workspace, path), entryResource(workspace, joinPath(parentOf(path), name))], readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
+  const remove = useResourceMutation({ ...treeWrite, onSuccess: (_, { path, to }) => { relocateDrafts(path, to === undefined ? null : joinPath(to, path.split('/').pop() ?? '')); void refresh() }, resource: ({ path }: { path: string; to?: string; call: () => Promise<unknown> }) => entryResource(workspace, path), readKeys: ({ path, to }) => folders(parentOf(path), ...(to === undefined ? [] : [to])), effect: () => ({ remove: true }), mutationFn: ({ call }) => call() })
+  const rename = useResourceMutation({ ...treeWrite, onSuccess: (_, { path, name }) => { relocateDrafts(path, joinPath(parentOf(path), name)); void refresh() }, resource: ({ path, name }: { path: string; name: string }) => [entryResource(workspace, path), entryResource(workspace, joinPath(parentOf(path), name))], readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
   const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file' } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
   const submitName = (kind: 'file' | 'dir', name: string) => { setNotice(null); create.mutate({ resource: newResource(createKind(workspace, dir)), path: joinPath(dir, name), name, isDir: kind === 'dir' }) }
   const go = (path: string) => { setNotice(null); setDir(path) }
@@ -149,7 +167,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, r
       {file ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
-            <Button variant="ghost" onClick={() => { setFile(null); setDraft(null) }}><ArrowUp size={12} aria-hidden="true" /> {m.back()}</Button>
+            <Button variant="ghost" onClick={() => setFile(null)}><ArrowUp size={12} aria-hidden="true" /> {m.back()}</Button>
             <span className="min-w-0 flex-1 truncate font-mono text-muted">{fileName}</span>
             {!managed && <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.download_folder()}><Download size={14} aria-hidden="true" /></a>}
           </div>

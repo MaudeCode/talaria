@@ -157,6 +157,19 @@ describe('chat side panel (TAL-373)', () => {
     expect(screen.getByText('src', { selector: 'span.font-mono' })).toBeInTheDocument()
     expect(vi.mocked(api.listDir).mock.calls.slice(calls).every(([, dir]) => dir === 'src')).toBe(true)
   })
+  it('keeps an unsaved Files draft when the panel closes and reopens or another page is shown, without saving (TAL-1576)', async () => {
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'original', binary: false, size: 8 })
+    const view = render(<Panel />)
+    await userEvent.click(await screen.findByRole('treeitem', { name: 'README.md' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Preview' }), ' draft')
+    view.rerender(<Panel open={false} />)
+    view.rerender(<Panel />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Agents' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Files' }))
+    expect(screen.getByRole('textbox', { name: 'Preview' })).toHaveValue('original draft')
+    expect(api.saveFile).not.toHaveBeenCalled()
+  })
 })
 
 describe('chat side panel Checkpoints (TAL-571)', () => {
