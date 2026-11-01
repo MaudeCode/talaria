@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -2082,6 +2083,7 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
     if (typeof n === 'number' && Number.isFinite(n)) item[key] = n
     else Reflect.deleteProperty(item, key)
   }
+  if ('_turnUsage' in item && !TurnUsageSchema.safeParse(item._turnUsage).success) delete item._turnUsage
   if ('reasoning_titles' in item) {
     const titles = Array.isArray(item.reasoning_titles) ? item.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
     if (titles.length) item.reasoning_titles = titles

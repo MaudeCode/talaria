@@ -11075,6 +11075,12 @@
               "number",
               "null"
             ]
+          },
+          "cost_status": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -11085,6 +11091,102 @@
           "estimated_cost_usd"
         ],
         "additionalProperties": false
+      },
+      "usage_start": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "plan_gauge": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "used_bp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10000
+                      },
+                      "resets_at_ms": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label",
+                      "used_bp",
+                      "resets_at_ms"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "prompt_tokens": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "completion_tokens": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "cache_read_tokens": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "cache_write_tokens": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "estimated_cost_usd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cost_status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "prompt_tokens",
+              "completion_tokens",
+              "cache_read_tokens",
+              "cache_write_tokens",
+              "estimated_cost_usd"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "context": {
         "type": "object",

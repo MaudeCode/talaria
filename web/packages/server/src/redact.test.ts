@@ -794,6 +794,14 @@ describe('redactSessionData', () => {
     expect(row).not.toHaveProperty('_turnTps')
   })
 
+  it('ships a stored turn usage record only in its contract shape (TAL-1076)', () => {
+    const usage = { input_tokens: 10, output_tokens: 2, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: null, cache_hit_percent: null }
+    const rows = redactSessionData({ messages: [{ role: 'assistant', content: 'a', _turnUsage: usage }, { role: 'assistant', content: 'b', _turnUsage: { input_tokens: '10' } }] }, true).messages as Record<string, unknown>[]
+    expect(rows.every((row) => MessageSchema.safeParse(row).success)).toBe(true)
+    expect(rows[0]?._turnUsage).toEqual(usage)
+    expect(rows[1]).not.toHaveProperty('_turnUsage')
+  })
+
   it('returns a user image part carrying a complete raster data URI byte-identical without scanning it (TAL-583)', () => {
     // Structurally complete images whose bytes carry an AWS-key-shaped base64 run: text redaction would rewrite them.
     const AWS = 'AKIAIOSFODNN7EXAMPLE'

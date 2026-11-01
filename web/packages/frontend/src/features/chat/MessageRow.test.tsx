@@ -59,6 +59,35 @@ describe('server-collapsed bodies (TAL-456)', () => {
   })
 })
 
+describe('reply token usage (TAL-1076)', () => {
+  const usage = { input_tokens: 12_345, output_tokens: 678, cache_read_tokens: 9_000, cache_write_tokens: 120, estimated_cost: 0.0123, cache_hit_percent: 73 }
+  const reply = (extra: Partial<Message> = {}) => groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Done.', _turnDuration: 4.25, _usedModel: 'test-model', ...extra }]))[0]!
+
+  it('shows the reply\'s own in/out summary and opens its cache and cost figures', async () => {
+    render(<AssistantMessageRow row={reply({ _turnUsage: usage })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
+    const trigger = screen.getByRole('button', { name: 'Token usage for this reply: 12.3K in, 678 out' })
+    expect(trigger.textContent).toBe('12.3K in · 678 out')
+    fireEvent.click(trigger)
+    const popup = await screen.findByRole('dialog', { name: 'Token usage for this reply: 12.3K in, 678 out' })
+    expect([...popup.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['Input tokens: 12,345', 'Output tokens: 678', 'Estimated cost: $0.0123', 'Cache: 73% hit (9,000 read / 120 write)'])
+  })
+
+  it('omits figures the server left unknown', async () => {
+    render(<AssistantMessageRow row={reply({ _turnUsage: { ...usage, estimated_cost: null, cache_hit_percent: null } })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
+    fireEvent.click(screen.getByRole('button', { name: /^Token usage for this reply/ }))
+    const popup = await screen.findByRole('dialog')
+    expect([...popup.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['Input tokens: 12,345', 'Output tokens: 678'])
+  })
+
+  it('shows nothing for an older reply without a record or with the setting off', () => {
+    const { rerender } = render(<AssistantMessageRow row={reply()} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
+    expect(screen.queryByRole('button', { name: /Token usage/ })).toBeNull()
+    expect(screen.getByText('4.3s · test-model')).toBeTruthy()
+    rerender(<AssistantMessageRow row={reply({ _turnUsage: usage })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    expect(screen.queryByRole('button', { name: /Token usage/ })).toBeNull()
+  })
+})
+
 describe('background updates (TAL-460)', () => {
   const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { background_update_session: { messages: Message[] } }).background_update_session.messages
 

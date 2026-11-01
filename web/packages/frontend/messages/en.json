@@ -435,6 +435,8 @@
 	"token_usage_off": "Token usage off",
 	"usage_cache_hit_detail": "Cache: {a0}% hit ({a1} read / {a2} write)",
 	"usage_cached_percent": "{a0}% cached",
+	"turn_usage_summary": "{input} in · {output} out",
+	"turn_usage_label": "Token usage for this reply: {input} in, {output} out",
 	"theme_usage": "Usage: /theme ",
 	"theme_set": "Theme: ",
 	"no_active_session": "No active session",

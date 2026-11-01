@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "With Show token usage on, each Web reply shows its own input and output tokens, with its cache use and estimated cost a click away.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -180,6 +180,14 @@
         "_turn_id": "contract-run-a",
         "_turnDuration": 4.25,
         "_turnTps": 31.5,
+        "_turnUsage": {
+          "input_tokens": 1200,
+          "output_tokens": 134,
+          "cache_read_tokens": 900,
+          "cache_write_tokens": 0,
+          "estimated_cost": 0.0042,
+          "cache_hit_percent": 75
+        },
         "_ts": 1700000001,
         "reasoning_titles": [
           "Plan"

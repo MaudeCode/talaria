@@ -695,7 +695,8 @@ export const CHECKPOINTS_METHODS = {
   },
 } as const
 // ── chat / approval / clarify ──────────────────────────────────────────
-export const ChatUsageSchema = z.object({ plan_gauge: PlanGaugeSchema.nullable().optional(), prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })
+/** The turn agent's session counters. `cost_status` is the Agent's pricing verdict for its last call (`unknown` when it could not price it). */
+export const ChatUsageSchema = z.object({ plan_gauge: PlanGaugeSchema.nullable().optional(), prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable(), cost_status: z.string().nullable().optional() })
 /**
  * `failed`, `partial`, and `compression_exhausted` are the Agent's own turn-result flags, forwarded as sent; `failed` also sets `status: 'error'`.
  * `max_iterations_summary_request` is the Agent's text for the user row it appends to ask for a summary once its tool budget runs out
@@ -712,7 +713,9 @@ const ChatContextSchema = z.looseObject({ next_turn_threshold_tokens: z.number()
 export const ChatStartResultSchema = z.object({
   status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), context_messages: z.array(Loose).nullable().optional(), post_compression_context_tokens_estimate: z.number().int().nullable().optional(), final_response: z.string(), error: z.string().nullable(),
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),
-  tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema, context: ChatContextSchema, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
+  tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema,
+  /** TAL-1076: the turn agent's counters when this turn bound it, the baseline of the turn's own usage; absent when no agent was bound. */
+  usage_start: ChatUsageSchema.nullable().optional(), context: ChatContextSchema, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
   token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),
 })
 const Text = z.object({ text: z.string() }).catchall(Json)

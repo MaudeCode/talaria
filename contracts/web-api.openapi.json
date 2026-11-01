@@ -6316,6 +6316,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -10547,6 +10603,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -13920,6 +14032,62 @@
                               },
                               "_turnTps": {
                                 "type": "number"
+                              },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
                               },
                               "_ts": {
                                 "type": "number"
@@ -19381,6 +19549,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -24401,6 +24625,62 @@
                               },
                               "_turnTps": {
                                 "type": "number"
+                              },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
                               },
                               "_ts": {
                                 "type": "number"
@@ -30142,6 +30422,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -33464,6 +33800,62 @@
                               },
                               "_turnTps": {
                                 "type": "number"
+                              },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
                               },
                               "_ts": {
                                 "type": "number"
@@ -36850,6 +37242,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -40232,6 +40680,62 @@
                               },
                               "_turnTps": {
                                 "type": "number"
+                              },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
                               },
                               "_ts": {
                                 "type": "number"
@@ -53053,6 +53557,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -56423,6 +56983,62 @@
                               },
                               "_turnTps": {
                                 "type": "number"
+                              },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
                               },
                               "_ts": {
                                 "type": "number"
@@ -60187,6 +60803,62 @@
                               "_turnTps": {
                                 "type": "number"
                               },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
+                              },
                               "_ts": {
                                 "type": "number"
                               },
@@ -63791,6 +64463,62 @@
                                   },
                                   "_turnTps": {
                                     "type": "number"
+                                  },
+                                  "_turnUsage": {
+                                    "type": "object",
+                                    "properties": {
+                                      "input_tokens": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "output_tokens": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "cache_read_tokens": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "cache_write_tokens": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "estimated_cost": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "cache_hit_percent": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 100
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "input_tokens",
+                                      "output_tokens",
+                                      "cache_read_tokens",
+                                      "cache_write_tokens",
+                                      "estimated_cost",
+                                      "cache_hit_percent"
+                                    ]
                                   },
                                   "_ts": {
                                     "type": "number"
@@ -104165,6 +104893,62 @@
                               },
                               "_turnTps": {
                                 "type": "number"
+                              },
+                              "_turnUsage": {
+                                "type": "object",
+                                "properties": {
+                                  "input_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "output_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_read_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cache_write_tokens": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "estimated_cost": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cache_hit_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "input_tokens",
+                                  "output_tokens",
+                                  "cache_read_tokens",
+                                  "cache_write_tokens",
+                                  "estimated_cost",
+                                  "cache_hit_percent"
+                                ]
                               },
                               "_ts": {
                                 "type": "number"

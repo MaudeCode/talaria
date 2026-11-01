@@ -226,7 +226,17 @@ export interface ContextFigures {
   onCompress?: (() => void) | undefined; compressing?: boolean | undefined
 }
 
-function contextStats({ percent, used, window, thresholdPercent, input, output, cacheRead, cacheWrite, cacheHitPercent, cost }: ContextFigures) {
+/** Token, cost and cache lines for a usage record as sent: the session's in the context popover, one reply's in its footer (TAL-1076). */
+export function usageDetailLines({ input, output, cacheRead, cacheWrite, cacheHitPercent, cost }: Pick<ContextFigures, 'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'cacheHitPercent' | 'cost'>): string[] {
+  return [
+    input != null ? `${m.usage_input_tokens()}: ${input.toLocaleString()}` : null,
+    output != null ? `${m.usage_output_tokens()}: ${output.toLocaleString()}` : null,
+    cost != null ? `${m.usage_estimated_cost()}: ${formatUsd(cost)}` : null,
+    cacheHitPercent != null ? m.usage_cache_hit_detail({ a0: cacheHitPercent, a1: (cacheRead ?? 0).toLocaleString(), a2: (cacheWrite ?? 0).toLocaleString() }) : null,
+  ].filter((d) => d !== null)
+}
+
+function contextStats({ percent, used, window, thresholdPercent, ...usage }: ContextFigures) {
   if (percent == null || used == null || window == null) return null
   const tone = percent >= 90 ? 'high' : percent >= 70 ? 'mid' : 'low'
   const threshold = thresholdPercent != null ? `${m.auto_compress_label()}: ${thresholdPercent}%` : null
@@ -235,10 +245,7 @@ function contextStats({ percent, used, window, thresholdPercent, input, output, 
   const details = [
     `${used.toLocaleString()} / ${window.toLocaleString()}`,
     threshold,
-    input != null ? `${m.usage_input_tokens()}: ${input.toLocaleString()}` : null,
-    output != null ? `${m.usage_output_tokens()}: ${output.toLocaleString()}` : null,
-    cost != null ? `${m.usage_estimated_cost()}: ${formatUsd(cost)}` : null,
-    cacheHitPercent != null ? m.usage_cache_hit_detail({ a0: cacheHitPercent, a1: (cacheRead ?? 0).toLocaleString(), a2: (cacheWrite ?? 0).toLocaleString() }) : null,
+    ...usageDetailLines(usage),
   ].filter((d) => d !== null)
   return { pct: percent, tone, title, usage: `${m.composer_context_usage()}: ${percent}%`, details }
 }
