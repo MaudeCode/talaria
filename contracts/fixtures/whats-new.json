@@ -23,7 +23,8 @@
           "components": [
             "app",
             "web"
-          ]
+          ],
+          "announce": false
         },
         {
           "category": "Changed",
