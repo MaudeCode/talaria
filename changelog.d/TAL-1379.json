@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A burst of one-shot Agent runs no longer pushes CLI, TUI and Desktop conversations out of the session list.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
