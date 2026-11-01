@@ -85,6 +85,7 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_sidebar_feedback()} settingKey="show_sidebar_feedback" />
       <Toggle label={m.settings_label_conversation_outline()} settingKey="show_conversation_outline" />
       <Toggle label={m.settings_label_terminal_auto_expand()} settingKey="terminal_auto_expand_on_output" />
+      <Toggle label={m.settings_label_terminal_screen_reader()} hint={m.settings_desc_terminal_screen_reader()} settingKey="screen_reader_mode" />
       <Toggle label={m.settings_label_new_chat_on_workspace_switch()} settingKey="new_chat_on_workspace_switch" />
       <Toggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
       <Toggle label={m.settings_label_sound()} settingKey="sound_enabled" />

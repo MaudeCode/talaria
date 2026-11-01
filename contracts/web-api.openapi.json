@@ -69534,6 +69534,10 @@
                         "pace_critical_burn_rate_percent",
                         "pace_minimum_elapsed_hours"
                       ]
+                    },
+                    "screen_reader_mode": {
+                      "type": "boolean",
+                      "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
                     }
                   },
                   "additionalProperties": {}
@@ -69807,6 +69811,10 @@
                         "pace_critical_burn_rate_percent",
                         "pace_minimum_elapsed_hours"
                       ]
+                    },
+                    "screen_reader_mode": {
+                      "type": "boolean",
+                      "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
                     }
                   },
                   "additionalProperties": {}

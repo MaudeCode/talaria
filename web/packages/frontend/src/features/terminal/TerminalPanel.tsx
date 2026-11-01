@@ -13,6 +13,7 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
+import { useSetting } from '../../app/settings'
 
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
 /** The server's per-request input limit (UTF-16 length). */
@@ -36,12 +37,16 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const mode = useRef<'web_pty' | 'owner_command' | null>(null)
   const commandBusy = useRef(false)
   const dropInput = useRef<() => void>(() => undefined)
+  // TAL-1605: the PTY's accessibility tree follows the saved preference; captured owner-command output always has one.
+  const screenReader = useSetting('screen_reader_mode') === true
+  const screenReaderPref = useRef(screenReader)
+  const applyScreenReader = () => { if (term.current) term.current.options.screenReaderMode = mode.current === 'owner_command' || screenReaderPref.current }
 
   useEffect(() => {
     mode.current = null
     const el = host.current
     if (!el) return
-    const t = new Terminal({ cursorBlink: true, fontFamily: 'var(--font-mono)', fontSize: 12.5, theme: { background: 'transparent' }, allowTransparency: true, convertEol: true })
+    const t = new Terminal({ cursorBlink: true, fontFamily: 'var(--font-mono)', fontSize: 12.5, theme: { background: 'transparent' }, allowTransparency: true, convertEol: true, screenReaderMode: screenReaderPref.current })
     const f = new FitAddon()
     t.loadAddon(f)
     t.loadAddon(new WebLinksAddon())
@@ -69,13 +74,13 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
         mode.current = 'owner_command'
         setCaptured({ workspace: res.workspace, target_key: res.target_key })
         t.options.disableStdin = true
-        t.options.screenReaderMode = true
       } else {
         mode.current = 'web_pty'
         setCaptured(null)
         t.options.disableStdin = false
         connect()
       }
+      applyScreenReader()
       setStatus('running')
     }
     applyStart.current = started
@@ -127,6 +132,10 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       term.current = null
     }
   }, [sessionId, workspace])
+  useEffect(() => {
+    screenReaderPref.current = screenReader
+    applyScreenReader()
+  }, [screenReader])
 
   // The panel closes at once while the server stops the shell. A refusal reopens it with the error; closing is
   // idempotent, so an unknown outcome is settled by asking once more.

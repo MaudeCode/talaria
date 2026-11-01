@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings → Preferences has a Terminal screen reader mode, so screen readers can read workspace terminal output.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

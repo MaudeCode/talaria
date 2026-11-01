@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, fireEvent } from '@testing-library/react'
+import { act, render as rtlRender, fireEvent, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import terminalFixture from '../../../../../../contracts/fixtures/native-captured-command.json'
 
 const webStart = { ...terminalFixture.web_target, session_id: 's1', workspace: '/w' }
 const noop = () => undefined
-const xterm: { type: (data: string) => void } = vi.hoisted(() => ({ type: () => undefined }))
+const xterm: { type: (data: string) => void; options: Record<string, unknown> } = vi.hoisted(() => ({ type: () => undefined, options: {} }))
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    constructor(options: Record<string, unknown>) { this.options = { ...options }; xterm.options = this.options }
     clear = noop
-    options = {}
+    options: Record<string, unknown>
     cols = 80
     rows = 24
     loadAddon = noop
@@ -25,11 +28,22 @@ vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class { dispose = noop
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 vi.mock('../../api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/client')>(), post: vi.fn() }))
+vi.mock('../../api/endpoints', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/endpoints')>(), saveSettings: vi.fn() }))
 import { post } from '../../api/client'
+import { saveSettings } from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
+import { useSaveSettings } from '../../app/settings'
 import { showToast } from '../toast/toast'
 import { TerminalPanel } from './TerminalPanel'
 
 const opened: string[] = []
+let queryClient: QueryClient
+/** The panel reads its screen-reader preference from confirmed settings; each test owns a fresh, already-loaded copy. */
+const render = (ui: ReactElement, settings: Record<string, unknown> = {}) => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  queryClient.setQueryData(keys.settings, settings)
+  return rtlRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> })
+}
 
 beforeEach(() => {
   opened.length = 0
@@ -225,5 +239,57 @@ describe('terminal input (TAL-1146)', () => {
     await act(async () => { inputs[0]!.resolve(); await Promise.resolve() })
     await settle()
     expect(sent()).toEqual(['a'])
+  })
+})
+
+describe('screen-reader mode (TAL-1605)', () => {
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+  beforeEach(() => { vi.mocked(post).mockReset(); vi.mocked(post).mockResolvedValue(webStart) })
+
+  it('gives the PTY an accessibility tree when screen_reader_mode is saved on', async () => {
+    render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />, { screen_reader_mode: true })
+    await settle()
+    expect(opened).toHaveLength(1)
+    expect(xterm.options.screenReaderMode).toBe(true)
+  })
+
+  it('leaves the PTY without one by default and follows later confirmed values', async () => {
+    render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
+    await settle()
+    expect(xterm.options.screenReaderMode).toBe(false)
+    act(() => { queryClient.setQueryData(keys.settings, { screen_reader_mode: true }) })
+    await waitFor(() => expect(xterm.options.screenReaderMode).toBe(true))
+  })
+
+  it('applies a toggle at once and restores the confirmed value when the save is refused', async () => {
+    const { ApiError } = await import('../../contracts/common')
+    let refuse!: () => void
+    vi.mocked(saveSettings).mockImplementation((patch) => new Promise((_, reject) => { refuse = () => reject(new ApiError({ kind: 'http', status: 400, path: 'api/settings', message: `refused ${Object.keys(patch).join()}` })) }))
+    let save!: ReturnType<typeof useSaveSettings>
+    function Toggle() { save = useSaveSettings(); return null }
+    render(<><Toggle /><TerminalPanel sessionId="s1" workspace="/w" onClose={noop} /></>, { screen_reader_mode: false })
+    await settle()
+    act(() => { save.mutate({ screen_reader_mode: true }) })
+    await waitFor(() => expect(xterm.options.screenReaderMode).toBe(true))
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ screen_reader_mode: true }))
+    act(() => { refuse() })
+    await waitFor(() => expect(xterm.options.screenReaderMode).toBe(false))
+  })
+
+  it('keeps owner-command output accessible and reapplies the preference to the next PTY', async () => {
+    let starts = 0
+    vi.mocked(post).mockImplementation((path: string) => Promise.resolve(path === 'api/terminal/start' && ++starts === 2
+      ? { ...terminalFixture.target, session_id: 's1', workspace: '/frozen/native', target_key: 'owner' }
+      : webStart))
+    const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />, { screen_reader_mode: false })
+    await settle()
+    expect(xterm.options.screenReaderMode).toBe(false)
+    await act(async () => { view.getByRole('button', { name: 'Restart' }).click(); await new Promise((r) => setTimeout(r, 0)) })
+    expect(view.getByRole('textbox', { name: 'Captured command' })).toBeVisible()
+    expect(xterm.options.screenReaderMode).toBe(true)
+    view.rerender(<TerminalPanel sessionId="s2" workspace="/w" onClose={noop} />)
+    await settle()
+    expect(opened).toHaveLength(2)
+    expect(xterm.options.screenReaderMode).toBe(false)
   })
 })

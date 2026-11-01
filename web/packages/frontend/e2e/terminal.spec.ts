@@ -132,3 +132,39 @@ test('closing the terminal during start opens no output stream', async ({ page }
   await expect(page.locator('#composerTerminalPanel')).toHaveAttribute('data-status', 'closed')
   expect(outputs).toHaveLength(1)
 })
+
+/** TAL-1605: the saved screen-reader preference decides whether PTY output reaches the accessibility tree. */
+for (const enabled of [true, false]) {
+  test(`PTY output ${enabled ? 'reaches' : 'stays out of'} the accessibility tree with screen_reader_mode ${enabled ? 'on' : 'off'}`, async ({ page }, testInfo) => {
+    const sid = `terminal-a11y-${enabled}`
+    const inputs: string[] = []
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      const response = await route.fetch()
+      await route.fulfill({ response, json: { ...await response.json() as object, screen_reader_mode: enabled } })
+    })
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Terminal', model: 'm1', workspace: '/tmp/term', messages: [] } } }))
+    await page.route('**/api/terminal/**', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/output')) {
+        await route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 60000\n\nevent: output\ndata: {"text":"build finished: 3 passed\\r\\n$ "}\n\n' })
+        return
+      }
+      if (path.endsWith('/input')) inputs.push((route.request().postDataJSON() as { data: string }).data)
+      await route.fulfill({ json: path.endsWith('/start') ? terminalStart(sid) : { ok: true } })
+    })
+    await page.goto(`/session/${sid}`)
+    await page.locator('#msg').fill('/terminal')
+    await page.locator('#btnSend').click()
+    const panel = page.locator('#composerTerminalPanel')
+    await expect(panel).toHaveAttribute('data-status', 'running')
+    await expect(panel.locator('.xterm-rows')).toContainText('build finished: 3 passed')
+    const rows = panel.getByRole('list').getByRole('listitem').filter({ hasText: 'build finished: 3 passed' })
+    if (enabled) await expect(rows).toHaveCount(1)
+    else await expect(panel.locator('.xterm-accessibility-tree')).toHaveCount(0)
+    await panel.locator('.xterm-helper-textarea').focus()
+    await page.keyboard.type('ls')
+    await expect.poll(() => inputs.join('')).toBe('ls')
+    await page.screenshot({ path: testInfo.outputPath(`terminal-screen-reader-${enabled ? 'on' : 'off'}.png`) })
+  })
+}

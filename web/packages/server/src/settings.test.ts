@@ -224,6 +224,14 @@ describe('save', () => {
     expect((await s.save({ show_sidebar_feedback: true })).show_sidebar_feedback).toBe(true)
     expect((await store().load()).show_sidebar_feedback).toBe(true)
   })
+  it('keeps the PTY screen-reader mode off until opted in, coercing writes to a boolean (TAL-1605)', async () => {
+    write({ bot_name: 'Older' })
+    expect((await store().load()).screen_reader_mode).toBe(false)
+    expect((await store().save({ screen_reader_mode: 'yes' })).screen_reader_mode).toBe(true)
+    expect(onDisk().screen_reader_mode).toBe(true)
+    expect((await store().load()).screen_reader_mode).toBe(true)
+    expect((await store().save({ screen_reader_mode: 0 })).screen_reader_mode).toBe(false)
+  })
   it('a dashboard_plugins patch replaces a malformed stored value instead of being dropped (TAL-685)', async () => {
     for (const bad of [null, 'x', ['a'], 3]) {
       write({ dashboard_plugins: bad })
