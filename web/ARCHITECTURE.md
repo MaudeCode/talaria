@@ -131,6 +131,12 @@ Recovery keeps its own short-lived handle.
 Each thread retains at most 16 handles, closing the least recently used path on
 eviction so deleted profiles cannot accumulate unbounded descriptors or page caches.
 
+The listing's orphan prune removes only Web-owned cached sidecars: read-only CLI, API-server
+and Desktop imports of the active profile whose row that profile's `state.db` proves absent.
+One batched existence probe per list serves the prune, and delete uses the same eligibility.
+A missing or unreadable `state.db`, another profile's row, a held run or a canonical owner keeps
+the sidecar; Agent records are never deleted.
+
 Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
 status settings enter that view; live repository filter definitions and configuration includes cannot
 be loaded by its status command. Initialized submodules use the same boundary, preserving their

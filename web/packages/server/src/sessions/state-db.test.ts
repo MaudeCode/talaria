@@ -814,6 +814,38 @@ describe('state.db projection', () => {
     await s.deps.settings.save({ show_cli_sessions: false })
   })
 
+  it('prunes a legacy Desktop sidecar only when its owning profile\'s state.db proves the row gone (TAL-1562)', async () => {
+    const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    // The cached shape older materialization left: Desktop markers, read-only, and no `is_cli_session`.
+    const desktop = async (sid: string, extra: Json = {}): Promise<string> => {
+      ;(await s.deps.sessionStore.save(new Session({
+        session_id: sid, title: 'Desktopprobe', source_tag: 'desktop', raw_source: 'desktop', read_only: true,
+        messages: [{ role: 'user', content: 'desktopprobe', timestamp: 8100 }, { role: 'assistant', content: 'ok', timestamp: 8101 }], ...extra,
+      }, { workspace: s.state, model: null })))
+      return sid
+    }
+    const gone = await desktop('tal1562-desktop-gone')
+    const live = await desktop('tal1562-desktop-live')
+    insertSession(db, { id: live, source: 'desktop', started_at: 8100, title: 'Desktopprobe', messages: [['user', 8100], ['assistant', 8101]] })
+    s.deps.registry.liveIds.add('tal1562-live-run')
+    // Another profile's row is never checked against the active profile's state.db, and a held run is never an orphan.
+    const kept = [live, (await desktop('tal1562-other-profile', { profile: 'work' })), (await desktop('tal1562-running', { active_stream_id: 'tal1562-live-run' }))]
+    for (const path of ['/api/sessions', '/api/sessions?all_profiles=1']) {
+      const rows = (await json(await s.get(path))).sessions as Json[]
+      expect(rows.map((r) => str(r.session_id)), path).not.toContain(gone)
+      // Pruning leaves the Desktop display classification alone.
+      for (const r of rows.filter((r) => kept.includes(str(r.session_id)))) expect(r.source_kind, str(r.session_id)).toBe('other')
+    }
+    expect(existsSync(sessionPath(s.deps.sessionStore, gone))).toBe(false)
+    for (const sid of kept) expect(existsSync(sessionPath(s.deps.sessionStore, sid)), sid).toBe(true)
+    // Delete shares the eligibility: a stale client may delete an orphan, never a live Desktop session.
+    const stale = await desktop('tal1562-desktop-stale')
+    expect(await json(await post('/api/session/delete', { session_id: stale }))).toEqual({ ok: true, state_db_cleanup_failed: false })
+    expect(existsSync(sessionPath(s.deps.sessionStore, stale))).toBe(false)
+    expect((await post('/api/session/delete', { session_id: live })).status).toBe(400)
+    s.deps.registry.liveIds.delete('tal1562-live-run')
+  })
+
   it('locks a sidecar whose state.db owner cannot be read, and only a missing state.db means no owner (TAL-358)', () => {
     expect(stateDbSessionSources(join(s.state, 'no-such-state.db'), ['a'])).toEqual(new Map())
     // A path that exists but does not open as a database: the owner is unknown, not absent.
@@ -822,6 +854,46 @@ describe('state.db projection', () => {
     expect(stateDbSessionSources(unreadable, ['a'])).toBeNull()
     const rows = withOwnerLocks([{ session_id: 'a' }, { session_id: 'b', source_tag: 'webui' }], () => null)
     expect(rows.map((r) => r.read_only)).toEqual([true, true])
+  })
+})
+
+describe('legacy Desktop sidecars without a provable owner row (TAL-1562)', () => {
+  const desktop = async (s: TestServer, sid: string, extra: Json = {}): Promise<string> => {
+    ;(await s.deps.sessionStore.save(new Session({
+      session_id: sid, title: 'Desktopprobe', source_tag: 'desktop', raw_source: 'desktop', read_only: true,
+      messages: [{ role: 'user', content: 'desktopprobe', timestamp: 8200 }, { role: 'assistant', content: 'ok', timestamp: 8201 }], ...extra,
+    }, { workspace: s.state, model: null })))
+    return sid
+  }
+  const listed = async (s: TestServer, path = '/api/sessions'): Promise<string[]> => {
+    const res = await s.get(path)
+    expect(res.status, path).toBe(200)
+    return ((await json(res)).sessions as Json[]).map((r) => str(r.session_id))
+  }
+
+  it('keeps the cache while the owning state.db is missing or corrupt, and the list stays healthy', async () => {
+    const s = await bootTestServer()
+    try {
+      const sid = await desktop(s, 'tal1562-unproven')
+      expect(await listed(s)).toContain(sid)
+      writeFileSync(join(s.state, 'state.db'), 'not a database')
+      expect(await listed(s)).toContain(sid)
+      expect(existsSync(sessionPath(s.deps.sessionStore, sid))).toBe(true)
+    } finally { await s.close() }
+  })
+
+  it('never proves a foreign profile\'s row gone from the pinned state.db in isolated mode', async () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-isolated-desktop-')))
+    const home = join(base, 'profiles', 'alice')
+    createStateDb(join(home, 'state.db')).close()
+    const s = await bootTestServer({ env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
+    try {
+      const own = await desktop(s, 'tal1562-isolated-own', { profile: 'alice' })
+      const foreign = await desktop(s, 'tal1562-isolated-foreign', { profile: 'bob' })
+      await listed(s, '/api/sessions?all_profiles=1')
+      expect(existsSync(sessionPath(s.deps.sessionStore, own))).toBe(false)
+      expect(existsSync(sessionPath(s.deps.sessionStore, foreign))).toBe(true)
+    } finally { await s.close(); rmSync(base, { recursive: true, force: true }) }
   })
 })
 

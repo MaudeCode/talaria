@@ -53,3 +53,13 @@ export function sourceKind(row: Row): SourceKind {
   if (row.is_cli_session === true || markers.some((m) => CLI_MARKERS.has(m))) return 'cli'
   return markers.length ? 'other' : 'webui'
 }
+
+/**
+ * The imports an orphan prune may reconcile (TAL-590): CLI and API-server sessions, and (TAL-1562) a Desktop session
+ * whose sidecar older materialization cached without `is_cli_session`, which `sourceKind` still files as `other`.
+ */
+export function isOrphanPrunableSource(row: Row): boolean {
+  const kind = sourceKind(row)
+  if (kind === 'cli' || kind === 'api') return true
+  return kind === 'other' && [row.session_source, row.source_tag, row.raw_source, row.source_label, row.source].map(lower).includes('desktop')
+}

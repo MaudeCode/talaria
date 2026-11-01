@@ -32,7 +32,7 @@ import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } 
 import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
-import { sourceKind } from './source-kind.js'
+import { isOrphanPrunableSource } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
@@ -379,9 +379,10 @@ export class SessionService {
 
   /**
    * TAL-590 (Python #3238): the read-only CLI or API-server imports among `rows` whose active-profile state.db row is
-   * gone, so their source was deleted outside Web and no Web action could remove them. An unreadable state.db proves
-   * nothing (`agentSessionRowsExisting`); another profile's session or one with a run the runtime still holds is never
-   * an orphan, while a stream id a crash left behind does not count as one.
+   * gone, so their source was deleted outside Web and no Web action could remove them. TAL-1562: a legacy Desktop
+   * sidecar too (`isOrphanPrunableSource`). An unreadable or missing state.db proves nothing (`agentSessionRowsExisting`);
+   * another profile's session, which only its own profile's state.db could prove gone, or one with a run the runtime
+   * still holds is never an orphan, while a stream id a crash left behind does not count as one.
    */
   private async orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null, reads?: SessionGateReads): Promise<Set<string>> {
     const candidates = (await this.orphanCandidates(rows))
@@ -392,7 +393,7 @@ export class SessionService {
   }
 
   private async orphanCandidates(rows: Row[]): Promise<string[]> {
-    return (await filterAsync(rows, async (r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !(await this.activeRunBlocking(str(r.session_id)))))
+    return (await filterAsync(rows, async (r) => r.read_only && isOrphanPrunableSource(r) && this.visibleToActiveProfile(str(r.profile) || null) && !(await this.activeRunBlocking(str(r.session_id)))))
       .map((r) => str(r.session_id))
   }
 
