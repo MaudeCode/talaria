@@ -43,4 +43,6 @@ input[type="text"],input[type="password"],input[type="number"],input[type="searc
 input[type="text"]:hover,input[type="password"]:hover,input[type="number"]:hover,input[type="search"]:hover,textarea:hover,select:hover{border-color:var(--border)}
 input[type="text"]:focus,input[type="password"]:focus,input[type="number"]:focus,input[type="search"]:focus,textarea:focus,select:focus{background:var(--surface);border-color:var(--input-focus-border);box-shadow:var(--input-focus-shadow)}
 ::selection{background:var(--selection-bg);color:var(--selection-fg)}
+/* TAL-1154: a ContextMenu trigger suppresses the iOS long-press callout; links nested in it keep theirs, as they keep the browser's menu. */
+[data-context-menu] a[href]{-webkit-touch-callout:default}
 }

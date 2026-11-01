@@ -10,7 +10,7 @@ const ANSWER = 'Read the [release notes](https://example.com/notes) first.'
 async function boot(page: Page): Promise<{ user: Locator; assistant: Locator; truncates: Record<string, unknown>[] }> {
   let truncated = false
   const truncates: Record<string, unknown>[] = []
-  const messages = [{ role: 'user', id: 1, content: 'Plan the release' }, { role: 'assistant', id: 2, content: ANSWER }]
+  const messages = [{ role: 'user', id: 1, content: 'Plan the release', attachments: [{ filename: 'report.pdf', download_url: 'api/media?path=report.pdf' }] }, { role: 'assistant', id: 2, content: ANSWER }]
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'msg-menu', title: 'Message menu', can_branch: true, messages: truncated ? [] : messages } } }))
   await page.route('**/api/session/truncate', (route) => {
     truncates.push(route.request().postDataJSON() as Record<string, unknown>)
@@ -76,12 +76,17 @@ test('right-click on a message opens its hover-bar actions, and Copy works from 
   await expect.poll(nativeMenus).toEqual([false, false])
 })
 
-test('a link and selected text inside a message keep the browser menu', async ({ page }, info) => {
+test('links and selected text inside a message keep the browser menu', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'right-click is the desktop route')
-  const { assistant } = await boot(page)
+  const { user, assistant } = await boot(page)
   const nativeMenus = await watchNativeMenu(page)
   await assistant.getByRole('button', { name: 'release notes' }).click({ button: 'right' })
   await expect(page.getByRole('menu')).toHaveCount(0)
+  const attachment = user.getByRole('link', { name: 'report.pdf' })
+  await attachment.click({ button: 'right' })
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  // The row's iOS callout suppression must not reach the link: base.css restores it under this selector.
+  expect(await attachment.evaluate((a) => a.matches('[data-context-menu] a[href]') && a.closest('[data-context-menu]') === a.closest('.msg-row'))).toBe(true)
 
   await assistant.locator('.msg-body').evaluate((el) => {
     const range = document.createRange(); range.selectNodeContents(el)
@@ -89,7 +94,7 @@ test('a link and selected text inside a message keep the browser menu', async ({
   })
   await assistant.locator('.msg-body').click({ button: 'right' })
   await expect(page.getByRole('menu')).toHaveCount(0)
-  await expect.poll(nativeMenus).toEqual([true, true])
+  await expect.poll(nativeMenus).toEqual([true, true, true])
 })
 
 test('long-press on a user message opens its actions, and Edit works from there', async ({ page }, info) => {
