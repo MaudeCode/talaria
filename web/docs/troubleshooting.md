@@ -139,30 +139,59 @@ Recovery is incremental: the marker records how far into the journal it has repl
 
 ## Run-journal storage keeps growing
 
-Completed runs retain their full replay journal for 14 days by default. WebUI
-also keeps at least the three newest terminal journals per session regardless of
-age, and never prunes a journal whose last event is nonterminal. The hygiene
+Completed runs keep their live journal for 14 days by default, then move to a
+compressed archive that still replays in full. WebUI also keeps at least the
+three newest terminal journals per session live regardless of age, and never
+archives a journal whose last event is nonterminal. The hygiene
 ticker runs retention one minute after startup and then at most once every six
 hours, one sweep at a time. The sweep is incremental: it reads journals
 asynchronously and yields between them, so `/health` and other requests keep
 answering while it runs. Shutdown and self-update restarts stop it at its next
 yield and wait for that before exiting. Sessions with
-no more journals than the keep count, or none past the retention age, are not
-read. A journal that gains a live writer or changes while the sweep runs is left
-for the next sweep.
+no more journals than the keep count, or none past the retention age and within
+both budgets, are not read. A journal that gains a live writer or changes while
+the sweep runs is left for the next sweep.
 
-Before removing an expired full journal, WebUI atomically writes a compact
-`<run_id>.summary.json` beside it. Status lookups remain auditable from that
-summary. A reconnect cursor aimed at a pruned journal returns `cursor_pruned`,
-which tells the caller to reload the settled transcript rather than replay stale
-events.
+Retention archives a settled journal rather than discarding it. WebUI streams
+the journal into a gzip copy at `<run_id>.jsonl.gz` under the session's
+`_archive/` directory, checks that the copy decompresses to the same bytes,
+syncs it to disk, and only then removes the live `<run_id>.jsonl`. Replay,
+reconnect cursors, status lookups and a later writer read the archive and any
+live continuation as one run, so an archived chat replays exactly as before. A
+failure at any step leaves the live journal in place for the next sweep. An
+archive that cannot be read or verified is never treated as missing: replay and
+appends for that run refuse, and a reconnect falls back to a snapshot.
+
+Each archived run also gets the compact `<run_id>.summary.json` earlier
+releases wrote, so switching back to the previous Stable keeps working: it sees
+a pruned run there. Runs that an earlier release already pruned keep only that
+summary; their events cannot be recovered, and a reconnect cursor aimed at one
+returns `cursor_pruned`, which tells the caller to reload the settled transcript.
+
+Archives use far less disk than the live journals they replace, but they are
+not deleted on a schedule. Deleting a session removes its live journals,
+archives and summaries together.
+
+A run is archived when it is past the retention age, or while its session
+exceeds a live journal budget, oldest runs first. The budgets are soft: the
+newest terminal journals, nonterminal runs, journals with a live writer, and
+the run a session still records as active stay live even when that leaves the
+session over budget. A session whose state cannot be read is skipped.
 
 The policy can be adjusted with:
 
 - `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS`, default `14`; set `0` to disable
-  retention.
+  retention, budgets included.
 - `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT`, default `3`; the minimum number of
-  terminal journals preserved per session.
+  terminal journals kept live per session.
+- `HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION`, default `40`; the
+  live journal count budget per session. `0` disables it.
+- `HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION`, default
+  `268435456` (256 MiB); the live journal byte budget per session. `0` disables
+  it.
+
+A budget that is not a whole number (or is above 100000 runs or 100 GiB) is
+treated as disabled.
 
 Changing these values does not affect active/nonterminal run recovery.
 

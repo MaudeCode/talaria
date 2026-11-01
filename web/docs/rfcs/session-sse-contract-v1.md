@@ -227,9 +227,11 @@ degraded journal once per run; reconnect recovery uses the session snapshot or
 settled transcript for the uncommitted gap. A journal failure never attaches a
 cursor to an event that was not flushed to the journal.
 
-Settled journals older than `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) are
-compacted to summaries, keeping the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3)
-newest per session; a cursor into a compacted run falls back to a snapshot.
+Settled journals older than `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14), or
+past a session's soft live budget (40 journals, 256 MiB), are archived as
+verified gzip, keeping the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest per
+session live. Cursors into an archived run replay it like a live one. A cursor
+into a run an earlier release compacted to a summary falls back to a snapshot.
 
 ### Settled prompts
 

@@ -251,19 +251,22 @@ export function runJournalBackendConformance(name: string, make: () => JournalBa
       await writer.close()
     })
 
-    it('preserves active runs, prunes closed terminal runs to summaries, and deletes them', async () => {
+    it('preserves active runs, archives closed terminal runs with their rows, and deletes them', async () => {
       const backend = fixture.backend
       const writer = await backend.open('session', 'stream', { durability: 'terminal-only' })
       await writer.append({ event: 'done', payload: {} }, { terminal: true })
       const cutoff = Date.now() / 1000 + 1
       expect(await backend.prune(cutoff)).toBe(0)
       await writer.close()
+      const before = await rows()
       expect(await backend.prune(cutoff)).toBe(1)
-      expect(await rows()).toEqual([])
-      expect(await backend.summary('session', 'stream')).toMatchObject({ terminal: true, last_seq: 1, journal_pruned: true })
+      expect(await rows()).toEqual(before)
+      expect(await backend.summary('session', 'stream')).toMatchObject({ terminal: true, last_seq: 1 })
+      expect(await backend.prune(cutoff), 'an archived run is not archived again').toBe(0)
       expect(await backend.streams('session')).toEqual(['stream'])
       expect(await backend.deleteSession('session')).toBe(true)
       expect(await backend.summary('session', 'stream')).toBeNull()
+      expect(await rows()).toEqual([])
       expect(await backend.streams('session')).toEqual([])
     })
   })

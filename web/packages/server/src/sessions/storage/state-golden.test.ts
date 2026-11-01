@@ -5,6 +5,7 @@ import { JsonJournal, JsonJournalWriter } from './json-journal.js'
 import { JsonDocuments } from '../../test/storage.js'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { gunzipSync } from 'node:zlib'
 import { dirname, join, relative } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { DraftStore, DraftVersionConflict } from '../drafts.js'
@@ -83,8 +84,10 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     const settingsBytes = readFileSync(join(state, 'settings.json'), 'utf8')
     expect((JSON.parse(settingsBytes) as { default_workspace: string }).default_workspace).toBe(workspace)
     const files: Record<string, string> = {}
-    const scan = (dir: string): void => { for (const entry of readdirSync(dir, { withFileTypes: true })) { const path = join(dir, entry.name); if (entry.isDirectory()) scan(path); else files[relative(state, path)] = readFileSync(path, 'utf8').replaceAll(JSON.stringify(workspace), JSON.stringify('<workspace>')) } }
+    const scan = (dir: string): void => { for (const entry of readdirSync(dir, { withFileTypes: true })) { const path = join(dir, entry.name); if (entry.isDirectory()) scan(path); else files[relative(state, path)] = (path.endsWith('.gz') ? gunzipSync(readFileSync(path)).toString('utf8') : readFileSync(path, 'utf8')).replaceAll(JSON.stringify(workspace), JSON.stringify('<workspace>')) } }
     scan(state)
+    // An archive is recorded by its content, which must repeat the journal byte for byte (gzip bytes vary with zlib).
+    expect(files['sessions/_run_journal/session/_archive/stream.jsonl.gz']).toBe(journalBytes)
     expect({ files, journalBytes }).toMatchSnapshot()
   } finally { vi.restoreAllMocks(); rmSync(state, { recursive: true, force: true }) }
 })

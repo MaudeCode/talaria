@@ -1,17 +1,16 @@
 /* eslint-disable @typescript-eslint/require-await -- Synchronous JSON transactions implement the async storage port. */
 import { rmSync } from 'node:fs'
 import { closeSync, existsSync, fsync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
-import { open, readdir, readFile, stat, unlink } from 'node:fs/promises'
+import { open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
 import { setImmediate as nextTurn } from 'node:timers/promises'
-import { atomicWriteTextAsync, writeFully } from '../../fs/atomic.js'
+import { atomicWriteTextAsync, writeFully, writeFullyAsync } from '../../fs/atomic.js'
 import { dirname, join } from 'node:path'
-import { StringDecoder } from 'node:string_decoder'
 
 
-import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, pruneRetention, staleInterruptedEvent, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
+import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, SessionJournalReplay } from './backend.js'
+import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, NOFOLLOW, StagedFile, fsyncDir, logicalBytes, runLines, stageArchive } from './json-journal-archive.js'
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
-const RUN_EVENTS_PAGE_BYTES = 64 * 1024
 const PRUNED_SUMMARY_SUFFIX = '.summary.json'
 const RUN_OWNER_CACHE_MAX = 1000
 
@@ -46,9 +45,19 @@ export function readTurnJournalEvents(sessionDir: string): Map<string, Record<st
   return out
 }
 
+const sameFile = (a: BigIntStats, b: BigIntStats): boolean => a.isFile() && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs
+
+/** A run's open journal files: its archive and its live journal, either absent. */
+interface RunFiles { archive: FileHandle | null; live: FileHandle | null; liveStat: BigIntStats | null; close(): Promise<void> }
+const NO_FILES: RunFiles = { archive: null, live: null, liveStat: null, close: async () => undefined }
+
+export { JournalArchiveError } from './json-journal-archive.js'
 export class JsonJournal implements JournalBackend {
   private readonly runOwners = new Map<string, string>()
-  constructor(readonly sessionDir: string, private readonly env: Record<string, string | undefined> = {}) {}
+  /** Bumped by each session deletion, so archival in flight never publishes into a deleted session. */
+  private readonly deletions = new Map<string, number>()
+  private readonly policy
+  constructor(readonly sessionDir: string, private readonly env: Record<string, string | undefined> = {}) { this.policy = retentionPolicy(env) }
 
   root(): string {
     return join(this.sessionDir, RUN_JOURNAL_DIR_NAME)
@@ -58,12 +67,48 @@ export class JsonJournal implements JournalBackend {
     return join(this.root(), validateId(sessionId, 'session_id'), `${validateId(runId, 'run_id')}.jsonl`)
   }
 
+  archivePathFor(sessionId: string, runId: string): string {
+    return join(this.root(), validateId(sessionId, 'session_id'), ARCHIVE_DIR, `${validateId(runId, 'run_id')}${ARCHIVE_SUFFIX}`)
+  }
+
+  /** The run's archive, null when it has none; an archive path that is anything but a plain file refuses. */
+  private async openArchive(sessionId: string, runId: string): Promise<FileHandle | null> {
+    const path = this.archivePathFor(sessionId, runId)
+    try {
+      if (!lstatSync(dirname(path)).isDirectory()) throw new JournalArchiveError('The run-journal archive directory is not a directory')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error instanceof JournalArchiveError ? error : new JournalArchiveError('The run-journal archive directory is unreadable', { cause: error })
+    }
+    let handle: FileHandle
+    try { handle = await open(path, fsConstants.O_RDONLY | (NOFOLLOW ?? 0)) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw new JournalArchiveError('The run-journal archive is unreadable', { cause: error })
+    }
+    if (!(await handle.stat()).isFile()) { await handle.close(); throw new JournalArchiveError('The run-journal archive is not a file') }
+    return handle
+  }
+
+  /** Every reader, the writer's resume, and archival open a run here; `pin` refuses a symlinked live journal. */
+  private async openRun(sessionId: string, runId: string, pin = false): Promise<RunFiles> {
+    try { validateId(sessionId, 'session_id'); validateId(runId, 'run_id') } catch { return NO_FILES }
+    const archive = await this.openArchive(sessionId, runId)
+    let live: FileHandle | null = null
+    let liveStat: BigIntStats | null = null
+    try {
+      live = await open(this.pathFor(sessionId, runId), fsConstants.O_RDONLY | (pin ? NOFOLLOW ?? 0 : 0))
+      liveStat = await live.stat({ bigint: true })
+    } catch { await live?.close().catch(() => undefined); live = null; liveStat = null }
+    return { archive, live, liveStat, close: async () => { await archive?.close(); await live?.close() } }
+  }
+
   /** Python `delete_run_journal`: remove one session's journal directory; false for a missing or unsafe id. */
   async deleteSession(sessionId: string): Promise<boolean> {
     if (/^\.+$/.test(sessionId)) return false
     let dir: string
     try { dir = join(this.root(), validateId(sessionId, 'session_id')) } catch { return false }
     for (const [rid, sid] of this.runOwners) if (sid === sessionId) this.runOwners.delete(rid)
+    this.deletions.set(sessionId, (this.deletions.get(sessionId) ?? 0) + 1)
     if (dir === this.root() || !existsSync(dir)) return false
     try { rmSync(dir, { recursive: true, force: true }) } catch { return false }
     return !existsSync(dir)
@@ -84,123 +129,78 @@ export class JsonJournal implements JournalBackend {
   register(writer: JsonJournalWriter): void { this.writers.add(writer); this.rememberOwner(writer.runId, writer.sessionId) }
   release(writer: JsonJournalWriter): void { this.writers.delete(writer) }
 
+  /** Resumes the run's sequence past its archived prefix and live rows; an untrusted archive refuses the writer. */
   async open(sessionId: string, runId: string, opts: { durability: 'eager' | 'terminal-only' }): Promise<JsonJournalWriter> {
     if (this.closed) throw new Error('Storage is closed')
-    return new JsonJournalWriter(this, sessionId, runId, opts.durability)
+    this.pathFor(sessionId, runId)
+    let seq = 0
+    for await (const event of this.iterRunEvents(sessionId, runId)) seq = event.seq
+    if (this.closed) throw new Error('Storage is closed')
+    return new JsonJournalWriter(this, sessionId, runId, opts.durability, undefined, seq)
   }
   private closed = false
   async close(): Promise<void> { this.closed = true; this.runOwners.clear(); await Promise.all([...this.writers].map(async (writer) => { await writer.close(); })) }
 
   async *read(sessionId: string, runId: string, fromSeq: number): AsyncGenerator<JournalEvent> {
-    yield* this.iterRunEventsNow(sessionId, runId, { afterSeq: fromSeq - 1 })
+    yield* this.iterRunEvents(sessionId, runId, { afterSeq: fromSeq - 1 })
   }
-  async *iterRunEvents(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): AsyncGenerator<JournalEvent> { yield* this.iterRunEventsNow(sessionId, runId, opts) }
-  async readRunEvents(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): Promise<JournalEvent[]> { return this.readRunEventsNow(sessionId, runId, opts) }
-  async readRunEventTail(sessionId: string, runId: string, maxBytes?: number, maxRows?: number): Promise<{ events: JournalEvent[]; truncated: boolean }> { return this.readRunEventTailNow(sessionId, runId, maxBytes, maxRows) }
-  async latestRunSummary(sessionId: string, runId: string): Promise<RunSummary> { return this.latestRunSummaryNow(sessionId, runId) }
+
+  /**
+   * The run's rows, archive first, one page at a time, so a replay that waits on a slow reader holds one page of the
+   * journal rather than all of it (run-state contract: recovery never parses an unbounded journal in one request).
+   */
+  async *iterRunEvents(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): AsyncGenerator<JournalEvent> {
+    const files = await this.openRun(sessionId, runId)
+    try {
+      for await (const line of runLines(files.archive, files.live, sessionId, runId)) {
+        const event = line.event
+        if (!event) continue
+        const seq = event.seq || 0
+        if (opts.afterSeq !== null && opts.afterSeq !== undefined && seq <= opts.afterSeq) continue
+        if (opts.maxSeq !== null && opts.maxSeq !== undefined && seq > opts.maxSeq) continue
+        yield event
+      }
+    } finally { await files.close() }
+  }
+  async readRunEvents(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): Promise<JournalEvent[]> {
+    const events: JournalEvent[] = []
+    for await (const event of this.iterRunEvents(sessionId, runId, opts)) events.push(event)
+    return events
+  }
+  async readRunEventTail(sessionId: string, runId: string, maxBytes = LIVE_SNAPSHOT_MAX_BYTES, maxRows = LIVE_SNAPSHOT_MAX_ROWS): Promise<{ events: JournalEvent[]; truncated: boolean }> {
+    const files = await this.openRun(sessionId, runId)
+    try { return await JsonJournal.tailOf(files, sessionId, runId, maxBytes, maxRows) } finally { await files.close() }
+  }
+  async latestRunSummary(sessionId: string, runId: string): Promise<RunSummary> {
+    return (await this.summaryOf(sessionId, runId)) ?? { ...JsonJournal.summaryFromEvents(sessionId, runId, []), journal_truncated: false }
+  }
   async summary(sessionId: string, runId: string): Promise<RunSummary | null> {
-    const summary = this.latestRunSummaryNow(sessionId, runId)
+    const summary = await this.latestRunSummary(sessionId, runId)
     return summary.event_count || summary.journal_pruned ? summary : null
   }
-  async findRunSummary(runId: string): Promise<RunSummary | null> { return this.findRunSummaryNow(runId) }
   async sessionJournalFingerprint(sessionId: string): Promise<string> { return this.sessionJournalFingerprintNow(sessionId) }
-  async staleInterruptedEvent(sessionId: string, runId: string, afterSeq: number | null = null, now?: number): Promise<JournalEvent | null> { return this.staleInterruptedEventNow(sessionId, runId, afterSeq, now) }
   async sessionIds(): Promise<string[]> {
     try { return readdirSync(this.root(), { withFileTypes: true }).filter((entry) => entry.isDirectory() && SAFE_ID_RE.test(entry.name)).map((entry) => entry.name).sort() } catch { return [] }
   }
   async streams(sessionId: string): Promise<string[]> {
     const dir = join(this.root(), validateId(sessionId, 'session_id'))
-    try { return [...new Set(readdirSync(dir).filter((name) => name.endsWith('.jsonl') || name.endsWith(PRUNED_SUMMARY_SUFFIX)).map((name) => name.replace(/(?:\.jsonl|\.summary\.json)$/, '')))].sort() } catch { return [] }
+    let archived: string[] = []
+    try { archived = readdirSync(join(dir, ARCHIVE_DIR)).filter((name) => name.endsWith(ARCHIVE_SUFFIX)).map((name) => name.slice(0, -ARCHIVE_SUFFIX.length)) } catch { /* none */ }
+    try { return [...new Set([...archived, ...readdirSync(dir).filter((name) => name.endsWith('.jsonl') || name.endsWith(PRUNED_SUMMARY_SUFFIX)).map((name) => name.replace(/(?:\.jsonl|\.summary\.json)$/, ''))])].sort() } catch { return [] }
   }
   async importRun(sessionId: string, runId: string, run: { rows: JournalEvent[]; summary: RunSummary | null }): Promise<void> {
     if (this.closed) throw new Error('Storage is closed')
     const path = this.pathFor(sessionId, runId)
     const summaryPath = path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
     mkdirSync(dirname(path), { recursive: true })
+    // The imported rows replace the whole run, its archived prefix included.
+    rmSync(this.archivePathFor(sessionId, runId), { force: true })
     if (run.rows.length) await atomicWriteTextAsync(path, run.rows.map((row) => `${JSON.stringify(row)}\n`).join(''))
     else rmSync(path, { force: true })
     if (run.summary) await atomicWriteTextAsync(summaryPath, JSON.stringify(run.summary))
     else rmSync(summaryPath, { force: true })
   }
   async prune(olderThan: number): Promise<number> { return (await this.pruneSettled({ now: olderThan + 1, retentionSeconds: 1 })).pruned }
-
-
-  private static parseLines(text: string): { events: JournalEvent[]; malformed: number } {
-    const events: JournalEvent[] = []
-    let malformed = 0
-    for (const raw of text.split('\n')) {
-      if (!raw.trim()) continue
-      try {
-        const parsed: unknown = JSON.parse(raw)
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) events.push(parsed as JournalEvent)
-        else malformed += 1
-      } catch {
-        malformed += 1
-      }
-    }
-    return { events, malformed }
-  }
-
-  readRunEventsNow(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): JournalEvent[] {
-    return [...this.iterRunEventsNow(sessionId, runId, opts)]
-  }
-
-  /**
-   * `readRunEventsNow` one page at a time, so a replay that waits on a slow reader holds one page of the journal rather
-   * than all of it (run-state contract: recovery never parses an unbounded journal in one request).
-   */
-  *iterRunEventsNow(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): Generator<JournalEvent> {
-    let fd: number
-    try { fd = openSync(this.pathFor(sessionId, runId), fsConstants.O_RDONLY) } catch { return }
-    try {
-      const page = Buffer.alloc(RUN_EVENTS_PAGE_BYTES)
-      const decoder = new StringDecoder('utf8')
-      let position = 0
-      let rest = ''
-      for (;;) {
-        let n = 0
-        try { n = readSyncAt(fd, page, 0, position) } catch { n = 0 }
-        position += n
-        const lines = (rest + (n > 0 ? decoder.write(page.subarray(0, n)) : decoder.end())).split('\n')
-        rest = n > 0 ? lines.pop() ?? '' : ''
-        for (const event of JsonJournal.parseLines(lines.join('\n')).events) {
-          const seq = event.seq || 0
-          if (opts.afterSeq !== null && opts.afterSeq !== undefined && seq <= opts.afterSeq) continue
-          if (opts.maxSeq !== null && opts.maxSeq !== undefined && seq > opts.maxSeq) continue
-          yield event
-        }
-        if (n <= 0) return
-      }
-    } finally {
-      closeSync(fd)
-    }
-  }
-
-  readRunEventTailNow(sessionId: string, runId: string, maxBytes = LIVE_SNAPSHOT_MAX_BYTES, maxRows = LIVE_SNAPSHOT_MAX_ROWS): { events: JournalEvent[]; truncated: boolean } {
-    const path = this.pathFor(sessionId, runId)
-    let raw: Buffer
-    let start = 0
-    try {
-      const size = statSync(path).size
-      start = Math.max(0, size - maxBytes)
-      const fd = openSync(path, fsConstants.O_RDONLY)
-      try {
-        raw = Buffer.alloc(Math.min(size, maxBytes))
-        let got = 0
-        while (got < raw.length) {
-          const n = readSyncAt(fd, raw, got, start + got)
-          if (n <= 0) break
-          got += n
-        }
-        raw = raw.subarray(0, got)
-      } finally {
-        closeSync(fd)
-      }
-    } catch {
-      return { events: [], truncated: false }
-    }
-    return JsonJournal.parseTail(raw, start, maxRows)
-  }
 
   /** The bounded tail of `raw`, read from byte `start`: drop the partial first line, keep the last `maxRows` rows. */
   private static parseTail(raw: Buffer, start: number, maxRows: number): { events: JournalEvent[]; truncated: boolean } {
@@ -211,28 +211,53 @@ export class JsonJournal implements JournalBackend {
     }
     const lines = text.split('\n').filter((l) => l.length > 0)
     const rowsTruncated = lines.length > maxRows
-    const { events } = JsonJournal.parseLines(lines.slice(-maxRows).join('\n'))
+    const events: JournalEvent[] = []
+    for (const raw of lines.slice(-maxRows)) {
+      if (!raw.trim()) continue
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) events.push(parsed as JournalEvent)
+      } catch { /* a torn line */ }
+    }
     return { events, truncated: start > 0 || rowsTruncated }
   }
 
-  /** `readRunEventTailNow` off the event loop, plus the identity of the file it read. */
-  private static async readTailAsync(path: string, maxBytes: number, maxRows: number): Promise<{ events: JournalEvent[]; st: BigIntStats }> {
-    const handle = await open(path, 'r')
-    try {
-      const st = await handle.stat({ bigint: true })
-      const size = Number(st.size)
+  /**
+   * The last `maxBytes` of the run's logical journal, parsed by `parseTail`. A live-only run reads just its tail; an
+   * archived one streams through, holding at most twice the window.
+   */
+  private static async tailOf(files: RunFiles, sessionId: string, runId: string, maxBytes: number, maxRows: number): Promise<{ events: JournalEvent[]; truncated: boolean }> {
+    if (!files.archive) {
+      if (!files.live || !files.liveStat) return { events: [], truncated: false }
+      const size = Number(files.liveStat.size)
       const start = Math.max(0, size - maxBytes)
       const raw = Buffer.alloc(Math.min(size, maxBytes))
       let got = 0
-      while (got < raw.length) {
-        const { bytesRead } = await handle.read(raw, got, raw.length - got, start + got)
-        if (bytesRead <= 0) break
-        got += bytesRead
-      }
-      return { events: JsonJournal.parseTail(raw.subarray(0, got), start, maxRows).events, st }
-    } finally {
-      await handle.close()
+      try {
+        while (got < raw.length) {
+          const { bytesRead } = await files.live.read(raw, got, raw.length - got, start + got)
+          if (bytesRead <= 0) break
+          got += bytesRead
+        }
+      } catch { return { events: [], truncated: false } }
+      return JsonJournal.parseTail(raw.subarray(0, got), start, maxRows)
     }
+    let kept: Buffer[] = []
+    let keptBytes = 0
+    let total = 0
+    for await (const chunk of logicalBytes(runLines(files.archive, files.live, sessionId, runId))) {
+      kept.push(chunk)
+      keptBytes += chunk.length
+      total += chunk.length
+      if (keptBytes > 2 * maxBytes) {
+        const joined = Buffer.concat(kept)
+        kept = [Buffer.from(joined.subarray(joined.length - maxBytes))]
+        keptBytes = maxBytes
+      }
+    }
+    const joined = Buffer.concat(kept)
+    const raw = joined.length > maxBytes ? joined.subarray(joined.length - maxBytes) : joined
+    return JsonJournal.parseTail(raw, total - raw.length, maxRows)
   }
 
   static readonly selectAuthoritativeTerminalEvent = selectAuthoritativeTerminalEvent
@@ -247,13 +272,17 @@ export class JsonJournal implements JournalBackend {
     }
   }
 
-  latestRunSummaryNow(sessionId: string, runId: string): RunSummary {
-    const path = this.pathFor(sessionId, runId)
-    if (!existsSync(path)) {
-      const pruned = this.loadPrunedSummary(path)
-      if (pruned) return pruned
-    }
-    const tail = this.readRunEventTailNow(sessionId, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS)
+  /**
+   * The run's summary from its logical journal's tail. A run with neither a live journal nor an archive answers with the
+   * summary an earlier release left when it pruned the events (`journal_pruned`), or null.
+   */
+  private async summaryOf(sessionId: string, runId: string): Promise<RunSummary | null> {
+    const files = await this.openRun(sessionId, runId)
+    let tail: { events: JournalEvent[]; truncated: boolean }
+    try {
+      if (!files.live && !files.archive) return this.loadPrunedSummary(this.pathFor(sessionId, runId))
+      tail = await JsonJournal.tailOf(files, sessionId, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS)
+    } finally { await files.close() }
     const summary = JsonJournal.summaryFromEvents(sessionId, runId, tail.events)
     const last = tail.events[tail.events.length - 1]
     if (last) summary.event_count = last.seq || tail.events.length
@@ -262,86 +291,157 @@ export class JsonJournal implements JournalBackend {
   }
 
   /**
-   * Python `prune_settled_run_journals`: compact terminal journals older than
-   * `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) into `.summary.json`, keeping
-   * the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest per session and any
-   * path with a live writer.
+   * Python `prune_settled_run_journals`: archive settled journals as verified gzip under `<session>/_archive/` and remove
+   * their live bytes. A run is due when it is older than `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14), or while its
+   * session holds more live journals or bytes than the soft `..._MAX_RUNS_PER_SESSION` (40) and
+   * `..._MAX_BYTES_PER_SESSION` (256 MiB) budgets, oldest first. The `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest
+   * terminal journals, nonterminal journals, live writers and runs the session still names stay live even past a budget.
+   * Each archived run also leaves the `.summary.json` the previous Stable reads once the live journal is gone.
    *
-   * The sweep is incremental so requests keep running on the event loop: I/O is
-   * async and it yields after every session and every parsed journal. Sessions
-   * whose metadata already rules out pruning (no more journals than the keep
-   * count, or none past the cutoff) are not parsed, so `terminal` counts only
-   * the journals inspected. `signal` stops the sweep at its next yield;
-   * `pause` replaces the default yield (`setImmediate`).
+   * The sweep is incremental so requests keep running on the event loop: I/O is async and it yields after every session
+   * and every parsed journal. Sessions whose metadata already rules out archival (no more journals than the keep count,
+   * none past the cutoff, and within both budgets) are not parsed, so `terminal` counts only the journals inspected.
+   * `signal` stops the sweep at its next yield; `pause` replaces the default yield (`setImmediate`).
    */
   async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
     const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
-    const { retention, keep, now, cutoff } = pruneRetention(this.env, opts)
+    const retention = opts.retentionSeconds ?? this.policy.retentionSeconds
+    const keep = opts.keepRecent ?? this.policy.keepRecent
+    const maxRuns = opts.maxRuns ?? this.policy.maxRuns
+    const maxBytes = opts.maxBytes ?? this.policy.maxBytes
+    const now = opts.now ?? Date.now() / 1000
+    const cutoff = now - retention
     const root = this.root()
     // Yield to queued requests, then report whether the sweep may continue.
     const proceed = async (): Promise<boolean> => { await (opts.pause ?? nextTurn)(); return !opts.signal?.aborted }
-    if (retention <= 0 || !existsSync(root)) return result
+    // Without O_NOFOLLOW archival cannot pin what it reads and publishes, so every journal stays live.
+    if (retention <= 0 || NOFOLLOW === undefined || !existsSync(root)) return result
+    const references = async (sid: string): Promise<ReadonlySet<string> | null> => {
+      if (!opts.protectedRuns) return new Set()
+      try { return await opts.protectedRuns(sid) } catch { return null }
+    }
     const sessions = (await readdir(root, { withFileTypes: true })).filter((d) => d.isDirectory() && SAFE_ID_RE.test(d.name)).map((d) => d.name).sort()
     for (const sid of sessions) {
       if (!(await proceed())) return result
       const dir = join(root, sid)
+      const generation = this.deletions.get(sid) ?? 0
       // The session may be deleted while the sweep runs.
       let names: string[]
       try { names = (await readdir(dir)).filter((n) => n.endsWith('.jsonl')).sort() } catch { continue }
       result.examined += names.length
       let expired = 0
+      let liveBytes = 0
       for (const name of names) {
         if (opts.signal?.aborted) return result
-        try { if ((await stat(join(dir, name))).mtimeMs / 1000 <= cutoff) expired += 1 } catch { /* vanished */ }
+        try {
+          const st = await stat(join(dir, name))
+          liveBytes += st.size
+          if (st.mtimeMs / 1000 <= cutoff) expired += 1
+        } catch { /* vanished */ }
       }
-      if (names.length <= keep || expired === 0) continue
-      const terminalRuns: { st: BigIntStats; path: string; summary: RunSummary }[] = []
+      let liveRuns = names.length
+      const overBudget = (): boolean => (maxRuns > 0 && liveRuns > maxRuns) || (maxBytes > 0 && liveBytes > maxBytes)
+      if (names.length <= keep || (expired === 0 && !overBudget())) continue
+      // Unreadable session state cannot prove which runs it still names, so the whole session stays live.
+      const named = await references(sid)
+      if (!named) continue
+      const terminalRuns: { st: BigIntStats; rid: string; summary: RunSummary }[] = []
       for (const name of names) {
-        const path = join(dir, name)
+        const rid = name.slice(0, -'.jsonl'.length)
+        let files: RunFiles
+        try { files = await this.openRun(sid, rid, true) } catch { continue }
         let tail
-        try { tail = await JsonJournal.readTailAsync(path, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS) } catch { continue }
-        const summary = JsonJournal.summaryFromEvents(sid, name.slice(0, -'.jsonl'.length), tail.events)
-        if (summary.terminal) {
-          result.terminal += 1
-          terminalRuns.push({ st: tail.st, path, summary })
+        try { tail = files.liveStat ? await JsonJournal.tailOf(files, sid, rid, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS) : null } catch { tail = null } finally { await files.close() }
+        if (tail && files.liveStat) {
+          const summary = JsonJournal.summaryFromEvents(sid, rid, tail.events)
+          if (summary.terminal) {
+            result.terminal += 1
+            terminalRuns.push({ st: files.liveStat, rid, summary })
+          }
         }
         if (!(await proceed())) return result
       }
-      terminalRuns.sort((a, b) => (b.st.mtimeNs > a.st.mtimeNs ? 1 : b.st.mtimeNs < a.st.mtimeNs ? -1 : b.path.localeCompare(a.path)))
-      for (const { st, path, summary } of terminalRuns.slice(keep)) {
-        if (opts.signal?.aborted) return result
+      terminalRuns.sort((a, b) => (b.st.mtimeNs > a.st.mtimeNs ? 1 : b.st.mtimeNs < a.st.mtimeNs ? -1 : b.rid.localeCompare(a.rid)))
+      // Oldest first, so the budgets archive the oldest settled runs. Each due run publishes its archive and legacy
+      // summary; one fsync of both directories then makes the session's publications durable before any live bytes go.
+      const published: { rid: string; size: number; archivable: () => boolean }[] = []
+      for (const { st, rid, summary } of terminalRuns.slice(keep).reverse()) {
+        if (opts.signal?.aborted) break
         const mtime = Number(st.mtimeNs) / 1e9
-        if (mtime > cutoff) continue
-        // Still the parsed file with no live writer. ctime catches a replacement that reuses the inode, size, and mtime.
-        const stillPrunable = (): boolean => {
-          if ([...this.writers].some((writer) => writer.path === path) || opts.isActive?.(path)) return false
-          let cur
-          try { cur = lstatSync(path, { bigint: true }) } catch { return false }
-          return cur.isFile() && cur.dev === st.dev && cur.ino === st.ino && cur.size === st.size && cur.mtimeNs === st.mtimeNs && cur.ctimeNs === st.ctimeNs
+        if ((mtime > cutoff && !overBudget()) || named.has(rid)) continue
+        const path = join(dir, `${rid}.jsonl`)
+        // Still the parsed file, with no live writer, in the session the sweep started. ctime catches a replacement
+        // that reuses the inode, size, and mtime.
+        const archivable = (): boolean => {
+          if ((this.deletions.get(sid) ?? 0) !== generation || [...this.writers].some((writer) => writer.path === path) || opts.isActive?.(path)) return false
+          try { return sameFile(lstatSync(path, { bigint: true }), st) } catch { return false }
         }
-        if (!stillPrunable()) continue
+        if (!archivable()) continue
         const size = Number(st.size)
-        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += size; continue }
-        const summaryPath = path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
-        const pruned = { ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime }
-        const prior = await readFile(summaryPath, 'utf8').catch(() => null)
-        try { await atomicWriteTextAsync(summaryPath, JSON.stringify(pruned)) } catch { continue }
-        // Re-check after the write's async gap; no await separates this check from the unlink.
-        if (!stillPrunable()) {
-          // Roll back to the summary that was there before, if any.
-          await (prior === null ? unlink(summaryPath) : atomicWriteTextAsync(summaryPath, prior)).catch(() => undefined)
-          continue
+        if (!opts.dryRun) {
+          const legacy = JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime })
+          if (!(await this.publishRun(sid, rid, st, legacy, archivable, opts.signal))) continue
+          published.push({ rid, size, archivable })
+        } else {
+          result.pruned += 1
+          result.bytes_reclaimed += size
         }
-        try { unlinkSync(path) } catch { continue }
+        liveRuns -= 1
+        liveBytes -= size
+      }
+      if (!published.length) continue
+      try { await fsyncDir(join(dir, ARCHIVE_DIR)); await fsyncDir(dir) } catch { continue }
+      // Recheck after the async publication: the session may now name the run, or it may have changed or been deleted.
+      const current = await references(sid)
+      for (const { rid, size, archivable } of published) {
+        if (!current || current.has(rid) || !archivable()) continue
+        try { unlinkSync(join(dir, `${rid}.jsonl`)) } catch { continue }
         result.pruned += 1
         result.bytes_reclaimed += size
       }
+      if (opts.signal?.aborted) return result
     }
     return result
   }
 
-  /** Locate a run across sessions (Python `find_run_summary`). */
-  findRunSummaryNow(runId: string): RunSummary | null {
+  /**
+   * Publish a verified archive of the run's logical journal, then the legacy summary the previous Stable reads once the
+   * live journal is gone. The caller fsyncs both directories before removing live bytes, so a failure at any step leaves
+   * the live copy readable and a crash between steps leaves copies that read as one run. Directories are created
+   * without recursion and every directory entry is created or renamed synchronously, so a session deleted meanwhile is
+   * never recreated.
+   */
+  private async publishRun(sid: string, rid: string, st: BigIntStats, legacySummary: string, archivable: () => boolean, signal?: AbortSignal): Promise<boolean> {
+    const sessionDir = join(this.root(), sid)
+    const dir = join(sessionDir, ARCHIVE_DIR)
+    try { mkdirSync(dir, { mode: 0o700 }) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false }
+    let dirStat: BigIntStats
+    try { dirStat = lstatSync(dir, { bigint: true }) } catch { return false }
+    if (!dirStat.isDirectory()) return false
+    const sameDir = (): boolean => { try { const cur = lstatSync(dir, { bigint: true }); return cur.isDirectory() && cur.dev === dirStat.dev && cur.ino === dirStat.ino } catch { return false } }
+    let files: RunFiles
+    try { files = await this.openRun(sid, rid, true) } catch { return false }
+    let archive: Awaited<ReturnType<typeof stageArchive>> = null
+    let summary: StagedFile | null = null
+    try {
+      if (!files.liveStat || !sameFile(files.liveStat, st)) return false
+      archive = await stageArchive(dir, `${rid}${ARCHIVE_SUFFIX}`, logicalBytes(runLines(files.archive, files.live, sid, rid)), signal)
+      if (!archive) return false
+      summary = await StagedFile.create(sessionDir, `${rid}${PRUNED_SUMMARY_SUFFIX}`, async (handle) => { await writeFullyAsync(handle, legacySummary) })
+      if (!summary) return false
+      // Concurrent fsyncs share one device flush.
+      await Promise.all([archive.file.sync(), summary.sync()])
+      if (!(await archive.verify())) return false
+      return archive.file.publish(() => archivable() && sameDir()) && summary.publish(archivable)
+    } catch { return false } finally {
+      await files.close()
+      await archive?.file.discard()
+      await summary?.discard()
+    }
+  }
+
+  /** Locate a run across sessions (Python `find_run_summary`): live journals first, then archived and pruned runs. */
+  async findRunSummary(runId: string): Promise<RunSummary | null> {
     let rid: string
     try {
       rid = validateId(runId, 'run_id')
@@ -351,7 +451,7 @@ export class JsonJournal implements JournalBackend {
     const cached = this.runOwners.get(rid)
     if (cached !== undefined) {
       this.runOwners.delete(rid)
-      const summary = this.resolvedRunSummary(cached, rid, false) ?? this.resolvedRunSummary(cached, rid, true)
+      const summary = (await this.resolvedRunSummary(cached, rid, false)) ?? (await this.resolvedRunSummary(cached, rid, true))
       if (summary) return summary
     }
     let sessions: string[]
@@ -361,21 +461,27 @@ export class JsonJournal implements JournalBackend {
       return null
     }
     for (const sid of sessions) {
-      const summary = this.resolvedRunSummary(sid, rid, false)
+      const summary = await this.resolvedRunSummary(sid, rid, false)
       if (summary) return summary
     }
     for (const sid of sessions) {
-      const summary = this.resolvedRunSummary(sid, rid, true)
+      const summary = await this.resolvedRunSummary(sid, rid, true)
       if (summary) return summary
     }
     return null
   }
 
-  private resolvedRunSummary(sessionId: string, runId: string, pruned: boolean): RunSummary | null {
+  private async resolvedRunSummary(sessionId: string, runId: string, settled: boolean): Promise<RunSummary | null> {
     const journalPath = this.pathFor(sessionId, runId)
-    const path = pruned ? journalPath.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX) : journalPath
+    const archivePath = this.archivePathFor(sessionId, runId)
+    const summaryPath = journalPath.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
+    let path: string
+    if (!settled) path = journalPath
+    else {
+      try { lstatSync(archivePath); path = archivePath } catch { path = summaryPath }
+    }
     if (!existsSync(path)) return null
-    const summary = pruned ? this.loadPrunedSummary(journalPath) : this.latestRunSummaryNow(sessionId, runId)
+    const summary = await this.summaryOf(sessionId, runId)
     if (!summary) return null
     this.rememberOwner(runId, sessionId)
     summary.path = path
@@ -429,7 +535,7 @@ export class JsonJournal implements JournalBackend {
     if (!rawCursor) return { status: 'ok', events: [], cursor_run_id: null, cursor_seq: null }
     const sessionRoot = join(this.root(), sid)
     const runs: { createdAt: number; runId: string; events: JournalEvent[] }[] = []
-    const positions = new Map<string, { offset: number; seq: number; dev: bigint; ino: bigint; complete: boolean }>()
+    const positions = new Map<string, { offset: number; seq: number; dev: bigint; ino: bigint; complete: boolean; archived: boolean }>()
     let retainedRows = 0
     let retainedBytes = 0
     const result = (status: string, events: JournalEvent[] = []): SessionJournalReplay => ({ status, events, cursor_run_id: cursorRunId, cursor_seq: cursorSeq })
@@ -450,30 +556,45 @@ export class JsonJournal implements JournalBackend {
       }
       return result('ok', events)
     }
-    let names: string[] = []
-    try { names = (await readdir(sessionRoot)).filter((n) => n.endsWith('.jsonl')).sort() } catch { names = [] }
-    for (const name of names) {
-      const runId = name.slice(0, -'.jsonl'.length)
+    let runIds: string[] = []
+    try { runIds = (await readdir(sessionRoot)).filter((n) => n.endsWith('.jsonl')).map((n) => n.slice(0, -'.jsonl'.length)) } catch { runIds = [] }
+    try { runIds.push(...(await readdir(join(sessionRoot, ARCHIVE_DIR))).filter((n) => n.endsWith(ARCHIVE_SUFFIX)).map((n) => n.slice(0, -ARCHIVE_SUFFIX.length))) } catch { /* no archives */ }
+    for (const runId of [...new Set(runIds)].sort()) {
       try { validateId(runId, 'run_id') } catch { continue }
-      const path = join(sessionRoot, name)
-      let raw: Buffer
-      let st: BigIntStats
+      let files: RunFiles
+      try { files = await this.openRun(sid, runId) } catch { return result('replay_archive_unreadable') }
       try {
-        const handle = await open(path, 'r')
-        try {
-          st = await handle.stat({ bigint: true })
+        let raw: Buffer
+        let st: BigIntStats
+        if (!files.archive) {
+          if (!files.live || !files.liveStat) continue
+          st = files.liveStat
           if (Number(st.size) + retainedBytes > SESSION_REPLAY_MAX_BYTES) return result('replay_limit_bytes')
-          raw = await readFile(handle)
-        } finally { await handle.close() }
-      } catch { continue }
-      const parsed = parse(runId, raw)
-      if (parsed.status !== 'ok') return parsed
-      const events = parsed.events
-      positions.set(runId, { offset: raw.length, seq: events.at(-1)?.seq ?? 0, dev: st.dev, ino: st.ino, complete: !raw.length || raw.at(-1) === 10 })
-      let createdAt = Number.POSITIVE_INFINITY
-      for (const e of events) createdAt = Math.min(createdAt, e.created_at || 0)
-      if (!Number.isFinite(createdAt)) createdAt = Number(st.mtimeMs) / 1000
-      runs.push({ createdAt, runId, events })
+          raw = await readFile(files.live)
+        } else {
+          const chunks: Buffer[] = []
+          let size = 0
+          for await (const chunk of logicalBytes(runLines(files.archive, files.live, sid, runId))) {
+            size += chunk.length
+            if (size + retainedBytes > SESSION_REPLAY_MAX_BYTES) return result('replay_limit_bytes')
+            chunks.push(chunk)
+          }
+          raw = Buffer.concat(chunks)
+          st = files.liveStat ?? await files.archive.stat({ bigint: true })
+        }
+        const parsed = parse(runId, raw)
+        if (parsed.status !== 'ok') return parsed
+        const events = parsed.events
+        // An archived run has no live offset to continue from; its active tail always asks for a snapshot.
+        positions.set(runId, { offset: raw.length, seq: events.at(-1)?.seq ?? 0, dev: st.dev, ino: st.ino, complete: !raw.length || raw.at(-1) === 10, archived: Boolean(files.archive) })
+        let createdAt = Number.POSITIVE_INFINITY
+        for (const e of events) createdAt = Math.min(createdAt, e.created_at || 0)
+        if (!Number.isFinite(createdAt)) createdAt = Number(st.mtimeMs) / 1000
+        runs.push({ createdAt, runId, events })
+      } catch (error) {
+        if (error instanceof JournalArchiveError) return result('replay_archive_unreadable')
+        continue
+      } finally { await files.close() }
     }
     runs.sort((a, b) => a.createdAt - b.createdAt || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0))
     const cursorIndex = runs.findIndex((r) => r.runId === cursorRunId)
@@ -492,6 +613,7 @@ export class JsonJournal implements JournalBackend {
     return { ...result('ok', replay), readActiveTail: async (runId) => {
       const path = this.pathFor(sid, runId)
       const previous = positions.get(runId)
+      if (previous?.archived) return result('replay_changed')
       try {
         // A run may finish between idle polls; the active tail alone cannot recover that history.
         const current = await readdir(sessionRoot)
@@ -511,32 +633,25 @@ export class JsonJournal implements JournalBackend {
     } }
   }
 
-  staleInterruptedEventNow(sessionId: string, runId: string, afterSeq: number | null = null, now = Date.now() / 1000): JournalEvent | null {
-    return staleInterruptedEvent(this.latestRunSummaryNow(sessionId, runId), sessionId, runId, afterSeq, now)
+  /** Python `stale_interrupted_event`: a synthetic terminal row for a journal whose worker died. */
+  async staleInterruptedEvent(sessionId: string, runId: string, afterSeq: number | null = null, now = Date.now() / 1000): Promise<JournalEvent | null> {
+    return staleInterruptedEvent(await this.latestRunSummary(sessionId, runId), sessionId, runId, afterSeq, now)
   }
-}
-
-import { readSync } from 'node:fs'
-function readSyncAt(fd: number, buf: Buffer, offset: number, position: number): number {
-  return readSync(fd, buf, offset, buf.length - offset, position)
 }
 
 export class JsonJournalWriter {
   private fd: number | null = null
   // fsyncs run on the thread pool; this tail orders them and every close after them.
   private syncs: Promise<void> = Promise.resolve()
-  private seq = 0
+  private seq: number
   private closed = false
   readonly path: string
 
-  constructor(private readonly journal: JsonJournal, readonly sessionId: string, readonly runId: string, private readonly fsyncMode: 'eager' | 'terminal-only', private readonly now: () => number = () => Date.now() / 1000) {
+  /** `seq` is the run's last journaled seq, which `JsonJournal.open` resolves (never nonzero in practice; ids are fresh). */
+  constructor(private readonly journal: JsonJournal, readonly sessionId: string, readonly runId: string, private readonly fsyncMode: 'eager' | 'terminal-only', private readonly now: () => number = () => Date.now() / 1000, seq = 0) {
     this.path = journal.pathFor(sessionId, runId)
+    this.seq = seq
     journal.register(this)
-    // Resume the sequence when a journal already exists for this stream id (never in practice; ids are fresh).
-    try {
-      const existing = journal.readRunEventsNow(sessionId, runId)
-      this.seq = existing[existing.length - 1]?.seq ?? 0
-    } catch { this.seq = 0 }
   }
 
   async append(row: JournalInput, opts: { terminal: boolean }): Promise<JournalEvent> {
