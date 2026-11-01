@@ -61,6 +61,7 @@ def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, ex
 
     jobs = types.SimpleNamespace(
         use_cron_store=lambda home: contextlib.nullcontext(),
+        _jobs_lock=contextlib.nullcontext,
         get_job=lambda job_id: record or {"id": job_id, "name": "Job", "prompt": "before edit"},
         is_job_runnable=lambda job: True,
         claim_job_for_fire=claim or (lambda job_id, **kw: {"id": job_id, "name": "Job", "prompt": "after edit", "fire_claim": {"by": "owner-1"}, "_scheduled_instant": None}),

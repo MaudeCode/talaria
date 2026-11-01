@@ -955,6 +955,14 @@
         ""
       ]
     },
+    "tests/test_cron_atomicity.py::test_store_transaction_publishes_one_complete_job_state": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent store-lock exclusion: real cron.create and cron.resume are held at event barriers while real list/get/run readers and an external Agent update_job writer race them on the installed release's reentrant jobs lock. Fakes cannot prove that lock's exclusion or reentrancy. Disposable homes; the run lookup is captured and never executes a job.",
+      "cases": [
+        "[create]",
+        "[resume]"
+      ]
+    },
     "tests/test_cron_blueprints.py::test_profile_blueprints_fill_and_validate": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: profile blueprints fill and validate. Uses the real installed release, not a fabricated API response.",

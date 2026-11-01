@@ -93,16 +93,27 @@ def _jobs():
     return jobs
 
 
-def _store(home: Path):
-    return _jobs().use_cron_store(home)
-
-
 @contextlib.contextmanager
-def _owned_store(home: Path):
+def _store(home: Path, *, owned: bool = False, transaction: bool = False):
+    """``home``'s cron store. ``owned`` binds ``home``'s own Agent runtime (see ``_owned_store``). ``transaction`` also
+    holds the Agent's reentrant jobs lock, the in-process RLock plus the store's ``.jobs.lock`` flock that every Agent
+    store writer and the scheduler tick take: a multi-step read/derive/write commits as one store state, and a reader
+    under it never sees one half-done. It is entered last, after the runtime binding, and is never held while
+    resolving runtime or config or while a job executes."""
+    jobs = _jobs()
+    with contextlib.ExitStack() as scope:
+        scope.enter_context(jobs.use_cron_store(home))
+        if owned:
+            scope.enter_context(scoped_home(home, recover_processes=False))
+        if transaction:
+            scope.enter_context(jobs._jobs_lock())
+        yield
+
+
+def _owned_store(home: Path, *, transaction: bool = False):
     """``home``'s store under ``home``'s own Agent runtime, for writes whose Agent helpers read profile config: the
     ``pinned`` main model, ``${VAR}`` expansion, provider resolution and schedule times. Reads keep the bare store."""
-    with _store(home), scoped_home(home, recover_processes=False):
-        yield
+    return _store(home, owned=True, transaction=transaction)
 
 
 def _job_id(params: dict, key: str = "job_id") -> str:
@@ -683,15 +694,16 @@ def register(registry) -> None:
         """Jobs of one store, shaped for the API; the server merges profiles. ``probe_store`` adds the store's write health."""
         jobs = _jobs()
         home = profile_home_param(params)
-        with _store(home):
-            from .cron_execution import pending_jobs
+        from .cron_execution import pending_jobs
+        with _store(home, transaction=True):
             pending = {job["id"]: job for job in pending_jobs(home)}
             stored = jobs.list_jobs(include_disabled=True)
-            ids = {job["id"] for job in stored}
-            stored.extend(job for jid, job in pending.items() if jid not in ids)
-            listed = [job_for_api(job) for job in stored]
-            result: dict = {"jobs": listed}
-            if params.get("probe_store"):
+        ids = {job["id"] for job in stored}
+        stored.extend(job for jid, job in pending.items() if jid not in ids)
+        listed = [job_for_api(job) for job in stored]
+        result: dict = {"jobs": listed}
+        if params.get("probe_store"):
+            with _store(home):
                 result["store_health"] = _store_health(jobs.get_cron_output_dir().parent)
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
         with _RUNNING_LOCK:
@@ -708,7 +720,7 @@ def register(registry) -> None:
     def get(ctx: CallContext, params: dict) -> dict:
         from .cron_execution import pending_job
         home, job_id = profile_home_param(params), _job_id(params)
-        with _store(home):
+        with _store(home, transaction=True):
             job = pending_job(home, job_id) or _jobs().get_job(job_id)
         return {"job": job_for_api(job) if job else None}
 
@@ -750,14 +762,22 @@ def register(registry) -> None:
                 model = model or profile_model
             except Exception as exc:  # noqa: BLE001
                 raise RpcError(f"Cannot safely resolve cron model for profile {post['profile']!r}", condition="cron_snapshot_failed") from exc
-        with _owned_store(home):
+        # create_job takes no profile or notification fields, so they land in a second write. One store transaction
+        # spans both: readers and the scheduler see no job or the complete one, and a refused second write removes
+        # the job before any of them can see or run it.
+        with _owned_store(home, transaction=True):
             try:
                 job = jobs.create_job(prompt=body.get("prompt") or "", schedule=body["schedule"], name=body.get("name") or None, deliver=body.get("deliver") or "local",
                                       skills=body.get("skills") or [], model=model, provider=provider, **kwargs)
             except Exception as exc:  # noqa: BLE001
                 raise InvalidParams(str(exc)) from exc
             if post:
-                job = jobs.update_job(job["id"], post) or job
+                try:
+                    job = jobs.update_job(job["id"], post) or job
+                except BaseException:
+                    with contextlib.suppress(Exception):
+                        jobs.remove_job(job["id"])
+                    raise
         return {"job": job_for_api(job)}
 
     @registry.method("cron.update")
@@ -810,7 +830,9 @@ def register(registry) -> None:
     @registry.method("cron.resume")
     @_settled_mutation
     def resume(ctx: CallContext, params: dict) -> dict:
-        with _owned_store(profile_home_param(params)):
+        # resume_job derives next_run_at from the schedule it read before writing; the transaction keeps an Agent
+        # store writer from changing the schedule in between.
+        with _owned_store(profile_home_param(params), transaction=True):
             try:
                 job = _jobs().resume_job(_job_ref(params))
             except ValueError as exc:
@@ -828,7 +850,7 @@ def register(registry) -> None:
         from .cron_execution import path
         if path(store_home, job_id).exists():
             return run_tracked({"id": job_id}, store_home, execution_home, ctx, recovery_only=True)
-        with _store(store_home):
+        with _store(store_home, transaction=True):
             job = _jobs().get_job(job_id)
         if not job:
             raise RpcError("Job not found", condition="not_found")
