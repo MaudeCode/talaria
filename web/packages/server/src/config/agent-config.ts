@@ -584,11 +584,18 @@ const auxEntry = (config: Config, task: string): Dict => dict(task === DELEGATIO
 const savedEffort = (entry: Dict): string | null => (entry.reasoning_effort === false ? 'none' : str(entry.reasoning_effort).trim().toLowerCase() || null)
 const isAutoRoute = (route: Dict): boolean => (str(route.provider).trim() || 'auto') === 'auto' && !str(route.model).trim()
 
-/** The route a slot's effort applies to: its pin, else the slot it inherits (TAL-800), else the main chat model. */
-function effortRoute(config: Config, entry: Dict, effective: AuxSlot['effective']): { provider: string; model: string; base_url: string } {
+/**
+ * The route a slot's effort applies to: its pin, else the route the Agent resolved for it (TAL-800), else the pin of the
+ * slot it inherits, else the main chat model. A write that changes the slot's own route passes `effective: null`, since
+ * the Agent resolved it before the write.
+ */
+function effortRoute(config: Config, slot: AuxSlot): { provider: string; model: string; base_url: string } {
   const pick = (route: Dict) => ({ provider: str(route.provider).trim(), model: str(route.model).trim(), base_url: str(route.base_url).trim() })
+  const entry = auxEntry(config, slot.key)
   if (!isAutoRoute(entry)) return pick(entry)
-  if (effective && !isAutoRoute(effective)) return pick(effective)
+  if (slot.effective && !isAutoRoute(slot.effective)) return pick(slot.effective)
+  const base = slot.inherit_from ? auxEntry(config, slot.inherit_from) : {}
+  if (!isAutoRoute(base)) return pick(base)
   const main = modelSection(config)
   return pick({ provider: main.provider, model: main.default ?? main.name, base_url: main.base_url })
 }
@@ -597,7 +604,7 @@ function effortRoute(config: Config, entry: Dict, effective: AuxSlot['effective'
 async function effortOptions(config: Config, slot: AuxSlot, resolve: AuxEfforts): Promise<Pick<AuxReasoning, 'options' | 'unavailable'>> {
   if (slot.takes_reasoning === false) return { options: [], unavailable: 'slot' }
   if (slot.takes_reasoning !== true) return { options: [], unavailable: 'agent' }
-  const route = effortRoute(config, auxEntry(config, slot.key), slot.effective)
+  const route = effortRoute(config, slot)
   if (!route.model) return { options: [], unavailable: 'model' }
   const efforts = await resolve(route.model, route.provider === 'auto' ? '' : route.provider, route.base_url)
   if (efforts === null) return { options: [], unavailable: 'agent' }
@@ -720,7 +727,9 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
     const aux = dict(config.auxiliary)
     // Auto clears the override, including a custom endpoint's base_url (which would otherwise keep routing there).
     const autoSlot = (entry: unknown): Dict => { const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }; Reflect.deleteProperty(slot, 'base_url'); return slot }
-    const slot = listing.slots.find((s) => s.key === task)
+    const listed = listing.slots.find((s) => s.key === task)
+    // The listing resolved the slot's route before this write; a slot leaving its pin re-resolves its inheritance from the written config.
+    const slot = listed && (isAutoRoute(auxEntry(config, task)) ? listed : { ...listed, effective: null })
     if (keepRoute && slot) {
       if (task === DELEGATION_TASK && !(await store.delegation(home, config)).fixed_model_active) throw new ConfigUnavailable('The selected delegation mode does not use the fixed model')
       const route = auxEntry(config, task)

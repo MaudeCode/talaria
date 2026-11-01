@@ -1112,6 +1112,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       tasks = await read()
       expect(Object.values(tasks).every((t) => t.reasoning.inherited)).toBe(true)
 
+      // An inheriting task leaving its pin for Auto is checked against the slot it now inherits, not the listing's stale pinned route.
+      const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
+      const sideTask = { key: 'side_task', label: 'Side model', description: 'side summaries', inherit_from: 'compression', reasoning_effort: 'high', effective: { provider: 'anthropic', model: 'claude-opus-4-7', base_url: '' }, takes_reasoning: true }
+      sidecar.respond('aux.tasks', () => ({ tasks: [...builtins, sideTask], reserved }))
+      reset({ ...configs.get(s.state), auxiliary: { compression: { provider: 'openrouter', model: 'plain-model' }, side_task: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' } } })
+      expect((await set({ task: 'side_task', provider: 'auto', model: '', reasoning_effort: 'high' })).status).toBe(400)
+      expect(aux().side_task).toEqual({ provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' })
+      expect((await set({ task: 'side_task', provider: 'auto', model: '' })).status).toBe(200)
+      expect(aux().side_task).toEqual({ provider: 'auto', model: '' })
+      sidecar.respond('aux.tasks', undefined)
+
       // When the Agent cannot say which levels a route takes, nothing is offered or accepted, and a route change keeps the saved effort.
       reset({ ...configs.get(s.state), auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' } } })
       sidecar.respond('models.reasoning_efforts', () => { throw new SidecarError('no capability', { condition: 'sidecar_error' }) })
