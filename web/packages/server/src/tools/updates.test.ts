@@ -1714,15 +1714,19 @@ describe('Agent checkout updates', () => {
     git(a.agent, 'config', '--add', 'remote.origin.fetch', '+refs/tags/*:refs/tags/*')
     const result = await checkAgentUpdate(a.agent, runGit)
     expect(result).toMatchObject({ behind: null, stale_check: true })
-    expect(String(result.error)).toContain("Run 'git remote prune origin' in the Agent checkout")
+    expect(String(result.error)).toContain("run 'git remote prune --dry-run origin', delete only the stale branch with 'git update-ref -d refs/remotes/origin/<branch>'")
+    expect(String(result.error)).not.toContain('…')
     expect(git(a.agent, 'tag', '-l', 'local-only-mark')).toBe('local-only-mark')
     expect(git(a.agent, 'rev-parse', 'refs/remotes/origin/topic')).toBe(a.v1)
   })
 
-  it('bounds collision recovery to one prune and never retries an unrelated failure through it (TAL-1026)', async () => {
+  it.each([
+    ['the prune hint', "error: some local refs could not be updated; try running\n 'git remote prune origin' to remove any old, conflicting branches"],
+    ["Git 2.43's file-to-directory conflict", "error: cannot lock ref 'refs/remotes/origin/topic/next': 'refs/remotes/origin/topic' exists; cannot create 'refs/remotes/origin/topic/next'"],
+    ["Git 2.43's directory-to-file conflict", "error: cannot lock ref 'refs/remotes/origin/topic': there is a non-empty directory '.git/refs/remotes/origin/topic' blocking reference 'refs/remotes/origin/topic'"],
+  ])('bounds collision recovery from %s to one prune and never retries an unrelated failure through it (TAL-1026)', async (_case, collision) => {
     const agent = tmp()
     mkdirSync(join(agent, '.git'))
-    const collision = "error: some local refs could not be updated; try running\n 'git remote prune origin' to remove any old, conflicting branches"
     const fetches: string[][] = []
     const stuck: GitRun = (args) => {
       if (args[0] === 'config') return Promise.resolve({ ok: true, out: '+refs/heads/*:refs/remotes/origin/*' })
@@ -1734,6 +1738,10 @@ describe('Agent checkout updates', () => {
     fetches.length = 0
     const offline: GitRun = (args) => { if (args[0] === 'fetch') fetches.push(args); return Promise.resolve({ ok: false, out: 'fatal: unable to access: Could not resolve host: example.invalid' }) }
     expect(await forceAgentUpdate(agent, offline, () => undefined)).toEqual({ ok: false, message: 'Could not reach the remote repository. Check your connection.' })
+    expect(fetches).toHaveLength(1)
+    fetches.length = 0
+    const locked: GitRun = (args) => { if (args[0] === 'fetch') fetches.push(args); return Promise.resolve({ ok: false, out: "error: cannot lock ref 'refs/remotes/origin/topic': Unable to create '/agent/.git/refs/remotes/origin/topic.lock': File exists." }) }
+    expect(await applyAgentUpdate(agent, locked)).toMatchObject({ ok: false, lock_conflict: true })
     expect(fetches).toHaveLength(1)
   })
 

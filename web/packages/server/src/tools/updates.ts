@@ -169,8 +169,10 @@ function gitFailure(label: string, out: string, network?: string): { message: st
 export const FETCH_RETRY_MS = 1000
 const ORIGIN_FETCH = ['fetch', 'origin', '--quiet', '--tags', '--force']
 const ORIGIN_TRACKING = '+refs/heads/*:refs/remotes/origin/*'
-/** Git's hint when a stale origin tracking ref blocks a renamed branch (`topic` ↔ `topic/next`); a lock is not one. */
-const isOriginRefCollision = (out: string): boolean => !isGitLockError(out) && out.toLowerCase().includes("'git remote prune origin'")
+/** Git 2.43's own diagnostic for a stale origin tracking ref in either direction (newer Git prints only the prune hint). */
+const ORIGIN_REF_CONFLICT = /cannot lock ref 'refs\/remotes\/origin\/[^']+': (?:'refs\/remotes\/origin\/[^']+' exists; cannot create|there is a non-empty directory)/i
+/** A stale origin tracking ref blocks a renamed branch (`topic` ↔ `topic/next`); a lock is not one. */
+const isOriginRefCollision = (out: string): boolean => !isGitLockError(out) && (out.toLowerCase().includes("'git remote prune origin'") || ORIGIN_REF_CONFLICT.test(out))
 
 /**
  * The one Agent origin fetch. `retry` spends one delayed attempt on a transient failure (never a lock or a collision).
@@ -186,7 +188,7 @@ async function fetchOrigin(git: GitRun, cwd: string, retry = false): Promise<Git
   if (fetched.ok || !isOriginRefCollision(fetched.out)) return fetched
   const mapping = await git(['config', '--get-all', 'remote.origin.fetch'], cwd)
   if (!mapping.ok || mapping.out !== ORIGIN_TRACKING) {
-    return { ok: false, out: "Origin's remote-tracking branches conflict with a renamed branch, and its custom fetch refspec is not pruned automatically. Run 'git remote prune origin' in the Agent checkout, then try again." }
+    return { ok: false, out: "A renamed origin branch conflicts with a stale tracking ref, and the custom fetch refspec is not pruned automatically. In the Agent checkout, run 'git remote prune --dry-run origin', delete only the stale branch with 'git update-ref -d refs/remotes/origin/<branch>', then retry." }
   }
   const pruned = await git(['fetch', 'origin', '--quiet', '--prune', '--no-prune-tags', ORIGIN_TRACKING], cwd, 15_000)
   return pruned.ok ? git(ORIGIN_FETCH, cwd, 15_000) : pruned
