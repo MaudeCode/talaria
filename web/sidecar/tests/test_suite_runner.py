@@ -241,6 +241,15 @@ def test_invalid_shards_fail(project, arguments, message):
     assert message in result.stderr
 
 
+def test_an_oversized_case_id_fails_collection(project):
+    # Every run prints the collection and every shard receipt lists its cases, and the CI runner takes minutes per
+    # 256 KiB log line (TAL-1776): a parametrized value that becomes the case ID needs an explicit short id.
+    (project / 'tests/test_ids.py').write_text("import pytest\n@pytest.mark.parametrize('value', ['x' * 2000])\ndef test_long(value): pass\n")
+    result = run(project, 2)
+    assert result.returncode != 0
+    assert 'pytest case IDs over 1024 characters: tests/test_ids.py::test_long[xxx' in result.stderr
+
+
 @pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "abc"])
 def test_invalid_worker_count_fails(project, value):
     (project / "tests/test_ok.py").write_text("def test_ok(): pass\n")

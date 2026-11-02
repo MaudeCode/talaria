@@ -2677,6 +2677,13 @@
         "[udp]"
       ]
     },
+    "tests/test_suite_runner.py::test_an_oversized_case_id_fails_collection": {
+      "layer": "process",
+      "reason": "Proves actual pytest collection refuses a case ID too long to print in the run log before any case executes.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_suite_runner.py::test_collection_only_validates_inventory_without_executing_cases": {
       "layer": "process",
       "reason": "Proves actual pytest collection-only routing validates classification without executing a case or accepting an execution receipt.",

@@ -19,6 +19,8 @@ import traceback
 import xml.etree.ElementTree as ET
 
 WORKERS = "TALARIA_SIDECAR_WORKERS"
+# The longest real case ID is under 500 characters.
+MAX_CASE_ID = 1024
 
 
 def worker_count(value=None):
@@ -430,6 +432,11 @@ def run(args):
             nodeids = collected['collected']
             if not nodeids or len(nodeids) != len(set(nodeids)):
                 raise ValueError("empty or duplicate pytest collection")
+            # The run log prints the collection and each shard receipt lists its cases; the CI runner takes minutes per
+            # 256 KiB line (TAL-1776), so a parametrized value that becomes the case ID needs an explicit short id.
+            oversized = [node for node in nodeids if len(node) > MAX_CASE_ID]
+            if oversized:
+                raise ValueError(f"pytest case IDs over {MAX_CASE_ID} characters: {oversized[0][:MAX_CASE_ID]}")
             expected = [node for node in nodeids if collected['layers'][node] in layers]
             if not expected:
                 raise ValueError('empty selected layer coverage')

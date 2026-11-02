@@ -18,8 +18,10 @@ provider, or the network. Run commands from `web/` unless noted.
 | Everything | `scripts/check web` (root) | `scripts/check-web-server` + frontend gates + browser |
 
 CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (one job per supported Agent release
-in `sidecar/agent_support.json`, each provisioned with
-`scripts/check-agent-compatibility.py --skip-docker --release TAG`), and frontend jobs selected by
+in `sidecar/agent_support.json` and shard of its suite, each provisioned with
+`scripts/check-agent-compatibility.py --skip-docker --release TAG --shard N/M`, then a join that
+requires each release's shards to run every case exactly once, with the release gate's shard count
+and proof from `scripts/check-release-agent.py`), and frontend jobs selected by
 `scripts/changed-components.py`. Its `web_sidecar` suite selects the sidecar jobs for `sidecar/`, the
 contracts, the workspace build files, the Agent compatibility tooling, the CI workflows, and only the
 server files the sidecar suite loads (`src/sidecar/`, `src/app.ts`, `src/runtime.ts`,
