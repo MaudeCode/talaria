@@ -48,8 +48,9 @@ async function seed(store: StorageBackend): Promise<void> {
   await archived.append({ event: 'done', payload: {}, created_at: 2 }, { terminal: true })
   await archived.close()
   expect(await journals.prune(Date.now() / 1000 + 1)).toBe(2)
-  // The JSON backend archives both; dropping one archive leaves the summary-only history an earlier release pruned.
+  // Both backends archive both; dropping one archive leaves the summary-only history an earlier release pruned.
   if (store instanceof JsonStorage) unlinkSync(join(store.directory, '_run_journal', 'alpha', '_archive', 'run-old.jsonl.gz'))
+  else if (store instanceof SqliteStorage) store.db.db.prepare("DELETE FROM journal_archives WHERE stream_id = 'run-old'").run()
   const live = await journals.open('alpha', 'run-live', { durability: 'eager' })
   await live.append({ event: 'token', payload: { text: 'live' }, created_at: 3 }, { terminal: false })
   await live.close()
@@ -142,7 +143,10 @@ it('copies a SQLite store back to JSON', async () => {
   const json = jsonStore(tempDir())
   expect((await copyStorage(sqlite, json)).failures).toEqual([])
   expect(await verifyStorage(sqlite, json)).toEqual([])
-  expect(await contents(json)).toEqual(await contents(sqlite))
+  const expected = await contents(sqlite)
+  expect(expected.pruned).toMatchObject({ journal_pruned: true, terminal: true })
+  expect((expected.archived as { rows: unknown[] }).rows, 'archived rows copy as rows').toHaveLength(2)
+  expect(await contents(json)).toEqual(expected)
 })
 
 async function cli(home: string, port: number, argv: string[]) {

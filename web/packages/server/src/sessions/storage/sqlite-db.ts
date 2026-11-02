@@ -23,6 +23,10 @@ const MIGRATIONS: readonly string[] = [
    CREATE INDEX journal_rows_stream ON journal_rows (stream_id);
    CREATE TABLE journal_summaries (session_id TEXT NOT NULL, stream_id TEXT NOT NULL, summary TEXT NOT NULL, PRIMARY KEY (session_id, stream_id)) WITHOUT ROWID;
    CREATE INDEX journal_summaries_stream ON journal_summaries (stream_id);`,
+  // TAL-1748: a settled run's rows compacted in place, as one gzip of its newline-terminated rows. `bytes` is that
+  // uncompressed size and `last_seq` its last row's seq; live rows past `last_seq` continue the run.
+  `CREATE TABLE journal_archives (session_id TEXT NOT NULL, stream_id TEXT NOT NULL, rows BLOB NOT NULL, bytes INTEGER NOT NULL, last_seq INTEGER NOT NULL, archived_at REAL NOT NULL, PRIMARY KEY (session_id, stream_id)) WITHOUT ROWID;
+   CREATE INDEX journal_archives_stream ON journal_archives (stream_id);`,
 ]
 export const SCHEMA_VERSION = MIGRATIONS.length
 

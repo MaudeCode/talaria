@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With SQLite storage, older finished chats keep their full replayable history: retention compresses their run journals like the default storage does, instead of reducing them to summaries.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
