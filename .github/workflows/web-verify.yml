@@ -28,13 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The server suite runs once per storage backend. Its server project is split across three shards, and the
-    # state-db-latency project, which runs alone, gets a job of its own so its time never stacks on a shard's (TAL-1774).
-    # The repository checks run once, on the default backend's first shard (TAL-1066).
+    # state-db-latency project, which runs alone, gets a job of its own so its time never stacks on a shard's. The
+    # repository checks run once, in a json-backend job without the suite, so no shard carries them (TAL-1066, TAL-1774).
     strategy:
       fail-fast: false
       matrix:
         storage: [json, sqlite]
-        shard: [1/3, 2/3, 3/3, latency]
+        shard: [1/3, 2/3, 3/3, latency, checks]
+        exclude:
+          - storage: sqlite
+            shard: checks
     env:
       TALARIA_STORAGE: ${{ matrix.storage }}
     # The S3 blob store conformance runs against a throwaway MinIO (TAL-1069); upstream stopped publishing
@@ -68,21 +71,23 @@ jobs:
         run: npm run build:fast -w packages/frontend
 
       - name: Contracts and server lint
-        if: matrix.storage == 'json' && matrix.shard == '1/3'
+        if: matrix.shard == 'checks'
         run: npm run lint -w packages/contracts && npm run lint -w packages/server
 
       - name: Contracts and server strict TypeScript
-        if: matrix.storage == 'json' && matrix.shard == '1/3'
+        if: matrix.shard == 'checks'
         run: npm run typecheck -w packages/contracts && npm run typecheck -w packages/server
 
       - name: Wait for MinIO
+        if: matrix.shard != 'checks'
         run: timeout 60 bash -c 'until curl -fsS http://127.0.0.1:9000/minio/health/live; do sleep 1; done'
 
       - name: Contracts Vitest
-        if: matrix.storage == 'json' && matrix.shard == '1/3'
+        if: matrix.shard == 'checks'
         run: npm test -w packages/contracts -- --maxWorkers=2
 
       - name: Server Vitest
+        if: matrix.shard != 'checks'
         env:
           TALARIA_TEST_BLOB_ENDPOINT: http://127.0.0.1:9000
           AWS_ACCESS_KEY_ID: talaria-ci
@@ -94,13 +99,13 @@ jobs:
           npm test -w packages/server -- --maxWorkers=2 "$@"
 
       - name: Generated OpenAPI document and What's New schema are committed
-        if: matrix.storage == 'json' && matrix.shard == '1/3'
+        if: matrix.shard == 'checks'
         run: |
           npm run openapi
           git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json
 
       - name: Generated sidecar and server method schemas are committed
-        if: matrix.storage == 'json' && matrix.shard == '1/3'
+        if: matrix.shard == 'checks'
         run: |
           npm run fixtures -w packages/contracts
           git diff --exit-code -- sidecar/tests/fixtures/schemas.json sidecar/tests/fixtures/server_schemas.json
