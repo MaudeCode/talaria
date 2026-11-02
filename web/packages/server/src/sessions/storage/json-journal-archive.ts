@@ -51,9 +51,12 @@ export async function* fileChunks(handle: FileHandle, start = 0): AsyncGenerator
 }
 
 /** Decompressed archive bytes, streamed; any read or gzip failure is untrusted authority. */
-export async function* gunzipped(handle: FileHandle): AsyncGenerator<Buffer> {
+export function gunzipped(handle: FileHandle): AsyncGenerator<Buffer> { return gunzipChunks(fileChunks(handle)) }
+
+/** Decompressed bytes of a gzip source (a file, or an archive blob a database holds), streamed one output chunk at a time. */
+export async function* gunzipChunks(source: Iterable<Buffer> | AsyncIterable<Buffer>): AsyncGenerator<Buffer> {
   const gunzip = createGunzip()
-  const feeding = pipeline(Readable.from(fileChunks(handle)), gunzip).catch(() => undefined)
+  const feeding = pipeline(Readable.from(source), gunzip).catch(() => undefined)
   try {
     for await (const chunk of gunzip) yield chunk as Buffer
   } catch (error) {
@@ -72,7 +75,7 @@ export class JournalReadLimit extends Error {
 }
 
 /** Lines split at the 0x0A byte, which never occurs inside a UTF-8 sequence; only the last line can be unterminated. */
-async function* splitLines(chunks: AsyncIterable<Buffer>, budget?: ReadBudget): AsyncGenerator<JournalLine> {
+export async function* splitLines(chunks: AsyncIterable<Buffer>, budget?: ReadBudget): AsyncGenerator<JournalLine> {
   let parts: Buffer[] = []
   for await (const chunk of chunks) {
     if (budget && (budget.remaining -= chunk.length) < 0) throw new JournalReadLimit()
