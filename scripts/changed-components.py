@@ -69,7 +69,8 @@ SCRIPTS = {
     "check-release-contracts.py": {"contracts", "tooling"},
     "check": {"tooling"},
     "generate-brand-icons.py": {"web_frontend", "tooling"},
-    "check-release-agent.py": {"tooling"},
+    # The release gate and the PR sidecar matrix and join (TAL-1776).
+    "check-release-agent.py": {"web_sidecar", "tooling"},
     "test-check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
     "check-hosted-runners.py": {"tooling"},

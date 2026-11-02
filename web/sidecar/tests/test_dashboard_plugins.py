@@ -385,7 +385,8 @@ def test_managed_content_bounds_and_unknown_save_never_replay(dashboards, monkey
     assert sum(method == 'PUT' for method, _ in s.calls) == 1
 
 
-@pytest.mark.parametrize('field,value', [('content', None), ('content', '\ud800'), ('content', 'x' * (256 * 1024 + 1)), ('session_id', 'foreign'), ('name', '../other')])
+@pytest.mark.parametrize('field,value', [('content', None), ('content', '\ud800'), pytest.param('content', 'x' * (256 * 1024 + 1), id='content-oversize'),
+                                         ('session_id', 'foreign'), ('name', '../other')])
 def test_managed_invalid_content_or_foreign_identity_never_reaches_the_editor(dashboards, monkeypatch, field, value):
     import base64
     from talaria_sidecar.errors import RpcError

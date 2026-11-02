@@ -106,6 +106,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       tags: ${{ steps.list.outputs.tags }}
+      shards: ${{ steps.list.outputs.shards }}
+      shard-count: ${{ steps.list.outputs.shard-count }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -113,23 +115,31 @@ jobs:
             scripts
             web/sidecar
 
+      # The release gate's shard count (check-release-agent.py SHARDS), so PR and release CI shard alike (TAL-1776).
       - name: Validate the support record and list its releases
         id: list
         working-directory: .
         run: |
           tags=$(python3 scripts/check-agent-compatibility.py --list)
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          shards=$(python3 scripts/check-release-agent.py --list-shards)
+          {
+            echo "tags=$tags"
+            echo "shards=$shards"
+            echo "shard-count=$(jq length <<< "$shards")"
+          } >> "$GITHUB_OUTPUT"
 
-  # Every supported release runs native compatibility. The shared runner selects once-only work on the active pin.
+  # Every supported release runs native compatibility in shards of its sidecar suite. The shared runner selects
+  # once-only work on the active pin.
   sidecar:
     needs: agent-releases
-    name: Sidecar pytest against Agent ${{ matrix.release }}
+    name: Sidecar pytest against Agent ${{ matrix.release }} (${{ matrix.shard }}/${{ needs.agent-releases.outputs.shard-count }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.agent-releases.outputs.tags) }}
+        shard: ${{ fromJSON(needs.agent-releases.outputs.shards) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -160,19 +170,49 @@ jobs:
         working-directory: .
         env:
           RELEASE: ${{ matrix.release }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ needs.agent-releases.outputs.shard-count }}
           TALARIA_SIDECAR_WORKERS: '4'
           # Read-only, for the Agent release API's published-release check.
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.json"
+        run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --shard "$SHARD/$SHARDS" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.shard-$SHARD.json"
 
+      # The join reads this receipt: the shard's result and the cases it ran.
       - name: Retain the Agent compatibility receipt
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: agent-compatibility-${{ matrix.release }}-${{ github.run_attempt }}
+          name: agent-compatibility-${{ matrix.release }}-shard-${{ matrix.shard }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/agent-compatibility
           retention-days: 7
           if-no-files-found: ignore
+
+  # Joins sidecar: a failed shard job skips this one, which fails the CI Gate. It passes only when every supported
+  # release's shards left passing receipts (a rerun keeps the shards that passed before) and together ran each of that
+  # release's sidecar test cases exactly once, the release gate's proof (TAL-1776).
+  sidecar-shards:
+    needs: [agent-releases, sidecar]
+    name: Sidecar shards ran every case once
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts
+            web/sidecar/scripts
+
+      - name: Download every shard's Agent compatibility receipt
+        uses: actions/download-artifact@v8
+        with:
+          pattern: agent-compatibility-*
+          path: ${{ runner.temp }}/agent-shards
+
+      - name: Require a passing receipt for every supported Agent release's shards
+        working-directory: .
+        env:
+          RELEASES: ${{ needs.agent-releases.outputs.tags }}
+        run: python3 scripts/check-release-agent.py --verify-pr-shards --receipts "$RUNNER_TEMP/agent-shards" --releases "$RELEASES"
 
   frontend-checks:
     if: inputs.frontend

@@ -248,5 +248,62 @@ class ReleaseBudgetTests(unittest.TestCase):
                 expect(lambda root: None, listed=listed)
 
 
+class PullRequestShardTests(unittest.TestCase):
+    """PR CI shards each supported release's sidecar suite like the release gate (TAL-1776), without a release plan."""
+
+    def run_checker(self, *options):
+        with patch('sys.argv', ['check-release-agent.py', *options]), patch('sys.stdout', new_callable=io.StringIO) as stdout:
+            checker.main()
+        return stdout.getvalue()
+
+    def test_the_pr_matrix_lists_the_release_gate_shards(self):
+        self.assertEqual(json.loads(self.run_checker('--list-shards')), list(range(1, checker.SHARDS + 1)))
+
+    def write_receipts(self, root, tag, cases=None, changes=None, attempt=1):
+        suite = sorted(f'tests/test_{name}.py::test_case' for name in 'abcdefg')
+        digest = hashlib.sha256('\n'.join(suite).encode()).hexdigest()
+        dealt = cases or [suite[shard - 1::3] for shard in (1, 2, 3)]
+        for shard in (1, 2, 3):
+            # PR CI uploads each shard's receipt directory as its own artifact; the join downloads them side by side.
+            directory = root / f'agent-compatibility-{tag}-shard-{shard}-{attempt}'
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f'{tag}.shard-{shard}.json').write_text(json.dumps({
+                'kind': 'supported', 'releaseTag': tag, 'webRevision': 'a' * 40, 'imageVerified': False, 'result': 'success',
+                'shard': {'shard': f'{shard}/3', 'suiteCases': len(suite), 'suiteDigest': digest, 'cases': dealt[shard - 1]},
+                **(changes or {}).get(shard, {})}))
+
+    def test_the_pr_join_requires_every_shard_to_pass_and_run_each_case_once(self):
+        def verify(prepare):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for tag in ('v1', 'v2', 'v3'):
+                    self.write_receipts(root, tag)
+                prepare(root)
+                return self.run_checker('--verify-pr-shards', '--receipts', str(root), '--releases', json.dumps(['v1', 'v2', 'v3']))
+
+        self.assertIn('Agent v2: 3 shards ran every one of 7 sidecar test cases exactly once', verify(lambda root: None))
+        # A rerun of a failed shard leaves the earlier attempt's failing receipt beside the passing one.
+        verify(lambda root: [self.write_receipts(root, 'v1', changes={2: {'result': 'failure'}}),
+                             self.write_receipts(root, 'v1', attempt=2)])
+        broken = {
+            'v2 shard 2/3 left no passing receipt': lambda root: [path.unlink() for path in root.rglob('v2.shard-2.json')],
+            'v3 shard 3/3 left no passing receipt': lambda root: self.write_receipts(root, 'v3', changes={3: {'result': 'failure'}}),
+            'v3 shard 1/3 left no passing receipt': lambda root: self.write_receipts(root, 'v3', changes={1: {'releaseTag': 'v2'}}),
+            'v1 shards ran 1 cases more than once': lambda root: self.write_receipts(root, 'v1', cases=[
+                ['tests/test_a.py::test_case', 'tests/test_d.py::test_case', 'tests/test_g.py::test_case'],
+                ['tests/test_b.py::test_case', 'tests/test_e.py::test_case', 'tests/test_a.py::test_case'],
+                ['tests/test_c.py::test_case', 'tests/test_f.py::test_case']]),
+            'v1 shards ran 6 of its 7 sidecar test cases': lambda root: self.write_receipts(root, 'v1', cases=[
+                ['tests/test_a.py::test_case', 'tests/test_d.py::test_case'],
+                ['tests/test_b.py::test_case', 'tests/test_e.py::test_case'],
+                ['tests/test_c.py::test_case', 'tests/test_f.py::test_case']]),
+        }
+        for message, prepare in broken.items():
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                verify(prepare)
+        with patch('sys.stderr', new_callable=io.StringIO), self.assertRaises(SystemExit):
+            self.run_checker('--verify-pr-shards', '--receipts', '.', '--releases', '[]')
+
+
 if __name__ == '__main__':
     unittest.main()

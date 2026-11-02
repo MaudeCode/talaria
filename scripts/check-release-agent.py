@@ -4,7 +4,10 @@
 ``--list`` prints the jobs a release runs: each supported release of the selected source in ``SHARDS`` shards
 (TAL-1550, TAL-1599), or in one unsharded job when that source's checker predates sharding (a retained Web release). ``--release TAG --shard N/M`` checks one release's shard with the whole worker budget, and
 ``--expect JSON --receipts DIR`` requires the listed jobs to be exactly those and every one of them to have left a
-passing receipt in this run whose shards together ran every sidecar test case of its release exactly once."""
+passing receipt in this run whose shards together ran every sidecar test case of its release exactly once.
+
+PR CI shards the same way without a release plan (TAL-1776): ``--list-shards`` feeds its matrix, and
+``--verify-pr-shards --receipts DIR --releases JSON`` applies the same exactly-once proof to its shards' receipts."""
 
 import argparse
 from collections import Counter
@@ -53,12 +56,29 @@ def latest_receipt(directory, tag, shard, shards, run, attempt):
     return json.loads(path.with_name(f"{tag}.shard-{shard}.json").read_text())
 
 
+def verify_coverage(tag, coverages):
+    """One release's shards were dealt from one sidecar suite and together ran each of its cases exactly once."""
+    cases, suites = Counter(), set()
+    for coverage in coverages:
+        cases.update(coverage["cases"])
+        suites.add((coverage["suiteCases"], coverage["suiteDigest"]))
+    repeated = sorted(case for case, count in cases.items() if count > 1)
+    if repeated:
+        raise ValueError(f"Agent {tag} shards ran {len(repeated)} cases more than once, first {repeated[0]}")
+    if len(suites) != 1:
+        raise ValueError(f"Agent {tag} shards were dealt from different suites")
+    (total, digest), = suites
+    if len(cases) != total or hashlib.sha256("\n".join(sorted(cases)).encode()).hexdigest() != digest:
+        raise ValueError(f"Agent {tag} shards ran {len(cases)} of its {total} sidecar test cases")
+    print(f"Agent {tag}: {len(coverages)} shards ran every one of {total} sidecar test cases exactly once", flush=True)
+
+
 def verify_receipts(directory, releases, source, shards):
     """Every release's shards passed on the selected source and together ran its whole sidecar suite exactly once. An
     unsharded source's one job ran its whole suite, which its own suite runner proved."""
     run, attempt = os.environ["GITHUB_RUN_ID"], int(os.environ["GITHUB_RUN_ATTEMPT"])
     for tag in releases:
-        cases, suites = Counter(), set()
+        coverages = []
         for shard in range(1, shards + 1):
             receipt = latest_receipt(directory, tag, shard, shards, run, attempt)
             coverage = receipt.get("shard") or {}
@@ -66,22 +86,27 @@ def verify_receipts(directory, releases, source, shards):
                     receipt.get("imageVerified"), coverage.get("shard")) != ("success", "supported", tag, source, True,
                                                                              f"{shard}/{shards}" if shards > 1 else None):
                 raise ValueError(f"Agent {tag} shard {shard}/{shards} receipt is not a passing, image-verified check of the selected source")
-            if shards == 1:
-                continue
-            cases.update(coverage["cases"])
-            suites.add((coverage["suiteCases"], coverage["suiteDigest"]))
+            coverages.append(coverage)
         if shards == 1:
             print(f"Agent {tag}: the selected source's checker ran its whole sidecar suite in one job", flush=True)
-            continue
-        repeated = sorted(case for case, count in cases.items() if count > 1)
-        if repeated:
-            raise ValueError(f"Agent {tag} shards ran {len(repeated)} cases more than once, first {repeated[0]}")
-        if len(suites) != 1:
-            raise ValueError(f"Agent {tag} shards were dealt from different suites")
-        (total, digest), = suites
-        if len(cases) != total or hashlib.sha256("\n".join(sorted(cases)).encode()).hexdigest() != digest:
-            raise ValueError(f"Agent {tag} shards ran {len(cases)} of its {total} sidecar test cases")
-        print(f"Agent {tag}: {shards} shards ran every one of {total} sidecar test cases exactly once", flush=True)
+        else:
+            verify_coverage(tag, coverages)
+
+
+def verify_pr_shards(directory, releases):
+    """PR CI's sidecar shards (TAL-1776): every release's shards left a passing receipt and together ran its whole suite
+    exactly once. PR CI checks the PR head with --skip-docker, so the release source and image checks do not apply. A
+    rerun of a failed shard leaves the earlier attempt's receipt beside the passing one."""
+    for tag in releases:
+        coverages = []
+        for shard in range(1, SHARDS + 1):
+            passing = [receipt for receipt in (json.loads(path.read_text()) for path in sorted(directory.rglob(f"{tag}.shard-{shard}.json")))
+                       if (receipt.get("result"), receipt.get("kind"), receipt.get("releaseTag"), (receipt.get("shard") or {}).get("shard"))
+                       == ("success", "supported", tag, f"{shard}/{SHARDS}")]
+            if not passing:
+                raise ValueError(f"Agent {tag} shard {shard}/{SHARDS} left no passing receipt")
+            coverages.append(passing[-1]["shard"])
+        verify_coverage(tag, coverages)
 
 
 def worker_allocations(releases, budget):
@@ -92,14 +117,32 @@ def worker_allocations(releases, budget):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--plan", type=Path)
     parser.add_argument("--receipts", type=Path, help="Directory for each release's receipt and JUnit report.")
     selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--list-shards", action="store_true", help="Print the shard numbers of each release's sidecar suite as JSON.")
+    selection.add_argument("--verify-pr-shards", action="store_true",
+                           help="Require PR CI's passing shard receipts in --receipts for every release in --releases.")
     selection.add_argument("--list", action="store_true", help="Print the release's Agent jobs as JSON and stop.")
     selection.add_argument("--release", help="Check only this supported release.")
     selection.add_argument("--expect", help="Require exactly these Agent jobs (JSON) and their passing receipts in --receipts.")
     parser.add_argument("--shard", metavar="N/M", help="With --release: run only this shard of its sidecar suite.")
+    parser.add_argument("--releases", help="With --verify-pr-shards: the supported release tags as JSON.")
     args = parser.parse_args()
+    if args.list_shards:
+        print(json.dumps(list(range(1, SHARDS + 1))))
+        return
+    if args.verify_pr_shards:
+        if not (args.receipts and args.releases):
+            parser.error("--verify-pr-shards needs --receipts and --releases")
+        releases = json.loads(args.releases)
+        if not releases:
+            parser.error("--releases lists no supported release")
+        verify_pr_shards(args.receipts, releases)
+        print(f"Every supported Agent release's sidecar shards passed: {', '.join(releases)}")
+        return
+    if not args.plan:
+        parser.error("--plan is required")
     if args.shard and not args.release:
         parser.error("--shard needs --release")
     if args.expect is not None and not args.receipts:
