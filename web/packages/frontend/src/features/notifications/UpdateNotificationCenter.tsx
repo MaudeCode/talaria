@@ -76,7 +76,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       // Only transport cadence is local; the server owns whether an operation is active or presents a dialog.
       const active = data?.tab_update?.active || data?.tab_update?.presents_dialog
         || data?.notifications.some((row) => row.active || row.presents_dialog)
-      return open || (tracking !== null && tracking.message === null) || active ? 2_000 : 30_000
+      return open || tracking?.message === null || active ? 2_000 : 30_000
     },
   })
   // The record whose dialog is open. The server opens it (`presents_dialog`); it stays open on that record until the

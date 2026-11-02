@@ -26,7 +26,6 @@ packages/frontend/              editable source (npm workspace "@maudecode/talar
   package.json                  (the lockfile is the workspace root's web/package-lock.json)
   vite.config.ts                Start SPA plugin, React, Tailwind, Paraglide, PWA injectManifest
   tsconfig.json                 strict, noUncheckedIndexedAccess, verbatimModuleSyntax
-  eslint.config.js              typescript-eslint, react-hooks, custom no-raw-fetch / no-innerHTML rules
   vitest.config.ts              jsdom environment, setup with jest-dom
   playwright.config.ts          Node Playwright against the built assets + the TypeScript server
   project.inlang/settings.json  Paraglide project (base locale en, all locales)
@@ -62,7 +61,7 @@ native `frontend-build` stage, so installs serve the UI without a frontend toolc
 ## 3. Build and serving
 
 - `npm run build` in `packages/frontend/` runs: i18n parity gate, Paraglide
-  compile, route generation, `tsc --noEmit`, ESLint, Vite production build with
+  compile, route generation, `tsc --noEmit`, Oxlint, Vite production build with
   `base: './'`, dist finalisation, and the service worker build, writing
   `static/dist/`. `npm run build:fast` skips the gates. Source maps are off unless
   `HERMES_WEBUI_SOURCEMAP=1`.
@@ -151,7 +150,7 @@ only renders what the server allows.
 | Extension channels | `extensions/host.ts` | one `MessageChannel` per iframe, nonce and version handshake, capability table from the sanitized manifest |
 | Service worker state | `sw.ts` | precache list injected by the build; runtime caches for hashed assets only |
 
-React Compiler owns memoization in compiled components and hooks. ESLint forbids manual
+React Compiler owns memoization in compiled components and hooks. Oxlint forbids manual
 `useMemo` and `useCallback` outside `VirtualHistory`, the sole compiler bailout, and test support.
 Keep `memo` on rows rendered in loops, where the parent cannot cache each item independently.
 The compiler coverage test checks every shipped source file and the chat hot path.
@@ -209,7 +208,7 @@ reconciliation finishes. Failed reconciliation retains the intent and offers a r
   the CSRF header to unsafe same-origin requests (except `/api/auth/login` and
   `/api/csp-report`), coalesces identical idempotent requests, retries network
   failures, redirects once on 401, parses the response
-  with the endpoint schema, and returns typed values. An ESLint rule fails the
+  with the endpoint schema, and returns typed values. An Oxlint rule fails the
   build on any other `fetch`/`EventSource` use.
 - Captured live payloads under `packages/frontend/src/contracts/__fixtures__/live/`
   must parse with the client's schemas (`contracts/fixtures.test.ts`).

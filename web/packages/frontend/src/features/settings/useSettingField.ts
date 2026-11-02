@@ -16,15 +16,15 @@ export function useSettingField(fields: readonly string[]) {
   }
   const set = (patch: Record<string, unknown>, onSuccess?: () => void) => { void setAsync(patch, onSuccess) }
   const bool = (key: string, fallback = false): boolean => {
-    const v = (settings.data as Record<string, unknown> | undefined)?.[key]
+    const v = settings.data?.[key]
     return typeof v === 'boolean' ? v : fallback
   }
   const str = (key: string, fallback = ''): string => {
-    const v = (settings.data as Record<string, unknown> | undefined)?.[key]
+    const v = settings.data?.[key]
     return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : fallback
   }
   const num = (key: string, fallback: number): number => {
-    const v = (settings.data as Record<string, unknown> | undefined)?.[key]
+    const v = settings.data?.[key]
     return typeof v === 'number' ? v : fallback
   }
   return { settings, save, set, setAsync, bool, str, num, savedLabel: m.saved() }

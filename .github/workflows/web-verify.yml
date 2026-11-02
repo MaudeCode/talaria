@@ -206,7 +206,7 @@ jobs:
       - name: Strict TypeScript
         run: npm run typecheck
 
-      - name: ESLint (TypeScript, React, service worker, contract rules)
+      - name: Oxlint (TypeScript, React, service worker, contract rules)
         run: npm run lint
 
       - name: Vitest
