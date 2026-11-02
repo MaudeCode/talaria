@@ -588,7 +588,11 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
       w.samples = []; w.phase = 'stream'
       const scroller = document.getElementById('messages')!
       const old = [...document.querySelectorAll('.msg-row')].find((el) => el.textContent?.includes('Earlier question 10'))!
-      const tick = () => {
+      // Sampled once each frame is drawn (after its layout, ResizeObserver follow and paint): a message posted from a
+      // frame callback runs after the frame. Read inside the callback, a height animation's growth for that frame shows
+      // before the follow that scrolls it into view in the same frame.
+      const channel = new MessageChannel()
+      channel.port1.onmessage = () => {
         const body = document.querySelector('.assistant-turn:not(.live-turn):last-of-type .assistant-turn-blocks > .activity > .activity-body')
         const pill = document.querySelector('.live-run-status')
         const bodies = document.querySelectorAll('.live-turn .msg-body')
@@ -600,8 +604,8 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
           cover: pill && last ? last.getBoundingClientRect().bottom - pill.getBoundingClientRect().top : 0,
           phase: w.phase,
         })
-        requestAnimationFrame(tick)
       }
+      const tick = () => { channel.port2.postMessage(0); requestAnimationFrame(tick) }
       requestAnimationFrame(tick)
     })
     send('reasoning', { text: 'Compare the ports.' })
@@ -637,6 +641,67 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     }
   } finally {
     await page.close()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('a sent message lands at its own height while a pinned transcript keeps its end in view (TAL-1753)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'frame sampling needs one stable viewport')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const sid = 'landing'
+  const history = Array.from({ length: 6 }, (_, i) => [
+    { role: 'user', id: 100 + i * 2, content: `Earlier question ${i + 1}` },
+    { role: 'assistant', id: 101 + i * 2, content: `Earlier answer ${i + 1}. `.repeat(8) },
+  ]).flat()
+  const question = 'Why does the login test fail on CI?'
+  let running = false
+  // The server has not persisted the message yet, so the sent row stays the pending one while it lands.
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Landing', messages: asServer(history), active_stream_id: running ? 'landing-run' : null } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: running, stream_id: 'landing-run', replay_available: true } }))
+  let stream: ServerResponse | undefined
+  const server = createServer((_request, response) => {
+    stream = response
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(`id: landing-run:1\nevent: server_turn_started\ndata: ${JSON.stringify({ session_id: sid, stream_id: 'landing-run', turn_id: 'landing-run', user_message_id: 200 })}\n\n`)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  await page.route('**/api/chat/start', (route) => { running = true; return route.fulfill({ json: { stream_id: 'landing-run', session_id: sid, turn_id: 'landing-run', user_message_id: 200 } }) })
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect(page.getByText('Earlier question 6', { exact: true })).toBeVisible()
+    // Sampled after each frame's layout, follow and paint: a message posted from a frame callback runs once it is drawn.
+    await page.evaluate(() => {
+      const w = window as unknown as { samples: { below: number; user: number }[] }
+      w.samples = []
+      const scroller = document.getElementById('messages')!
+      const channel = new MessageChannel()
+      channel.port1.onmessage = () => {
+        const user = document.querySelector('[data-live-user]')
+        if (user) w.samples.push({ below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight, user: user.getBoundingClientRect().height })
+      }
+      const tick = () => { channel.port2.postMessage(0); requestAnimationFrame(tick) }
+      requestAnimationFrame(tick)
+    })
+    await page.locator('#msg').fill(question)
+    await page.locator('#btnSend').click()
+    await expect(page.locator('[data-live-user]')).toBeVisible()
+    stream?.write(`id: landing-run:2\nevent: tool\ndata: ${JSON.stringify({ id: 'a', name: 'read_file', args: { path: 'login.spec.ts' } })}\n\n`)
+    await expect(page.locator('.live-turn [data-tool-id="a"]')).toBeVisible()
+    await page.waitForTimeout(600)
+    const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; user: number }[] }).samples)
+    const heights = samples.map((sample) => Math.round(sample.user))
+    const final = heights.at(-1)!
+    // The row opens through several heights to its own, never past it and never snapping back.
+    expect(new Set(heights).size).toBeGreaterThanOrEqual(3)
+    expect(heights.every((height, i) => i === 0 || height >= heights[i - 1]!)).toBe(true)
+    expect(Math.max(...heights)).toBe(final)
+    // Every drawn frame keeps the pinned transcript at its end while the message and the tool row open.
+    expect(Math.max(...samples.map((sample) => sample.below))).toBeLessThanOrEqual(2)
+  } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }

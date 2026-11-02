@@ -27,8 +27,8 @@
 .tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) .tool-worklog-summary:hover{background:transparent}
 .tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) .as-dot{display:none}
 .tool-worklog-body{padding-left:0}
-.activity-body{overflow:hidden;max-height:0;opacity:0;transition:max-height .34s ease,opacity .22s ease}
-.activity.open > .activity-body{max-height:none;overflow:visible;opacity:1;margin-top:10px}
+/* Shut, the body is `hidden`; its open and shut motion is the shared height reveal (lib/motion.ts), not a transition. */
+.activity-body{margin-top:10px}
 .tool-worklog-controls{display:flex;justify-content:flex-end;gap:12px}
 .tool-worklog-control{padding:2px 0;border:0;background:transparent;color:var(--muted);font-size:12px;opacity:.72;cursor:pointer}
 .tool-worklog-control:hover{color:var(--text);opacity:1}

@@ -238,6 +238,20 @@ survive the remount, and a failed send returns the text to the box. Existing-cha
 same pending user-row renderer while admission is unresolved. Only the submitted draft and tray leave the
 composer; newer typing and files survive. Refused submissions restore their exact payload. Uncertain
 transport outcomes keep the payload and block automatic replay until the conversation is reconciled.
+
+### Live turn motion
+
+Every change in a live turn moves instead of appearing in one frame (TAL-1753,
+timed from the owner-approved Stageshow demo). The sent message lands from
+below; each tool or reasoning row that arrives in a running turn opens its
+height; a changing activity or row label crossfades in its slot (`ui/SwapText`,
+about 180 ms) while the slot eases to the new width; and clicking a settled
+"Worked" summary opens or shuts its body over about 300 ms as the chevron turns.
+All height motion goes through `revealHeight` in `lib/motion.ts`, which also
+folds a settling turn (`SettleSpacer`). It uses the Web Animations API because
+`.msg-row` disables CSS transitions for streaming rows. Rows a turn already had
+when it mounted (entering a chat, a virtual row scrolling back, earlier steps)
+never animate, and everything is instant under reduced motion.
 Interrupt stages its replacement in the existing queue immediately. Stop shows Stopping until the server
 confirms worker release, including after a terminal event; a failed Stop keeps the queue held and can be
 retried. Accepted queue mutations persist before their view renders, so an admission that finishes after

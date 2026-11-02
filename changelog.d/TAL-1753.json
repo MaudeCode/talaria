@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "In Web chat, a sent message, new tool steps, changing activity labels, and the Worked summary now move smoothly instead of jumping into place.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
