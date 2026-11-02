@@ -2470,8 +2470,10 @@
       "cases": [
         "[present-cancel]",
         "[present-startup]",
+        "[present-poll]",
         "[missing-cancel]",
-        "[missing-startup]"
+        "[missing-startup]",
+        "[missing-poll]"
       ]
     },
     "tests/test_suite_runner.py::test_cleanup_fixture_runs_after_subprocess_mocks_are_restored": {

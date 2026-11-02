@@ -489,7 +489,8 @@ def main():
             raise OSError("could not enable pytest child reaping")
 
     def interrupt(signum, frame):
-        raise InterruptedError(f"sidecar suite interrupted by signal {signum}")
+        # Not an OSError: Popen.poll() swallows those around waitpid, dropping the signal.
+        raise KeyboardInterrupt(f"sidecar suite interrupted by signal {signum}")
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, interrupt)

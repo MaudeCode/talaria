@@ -352,6 +352,12 @@ def process_is_live(pid):
     return result.returncode == 0 and not result.stdout.strip().startswith('Z')
 
 
+def project_pids(root):
+    listing = subprocess.run(['ps', '-ww', '-eo', 'pid=,args='], capture_output=True, text=True).stdout
+    return [int(pid) for pid, args in (line.split(None, 1) for line in listing.splitlines() if ' ' in line.strip())
+            if str(root) in args and int(pid) != os.getpid()]
+
+
 def hide_proc_children(project):
     (project / 'sitecustomize.py').write_text(textwrap.dedent("""
         import pathlib
@@ -364,7 +370,8 @@ def hide_proc_children(project):
     """))
 
 
-@pytest.mark.parametrize('failure', ['cancel', 'startup'])
+# 'poll' lands SIGTERM inside Popen.poll's `except OSError` window, as a busy CI runner can.
+@pytest.mark.parametrize('failure', ['cancel', 'startup', 'poll'])
 @pytest.mark.parametrize('proc_entry', ['present', pytest.param('missing', marks=pytest.mark.skipif(sys.platform != 'linux', reason='Linux proc fallback'))])
 def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_entry):
     review_process_cases(project, 'Proves runner cancellation/startup failure reaps actual detached children while another worker starts.',
@@ -387,8 +394,19 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_e
     # Hold startup failure until the parent has observed worker 1's live child.
     wrapper = project / 'scripts/abort.py'
     wrapper.write_text(textwrap.dedent(f"""
-        import suite_runner as runner, time
+        import os, signal, sys
         from pathlib import Path
+        if {failure!r} == 'poll':
+            # subprocess binds waitpid at import, so fault it before the runner loads.
+            assert 'subprocess' not in sys.modules
+            real_waitpid = os.waitpid
+            def waitpid(pid, options):
+                result = real_waitpid(pid, options)
+                if Path({str(observed)!r}).exists() and sys._getframe(1).f_code.co_name == '_internal_poll':
+                    signal.raise_signal(signal.SIGTERM)
+                return result
+            os.waitpid = waitpid
+        import suite_runner as runner, time
         if {proc_entry!r} == 'missing':
             try:
                 Path('/proc/self/task/' + str(runner.os.getpid()) + '/children').read_text()
@@ -420,7 +438,10 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_e
         observed.touch()
         if failure == 'cancel':
             proc.send_signal(signal.SIGTERM)
-        output = proc.communicate(timeout=15)[0]
+        try:
+            output = proc.communicate(timeout=15)[0]
+        except subprocess.TimeoutExpired as expired:
+            pytest.fail(f'runner ignored the abort: {expired.output}')
         assert proc.returncode != 0, output
         assert 'worker-1/output.log' in output, 'aborted worker diagnostics were not retained in the run output'
         deadline = time.monotonic() + 5
@@ -431,6 +452,12 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_e
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
+            # Workers run in their own sessions; stop them so a hang reports one failure.
+            for pid in project_pids(project.parent):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         if pidfile.exists() and process_is_live(int(pidfile.read_text())):
             os.kill(int(pidfile.read_text()), signal.SIGKILL)
 
