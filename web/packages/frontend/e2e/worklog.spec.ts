@@ -2,6 +2,7 @@ import sceneCases from '../src/features/chat/__fixtures__/activity-scene-boundar
 import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.json' with { type: 'json' }
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
+import { deferred } from '../src/test/fixtures'
 import { fullToolResult, hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { publicToolFrame, redactSessionData } from '../../server/dist/redact.js'
 import { reasoningProjection } from '../../server/dist/sessions/reasoning-display.js'
@@ -659,11 +660,12 @@ test('a sent message lands at its own height while a pinned transcript keeps its
   // The server has not persisted the message yet, so the sent row stays the pending one while it lands.
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Landing', messages: asServer(history), active_stream_id: running ? 'landing-run' : null } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: running, stream_id: 'landing-run', replay_available: true } }))
-  let stream: ServerResponse | undefined
+  // The pending row shows before the page opens its stream; frames are written only once it is connected.
+  const connected = deferred<ServerResponse>()
   const server = createServer((_request, response) => {
-    stream = response
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
     response.write(`id: landing-run:1\nevent: server_turn_started\ndata: ${JSON.stringify({ session_id: sid, stream_id: 'landing-run', turn_id: 'landing-run', user_message_id: 200 })}\n\n`)
+    connected.resolve(response)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -689,7 +691,8 @@ test('a sent message lands at its own height while a pinned transcript keeps its
     await page.locator('#msg').fill(question)
     await page.locator('#btnSend').click()
     await expect(page.locator('[data-live-user]')).toBeVisible()
-    stream?.write(`id: landing-run:2\nevent: tool\ndata: ${JSON.stringify({ id: 'a', name: 'read_file', args: { path: 'login.spec.ts' } })}\n\n`)
+    const stream = await connected.promise
+    stream.write(`id: landing-run:2\nevent: tool\ndata: ${JSON.stringify({ id: 'a', name: 'read_file', args: { path: 'login.spec.ts' } })}\n\n`)
     await expect(page.locator('.live-turn [data-tool-id="a"]')).toBeVisible()
     await page.waitForTimeout(600)
     const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; user: number }[] }).samples)
