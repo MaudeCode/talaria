@@ -10,7 +10,7 @@
  * - schema validation of every JSON body (typed values out, never raw JSON).
  *
  * Tests and the in-memory contract adapters inject a `Transport`; production
- * uses `fetch`. ESLint forbids `fetch` anywhere else.
+ * uses `fetch`. Oxlint forbids `fetch` anywhere else.
  */
 import { chatConditionText } from '../features/notices/chatCondition'
 import type { ZodType } from 'zod'

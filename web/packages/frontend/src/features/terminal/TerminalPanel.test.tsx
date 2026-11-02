@@ -266,6 +266,7 @@ describe('screen-reader mode (TAL-1605)', () => {
     let refuse!: () => void
     vi.mocked(saveSettings).mockImplementation((patch) => new Promise((_, reject) => { refuse = () => reject(new ApiError({ kind: 'http', status: 400, path: 'api/settings', message: `refused ${Object.keys(patch).join()}` })) }))
     let save!: ReturnType<typeof useSaveSettings>
+    // oxlint-disable-next-line react/globals -- the test harness hands its hook results to the test body.
     function Toggle() { save = useSaveSettings(); return null }
     render(<><Toggle /><TerminalPanel sessionId="s1" workspace="/w" onClose={noop} /></>, { screen_reader_mode: false })
     await settle()

@@ -972,7 +972,7 @@ export class GatewaySessions {
       // Closing the sidecar after a terminal snapshot is expected; every other exit is observable.
       if (!terminal) channel.put(['apperror', { message: 'The owning Agent connection ended', type: 'owner_unavailable', terminal_state: 'error' }, null])
       this.deps.log(`[webui] owner observation ended: ${error instanceof Error ? error.name : 'error'}`)
-    }).finally(async () => {
+    }).finally(async () => { // oxlint-disable-line typescript/no-misused-promises -- finally() waits for the cleanup promise it returns.
       watch.controller.abort()
       observation.listeners.delete(listener)
       release()

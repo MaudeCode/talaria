@@ -1069,6 +1069,7 @@ export class SessionService {
       // index or the lifecycle snapshots: null asks the caller to take them again, and a second change is answered as
       // read, uncached.
       const [localRows, localCount, updatedAt, seenId] = [s.messages, s.messages.length, s.updated_at, s.state_db_seen_id]
+      // oxlint-disable-next-line typescript/prefer-optional-chain -- an identity check, not a nullish guard.
       const changed = (): boolean => s.messages !== localRows || s.messages.length !== localCount || s.updated_at !== updatedAt || s.state_db_seen_id !== seenId
       if (typeof seenId === 'number' && !isSubagentView(s)) {
         const read = await this.stateDbTailRead(s, seenId, [...index.unidentified, ...context.unidentified])

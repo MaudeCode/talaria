@@ -39,7 +39,7 @@ function hostTool(env: Record<string, string | undefined>, cmd: string, args: st
 }
 
 /** A supervisor probe that hit the bound, unlike a missing tool or an unknown job, cannot rule out a running instance. */
-const timedOut = (r: { error?: Error }): boolean => (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+const timedOut = (r: { error?: NodeJS.ErrnoException }): boolean => r.error?.code === 'ETIMEDOUT'
 
 export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabels: string[] }
 
