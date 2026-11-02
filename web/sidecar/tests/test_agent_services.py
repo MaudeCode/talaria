@@ -574,6 +574,9 @@ def alive(pid,ct=None):
  actual=birth(pid)
  return actual is not None and (ct is None or abs(actual-ct)<.002)
 def services(): return [json.loads(p.read_text()) for p in sorted((HOME/'services').glob('*/config.json'))]
+def port(cfg):
+ try: return int((Path(cfg['home'])/'backend.port').read_text()) if cfg['purpose']!='gateway' else None
+ except FileNotFoundError: return None
 def service_pid(label):
  try:
   pid=int((HOME/'services'/label/'service.pid').read_text())
@@ -618,7 +621,7 @@ def ledger():
   except FileNotFoundError: continue
   ct=birth(pid)
   if ct is not None:
-   row=dict(pid=pid,create_time=ct,install='synthetic-install',purpose=cfg['purpose'],hermes_home=cfg['home'],profile=cfg['profile'],host='127.0.0.1',port=cfg.get('port'),argv='hermes '+cfg['purpose'])
+   row=dict(pid=pid,create_time=ct,install='synthetic-install',purpose=cfg['purpose'],hermes_home=cfg['home'],profile=cfg['profile'],host='127.0.0.1',port=port(cfg),argv='hermes '+cfg['purpose'])
    if cfg.get('legacy') and cfg['purpose']!='gateway': row.pop('hermes_home'); row['profile']=''
    result.append(row)
  return result
@@ -684,13 +687,16 @@ finally:
 ''')
     (modules / 'backend_retirement.py').write_bytes((AGENT_DIR / 'hermes_cli/backend_retirement.py').read_bytes())
     (modules / 'web_server_idle_proof.py').write_text("import os\nfrom pathlib import Path\ndef idle_proof(): return {'idle': not (Path(os.environ['BACKEND_HOME'])/'busy').exists()}\n")
-    (root / 'backend.py').write_text('''import json, os, signal, sys, threading
+    (root / 'backend.py').write_text('''import json, os, signal, sys, threading, traceback
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from synthetic_services import publish_pid
 home=Path(sys.argv[1]); os.environ['BACKEND_HOME']=str(home)
+def report(*error):
+ with (home/'backend.stderr').open('a') as log: traceback.print_exception(*error,file=log)
+ sys.__excepthook__(*error)
+sys.excepthook=report
 from hermes_cli.backend_retirement import retirement
-cfg=json.loads((home/'backend-config.json').read_text())
 legacy_runtime=(home/'refresh-once').exists()
 if legacy_runtime: (home/'refresh-once').unlink()
 class Handler(BaseHTTPRequestHandler):
@@ -721,7 +727,11 @@ class Handler(BaseHTTPRequestHandler):
    return
   with (home/'retirement-actions').open('a') as log: log.write(body['action']+'\\n')
   self.reply(retirement.prepare() if body['action']=='prepare' else getattr(retirement,body['action'])(body.get('token')))
-server=ThreadingHTTPServer(('127.0.0.1',cfg['port']),Handler)
+# The first backend binds an OS-chosen port; a successor serves the same endpoint, as a configured dashboard does.
+port_file=home/'backend.port'
+server=ThreadingHTTPServer(('127.0.0.1',int(port_file.read_text()) if port_file.exists() else 0),Handler)
+if not port_file.exists():
+ staged=home/'.backend.port.tmp'; staged.write_text(str(server.server_address[1])); staged.replace(port_file)
 publish_pid(home/'backend.pid')
 def stop(*_):
  with (home/'signals').open('a') as log: log.write('TERM'+chr(10))
@@ -751,8 +761,8 @@ def _get_systemd_service_for_pid(pid): return next((c['label'] for c in services
 def _get_pid_cgroup_path(pid): return 'synthetic-user-cgroup'
 def _extract_scope_from_cgroup(cgroup): return 'user'
 ''',
-      'dashboard_procs': '''from synthetic_services import ledger, services
-def _hermes_home_for_pid(pid): return next((c['home'] for r in ledger() for c in services() if r['pid']==pid and c['purpose']==r['purpose'] and c.get('port')==r.get('port')),None)
+      'dashboard_procs': '''from synthetic_services import ledger, port, services
+def _hermes_home_for_pid(pid): return next((c['home'] for r in ledger() for c in services() if r['pid']==pid and c['purpose']==r['purpose'] and port(c)==r.get('port')),None)
 def _pid_environ(pid): return {'HERMES_DASHBOARD_SESSION_TOKEN':'synthetic-local-token'}
 ''',
       'update_receipt': '''from pathlib import Path
@@ -956,8 +966,7 @@ def run_git(command,args,**kw):
  return subprocess.run([*command,*args],**kw)
 ''')
     import plistlib
-    import socket
-    sockets, configs = [], []
+    configs = []
     (home / 'services').mkdir()
     (home / 'plists').mkdir()
     for i in range(dashboards + gateway_profiles):
@@ -968,13 +977,8 @@ def run_git(command,args,**kw):
         served_home = home if i in {0, gateway_profiles} else home / 'profiles' / f'profile{i}'
         served_home.mkdir(parents=True, exist_ok=True)
         cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if served_home == home else f'profile{i}', legacy=legacy, refresh=refresh, manager=manager, transient=transient)
-        if purpose != 'gateway':
-            listener = socket.socket()
-            listener.bind(('127.0.0.1', 0))
-            cfg['port'] = listener.getsockname()[1]
-            sockets.append(listener)
-            (served_home / 'backend-config.json').write_text(json.dumps(cfg))
-            if refresh and not (modern_first and i == 1): (served_home / 'refresh-once').touch()
+        if purpose != 'gateway' and refresh and not (modern_first and i == 1):
+            (served_home / 'refresh-once').touch()
         folder = home / 'services' / label
         folder.mkdir()
         (folder / 'config.json').write_text(json.dumps(cfg))
@@ -1005,13 +1009,12 @@ def run_git(command,args,**kw):
     git(root, 'commit', '-qm', 'target')
     target = git(root, 'rev-parse', 'HEAD')
     git(root, 'reset', '--hard', base)
-    for listener in sockets:
-        listener.close()
     env = {**os.environ, 'HERMES_HOME': str(home), 'PATH': str(binary) + os.pathsep + os.environ['PATH']}
     supervisors = [subprocess.Popen([AGENT_PYTHON, str(root / 'supervisor.py'), cfg['label']], env=env) for cfg in configs]
     sidecar = None
     try:
-        wait_for(lambda: (not gateways or all((Path(c['home'])/'active').exists() for c in configs if c['purpose']=='gateway')) and all((Path(c['home']) / 'backend.pid').exists() for c in configs if c['purpose'] != 'gateway'))
+        wait_for(lambda: (not gateways or all((Path(c['home'])/'active').exists() for c in configs if c['purpose']=='gateway')) and all((Path(c['home']) / 'backend.pid').exists() for c in configs if c['purpose'] != 'gateway'),
+                 lambda: ''.join(path.read_text() for path in {Path(c['home']) / 'backend.stderr' for c in configs} if path.exists()))
         sidecar = SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': env['PATH']})
         yield root, home, base, target, sidecar, configs
     finally:
