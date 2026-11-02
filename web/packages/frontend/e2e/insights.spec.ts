@@ -9,10 +9,10 @@ const quotas = {
     computed_at: '2030-01-01T00:00:00Z', fetched_at: '2030-01-01T00:00:00Z', urgency: { remaining: 'healthy', pace: 'warning' },
     windows: [
       { label: 'Session', used_percent: 25, remaining_percent: 75, reset_at: '2030-01-01T03:00:00Z', detail: null, window_seconds: 18000, urgency: { remaining: 'healthy', pace: 'healthy' },
-        pace: { expected_remaining_percent: 60, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
+        pace: { expected_remaining_percent: 60, expected_used_percent: 40, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
         forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 25, depletion_margin_minutes: 360 } },
       { label: 'Weekly', used_percent: 70, remaining_percent: 30, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: 604800, urgency: { remaining: 'warning', pace: 'warning' },
-        pace: { expected_remaining_percent: 36, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
+        pace: { expected_remaining_percent: 36, expected_used_percent: 64, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
         forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 12, depletion_margin_minutes: -330 } },
     ],
   }, {
@@ -54,17 +54,30 @@ test('Insights opens on Quotas with every window, pace and forecast; Usage holds
   await expect(paced.getByRole('meter')).toHaveCount(2)
   const session = paced.locator('[data-quota-window="Session"]')
   await expect(session).toHaveAttribute('data-level', 'healthy')
-  await expect(session).toContainText('75% remaining')
-  await expect(session).toContainText('15% under pace')
-  await expect(session).toContainText('Burn 0.62×')
+  await expect(session.getByRole('meter', { name: 'Session: 25% Used' })).toBeVisible()
+  await expect(session.locator('[data-metric="pace"]')).toHaveText('Pace15% under')
+  await expect(session.locator('[data-metric="burn"]')).toHaveText('Burn0.62×')
+  await expect(session.locator('[data-metric="budget"]')).toHaveText('Budget25%/hr')
   await expect(session).toContainText('Lasts through reset')
   const weekly = paced.locator('[data-quota-window="Weekly"]')
   await expect(weekly).toHaveAttribute('data-level', 'warning')
   await expect(weekly).toContainText('Empty 5h early')
-  await expect(weekly).toContainText('12% / day budget')
+  await expect(weekly.locator('[data-metric="budget"]')).toHaveText('Budget12%/day')
   const codex = page.locator('[data-quota-source="qsrc_codex"]')
-  await expect(codex).toContainText('60% remaining')
-  await expect(codex).not.toContainText('pace')
+  await expect(codex.getByRole('meter', { name: 'Session: 40% Used' })).toBeVisible()
+  await expect(codex.locator('[data-metric]')).toHaveCount(0)
+
+  // The Used / Remaining choice flips every headline and survives a reload (a per-browser convenience).
+  await page.getByRole('combobox', { name: 'Percentage' }).click()
+  await page.getByRole('option', { name: 'Remaining', exact: true }).click()
+  await expect(session.getByRole('meter', { name: 'Session: 75% Remaining' })).toBeVisible()
+  await expect(codex.getByRole('meter', { name: 'Session: 60% Remaining' })).toBeVisible()
+  await page.reload()
+  await settle(page)
+  await expect(page.locator('[data-quota-source="qsrc_paced"]').getByRole('meter', { name: 'Session: 75% Remaining' })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Percentage' }).click()
+  await page.getByRole('option', { name: 'Used', exact: true }).click()
+  await expect(session.getByRole('meter', { name: 'Session: 25% Used' })).toBeVisible()
 
   // Evidence: the Quotas tab, then the Usage tab's charts and table further down the hub's own scroll area.
   const shot = async (name: string) => {

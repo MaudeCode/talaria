@@ -12,12 +12,15 @@ import { HubPage } from '../../shell/AppShell'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
 import { BarChart } from './BarChart'
-import { ProviderQuotaRows } from './ProviderQuotaRows'
+import { ProviderQuotaRows, QUOTA_PERCENT_MODES, toQuotaPercentMode, type QuotaPercentMode } from './ProviderQuotaRows'
+import { readPersisted, writePersisted } from '../../lib/persisted'
 import { cn } from '../../ui/cn'
 
 const PERIODS = [7, 30, 90, 365]
 const TABS: { id: InsightsTab; label: () => string }[] = [{ id: 'quotas', label: m.insights_tab_quotas }, { id: 'usage', label: m.insights_tab_usage }]
 const METRICS = ['tokens', 'cost', 'sessions'] as const
+/** The viewer's Used / Remaining choice for the quota rows: a per-browser convenience, like the App's device setting. */
+const PERCENT_MODE_KEY = 'insights.quotaPercentMode'
 type Metric = (typeof METRICS)[number]
 
 /** The server's `YYYY-MM-DD` bucket as a local day; a UTC parse would shift it a day west of Greenwich. */
@@ -36,6 +39,8 @@ export function InsightsPage() {
   const setTab = (next: InsightsTab) => { void navigate({ to: '/insights', search: { ...search, tab: next }, replace: true }) }
   const setDays = (next: number) => { void navigate({ to: '/insights', search: { ...search, days: next }, replace: true }) }
   const [metric, setMetric] = useState<Metric>('tokens')
+  const [percentMode, setPercentMode] = useState<QuotaPercentMode>(() => toQuotaPercentMode(readPersisted(PERCENT_MODE_KEY)))
+  const choosePercentMode = (next: QuotaPercentMode) => { setPercentMode(next); writePersisted(PERCENT_MODE_KEY, next) }
   const insights = useQuery({ queryKey: keys.insights(days), queryFn: () => api.fetchInsights(days), staleTime: 60_000, enabled: tab === 'usage' })
   const { quotas, refresh } = useProviderQuotas()
   const d = insights.data
@@ -74,12 +79,13 @@ export function InsightsPage() {
               </button>
             ))}
           </div>
+          {tab === 'quotas' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_percentage()} <Select value={percentMode} aria-label={m.insights_percentage()} onValueChange={(v) => choosePercentMode(toQuotaPercentMode(v))}>{QUOTA_PERCENT_MODES.map((k) => <option key={k} value={k}>{k === 'used' ? m.provider_quota_metric_used() : m.provider_quota_metric_remaining()}</option>)}</Select></label>}
           {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
         </>
       }
     >
       <div className="flex flex-col gap-8" id="insightsContent">
-        {tab === 'quotas' && <div role="tabpanel" id="insights-quotas"><ProviderQuotaRows quotas={quotas} onRefresh={() => { void refresh() }} /></div>}
+        {tab === 'quotas' && <div role="tabpanel" id="insights-quotas"><ProviderQuotaRows quotas={quotas} mode={percentMode} onRefresh={() => { void refresh() }} /></div>}
 
         {tab === 'usage' && <section role="tabpanel" id="insights-usage" className="flex flex-col gap-4" data-section="insights-usage">
           {insights.isPending && <LoadingState />}

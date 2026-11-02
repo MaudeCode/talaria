@@ -2,7 +2,7 @@ import type { PlanGauge, PlanUsage } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
-import { formatMinutes, formatPercent, resetTime } from '../../i18n/units'
+import { formatBurnRate, formatMinutes, formatPercent, resetTime } from '../../i18n/units'
 import type { ProviderQuotaSourceSchema } from '../../contracts'
 import { QuotaUrgency } from './QuotaThresholds'
 
@@ -20,7 +20,7 @@ export function QuotaPaceSummary({ pace, forecast, locale, forecastClassName }: 
       {pace ? (
         <>
           <span>{pace.status === 'over' ? m.provider_quota_over_pace({ percent: percent(-pace.pace_delta_percent) }) : pace.status === 'under' ? m.provider_quota_under_pace({ percent: percent(pace.pace_delta_percent) }) : m.provider_quota_on_pace()}</span>
-          <span>{m.provider_quota_burn({ rate: `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pace.burn_rate)}×` })}</span>
+          <span>{m.provider_quota_burn({ rate: formatBurnRate(locale, pace.burn_rate) })}</span>
         </>
       ) : <span>{m.provider_quota_pace_unavailable()}</span>}
       {forecast ? (

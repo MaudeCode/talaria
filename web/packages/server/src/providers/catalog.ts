@@ -291,7 +291,7 @@ export function isoUtc(value: unknown): string | null {
   return Number.isFinite(ms) ? isoAt(ms / 1000) : null
 }
 
-export interface QuotaPace { expected_remaining_percent: number; pace_delta_percent: number; burn_rate: number; minutes_to_reset: number; projected_minutes_to_empty: number | null; elapsed_minutes: number; valid_until: string }
+export interface QuotaPace { expected_remaining_percent: number; expected_used_percent: number; pace_delta_percent: number; burn_rate: number; minutes_to_reset: number; projected_minutes_to_empty: number | null; elapsed_minutes: number; valid_until: string }
 export interface QuotaForecast { outcome: 'safe' | 'warning'; budget_unit: 'hour' | 'day'; budget_percent: number | null; depletion_margin_minutes: number | null }
 export interface QuotaWindow { label: string; used_percent: number | null; remaining_percent: number | null; reset_at: string | null; detail: string | null; window_seconds: number | null; pace: QuotaPace | null; forecast: QuotaForecast | null }
 export interface QuotaWindows { windows: QuotaWindow[]; pace_window_index: number | null; session_window_index: number | null; weekly_window_index: number | null }
@@ -349,6 +349,7 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
       const usagePerMinute = elapsed > 0 ? used / elapsed : 0
       pace = {
         expected_remaining_percent: expectedRemaining,
+        expected_used_percent: expectedUsed,
         pace_delta_percent: roundTo(remaining - expectedRemaining, 1),
         burn_rate: expectedUsed > 0 ? roundTo(used / expectedUsed, 2) : 0,
         minutes_to_reset: minutesToReset,
@@ -358,7 +359,8 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
       }
     }
     windows.push({
-      label, used_percent: usedRaw, remaining_percent: remaining, reset_at: resetAt, detail: typeof entry.detail === 'string' ? entry.detail : null,
+      // Both percents are the normalized pair, so a client in Used mode never derives one from the other (TAL-1782).
+      label, used_percent: used, remaining_percent: remaining, reset_at: resetAt, detail: typeof entry.detail === 'string' ? entry.detail : null,
       window_seconds: windowSeconds, pace, forecast: pace ? quotaForecast(pace, remaining) : null,
     })
   }

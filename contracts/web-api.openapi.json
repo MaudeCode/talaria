@@ -76726,6 +76726,10 @@
                                           "expected_remaining_percent": {
                                             "type": "number"
                                           },
+                                          "expected_used_percent": {
+                                            "type": "number",
+                                            "description": "100 − `expected_remaining_percent`; the pace marker in a Used-mode display."
+                                          },
                                           "pace_delta_percent": {
                                             "type": "number"
                                           },
@@ -76764,6 +76768,7 @@
                                         },
                                         "required": [
                                           "expected_remaining_percent",
+                                          "expected_used_percent",
                                           "pace_delta_percent",
                                           "burn_rate",
                                           "minutes_to_reset",
@@ -77299,6 +77304,10 @@
                                         "expected_remaining_percent": {
                                           "type": "number"
                                         },
+                                        "expected_used_percent": {
+                                          "type": "number",
+                                          "description": "100 − `expected_remaining_percent`; the pace marker in a Used-mode display."
+                                        },
                                         "pace_delta_percent": {
                                           "type": "number"
                                         },
@@ -77337,6 +77346,7 @@
                                       },
                                       "required": [
                                         "expected_remaining_percent",
+                                        "expected_used_percent",
                                         "pace_delta_percent",
                                         "burn_rate",
                                         "minutes_to_reset",

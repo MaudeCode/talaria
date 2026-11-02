@@ -15,10 +15,10 @@ const quotas = ProviderQuotasSchema.parse({
       computed_at: '2030-01-01T00:00:00Z', fetched_at: '2030-01-01T00:00:00Z', urgency: { remaining: 'healthy', pace: 'warning' },
       windows: [
         { label: 'Session', used_percent: 25, remaining_percent: 75, reset_at: '2030-01-01T03:00:00Z', detail: null, window_seconds: 18000, urgency: { remaining: 'healthy', pace: 'healthy' },
-          pace: { expected_remaining_percent: 60, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
+          pace: { expected_remaining_percent: 60, expected_used_percent: 40, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
           forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 25, depletion_margin_minutes: 360 } },
         { label: 'Weekly', used_percent: 70, remaining_percent: 30, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: 604800, urgency: { remaining: 'warning', pace: 'warning' },
-          pace: { expected_remaining_percent: 36, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
+          pace: { expected_remaining_percent: 36, expected_used_percent: 64, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
           forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 12, depletion_margin_minutes: -330 } },
       ],
     },
@@ -35,29 +35,32 @@ function asQuery(data: z.infer<typeof ProviderQuotasSchema>): UseQueryResult<z.i
 }
 
 describe('ProviderQuotaRows', () => {
-  it('renders every window with its meter, pace, burn, budget and forecast, and the plain states without them', () => {
-    render(<QueryClientProvider client={new QueryClient()}><ProviderQuotaRows quotas={asQuery(quotas)} onRefresh={vi.fn()} /></QueryClientProvider>)
+  const renderRows = (mode: 'used' | 'remaining') => render(<QueryClientProvider client={new QueryClient()}><ProviderQuotaRows quotas={asQuery(quotas)} mode={mode} onRefresh={vi.fn()} /></QueryClientProvider>)
+
+  it('renders every window with its headline percent, meter, forecast and Pace / Burn / Budget cells, and the plain states without them', () => {
+    renderRows('used')
     const paced = document.querySelector('[data-quota-source="qsrc_paced"]')!
     expect(within(paced as HTMLElement).getAllByRole('meter')).toHaveLength(2)
     const session = paced.querySelector('[data-quota-window="Session"]')!
     expect(session).toHaveAttribute('data-level', 'healthy')
-    expect(session).toHaveTextContent('75% remaining')
-    expect(session).toHaveTextContent('15% under pace')
-    expect(session).toHaveTextContent('Burn 0.62×')
-    expect(session).toHaveTextContent('25% / hour budget')
-    expect(session).toHaveTextContent('Lasts through reset')
+    expect(within(session as HTMLElement).getByRole('meter', { name: 'Session: 25% Used' })).toHaveAttribute('aria-valuenow', '25')
+    expect(session.querySelector('[data-metric="pace"]')).toHaveTextContent('Pace15% under')
+    expect(session.querySelector('[data-metric="burn"]')).toHaveTextContent('Burn0.62×')
+    expect(session.querySelector('[data-metric="budget"]')).toHaveTextContent('Budget25%/hr')
+    expect(session.querySelector('[data-forecast="safe"]')).toHaveTextContent('Lasts through reset')
     const weekly = paced.querySelector('[data-quota-window="Weekly"]')!
     expect(weekly).toHaveAttribute('data-level', 'warning')
-    expect(weekly).toHaveTextContent('6% over pace')
-    expect(weekly).toHaveTextContent('12% / day budget')
+    expect(weekly.querySelector('[data-metric="pace"]')).toHaveTextContent('6% over')
+    expect(weekly.querySelector('[data-metric="budget"]')).toHaveTextContent('12%/day')
     expect(weekly.querySelector('[data-forecast="warning"]')).toHaveTextContent('Empty 5h early')
     expect(paced).toHaveTextContent('Max')
     expect(paced).toHaveTextContent('Active provider')
     expect(paced).toHaveTextContent('As of')
 
     const plain = document.querySelector('[data-quota-source="qsrc_plain"]')!
-    expect(plain).toHaveTextContent('60% remaining')
-    expect(plain.textContent).not.toMatch(/pace|Burn|budget|reset/)
+    expect(within(plain as HTMLElement).getByRole('meter', { name: 'Session: 40% Used' })).toBeInTheDocument()
+    expect(plain.querySelectorAll('[data-metric]')).toHaveLength(0)
+    expect(plain.textContent).not.toMatch(/pace|Burn|Budget|reset/)
 
     expect(document.querySelector('[data-quota-source="qsrc_credits"]')).toHaveTextContent('12.5 credits remaining')
     const down = document.querySelector('[data-quota-source="qsrc_down"]')!
@@ -68,6 +71,15 @@ describe('ProviderQuotaRows', () => {
     expect(unavailable).toHaveTextContent('Google')
     expect(unavailable.querySelector('[data-quota-source="qsrc_none"]')).toHaveTextContent('No verified server-side quota')
     expect(screen.getByRole('button', { name: 'Refresh quotas' })).toBeEnabled()
+  })
+
+  it('shows the remaining percent, fill and marker in Remaining mode', () => {
+    renderRows('remaining')
+    const session = document.querySelector('[data-quota-source="qsrc_paced"] [data-quota-window="Session"]')!
+    const meter = within(session as HTMLElement).getByRole('meter', { name: 'Session: 75% Remaining' })
+    expect(meter).toHaveAttribute('aria-valuenow', '75')
+    expect(meter.firstElementChild).toHaveStyle({ width: '75%' })
+    expect(meter.lastElementChild).toHaveStyle({ left: '60%' })
   })
 })
 

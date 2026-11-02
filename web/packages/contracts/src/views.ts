@@ -802,7 +802,7 @@ export const ProvidersSchema = z.looseObject({ availability: CatalogAvailability
 export const QuotaUrgencySchema = z.looseObject({ remaining: QuotaLevelSchema, pace: QuotaLevelSchema.describe('Burn rate and pace tolerance; the remaining classification when the window has no pace.') })
 /** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */
 export const QuotaPaceSchema = z.looseObject({
-  expected_remaining_percent: z.number(), pace_delta_percent: z.number(), burn_rate: z.number(), minutes_to_reset: z.number(),
+  expected_remaining_percent: z.number(), expected_used_percent: z.number().describe('100 − `expected_remaining_percent`; the pace marker in a Used-mode display.'), pace_delta_percent: z.number(), burn_rate: z.number(), minutes_to_reset: z.number(),
   projected_minutes_to_empty: NullableNumber.describe('Minutes until the window empties at the current burn; null when nothing has been used.'),
   elapsed_minutes: z.number(), valid_until: z.string(),
   status: z.enum(['over', 'on', 'under']).optional().describe('TAL-411, `/api/provider/quotas` only: over when behind pace by at least the tolerance, under when more than 1 point ahead.'),
