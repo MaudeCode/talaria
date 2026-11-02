@@ -1622,12 +1622,12 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
 
   const session = {
     label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: '2026-09-28T12:00:00Z', detail: null, window_seconds: 18_000,
-    pace: { expected_remaining_percent: 80, pace_delta_percent: 10, burn_rate: 0.5, minutes_to_reset: 240, projected_minutes_to_empty: 540, elapsed_minutes: 60, valid_until: '2026-09-28T12:00:00Z' },
+    pace: { expected_remaining_percent: 80, expected_used_percent: 20, pace_delta_percent: 10, burn_rate: 0.5, minutes_to_reset: 240, projected_minutes_to_empty: 540, elapsed_minutes: 60, valid_until: '2026-09-28T12:00:00Z' },
     forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 22.5, depletion_margin_minutes: 300 },
   }
   const weekly = {
     label: 'Weekly', used_percent: 32, remaining_percent: 68, reset_at: '2026-10-03T08:00:00Z', detail: null, window_seconds: 604_800,
-    pace: { expected_remaining_percent: 71.4, pace_delta_percent: -3.4, burn_rate: 1.12, minutes_to_reset: 7200, projected_minutes_to_empty: 6120, elapsed_minutes: 2880, valid_until: '2026-10-03T08:00:00Z' },
+    pace: { expected_remaining_percent: 71.4, expected_used_percent: 28.6, pace_delta_percent: -3.4, burn_rate: 1.12, minutes_to_reset: 7200, projected_minutes_to_empty: 6120, elapsed_minutes: 2880, valid_until: '2026-10-03T08:00:00Z' },
     forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 13.6, depletion_margin_minutes: -1080 },
   }
   const monthly = { label: 'Monthly', used_percent: 5, remaining_percent: 95, reset_at: '2026-10-15T00:00:00Z', detail: null, window_seconds: null, pace: null, forecast: null }

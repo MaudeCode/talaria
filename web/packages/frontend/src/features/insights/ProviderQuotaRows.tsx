@@ -114,7 +114,7 @@ function QuotaWindowRow({ window: w, source, mode, locale }: { window: QuotaWind
     : w.urgency?.pace ?? source.urgency?.pace ?? 'healthy'
   // The headline, fill and marker read the server percent for the mode; the server ships both normalized.
   const percent = mode === 'used' ? w.used_percent : w.remaining_percent
-  const marker = pace ? (mode === 'used' ? 100 - pace.expected_remaining_percent : pace.expected_remaining_percent) : null
+  const marker = pace ? (mode === 'used' ? pace.expected_used_percent : pace.expected_remaining_percent) : null
   const modeLabel = mode === 'used' ? m.provider_quota_metric_used() : m.provider_quota_metric_remaining()
   // The server's minutes to reset, as of its `computed_at`; the list rereads every minute.
   const countdown = pace ? formatMinutes(locale, pace.minutes_to_reset) : null

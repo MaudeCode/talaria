@@ -15,10 +15,10 @@ const quotas = ProviderQuotasSchema.parse({
       computed_at: '2030-01-01T00:00:00Z', fetched_at: '2030-01-01T00:00:00Z', urgency: { remaining: 'healthy', pace: 'warning' },
       windows: [
         { label: 'Session', used_percent: 25, remaining_percent: 75, reset_at: '2030-01-01T03:00:00Z', detail: null, window_seconds: 18000, urgency: { remaining: 'healthy', pace: 'healthy' },
-          pace: { expected_remaining_percent: 60, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
+          pace: { expected_remaining_percent: 60, expected_used_percent: 40, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
           forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 25, depletion_margin_minutes: 360 } },
         { label: 'Weekly', used_percent: 70, remaining_percent: 30, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: 604800, urgency: { remaining: 'warning', pace: 'warning' },
-          pace: { expected_remaining_percent: 36, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
+          pace: { expected_remaining_percent: 36, expected_used_percent: 64, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
           forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 12, depletion_margin_minutes: -330 } },
       ],
     },

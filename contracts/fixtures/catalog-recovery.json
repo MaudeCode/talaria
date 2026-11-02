@@ -61,6 +61,7 @@
             "window_seconds": 18000,
             "pace": {
               "expected_remaining_percent": 80,
+              "expected_used_percent": 20,
               "pace_delta_percent": 10,
               "burn_rate": 0.5,
               "minutes_to_reset": 240,
@@ -90,6 +91,7 @@
             "window_seconds": 604800,
             "pace": {
               "expected_remaining_percent": 71.4,
+              "expected_used_percent": 28.6,
               "pace_delta_percent": -3.4,
               "burn_rate": 1.12,
               "minutes_to_reset": 7200,
