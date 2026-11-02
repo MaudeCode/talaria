@@ -2388,6 +2388,16 @@
         ""
       ]
     },
+    "tests/test_suite_runner.py::test_a_slow_module_splits_across_workers": {
+      "layer": "process",
+      "reason": "Actual pytest worker processes prove a recorded-slow module splits its cases across concurrent workers and each case runs exactly once.",
+      "cases": [""]
+    },
+    "tests/test_suite_runner.py::test_layers_share_one_bounded_worker_pool": {
+      "layer": "process",
+      "reason": "Actual pytest worker processes prove fast, process and compatibility workers share one pool without exceeding the worker budget.",
+      "cases": [""]
+    },
     "tests/test_suite_runner.py::test_independent_modules_overlap": {
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
