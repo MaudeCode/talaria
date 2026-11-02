@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: splits the Web server test job into parallel shards; no app, Web, or Relay behavior changes."}
