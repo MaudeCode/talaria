@@ -95,6 +95,19 @@ sidecar/scripts/test.sh --layer=fast tests/test_agent_services.py -k worker
 sidecar/scripts/test.sh --layer=process tests/test_suite_runner.py
 ```
 
+The runner balances workers by `sidecar/tests/case_durations.json`, the recorded
+seconds per case for each test function; an unrecorded case weighs its layer's
+median. Every layer's groups share one pool of at most `TALARIA_SIDECAR_WORKERS`
+processes, longest estimate first, and each worker runs exactly its listed cases.
+Refresh the record from a full active-pin run's merged report, such as the CI
+`agent-compatibility-<release>` artifact's `<release>.junit.xml`:
+
+```bash
+python3 sidecar/scripts/suite_runner.py --record-durations path/to/merged.junit.xml
+```
+
+A stale record only degrades balance, never coverage.
+
 Explicit layer selection is a focused check, not a replacement for the default
 verification gate. Specify `--layer=fast` or `--layer=process` for offline focused
 checks. Omitting the layer keeps the default compatibility request and provisions

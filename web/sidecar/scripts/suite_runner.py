@@ -1,4 +1,4 @@
-"""Bounded, module-preserving pytest subprocesses and verified JUnit aggregation.
+"""Bounded, duration-balanced pytest subprocesses and verified JUnit aggregation.
 
 Also loaded as a pytest plugin to record collection and actual test starts. Only
 the existing pytest dependency is used; orchestration itself is Python stdlib.
@@ -11,6 +11,7 @@ import contextlib
 import os
 from pathlib import Path
 import signal
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -32,14 +33,44 @@ def worker_count(value=None):
     return int(value)
 
 
-def partition(nodeids, count):
-    modules = defaultdict(list)
-    for nodeid in nodeids:
-        modules[nodeid.split("::", 1)[0]].append(nodeid)
-    groups = [[] for _ in range(min(count, len(modules)))]
-    for _, items in sorted(modules.items(), key=lambda pair: (-len(pair[1]), pair[0])):
-        min(groups, key=len).extend(items)
-    return groups
+DURATIONS = Path(__file__).resolve().parents[1] / 'tests/case_durations.json'
+
+
+def family(nodeid):
+    return nodeid.split('[', 1)[0]
+
+
+def case_weights(nodeids, layers, recorded):
+    """Recorded seconds per case, keyed by test function; an unrecorded case weighs its layer's median. A stale
+    record only skews balance: every case is still dealt to exactly one group."""
+    known = {node: recorded[family(node)] for node in nodeids if family(node) in recorded}
+    medians = {layer: statistics.median([seconds for node, seconds in known.items() if layers[node] == layer] or [1.0])
+               for layer in {layers[node] for node in nodeids}}
+    return {node: known.get(node, medians[layers[node]]) for node in nodeids}
+
+
+def balance(nodeids, weights, count):
+    """Longest-processing-time first: each case, slowest first, joins the group with the least estimated time (then
+    the fewest cases). Returns (estimated seconds, cases) pairs."""
+    groups = [[0.0, 0, index, []] for index in range(min(count, len(nodeids)))]
+    for node in sorted(nodeids, key=lambda node: -weights[node]):
+        group = min(groups)
+        group[0] += weights[node]
+        group[1] += 1
+        group[3].append(node)
+    return [(estimate, cases) for estimate, _, _, cases in groups]
+
+
+def record_durations(report, destination=DURATIONS):
+    """Mean seconds per case for each test function in a merged JUnit report, written byte-for-byte reproducibly."""
+    cases = defaultdict(float)
+    for case in ET.parse(report).iter('testcase'):
+        cases[case.find("properties/property[@name='talaria_nodeid']").get('value')] += float(case.get('time', '0'))
+    functions = defaultdict(list)
+    for node, seconds in cases.items():
+        functions[family(node)].append(seconds)
+    means = {name: round(sum(values) / len(values), 3) for name, values in sorted(functions.items())}
+    Path(destination).write_text(json.dumps(means, indent=1) + '\n')
 
 
 # Pytest plugin hooks. The collection and execution journal is independent of
@@ -48,7 +79,7 @@ _collected, _started, _layers = [], [], {}
 _inventory, _active_case, _harness_launch = {}, None, False
 _launches, _violations = [], []
 _active_phase = 'collection'
-# A shard's worker runs its modules' listed cases only (TAL-1599).
+# Every worker runs exactly its listed cases (TAL-1599, TAL-1781).
 SELECTION = 'TALARIA_PYTEST_SELECTION'
 _selection = None
 
@@ -444,22 +475,30 @@ def run(args):
                     raise ValueError(f'shard {shard[0]}/{shard[1]} selected no cases')
             print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}"
                   f"{f' for shard {shard[0]}/{shard[1]}' if shard else ''}; diagnostics: {output}", flush=True)
-            jobs = []
-            failed = False
-            for layer in layers:
-                groups = partition([node for node in expected if collected['layers'][node] == layer], selected)
-                current = []
-                for group in groups:
+            # Every layer's balanced groups share one pool of `selected` slots, longest estimate first.
+            recorded = json.loads(DURATIONS.read_text()) if DURATIONS.exists() else {}
+            weights = case_weights(expected, collected['layers'], recorded)
+            pending = sorted(((estimate, layer, group) for layer in layers for estimate, group in balance(
+                [node for node in expected if collected['layers'][node] == layer], weights, selected)),
+                key=lambda entry: -entry[0])
+            jobs, running, failed = [], [], False
+            while pending or running:
+                while pending and len(running) < selected:
+                    estimate, layer, group = pending.pop(0)
                     name = f'worker-{len(jobs) + 1}'
                     selection = remaining if remaining else list(dict.fromkeys(node.split('::', 1)[0] for node in group))
                     job, proc = launch(name, [f"--junitxml={output / name / 'junit.xml'}",
-                                              f'--talaria-layer={layer}', *selection], layer, cases=group if shard else None)
+                                              f'--talaria-layer={layer}', *selection], layer, cases=group)
                     jobs.append((job, group, proc))
-                    current.append((job, proc))
-                for job, proc in current:
-                    code = wait_for(proc, processes)
-                    print(f'{job.name} ({layer}): exit={code}', flush=True)
-                    failed |= code != 0
+                    running.append((job, proc, layer, group, estimate, time.monotonic()))
+                for entry in [entry for entry in running if entry[1].poll() is not None]:
+                    running.remove(entry)
+                    job, proc, layer, group, estimate, started = entry
+                    print(f'{job.name} ({layer}): exit={proc.returncode}, cases={len(group)}, '
+                          f'estimated={estimate:.1f}s, actual={time.monotonic() - started:.1f}s', flush=True)
+                    failed |= proc.returncode != 0
+                reap_orphans(processes)
+                time.sleep(.02)
             if Counter(node for _, group, _ in jobs for node in group) != Counter(expected):
                 raise ValueError('missing or duplicate selected layer coverage')
             report_failed = merge_reports([(job, group) for job, group, _ in jobs], report or output / "junit.xml", suite)
@@ -480,6 +519,9 @@ def run(args):
 
 
 def main():
+    if sys.argv[1:2] == ['--record-durations'] and len(sys.argv) == 3:
+        record_durations(sys.argv[2])
+        return 0
     if sys.argv[1:2] == ['--requires-agent']:
         print(str('compatibility' in layer_arguments(shard_argument(sys.argv[2:])[0])[1]).lower())
         return 0

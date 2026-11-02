@@ -538,13 +538,96 @@ def test_exited_orphans_are_reaped_while_worker_runs(project, proc_entry):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_partition_keeps_modules_balanced():
+def load_runner():
     spec = importlib.util.spec_from_file_location('runner_under_test', SCRIPTS / 'suite_runner.py')
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
-    nodes = [f'test_{module}.py::test_{case}' for module, count in enumerate([9, 6, 3, 2]) for case in range(count)]
-    groups = runner.partition(nodes, 2)
-    assert list(map(len, groups)) == [11, 9]
-    assert sorted(sum(groups, [])) == sorted(nodes)
-    assert runner.partition(nodes, 2) == groups
-    assert not set(node.split('::')[0] for node in groups[0]) & set(node.split('::')[0] for node in groups[1])
+    return runner
+
+
+def test_balance_splits_modules_by_recorded_duration():
+    runner = load_runner()
+    weights = {'tests/test_a.py::test_slow': 10.0, **{f'tests/test_a.py::test_quick[{n}]': 1.0 for n in range(6)},
+               'tests/test_b.py::test_one': 3.0, 'tests/test_b.py::test_two': 3.0}
+    groups = runner.balance(list(weights), weights, 2)
+    assert [estimate for estimate, _ in groups] == [11.0, 11.0]
+    assert sorted(sum((group for _, group in groups), [])) == sorted(weights)
+    assert all(any(node.startswith('tests/test_a.py') for node in group) for _, group in groups)
+    assert runner.balance(list(weights), weights, 2) == groups
+
+
+def test_unknown_cases_weigh_their_layer_median():
+    runner = load_runner()
+    recorded = {'tests/test_a.py::test_x': 2.0, 'tests/test_a.py::test_y': 4.0, 'tests/test_a.py::test_z': 10.0,
+                'tests/test_c.py::test_native': 30.0}
+    nodes = ['tests/test_a.py::test_x[1]', 'tests/test_a.py::test_y', 'tests/test_a.py::test_z',
+             'tests/test_a.py::test_new', 'tests/test_c.py::test_native', 'tests/test_c.py::test_new']
+    layers = {node: 'compatibility' if 'test_c' in node else 'fast' for node in nodes}
+    assert runner.case_weights(nodes, layers, recorded) == {
+        'tests/test_a.py::test_x[1]': 2.0, 'tests/test_a.py::test_y': 4.0, 'tests/test_a.py::test_z': 10.0,
+        'tests/test_a.py::test_new': 4.0, 'tests/test_c.py::test_native': 30.0, 'tests/test_c.py::test_new': 30.0}
+
+
+def test_recorded_durations_are_deterministic_per_function(tmp_path):
+    runner = load_runner()
+    def case(node, seconds):
+        return f'<testcase name="x" time="{seconds}"><properties><property name="talaria_nodeid" value="{node}"/></properties></testcase>'
+    report = tmp_path / 'merged.xml'
+    report.write_text('<testsuites><testsuite tests="3">' + case('tests/test_b.py::test_p[1]', '1.0')
+                      + case('tests/test_b.py::test_p[2]', '3.0') + case('tests/test_a.py::test_q', '0.25') + '</testsuite></testsuites>')
+    outputs = []
+    for name in ('first.json', 'second.json'):
+        runner.record_durations(report, tmp_path / name)
+        outputs.append((tmp_path / name).read_bytes())
+    assert outputs[0] == outputs[1]
+    assert json.loads(outputs[0]) == {'tests/test_a.py::test_q': 0.25, 'tests/test_b.py::test_p': 2.0}
+
+
+def test_a_slow_module_splits_across_workers(project):
+    pids = project / 'pids'
+    pids.mkdir()
+    (project / 'tests/case_durations.json').write_text(json.dumps({
+        'tests/test_slow.py::test_case': 5.0, 'tests/test_quick.py::test_quick': 0.1}))
+    (project / 'tests/test_slow.py').write_text(
+        f"import os, pytest\nfrom pathlib import Path\n@pytest.mark.parametrize('n', range(4))\n"
+        f"def test_case(n): Path({str(pids)!r}, str(n)).write_text(str(os.getpid()))\n")
+    (project / 'tests/test_quick.py').write_text('def test_quick(): pass\n')
+    report = project / 'result.xml'
+    result = run(project, 2, f'--junitxml={report}')
+    assert result.returncode == 0, result.stdout + result.stderr
+    names = [case.find("properties/property[@name='talaria_nodeid']").get('value') for case in ET.parse(report).iter('testcase')]
+    assert sorted(names) == sorted([f'tests/test_slow.py::test_case[{n}]' for n in range(4)] + ['tests/test_quick.py::test_quick'])
+    assert len({path.read_text() for path in pids.iterdir()}) == 2, 'the slow module never split across workers'
+
+
+def test_layers_share_one_bounded_worker_pool(project):
+    active, seen = project / 'active', project / 'seen'
+    active.mkdir()
+    seen.mkdir()
+    (project / 'tests/test_pool.py').write_text(textwrap.dedent(f"""
+        import time
+        from pathlib import Path
+        ACTIVE, SEEN = Path({str(active)!r}), Path({str(seen)!r})
+        def visit(name, partner=None):
+            marker = ACTIVE / name
+            marker.touch()
+            (SEEN / name).write_text(str(len(list(ACTIVE.iterdir()))))
+            deadline = time.monotonic() + 5
+            while partner and not (SEEN / partner).exists() and time.monotonic() < deadline:
+                time.sleep(.02)
+            time.sleep(.2)
+            marker.unlink()
+            assert not partner or (SEEN / partner).exists(), name + ' never overlapped ' + partner
+        def test_fast(): visit('fast', 'compatibility')
+        def test_process(): visit('process')
+        def test_compatibility(): visit('compatibility', 'fast')
+    """))
+    review_process_cases(project, 'Proves process workers share the pool.', 'tests/test_pool.py::test_process')
+    inventory = json.loads((project / 'tests/process_inventory.json').read_text())
+    inventory['families']['tests/test_pool.py::test_compatibility'] = {
+        'layer': 'compatibility', 'reason': 'Proves compatibility workers share the pool.', 'cases': ['']}
+    (project / 'tests/process_inventory.json').write_text(json.dumps(inventory))
+    result = run(project, 2)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sorted(path.name for path in seen.iterdir()) == ['compatibility', 'fast', 'process']
+    assert max(int(path.read_text()) for path in seen.iterdir()) <= 2
