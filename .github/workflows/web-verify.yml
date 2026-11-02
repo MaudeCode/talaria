@@ -24,16 +24,17 @@ defaults:
 jobs:
   server:
     if: inputs.server
-    name: server (${{ matrix.storage }} storage, ${{ matrix.shard }}/3)
+    name: server (${{ matrix.storage }} storage, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The server suite runs once per storage backend, its test files split across three shards (TAL-1774); the
-    # repository checks run once, on the default backend's first shard (TAL-1066).
+    # The server suite runs once per storage backend. Its server project is split across three shards, and the
+    # state-db-latency project, which runs alone, gets a job of its own so its time never stacks on a shard's (TAL-1774).
+    # The repository checks run once, on the default backend's first shard (TAL-1066).
     strategy:
       fail-fast: false
       matrix:
         storage: [json, sqlite]
-        shard: [1, 2, 3]
+        shard: [1/3, 2/3, 3/3, latency]
     env:
       TALARIA_STORAGE: ${{ matrix.storage }}
     # The S3 blob store conformance runs against a throwaway MinIO (TAL-1069); upstream stopped publishing
@@ -67,18 +68,18 @@ jobs:
         run: npm run build:fast -w packages/frontend
 
       - name: Contracts and server lint
-        if: matrix.storage == 'json' && matrix.shard == 1
+        if: matrix.storage == 'json' && matrix.shard == '1/3'
         run: npm run lint -w packages/contracts && npm run lint -w packages/server
 
       - name: Contracts and server strict TypeScript
-        if: matrix.storage == 'json' && matrix.shard == 1
+        if: matrix.storage == 'json' && matrix.shard == '1/3'
         run: npm run typecheck -w packages/contracts && npm run typecheck -w packages/server
 
       - name: Wait for MinIO
         run: timeout 60 bash -c 'until curl -fsS http://127.0.0.1:9000/minio/health/live; do sleep 1; done'
 
       - name: Contracts Vitest
-        if: matrix.storage == 'json' && matrix.shard == 1
+        if: matrix.storage == 'json' && matrix.shard == '1/3'
         run: npm test -w packages/contracts -- --maxWorkers=2
 
       - name: Server Vitest
@@ -87,16 +88,19 @@ jobs:
           AWS_ACCESS_KEY_ID: talaria-ci
           AWS_SECRET_ACCESS_KEY: talaria-ci-synthetic
           AWS_REGION: us-east-1
-        run: npm test -w packages/server -- --maxWorkers=2 --shard=${{ matrix.shard }}/3
+          SHARD: ${{ matrix.shard }}
+        run: |
+          if [ "$SHARD" = latency ]; then set -- --project state-db-latency; else set -- --project server --shard="$SHARD"; fi
+          npm test -w packages/server -- --maxWorkers=2 "$@"
 
       - name: Generated OpenAPI document and What's New schema are committed
-        if: matrix.storage == 'json' && matrix.shard == 1
+        if: matrix.storage == 'json' && matrix.shard == '1/3'
         run: |
           npm run openapi
           git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json
 
       - name: Generated sidecar and server method schemas are committed
-        if: matrix.storage == 'json' && matrix.shard == 1
+        if: matrix.storage == 'json' && matrix.shard == '1/3'
         run: |
           npm run fixtures -w packages/contracts
           git diff --exit-code -- sidecar/tests/fixtures/schemas.json sidecar/tests/fixtures/server_schemas.json
