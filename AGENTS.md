@@ -3,7 +3,9 @@
 Read the selected component instructions before edits: `app/AGENTS.md` for the
 Apple app, `web/AGENTS.md` for Talaria Web, and `relay/AGENTS.md` for Relay.
 Shared machine-readable interfaces belong in `contracts/`; cross-component
-changes must validate every affected consumer. Run component commands from
+changes must validate every affected consumer. Every screen on both clients
+follows `docs/design-system.md`; read it before building, changing or reviewing
+UI. Run component commands from
 their component directory. GitHub workflow orchestration stays at the root.
 
 Server-owned state: clients are display-only. The Web server

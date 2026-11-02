@@ -24,8 +24,10 @@ For architecture, testing, or setup work, also read the matching reference:
 - `docs/troubleshooting.md` for diagnostic flows
 - `docs/rfcs/README.md` for larger RFCs and state/durability contracts
 
-For UI or UX work, read `docs/UIUX-GUIDE.md` and `DESIGN.md` before
-changing layout, interaction flow, themes, chat rendering, or composer chrome.
+For UI or UX work, read `../docs/design-system.md` first (every hub, list,
+settings and detail page: plain rows, no cards, the Insights pages as the
+reference), then `docs/UIUX-GUIDE.md` and `DESIGN.md` before changing layout,
+interaction flow, themes, chat rendering, or composer chrome.
 
 ## Onboarding and reinstall support
 

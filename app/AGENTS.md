@@ -21,6 +21,10 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
 - Follow [release-note authoring](docs/release-notes.md) for the
   `../changelog.d/TAL-<number>.json` schema and validation command.
 - Triage automated review feedback before accepting it.
+- Before any view change, read `../docs/design-system.md`: plain lists on the
+  system background, no cards or grouped inset backgrounds, the Insights rows as
+  the reference, shared components (`SidebarList`, `ProgressRailView`,
+  `ProviderQuotaMetricCell`) over new ones.
 - Do not modify or restart the user's Hermes server, tunnel, macOS services, or
   Apple resources unless explicitly asked.
 

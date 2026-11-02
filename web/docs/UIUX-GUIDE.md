@@ -183,8 +183,16 @@ dropdowns, modals, and floating controls. Chat cards should usually use either a
 subtle border or a subtle tint, not aggressive combinations of both.
 
 Avoid stacks of nested rounded rectangles. Rows and list items should feel
-compact; panels and cards may be slightly rounder; true pills are reserved for
-chips, badges, and the floating scroll-to-end control.
+compact; the remaining panels (dialogs, popovers, transcript tool and approval
+cards) may be slightly rounder; true pills are reserved for chips, badges, and
+the floating scroll-to-end control.
+
+Hub, list, settings and detail pages carry no cards at all: content sits in rows
+on the page background with hairline separators and small uppercase section
+headers, figures lead each row, and actions sit beside their content. The
+shared rulebook with the exact tokens and components is
+[docs/design-system.md](../../docs/design-system.md); Insights is the
+reference implementation.
 
 ## Composer and controls
 
@@ -376,6 +384,7 @@ Do:
 - collapse noisy internals by default when settled,
 - make debugging details accessible without making them visually dominant,
 - use existing tokens, variables, and component patterns,
+- build hub, list, settings and detail pages as rows per `docs/design-system.md`,
 - protect action-required states such as errors and approvals,
 - put explanatory copy in a `HelpTip` (`FieldRow` `hint`, `HubPage` `help`) beside its label.
 - give every item-level surface with actions a right-click and long-press menu through `ContextMenu`, with the same items as its visible trigger (see "Context menus").
@@ -383,6 +392,7 @@ Do:
 Don't:
 
 - make every tool call look like a separate chat message,
+- wrap page content in cards, tiles or bordered panels,
 - add decorative color or motion without a user-facing reason,
 - add a frontend framework, bundler plugin, or build step for ordinary UI work,
 - hide important recovery, error, or approval state,
