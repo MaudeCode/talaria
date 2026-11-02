@@ -14,11 +14,11 @@ import pytest
 from conftest import AGENT_DIR, SidecarProcess, assert_matches, requires_agent, process_snapshot
 
 
-def wait_for(predicate):
+def wait_for(predicate, describe=lambda: ''):
     deadline = time.monotonic() + 8
     while not predicate() and time.monotonic() < deadline:
         time.sleep(.02)
-    assert predicate()
+    assert predicate(), describe()
 
 
 def wait_for_agent_exit(root, home):
