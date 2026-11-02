@@ -6,6 +6,7 @@ import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream
 import { sessionFixture } from '../../test/fixtures'
 import { requestScroll } from './sendMotion'
 import * as turnActivity from './turnActivity'
+import { stubAnimate } from '../../test/animate'
 
 let intersect: IntersectionObserverCallback
 let resized: ResizeObserverCallback
@@ -501,4 +502,56 @@ it('preserves the visible row offset when terminal excerpts shrink an earlier re
   view.rerender(<Transcript {...props} rows={[{ ...collapsed }, { ...props.rows[1]! }]} />)
   act(() => resized([], {} as ResizeObserver))
   expect(pane.scrollTop).toBe(2800)
+})
+
+it.each([false, true])('lands a sent message from below while the transcript stays pinned to its end (TAL-1753, reduced motion: %s)', (reduced) => {
+  const motion = stubAnimate({ reduced })
+  try {
+    const input = { ...props(), truncated: false, autoFollow: true }
+    const view = render(<Transcript {...input} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+    let height = 1000
+    Object.defineProperty(pane, 'scrollHeight', { configurable: true, get: () => height })
+    vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = height - 600 })
+    view.rerender(<Transcript {...input} pendingUserText="Why does CI fail?" />)
+    const row = view.container.querySelector('[data-live-user]')
+    expect(motion.reveals().map((call) => call.el)).toEqual(reduced ? [] : [row])
+    if (!reduced) {
+      expect(motion.reveals()[0]!.keyframes[0]).toMatchObject({ height: '0px', opacity: 0, transform: 'translateY(8px)' })
+      expect(motion.reveals()[0]!.keyframes.at(-1)).toMatchObject({ opacity: 1, transform: 'none' })
+    }
+    // Every frame of the reveal grows the transcript, and the pinned pane follows each one.
+    for (const grown of [1040, 1080, 1120]) {
+      height = grown
+      act(() => resized([], {} as ResizeObserver))
+      expect(pane.scrollTop).toBe(grown - 600)
+    }
+    expect(screen.queryByRole('button', { name: /scroll to bottom/i })).toBeNull()
+    // The stream taking the same row over does not land it again.
+    dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'run', userMessageId: null, userText: 'Why does CI fail?', now: 0 })
+    view.rerender(<Transcript {...input} live={getStreamState().turns.history!} pendingUserText="Why does CI fail?" />)
+    expect(view.container.querySelectorAll('[data-live-user]')).toHaveLength(1)
+    expect(motion.reveals()).toHaveLength(reduced ? 0 : 1)
+  } finally { motion.restore() }
+})
+
+it('does not land the user row of a running turn the reader enters (TAL-1753)', () => {
+  const motion = stubAnimate()
+  try {
+    dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'run', userMessageId: 'u9', userText: 'Already running', now: 0 })
+    const view = render(<Transcript {...props()} truncated={false} live={getStreamState().turns.history!} />)
+    expect(view.container.querySelector('[data-live-user]')).toHaveTextContent('Already running')
+    expect(motion.reveals()).toHaveLength(0)
+  } finally { motion.restore() }
+})
+
+it('resumes a sent message\'s landing when a new chat\'s first send moves to its session view (TAL-1753)', () => {
+  const motion = stubAnimate()
+  try {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000)
+    const input = { ...props(), truncated: false }
+    render(<Transcript {...input} pendingUserText="First send" />).unmount()
+    now.mockReturnValue(1120)
+    render(<Transcript {...input} pendingUserText="First send" />)
+    expect(motion.reveals().map((call) => call.animation.currentTime)).toEqual([undefined, 120])
+  } finally { motion.restore() }
 })

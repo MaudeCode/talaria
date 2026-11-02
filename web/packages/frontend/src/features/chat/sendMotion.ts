@@ -1,4 +1,4 @@
-import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
+import { MOTION_EASE, prefersReducedMotion, REVEAL_MS, revealHeight } from '../../lib/motion'
 
 /** Composer and transcript motion around a send (TAL-429): the hero-to-dock FLIP and transcript scroll requests. */
 export const DOCK_MS = 340
@@ -18,6 +18,19 @@ export function playDock(el: HTMLElement): void {
   if (Math.abs(dy) < 1) return
   const animation = el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: DOCK_MS, easing: MOTION_EASE })
   animation.currentTime = elapsed
+}
+
+let landing: { text: string; start: number } | null = null
+/**
+ * The sent message lands from below (TAL-1753). A new chat's first send remounts its pending row in the session view;
+ * the same text landing again within the reveal resumes at the elapsed time instead of starting over.
+ */
+export function landSent(el: HTMLElement, text: string): void {
+  const now = performance.now()
+  const elapsed = landing?.text === text ? now - landing.start : REVEAL_MS
+  if (elapsed >= REVEAL_MS) landing = { text, start: now }
+  const animation = revealHeight(el, { open: true, from: 'below', arrive: true })
+  if (animation && elapsed < REVEAL_MS) animation.currentTime = elapsed
 }
 
 /**

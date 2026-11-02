@@ -1,7 +1,7 @@
 import type { MessageReactionView, TurnUsage } from '@maudecode/talaria-web-contracts'
 import { Popover } from '@base-ui/react/popover'
 import { ContextMenu, Menu, MenuItem } from '../../ui/Menu'
-import { memo, useRef, useState, type ReactElement } from 'react'
+import { memo, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
@@ -25,6 +25,7 @@ import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 import { usageDetailLines } from '../composer/chips'
 import { useLocale } from '../../i18n/useLocale'
 import { formatCompact } from '../../i18n/units'
+import { landSent } from './sendMotion'
 
 export interface RowActions {
   onQuoteSelection?: (text: string) => void
@@ -97,15 +98,19 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
   )
 }
 
-export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions, pending = false }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions; pending?: boolean }) {
+export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions, pending = false, arrive = false }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions; pending?: boolean; /** The user just sent it: it lands from below as it mounts (TAL-1753). */ arrive?: boolean }) {
   const text = messageText(row.message.content)
+  // Decided at mount: the same row staying on screen as the stream takes it over never lands twice.
+  const [lands] = useState(arrive)
+  const rowRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => { if (lands && rowRef.current) landSent(rowRef.current, text) }, [lands, text])
   const items: MessageAction[] = pending ? [] : [
     { label: m.copy(), Icon: Copy, run: () => copyText(text) },
     ...(actions.onEdit ? [{ label: m.edit_message(), Icon: Pencil, run: () => actions.onEdit?.(row, text) }] : []),
     ...(actions.onBranch ? [{ label: m.branch_from_here(), Icon: GitBranch, run: () => actions.onBranch?.(row) }] : []),
   ]
   return <MessageMenu items={items} row={
-    <div className="msg-row" data-role="user" data-msg-idx={pending ? undefined : row.index} data-message-key={row.key} data-live-user={pending ? "1" : undefined} aria-busy={pending || undefined}>
+    <div ref={rowRef} className="msg-row" data-role="user" data-msg-idx={pending ? undefined : row.index} data-message-key={row.key} data-live-user={pending ? "1" : undefined} aria-busy={pending || undefined}>
       <AttachmentList message={row.message} sessionId={sessionId} />
       <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
         {(excerpt) => <div className="msg-body">{renderMarkdown ? <Markdown text={excerpt ?? text} /> : <div className="whitespace-pre-wrap">{excerpt ?? text}</div>}</div>}

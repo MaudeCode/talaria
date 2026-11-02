@@ -11,6 +11,8 @@ import { m } from '../../../paraglide/messages.js'
 import { useQuery } from '@tanstack/react-query'
 import { fetchToolResult } from '../../../api/endpoints'
 import { Button } from '../../../ui/Button'
+import { SwapText } from '../../../ui/SwapText'
+import { useArrival } from '../arrival'
 
 export interface ToolCardData {
   id: string
@@ -66,19 +68,20 @@ function ClippedResult({ sessionId, callId, clipped }: { sessionId: string; call
 }
 
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
-export function ToolCard({ call, timestamp, sessionId }: { call: ToolCardData; timestamp?: string | undefined; sessionId?: string | undefined }) {
+export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: ToolCardData; timestamp?: string | undefined; sessionId?: string | undefined; /** Its row in a running turn, which opens as it arrives. */ arrivalKey?: string | undefined }) {
   const locale = useLocale()
+  const arrival = useArrival(arrivalKey)
   const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
   const kind = call.kind
   const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
   const result = call.resultView ? resultText(call.resultView) : call.preview ?? ''
   return (
-    <div className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
+    <div ref={arrival} className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
       <button type="button" className="tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>
         <ChevronRight size={14} className={cn('tool-card-toggle shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
         <span className="tool-card-icon"><ToolKindIcon kind={kind} /></span>
-        <span className="tool-card-name min-w-0 flex-1 truncate"><span className="tool-card-name-label">{label}</span></span>
+        <span className="tool-card-name min-w-0 flex-1 truncate"><SwapText className="tool-card-name-label" text={label} /></span>
         {!call.done && call.progress && <span className="tool-card-progress min-w-0 max-w-[60%] truncate text-[11px] tabular-nums text-muted" title={call.progress.message ?? undefined}>{[call.progress.percent === null ? null : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(call.progress.percent / 100), call.progress.message].filter(Boolean).join(' · ')}</span>}
         {call.background && <span className="tool-card-background shrink-0 text-[11px] text-muted" data-background-status={call.background.status}>{call.background.status === 'running' || call.background.status === 'completed' ? agentsSummary(call.background.agents) : `${statusLabel(call.background.status)} · ${agentsSummary(call.background.agents)}`}</span>}
         {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={m.status_streaming()} />}
