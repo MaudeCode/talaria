@@ -20,7 +20,7 @@ type ControlsProps = Pick<ComposerProps, 'sessionId' | 'session' | 'settings' | 
 
 const MESSAGE_ONLY_CONTROLS = new Set(['hide_composer_attach', 'hide_composer_mic', 'hide_composer_profile', 'hide_composer_workspace', 'hide_composer_model', 'hide_composer_reasoning'])
 export function hideComposerControl(settings: ComposerProps['settings'], answering: boolean, key: string): boolean {
-  return (answering && MESSAGE_ONLY_CONTROLS.has(key)) || !!(settings as Record<string, unknown> | undefined)?.[key]
+  return (answering && MESSAGE_ONLY_CONTROLS.has(key)) || !!settings?.[key]
 }
 
 /** Stable control groups at the existing DOM positions around the input and send actions. */

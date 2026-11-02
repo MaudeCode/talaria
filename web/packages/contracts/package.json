@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint .",
+    "lint": "oxlint --type-aware -c ../../.oxlintrc.json",
     "test": "vitest run",
     "openapi": "node scripts/generate-openapi.mjs",
     "fixtures": "node scripts/export-fixtures.mjs",
@@ -32,9 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "24.13.6",
-    "eslint": "10.10.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.70.0",
     "vitest": "5.0.0"
   },
   "engines": {

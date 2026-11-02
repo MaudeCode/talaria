@@ -7,7 +7,6 @@ import { pathToFileURL } from 'node:url'
 const [baselinePath, candidatePath] = process.argv.slice(2)
 assert(baselinePath && candidatePath, 'Expected baseline and candidate built redact.js paths')
 const variants = await Promise.all([baselinePath, candidatePath].map(async (path) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Caller supplies built module paths outside this project.
   const module = /** @type {{ redactSensitive: (text: string) => string }} */ (await import(pathToFileURL(resolve(path)).href))
   assert.equal(typeof module.redactSensitive, 'function')
   return module.redactSensitive

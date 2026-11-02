@@ -471,6 +471,7 @@ function withStoredFinalAnswer(scene: Record<string, unknown>, built: Record<str
 function withBuiltToolFlags(rows: unknown, built: Record<string, unknown> | null): SceneRow[] {
   const flags = new Map(normalizeSceneRows(built?.activity_rows).flatMap((row) => (row.tool?.result_truncated ? [[row.row_id, row.tool.result_chars ?? null] as const] : [])))
   return (rows as SceneRow[]).map((row) => {
+    // oxlint-disable-next-line typescript/prefer-optional-chain -- `row.tool?.result_truncated` would drop the missing-tool guard.
     if (!row.tool || row.tool.result_truncated || !flags.has(row.row_id)) return row
     return { ...row, tool: { ...row.tool, result_truncated: true as const, result_chars: flags.get(row.row_id) ?? null } }
   })

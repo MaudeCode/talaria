@@ -23,6 +23,7 @@ it('hydrates a cold session task list and clears it on an accepted clear and a p
   vi.mocked(api.fetchSession).mockResolvedValue({ session: fixture.session } as Awaited<ReturnType<typeof api.fetchSession>>)
   let refresh!: ReturnType<typeof useTranscript>['refresh']
   let switchProfile!: ReturnType<typeof useSwitchProfile>['mutateAsync']
+  // oxlint-disable-next-line react/globals -- the test harness hands its hook results to the test body.
   const Harness = () => { refresh = useTranscript(sid).refresh; switchProfile = useSwitchProfile().mutateAsync; return <TodosPage sessionId={sid} /> }
   render(<QueryClientProvider client={qc}><Harness /></QueryClientProvider>)
   expect(await screen.findByText('Owner task')).toBeVisible()

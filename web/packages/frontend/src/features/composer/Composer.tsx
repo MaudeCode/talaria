@@ -97,6 +97,7 @@ const EMPTY_TASKS: NonNullable<ReturnType<typeof useBackgroundTasks>['data']>['t
 const EMPTY_ADMISSIONS: NonNullable<Session['owner_attachment']>['admissions'] = []
 /** Phone-width viewport: the footer runs the icon/burger stage and collapses when idle (legacy _isPhoneWidthViewport). */
 function usePhone(): boolean {
+  // oxlint-disable-next-line typescript/prefer-optional-chain -- `window?.` would throw where `window` is undeclared.
   const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE).matches)
   useEffect(() => {
     const mq = window.matchMedia(PHONE)

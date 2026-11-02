@@ -518,9 +518,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             sessionId={sessionId ?? undefined}
             focusKey={focusKey}
             actions={actions}
-            tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
-            tokenUsage={(settings.data as Record<string, unknown> | undefined)?.show_token_usage === true}
-            autoRead={(settings.data as Record<string, unknown> | undefined)?.tts_auto_read === true}
+            tts={!!settings.data?.tts_enabled}
+            tokenUsage={settings.data?.show_token_usage === true}
+            autoRead={settings.data?.tts_auto_read === true}
             truncated={truncated}
             loadedFrom={base}
             onLoadOlder={(retry, beforePrepend) => { void loadOlder(retry, beforePrepend) }}
@@ -530,8 +530,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             pendingUserText={pendingUserText}
             pendingAttachments={intent.send?.attachments}
             pendingPreviousStreamId={intent.send?.previousStreamId}
-            showJumpButtons={(settings.data as Record<string, unknown> | undefined)?.session_jump_buttons !== false}
-            virtualizeLongTranscripts={(settings.data as Record<string, unknown> | undefined)?.virtualize_transcript === true}
+            showJumpButtons={settings.data?.session_jump_buttons !== false}
+            virtualizeLongTranscripts={settings.data?.virtualize_transcript === true}
           />
         )}
         <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>

@@ -1,0 +1,3 @@
+{
+  "skip": "Developer tooling only: the Web packages lint with Oxlint instead of ESLint; no shipped behavior changes."
+}
