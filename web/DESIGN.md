@@ -37,10 +37,11 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 
 ## Shapes
 
-- Rows/list items: `4–8px` radius.
-- Cards/panels: `8–12px` radius. The composer card is the one exception: `--composer-radius` (24px in the base skin) for T3 Code's floating card.
+- Hub, list, settings and detail pages hold no cards: rows sit on `--bg` with `border-t` hairlines, grouped by section headers (see [docs/design-system.md](../docs/design-system.md)). The only filled shape inside a list is a metric cell (`rounded-md`, `bg-hover`).
+- Rows/list items and controls: `4–8px` radius.
+- Panels that remain (dialogs, popovers, approval and tool cards in the transcript, `EmptyState`, `ErrorState`): `8–12px` radius. The composer card is the one floating exception: `--composer-radius` (24px in the base skin).
 - Pills: only true chips/badges use `999px`.
-- Avoid stacks of nested rounded rectangles. If a card contains another card, one of them is probably unnecessary.
+- Avoid stacks of nested rounded rectangles. If a panel contains another panel, one of them is unnecessary.
 
 ## Components
 
