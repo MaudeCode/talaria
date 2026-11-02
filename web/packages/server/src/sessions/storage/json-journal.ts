@@ -7,7 +7,7 @@ import { atomicWriteTextAsync, writeFully, writeFullyAsync } from '../../fs/atom
 import { dirname, join } from 'node:path'
 
 
-import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
+import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, summaryFromTail, archivedSummary, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, SessionJournalReplay } from './backend.js'
 import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, JournalReadLimit, NOFOLLOW, StagedFile, fsyncDir, logicalBytes, runLines, stageArchive } from './json-journal-archive.js'
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
@@ -295,28 +295,12 @@ export class JsonJournal implements JournalBackend {
       if (!files.live) {
         const path = this.pathFor(sessionId, runId)
         if (!files.archive) return this.loadPrunedSummary(path)
-        const persisted = JsonJournal.archivedSummary(this.loadPrunedSummary(path), sessionId, runId)
+        const persisted = archivedSummary(this.loadPrunedSummary(path), sessionId, runId)
         if (persisted) return persisted
       }
       tail = await JsonJournal.tailOf(files, sessionId, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS)
     } finally { await files.close() }
-    return JsonJournal.summaryFromTail(sessionId, runId, tail)
-  }
-
-  private static summaryFromTail(sessionId: string, runId: string, tail: { events: JournalEvent[]; truncated: boolean }): RunSummary {
-    const summary = JsonJournal.summaryFromEvents(sessionId, runId, tail.events)
-    const last = tail.events[tail.events.length - 1]
-    if (last) summary.event_count = last.seq || tail.events.length
-    summary.journal_truncated = tail.truncated
-    return summary
-  }
-
-  /** The tail summary an archive's `.summary.json` carries under `archived`; null for a summary this release did not write. */
-  private static archivedSummary(stored: RunSummary | null, sessionId: string, runId: string): RunSummary | null {
-    const archived = (stored as { archived?: unknown } | null)?.archived as { event_count?: unknown; journal_truncated?: unknown } | undefined
-    if (stored?.session_id !== sessionId || stored.run_id !== runId || typeof archived?.event_count !== 'number' || typeof archived.journal_truncated !== 'boolean') return null
-    const { stream_id, last_seq, last_event_id, terminal, terminal_state, last_event } = stored
-    return { session_id: sessionId, run_id: runId, stream_id, event_count: archived.event_count, last_seq, last_event_id, terminal, terminal_state, last_event, journal_truncated: archived.journal_truncated }
+    return summaryFromTail(sessionId, runId, tail)
   }
 
   /**
@@ -386,7 +370,7 @@ export class JsonJournal implements JournalBackend {
           const summary = JsonJournal.summaryFromEvents(sid, rid, tail.events)
           if (summary.terminal) {
             result.terminal += 1
-            terminalRuns.push({ st: files.liveStat, rid, summary, archived: { event_count: JsonJournal.summaryFromTail(sid, rid, tail).event_count, journal_truncated: tail.truncated } })
+            terminalRuns.push({ st: files.liveStat, rid, summary, archived: { event_count: summaryFromTail(sid, rid, tail).event_count, journal_truncated: tail.truncated } })
           }
         }
         if (!(await proceed())) return result

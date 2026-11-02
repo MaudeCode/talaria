@@ -142,6 +142,23 @@ export function summaryFromEvents(sessionId: string, runId: string, events: Jour
   }
 }
 
+/** The summary of a run from its bounded tail: the event count is the last seq, and the tail says whether it was cut. */
+export function summaryFromTail(sessionId: string, runId: string, tail: { events: JournalEvent[]; truncated: boolean }): RunSummary {
+  const summary = summaryFromEvents(sessionId, runId, tail.events)
+  const last = tail.events.at(-1)
+  if (last) summary.event_count = last.seq || tail.events.length
+  summary.journal_truncated = tail.truncated
+  return summary
+}
+
+/** The tail summary an archived run's stored summary carries under `archived`; null for a summary this release did not write. */
+export function archivedSummary(stored: RunSummary | null, sessionId: string, runId: string): RunSummary | null {
+  const archived = (stored as { archived?: unknown } | null)?.archived as { event_count?: unknown; journal_truncated?: unknown } | undefined
+  if (stored?.session_id !== sessionId || stored.run_id !== runId || typeof archived?.event_count !== 'number' || typeof archived.journal_truncated !== 'boolean') return null
+  const { stream_id, last_seq, last_event_id, terminal, terminal_state, last_event } = stored
+  return { session_id: sessionId, run_id: runId, stream_id, event_count: archived.event_count, last_seq, last_event_id, terminal, terminal_state, last_event, journal_truncated: archived.journal_truncated }
+}
+
 /** One journal row as every backend writes it; `name` is the trimmed, non-empty event name. */
 export function journalEvent(sessionId: string, runId: string, seq: number, name: string, payload: unknown, meta: { terminal?: boolean | undefined; createdAt: number; redacted?: boolean | undefined }): JournalEvent {
   const terminalState = terminalStateForEvent(name, payload)
@@ -164,13 +181,12 @@ export function staleInterruptedEvent(summary: RunSummary, sessionId: string, ru
   }
 }
 
-/** Retention for `pruneSettled`: `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) and `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3), unless the caller overrides them. */
-export function pruneRetention(env: Record<string, string | undefined>, opts: PruneOptions): { retention: number; keep: number; now: number; cutoff: number } {
+/** Retention for `pruneSettled`: the server's `retentionPolicy`, with each value the caller passes overriding it. */
+export function pruneRetention(env: Record<string, string | undefined>, opts: PruneOptions): { retention: number; keep: number; maxRuns: number; maxBytes: number; maxArchiveBytes: number; now: number; cutoff: number } {
   const policy = retentionPolicy(env)
   const retention = opts.retentionSeconds ?? policy.retentionSeconds
-  const keep = opts.keepRecent ?? policy.keepRecent
   const now = opts.now ?? Date.now() / 1000
-  return { retention, keep, now, cutoff: now - retention }
+  return { retention, keep: opts.keepRecent ?? policy.keepRecent, maxRuns: opts.maxRuns ?? policy.maxRuns, maxBytes: opts.maxBytes ?? policy.maxBytes, maxArchiveBytes: opts.maxArchiveBytes ?? policy.maxArchiveBytes, now, cutoff: now - retention }
 }
 
 /** Session journal replay bounds: a reconnect never parses more than this in one request. */

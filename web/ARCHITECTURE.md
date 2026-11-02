@@ -180,7 +180,9 @@ The SQLite adapter (`sessions/storage/sqlite*.ts`) uses one `node:sqlite` connec
 mode, with numbered schema migrations; a database from a newer schema refuses to open. Messages are rows keyed by
 `(session_id, idx)`, so range reads, appends and tail splices touch only their rows. An FTS5 trigram index over each
 message's JavaScript-lowercased search text narrows content search to one statement; the shared matcher still decides
-every result. `talaria-web storage copy` moves an install between backends through the `StorageBackend` port and
+every result. Run-journal retention compacts a settled run's rows into one gzip blob in `journal_archives` in the
+transaction that deletes them, with the JSON adapter's budgets and protections, so archived runs replay the same on
+both backends. `talaria-web storage copy` moves an install between backends through the `StorageBackend` port and
 verifies the copy, so a new adapter gets migration for free.
 `SessionStore` owns resident sessions, mutation locks, write serialization and index projection. Only its
 backend adapter accesses session files. Reads carry opaque revisions; stale writes raise
