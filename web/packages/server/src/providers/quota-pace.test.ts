@@ -32,8 +32,8 @@ describe('quota window pace', () => {
     expect(one({ label: 'Monthly', used_percent: 10, reset_at: resetIn(3600) })).toMatchObject({ window_seconds: null, pace: null, forecast: null })
     // A provider-reported length wins over the label, and only 5h and weekly windows have a pace.
     expect(one({ label: 'Weekly', window_seconds: 3600, used_percent: 10, reset_at: resetIn(1800) })).toMatchObject({ label: '1-hour', window_seconds: 3600, pace: null })
-    // `remaining_percent` stands in for a missing `used_percent`.
-    expect(one({ label: '5h', remaining_percent: 70, reset_at: resetIn(3 * 3600) })).toMatchObject({ used_percent: null, remaining_percent: 70, pace: { expected_remaining_percent: 60, pace_delta_percent: 10 } })
+    // `remaining_percent` stands in for a missing `used_percent`, and both ship normalized.
+    expect(one({ label: '5h', remaining_percent: 70, reset_at: resetIn(3 * 3600) })).toMatchObject({ used_percent: 30, remaining_percent: 70, pace: { expected_remaining_percent: 60, pace_delta_percent: 10 } })
   })
 
   it('a provider duration is authoritative: a 24-hour "Session" gets no 5h pace (TAL-1125)', () => {

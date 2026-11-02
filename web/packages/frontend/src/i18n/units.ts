@@ -31,6 +31,11 @@ export function formatPercent(locale: string, value: number, digits = 1): string
   return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: digits }).format(value / 100)
 }
 
+/** A server burn rate as `0.62×`; formatting only. */
+export function formatBurnRate(locale: string, rate: number): string {
+  return `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(rate)}×`
+}
+
 /** A count the way a stat or axis reads it ("1.2M", "48.2K"). */
 export function formatCompact(locale: string, value: number): string {
   return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value)

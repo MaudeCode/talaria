@@ -358,7 +358,8 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
       }
     }
     windows.push({
-      label, used_percent: usedRaw, remaining_percent: remaining, reset_at: resetAt, detail: typeof entry.detail === 'string' ? entry.detail : null,
+      // Both percents are the normalized pair, so a client in Used mode never derives one from the other (TAL-1782).
+      label, used_percent: used, remaining_percent: remaining, reset_at: resetAt, detail: typeof entry.detail === 'string' ? entry.detail : null,
       window_seconds: windowSeconds, pace, forecast: pace ? quotaForecast(pace, remaining) : null,
     })
   }
