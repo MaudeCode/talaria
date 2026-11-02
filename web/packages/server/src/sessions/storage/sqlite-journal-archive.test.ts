@@ -118,6 +118,16 @@ describe('SQLite run-journal archival', () => {
     expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_unreadable')
   })
 
+  it('keeps a malformed row through archival, and the replay status it produces', async () => {
+    const { storage, journal } = open()
+    await writeRun(storage, 'session', 'run')
+    sql(storage).prepare("INSERT INTO journal_rows (session_id, stream_id, seq, row, written_at) VALUES ('session', 'run', 4, '{torn', ?)").run(old)
+    const before = await observe(journal, 'session', 'run')
+    expect(before.replay.status).toBe('replay_malformed')
+    expect(await sweep(journal)).toMatchObject({ pruned: 1 })
+    expect(await observe(journal, 'session', 'run')).toEqual(before)
+  })
+
   it('stops a session replay at its byte budget before assembling an archived row', async () => {
     const { storage, journal } = open()
     await writeRun(storage, 'session', 'run', { text: 'x'.repeat(6 * 1024 * 1024) })

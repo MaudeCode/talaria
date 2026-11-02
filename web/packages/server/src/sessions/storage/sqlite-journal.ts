@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/require-await -- node:sqlite is synchronous; each transaction completes before its promise resolves. */
 import { setImmediate as nextTurn } from 'node:timers/promises'
-import { promisify } from 'node:util'
-import { gzip } from 'node:zlib'
+import { pipeline } from 'node:stream/promises'
+import { createGzip } from 'node:zlib'
 import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, archivedSummary, journalEvent, parseRunJournalEventId, pruneRetention, staleInterruptedEvent, summaryFromEvents, summaryFromTail, validateId, type JournalEvent, type PruneOptions, type PruneResult, type RunSummary } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, JournalWriter, SessionJournalReplay } from './backend.js'
 import { readTurnJournalEvents } from './json-journal.js'
 import { JournalArchiveError, JournalReadLimit, gunzipChunks, splitLines, type ReadBudget } from './json-journal-archive.js'
 import type { SqliteDb } from './sqlite-db.js'
-
-const gzipAsync = promisify(gzip)
 
 /** Rows a `terminal-only` writer may hold before committing them together. */
 const TERMINAL_ONLY_FLUSH_MS = 250
@@ -95,10 +93,13 @@ export class SqliteJournal implements JournalBackend {
       const archived = this.archivedSeq(sessionId, runId) ?? 0
       if (archived > after) {
         const blob = this.db.get<{ rows: Uint8Array }>('SELECT rows FROM journal_archives WHERE session_id = ? AND stream_id = ?', sessionId, runId)!.rows
+        // The seq of the archive's last row so far: a malformed line stays in place after it, for replay to reject.
+        let position = 0
         for await (const line of splitLines(gunzipChunks([Buffer.from(blob.buffer, blob.byteOffset, blob.byteLength)]), opts.budget)) {
           const event = line.event
-          if (!event) continue
+          if (!event) { if (position >= after) yield { text: line.bytes.toString('utf8'), event: null }; continue }
           if (event.session_id !== sessionId || event.run_id !== runId) throw new JournalArchiveError('The run-journal archive belongs to another run')
+          position = event.seq
           if (event.seq <= after) continue
           if (event.seq > max) return
           after = event.seq
@@ -335,39 +336,33 @@ export class SqliteJournal implements JournalBackend {
         if (!(await proceed())) return result
       }
       terminalRuns.sort((a, b) => b.run.written - a.run.written || b.run.stream_id.localeCompare(a.run.stream_id))
-      // Oldest first, so the budgets archive the oldest settled runs.
-      const staged: { run: Stat; archive: Compacted; summary: string }[] = []
+      // Oldest first, so the budgets archive the oldest settled runs. Each run commits once compacted, so the sweep holds
+      // one compressed run at a time.
       for (const { run, summary, archived } of terminalRuns.slice(keep).reverse()) {
-        if (stopped()) break
-        if ((run.written > cutoff && !overBudget()) || named.has(run.stream_id) || this.busy(sid, run.stream_id, opts)) continue
-        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += run.bytes }
-        else {
-          const archive = await this.compact(sid, run.stream_id)
-          if (!archive) continue
-          // The legacy fields stay as the JSON adapter writes them; `archived` carries the lookup summary.
-          staged.push({ run, archive, summary: JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: run.bytes, original_mtime: run.written, archived }) })
-        }
+        if (stopped()) return result
+        const rid = run.stream_id
+        if ((run.written > cutoff && !overBudget()) || named.has(rid) || this.busy(sid, rid, opts)) continue
+        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += run.bytes; liveRuns -= 1; liveBytes -= run.bytes; continue }
+        const archive = await this.compact(sid, rid)
+        if (!archive) continue
         liveRuns -= 1
         liveBytes -= run.bytes
-      }
-      if (!staged.length) continue
-      // Recheck after the async compaction: the session may now name the run, or the run may have changed or been deleted.
-      const current = await references(sid)
-      if (!current || this.closed) continue
-      for (const { run, archive, summary } of staged) {
-        const rid = run.stream_id
+        // Recheck after the async compaction: the session may now name the run, or the run may have changed or been deleted.
+        const current = await references(sid)
+        if (!current || this.closed) continue
         this.flushAll()
         const stat = this.db.get<Stat>(`${STAT_SQL} AND stream_id = ? GROUP BY stream_id`, sid, rid)
         if (current.has(rid) || this.busy(sid, rid, opts) || stat?.rows !== run.rows || stat.written !== run.written || stat.bytes !== run.bytes || (this.archivedSeq(sid, rid) ?? 0) !== archive.previousSeq) continue
+        // The legacy fields stay as the JSON adapter writes them; `archived` carries the lookup summary.
+        const stored = JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: run.bytes, original_mtime: run.written, archived })
         this.db.transaction(() => {
           this.db.run('INSERT INTO journal_archives (session_id, stream_id, rows, bytes, last_seq, archived_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (session_id, stream_id) DO UPDATE SET rows = excluded.rows, bytes = excluded.bytes, last_seq = excluded.last_seq, archived_at = excluded.archived_at', sid, rid, archive.blob, archive.bytes, archive.lastSeq, now)
-          this.db.run('INSERT INTO journal_summaries (session_id, stream_id, summary) VALUES (?, ?, ?) ON CONFLICT (session_id, stream_id) DO UPDATE SET summary = excluded.summary', sid, rid, summary)
+          this.db.run('INSERT INTO journal_summaries (session_id, stream_id, summary) VALUES (?, ?, ?) ON CONFLICT (session_id, stream_id) DO UPDATE SET summary = excluded.summary', sid, rid, stored)
           this.db.run('DELETE FROM journal_rows WHERE session_id = ? AND stream_id = ?', sid, rid)
         })
         result.pruned += 1
         result.bytes_reclaimed += run.bytes
       }
-      if (stopped()) return result
     }
     if (maxArchiveBytes > 0) this.trimArchives(maxArchiveBytes, opts, result)
     return result
@@ -377,19 +372,27 @@ export class SqliteJournal implements JournalBackend {
     return [...this.writers].some((writer) => writer.sessionId === sessionId && writer.runId === runId) || Boolean(opts.isActive?.(`${sessionId}/${runId}`))
   }
 
-  /** The run's logical journal as newline-terminated rows, gzipped off the event loop; null when it cannot be read. */
+  /**
+   * The run's logical journal as newline-terminated rows, streamed through gzip off the event loop, so only the
+   * compressed archive is held; null when it cannot be read.
+   */
   private async compact(sessionId: string, runId: string): Promise<Compacted | null> {
     const previousSeq = this.archivedSeq(sessionId, runId) ?? 0
-    const parts: Buffer[] = []
+    const lines = this.lines(sessionId, runId)
+    const compressed: Buffer[] = []
+    let bytes = 0
     let lastSeq = 0
     try {
-      for await (const { text, event } of this.lines(sessionId, runId)) {
-        parts.push(Buffer.from(`${text}\n`))
-        lastSeq = Math.max(lastSeq, event?.seq ?? 0)
-      }
+      await pipeline(async function* () {
+        for await (const { text, event } of lines) {
+          const row = Buffer.from(`${text}\n`)
+          bytes += row.length
+          lastSeq = Math.max(lastSeq, event?.seq ?? 0)
+          yield row
+        }
+      }, createGzip(), async (source: AsyncIterable<Buffer>) => { for await (const chunk of source) compressed.push(chunk) })
     } catch { return null }
-    const raw = Buffer.concat(parts)
-    return { blob: await gzipAsync(raw), bytes: raw.length, lastSeq, previousSeq }
+    return { blob: Buffer.concat(compressed), bytes, lastSeq, previousSeq }
   }
 
   /**
