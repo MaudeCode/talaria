@@ -308,7 +308,7 @@ def test_partial_evidence_never_succeeds(project, damage):
             "malformed": "report.write_text('<broken')",
             "omitted": "data['started'].pop(); manifest.write_text(json.dumps(data))",
             "duplicate": "data['started'] *= 2; manifest.write_text(json.dumps(data))",
-            "junit-count": "report.write_text(report.read_text().replace('tests=\"1\"', 'tests=\"2\"'))",
+            "junit-count": "report.write_text(report.read_text().replace('failures=\"0\"', 'failures=\"1\"'))",
             "junit-coverage": "report.write_text(report.read_text().replace('talaria_nodeid', 'missing_nodeid'))",
             "junit-duplicate": "import xml.etree.ElementTree as ET; tree = ET.parse(report); suite = tree.getroot().find('testsuite'); suite.append(ET.fromstring(ET.tostring(suite.find('testcase')))); suite.set('tests', '2'); tree.write(report)",
         }

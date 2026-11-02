@@ -379,10 +379,13 @@ def merge_reports(jobs, destination, extra=None):
                 raise ValueError(f"duplicate JUnit testcase in {job}")
         for suite in suites:
             cases = suite.findall("testcase")
-            counts = {"tests": len(cases), **{key: sum(len(case.findall(tag)) for case in cases)
-                      for key, tag in (("failures", "failure"), ("errors", "error"), ("skipped", "skipped"))}}
+            counts = {key: sum(len(case.findall(tag)) for case in cases)
+                      for key, tag in (("failures", "failure"), ("errors", "error"), ("skipped", "skipped"))}
             if any(int(suite.get(key, "-1")) != count for key, count in counts.items()):
                 raise ValueError(f"JUnit counts differ from testcases in {job}")
+            # Pytest 9.0 counts outcome reports, not testcases, when a setup or call failure also has a teardown
+            # error, so its suite total is not evidence. The merged report counts the verified testcases.
+            suite.set("tests", str(len(cases)))
             merged.append(suite)
             for case in cases:
                 duration = float(case.get("time", "0"))
