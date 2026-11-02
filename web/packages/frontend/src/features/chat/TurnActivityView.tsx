@@ -12,9 +12,10 @@ import { DisclosureTurnContext, WorklogDisclosureContext, terminalOutcomeLabel, 
 import { useLocale } from '../../i18n/useLocale'
 import type { ActivityItem, TurnActivity } from './turnActivity'
 import type { PendingSteerRow } from '../../stream/reducer'
-import { prefersReducedMotion } from '../../lib/motion'
+import { motionOn, revealHeight } from '../../lib/motion'
 import { CollapsedBody } from './CollapsedBody'
 import { MediaTiles } from './blocks/MediaTiles'
+import { ArrivalScope } from './arrival'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
 let lastLiveTurn: { key: string; height: number } | null = null
@@ -27,12 +28,10 @@ function takeLiveTurn(key: string) {
   return live
 }
 
-const FOLD = { duration: 320, easing: 'ease-out', fill: 'forwards' } as const
-
 /**
- * Folds a just-settled turn from its live height: the collapsed "Worked" body is shown open and animated
- * shut, and a spacer holds any remaining height the live turn lost and shrinks with it, so the work
- * visibly folds into its summary and history glides instead of snapping.
+ * Folds a just-settled turn from its live height: the collapsed "Worked" body is shown open and folded shut, and a
+ * spacer holds any remaining height the live turn lost and shuts with it, so the work visibly folds into its summary
+ * and history glides instead of snapping.
  */
 function SettleSpacer({ turnKey }: { turnKey: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -40,29 +39,22 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
     const el = ref.current
     const row = el?.closest('.assistant-turn')
     const live = el && row ? takeLiveTurn(turnKey) : null
-    if (!live || !el || !row) return
-    if (typeof el.animate !== 'function' || prefersReducedMotion()) return
+    if (!live || !el || !row || !motionOn()) return
     // Grow before measuring: a layout forced while the row is shorter than the live turn would clamp the scroll first.
     el.style.height = `${live.height}px`
     const body = row.querySelector<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) > .activity-body')
     if (body) body.hidden = false
-    const bodyHeight = body?.scrollHeight ?? 0
-    if (body && bodyHeight > 0) Object.assign(body.style, { maxHeight: `${bodyHeight}px`, opacity: '1', marginTop: '10px' })
-    else if (body) body.hidden = true
     const gap = Math.max(0, live.height - (row.getBoundingClientRect().height - live.height))
     el.style.height = `${gap}px`
-    const done = () => { el.style.height = '' }
-    if (gap > 1) void el.animate([{ height: `${gap}px` }, { height: '0px' }], FOLD).finished.then(done, () => undefined)
-    else done()
-    if (body && bodyHeight > 0) {
-      const fold = body.animate([{ maxHeight: `${bodyHeight}px`, opacity: 1, marginTop: '10px' }, { maxHeight: '0px', opacity: 0, marginTop: '0px' }], FOLD)
-      void fold.finished.then(() => {
-        // Hand the body back to the disclosure; a click during the fold may already have reopened it.
-        if (!body.parentElement?.classList.contains('open')) body.hidden = true
-        Object.assign(body.style, { maxHeight: '', opacity: '', marginTop: '' })
-        fold.cancel()
-      }, () => undefined)
+    const fold = (target: HTMLElement, done: () => void) => {
+      const motion = revealHeight(target, { open: false })
+      if (motion) void motion.finished.then(done, () => undefined)
+      else done()
     }
+    if (gap > 1) fold(el, () => { el.style.height = '' })
+    else el.style.height = ''
+    // Hand the body back to the disclosure; a click during the fold may already have reopened it.
+    if (body) fold(body, () => { if (!body.parentElement?.classList.contains('open')) body.hidden = true })
   }, [turnKey])
   return <div ref={ref} aria-hidden="true" />
 }
@@ -111,9 +103,9 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
-      case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
+      case 'reasoning': return <ReasoningBlock key={item.key} arrivalKey={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
-      case 'tool': return <ToolCard key={item.key} call={item.call} sessionId={sessionId} />
+      case 'tool': return <ToolCard key={item.key} arrivalKey={item.key} call={item.call} sessionId={sessionId} />
     }
   }
   // `tail` marks the list that ends the turn: only its last item can still be streaming.
@@ -147,6 +139,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   const hasWork = !!earlier || (running ? items.some((item) => item.kind !== 'text') : items.length > 0)
   return (
     <DisclosureTurnContext value={activity.key}>
+      <ArrivalScope keys={items.map((item) => item.key)} running={running}>
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork && (running || !activity.live)
         ? phases.map((phase, n) => (
           <Fragment key={n}>
@@ -159,6 +152,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
       {!running && <SettleSpacer turnKey={activity.key} />}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}
       {finalAnswer.trim() && <CollapsedBody excerpt={activity.finalAnswerExcerpt}>{(excerpt) => <div className="msg-body" data-final-answer="1"><Markdown text={excerpt ?? activity.finalAnswerDisplay?.display ?? finalAnswer} /><MediaTiles media={activity.finalAnswerDisplay?.media} sessionId={sessionId} /></div>}</CollapsedBody>}
+      </ArrivalScope>
     </DisclosureTurnContext>
   )
 }

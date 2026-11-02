@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useId, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
@@ -6,6 +6,8 @@ import { m } from '../../../paraglide/messages.js'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { readPersistedJson, writePersistedJson } from '../../../lib/persisted'
+import { motionOn, revealHeight, REVEAL_MS, TRAVEL_EASE } from '../../../lib/motion'
+import { SwapText } from '../../../ui/SwapText'
 import type { ToolCardData } from './ToolCard'
 
 export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'
@@ -76,6 +78,21 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   const [chosen, toggle] = useDisclosure(sequenceKey ?? disclosureId, defaultOpen)
   const open = live || chosen
   const bodyId = useId()
+  // Only the reader's click moves the body; a live turn settling folds through SettleSpacer, and entry never animates.
+  const clicked = useRef(false)
+  const body = useRef<HTMLDivElement>(null)
+  const caret = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!clicked.current || !el) return
+    clicked.current = false
+    // Shutting, the body stays drawn until it has folded; a click that reopens it first cancels that hand-back.
+    el.hidden = false
+    const motion = revealHeight(el, { open })
+    if (!open) { if (motion) void motion.finished.then(() => { el.hidden = true }, () => undefined); else el.hidden = true }
+    const chevron = caret.current
+    if (chevron && motionOn()) chevron.animate([{ rotate: chevron.getAnimations?.().length ? getComputedStyle(chevron).rotate : open ? '0deg' : '90deg' }, { rotate: open ? '90deg' : '0deg' }], { duration: REVEAL_MS, easing: TRAVEL_EASE })
+  }, [open])
   // Only the turn-level worklog owns the control; nested groups and their rows register with it.
   const [resets] = useState(() => new Set<() => void>())
   const [all, setAll] = useState<boolean>()
@@ -90,14 +107,14 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   return (
     <div className={cn('tool-group tool-worklog-group agent-activity-group activity', nested && 'activity-sequence-group', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-live-activity-current={active ? '1' : undefined} data-open={open ? '1' : '0'}>
       {!live && (
-        <button type="button" className="tool-call-group-summary tool-worklog-summary activity-summary" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+        <button type="button" className="tool-call-group-summary tool-worklog-summary activity-summary" aria-expanded={open} aria-controls={bodyId} onClick={() => { clicked.current = true; toggle() }}>
           <span className="as-dot" aria-hidden="true" />
-          <span className="tool-call-group-label tool-worklog-label as-text">{summary}</span>
+          <SwapText className="tool-call-group-label tool-worklog-label as-text" text={summary} />
           {failed > 0 && <span className="tool-call-group-duration text-error">{failed}✕</span>}
-          <span className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
+          <span ref={caret} className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
         </button>
       )}
-      <div id={bodyId} className="tool-call-group-body tool-worklog-body activity-body" hidden={!open}>
+      <div ref={body} id={bodyId} className="tool-call-group-body tool-worklog-body activity-body" hidden={!open}>
         <div className="worklog">
           {!nested && calls.length > 0 && (
             <div className="tool-worklog-controls">

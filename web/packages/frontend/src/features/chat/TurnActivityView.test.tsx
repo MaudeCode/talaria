@@ -3,7 +3,7 @@ import sceneCases from './__fixtures__/activity-scene-boundaries.json'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
 import { AssistantMessageRow } from './MessageRow'
 import { TurnActivityView } from './TurnActivityView'
@@ -14,6 +14,7 @@ import { initialStreamState, streamReducer, type LiveTurn } from '../../stream/r
 import type { Message, Session } from '../../contracts'
 import type { ChatEvent } from '../../contracts/sse'
 import { MessageSchema } from '../../contracts/session'
+import { stubAnimate } from '../../test/animate'
 
 afterEach(() => { cleanup(); localStorage.clear() })
 
@@ -493,5 +494,117 @@ describe('a running turn with no journal to replay (TAL-374)', () => {
     run.emit({ event: 'reasoning', data: { text: 'Comparing' } })
     view.rerender(transcript(messages, run.turn))
     expect(active()).toEqual(['live'])
+  })
+})
+
+describe('live turn motion (TAL-1753)', () => {
+  let motion: ReturnType<typeof stubAnimate>
+  afterEach(() => { motion.restore(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+  const live = (run: ReturnType<typeof liveRun>, mode: 'compact_worklog' | 'transparent_stream' = 'transparent_stream') => <View mode={mode} activity={liveActivity(run.turn)} />
+  /** Settled Worked turn: its outer summary and the body it controls. */
+  const worked = (container: HTMLElement) => {
+    const summary = container.querySelector<HTMLElement>('.tool-worklog-group:not(.activity-sequence-group) > .tool-worklog-summary')!
+    return { summary, body: container.querySelector<HTMLElement>(`#${CSS.escape(summary.getAttribute('aria-controls')!)}`)! }
+  }
+
+  it('opens each row that arrives in a running turn once, and never the rows it entered with or earlier steps above them', () => {
+    motion = stubAnimate()
+    const run = liveRun()
+    run.emit(tool('a'))
+    const view = render(live(run))
+    // Entering a running turn (a session switch, a virtual row scrolling back) opens nothing.
+    expect(motion.reveals()).toHaveLength(0)
+    for (const id of ['b', 'c', 'd']) {
+      run.emit(tool(id))
+      view.rerender(live(run))
+    }
+    expect(motion.reveals().map((call) => call.el.getAttribute('data-tool-id'))).toEqual(['b', 'c', 'd'])
+    expect(motion.reveals()[0]!.keyframes[0]).toMatchObject({ height: '0px', opacity: 0 })
+    expect(motion.reveals()[0]!.keyframes.at(-1)).toMatchObject({ opacity: 1 })
+    // Steps loaded above the rows already shown are history, not arrivals.
+    const activity = liveActivity(run.turn)
+    const first = activity.items[0]!
+    if (first.kind !== 'tool') throw new Error('expected a tool row')
+    view.rerender(<View mode="transparent_stream" activity={{ ...activity, items: [{ ...first, key: 'earlier', call: { ...first.call, id: 'earlier' } }, ...activity.items] }} />)
+    expect(view.container.querySelector('[data-tool-id="earlier"]')).not.toBeNull()
+    expect(motion.reveals()).toHaveLength(3)
+  })
+
+  it.each([
+    ['a tool row finishing', 'transparent_stream', '[data-tool-id="a"] .tool-card-name-label', 'Reading a.txt', 'Read a.txt', (run: ReturnType<typeof liveRun>) => run.emit(completed('a'))],
+    ['the live activity summary', 'compact_worklog', '.activity-sequence-group > .tool-worklog-summary .tool-worklog-label', 'Reading b.txt', 'Reading next.txt', (run: ReturnType<typeof liveRun>) => run.emit(tool('next'))],
+  ] as const)('crossfades %s in one slot that eases between the two widths', async (_, mode, label, before, after, change) => {
+    motion = stubAnimate()
+    // Width in proportion to the text, so the slot's start and end widths are the two labels'.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return { width: (this.textContent ?? '').length * 7 } as DOMRect })
+    const run = liveRun()
+    run.emit(tool('a'))
+    run.emit(tool('b'))
+    const view = render(live(run, mode))
+    const slot = view.container.querySelector<HTMLElement>(label)!
+    expect(slot).toHaveTextContent(before)
+    change(run)
+    view.rerender(live(run, mode))
+    const part = (el: Element) => el === slot ? 'slot' : el.hasAttribute('data-swap-out') ? `out:${el.textContent ?? ''}` : el.hasAttribute('data-swap-in') ? `in:${el.textContent ?? ''}` : 'other'
+    const swap = motion.calls.filter((call) => slot.contains(call.el))
+    expect(swap.map((call) => [part(call.el), call.keyframes])).toEqual([
+      ['slot', [{ width: `${before.length * 7}px` }, { width: `${after.length * 7}px` }]],
+      [`out:${before}`, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-3px)' }]],
+      [`in:${after}`, [{ opacity: 0 }, { opacity: 1 }]],
+    ])
+    await act(() => Promise.resolve(swap[2]!.finish()))
+    expect(slot.querySelector('[data-swap-out], [data-swap-in]')).toBeNull()
+    expect(slot).toHaveTextContent(after)
+  })
+
+  it('opens and shuts a settled Worked body by height, and a click mid-motion reverses it without leaving styles behind', async () => {
+    motion = stubAnimate()
+    const view = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(toolRow('a'), proseRow('p', 'Between'), toolRow('b')) })} />)
+    const { summary, body } = worked(view.container)
+    expect(body.hidden).toBe(true)
+    fireEvent.click(summary)
+    expect(motion.reveals().map((call) => call.el)).toEqual([body])
+    const [opening] = motion.reveals()
+    expect(opening!.keyframes[0]).toMatchObject({ height: '0px', opacity: 0 })
+    expect(motion.calls.find((call) => 'rotate' in call.keyframes[0]!)?.keyframes).toEqual([{ rotate: '0deg' }, { rotate: '90deg' }])
+    await act(() => Promise.resolve(opening!.finish()))
+    expect([summary.getAttribute('aria-expanded'), body.hidden]).toEqual(['true', false])
+
+    fireEvent.click(summary)
+    const closing = motion.reveals()[1]!
+    expect(closing.keyframes.at(-1)).toMatchObject({ height: '0px', opacity: 0 })
+    // Still drawn while it folds.
+    expect([summary.getAttribute('aria-expanded'), body.hidden]).toEqual(['false', false])
+    fireEvent.click(summary)
+    expect(closing.cancel).toHaveBeenCalled()
+    const reopening = motion.reveals()[2]!
+    await act(() => Promise.resolve(reopening.finish()))
+    expect([summary.getAttribute('aria-expanded'), body.hidden, body.getAttribute('style')]).toEqual(['true', false, null])
+
+    fireEvent.click(summary)
+    await act(() => Promise.resolve(motion.reveals()[3]!.finish()))
+    expect([summary.getAttribute('aria-expanded'), body.hidden, body.getAttribute('style')]).toEqual(['false', true, null])
+  })
+
+  it('moves nothing under reduced motion and reaches the same end states', () => {
+    motion = stubAnimate({ reduced: true })
+    const run = liveRun()
+    run.emit(tool('a'))
+    const view = render(live(run))
+    run.emit(completed('a'))
+    run.emit(tool('b'))
+    view.rerender(live(run))
+    expect(view.container.querySelector('[data-tool-id="b"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-tool-id="a"] .tool-card-name-label')).toHaveTextContent('Read a.txt')
+    expect(view.container.querySelector('[data-swap-out]')).toBeNull()
+    view.unmount()
+
+    const settledView = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(toolRow('a')) })} />)
+    const { summary, body } = worked(settledView.container)
+    fireEvent.click(summary)
+    expect([summary.getAttribute('aria-expanded'), body.hidden]).toEqual(['true', false])
+    fireEvent.click(summary)
+    expect([summary.getAttribute('aria-expanded'), body.hidden]).toEqual(['false', true])
+    expect(motion.calls).toHaveLength(0)
   })
 })

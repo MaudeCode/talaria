@@ -393,7 +393,7 @@ export function Transcript(props: TranscriptProps) {
             {virtualize ? (
               <VirtualHistory rows={rows} estimateSize={estimateSize} handle={virtualizerRef} renderRow={renderRow} anchorKey={() => readerAnchor.current?.key ?? null} onCommit={restoreReaderAnchor} />
             ) : <div className="messages-inner messages-history">{renderedRows}</div>}
-            {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending />}
+            {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending arrive={pending} />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}
             {!showLive && live?.error?.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: live.error.continuationSessionId }} className="mt-1 inline-block text-[13px] text-accent-text underline">{m.live_continuation()}</Link>}
