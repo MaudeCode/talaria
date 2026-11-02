@@ -39,6 +39,7 @@ export function revealHeight(el: HTMLElement, { open, from, arrive = false }: { 
   const animation = el.animate(keyframes, { duration: REVEAL_MS, easing: arrive ? ARRIVE_EASE : TRAVEL_EASE, fill: 'forwards' })
   reveals.set(el, animation)
   // Held until the caller's own `finished` handlers run in the same task, then handed back to the stylesheet.
-  void animation.finished.then(() => { if (reveals.get(el) === animation) reveals.delete(el); animation.cancel() }, () => undefined)
+  const forget = () => { if (reveals.get(el) === animation) reveals.delete(el) }
+  void animation.finished.then(() => { forget(); animation.cancel() }, forget)
   return animation
 }

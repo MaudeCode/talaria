@@ -82,13 +82,17 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   const clicked = useRef(false)
   const body = useRef<HTMLDivElement>(null)
   const caret = useRef<HTMLSpanElement>(null)
+  const folding = useRef<Animation | null>(null)
   useLayoutEffect(() => {
     const el = body.current
-    if (!clicked.current || !el) return
+    // Expand all or Collapse all moves no body, and a fold still running must not hide a group they reopened.
+    if (!clicked.current) { folding.current?.cancel(); folding.current = null; return }
+    if (!el) return
     clicked.current = false
-    // Shutting, the body stays drawn until it has folded; a click that reopens it first cancels that hand-back.
+    // Shutting, the body stays drawn until it has folded; a click that reopens it reverses the fold, cancelling its hand-back.
     el.hidden = false
     const motion = revealHeight(el, { open })
+    folding.current = open ? null : motion
     if (!open) { if (motion) void motion.finished.then(() => { el.hidden = true }, () => undefined); else el.hidden = true }
     const chevron = caret.current
     if (chevron && motionOn()) chevron.animate([{ rotate: chevron.getAnimations?.().length ? getComputedStyle(chevron).rotate : open ? '0deg' : '90deg' }, { rotate: open ? '90deg' : '0deg' }], { duration: REVEAL_MS, easing: TRAVEL_EASE })

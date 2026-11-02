@@ -586,6 +586,22 @@ describe('live turn motion (TAL-1753)', () => {
     expect([summary.getAttribute('aria-expanded'), body.hidden, body.getAttribute('style')]).toEqual(['false', true, null])
   })
 
+  it('keeps a group open that Expand all reopens while its fold is still running', async () => {
+    motion = stubAnimate()
+    const view = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(toolRow('a'), toolRow('b')) })} />)
+    fireEvent.click(worked(view.container).summary)
+    await act(() => Promise.resolve(motion.reveals()[0]!.finish()))
+    const group = view.container.querySelector<HTMLElement>('.activity-sequence-group > .tool-worklog-summary')!
+    const body = view.container.querySelector<HTMLElement>(`#${CSS.escape(group.getAttribute('aria-controls')!)}`)!
+    fireEvent.click(group)
+    await act(() => Promise.resolve(motion.reveals()[1]!.finish()))
+    fireEvent.click(group)
+    const folding = motion.reveals()[2]!
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    await act(() => Promise.resolve(folding.finish()))
+    expect([group.getAttribute('aria-expanded'), body.hidden]).toEqual(['true', false])
+  })
+
   it('moves nothing under reduced motion and reaches the same end states', () => {
     motion = stubAnimate({ reduced: true })
     const run = liveRun()
