@@ -544,8 +544,9 @@ running the importer. Web renders the server's dispositions and secret names.
 App adoption is tracked separately in TAL-1494.
 
 The adapter requires an installed, enabled catalog `agent-importers` plugin at
-the immutable revision in `sidecar/agent_importer.json`, with matching native
-API hashes. It never installs or enables a plugin. The real owning profile must
+the immutable revision the Agent's in-tree catalog pins. That revision must be
+one reviewed in `sidecar/agent_importer.json`, with matching native API hashes;
+each supported Agent release ships its own pin. It never installs or enables a plugin. The real owning profile must
 pass the shared config-write management guard before inspection and before
 publication. An unavailable policy fails closed. The server refuses imports
 with a custom active config path because the native API targets the default
