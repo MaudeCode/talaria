@@ -108,7 +108,7 @@ public struct OwnerAdmission: Codable, Equatable, Identifiable, Sendable {
 }
 
 /// `POST /api/chat/owner-action`'s answer: the refreshed session, and for Retry the original text to review.
-public struct OwnerActionResponse: Decodable, Equatable {
+public struct OwnerActionResponse: Decodable, Equatable, Sendable {
     public let session: SessionDetail?
     public let draft: String?
 }

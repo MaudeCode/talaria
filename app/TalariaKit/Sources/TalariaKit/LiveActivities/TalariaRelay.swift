@@ -5,7 +5,7 @@ import Foundation
 import UIKit
 #endif
 
-public struct TalariaRelayCredentials: Codable, Equatable {
+public struct TalariaRelayCredentials: Codable, Equatable, Sendable {
     public var baseURL: URL
     public var deviceID: String
     var userID: String
@@ -18,7 +18,7 @@ public struct TalariaRelayCredentials: Codable, Equatable {
     public var isExpired: Bool { expiresAt.map { $0 <= Date() } ?? true }
 }
 
-public enum TalariaRelayConnectionState: Equatable {
+public enum TalariaRelayConnectionState: Equatable, Sendable {
     case signedOut
     case expired
     case disconnectPending
@@ -130,7 +130,7 @@ public enum TalariaRelayConfigurationStore {
     }
 }
 
-public final class TalariaRelayClient {
+public final class TalariaRelayClient: Sendable {
     struct AppleAuthResponse: Decodable {
         var userId: String
         var sessionToken: String
@@ -141,7 +141,7 @@ public final class TalariaRelayClient {
         var invitation: String
     }
 
-    public struct Completion: Codable, Identifiable, Equatable {
+    public struct Completion: Codable, Identifiable, Equatable, Sendable {
         public var id: String
         public var row: TalariaAggregateActivityAttributes.ContentState.Row
     }
@@ -155,7 +155,7 @@ public final class TalariaRelayClient {
         var aggregate: TalariaAggregateActivityAttributes.ContentState?
     }
 
-    public struct PublisherSubscription: Decodable, Equatable {
+    public struct PublisherSubscription: Decodable, Equatable, Sendable {
         public var publisherId: String
         public var label: String
         public var subscribed: Bool
@@ -165,7 +165,7 @@ public final class TalariaRelayClient {
         var publishers: [PublisherSubscription]
     }
 
-    public enum ClientError: LocalizedError, ErrorDetailProviding {
+    public enum ClientError: LocalizedError, ErrorDetailProviding, Sendable {
         case invalidURL
         case invalidResponse(Int, String?)
         case rejected(String)
@@ -588,13 +588,13 @@ final class TalariaRelayRedirectGuard: NSObject, URLSessionTaskDelegate, @unchec
     }
 }
 
-public enum TalariaRelayAppleCredentialStatus: Equatable {
+public enum TalariaRelayAppleCredentialStatus: Equatable, Sendable {
     case authorized
     case revoked
     case unknown
 }
 
-public enum TalariaRelayAppleCredentialState {
+public enum TalariaRelayAppleCredentialState: Sendable {
     public static func status(userID: String) async -> TalariaRelayAppleCredentialStatus {
         return await withCheckedContinuation { continuation in
             ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in

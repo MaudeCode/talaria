@@ -1,13 +1,13 @@
 import Foundation
 
 /// One creation request's outcome, kept with its own error and retry safety across navigation.
-public enum ChatSessionStartResult {
+public enum ChatSessionStartResult: Sendable {
     /// `detail` is the server's created session, which carries what a list row lacks (TAL-1045).
     case started(SessionSummary, detail: SessionDetail? = nil)
     case failed(String, canRetry: Bool = true, error: Error? = nil)
 }
 
-public struct PendingNewChatRoute: Identifiable, Hashable {
+public struct PendingNewChatRoute: Identifiable, Hashable, Sendable {
     public let id = UUID()
     public let initialDraft: String
     public let initialAttachments: [SharedAttachmentImport]

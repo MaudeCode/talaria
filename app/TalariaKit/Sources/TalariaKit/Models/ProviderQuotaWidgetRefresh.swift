@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-public enum ProviderQuotaRefreshInterval: Int, CaseIterable, Identifiable {
+public enum ProviderQuotaRefreshInterval: Int, CaseIterable, Identifiable, Sendable {
     case oneMinute = 60
     case fiveMinutes = 300
     case fifteenMinutes = 900

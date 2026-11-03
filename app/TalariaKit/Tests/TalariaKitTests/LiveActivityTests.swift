@@ -328,7 +328,7 @@ final class LiveActivityTests: XCTestCase {
         let acknowledged = await store.acknowledge(["completion1"])
         XCTAssertTrue(acknowledged)
         requests.request(at: 1).complete(withJSON: payload)
-        await refresh.value
+        _ = await refresh.value
         XCTAssertTrue(store.completions.isEmpty)
         XCTAssertFalse(store.isLoading)
     }
@@ -2611,7 +2611,11 @@ private final class LiveActivitySpySSEClient: SSEStreamingClient {
 }
 
 private final class LiveActivityURLProtocol: URLProtocol {
-    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let handlerStorage = LockedTestValue<((URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        get { handlerStorage.value }
+        set { handlerStorage.value = newValue }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         true

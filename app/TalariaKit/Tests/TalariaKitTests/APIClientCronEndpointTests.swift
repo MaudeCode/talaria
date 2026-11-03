@@ -550,7 +550,7 @@ final class APIClientCronEndpointTests: APIClientTestCase {
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
             XCTAssertEqual(query["job_id"], "job456")
-            XCTAssertNil(query["limit"])
+            XCTAssertNil(query["limit"] as Any?)
 
             return apiTestJSONResponse("""
             {

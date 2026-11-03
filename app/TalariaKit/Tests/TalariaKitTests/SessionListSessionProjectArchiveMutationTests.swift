@@ -321,7 +321,7 @@ extension SessionListMutationTests {
     func testCreateProjectThenMovesSessionAndUpdatesLocalLists() async throws {
         var loadCount = 0
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -403,7 +403,7 @@ extension SessionListMutationTests {
     }
 
     func testCreateProjectBlocksBlankNameBeforeNetworkRequest() async throws {
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             XCTFail("Blank project names should not make network requests: \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
         }
@@ -434,7 +434,7 @@ extension SessionListMutationTests {
 
     func testCreateProjectMoveFailureKeepsSessionUnmovedAndShowsError() async throws {
         var loadCount = 0
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/sessions":
                 loadCount += 1
@@ -494,7 +494,7 @@ extension SessionListMutationTests {
     func testCreateEmptyProjectCreatesProjectWithoutMovingAnySession() async throws {
         var loadCount = 0
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -557,7 +557,7 @@ extension SessionListMutationTests {
     }
 
     func testCreateEmptyProjectBlocksBlankNameBeforeNetworkRequest() async throws {
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             XCTFail("Blank project names should not make network requests: \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
         }
@@ -579,7 +579,7 @@ extension SessionListMutationTests {
 
     func testCreateEmptyProjectMissingProjectInResponseShowsError() async throws {
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -612,7 +612,7 @@ extension SessionListMutationTests {
 
     func testCreateEmptyProjectNetworkFailureSetsError() async throws {
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -653,7 +653,7 @@ extension SessionListMutationTests {
 
     func testRenameProjectUpdatesLocalProject() async throws {
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -714,7 +714,7 @@ extension SessionListMutationTests {
 
     func testRenameProjectBlocksBlankNameBeforeNetworkRequest() async throws {
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -755,7 +755,7 @@ extension SessionListMutationTests {
 
     func testRenameProjectFailureKeepsProject() async throws {
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -806,7 +806,7 @@ extension SessionListMutationTests {
     func testDeleteProjectRemovesProjectAndReloadsUnassignedSessions() async throws {
         var sessionLoadCount = 0
         var requestedPaths: [String] = []
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "")
 
@@ -888,7 +888,7 @@ extension SessionListMutationTests {
 
     func testDeleteProjectFailureKeepsProjectAndSessions() async throws {
         var sessionLoadCount = 0
-        let viewModel = try await makeViewModel { request in
+        let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/sessions":
                 sessionLoadCount += 1

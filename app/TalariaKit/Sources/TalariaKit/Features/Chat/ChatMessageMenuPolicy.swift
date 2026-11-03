@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 /// What a long press inside a message row resolves to.
-public enum ChatMessageMenuTarget: Equatable {
+public enum ChatMessageMenuTarget: Equatable, Sendable {
     case link(URL)
     case message
     /// A control inside the row, such as Show more, which keeps its own touch:

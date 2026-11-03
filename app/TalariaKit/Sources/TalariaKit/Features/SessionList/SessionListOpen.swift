@@ -2,8 +2,8 @@ import Foundation
 
 /// Resolves a session the list is about to open: a row tap, a restored selection,
 /// or a deep link that is loaded first.
-public enum SessionListOpen {
-    public enum Outcome: Equatable {
+public enum SessionListOpen: Sendable {
+    public enum Outcome: Equatable, Sendable {
         case open(SessionSummary)
         /// Loading or importing failed; the caller surfaces the view model's error.
         case failed

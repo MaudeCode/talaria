@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ParsedSlashCommand: Equatable {
+public struct ParsedSlashCommand: Equatable, Sendable {
     public let command: SlashCommand?
     let name: String
     let args: String
@@ -15,7 +15,7 @@ public struct ParsedSlashCommand: Equatable {
     }
 }
 
-public enum SlashCommandExecutionResult: Equatable {
+public enum SlashCommandExecutionResult: Equatable, Sendable {
     case executed(message: String?)
     case openedSession(SessionSummary)
     case sendAsMessage

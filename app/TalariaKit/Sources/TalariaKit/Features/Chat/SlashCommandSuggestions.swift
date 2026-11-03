@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public struct AgentSlashCommandSuggestion: Identifiable, Equatable {
+public struct AgentSlashCommandSuggestion: Identifiable, Equatable, Sendable {
     public let name: String
     public let description: String
     public let argHint: String?
@@ -60,7 +60,7 @@ public struct AgentSlashCommandSuggestion: Identifiable, Equatable {
     }
 }
 
-public struct ParsedSlashQuery {
+public struct ParsedSlashQuery: Sendable {
     let query: String
     let catalog: [AgentCommand]
 

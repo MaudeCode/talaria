@@ -1,6 +1,6 @@
 import Foundation
 
-public enum TranscriptMediaKind: String, Codable, Equatable {
+public enum TranscriptMediaKind: String, Codable, Equatable, Sendable {
     case image
     case audio
     case video
@@ -9,7 +9,7 @@ public enum TranscriptMediaKind: String, Codable, Equatable {
 
 /// One media item the server resolved in a message's text (`_media`, TAL-186). The server decides
 /// which references exist, where they load from and their kind; the app renders them as sent.
-public struct TranscriptMediaReference: Codable, Equatable, Identifiable {
+public struct TranscriptMediaReference: Codable, Equatable, Identifiable, Sendable {
     /// Relative to the server root (`./api/media?…`) or a remote `http(s)` URL, as the server sent it.
     public let url: String
     public let name: String
@@ -81,7 +81,7 @@ public struct TranscriptMediaReference: Codable, Equatable, Identifiable {
 
 /// The server's display text for a body, with its media references rewritten to Markdown that
 /// points at their URLs, and the media it references (TAL-186). The body's own text stays for copy and edit.
-public struct TranscriptDisplayBody: Codable, Equatable {
+public struct TranscriptDisplayBody: Codable, Equatable, Sendable {
     public let text: String
     public let media: [TranscriptMediaReference]
 

@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
 
-public enum TranscriptMediaResolvedExportKind {
+public enum TranscriptMediaResolvedExportKind: Sendable {
     case image
     case audio
     case video

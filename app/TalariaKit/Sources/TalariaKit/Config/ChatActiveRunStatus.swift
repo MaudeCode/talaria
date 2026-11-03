@@ -1,6 +1,6 @@
 public import Foundation
 
-public enum ChatActiveRunStatusKind: Equatable {
+public enum ChatActiveRunStatusKind: Equatable, Sendable {
     case starting
     case active
     /// A background result started the running turn (TAL-460).
@@ -93,7 +93,7 @@ public enum ChatActiveRunStatusKind: Equatable {
     }
 }
 
-public struct ChatActiveRunStatusPresentation: Equatable {
+public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     let kind: ChatActiveRunStatusKind
     /// When the run started, for the elapsed time after the label (TAL-446); for `.compressing`, when the
     /// server's compression span started (TAL-1006). Nil when the start is unknown or the status is not
@@ -180,7 +180,7 @@ public struct ChatActiveRunStatusPresentation: Equatable {
     }
 }
 
-public enum ChatActiveRunStatusPolicy {
+public enum ChatActiveRunStatusPolicy: Sendable {
     public static func presentation(
         isStartingChat: Bool,
         hasActiveStream: Bool,

@@ -23,7 +23,8 @@ struct ActiveChatStreamSnapshotKey: Hashable {
     let streamID: String
 }
 
-final class ActiveChatStreamSnapshotStore {
+/// `@unchecked Sendable`: `lock` guards `snapshots`, the only mutable state.
+final class ActiveChatStreamSnapshotStore: @unchecked Sendable {
     static let shared = ActiveChatStreamSnapshotStore()
 
     private let lock = NSLock()

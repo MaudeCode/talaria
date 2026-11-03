@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-public enum KanbanCardDetailLoadState: Equatable {
+public enum KanbanCardDetailLoadState: Equatable, Sendable {
     case idle
     case loading
     case loaded
@@ -10,7 +10,7 @@ public enum KanbanCardDetailLoadState: Equatable {
     case failed
 }
 
-public enum KanbanCommentSubmissionState: Equatable {
+public enum KanbanCommentSubmissionState: Equatable, Sendable {
     case idle
     case validationFailed
     case submitting
@@ -24,7 +24,7 @@ public enum KanbanCommentSubmissionState: Equatable {
     }
 }
 
-public enum KanbanWorkerLogState: Equatable {
+public enum KanbanWorkerLogState: Equatable, Sendable {
     case idle
     case loading
     case absent

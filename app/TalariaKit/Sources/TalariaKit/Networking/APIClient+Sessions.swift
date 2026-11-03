@@ -288,7 +288,7 @@ extension APIClient {
     }
 }
 
-public struct SessionToolsetsResponse: Decodable, Equatable {
+public struct SessionToolsetsResponse: Decodable, Equatable, Sendable {
     public let enabledToolsets: [String]?
 }
 

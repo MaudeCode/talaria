@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Which of the session list's optional navigation rows are shown, so a user can
 /// hide the parts of the app they never use (issue #189).
-public struct SidebarSectionVisibility: Equatable {
+public struct SidebarSectionVisibility: Equatable, Sendable {
     public var tasks: Bool
     public var kanban: Bool
     public var skills: Bool
@@ -34,8 +34,8 @@ public struct SidebarSectionVisibility: Equatable {
 /// rows the context menu renders, deriving each row's display name the same way
 /// the Settings server list does, so the menu's contents — and which server is
 /// marked active — are unit-testable without standing up the view.
-public struct AvatarServerSwitcherModel: Equatable {
-    public struct Entry: Identifiable, Equatable {
+public struct AvatarServerSwitcherModel: Equatable, Sendable {
+    public struct Entry: Identifiable, Equatable, Sendable {
         public let id: String
         public let account: ServerAccount
         public let displayName: String
@@ -66,7 +66,7 @@ public struct AvatarServerSwitcherModel: Equatable {
 /// leading-edge points. The screen slides aside to reveal the sidebar, except beside a vertical
 /// bar: the bar is window chrome that cannot move with the screen, so there the sidebar slides
 /// in over a screen that stays put (TAL-481).
-public struct AppSidebarSlide: Equatable {
+public struct AppSidebarSlide: Equatable, Sendable {
     public var revealWidth: CGFloat
     public var leadingInset: CGFloat
     public var presentsOver: Bool

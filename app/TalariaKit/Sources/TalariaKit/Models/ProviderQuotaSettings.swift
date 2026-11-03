@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ProviderIconStyle: String, CaseIterable, Identifiable {
+public enum ProviderIconStyle: String, CaseIterable, Identifiable, Sendable {
     case color
     case silhouette
 
@@ -51,7 +51,7 @@ public enum ProviderQuotaDisplaySettings {
     }
 }
 
-public enum ProviderQuotaPercentageMode: String, CaseIterable, Identifiable {
+public enum ProviderQuotaPercentageMode: String, CaseIterable, Identifiable, Sendable {
     case used
     case remaining
 
@@ -67,7 +67,7 @@ public enum ProviderQuotaPercentageMode: String, CaseIterable, Identifiable {
     }
 }
 
-public enum ProviderQuotaWidgetArcColor: String, CaseIterable, Identifiable {
+public enum ProviderQuotaWidgetArcColor: String, CaseIterable, Identifiable, Sendable {
     case automatic
     case accent
     case blue
@@ -111,7 +111,7 @@ public enum ProviderQuotaWidgetArcColor: String, CaseIterable, Identifiable {
     }
 }
 
-public enum ProviderQuotaWidgetArcWeight: String, CaseIterable, Identifiable {
+public enum ProviderQuotaWidgetArcWeight: String, CaseIterable, Identifiable, Sendable {
     case thin
     case regular
     case bold
@@ -129,7 +129,7 @@ public enum ProviderQuotaWidgetArcWeight: String, CaseIterable, Identifiable {
     }
 }
 
-public enum ProviderQuotaWidgetColorBasis: String, CaseIterable, Identifiable {
+public enum ProviderQuotaWidgetColorBasis: String, CaseIterable, Identifiable, Sendable {
     case pace
     case overall
 
@@ -220,7 +220,7 @@ public struct ProviderQuotaThresholds: Codable, Equatable, Sendable {
     }
 }
 
-public enum ProviderQuotaLockScreenPaceDetail: String, CaseIterable, Identifiable {
+public enum ProviderQuotaLockScreenPaceDetail: String, CaseIterable, Identifiable, Sendable {
     case burnAndForecast
     case burn
     case forecast

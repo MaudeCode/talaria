@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ChatStartResponse: Decodable, Equatable {
+public struct ChatStartResponse: Decodable, Equatable, Sendable {
     public let streamId: String?
     let sessionId: String?
     /// Unix epoch seconds for when the server started this turn, the same
@@ -34,7 +34,7 @@ public struct ChatStartResponse: Decodable, Equatable {
     }
 }
 
-public struct ChatCancelResponse: Decodable, Equatable {
+public struct ChatCancelResponse: Decodable, Equatable, Sendable {
     public var activityPhase: String? = nil
     public let ok: Bool?
     let cancelled: Bool?
@@ -44,7 +44,7 @@ public struct ChatCancelResponse: Decodable, Equatable {
     public let error: String?
 }
 
-public struct ChatStreamStatusResponse: Decodable, Equatable {
+public struct ChatStreamStatusResponse: Decodable, Equatable, Sendable {
     public var activityPhase: String? = nil
     public let active: Bool?
     let streamId: String?
@@ -69,7 +69,7 @@ struct RunJournalStatus: Decodable, Equatable {
     let terminalState: String?
 }
 
-public struct ChatSteerResponse: Decodable, Equatable {
+public struct ChatSteerResponse: Decodable, Equatable, Sendable {
     public let accepted: Bool?
     let fallback: String?
     let streamId: String?
@@ -79,14 +79,14 @@ public struct ChatSteerResponse: Decodable, Equatable {
     let startedTurn: ChatStartResponse?
 }
 
-public struct BtwStartResponse: Decodable, Equatable {
+public struct BtwStartResponse: Decodable, Equatable, Sendable {
     public let streamId: String?
     let sessionId: String?
     let parentSessionId: String?
     public let error: String?
 }
 
-public struct BackgroundStartResponse: Decodable, Equatable {
+public struct BackgroundStartResponse: Decodable, Equatable, Sendable {
     public let taskId: String?
     let streamId: String?
     let sessionId: String?

@@ -1,5 +1,5 @@
 import Foundation
-import LDSwiftEventSource
+@preconcurrency import LDSwiftEventSource
 import OSLog
 
 /// A conforming client must deliver events only for its current connection:
@@ -7,7 +7,7 @@ import OSLog
 /// `ChatStreamCoordinator` installs one bare `handle` closure per start and
 /// relies on this instead of fencing per connection itself (TAL-115).
 @MainActor
-public protocol SSEStreamingClient: AnyObject {
+public protocol SSEStreamingClient: AnyObject, Sendable {
     var lastEventID: String? { get }
 
     func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void)
@@ -57,7 +57,7 @@ public final class SSEClient: SSEStreamingClient {
         var config = EventSource.Config(handler: handler, url: url)
         // `.shutdown` suppresses EventHandler.onError inside LDSwiftEventSource;
         // forward once so ChatStreamCoordinator can own status-based recovery.
-        config.connectionErrorHandler = { error in
+        config.connectionErrorHandler = { @Sendable error in
             handler.onError(error: error)
             return .shutdown
         }
@@ -118,7 +118,7 @@ public final class SSEClient: SSEStreamingClient {
     }
 }
 
-public enum SSEEvent: Equatable {
+public enum SSEEvent: Equatable, Sendable {
     case token(String)
     case interimAssistant(InterimAssistantStreamEvent)
     case reasoning(ReasoningStreamEvent)
@@ -164,7 +164,7 @@ extension SSEEvent {
     }
 }
 
-public struct ReasoningStreamEvent: Decodable, Equatable {
+public struct ReasoningStreamEvent: Decodable, Equatable, Sendable {
     public let text: String
     public let titles: [String]
 
@@ -187,7 +187,7 @@ public struct ReasoningStreamEvent: Decodable, Equatable {
     }
 }
 
-public struct SteeringStreamEvent: Decodable, Equatable {
+public struct SteeringStreamEvent: Decodable, Equatable, Sendable {
     let sessionId: String?
     let streamId: String?
     public let steerId: String?
@@ -231,7 +231,7 @@ public struct SteeringStreamEvent: Decodable, Equatable {
     }
 }
 
-public struct TitleStreamEvent: Decodable, Equatable {
+public struct TitleStreamEvent: Decodable, Equatable, Sendable {
     public let sessionId: String?
     public let title: String?
 
@@ -241,7 +241,7 @@ public struct TitleStreamEvent: Decodable, Equatable {
     }
 }
 
-public struct ToolStreamEvent: Decodable, Equatable {
+public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     let eventType: String?
     public let name: String?
     public let preview: String?
@@ -323,7 +323,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
     }
 }
 
-public struct InterimAssistantStreamEvent: Decodable, Equatable {
+public struct InterimAssistantStreamEvent: Decodable, Equatable, Sendable {
     public let text: String?
     public let alreadyStreamed: Bool?
 
@@ -344,7 +344,7 @@ public struct InterimAssistantStreamEvent: Decodable, Equatable {
     }
 }
 
-public struct MeteringStreamEvent: Decodable, Equatable {
+public struct MeteringStreamEvent: Decodable, Equatable, Sendable {
     let tokensPerSecond: Double?
     let isTokensPerSecondAvailable: Bool?
     let isEstimated: Bool?
@@ -587,7 +587,7 @@ private extension String {
     }
 }
 
-private final class SSEEventHandler: EventHandler {
+private final class SSEEventHandler: EventHandler, Sendable {
     private let onEventID: @MainActor (String) -> Void
     private let onEvent: @MainActor (SSEEvent) -> Void
 
@@ -675,7 +675,7 @@ private struct WarningPayload: Decodable {
     let message: String?
 }
 
-public struct DoneStreamEvent: Equatable {
+public struct DoneStreamEvent: Equatable, Sendable {
     public let usage: ContextWindowSnapshot?
     public let session: SessionDetail?
     /// The server's turn outcome (`completed`, `no_response`, `tool_limit_reached`); nil from an older server.

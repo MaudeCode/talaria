@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ClarificationPromptState: Equatable, Identifiable {
+public struct ClarificationPromptState: Equatable, Identifiable, Sendable {
     public var requestID: String { "\(sessionID)-\(pending.id)" }
     public var id: String { questionID.map { "\(requestID)-\($0)" } ?? requestID }
 

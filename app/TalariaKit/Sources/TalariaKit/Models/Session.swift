@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SessionsResponse: Decodable {
+public struct SessionsResponse: Decodable, Sendable {
     public let sessions: [SessionSummary]?
     let cliCount: Int?
     /// Total archived sessions in the active profile (`archived_count`), present
@@ -97,7 +97,7 @@ public struct AgentStorage: Codable, Equatable, Sendable {
     }
 }
 
-public struct SessionSearchResponse: Decodable, Equatable {
+public struct SessionSearchResponse: Decodable, Equatable, Sendable {
     public let sessions: [SessionSummary]?
     let query: String?
     let count: Int?
@@ -114,13 +114,13 @@ public struct SessionSearchResponse: Decodable, Equatable {
     }
 }
 
-public struct SessionResponse: Decodable {
+public struct SessionResponse: Decodable, Sendable {
     public let session: SessionDetail?
 }
 
 /// `POST /api/session/truncate` (TAL-929): the cut session, or, for a cut that would discard more than one user turn,
 /// `confirmRequired` with the server's counts and nothing changed until the cut is resent with `confirmToken`.
-public struct SessionTruncateResponse: Decodable {
+public struct SessionTruncateResponse: Decodable, Sendable {
     public let session: SessionDetail?
     public let confirmRequired: Bool?
     public let discardUserTurns: Int?
@@ -128,7 +128,7 @@ public struct SessionTruncateResponse: Decodable {
     public let confirmToken: String?
 }
 
-public struct SessionMutationResponse: Decodable {
+public struct SessionMutationResponse: Decodable, Sendable {
     public let ok: Bool?
     public let session: SessionSummary?
     public let error: String?
@@ -139,7 +139,7 @@ public enum SessionBulkAction: String, Encodable, Sendable {
 }
 
 /// `POST /api/sessions/bulk` (TAL-627): one result per requested id, in request order.
-public struct SessionBulkResponse: Decodable, Equatable {
+public struct SessionBulkResponse: Decodable, Equatable, Sendable {
     public let results: [SessionBulkResult]?
 
     enum CodingKeys: String, CodingKey { case results }
@@ -150,7 +150,7 @@ public struct SessionBulkResponse: Decodable, Equatable {
     }
 }
 
-public struct SessionBulkResult: Decodable, Equatable {
+public struct SessionBulkResult: Decodable, Equatable, Sendable {
     public let sessionId: String?
     public let ok: Bool?
     public let error: String?
@@ -168,7 +168,7 @@ public struct SessionBulkResult: Decodable, Equatable {
     }
 }
 
-public struct ProjectsResponse: Decodable, Equatable {
+public struct ProjectsResponse: Decodable, Equatable, Sendable {
     public let projects: [ProjectSummary]?
 
     enum CodingKeys: String, CodingKey {
@@ -181,7 +181,7 @@ public struct ProjectsResponse: Decodable, Equatable {
     }
 }
 
-public struct ProjectMutationResponse: Decodable, Equatable {
+public struct ProjectMutationResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let project: ProjectSummary?
     public let error: String?
@@ -200,7 +200,7 @@ public struct ProjectMutationResponse: Decodable, Equatable {
     }
 }
 
-public struct ProjectSummary: Decodable, Equatable, Hashable, Identifiable {
+public struct ProjectSummary: Decodable, Equatable, Hashable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String { projectId ?? fallbackIdentity.value }
 
@@ -225,7 +225,7 @@ public struct ProjectSummary: Decodable, Equatable, Hashable, Identifiable {
     }
 }
 
-public struct SessionBranchResponse: Decodable, Equatable {
+public struct SessionBranchResponse: Decodable, Equatable, Sendable {
     public let sessionId: String?
     let title: String?
     let parentSessionId: String?
@@ -234,7 +234,7 @@ public struct SessionBranchResponse: Decodable, Equatable {
 
 /// The manual compression job (`compress/start` and `compress/status`): `running`, then `done` with the compressed
 /// session and summary, or `error`; `idle` when no job exists.
-public struct SessionCompressResponse: Decodable, Equatable {
+public struct SessionCompressResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let status: String?
     /// TAL-1006: when the job started, in epoch seconds.
@@ -245,21 +245,21 @@ public struct SessionCompressResponse: Decodable, Equatable {
     public let error: String?
 }
 
-public struct SessionCompressionSummary: Decodable, Equatable {
+public struct SessionCompressionSummary: Decodable, Equatable, Sendable {
     public let headline: String?
     public let tokenLine: String?
     let note: String?
     let referenceMessage: String?
 }
 
-public struct SessionUndoResponse: Decodable, Equatable {
+public struct SessionUndoResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let removedCount: Int?
     let removedPreview: String?
     public let error: String?
 }
 
-public struct SessionRetryResponse: Decodable, Equatable {
+public struct SessionRetryResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let lastUserText: String?
     let removedCount: Int?
@@ -341,7 +341,7 @@ public struct SessionAttention: Decodable, Equatable, Hashable, Sendable {
     }
 }
 
-public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
+public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String {
         if let sessionId, !sessionId.isEmpty {
             return sessionId
@@ -832,7 +832,7 @@ extension SessionSummary {
 /// Which non-standard session kinds the session list should show. Webhooks,
 /// cron jobs, CLI imports, Claude Code imports, and delegated subagents are
 /// controlled independently. A row with unknown/missing source data remains visible.
-public struct AutomatedSessionVisibility: Hashable {
+public struct AutomatedSessionVisibility: Hashable, Sendable {
     public var showsCron: Bool
     var showsCli: Bool
     public var showsWebhook: Bool
@@ -897,7 +897,7 @@ public struct SessionToolsets: Equatable, Sendable {
     }
 }
 
-public struct SessionDetail: Decodable, Equatable, Identifiable {
+public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public var id: String {
         if let sessionId, !sessionId.isEmpty {
             return sessionId
@@ -1188,7 +1188,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
 
 /// The server's statement that a session detail's `messages` hold nothing the journal of `streamId` delivers after `seq`,
 /// so resuming that stream with `after_seq = seq` renders the replay as-is.
-public struct TranscriptSeq: Decodable, Equatable {
+public struct TranscriptSeq: Decodable, Equatable, Sendable {
     let streamId: String
     let seq: Int
 }

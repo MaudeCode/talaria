@@ -2,7 +2,7 @@ import Foundation
 
 /// TAL-1458: the file a chat's companion page shows beside it. The server names each file call's `focus_path`; this is
 /// the device-local state over it: which one the page follows, a file the user pinned, and the page's open browser.
-public struct ChatCompanionFocus: Equatable {
+public struct ChatCompanionFocus: Equatable, Sendable {
     /// The latest file a tool frame named, seeded by the session's `focus_path`.
     public private(set) var followedPath: String?
     /// The followed file's change, while the latest frame naming it carries one.

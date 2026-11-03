@@ -4,7 +4,7 @@ import CoreGraphics
 /// two-row card at one line and the transcript's minimum, as on an iPhone in landscape with the keyboard up, gets the
 /// card in one row: +, the text, then voice, context and send (TAL-680). A draft that grows never switches it: in two
 /// rows the text stops growing where the transcript's minimum begins and scrolls inside the card (TAL-1635).
-public struct ComposerCardSizing: Equatable {
+public struct ComposerCardSizing: Equatable, Sendable {
     /// The transcript's share of the chat pane: room under the navigation bar for at least one row (TAL-680).
     public static let minimumTranscriptHeight: CGFloat = 96
     /// The text view's height at one line.

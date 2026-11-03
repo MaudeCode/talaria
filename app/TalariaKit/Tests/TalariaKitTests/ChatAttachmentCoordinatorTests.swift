@@ -371,7 +371,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         let secondUpload = Task {
             await coordinator.uploadAttachment(data: Data("two".utf8), filename: "two.txt")
         }
-        await secondUpload.value
+        _ = await secondUpload.value
 
         XCTAssertTrue(coordinator.isUploadingAttachment)
         let finishFirst = try XCTUnwrap(
@@ -379,7 +379,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
             "Expected the first upload completion to be deferred."
         )
         finishFirst()
-        await firstUpload.value
+        _ = await firstUpload.value
 
         XCTAssertFalse(coordinator.isUploadingAttachment)
         XCTAssertEqual(coordinator.pendingAttachments.map(\.name), ["one.txt", "two.txt"])
@@ -811,7 +811,11 @@ private actor RecordingAttachmentStore: ChatDraftAttachmentStoring {
 }
 
 final class DeferredUploadMockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest, DeferredUploadMockURLProtocol) throws -> Void)?
+    private static let requestHandlerStorage = LockedTestValue<((URLRequest, DeferredUploadMockURLProtocol) throws -> Void)?>(nil)
+    static var requestHandler: ((URLRequest, DeferredUploadMockURLProtocol) throws -> Void)? {
+        get { requestHandlerStorage.value }
+        set { requestHandlerStorage.value = newValue }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         true

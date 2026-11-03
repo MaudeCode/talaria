@@ -1,11 +1,11 @@
 import Foundation
 
-public struct WorkspacesResponse: Decodable, Equatable {
+public struct WorkspacesResponse: Decodable, Equatable, Sendable {
     public let workspaces: [WorkspaceRoot]?
     public let last: String?
 }
 
-public struct WorkspaceSuggestionsResponse: Decodable, Equatable {
+public struct WorkspaceSuggestionsResponse: Decodable, Equatable, Sendable {
     public let suggestions: [String]?
     let prefix: String?
 }
@@ -37,7 +37,7 @@ public struct WorkspaceRoot: Decodable, Equatable, Sendable {
 /// `_handle_workspace_*` handlers: `{"ok": true, "workspaces": [...]}` on success.
 /// These routes are undocumented (not on the official docs site), so every field
 /// stays optional and callers must tolerate a missing `workspaces` echo.
-public struct WorkspaceMutationResponse: Decodable, Equatable {
+public struct WorkspaceMutationResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let workspaces: [WorkspaceRoot]?
     public let error: String?
@@ -48,7 +48,7 @@ public struct WorkspaceMutationResponse: Decodable, Equatable {
 /// these routes are undocumented, so an explicit body-level failure must not
 /// be presented as a success. Reuses the phrasing (and localization keys) of
 /// `APIError`'s 400 handling.
-public struct WorkspaceMutationRejection: LocalizedError, Equatable {
+public struct WorkspaceMutationRejection: LocalizedError, Equatable, Sendable {
     let serverMessage: String?
 
     public init(serverMessage: String?) {
@@ -82,14 +82,14 @@ struct ReorderWorkspacesRequest: Encodable, Equatable {
     let paths: [String]
 }
 
-public struct DirectoryListResponse: Decodable, Equatable {
+public struct DirectoryListResponse: Decodable, Equatable, Sendable {
     public let entries: [WorkspaceEntry]?
     public let path: String?
     let workspace: String?
     let error: String?
 }
 
-public struct WorkspaceEntry: Decodable, Equatable, Identifiable {
+public struct WorkspaceEntry: Decodable, Equatable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String { path ?? fallbackIdentity.value }
     public var isBrowsableDirectory: Bool {
@@ -135,7 +135,7 @@ public struct WorkspaceEntry: Decodable, Equatable, Identifiable {
     }
 }
 
-public struct FileResponse: Decodable, Equatable {
+public struct FileResponse: Decodable, Equatable, Sendable {
     public let content: String?
     public let path: String?
     let name: String?

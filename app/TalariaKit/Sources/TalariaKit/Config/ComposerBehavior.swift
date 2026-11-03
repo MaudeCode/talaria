@@ -1,6 +1,6 @@
 import Foundation
 
-public enum StreamingSendBehavior: String, CaseIterable, Identifiable {
+public enum StreamingSendBehavior: String, CaseIterable, Identifiable, Sendable {
     case steer
     case interrupt
     case queue
@@ -48,7 +48,7 @@ public enum StreamingSendBehavior: String, CaseIterable, Identifiable {
 }
 
 /// The hardware-keyboard key that sends the draft; the other of Return and ⌘Return inserts a newline.
-public enum ComposerSendKey: String, CaseIterable, Identifiable {
+public enum ComposerSendKey: String, CaseIterable, Identifiable, Sendable {
     case `return`
     case commandReturn
 
@@ -71,7 +71,7 @@ public enum ComposerSendKey: String, CaseIterable, Identifiable {
     }
 }
 
-public enum ComposerSTTProviderPreference: String, CaseIterable, Identifiable {
+public enum ComposerSTTProviderPreference: String, CaseIterable, Identifiable, Sendable {
     case serverFirst
     case onDeviceFirst
     case onDeviceOnly

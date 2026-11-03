@@ -370,7 +370,7 @@ final class InsightsViewModelTests: XCTestCase {
     private func isolatedDefaults() throws -> UserDefaults {
         let suiteName = "InsightsViewModelTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        addTeardownBlock { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
         return defaults
     }
 
@@ -388,6 +388,7 @@ final class InsightsViewModelTests: XCTestCase {
 
 }
 
+@MainActor
 private final class StubInsightsClient: InsightsDataClient {
     private let insightsResult: Result<InsightsResponse, Error>
     private let sessionsResult: Result<SessionsResponse, Error>

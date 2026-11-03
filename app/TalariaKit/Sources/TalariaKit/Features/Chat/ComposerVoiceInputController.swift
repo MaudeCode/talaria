@@ -7,7 +7,7 @@ import Speech
 @MainActor
 @Observable
 public final class ComposerVoiceInputController {
-    public enum State: Equatable {
+    public enum State: Equatable, Sendable {
         case idle
         case requestingPermission
         case listening
@@ -17,7 +17,7 @@ public final class ComposerVoiceInputController {
 
     /// The draft as dictation last composed it. Every composer showing the chat applies it, so one the navigation
     /// rebuilt mid-dictation keeps receiving it (TAL-1477).
-    public struct DictatedDraft: Equatable {
+    public struct DictatedDraft: Equatable, Sendable {
         public let text: String
         let revision: Int
     }
@@ -274,20 +274,22 @@ public final class ComposerVoiceInputController {
     /// Server First records until the user taps Stop, so the format has to stay small
     /// over long speech: mono AAC at 32 kbps is ~14 MB/hour, where the previous 16 kHz
     /// PCM WAV was ~115 MB/hour and crossed the server's upload limit in minutes.
-    static let serverRecordingBitRate = 32_000
+    nonisolated static let serverRecordingBitRate = 32_000
 
-    static let serverRecordingSettings: [String: Any] = [
-        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-        AVSampleRateKey: 16_000.0,
-        AVNumberOfChannelsKey: 1,
-        AVEncoderBitRateKey: serverRecordingBitRate
-    ]
+    nonisolated static var serverRecordingSettings: [String: Any] {
+        [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 16_000.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: serverRecordingBitRate
+        ]
+    }
 
     /// Client upload ceiling. The server's default multipart limit is 20 MiB
     /// (`HERMES_WEBUI_MAX_UPLOAD_MB`) and rejects a larger `Content-Length` with 413,
     /// so leave room for the multipart envelope. A recording above this is never read
     /// into memory or uploaded; it goes to the on-device fallback instead.
-    static let maximumServerUploadBytes = PendingAttachment.maximumUploadBytes - 64 * 1_024
+    nonisolated static let maximumServerUploadBytes = PendingAttachment.maximumUploadBytes - 64 * 1_024
 
     /// `.m4a` so the extension the transcribe endpoint sees matches the AAC payload.
     nonisolated static func makeServerRecordingURL(uuid: UUID = UUID()) -> URL {

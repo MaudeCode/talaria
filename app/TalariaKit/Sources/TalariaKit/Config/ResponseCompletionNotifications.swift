@@ -4,7 +4,7 @@ import UserNotifications
 /// How a run ended, for the local reply notification. Only the server's outcome
 /// reaches here (a terminal stream event or the run journal's `terminal_state`);
 /// a user Stop (cancelled) has no case, so it never notifies.
-public enum ResponseCompletionOutcome: Equatable {
+public enum ResponseCompletionOutcome: Equatable, Sendable {
     case completed
     case failed
 
@@ -36,7 +36,7 @@ enum ResponseCompletionNotificationPolicy {
     }
 }
 
-public struct ResponseCompletionNotificationRequest: Equatable {
+public struct ResponseCompletionNotificationRequest: Equatable, Sendable {
     let sessionID: String?
     /// The chat's display title, as the Chats list shows it.
     let chatTitle: String?
@@ -60,11 +60,11 @@ public struct ResponseCompletionNotificationRequest: Equatable {
     }
 }
 
-public struct ResponseCompletionNotificationCompletionContext: Equatable {
+public struct ResponseCompletionNotificationCompletionContext: Equatable, Sendable {
     public let sceneIsActive: Bool
 }
 
-public struct ResponseCompletionNotificationTracker {
+public struct ResponseCompletionNotificationTracker: Sendable {
 
     public init() {
     }
@@ -91,13 +91,13 @@ public struct ResponseCompletionNotificationTracker {
     }
 }
 
-public protocol ResponseCompletionNotificationScheduling {
+public protocol ResponseCompletionNotificationScheduling: Sendable {
     func authorizationStatus() async -> UNAuthorizationStatus
     func requestAuthorization() async -> Bool
     func schedule(_ request: ResponseCompletionNotificationRequest) async
 }
 
-public struct UserNotificationResponseCompletionScheduler: ResponseCompletionNotificationScheduling {
+public struct UserNotificationResponseCompletionScheduler: ResponseCompletionNotificationScheduling, Sendable {
     public init() {}
 
     public func authorizationStatus() async -> UNAuthorizationStatus {

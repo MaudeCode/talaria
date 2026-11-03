@@ -593,7 +593,7 @@ public final class ChatViewModel {
     public private(set) var listenPlaybackDuration: TimeInterval = 0
     private(set) var listenPlaybackScrubTime: TimeInterval?
     public private(set) var listenPlaybackSpeed: ListenPlaybackSpeed
-    @ObservationIgnored private var listenPlaybackTicker: Timer?
+    @ObservationIgnored private var listenPlaybackTicker: Task<Void, Never>?
     /// Dictation into this chat's composer. It lives as long as the chat rather than its composer, so a composer the
     /// navigation rebuilds keeps dictating (TAL-1477). Lazy: SwiftUI builds a view model on every `ChatView` init.
     @ObservationIgnored public private(set) lazy var voiceInput = ComposerVoiceInputController()
@@ -759,7 +759,7 @@ public final class ChatViewModel {
         pendingStreamingScrollTriggerTask?.cancel()
         pendingStreamingContentFlushTask?.cancel()
         listenPreparationTask?.cancel()
-        listenPlaybackTicker?.invalidate()
+        listenPlaybackTicker?.cancel()
     }
 
     public func setShowsLiveActivityResponseExcerpts(_ shows: Bool) {
@@ -6694,17 +6694,13 @@ public final class ChatViewModel {
 
     private func startListenPlaybackTicker() {
         stopListenPlaybackTicker()
-        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateListenPlaybackProgressFromPlayer()
-            }
+        listenPlaybackTicker = startMainActorTicker(every: .milliseconds(200)) { [weak self] in
+            self?.updateListenPlaybackProgressFromPlayer()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        listenPlaybackTicker = timer
     }
 
     private func stopListenPlaybackTicker() {
-        listenPlaybackTicker?.invalidate()
+        listenPlaybackTicker?.cancel()
         listenPlaybackTicker = nil
     }
 

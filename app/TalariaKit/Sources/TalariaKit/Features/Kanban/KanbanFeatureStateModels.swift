@@ -1,6 +1,6 @@
 public import Foundation
 
-public enum KanbanCompatibilityState: Equatable {
+public enum KanbanCompatibilityState: Equatable, Sendable {
     case idle
     case checking
     case compatible
@@ -36,7 +36,7 @@ public enum KanbanWriteCapability: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-public enum KanbanEndpointCompatibility {
+public enum KanbanEndpointCompatibility: Sendable {
     static func isMissingCapability(_ error: Error) -> Bool {
         guard let apiError = error as? APIError,
               case let .http(statusCode, _) = apiError else { return false }
@@ -105,7 +105,7 @@ public struct KanbanDispatchState: Equatable, Sendable {
     }
 }
 
-public enum KanbanDispatchAccessibility {
+public enum KanbanDispatchAccessibility: Sendable {
     public static func summary(_ state: KanbanDispatchState, isStale: Bool) -> String {
         var parts = [
             state.mode == .preview
@@ -172,7 +172,7 @@ public enum KanbanDispatcherAvailability: Equatable, Sendable {
     case refreshFailed
 }
 
-public enum KanbanBoardCollectionExpectation {
+public enum KanbanBoardCollectionExpectation: Sendable {
     case boardMutation(generation: Int)
     case dispatch(generation: Int, board: String, mode: KanbanDispatchMode)
 }

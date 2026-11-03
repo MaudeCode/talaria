@@ -42,7 +42,7 @@ public enum AssistantActivityHeaderSummary {
     }
 }
 
-public enum AssistantActivityGroupPolicy {
+public enum AssistantActivityGroupPolicy: Sendable {
     public static func requiresGroup(for rows: [AssistantActivityRow]) -> Bool {
         rows.reduce(into: 0) { count, row in
             switch row.content {
@@ -57,7 +57,7 @@ public enum AssistantActivityGroupPolicy {
     }
 }
 
-public enum AssistantActivitySummary {
+public enum AssistantActivitySummary: Sendable {
     enum Category: Hashable {
         case command
         case read

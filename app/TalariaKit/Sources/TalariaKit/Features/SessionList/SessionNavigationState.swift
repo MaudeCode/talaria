@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SessionNavigationDestination: Hashable, Identifiable {
+public enum SessionNavigationDestination: Hashable, Identifiable, Sendable {
     case session(SessionSummary)
     case newChat(PendingNewChatRoute)
     case utility(SessionListUtilityDestination)
@@ -24,7 +24,7 @@ public enum SessionNavigationDestination: Hashable, Identifiable {
     }
 }
 
-public struct SessionNavigationState: Equatable {
+public struct SessionNavigationState: Equatable, Sendable {
     public private(set) var destination: SessionNavigationDestination? {
         // The chat a destination opens reports its own Files inspector and companion page when it appears.
         didSet {

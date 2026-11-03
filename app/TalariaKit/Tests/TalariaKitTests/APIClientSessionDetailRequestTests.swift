@@ -50,7 +50,7 @@ func testSessionColdLoadSendsExpandRenderableFlag() async throws {
         XCTAssertEqual(query["session_id"], "abc123")
         XCTAssertEqual(query["msg_limit"], "50")
         XCTAssertEqual(query["expand_renderable"], "1")
-        XCTAssertNil(query["msg_before"])
+        XCTAssertNil(query["msg_before"] as Any?)
 
         return apiTestJSONResponse("""
         { "session": { "session_id": "abc123" } }
@@ -70,7 +70,7 @@ func testSessionLoadEarlierOmitsExpandRenderableFlag() async throws {
         let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
         let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
         XCTAssertEqual(query["msg_before"], "100")
-        XCTAssertNil(query["expand_renderable"])
+        XCTAssertNil(query["expand_renderable"] as Any?)
 
         return apiTestJSONResponse("""
         { "session": { "session_id": "abc123" } }

@@ -9,7 +9,7 @@ import Foundation
 // status chip.
 
 /// A single file changed during one assistant turn.
-public struct TurnFileChange: Identifiable, Equatable {
+public struct TurnFileChange: Identifiable, Equatable, Sendable {
     /// The server's normalized path, workspace-relative or absolute as the tool reported it.
     public let path: String
     /// Added lines, from the matched `git/status` entry (`0` when there is no net change).
@@ -32,7 +32,7 @@ public struct TurnFileChange: Identifiable, Equatable {
         path.split(separator: "/").last.map(String.init) ?? path
     }
 
-    enum Action: String, Codable, Equatable {
+    enum Action: String, Codable, Equatable, Sendable {
         case edited
         case added
         case deleted
@@ -52,7 +52,7 @@ public struct TurnFileChange: Identifiable, Equatable {
 
 /// Aggregated per-turn file-change recap. An empty `changes` array means "show nothing"
 /// (a turn that changed no files, or a non-git workspace).
-public struct TurnFileChangeSummary: Equatable {
+public struct TurnFileChangeSummary: Equatable, Sendable {
     public let changes: [TurnFileChange]
 
     static let empty = TurnFileChangeSummary(changes: [])
@@ -81,7 +81,7 @@ public struct TurnFileChangeSummary: Equatable {
 }
 
 /// One file the server attributed to a settled turn (`_anchor_activity_scene.file_changes`).
-public struct AssistantTurnFileChange: Codable, Equatable {
+public struct AssistantTurnFileChange: Codable, Equatable, Sendable {
     let path: String
     let action: TurnFileChange.Action
 

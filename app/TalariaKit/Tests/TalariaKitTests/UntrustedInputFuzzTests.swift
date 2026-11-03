@@ -420,7 +420,7 @@ class UntrustedInputFuzzTests: XCTestCase {
 
     /// The decode runs under the watchdog; the inspection runs here, so a
     /// bounded assertion failure is reported against the calling test.
-    private func assertTolerantDecode<Value: Decodable>(
+    private func assertTolerantDecode<Value: Decodable & SendableMetatype>(
         _ type: Value.Type,
         from data: Data,
         seed: UInt64,

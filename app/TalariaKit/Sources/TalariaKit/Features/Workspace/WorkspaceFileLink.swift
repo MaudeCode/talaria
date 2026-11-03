@@ -12,7 +12,7 @@ import Foundation
 ///
 /// Bare relative destinations (`src/main.swift`) are not file links: a relative
 /// web URL looks the same, so they keep the ordinary link behaviour.
-public struct WorkspaceFileLink: Hashable, Identifiable {
+public struct WorkspaceFileLink: Hashable, Identifiable, Sendable {
     public let path: String
     /// One-based; nil when the destination named no line.
     public let line: Int?

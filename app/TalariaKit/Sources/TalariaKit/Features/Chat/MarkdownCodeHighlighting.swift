@@ -4,12 +4,12 @@ import OSLog
 import Splash
 import SwiftUI
 
-public struct MarkdownPlainCodeLine: Equatable, Identifiable {
+public struct MarkdownPlainCodeLine: Equatable, Identifiable, Sendable {
     public let id: Int
     public let segments: [MarkdownPlainCodeSegment]
 }
 
-public struct MarkdownPlainCodeSegment: Equatable, Identifiable {
+public struct MarkdownPlainCodeSegment: Equatable, Identifiable, Sendable {
     public let id: Int
     public let text: String
 }
@@ -80,7 +80,7 @@ public enum MarkdownPlainCodeFormatter {
 /// How a line of a `diff` or `patch` code block is tinted (TAL-447). Kinds
 /// come from each line's leading characters in one O(lines) pass with no
 /// tokenizer; the only state is the open hunk's remaining line counts.
-public enum MarkdownDiffLineKind: Equatable {
+public enum MarkdownDiffLineKind: Equatable, Sendable {
     case added
     case removed
     case hunkHeader
@@ -254,7 +254,7 @@ public enum MarkdownAttributedCodeFormatter {
     }
 }
 
-public enum MarkdownContentFallbackReason: String, Equatable {
+public enum MarkdownContentFallbackReason: String, Equatable, Sendable {
     case tooManyCharacters
     case tooManyLines
 }
@@ -281,7 +281,7 @@ enum MarkdownHighlightEngine: Equatable {
     case highlightr
 }
 
-public enum MarkdownHighlightFallbackReason: String, Equatable {
+public enum MarkdownHighlightFallbackReason: String, Equatable, Sendable {
     case streaming
     case empty
     case missingLanguage
@@ -514,7 +514,7 @@ public enum MarkdownHighlightPolicy {
     }
 }
 
-public struct MarkdownCodeHighlightRequest: Equatable {
+public struct MarkdownCodeHighlightRequest: Equatable, Sendable {
     public let code: String
     let language: String?
     let colorScheme: ColorScheme
@@ -533,7 +533,7 @@ public enum MarkdownCodeHighlightResult {
     case plain(reason: MarkdownHighlightFallbackReason, normalizedLanguage: String?)
 }
 
-public enum MarkdownCodeHighlighter {
+public enum MarkdownCodeHighlighter: Sendable {
     @MainActor
     public static func highlightedCode(for request: MarkdownCodeHighlightRequest) -> MarkdownCodeHighlightResult {
         let decision = MarkdownHighlightPolicy.decision(
@@ -621,7 +621,7 @@ private final class StableHighlightrStore {
 /// the row growing — rows end up overlapping (issue #233). Measuring the
 /// child at the clamped width makes the reported height match what is
 /// actually drawn.
-public struct TableCellWidthCap: Layout {
+public struct TableCellWidthCap: Layout, Sendable {
     let minWidth: CGFloat
     let maxWidth: CGFloat
 

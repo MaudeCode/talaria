@@ -1,13 +1,13 @@
 import Foundation
 
-public enum ApprovalChoice: String, Codable, CaseIterable, Equatable {
+public enum ApprovalChoice: String, Codable, CaseIterable, Equatable, Sendable {
     case once
     case session
     case always
     case deny
 }
 
-public struct ApprovalPendingResponse: Decodable, Equatable {
+public struct ApprovalPendingResponse: Decodable, Equatable, Sendable {
     public let pending: PendingApproval?
     public let pendingCount: Int?
 
@@ -45,7 +45,7 @@ public struct ApprovalPendingResponse: Decodable, Equatable {
     }
 }
 
-public struct PendingApproval: Decodable, Equatable, Identifiable {
+public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     public var id: String {
         if let approvalId, !approvalId.isEmpty {
             return approvalId
@@ -188,7 +188,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
     }
 }
 
-public struct ApprovalRespondResponse: Decodable, Equatable {
+public struct ApprovalRespondResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     let choice: ApprovalChoice?
     /// Server cleared a stale card whose approval already resolved (benign 200; issue #25).
@@ -218,7 +218,7 @@ public struct ApprovalRespondResponse: Decodable, Equatable {
     }
 }
 
-public struct SessionYoloResponse: Decodable, Equatable {
+public struct SessionYoloResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let yoloEnabled: Bool?
 

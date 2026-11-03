@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-public enum MarkdownMathSegment: Equatable {
+public enum MarkdownMathSegment: Equatable, Sendable {
     case markdown(String)
     case displayMath(String)
 }
@@ -13,7 +13,7 @@ public enum MarkdownMathSegment: Equatable {
 /// `MarkdownMathFormatter.replacingInlineMath(in:)`, so callers must not run
 /// that pass again — doing so scans the whole string a second time for no
 /// change in output.
-public enum MarkdownMathLayout: Equatable {
+public enum MarkdownMathLayout: Equatable, Sendable {
     case plain(String)
     case segmented([MarkdownMathSegment])
 }
@@ -324,13 +324,14 @@ public enum MarkdownMathLayoutCache {
     /// not stored.
     static let maxCachedCharacterCount = 100_000
 
-    private static let storage: NSCache<NSString, Box> = {
+    /// `nonisolated(unsafe)`: `NSCache` serializes access with its own internal lock.
+    nonisolated(unsafe) private static let storage: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>()
         cache.countLimit = 240
         return cache
     }()
 
-    private final class Box {
+    private final class Box: Sendable {
         let layout: MarkdownMathLayout
         init(_ layout: MarkdownMathLayout) { self.layout = layout }
     }

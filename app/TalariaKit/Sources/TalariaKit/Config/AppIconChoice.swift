@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AppIconChoice: String, CaseIterable, Identifiable {
+public enum AppIconChoice: String, CaseIterable, Identifiable, Sendable {
     case system
     case light
     case dark

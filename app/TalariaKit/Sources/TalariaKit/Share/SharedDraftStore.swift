@@ -67,7 +67,7 @@ public struct SharedImportReservation: Equatable, Identifiable, Sendable {
     public var id: String { reservationID }
 }
 
-public enum SharedDraftStoreError: LocalizedError, Equatable {
+public enum SharedDraftStoreError: LocalizedError, Equatable, Sendable {
     case totalAttachmentBytesExceeded(maximumBytes: Int)
 
     public var errorDescription: String? {

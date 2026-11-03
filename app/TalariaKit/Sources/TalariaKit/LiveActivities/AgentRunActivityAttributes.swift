@@ -3,8 +3,8 @@ import Foundation
 import ActivityKit
 #endif
 
-public struct AgentRunActivityAttributes: Codable {
-    public struct ContentState: Codable, Hashable {
+public struct AgentRunActivityAttributes: Codable, Sendable {
+    public struct ContentState: Codable, Hashable, Sendable {
         public var sessionID: String
         public var sessionTitle: String
         public var status: AgentRunActivityStatus
@@ -68,9 +68,9 @@ public struct AgentRunActivityAttributes: Codable {
     }
 }
 
-public struct TalariaAggregateActivityAttributes: Codable {
-    public struct ContentState: Codable, Hashable {
-        public struct Row: Codable, Hashable, Identifiable {
+public struct TalariaAggregateActivityAttributes: Codable, Sendable {
+    public struct ContentState: Codable, Hashable, Sendable {
+        public struct Row: Codable, Hashable, Identifiable, Sendable {
             var completionId: String? = nil
             public var streamId: String? = nil
             public var publisherId: String
@@ -130,7 +130,7 @@ extension AgentRunActivityAttributes: ActivityAttributes {}
 extension TalariaAggregateActivityAttributes: ActivityAttributes {}
 #endif
 
-public enum TalariaAggregateLiveActivityPresentation {
+public enum TalariaAggregateLiveActivityPresentation: Sendable {
     public static let lockScreenRowLimit = 5
     public static let expandedIslandRowLimit = 3
 
@@ -220,7 +220,7 @@ public enum TalariaAggregateLiveActivityPresentation {
     }
 }
 
-public enum TalariaLiveActivityMode: String, CaseIterable, Identifiable {
+public enum TalariaLiveActivityMode: String, CaseIterable, Identifiable, Sendable {
     case perSession
     case allRunning
 
@@ -244,7 +244,7 @@ public enum TalariaRelayNotifications {
     public static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
 }
 
-public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable {
+public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sendable {
     case starting
     case thinking
     case usingTool
@@ -337,7 +337,7 @@ enum AgentRunActivityToolKind: Equatable {
     case command
 }
 
-public enum AgentRunActivitySanitizer {
+public enum AgentRunActivitySanitizer: Sendable {
     static let maximumSessionTitleCharacters = 42
     static let maximumActivityCharacters = 64
     static let maximumExcerptCharacters = 140

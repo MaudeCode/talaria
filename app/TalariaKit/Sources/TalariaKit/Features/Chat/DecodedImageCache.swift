@@ -2,7 +2,7 @@ import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-public struct TranscriptMediaPreviewItem: Identifiable, Equatable {
+public struct TranscriptMediaPreviewItem: Identifiable, Equatable, Sendable {
     public let reference: TranscriptMediaReference
 
     public init(reference: TranscriptMediaReference) {
@@ -27,7 +27,7 @@ public actor DecodedImageCache {
 
     public func image(
         for key: DecodedImageCacheKey,
-        load: @escaping () async -> PlatformImage?
+        load: @escaping @Sendable () async -> PlatformImage?
     ) async -> PlatformImage? {
         if let cached = cache.object(forKey: key.cacheKey) {
             return cached
@@ -50,7 +50,7 @@ public actor DecodedImageCache {
     }
 }
 
-public struct DecodedImageCacheKey: Hashable {
+public struct DecodedImageCacheKey: Hashable, Sendable {
     let namespace: String
     let resourceID: String
 

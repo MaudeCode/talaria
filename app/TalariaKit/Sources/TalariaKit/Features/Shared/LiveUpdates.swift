@@ -61,7 +61,7 @@ public enum SessionsChangeTrigger: Equatable, Sendable {
 /// Tells a real return from the background apart from an `.inactive` blip such as Control Center
 /// or the notification shade. iOS goes `.background` → `.inactive` → `.active`, so the return is
 /// the first `.active` after a `.background`.
-public struct ForegroundReturnDetector {
+public struct ForegroundReturnDetector: Sendable {
     private var wasInBackground = false
 
     public init() {}

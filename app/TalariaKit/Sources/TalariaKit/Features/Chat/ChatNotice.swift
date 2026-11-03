@@ -2,7 +2,7 @@ import Foundation
 
 /// TAL-1001: the chat's one short notice above the composer, at an Agent notice's level so both share one chip. It
 /// goes on its own or on tap and is never saved.
-public struct ChatNotice: Equatable, Identifiable {
+public struct ChatNotice: Equatable, Identifiable, Sendable {
     public let id: UUID
     public let text: String
     public let level: SessionNotice.Level

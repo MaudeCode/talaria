@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AgentLiveActivityEvent: Equatable {
+public enum AgentLiveActivityEvent: Equatable, Sendable {
     case sessionTitle(String)
     case token(String)
     case interimAssistant(String)
@@ -18,7 +18,7 @@ public enum AgentLiveActivityEvent: Equatable {
 /// isn't currently driving — a reconciliation candidate (#246). Carries the bits
 /// the reconciler needs to decide whether a "response complete" notification is
 /// still worth firing: the run's session and when it last advanced (#248).
-public struct OrphanedLiveActivity: Equatable {
+public struct OrphanedLiveActivity: Equatable, Sendable {
     public let streamID: String
     public let sessionID: String
     public let updatedAt: Date

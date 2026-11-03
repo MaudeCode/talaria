@@ -1,18 +1,18 @@
 import Foundation
 
-public struct ToolCallDisplayContent: Equatable {
+public struct ToolCallDisplayContent: Equatable, Sendable {
     public let argumentRows: [ToolCallArgumentDisplay]
     public let result: ToolCallResultDisplay?
 }
 
-public struct ToolCallArgumentDisplay: Identifiable, Equatable {
+public struct ToolCallArgumentDisplay: Identifiable, Equatable, Sendable {
     public let key: String
     public let value: String
 
     public var id: String { key }
 }
 
-public struct ToolCallResultDisplay: Equatable {
+public struct ToolCallResultDisplay: Equatable, Sendable {
     public let title: String
     public let text: String
     public let isMonospaced: Bool

@@ -1,6 +1,6 @@
 public import Foundation
 
-public struct SlashCommand: Identifiable, Equatable {
+public struct SlashCommand: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public let name: String
     public let description: String
@@ -30,19 +30,19 @@ public struct SlashCommand: Identifiable, Equatable {
     }
 }
 
-public enum SlashCommandHandler: Equatable {
+public enum SlashCommandHandler: Equatable, Sendable {
     case clientSide(ClientSideAction)
     case serverSide(ServerSideAction)
 }
 
-public enum ClientSideAction: String, Equatable {
+public enum ClientSideAction: String, Equatable, Sendable {
     case clear
     case stop
     case new
     case help
 }
 
-public enum ServerSideAction: String, Equatable {
+public enum ServerSideAction: String, Equatable, Sendable {
     case model
     case workspace
     case reasoning
@@ -62,7 +62,7 @@ public enum ServerSideAction: String, Equatable {
     case goal
 }
 
-public enum SlashCommandSubArgs: Equatable {
+public enum SlashCommandSubArgs: Equatable, Sendable {
     case none
     case models
     case personalities

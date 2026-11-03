@@ -115,7 +115,7 @@ extension ModelsResponse {
 /// Response of `GET /api/models/live`: the uncached model list for one provider.
 /// Shape: `{"provider": "<id>", "models": [{"id", "label"}], "count": <int>}`;
 /// the server echoes back the provider it resolved when none was requested.
-public struct ModelsLiveResponse: Decodable, Equatable {
+public struct ModelsLiveResponse: Decodable, Equatable, Sendable {
     let source: String?
     public let availability: CatalogAvailability?
     let provider: String?

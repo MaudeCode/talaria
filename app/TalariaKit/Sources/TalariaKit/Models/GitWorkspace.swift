@@ -15,12 +15,12 @@ import Foundation
 
 // MARK: - git-info (lightweight badge data)
 
-public struct GitInfoResponse: Decodable, Equatable {
+public struct GitInfoResponse: Decodable, Equatable, Sendable {
     /// `null` when the session workspace is not a git repository.
     public let git: GitInfo?
 }
 
-public struct GitInfo: Decodable, Equatable {
+public struct GitInfo: Decodable, Equatable, Sendable {
     public let branch: String?
     public let dirty: Int?
     let modified: Int?
@@ -32,11 +32,11 @@ public struct GitInfo: Decodable, Equatable {
 
 // MARK: - git/status (the status sheet's source of truth)
 
-public struct GitStatusResponse: Decodable, Equatable {
+public struct GitStatusResponse: Decodable, Equatable, Sendable {
     public let git: GitStatus?
 }
 
-public struct GitStatus: Decodable, Equatable {
+public struct GitStatus: Decodable, Equatable, Sendable {
     /// `false` for a non-repo workspace (still an HTTP 200 response).
     public let isGit: Bool?
     public let branch: String?
@@ -73,7 +73,7 @@ struct GitTotals: Decodable, Equatable {
     let conflicts: Int?
 }
 
-public struct GitFile: Decodable, Equatable, Identifiable {
+public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
     public let id: String
     public let path: String?
     let oldPath: String?
@@ -138,7 +138,7 @@ public struct GitFile: Decodable, Equatable, Identifiable {
 extension GitFile {
     /// A normalized change kind derived from the booleans first (the reliable signal),
     /// falling back to the raw `status` code. UI maps this to a localized chip + colour.
-    public enum ChangeKind: Equatable {
+    public enum ChangeKind: Equatable, Sendable {
         case conflict
         case untracked
         case added
@@ -195,11 +195,11 @@ extension GitFile {
 
 // MARK: - git/branches (decoded + tested now; interactive picker is Slice B)
 
-public struct GitBranchesResponse: Decodable, Equatable {
+public struct GitBranchesResponse: Decodable, Equatable, Sendable {
     public let branches: GitBranches?
 }
 
-public struct GitBranches: Decodable, Equatable {
+public struct GitBranches: Decodable, Equatable, Sendable {
     let isGit: Bool?
     public let current: String?
     let detached: Bool?
@@ -211,7 +211,7 @@ public struct GitBranches: Decodable, Equatable {
     let behind: Int?
 }
 
-public struct GitBranchRef: Decodable, Equatable {
+public struct GitBranchRef: Decodable, Equatable, Sendable {
     public let name: String?
     let sha: String?
     let updated: Int?
@@ -223,12 +223,12 @@ public struct GitBranchRef: Decodable, Equatable {
     public let behind: Int?
 }
 
-public enum GitBranchMode: String, Equatable {
+public enum GitBranchMode: String, Equatable, Sendable {
     case local
     case remote
 }
 
-public struct GitCheckoutTarget: Equatable, Identifiable {
+public struct GitCheckoutTarget: Equatable, Identifiable, Sendable {
     let ref: String
     let mode: GitBranchMode
     var newBranch: String? = nil
@@ -245,7 +245,7 @@ public struct GitCheckoutTarget: Equatable, Identifiable {
     public var displayName: String { newBranch ?? ref }
 }
 
-public struct GitRemoteActionResponse: Decodable, Equatable {
+public struct GitRemoteActionResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let message: String?
     public let status: GitStatus?
@@ -253,7 +253,7 @@ public struct GitRemoteActionResponse: Decodable, Equatable {
 
 /// Both checkout endpoints currently return `status`; `git` is retained as a tolerant
 /// alias for servers that shipped the earlier documented response name.
-public struct GitCheckoutResponse: Decodable, Equatable {
+public struct GitCheckoutResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let message: String?
     let status: GitStatus?
@@ -280,7 +280,7 @@ struct GitRestoredStash: Decodable, Equatable {
 
 /// Response for `stage` / `unstage` / `discard`, which return the refreshed status under
 /// the `git` key (the commit endpoints return it under `status` instead — see below).
-public struct GitMutationResponse: Decodable, Equatable {
+public struct GitMutationResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let message: String?
     let git: GitStatus?
@@ -290,7 +290,7 @@ public struct GitMutationResponse: Decodable, Equatable {
 
 /// Response for `commit` (`{ok,commit,status}`) and `commit-selected`
 /// (`{ok,commit,paths,status}`). Tolerant: `status` is decoded from either key.
-public struct GitCommitResponse: Decodable, Equatable {
+public struct GitCommitResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let message: String?
     let commit: String?
@@ -307,7 +307,7 @@ public struct GitCommitResponse: Decodable, Equatable {
 }
 
 /// Response for the (ungated) `commit-message` / `commit-message-selected` endpoints.
-public struct GitCommitMessageResponse: Decodable, Equatable {
+public struct GitCommitMessageResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let message: String?
     /// `true` when the diff exceeded the server's 64 KiB prompt limit, so the
@@ -317,11 +317,11 @@ public struct GitCommitMessageResponse: Decodable, Equatable {
 
 // MARK: - git/diff (per-file unified diff)
 
-public struct GitDiffResponse: Decodable, Equatable {
+public struct GitDiffResponse: Decodable, Equatable, Sendable {
     public let diff: GitDiff?
 }
 
-public struct GitDiff: Decodable, Equatable {
+public struct GitDiff: Decodable, Equatable, Sendable {
     let path: String?
     let kind: String?
     public let binary: Bool?

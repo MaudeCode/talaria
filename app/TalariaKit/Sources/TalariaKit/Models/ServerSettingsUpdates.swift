@@ -1,6 +1,6 @@
 public import Foundation
 
-public struct SettingsResponse: Decodable, Equatable {
+public struct SettingsResponse: Decodable, Equatable, Sendable {
     let botName: String?
     public let webuiVersion: String?
     let agentVersion: String?
@@ -47,7 +47,7 @@ public struct SettingsResponse: Decodable, Equatable {
     }
 }
 
-public struct DefaultModelResponse: Decodable, Equatable {
+public struct DefaultModelResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     let model: String?
 }
@@ -55,14 +55,14 @@ public struct DefaultModelResponse: Decodable, Equatable {
 /// `GET /api/updates/check`. Every field is optional: older servers, the
 /// `{ "disabled": true }` opt-out payload, and failed/`stale_check` responses
 /// all omit different keys, and we never crash on a shape we don't expect.
-public struct UpdatesCheckResponse: Decodable, Equatable {
+public struct UpdatesCheckResponse: Decodable, Equatable, Sendable {
     public let webui: UpdateTargetInfo?
     public let agent: UpdateTargetInfo?
     let checkedAt: Double?
     let disabled: Bool?
 }
 
-public struct UpdateTargetInfo: Decodable, Equatable {
+public struct UpdateTargetInfo: Decodable, Equatable, Sendable {
     let name: String?
     public let behind: Int?
     let currentSha: String?
@@ -90,8 +90,8 @@ public enum UpdateTarget: String, Encodable, Sendable {
 
 /// `POST /api/updates/summary` (TAL-759): the server's summary of one target's pending update,
 /// already split into display-ready headed bullet lists. Missing sections decode as empty.
-public struct UpdatesSummaryResponse: Decodable, Equatable {
-    public struct Section: Decodable, Equatable, Hashable {
+public struct UpdatesSummaryResponse: Decodable, Equatable, Sendable {
+    public struct Section: Decodable, Equatable, Hashable, Sendable {
         public let title: String
         public let items: [String]
     }
@@ -124,7 +124,7 @@ extension UpdatesCheckResponse {
     /// What the Settings screen should show for the webui repo. `.unavailable`
     /// means "show the version only, no indicator" — the server turned the check
     /// off, errored, returned a stale result, or omitted the webui block.
-    public enum WebUIUpdateState: Equatable {
+    public enum WebUIUpdateState: Equatable, Sendable {
         case upToDate
         case updateAvailable(behind: Int)
         case unavailable
@@ -134,7 +134,7 @@ extension UpdatesCheckResponse {
     /// Unlike `webuiUpdateState`, this keeps `disabled` and `error` apart so the
     /// "Check for updates" popup can word each case for the user — the passive
     /// inline note treats both as "no indicator" and collapses them together.
-    public enum ForcedCheckOutcome: Equatable {
+    public enum ForcedCheckOutcome: Equatable, Sendable {
         case updateAvailable(behind: Int)
         case upToDate
         /// The server reports a newer state it cannot apply itself (a manual install or local changes).
@@ -185,7 +185,7 @@ extension UpdatesCheckResponse {
 /// `restart_scheduled`), restart-blocked (`restart_blocked` + active counts),
 /// merge conflict (`conflict`), diverged history (`diverged`), or a generic
 /// failure — and may add more over time. We never crash on an unexpected shape.
-public struct UpdatesApplyResponse: Decodable, Equatable {
+public struct UpdatesApplyResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let message: String?
     let target: String?
@@ -200,7 +200,7 @@ public struct UpdatesApplyResponse: Decodable, Equatable {
     public let notificationId: String?
 }
 
-public struct UpdateNotificationsResponse: Decodable, Equatable {
+public struct UpdateNotificationsResponse: Decodable, Equatable, Sendable {
     let scopeId: String
     public let notifications: [UpdateNotificationRecord]
     public let unreadCount: Int
@@ -208,11 +208,11 @@ public struct UpdateNotificationsResponse: Decodable, Equatable {
     public let canClear: Bool
 }
 
-public struct UpdateNotificationDismissResponse: Decodable, Equatable {
+public struct UpdateNotificationDismissResponse: Decodable, Equatable, Sendable {
     let ok: Bool
 }
 
-public struct UpdateNotificationRecord: Decodable, Equatable, Identifiable {
+public struct UpdateNotificationRecord: Decodable, Equatable, Identifiable, Sendable {
     public let id: String
     let kind: String
     let target: String?
@@ -238,39 +238,32 @@ public struct UpdateNotificationRecord: Decodable, Equatable, Identifiable {
     public let canDismiss: Bool
 }
 
-public struct UpdateNotificationAction: Decodable, Equatable, Identifiable {
+public struct UpdateNotificationAction: Decodable, Equatable, Identifiable, Sendable {
     public let id: String
     public let label: String
     public let style: String
     let acknowledges: Bool
 }
 
-public struct UpdateNotificationDestination: Decodable, Equatable {
+public struct UpdateNotificationDestination: Decodable, Equatable, Sendable {
     public let key: String
     public let label: String
 }
 
 public enum UpdateNotificationTimestamp {
-    private static let standard: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
-    private static let fractional: ISO8601DateFormatter = {
+    /// `ISO8601DateFormatter` is not `Sendable`, so each parse builds its own rather than sharing a static one.
+    public static func date(from value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    public static func date(from value: String) -> Date? {
-        fractional.date(from: value) ?? standard.date(from: value)
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }
 
 extension UpdatesApplyResponse {
     /// How the Settings screen should react to an apply attempt.
-    public enum Outcome: Equatable {
+    public enum Outcome: Equatable, Sendable {
         /// The server is updating or recovering; follow its notification until it finishes.
         case applying
         /// Active chat/agent work blocked the restart. Not a failure — surface

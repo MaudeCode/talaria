@@ -1,6 +1,6 @@
 import Foundation
 
-public enum MemorySection: String, CaseIterable, Decodable, Encodable, Equatable, Identifiable {
+public enum MemorySection: String, CaseIterable, Decodable, Encodable, Equatable, Identifiable, Sendable {
     case memory
     case user
     case soul
@@ -8,7 +8,7 @@ public enum MemorySection: String, CaseIterable, Decodable, Encodable, Equatable
     public var id: String { rawValue }
 }
 
-public struct MemoryResponse: Decodable, Equatable {
+public struct MemoryResponse: Decodable, Equatable, Sendable {
     public let memory: String?
     public let user: String?
     public let soul: String?
@@ -98,7 +98,7 @@ extension MemoryResponse {
     }
 }
 
-public struct MemoryWriteResponse: Decodable, Equatable {
+public struct MemoryWriteResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     let section: MemorySection?
     let path: String?

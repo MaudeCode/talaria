@@ -3,7 +3,7 @@ import Photos
 import SwiftUI
 import UniformTypeIdentifiers
 
-public struct ExportedFileDocument: FileDocument {
+public struct ExportedFileDocument: FileDocument, Sendable {
     public static var readableContentTypes: [UTType] { [.data] }
 
     public let data: Data
@@ -113,7 +113,7 @@ private struct StagedPhotoLibraryVideo {
     }
 }
 
-public enum PhotoLibrarySaveError: LocalizedError, Equatable {
+public enum PhotoLibrarySaveError: LocalizedError, Equatable, Sendable {
     case notAuthorized
     case notImage
     case notPhotosMedia

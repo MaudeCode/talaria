@@ -14,7 +14,7 @@ public enum CacheFallbackReason: Equatable, Sendable {
     case connectionInterrupted
 }
 
-public enum CacheFallbackPolicy {
+public enum CacheFallbackPolicy: Sendable {
     public static func shouldUseCache(for error: Error) -> Bool {
         reason(for: error) != nil
     }

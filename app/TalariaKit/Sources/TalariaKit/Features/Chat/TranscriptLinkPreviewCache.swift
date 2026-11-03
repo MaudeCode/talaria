@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TranscriptLinkPreviewSnapshot: Equatable {
+public struct TranscriptLinkPreviewSnapshot: Equatable, Sendable {
     public let title: String?
     public let displayURL: URL?
     public let imageData: Data?

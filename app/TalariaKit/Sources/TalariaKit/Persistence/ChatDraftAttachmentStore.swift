@@ -24,7 +24,7 @@ public protocol ChatDraftAttachmentStoring: Sendable {
 /// that is merely unreadable *right now* — data protection before first
 /// unlock, for instance — would otherwise be reported as permanently lost and
 /// dropped from the draft, and its file later reclaimed by the sweep.
-public enum ChatDraftAttachmentReadFailure: Equatable {
+public enum ChatDraftAttachmentReadFailure: Equatable, Sendable {
     /// The copy is gone, or its recorded name can never resolve. The record
     /// cannot be restored now or later, so it is dropped.
     case unrecoverable

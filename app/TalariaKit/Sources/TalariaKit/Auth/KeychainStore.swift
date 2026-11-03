@@ -16,7 +16,7 @@ public protocol KeychainStoring {
 }
 
 public struct KeychainStore: KeychainStoring {
-    public enum Key: String {
+    public enum Key: String, Sendable {
         case serverURL = "server_url"
         // JSON-encoded [{name, value}] of user-supplied request headers (#255).
         // Values may be secrets, so the list lives in the Keychain, not defaults.

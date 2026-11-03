@@ -50,7 +50,7 @@ extension AuthAPIClient {
     }
 }
 
-public enum OIDCSignInError: LocalizedError, Equatable {
+public enum OIDCSignInError: LocalizedError, Equatable, Sendable {
     case alreadyInProgress
     case alreadyConfigured
     case unavailable

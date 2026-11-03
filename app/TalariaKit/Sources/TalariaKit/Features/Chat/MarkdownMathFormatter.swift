@@ -1,6 +1,6 @@
 import Foundation
 
-public struct MarkdownMathFormatter {
+public struct MarkdownMathFormatter: Sendable {
     static func replacingInlineMath(in markdown: String) -> String {
         let characters = Array(markdown)
         guard characters.count >= 3 else { return markdown }

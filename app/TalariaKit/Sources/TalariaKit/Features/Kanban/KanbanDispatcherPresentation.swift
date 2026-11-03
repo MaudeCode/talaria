@@ -1,6 +1,6 @@
 import SwiftUI
 
-public enum KanbanDispatcherPresentation {
+public enum KanbanDispatcherPresentation: Sendable {
     static func hasResult(_ state: KanbanDispatchState?) -> Bool {
         guard let state, state.result != nil else { return false }
         switch state.phase {

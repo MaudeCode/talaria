@@ -1,5 +1,5 @@
 /// A Settings destination that an external entry point can open directly.
-public enum SettingsScrollAnchor: Hashable {
+public enum SettingsScrollAnchor: Hashable, Sendable {
     case servers
     case providerQuotas
     case system

@@ -11,7 +11,7 @@ final class FeedbackComposerTests: XCTestCase {
     private func defaults() -> UserDefaults {
         let name = "FeedbackComposerTests.\(UUID())"
         let defaults = UserDefaults(suiteName: name)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
         return defaults
     }
 

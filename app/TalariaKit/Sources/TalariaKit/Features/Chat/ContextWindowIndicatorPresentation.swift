@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public struct ContextWindowIndicatorPresentation: Equatable {
+public struct ContextWindowIndicatorPresentation: Equatable, Sendable {
     let percent: Int?
 
     public init(snapshot: ContextWindowSnapshot?) {

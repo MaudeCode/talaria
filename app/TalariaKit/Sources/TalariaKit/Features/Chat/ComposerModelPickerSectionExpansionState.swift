@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ComposerModelPickerSectionExpansionState {
+public struct ComposerModelPickerSectionExpansionState: Sendable {
 
     public init() {
     }

@@ -14,7 +14,7 @@ private let authManagerLogger = Logger(
 @MainActor
 @Observable
 public final class AuthManager {
-    public enum State: Equatable {
+    public enum State: Equatable, Sendable {
         case unconfigured
         case loggedOut(server: URL)
         case loggedIn(server: URL)
@@ -518,7 +518,7 @@ public final class AuthManager {
 
     /// Outcome of `addServer`, so the in-app add-server flow can reveal the
     /// password field only when the server actually needs one (#17).
-    public enum AddServerOutcome: Equatable {
+    public enum AddServerOutcome: Equatable, Sendable {
         case added(URL)
         case needsPassword
         case needsOIDC

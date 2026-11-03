@@ -1,11 +1,11 @@
 import Foundation
 
-public enum HapticButtonFeedbackStyle: Equatable {
+public enum HapticButtonFeedbackStyle: Equatable, Sendable {
     case light
     case medium
 }
 
-public enum AppHapticFeedback: Equatable {
+public enum AppHapticFeedback: Equatable, Sendable {
     case lightImpact
     case mediumImpact
     case selection

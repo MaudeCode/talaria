@@ -221,7 +221,7 @@ enum ConfigurationSyncAccountAvailability: Equatable, Sendable {
     case unavailable(String)
 }
 
-public enum ConfigurationSyncStoreError: Error, Equatable {
+public enum ConfigurationSyncStoreError: Error, Equatable, Sendable {
     /// No network, throttled, or CloudKit temporarily down: retry later.
     case offline
     /// Not signed in to iCloud, restricted, or the account changed under us.

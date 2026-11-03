@@ -8,7 +8,7 @@ private let chatStreamCoordinatorLogger = Logger(
     category: "ChatStreamCoordinator"
 )
 
-public struct ChatStreamCoordinatorTiming: Equatable {
+public struct ChatStreamCoordinatorTiming: Equatable, Sendable {
     let checkingInterval: TimeInterval
     let reconnectInterval: TimeInterval
     let runningToolReconnectInterval: TimeInterval
@@ -26,7 +26,7 @@ public struct ChatStreamCoordinatorTiming: Equatable {
     )
 }
 
-public struct ChatStreamLoadPreparation: Equatable {
+public struct ChatStreamLoadPreparation: Equatable, Sendable {
     public let activeStreamIDBeforeLoad: String?
     let shouldPrepareSuspendedStreamResume: Bool
     let responseGeneration: Int

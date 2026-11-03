@@ -25,7 +25,7 @@ struct ApprovalNotificationRequest: Equatable {
     }
 }
 
-protocol ApprovalNotificationScheduling {
+protocol ApprovalNotificationScheduling: Sendable {
     func authorizationStatus() async -> UNAuthorizationStatus
     func schedule(_ request: ApprovalNotificationRequest) async
 }

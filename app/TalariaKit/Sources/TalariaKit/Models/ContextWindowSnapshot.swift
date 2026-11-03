@@ -2,7 +2,7 @@ import Foundation
 
 /// The context ring's figures. The server computes the used tokens, the window, and both percents (TAL-299);
 /// a nil figure means unknown, and the ring then shows no percentage.
-public struct ContextWindowSnapshot: Decodable, Equatable {
+public struct ContextWindowSnapshot: Decodable, Equatable, Sendable {
     let contextUsedTokens: Int?
     let contextWindowTokens: Int?
     let contextUsagePercent: Int?

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ClarificationPendingResponse: Decodable, Equatable {
+public struct ClarificationPendingResponse: Decodable, Equatable, Sendable {
     public let pending: PendingClarification?
     public let pendingCount: Int?
 
@@ -51,7 +51,7 @@ public struct ClarificationPendingResponse: Decodable, Equatable {
     }
 }
 
-public struct PendingClarification: Decodable, Equatable, Identifiable {
+public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable {
     public var id: String {
         if let clarifyId, !clarifyId.isEmpty {
             return clarifyId
@@ -130,16 +130,16 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
 /// The Agent asks for a password manager's master password, a login to save, a one-time code (TAL-887), or a skill's
 /// missing environment secret (TAL-1046). The server owns every field; the answers go back once, keyed by field, and
 /// are never kept. An unknown kind or field fails the whole prompt's decode, so it renders nothing.
-public struct VaultPrompt: Decodable, Equatable {
-    public enum Kind: String, Decodable {
+public struct VaultPrompt: Decodable, Equatable, Sendable {
+    public enum Kind: String, Decodable, Sendable {
         case unlock = "vault_unlock"
         case saveLogin = "vault_save_login"
         case code = "vault_code"
         case skillSecret = "skill_secret"
     }
 
-    public struct Field: Decodable, Equatable, Identifiable {
-        public enum Key: String, Decodable {
+    public struct Field: Decodable, Equatable, Identifiable, Sendable {
+        public enum Key: String, Decodable, Sendable {
             case masterPassword = "master_password"
             case identifier, password, code, secret
         }
@@ -159,7 +159,7 @@ public struct VaultPrompt: Decodable, Equatable {
     public let fields: [Field]
     public let timeoutAt: Double
 
-    public struct Skill: Decodable, Equatable {
+    public struct Skill: Decodable, Equatable, Sendable {
         public let envVar: String
         public let skillName: String
         public let help: String?
@@ -181,7 +181,7 @@ public struct VaultPrompt: Decodable, Equatable {
 }
 
 /// Server-owned display fields for one clarification question.
-public struct ClarificationStep: Decodable, Equatable {
+public struct ClarificationStep: Decodable, Equatable, Sendable {
     public let qid: String
     public let question: String
     public let choices: [String]
@@ -202,7 +202,7 @@ public struct ClarificationStep: Decodable, Equatable {
     }
 }
 
-public struct ClarificationRespondResponse: Decodable, Equatable {
+public struct ClarificationRespondResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let response: String?
     /// The prompt already expired or was resolved (paired with a 409; issue #25).

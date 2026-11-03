@@ -1,7 +1,7 @@
 public import Foundation
 
-public struct AssistantActivityRow: Identifiable, Equatable {
-    public struct Reasoning: Equatable {
+public struct AssistantActivityRow: Identifiable, Equatable, Sendable {
+    public struct Reasoning: Equatable, Sendable {
         public var text: String
         public var titles: [String]
 
@@ -11,7 +11,7 @@ public struct AssistantActivityRow: Identifiable, Equatable {
         }
     }
 
-    public struct Steering: Equatable {
+    public struct Steering: Equatable, Sendable {
         public let id: String
         public let text: String
         public let submittedAt: Double?
@@ -20,7 +20,7 @@ public struct AssistantActivityRow: Identifiable, Equatable {
         var phaseDuration: Double? = nil
     }
 
-    public enum Content: Equatable {
+    public enum Content: Equatable, Sendable {
         case prose(String)
         case reasoning(Reasoning)
         case tools([ToolCall])
@@ -59,7 +59,7 @@ public struct AssistantActivityRow: Identifiable, Equatable {
 }
 
 /// Localized wording for the server's turn outcome; an ordinary completed turn shows none.
-public enum AssistantTurnOutcome {
+public enum AssistantTurnOutcome: Sendable {
     public static func label(for terminalState: String?) -> String? {
         switch terminalState {
         case nil, "", "completed", "running": nil
@@ -75,7 +75,7 @@ public enum AssistantTurnOutcome {
 
 /// What one assistant turn's block lays out: its rows in order, whether the server's settled scene folds its work
 /// under "Worked", and whether its last row is still being produced.
-public struct AssistantTurnLayout: Equatable {
+public struct AssistantTurnLayout: Equatable, Sendable {
     public let rows: [AssistantActivityRow]
     public let foldsWork: Bool
     public let isLive: Bool
@@ -148,15 +148,15 @@ public struct AssistantTurnLayout: Equatable {
     }
 }
 
-public struct CompletedAssistantTurn: Equatable {
-    public struct Phase: Identifiable, Equatable {
+public struct CompletedAssistantTurn: Equatable, Sendable {
+    public struct Phase: Identifiable, Equatable, Sendable {
         public let id: String
         public let workRows: [AssistantActivityRow]
         public let steeringAfter: AssistantActivityRow.Steering?
     }
 
-    public struct Segment: Identifiable, Equatable {
-        public enum Content: Equatable {
+    public struct Segment: Identifiable, Equatable, Sendable {
+        public enum Content: Equatable, Sendable {
             case activity([AssistantActivityRow])
             case prose(String)
             case steering(AssistantActivityRow.Steering)
@@ -298,7 +298,7 @@ public struct CompletedAssistantTurn: Equatable {
     }
 }
 
-public struct AssistantActivityTimeline: Equatable {
+public struct AssistantActivityTimeline: Equatable, Sendable {
     public private(set) var rows: [AssistantActivityRow] = []
 
     var persistedContentParts: [JSONValue] {
@@ -838,7 +838,7 @@ public struct AssistantActivityTimeline: Equatable {
     }
 }
 
-public struct ReasoningGroup: Identifiable, Equatable {
+public struct ReasoningGroup: Identifiable, Equatable, Sendable {
     public let id: String
     public let anchorMessageID: String?
     public let text: String
@@ -852,7 +852,7 @@ public struct ReasoningGroup: Identifiable, Equatable {
     }
 }
 
-public struct TranscriptMessage: Identifiable, Equatable {
+public struct TranscriptMessage: Identifiable, Equatable, Sendable {
     public let loadedIndex: Int
     public let renderID: String
     public let anchorID: String
@@ -871,15 +871,15 @@ public struct TranscriptMessage: Identifiable, Equatable {
     }
 }
 
-public struct TranscriptAssistantSegment: Equatable {
+public struct TranscriptAssistantSegment: Equatable, Sendable {
     public let anchorID: String
     let message: ChatMessage
 }
 
-public struct MessageActionContext: Equatable, Identifiable {
+public struct MessageActionContext: Equatable, Identifiable, Sendable {
     public var id: String { messageID }
 
-    public enum Role: Equatable {
+    public enum Role: Equatable, Sendable {
         case user
         case assistant
     }
@@ -918,8 +918,8 @@ public struct MessageActionContext: Equatable, Identifiable {
 
 /// An edit or regenerate the server held because its cut discards more than one user turn (TAL-929).
 /// `discardMessages` is the server's count of the later messages the cut removes, and `confirmToken` confirms it.
-public struct DeepTruncateConfirmation: Equatable, Identifiable {
-    public enum Action: Equatable {
+public struct DeepTruncateConfirmation: Equatable, Identifiable, Sendable {
+    public enum Action: Equatable, Sendable {
         case edit(newText: String)
         case regenerate
     }
@@ -932,7 +932,7 @@ public struct DeepTruncateConfirmation: Equatable, Identifiable {
 }
 
 /// Uses the same held-action/token pattern as DeepTruncateConfirmation, without a transcript cut's message context.
-public struct ModelSwitchConfirmation: Equatable, Identifiable {
+public struct ModelSwitchConfirmation: Equatable, Identifiable, Sendable {
     public let id = UUID()
     public let warnings: [ModelConfirmationRequired.Warning]
     public var message: String? = nil

@@ -2,7 +2,7 @@ import Foundation
 
 /// How an update started from Settings ended, read from the server's update
 /// notification (`notification_id` on the apply response).
-public enum ServerUpdateCompletion: Equatable {
+public enum ServerUpdateCompletion: Equatable, Sendable {
     case succeeded
     /// Active work blocked the restart; carries the server's explanation.
     case blocked(message: String)

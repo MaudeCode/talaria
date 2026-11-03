@@ -4,7 +4,7 @@ import Foundation
 /// to JSON when the param is absent, but the app always sends it explicitly.
 /// HTML is the self-contained human-readable transcript (best for sharing);
 /// JSON is the machine-readable session dump (pairs with a future import).
-public enum SessionExportFormat: String, CaseIterable {
+public enum SessionExportFormat: String, CaseIterable, Sendable {
     case html
     case json
 
@@ -13,7 +13,7 @@ public enum SessionExportFormat: String, CaseIterable {
 
 /// A downloaded session export: the raw file bytes plus the filename the share
 /// sheet should offer (never "download.bin").
-public struct SessionExportFile: Equatable {
+public struct SessionExportFile: Equatable, Sendable {
     public let data: Data
     public let filename: String
 }

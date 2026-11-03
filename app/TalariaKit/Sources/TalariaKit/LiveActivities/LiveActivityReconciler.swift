@@ -9,7 +9,7 @@ import Foundation
 /// knew about. Streams still active server-side are left untouched for the normal
 /// reconnect path to adopt.
 @MainActor
-public enum LiveActivityReconciler {
+public enum LiveActivityReconciler: Sendable {
     /// How recently a run must have completed for the cold-launch reconciler to
     /// still fire a "response complete" notification for it. Matches the 300s
     /// non-stale `staleDate` window the widget uses (#248): an older completion is
@@ -20,7 +20,7 @@ public enum LiveActivityReconciler {
 
     /// The final status + localized widget line a reconciled orphan should be
     /// ended with, derived from the server journal's `terminal_state` (#267).
-    public struct ReconciledOutcome: Equatable {
+    public struct ReconciledOutcome: Equatable, Sendable {
         public let status: AgentRunActivityStatus
         public let activity: String
     }

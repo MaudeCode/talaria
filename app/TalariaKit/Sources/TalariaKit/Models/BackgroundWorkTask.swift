@@ -2,17 +2,17 @@ import Foundation
 
 /// TAL-372: one piece of background work a session owns (a delegated agent, a notified process, or a `/background`
 /// task), as the server records it for every client. Decoded with `convertFromSnakeCase`; unknown values decode leniently.
-public struct BackgroundWorkTask: Decodable, Equatable, Identifiable {
-    public enum Kind: String, Equatable {
+public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
+    public enum Kind: String, Equatable, Sendable {
         case delegation, process
         case backgroundCommand = "background_command"
     }
 
-    public enum Status: String, Equatable {
+    public enum Status: String, Equatable, Sendable {
         case running, attention, completed, failed, cancelled, unknown
     }
 
-    public struct Agents: Decodable, Equatable {
+    public struct Agents: Decodable, Equatable, Sendable {
         public let total: Int
         public let completed: Int
         public let failed: Int
@@ -85,7 +85,7 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable {
 }
 
 /// TAL-372: a delegation tool row's link to the work it started, updated in place (scene `tool.background`).
-public struct BackgroundLink: Decodable, Equatable {
+public struct BackgroundLink: Decodable, Equatable, Sendable {
     public let taskIds: [String]
     public let status: BackgroundWorkTask.Status
     public let agents: BackgroundWorkTask.Agents
@@ -106,7 +106,7 @@ public struct BackgroundLink: Decodable, Equatable {
     }
 }
 
-public struct BackgroundTasksResponse: Decodable, Equatable {
+public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
     public let tasks: [BackgroundWorkTask]
     public let agentAvailable: Bool
     public let activityPhase: String?
@@ -121,11 +121,11 @@ public struct BackgroundTasksResponse: Decodable, Equatable {
     }
 }
 
-public struct BackgroundTaskResult: Decodable, Equatable {
+public struct BackgroundTaskResult: Decodable, Equatable, Sendable {
     public let taskId: String
     public let text: String
 }
 
-public struct BackgroundDismissResponse: Decodable, Equatable {
+public struct BackgroundDismissResponse: Decodable, Equatable, Sendable {
     public let ok: Bool
 }

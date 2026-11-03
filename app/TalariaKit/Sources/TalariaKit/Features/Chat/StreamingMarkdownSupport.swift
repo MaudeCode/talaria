@@ -1,11 +1,11 @@
 import Foundation
 
-public struct StreamingMarkdownChunk: Identifiable, Equatable {
+public struct StreamingMarkdownChunk: Identifiable, Equatable, Sendable {
     public let id: Int
     public let text: String
 }
 
-public struct StreamingMarkdownBlockSegments: Equatable {
+public struct StreamingMarkdownBlockSegments: Equatable, Sendable {
     public let stableChunks: [StreamingMarkdownChunk]
     public let activeMarkdown: String
 }

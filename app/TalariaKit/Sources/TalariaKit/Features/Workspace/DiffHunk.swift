@@ -1,7 +1,7 @@
 import Foundation
 
 /// TAL-604: one hunk of a unified diff, parsed on the server (`hunks` on a git diff and on a file edit's `edit_diff`).
-public struct DiffHunk: Identifiable, Equatable, Decodable {
+public struct DiffHunk: Identifiable, Equatable, Decodable, Sendable {
     public internal(set) var id = 0
     let header: String
     let newStart: Int?
@@ -71,8 +71,8 @@ public struct DiffHunk: Identifiable, Equatable, Decodable {
     }
 }
 
-public struct DiffLine: Identifiable, Equatable, Decodable {
-    public enum Kind: String, Equatable {
+public struct DiffLine: Identifiable, Equatable, Decodable, Sendable {
+    public enum Kind: String, Equatable, Sendable {
         case addition, deletion, context
     }
 

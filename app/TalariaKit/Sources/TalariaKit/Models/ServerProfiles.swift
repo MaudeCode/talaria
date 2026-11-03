@@ -31,7 +31,7 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
     }
 }
 
-public struct PersonalitiesResponse: Decodable, Equatable {
+public struct PersonalitiesResponse: Decodable, Equatable, Sendable {
     public let personalities: [PersonalitySummary]?
 }
 
@@ -51,14 +51,14 @@ extension PersonalitiesResponse {
     }
 }
 
-public struct PersonalitySummary: Decodable, Equatable, Hashable, Identifiable {
+public struct PersonalitySummary: Decodable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String { name ?? UUID().uuidString }
 
     public let name: String?
     public let description: String?
 }
 
-public struct PersonalitySetResponse: Decodable, Equatable {
+public struct PersonalitySetResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let personality: String?
     let prompt: String?
@@ -77,7 +77,7 @@ public struct ProfilesResponse: Decodable, Equatable, Sendable {
     }
 }
 
-public struct ProfileCreateResponse: Decodable, Equatable {
+public struct ProfileCreateResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let profile: ProfileSummary?
     public let error: String?
@@ -103,7 +103,7 @@ public enum ProfileNameRules {
     }
 }
 
-public struct ProfileSwitchResponse: Decodable, Equatable {
+public struct ProfileSwitchResponse: Decodable, Equatable, Sendable {
     public let profiles: [ProfileSummary]?
     public let active: String?
     public let defaultModel: String?

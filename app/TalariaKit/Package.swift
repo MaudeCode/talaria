@@ -4,14 +4,6 @@
 // without a simulator (TAL-399).
 import PackageDescription
 
-// The App target's language settings: Swift 5 mode, targeted concurrency checking, regex literals. Plus Swift 6's
-// Sendable key-path literals, which SwiftData's `#Predicate` and `SortDescriptor` need in the macOS SDK.
-let settings: [SwiftSetting] = [
-    .enableExperimentalFeature("StrictConcurrency=targeted"),
-    .enableUpcomingFeature("BareSlashRegexLiterals"),
-    .enableUpcomingFeature("InferSendableFromCaptures"),
-]
-
 let package = Package(
     name: "TalariaKit",
     platforms: [.iOS(.v18), .macOS(.v15)],
@@ -36,7 +28,7 @@ let package = Package(
                 .product(name: "Highlightr", package: "Highlightr"),
             ],
             // The package's own sources build warning-free; dependencies keep their warnings (TAL-1685).
-            swiftSettings: settings + [.treatAllWarnings(as: .error)]
+            swiftSettings: [.treatAllWarnings(as: .error)]
         ),
         .testTarget(
             name: "TalariaKitTests",
@@ -45,8 +37,11 @@ let package = Package(
                 // The streaming-fade tests render through MarkdownUI, as the App's transcript does.
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
             ],
-            swiftSettings: settings
+            // Stub URL handlers are closures formed in main-actor tests that run on URLSession's thread, and many block
+            // it on a semaphore, so Swift 6's runtime isolation trap can't apply to them. Static checking still does,
+            // and the production module keeps the trap. The hosted TalariaTests target sets the same flag.
+            swiftSettings: [.unsafeFlags(["-Xfrontend", "-disable-actor-data-race-checks", "-Xfrontend", "-disable-dynamic-actor-isolation"])]
         ),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v6]
 )

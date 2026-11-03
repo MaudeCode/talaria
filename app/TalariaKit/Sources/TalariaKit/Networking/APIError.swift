@@ -1,6 +1,6 @@
 import Foundation
 
-public enum APIError: LocalizedError {
+public enum APIError: LocalizedError, Sendable {
     case invalidServerURL
     case network(underlying: Error)
     case http(statusCode: Int, body: String?)

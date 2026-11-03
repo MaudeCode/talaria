@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CronJobsResponse: Decodable, Equatable {
+public struct CronJobsResponse: Decodable, Equatable, Sendable {
     public let jobs: [CronJob]?
     /// `true` when `jobs` arrive in the server's display order (TAL-601).
     public let ordered: Bool?
@@ -23,7 +23,7 @@ public struct CronJobsResponse: Decodable, Equatable {
 
 /// TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions). `error` and
 /// `fix` are the Agent's text.
-public struct CronStoreHealth: Decodable, Equatable, Identifiable {
+public struct CronStoreHealth: Decodable, Equatable, Identifiable, Sendable {
     public var id: String { store }
 
     public let profile: String?
@@ -54,7 +54,7 @@ public struct CronStoreHealth: Decodable, Equatable, Identifiable {
     }
 }
 
-public struct CronMutationResponse: Decodable, Equatable {
+public struct CronMutationResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let job: CronJob?
     public let error: String?
@@ -62,7 +62,7 @@ public struct CronMutationResponse: Decodable, Equatable {
     public let status: String?
 }
 
-public struct CronStatusResponse: Decodable, Equatable {
+public struct CronStatusResponse: Decodable, Equatable, Sendable {
     let jobId: String?
     let running: Bool?
     let elapsed: Double?
@@ -87,7 +87,7 @@ public struct CronStatusResponse: Decodable, Equatable {
     }
 }
 
-public struct CronJob: Decodable, Equatable, Identifiable {
+public struct CronJob: Decodable, Equatable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String {
         jobId ?? fallbackIdentity.value
@@ -206,7 +206,7 @@ public struct CronJob: Decodable, Equatable, Identifiable {
 }
 
 /// TAL-810: when a job last failed (`nil` when the server could not read the time) and why.
-public struct CronJobFailure: Decodable, Equatable {
+public struct CronJobFailure: Decodable, Equatable, Sendable {
     public let at: Date?
     public let detail: String
 
@@ -230,7 +230,7 @@ public struct CronJobFailure: Decodable, Equatable {
     }
 }
 
-public struct CronOutputResponse: Decodable, Equatable {
+public struct CronOutputResponse: Decodable, Equatable, Sendable {
     let jobId: String?
     public let outputs: [CronOutputItem]?
 
@@ -246,14 +246,14 @@ public struct CronOutputResponse: Decodable, Equatable {
     }
 }
 
-public struct CronOutputItem: Decodable, Equatable, Identifiable {
+public struct CronOutputItem: Decodable, Equatable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String { fallbackIdentity.value }
 
     public let filename: String?
     public let content: String?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case filename
         case content
     }
@@ -266,13 +266,13 @@ public struct CronOutputItem: Decodable, Equatable, Identifiable {
 }
 
 /// `GET /api/crons/history`: newest-first run listing without content.
-public struct CronHistoryResponse: Decodable, Equatable {
+public struct CronHistoryResponse: Decodable, Equatable, Sendable {
     let jobId: String?
     public let runs: [CronRunSummary]?
     public let total: Int?
     let offset: Int?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case jobId
         case runs
         case total
@@ -290,7 +290,7 @@ public struct CronHistoryResponse: Decodable, Equatable {
     }
 }
 
-public struct CronRunSummary: Decodable, Equatable, Identifiable {
+public struct CronRunSummary: Decodable, Equatable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String { filename ?? fallbackIdentity.value }
 
@@ -299,7 +299,7 @@ public struct CronRunSummary: Decodable, Equatable, Identifiable {
     public let modified: CronDateValue?
     public let usage: CronRunUsage?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case filename
         case size
         case modified
@@ -316,7 +316,7 @@ public struct CronRunSummary: Decodable, Equatable, Identifiable {
 }
 
 /// Optional token/cost metadata the server parses from a run's front matter.
-public struct CronRunUsage: Decodable, Equatable {
+public struct CronRunUsage: Decodable, Equatable, Sendable {
     public let model: String?
     let provider: String?
     public let estimatedCostUsd: Double?
@@ -325,7 +325,7 @@ public struct CronRunUsage: Decodable, Equatable {
     let outputTokens: Int?
     public let totalTokens: Int?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case model
         case provider
         case estimatedCostUsd
@@ -353,14 +353,14 @@ public struct CronRunUsage: Decodable, Equatable {
 }
 
 /// `GET /api/crons/run`: one run's full output.
-public struct CronRunDetailResponse: Decodable, Equatable {
+public struct CronRunDetailResponse: Decodable, Equatable, Sendable {
     let jobId: String?
     let filename: String?
     public let content: String?
     public let snippet: String?
     let usage: CronRunUsage?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case jobId
         case filename
         case content
@@ -380,10 +380,10 @@ public struct CronRunDetailResponse: Decodable, Equatable {
 
 /// `GET /api/crons/recent`: one row per job that has ever completed, carrying
 /// only that job's latest run, newest first. Not a run archive; `cronHistory` is.
-public struct CronRecentCompletionsResponse: Decodable, Equatable {
+public struct CronRecentCompletionsResponse: Decodable, Equatable, Sendable {
     public let completions: [CronRecentCompletion]?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case completions
     }
 
@@ -395,8 +395,8 @@ public struct CronRecentCompletionsResponse: Decodable, Equatable {
 }
 
 /// The server orders the feed and owns `outcome`; the app renders both as sent.
-public struct CronRecentCompletion: Decodable, Equatable, Identifiable {
-    public enum Outcome: String, Decodable {
+public struct CronRecentCompletion: Decodable, Equatable, Identifiable, Sendable {
+    public enum Outcome: String, Decodable, Sendable {
         case succeeded
         case failed
         case unknown
@@ -410,7 +410,7 @@ public struct CronRecentCompletion: Decodable, Equatable, Identifiable {
     /// Unix seconds; the server normalizes every completion time to a number.
     public let completedAt: Date?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case jobId
         case name
         case outcome
@@ -440,10 +440,10 @@ public struct CronRecentCompletion: Decodable, Equatable, Identifiable {
     }
 }
 
-public struct CronDeliveryOptionsResponse: Decodable, Equatable {
+public struct CronDeliveryOptionsResponse: Decodable, Equatable, Sendable {
     public let platforms: [CronDeliveryOption]?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case platforms
     }
 
@@ -457,14 +457,14 @@ public struct CronDeliveryOptionsResponse: Decodable, Equatable {
     }
 }
 
-public struct CronDeliveryOption: Decodable, Equatable, Identifiable {
+public struct CronDeliveryOption: Decodable, Equatable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String { value ?? fallbackIdentity.value }
 
     let value: String?
     let label: String?
 
-    public enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey, Sendable {
         case value
         case label
     }
@@ -482,7 +482,7 @@ public struct CronDeliveryOption: Decodable, Equatable, Identifiable {
 }
 
 /// One selectable row in the cron deliver picker.
-public struct CronDeliverPickerOption: Equatable, Identifiable {
+public struct CronDeliverPickerOption: Equatable, Identifiable, Sendable {
     public let value: String
     public let label: String
     /// `true` when the row exists only to round-trip a draft value that the
@@ -592,7 +592,7 @@ public enum CronProfilePicker {
     }
 }
 
-public enum CronJobStatus: Equatable {
+public enum CronJobStatus: Equatable, Sendable {
     case active
     case paused
     case off
@@ -621,7 +621,7 @@ public enum CronJobStatus: Equatable {
     }
 }
 
-public struct CronJobEditorDraft: Equatable {
+public struct CronJobEditorDraft: Equatable, Sendable {
     public var name: String
     public var prompt: String
     public var schedule: String
@@ -779,7 +779,7 @@ public struct CronJobEditorDraft: Equatable {
     }
 }
 
-public struct CronDateValue: Decodable, Equatable {
+public struct CronDateValue: Decodable, Equatable, Sendable {
     public let date: Date
 
     public init(from decoder: Decoder) throws {
@@ -796,8 +796,7 @@ public struct CronDateValue: Decodable, Equatable {
             return
         }
 
-        if let parsed = Self.isoFormatter.date(from: stringValue)
-            ?? Self.fractionalISOFormatter.date(from: stringValue) {
+        if let parsed = UpdateNotificationTimestamp.date(from: stringValue) {
             date = parsed
             return
         }
@@ -811,18 +810,6 @@ public struct CronDateValue: Decodable, Equatable {
     public var formatted: String {
         Self.displayFormatter.string(from: date)
     }
-
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
-    private static let fractionalISOFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
 
     private static let displayFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -851,11 +838,11 @@ extension KeyedDecodingContainer {
 }
 
 /// The Agent's form schema and provenance. Clients render slots without filling templates.
-public struct CronBlueprintsResponse: Decodable {
+public struct CronBlueprintsResponse: Decodable, Sendable {
     public let blueprints: [CronBlueprint]
 }
 
-public struct CronBlueprint: Decodable, Identifiable {
+public struct CronBlueprint: Decodable, Identifiable, Sendable {
     public var id: String { key }
     public let key: String
     public let title: String
@@ -867,7 +854,7 @@ public struct CronBlueprint: Decodable, Identifiable {
     public let slots: [CronBlueprintSlot]
 }
 
-public struct CronBlueprintSlot: Decodable, Identifiable {
+public struct CronBlueprintSlot: Decodable, Identifiable, Sendable {
     public var id: String { name }
     public let name: String
     public let type: String
@@ -879,7 +866,7 @@ public struct CronBlueprintSlot: Decodable, Identifiable {
     public let help: String
 }
 
-public struct CronBlueprintFillResponse: Decodable {
+public struct CronBlueprintFillResponse: Decodable, Sendable {
     public let draft: CronJobEditorDraft
 }
 

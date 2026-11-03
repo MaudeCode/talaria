@@ -1,6 +1,6 @@
 import Foundation
 
-public struct GoalSubmissionResponse: Decodable, Equatable {
+public struct GoalSubmissionResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let action: String?
     let message: String?
@@ -40,7 +40,7 @@ public struct GoalSubmissionResponse: Decodable, Equatable {
     }
 }
 
-public struct SubmittedGoal: Decodable, Equatable {
+public struct SubmittedGoal: Decodable, Equatable, Sendable {
     let goal: String?
     public let status: String?
     let turnsUsed: Int?
@@ -125,8 +125,8 @@ struct GoalDecision: Decodable, Equatable {
 
 /// TAL-808: the session's standing `/goal` while it runs (session `goal`); a done, cleared or absent goal is null.
 /// `parked` is an active goal waiting on a process or a timer. Decoded with `convertFromSnakeCase`.
-public struct SessionGoal: Decodable, Equatable {
-    public enum Status: String, Equatable {
+public struct SessionGoal: Decodable, Equatable, Sendable {
+    public enum Status: String, Equatable, Sendable {
         case active, paused, parked
     }
 

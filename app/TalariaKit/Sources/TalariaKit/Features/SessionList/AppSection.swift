@@ -2,7 +2,7 @@ import Foundation
 
 /// The part of the app the drawer opened. At regular width (iPad, the iPhone Duo inner display)
 /// its root and inner pages are shared with compact width.
-public enum AppSection: Hashable {
+public enum AppSection: Hashable, Sendable {
     case chats
     case archived
     case scheduled
@@ -81,8 +81,8 @@ public enum RegularSplitLayout {
 }
 
 /// One device-local decision for the split column, drawer and toolbar ownership.
-public struct SidebarPresentation: Equatable {
-    public enum ToggleTarget: Equatable { case column, drawer }
+public struct SidebarPresentation: Equatable, Sendable {
+    public enum ToggleTarget: Equatable, Sendable { case column, drawer }
 
     public let isLandscape: Bool
     public let tiled: Bool
@@ -131,7 +131,7 @@ public struct SidebarPresentation: Equatable {
 }
 
 /// A page pushed within the current section root at either width. Device-local UI state.
-public enum SectionItem: Hashable {
+public enum SectionItem: Hashable, Sendable {
     case memory(MemoryFile)
     case skill(id: String)
     case task(id: String)
@@ -140,7 +140,7 @@ public enum SectionItem: Hashable {
 }
 
 /// A row of the Settings root list.
-public enum SettingsPane: Hashable {
+public enum SettingsPane: Hashable, Sendable {
     case userProfile
     case appleAccount
     case providerQuotaWidget
@@ -148,7 +148,7 @@ public enum SettingsPane: Hashable {
 }
 
 /// A Memory document: the three editable sections and the read-only project context.
-public enum MemoryFile: Hashable {
+public enum MemoryFile: Hashable, Sendable {
     case section(MemorySection)
     case projectContext
 }

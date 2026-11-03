@@ -1,4 +1,4 @@
 
-public struct ProfileSwitchOutcome: Equatable {
+public struct ProfileSwitchOutcome: Equatable, Sendable {
     public let session: SessionSummary?
 }

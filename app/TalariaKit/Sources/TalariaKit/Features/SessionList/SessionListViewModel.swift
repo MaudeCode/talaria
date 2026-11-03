@@ -3,7 +3,7 @@ import Observation
 import SwiftData
 import SwiftUI
 
-public struct ScheduledSessionGroups: Equatable {
+public struct ScheduledSessionGroups: Equatable, Sendable {
     public let ordinary: [SessionSummary]
     public let scheduled: [SessionSummary]
     public let webhook: [SessionSummary]
@@ -38,7 +38,7 @@ public struct ScheduledSessionGroups: Equatable {
     }
 }
 
-public enum ActiveSessionStateRefreshResult: Equatable {
+public enum ActiveSessionStateRefreshResult: Equatable, Sendable {
     case unchanged
     case reloaded
     case failed
@@ -1959,7 +1959,7 @@ private struct RemoteSearchScope: Equatable {
 }
 
 /// Submitted display values, never server metadata or inputs to grouping/filtering.
-public struct PendingResourceChange: Equatable {
+public struct PendingResourceChange: Equatable, Sendable {
     public let id = UUID()
     public let label: String
     public let title: String?

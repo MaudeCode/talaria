@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SessionListUtilityDestination: Hashable, Identifiable {
+public enum SessionListUtilityDestination: Hashable, Identifiable, Sendable {
     /// Optional category to open when Settings appears. "Manage Servers"
     /// passes `.servers`, while a plain Settings action passes `nil` (#283).
     case settings(SettingsScrollAnchor?)

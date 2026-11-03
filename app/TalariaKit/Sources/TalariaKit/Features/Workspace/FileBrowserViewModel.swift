@@ -107,7 +107,7 @@ public final class FileBrowserViewModel {
 
 }
 
-public struct FileBreadcrumb: Identifiable, Equatable {
+public struct FileBreadcrumb: Identifiable, Equatable, Sendable {
     public var id: String { path }
 
     public let title: String

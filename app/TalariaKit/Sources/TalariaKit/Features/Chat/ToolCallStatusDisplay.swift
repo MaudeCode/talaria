@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public struct ToolCallStatusDisplay: Equatable {
+public struct ToolCallStatusDisplay: Equatable, Sendable {
     let collapsedText: String?
     public let detailText: String
     public let progressText: String?

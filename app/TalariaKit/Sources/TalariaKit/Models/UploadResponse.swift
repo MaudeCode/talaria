@@ -1,7 +1,7 @@
 import Foundation
 import ImageIO
 
-public struct UploadResponse: Codable {
+public struct UploadResponse: Codable, Sendable {
     let filename: String?
     public let path: String?
     public let size: Int?
@@ -12,7 +12,7 @@ public struct UploadResponse: Codable {
     public let maxAttachmentsPerMessage: Int?
 }
 
-public struct PendingAttachment: Identifiable, Equatable {
+public struct PendingAttachment: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let name: String
     public let path: String
@@ -26,7 +26,7 @@ public struct PendingAttachment: Identifiable, Equatable {
     public let draftFileName: String?
     public var uploadPhase: UploadPhase
 
-    public enum UploadPhase: Equatable {
+    public enum UploadPhase: Equatable, Sendable {
         case staged, uploading, ready, failed(String)
     }
 
@@ -55,7 +55,7 @@ public struct PendingAttachment: Identifiable, Equatable {
     }
 }
 
-public enum ImagePreviewDownsampler {
+public enum ImagePreviewDownsampler: Sendable {
     public static let attachmentMaxPixelSize = 512
     public static let filePreviewMaxPixelSize = 2_048
     public static let uploadMaxPixelSize = 4_096

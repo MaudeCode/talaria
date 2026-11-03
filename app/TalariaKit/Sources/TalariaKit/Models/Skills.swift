@@ -1,10 +1,10 @@
 import Foundation
 
-public struct SkillsResponse: Decodable, Equatable {
+public struct SkillsResponse: Decodable, Equatable, Sendable {
     public let skills: [SkillSummary]?
 }
 
-public struct SkillSummary: Decodable, Equatable, Identifiable {
+public struct SkillSummary: Decodable, Equatable, Identifiable, Sendable {
     private let fallbackIdentity = DecodedIdentityToken()
     public var id: String {
         name ?? fallbackIdentity.value
@@ -63,13 +63,13 @@ struct ToggleSkillRequest: Encodable, Equatable {
     let enabled: Bool
 }
 
-public struct ToggleSkillResponse: Decodable, Equatable {
+public struct ToggleSkillResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let name: String?
     let enabled: Bool?
 }
 
-public struct SkillSlashSuggestion: Identifiable, Equatable {
+public struct SkillSlashSuggestion: Identifiable, Equatable, Sendable {
     public let name: String
     public let category: String?
     public let description: String?
@@ -78,7 +78,7 @@ public struct SkillSlashSuggestion: Identifiable, Equatable {
     public var slashName: String { SlashSkillFormatter.slug(for: name) }
 }
 
-public struct SkillSlashInvocation: Equatable {
+public struct SkillSlashInvocation: Equatable, Sendable {
     let skill: SkillSlashSuggestion
     let message: String
 }
@@ -240,7 +240,7 @@ public enum SlashSkillFormatter {
     }
 }
 
-public struct SkillDetailResponse: Decodable, Equatable {
+public struct SkillDetailResponse: Decodable, Equatable, Sendable {
     let name: String?
     public let content: String?
     public let linkedFiles: [String]?

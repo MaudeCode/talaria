@@ -1,4 +1,4 @@
-public enum ActiveStreamRecoveryState: Equatable {
+public enum ActiveStreamRecoveryState: Equatable, Sendable {
     case idle
     case checking
     case reconnecting

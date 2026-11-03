@@ -176,7 +176,7 @@ public final class FilePreviewViewModel {
     private static let videoExtensions = Set(["m4v", "mov", "mp4"])
 }
 
-public enum FilePreviewContent {
+public enum FilePreviewContent: Sendable {
     case text(FileResponse)
     case image(ImageFilePreview)
     case audio(Data)
@@ -227,7 +227,7 @@ public struct ImageFilePreview: @unchecked Sendable {
     }
 }
 
-public struct FileExportPayload {
+public struct FileExportPayload: Sendable {
     public let data: Data
     public let filename: String
     public let contentType: UTType

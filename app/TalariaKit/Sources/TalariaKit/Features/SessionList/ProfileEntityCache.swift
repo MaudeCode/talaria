@@ -4,7 +4,7 @@ import Foundation
 /// (and #8's widgets, which run out-of-process) can populate their picker without a live,
 /// authenticated server call. The app refreshes this on every foreground profiles load.
 public struct ProfileEntityCache {
-    public static let shared = ProfileEntityCache()
+    public static var shared: ProfileEntityCache { ProfileEntityCache() }
 
     private let defaults: UserDefaults?
     // `.v2`: bumped from v1 when the App Shortcut refresh nudge was added, so the first load
@@ -53,7 +53,7 @@ public struct ProfileEntityCache {
 
 /// Minimal codable snapshot of a profile for the cache — deliberately decoupled from the
 /// server model so an upstream shape change can't break a cached read.
-public struct CachedProfile: Codable, Equatable {
+public struct CachedProfile: Codable, Equatable, Sendable {
     public let id: String
     public let name: String
     public let subtitle: String?

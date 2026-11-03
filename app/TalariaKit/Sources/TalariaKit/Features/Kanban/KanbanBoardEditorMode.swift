@@ -1,6 +1,6 @@
 import SwiftUI
 
-public enum KanbanBoardEditorMode: Identifiable {
+public enum KanbanBoardEditorMode: Identifiable, Sendable {
     case create
     case edit(KanbanBoard)
 
