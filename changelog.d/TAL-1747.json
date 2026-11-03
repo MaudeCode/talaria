@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web starts faster: it no longer imports Hermes Agent once before starting the server. A broken Agent install is still reported in the server log when the Agent first connects.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

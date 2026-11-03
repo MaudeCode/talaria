@@ -192,6 +192,11 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
     return null
   }
   const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome, opts.log), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log, supportedAgents: supportedAgents(opts.webRoot) })
+  // The handshake is the only Agent import check: its first result names a broken interpreter for the operator.
+  const stop = client.onHandshake((describe) => {
+    stop()
+    if (describe.import_error) opts.log(`[sidecar] Python environment at ${describe.python} cannot import Hermes Agent (${describe.import_error}). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.`)
+  })
   opts.log(`[sidecar] starting for agent ${agentDir}`)
   return client
 }

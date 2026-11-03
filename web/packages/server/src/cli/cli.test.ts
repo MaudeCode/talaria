@@ -2,12 +2,17 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
-import { execFileSync } from 'node:child_process'
-import { afterEach, describe, expect, it } from 'vitest'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
-import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, sidecarPreflight, waitForHealth } from './launcher.js'
+import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
 import { ctlPaths, launchdConflictPid, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
 import { bootTestServer } from '../test/harness.js'
+
+vi.mock('node:child_process', async (original) => {
+  const cp = await original<typeof import('node:child_process')>()
+  return { ...cp, spawnSync: vi.fn(cp.spawnSync) }
+})
 
 function scratch(): string {
   const dir = join(tmpdir(), `talaria-cli-${String(process.pid)}-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`)
@@ -110,37 +115,23 @@ describe('serve argument precedence', () => {
 })
 
 describe('launcher', () => {
-  it('preflight disables Agent lazy installs before importing run_agent', () => {
-    const dir = scratch()
+  it('bootstrap starts the server without running the Agent interpreter first', async () => {
+    const home = scratch()
     try {
-      writeFileSync(join(dir, 'run_agent.py'), 'import os\nassert os.environ.get("HERMES_DISABLE_LAZY_INSTALLS") == "1", "lazy installs enabled"\nclass AIAgent: pass\n')
-      writeFileSync(join(dir, 'hermes_yaml.py'), '')
-      const result = sidecarPreflight('python3', dir, { PATH: process.env.PATH, HOME: dir, HERMES_HOME: dir, HERMES_DISABLE_LAZY_INSTALLS: '0' })
-      expect(result, result.detail).toEqual({ ok: true, detail: '' })
-    } finally { rmSync(dir, { recursive: true, force: true }) }
-  })
-
-  it.each([
-    { name: 'hermes_yaml without PyYAML', hermesYaml: '', yaml: null, agent: true, ok: true, detail: '' },
-    { name: 'legacy PyYAML without hermes_yaml', hermesYaml: null, yaml: '', agent: true, ok: true, detail: '' },
-    { name: 'PyYAML fallback when hermes_yaml fails to load', hermesYaml: 'raise RuntimeError("broken hermes_yaml")', yaml: '', agent: true, ok: true, detail: '' },
-    { name: 'hermes_yaml preferred over broken PyYAML', hermesYaml: '', yaml: 'raise RuntimeError("broken yaml")', agent: true, ok: true, detail: '' },
-    { name: 'neither YAML provider', hermesYaml: null, yaml: null, agent: true, ok: false, detail: "No module named 'yaml'" },
-    { name: 'missing AIAgent', hermesYaml: '', yaml: '', agent: false, ok: false, detail: "cannot import name 'AIAgent'" },
-  ])('sidecar preflight: $name', ({ hermesYaml, yaml, agent, ok, detail }) => {
-    const dir = scratch()
-    try {
-      const env = { PATH: process.env.PATH, HOME: dir, HERMES_HOME: join(dir, 'home'), HERMES_WEBUI_STATE_DIR: join(dir, 'state') }
-      const venv = join(dir, 'venv')
-      execFileSync('python3', ['-m', 'venv', '--without-pip', venv], { env })
-      writeFileSync(join(dir, 'run_agent.py'), agent ? 'class AIAgent: pass\n' : '')
-      if (hermesYaml !== null) writeFileSync(join(dir, 'hermes_yaml.py'), hermesYaml)
-      if (yaml !== null) writeFileSync(join(dir, 'yaml.py'), yaml)
-      const result = sidecarPreflight(join(venv, 'bin', 'python'), dir, env)
-      expect(result.ok, result.detail).toBe(ok)
-      if (ok) expect(result.detail).toBe('')
-      else expect(result.detail).toContain(detail)
-    } finally { rmSync(dir, { recursive: true, force: true }) }
+      const agent = join(home, 'agent')
+      mkdirSync(agent)
+      writeFileSync(join(agent, 'run_agent.py'), '')
+      // A stand-in interpreter that would succeed if it were run.
+      const python = join(home, 'python')
+      writeFileSync(python, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_AGENT_DIR: agent, HERMES_WEBUI_PYTHON: python, HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+      const serve = vi.fn(() => Promise.resolve())
+      vi.mocked(spawnSync).mockClear()
+      const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [], log: () => undefined }, { port: 8787, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: true }, serve)
+      expect(code).toBe(0)
+      expect(serve).toHaveBeenCalledOnce()
+      expect(vi.mocked(spawnSync).mock.calls.filter(([command]) => command === python)).toEqual([])
+    } finally { rmSync(home, { recursive: true, force: true }) }
   })
 
   it('a detached launch passes the resolved host and port to the worker so a checkout .env cannot override them', async () => {

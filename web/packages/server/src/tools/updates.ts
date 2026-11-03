@@ -19,6 +19,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
@@ -1195,7 +1196,7 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   })
 }
 
-/** Python `_inventory_locks`: report `.git/**\/*.lock` without touching any of them. */
+/** Python `_inventory_locks`: report the `.git` top-level, `refs/**` and `worktrees/**` locks without touching any of them; the object store is never walked. */
 export function inventoryLocks(path: string): { well_known_lock_present: boolean; well_known_lock_path: string | null; other_locks: string[] } {
   const gitDir = join(path, '.git')
   const out: { well_known_lock_present: boolean; well_known_lock_path: string | null; other_locks: string[] } = { well_known_lock_present: false, well_known_lock_path: null, other_locks: [] }
@@ -1203,30 +1204,29 @@ export function inventoryLocks(path: string): { well_known_lock_present: boolean
   const wellKnown = join(gitDir, 'index.lock')
   try { out.well_known_lock_present = existsSync(wellKnown) } catch { out.well_known_lock_present = true }
   out.well_known_lock_path = wellKnown
-  try {
-    for (const entry of readdirSync(gitDir, { recursive: true, encoding: 'utf8' }).sort()) {
-      const rel = entry.split('\\').join('/')
-      if (rel.endsWith('.lock') && rel !== 'index.lock') out.other_locks.push(rel)
-    }
-  } catch { /* unreadable subtrees are skipped */ }
+  const listed = (rel: string, recursive: boolean): string[] => {
+    try { return readdirSync(join(gitDir, rel), { recursive, encoding: 'utf8' }).map((entry) => join(rel, entry).split('\\').join('/')) }
+    catch { return [] } // unreadable subtrees are skipped
+  }
+  for (const rel of [...listed('', false), ...listed('refs', true), ...listed('worktrees', true)].sort()) {
+    if (rel.endsWith('.lock') && rel !== 'index.lock') out.other_locks.push(rel)
+  }
   return out
 }
 
 /** Python `_purge_agent_pycache`: stale bytecode after a pull must not outlive the restart. */
-export function purgePycache(root: string): void {
-  if (!existsSync(root)) return
+export async function purgePycache(root: string): Promise<void> {
   const skip = new Set(['.git', 'venv', '.venv', 'node_modules'])
-  const walk = (dir: string): void => {
+  const walk = async (dir: string): Promise<void> => {
     let entries: import('node:fs').Dirent[]
-    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || skip.has(entry.name)) continue
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+    await Promise.all(entries.filter((entry) => entry.isDirectory() && !skip.has(entry.name)).map((entry) => {
       const full = join(dir, entry.name)
-      if (entry.name === '__pycache__') rmSync(full, { recursive: true, force: true })
-      else walk(full)
-    }
+      // A cache that cannot be removed only costs a recompile; it must not stop the restart.
+      return entry.name === '__pycache__' ? rm(full, { recursive: true, force: true }).catch(() => undefined) : walk(full)
+    }))
   }
-  walk(root)
+  await walk(root)
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

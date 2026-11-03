@@ -4,14 +4,14 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 // These tests own a synthetic host prefix even when CI itself runs in a container.
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
-  return { ...fs, existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? false : fs.existsSync(path) }
+  return { ...fs, readdirSync: vi.fn(fs.readdirSync), existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? false : fs.existsSync(path) }
 })
 import type { AgentRecoveryState, RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
@@ -21,7 +21,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, purgePycache, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
@@ -2874,6 +2874,35 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(head)
     expect(await applyAgentUpdate(a.agent, runGit)).toMatchObject({ ok: false, manual_update: true }) // Stable never falls through to a branch.
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(head)
+  })
+
+  it('inventories locks from the git top level, refs and worktrees without walking the object store', () => {
+    const gitDir = join(tmp(), '.git')
+    const objects = join(gitDir, 'objects')
+    for (let i = 0; i < 10_000; i += 1) {
+      const fan = join(objects, (i % 256).toString(16).padStart(2, '0'))
+      if (i < 256) mkdirSync(fan, { recursive: true })
+      writeFileSync(join(fan, String(i)), '')
+    }
+    mkdirSync(join(gitDir, 'refs', 'heads'), { recursive: true })
+    mkdirSync(join(gitDir, 'worktrees', 'wt'), { recursive: true })
+    for (const lock of ['HEAD.lock', 'refs/heads/main.lock', 'worktrees/wt/index.lock']) writeFileSync(join(gitDir, lock), '')
+    const reads = vi.mocked(readdirSync)
+    reads.mockClear()
+    expect(inventoryLocks(join(gitDir, '..')).other_locks).toEqual(['HEAD.lock', 'refs/heads/main.lock', 'worktrees/wt/index.lock'])
+    const listed = reads.mock.calls.flatMap(([dir], i) => (reads.mock.results[i]?.value as string[]).map((entry) => join(String(dir), entry)))
+    expect(listed.filter((path) => path.startsWith(objects + sep))).toEqual([])
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
+  it('purges Agent bytecode caches outside the git, venv and node_modules trees', async () => {
+    const root = tmp()
+    const caches = ['__pycache__', 'agent/__pycache__', 'agent/tools/__pycache__']
+    const kept = ['.git/__pycache__', 'venv/__pycache__', '.venv/lib/__pycache__', 'node_modules/x/__pycache__']
+    for (const dir of [...caches, ...kept]) { mkdirSync(join(root, dir), { recursive: true }); writeFileSync(join(root, dir, 'm.pyc'), '') }
+    await purgePycache(root)
+    expect(caches.filter((dir) => existsSync(join(root, dir)))).toEqual([])
+    expect(kept.filter((dir) => existsSync(join(root, dir)))).toEqual(kept)
   })
 
   it('clear_lock inventories locks and never deletes them', async () => {
