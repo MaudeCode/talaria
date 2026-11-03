@@ -167,12 +167,16 @@ export class SqliteJournal implements JournalBackend {
     const summary = await this.latest(sessionId, runId)
     return summary.event_count || summary.journal_pruned ? summary : null
   }
-  async findRunSummary(runId: string): Promise<RunSummary | null> {
+  async findRunSummary(runId: string, sessionId?: string): Promise<RunSummary | null> {
     try { validateId(runId, 'run_id') } catch { return null }
     this.flushAll()
-    const live = this.db.get<{ session_id: string }>('SELECT session_id FROM journal_rows WHERE stream_id = ? LIMIT 1', runId) ?? this.db.get<{ session_id: string }>('SELECT session_id FROM journal_archives WHERE stream_id = ? LIMIT 1', runId)
+    // A session restriction selects within that session, so a run ID another session also holds never hides it.
+    const owner = (table: string): { session_id: string } | undefined => sessionId === undefined
+      ? this.db.get<{ session_id: string }>(`SELECT session_id FROM ${table} WHERE stream_id = ? LIMIT 1`, runId)
+      : this.db.get<{ session_id: string }>(`SELECT session_id FROM ${table} WHERE stream_id = ? AND session_id = ? LIMIT 1`, runId, sessionId)
+    const live = owner('journal_rows') ?? owner('journal_archives')
     if (live) return await this.latest(live.session_id, runId)
-    const pruned = this.db.get<{ session_id: string }>('SELECT session_id FROM journal_summaries WHERE stream_id = ? LIMIT 1', runId)
+    const pruned = owner('journal_summaries')
     return pruned ? this.prunedSummary(pruned.session_id, runId) : null
   }
   async sessionJournalFingerprint(sessionId: string): Promise<string> {

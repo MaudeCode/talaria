@@ -237,3 +237,12 @@ describe('SQLite retention budgets and protection', () => {
     expect((await journal.readRunEvents('b', 'run')).map((e) => e.seq)).toEqual([1, 2, 3, 4])
   })
 })
+
+it('a session restriction finds its own run when another session holds the same run ID', async () => {
+  const { storage, journal } = open()
+  await writeRun(storage, 'first', 'run')
+  await writeRun(storage, 'second', 'run')
+  expect(await journal.findRunSummary('run', 'second')).toMatchObject({ session_id: 'second', run_id: 'run' })
+  expect(await journal.findRunSummary('run', 'first')).toMatchObject({ session_id: 'first', run_id: 'run' })
+  expect(await journal.findRunSummary('run', 'third')).toBeNull()
+})

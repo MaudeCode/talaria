@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A browser tab reconnecting to a finished or deleted chat no longer slows the server for other users.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
