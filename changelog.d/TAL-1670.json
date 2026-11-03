@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On a Duo, tapping Files right after unfolding opens the inspector instead of doing nothing.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
