@@ -4,7 +4,8 @@ warnings, and the captured terminal error. The table holds the pinned Agent's re
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -66,12 +67,29 @@ def test_status_events_classify_the_agents_real_status_lines(kind, message, expe
     assert _status_events(kind, message) == expected
 
 
+@pytest.fixture
+def pinned_stream_diag(monkeypatch):
+    """The pinned ``agent.stream_diag`` imported as part of its package, as production loads it; v0.22.6 imports a
+    sibling lazily. Other tests install fake ``agent.*`` modules, so those are set aside and restored afterwards."""
+    def agent_modules():
+        return {name: module for name, module in sys.modules.items() if name == "agent" or name.startswith("agent.")}
+
+    saved = agent_modules()
+    for name in saved:
+        del sys.modules[name]
+    monkeypatch.syspath_prepend(str(AGENT_DIR))
+    try:
+        yield importlib.import_module("agent.stream_diag")
+    finally:
+        for name in agent_modules():
+            del sys.modules[name]
+        sys.modules.update(saved)
+
+
 @pytest.mark.skipif(AGENT_DIR is None, reason="pinned Hermes Agent checkout not found")
 @pytest.mark.parametrize("mid_tool_call", [False, True], ids=["response", "tool-call"])
-def test_pinned_stream_diagnostics_reach_warning_frames(monkeypatch, tmp_path, mid_tool_call):
-    spec = importlib.util.spec_from_file_location("stream_diag", AGENT_DIR / "agent" / "stream_diag.py")
-    diagnostics = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(diagnostics)
+def test_pinned_stream_diagnostics_reach_warning_frames(pinned_stream_diag, monkeypatch, tmp_path, mid_tool_call):
+    diagnostics = pinned_stream_diag
     lines = []
     agent = SimpleNamespace(
         provider="custom", base_url="https://provider.invalid/v1",
