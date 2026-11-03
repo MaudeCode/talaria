@@ -82,7 +82,7 @@ export function runBlobStoreConformance(name: string, make: () => Promise<BlobSt
       expect(await keys(f.store, 'attachments/')).toEqual(['attachments/s10/c.txt', 'attachments/s2/d.txt'])
     })
 
-    it('gives a readable local file with identical bytes, and no file for a missing object', async () => {
+    it('gives a readable local file with identical bytes, reports its cached size, and no file for a missing object', async () => {
       // Over the multipart threshold, streamed so nothing is written through to a cache.
       const big = Buffer.alloc(9 * 1024 * 1024 + 17, 7)
       big.write('head', 0)
@@ -91,8 +91,10 @@ export function runBlobStoreConformance(name: string, make: () => Promise<BlobSt
       const path = await f.store.localPath('attachments/s1/big.bin')
       expect(path.startsWith(f.store.attachmentRoot())).toBe(true)
       expect(readFileSync(path).equals(big)).toBe(true)
+      expect(f.store.cachedSize('attachments/s1/big.bin')).toBe(big.length)
       const missing = await f.store.localPath('attachments/s1/missing.txt')
       expect(existsSync(missing)).toBe(false)
+      expect(f.store.cachedSize('attachments/s1/missing.txt')).toBeNull()
     })
 
     it('shares one download between concurrent localPath calls', async () => {
@@ -117,6 +119,7 @@ export function runBlobStoreConformance(name: string, make: () => Promise<BlobSt
         expect(existsSync(paths[1]!)).toBe(true)
         // Three 400-byte files exceed 1000 bytes: a cache drops the least recently used; a directory keeps everything.
         expect(existsSync(paths[0]!)).toBe(!f.evicts)
+        expect(capped.cachedSize('attachments/s1/one.bin')).toBe(f.evicts ? null : 400)
         // An evicted object comes back on its next use.
         expect(readFileSync(await capped.localPath('attachments/s1/one.bin')).equals(Buffer.alloc(400, 'o'.charCodeAt(0)))).toBe(true)
       } finally { await capped.close() }
