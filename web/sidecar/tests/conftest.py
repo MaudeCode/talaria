@@ -229,13 +229,20 @@ def no_surviving_processes(tmp_path_factory: pytest.TempPathFactory, request):
     if case_layer(request.node.nodeid) == 'fast':
         return
     base = str(tmp_path_factory.getbasetemp())
-    rows = process_snapshot()
-    # The runner and its parents may name the temp tree themselves (--basetemp).
-    parents, runner, pid = {pid: ppid for pid, ppid, _, _ in rows}, set(), os.getpid()
-    while pid > 1 and pid not in runner:
-        runner.add(pid)
-        pid = parents.get(pid, 0)
-    left = [(pid, args) for pid, _, _, args in rows if base in args and pid not in runner]
+    # Agent v0.22.6+ runs its hourly scratch prune in a child detached from the command that
+    # started it (hermes_constants_scratch_detach). It exits on its own; let it finish before cleanup.
+    deadline = time.monotonic() + 30
+    while True:
+        rows = process_snapshot()
+        # The runner and its parents may name the temp tree themselves (--basetemp).
+        parents, runner, pid = {pid: ppid for pid, ppid, _, _ in rows}, set(), os.getpid()
+        while pid > 1 and pid not in runner:
+            runner.add(pid)
+            pid = parents.get(pid, 0)
+        left = [(pid, args) for pid, _, _, args in rows if base in args and pid not in runner]
+        if time.monotonic() > deadline or not any("hermes_constants_scratch_detach" in args for _, args in left):
+            break
+        time.sleep(.1)
     for pid, _ in left:
         try:
             os.kill(pid, 9)

@@ -43,8 +43,8 @@ the oldest entry only after the candidate passes.
 The optional `nativeContracts` section records exact boot revisions proven for an
 additional native-owner contract, independently of release promotion. TAL-1324
 verifies `served-local-policy-v1` on Agent v0.22.4; TAL-1511 verifies it on
-v0.22.5. The sidecar admits served canonical sessions only when private control
-discovery reports one of those revisions and the authenticated owner's profile,
+v0.22.5 and TAL-1804 on v0.22.6. The sidecar admits served canonical sessions
+only when private control discovery reports one of those revisions and the authenticated owner's profile,
 instance, authority epoch and session capabilities match. A local checkout or
 package version cannot authorize the connection. Missing or unreadable evidence retains
 `served_profile_sessions_unavailable`. Diagnostic creation remains dedicated-only.
@@ -124,8 +124,9 @@ Agent v0.22.2, retired from the support set by TAL-1511, had these observed upst
 limitations: task-relative SSH configuration approval could be bypassed, explicit
 MCP budgets could be shortened by the executor's generic deadline, and transcript
 growth did not lift structural compression backoff. Those are Agent behaviors;
-Talaria does not patch, vendor or wrap the Agent to change them. The retained
-v0.22.3, v0.22.4 and v0.22.5 releases show none of these limitations.
+Talaria does not patch, vendor or wrap the Agent to change them. TAL-1804 retires
+v0.22.3; the retained v0.22.4, v0.22.5 and v0.22.6 releases show none of these
+limitations.
 
 Candidate and canary probes, and supported releases from v0.22.1 onward, also
 replay retained cron records written by the v0.22.1 Agent and Web manual-execution

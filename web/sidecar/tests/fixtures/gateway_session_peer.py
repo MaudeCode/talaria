@@ -542,6 +542,7 @@ async def probe_profiles(home, peer, desc, proc, env):
     verified = getattr(discovered.endpoint, "code_sha", None) in {
         "4d04303818b61bf3aa09278af48356315515965b",
         "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
+        "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab",
     }
 
     async def call(target, sid, action, **extra):
