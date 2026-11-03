@@ -34,15 +34,19 @@ class Gate {
     if (!this.ready) {
       waiting.add(this)
       if (loaded) drain()
-      else load()
+      else preloadMarkdownRenderer()
     }
     return () => { this.notify = null; waiting.delete(this) }
   }
   snapshot = () => (this.ready ? loaded : null)
 }
 
-function load(): void {
-  if (loading) return
+/**
+ * TAL-1693: the single import of the renderer chunk. The client entry starts it before the bootstrap so it downloads
+ * beside the bootstrap and session fetches; the first mounted Markdown reuses the same request.
+ */
+export function preloadMarkdownRenderer(): void {
+  if (loading || loaded) return
   loading = true
   void import('./MarkdownRenderer').then(({ default: Renderer }) => ({ Renderer }), (error: unknown) => ({ error })).then((result) => {
     loaded = result
@@ -71,7 +75,8 @@ function drain(): void {
 export function Markdown(props: MarkdownProps) {
   const [gate] = useState(() => new Gate())
   const renderer = useSyncExternalStore(gate.subscribe, gate.snapshot, gate.snapshot)
-  if (!renderer) return null
+  // TAL-1693: the raw text holds roughly the rendered height, so rows do not grow under the reader when the chunk lands.
+  if (!renderer) return <div className={props.className ?? 'hermes-prose'} dir={props.dir} style={{ whiteSpace: 'pre-wrap' }}>{props.text}</div>
   // A failed chunk (deploy while the tab was open) reaches the route error boundary, as `lazy` did.
   if ('error' in renderer) throw renderer.error
   return <Suspense fallback={null}><renderer.Renderer {...props} /></Suspense>

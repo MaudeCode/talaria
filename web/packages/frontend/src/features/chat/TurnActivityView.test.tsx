@@ -136,7 +136,8 @@ describe('turn worklog presentation', () => {
     view.unmount()
     // A settled answer that talks about these tags keeps them: the server already split the row.
     view = render(<View activity={settled({ final_answer: 'Use `<think>` and `<function_calls>` tags.', activity_rows: rows({ row_id: 'r', role: 'reasoning', text: 'About <tool_call> tags' }) })} />)
-    expect(view.container.querySelector('[data-final-answer]')).toHaveTextContent('Use <think> and <function_calls> tags.')
+    // The raw text shows until the lazy renderer arrives (TAL-1693).
+    await waitFor(() => { expect(view.container.querySelector('[data-final-answer]')).toHaveTextContent('Use <think> and <function_calls> tags.') }, { timeout: 5000 })
     fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
     fireEvent.click(view.container.querySelector('.thinking-card-header')!)
     expect(view.container.querySelector('.thinking-card-body')).toHaveTextContent('About <tool_call> tags')
