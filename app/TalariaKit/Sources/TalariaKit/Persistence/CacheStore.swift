@@ -493,7 +493,7 @@ public enum CacheStore {
 }
 
 private extension SessionSummary {
-    public init(cachedSession: CachedSession) {
+    init(cachedSession: CachedSession) {
         sessionId = cachedSession.sessionID
         title = cachedSession.title
         workspace = cachedSession.workspace
@@ -543,7 +543,7 @@ private extension SessionSummary {
 }
 
 private extension ChatMessage {
-    public init(cachedMessage: CachedMessage) {
+    init(cachedMessage: CachedMessage) {
         let attachments: [MessageAttachment]?
         if let data = cachedMessage.attachmentsData {
             attachments = try? JSONDecoder().decode([MessageAttachment].self, from: data)

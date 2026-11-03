@@ -1,13 +1,15 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // The App's logic that needs no app host: models, networking, persistence, sync, and the view models and presentation
 // logic behind every screen. The App and its extensions link TalariaKit; its tests run with `swift test` on macOS,
 // without a simulator (TAL-399).
 import PackageDescription
 
-// The App target's language settings: Swift 5 mode, targeted concurrency checking, regex literals.
+// The App target's language settings: Swift 5 mode, targeted concurrency checking, regex literals. Plus Swift 6's
+// Sendable key-path literals, which SwiftData's `#Predicate` and `SortDescriptor` need in the macOS SDK.
 let settings: [SwiftSetting] = [
     .enableExperimentalFeature("StrictConcurrency=targeted"),
     .enableUpcomingFeature("BareSlashRegexLiterals"),
+    .enableUpcomingFeature("InferSendableFromCaptures"),
 ]
 
 let package = Package(
@@ -33,7 +35,8 @@ let package = Package(
                 .product(name: "Splash", package: "Splash"),
                 .product(name: "Highlightr", package: "Highlightr"),
             ],
-            swiftSettings: settings
+            // The package's own sources build warning-free; dependencies keep their warnings (TAL-1685).
+            swiftSettings: settings + [.treatAllWarnings(as: .error)]
         ),
         .testTarget(
             name: "TalariaKitTests",

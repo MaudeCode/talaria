@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 import Observation
 
 public enum KanbanCardDetailLoadState: Equatable {

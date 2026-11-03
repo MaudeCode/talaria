@@ -1,4 +1,4 @@
-public import AVFoundation
+import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
 

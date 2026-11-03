@@ -57,12 +57,14 @@ public final class ComposerVoiceNoteRecorder {
     public var isRequestingPermission: Bool { state == .requestingPermission }
     var hasReachedMaximumDuration: Bool { elapsed >= Self.maximumDuration }
 
-    public static let recordingSettings: [String: Any] = [
-        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-        AVSampleRateKey: 44_100.0,
-        AVNumberOfChannelsKey: 1,
-        AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
-    ]
+    public nonisolated static var recordingSettings: [String: Any] {
+        [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44_100.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
+        ]
+    }
 
     // MARK: - Lifecycle
 

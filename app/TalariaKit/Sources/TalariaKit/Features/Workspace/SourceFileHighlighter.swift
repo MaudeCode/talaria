@@ -97,18 +97,12 @@ public actor SourceFileHighlighter {
     /// The engines bake their own fixed-size fonts in; the viewer's Dynamic
     /// Type font must win, so only the colour survives.
     private static func strippedOfFonts(_ attributedText: NSAttributedString) -> AttributedString {
-        var attributed = AttributedString(attributedText)
-        #if os(iOS)
-        attributed.uiKit.font = nil
-        attributed.uiKit.backgroundColor = nil
-        attributed.uiKit.paragraphStyle = nil
-        #else
-        // macOS (tests): the engines emit AppKit attributes.
-        attributed.appKit.font = nil
-        attributed.appKit.backgroundColor = nil
-        attributed.appKit.paragraphStyle = nil
-        #endif
-        return attributed
+        let stripped = NSMutableAttributedString(attributedString: attributedText)
+        let range = NSRange(location: 0, length: stripped.length)
+        for key: NSAttributedString.Key in [.font, .backgroundColor, .paragraphStyle] {
+            stripped.removeAttribute(key, range: range)
+        }
+        return AttributedString(stripped)
     }
 
     private func highlightr(isDark: Bool) -> Highlightr? {

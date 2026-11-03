@@ -100,9 +100,10 @@ struct FeedbackSheet: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
             }
             if model.remainingAttachmentSlots > 0 {
+                let videoAllowed = model.videoAllowed
                 PhotosPicker(selection: $pickedItems, maxSelectionCount: model.remainingAttachmentSlots,
-                             matching: model.videoAllowed ? .any(of: [.images, .videos]) : .images) {
-                    Label(model.videoAllowed ? "Add Photo or Video" : "Add Photo", systemImage: "photo.on.rectangle")
+                             matching: videoAllowed ? .any(of: [.images, .videos]) : .images) {
+                    Label(videoAllowed ? "Add Photo or Video" : "Add Photo", systemImage: "photo.on.rectangle")
                 }
                 .accessibilityIdentifier("feedback-add-attachment")
             }

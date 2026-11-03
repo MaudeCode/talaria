@@ -1,13 +1,13 @@
 import Foundation
 
-public struct HealthResponse: Decodable {
+public struct HealthResponse: Decodable, Sendable {
     public let status: String?
     let sessions: Int?
     let activeStreams: Int?
     let uptimeSeconds: Double?
 }
 
-public struct AuthStatusResponse: Decodable {
+public struct AuthStatusResponse: Decodable, Sendable {
     public let authEnabled: Bool?
     public let loggedIn: Bool?
     /// Finer-grained capabilities newer servers report. All optional so older
@@ -92,14 +92,14 @@ public struct ServerPerson: Decodable, Equatable, Sendable {
     }
 }
 
-public struct NativeOIDCStartResponse: Decodable {
+public struct NativeOIDCStartResponse: Decodable, Sendable {
     public let flowId: String
     public let authorizationUrl: URL
     public let serverId: String
     public let expiresIn: Int
 }
 
-public struct LoginResponse: Decodable {
+public struct LoginResponse: Decodable, Sendable {
     public let ok: Bool?
     let message: String?
     let error: String?

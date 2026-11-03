@@ -1,6 +1,6 @@
 import Foundation
 
-public struct InsightsResponse: Codable, Equatable {
+public struct InsightsResponse: Codable, Equatable, Sendable {
     public let periodDays: Int?
     public let totalSessions: Int?
     public let totalMessages: Int?
@@ -49,7 +49,7 @@ public struct InsightsResponse: Codable, Equatable {
     }
 }
 
-public struct InsightsModelBreakdown: Codable, Equatable {
+public struct InsightsModelBreakdown: Codable, Equatable, Sendable {
     public let model: String?
     public let sessions: Int?
     public let inputTokens: Int?
@@ -100,7 +100,7 @@ public struct InsightsModelBreakdown: Codable, Equatable {
     }
 }
 
-public struct InsightsDailyToken: Codable, Equatable {
+public struct InsightsDailyToken: Codable, Equatable, Sendable {
     public let date: String?
     public let inputTokens: Int?
     public let outputTokens: Int?
@@ -141,7 +141,7 @@ public struct InsightsDailyToken: Codable, Equatable {
     }
 }
 
-public struct InsightsActivityByDay: Codable, Equatable {
+public struct InsightsActivityByDay: Codable, Equatable, Sendable {
     public let day: String?
     public let sessions: Int?
 
@@ -157,7 +157,7 @@ public struct InsightsActivityByDay: Codable, Equatable {
     }
 }
 
-public struct InsightsActivityByHour: Codable, Equatable {
+public struct InsightsActivityByHour: Codable, Equatable, Sendable {
     public let hour: Int?
     public let sessions: Int?
 

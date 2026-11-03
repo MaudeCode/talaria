@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// `GET /api/model/auxiliary` (TAL-388): the active profile's auxiliary task
 /// slots in server order. The server owns ordering, catalog matching, and every

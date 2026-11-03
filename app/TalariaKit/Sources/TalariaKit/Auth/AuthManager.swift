@@ -222,7 +222,7 @@ public final class AuthManager {
         probeClientFactory: @escaping (URL, [CustomHeader], HTTPCookieStorage) -> any AuthAPIClient = { url, headers, cookies in
             APIClient(baseURL: url, cookieStorage: cookies, customHeaderProvider: { headers })
         },
-        webAuthenticator: @escaping (URL, String) async throws -> URL = { url, scheme in
+        webAuthenticator: @escaping (URL, String) async throws -> URL = { @MainActor url, scheme in
             try await PlatformHooks.authenticateInBrowser(url, scheme)
         },
         headerStore: CustomHeaderStore = .shared,
@@ -278,11 +278,12 @@ public final class AuthManager {
     /// instead of exposing the previous profile's data.
     public static func serverScopedStateReset(
         cacheContainer: ModelContainer,
-        draftStore: ChatDraftStore = .shared,
+        draftStore: ChatDraftStore? = nil,
         defaults: UserDefaults = .standard,
         responseCacheRoot: URL? = nil
     ) -> @MainActor (URL) async throws -> Void {
-        { server in
+        let draftStore = draftStore ?? .shared
+        return { server in
             // First, so a screen still open on the previous identity cannot write back what follows.
             ServerCacheGeneration.advance(for: server)
             FeedbackComposer.discardDraft(for: server, defaults: defaults)
@@ -1302,7 +1303,7 @@ public final class AuthManager {
         }
         guard canCommit() else { return false }
         if wasUnconfigured {
-            try? serverRegistry.setActive(id: serverID)
+            _ = try? serverRegistry.setActive(id: serverID)
             try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
             hydrateCustomHeaders(for: serverURL)
             refreshServers()
@@ -1432,7 +1433,7 @@ public final class AuthManager {
         if let previous {
             try? serverRegistry.upsert(previous)
         } else {
-            try? serverRegistry.remove(id: id)
+            _ = try? serverRegistry.remove(id: id)
         }
         if let headers {
             try? keychain.save(headers, forKey: .customHeaders, scope: id)

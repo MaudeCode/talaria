@@ -159,7 +159,11 @@ struct TalariaApp: App {
         _authManager = State(initialValue: liveAuthManager())
         #endif
         // A fixture launch starts from synthetic state, so it never offers this device's update.
+        #if DEBUG
         _whatsNew = State(initialValue: WhatsNewPresenter(pending: usesUITestFixture ? nil : WhatsNewAnnouncement.pending()))
+        #else
+        _whatsNew = State(initialValue: WhatsNewPresenter(pending: WhatsNewAnnouncement.pending()))
+        #endif
 
         // Registering only installs the launch handler, so the fixture needs it too: backgrounding
         // the app submits a refresh request from `ContentView`, and submitting one whose
