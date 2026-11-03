@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Usage: ci/check-swift-warnings LOG
+# Fails on a Swift warning from our own sources in an xcodebuild log. SWIFT_TREAT_WARNINGS_AS_ERRORS can't cover them
+# all: the compiler caps some diagnostics at warning whatever the flags, such as a main-actor call from a completion the
+# SDK marks @preconcurrency @Sendable (#ActorIsolatedCall, TAL-1682 and TAL-1837). Package checkouts are not ours.
+set -euo pipefail
+
+log=${1:?usage: ci/check-swift-warnings LOG}
+pattern='/app/(Talaria|TalariaKit/Sources|TalariaShareExtension|TalariaLiveActivityWidget|TalariaTests)/[^:]+\.swift:[0-9]+:[0-9]+: warning: '
+warnings=$(grep -E "${pattern}" "${log}" | sort -u || true)
+[[ -n "${warnings}" ]] || exit 0
+printf 'error: Swift warning: %s\n' "${warnings//$'\n'/$'\n'error: Swift warning: }" >&2
+exit 1

@@ -138,7 +138,7 @@ def path_suites(path):
     if component == "scripts":
         return SCRIPTS.get(local, SUITES)
     if component == "app":
-        if local in ("ci/build-for-testing", "ci/wait-for-job", "ci/gh-api-poll", "ci/package-coverage"):
+        if local in ("ci/build-for-testing", "ci/check-swift-warnings", "ci/wait-for-job", "ci/gh-api-poll", "ci/package-coverage"):
             return {"app", "tooling"}  # They build, select and sequence the App CI jobs.
         if local.startswith("ci/"):
             return {"tooling"}

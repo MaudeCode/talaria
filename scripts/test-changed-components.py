@@ -123,7 +123,7 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/package-coverage"], {"app", "tooling"}),
-            (["app/ci/build-for-testing", "app/ci/wait-for-job", "app/ci/gh-api-poll"], {"app", "tooling"}),
+            (["app/ci/build-for-testing", "app/ci/check-swift-warnings", "app/ci/wait-for-job", "app/ci/gh-api-poll"], {"app", "tooling"}),
             (["app/ci/package-coverage"], {"app", "tooling"}),
             (["app/ci/wait_for_job_test.sh"], {"tooling"}),
             (["scripts/check-hosted-runners.py", "scripts/test-check-hosted-runners.py"], {"tooling"}),

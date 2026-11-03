@@ -3,7 +3,7 @@
 # CI's build-for-testing into app/DerivedData, after a plain package resolve (both timed in the step summary).
 # Builds are signed ad hoc (CODE_SIGN_IDENTITY=-): no certificate, profile or secret, but the entitlements are
 # embedded, so the app group works and ShareExtensionUITests can hand content to the app (TAL-81). No index
-# store: nothing in CI reads it.
+# store: nothing in CI reads it. A Swift warning from our sources fails the build (ci/check-swift-warnings).
 set -euo pipefail
 
 destination=${1:?usage: ci/build-for-testing DESTINATION}
@@ -12,6 +12,7 @@ project=(-project Talaria.xcodeproj -scheme Talaria -derivedDataPath DerivedData
 start_seconds=${SECONDS}
 xcodebuild -resolvePackageDependencies "${project[@]}"
 resolve_seconds=$((SECONDS - start_seconds))
+log=$(mktemp)
 xcodebuild build-for-testing "${project[@]}" \
   -destination "${destination}" \
   -showBuildTimingSummary \
@@ -21,5 +22,6 @@ xcodebuild build-for-testing "${project[@]}" \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGN_STYLE=Manual \
   PROVISIONING_PROFILE_SPECIFIER= \
-  COMPILER_INDEX_STORE_ENABLE=NO
+  COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee "${log}"
+ci/check-swift-warnings "${log}"
 echo "- Package resolve: ${resolve_seconds}s; build for testing: $((SECONDS - start_seconds - resolve_seconds))s" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
