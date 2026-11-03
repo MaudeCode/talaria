@@ -128,16 +128,38 @@ def test_the_cache_trims_least_recent_idle_agents_to_its_transcript_byte_budget(
         assert chat.start(Ctx(), _params("st-old", "old"))["status"] == "completed"
         long_bytes = len(json.dumps(chat._AGENT_CACHE["long"][0]._session_messages))
         transcript = len(json.dumps(TRANSCRIPT))
-        # Room for the running session and one short transcript: each later insert trims the oldest idle agent.
+        # Room for the running session and one short transcript: the next idle transcript trims the oldest idle agent.
         monkeypatch.setattr(chat, "_AGENT_CACHE_MAX_BYTES", long_bytes + transcript + transcript // 2, raising=False)
         assert chat.start(Ctx(), _params("st-new", "new"))["status"] == "completed"
-        assert chat.start(Ctx(), _params("st-newest", "newest"))["status"] == "completed"
         assert _ended("old") == _released("old")
-        assert list(chat._AGENT_CACHE) == ["long", "new", "newest"]
+        assert list(chat._AGENT_CACHE) == ["long", "new"]
         assert [e for e in EVENTS if e[1] != "old"] == []
     finally:
         gate.set()
         live.join(5)
+
+
+def test_a_turn_that_grows_a_cached_transcript_past_the_budget_trims_idle_agents_when_it_ends(monkeypatch) -> None:
+    """Cache hits insert nothing, so the budget is rechecked once a turn gives back its grown agent."""
+    _setup(monkeypatch)
+    grown = [{"role": "user", "content": "grow"}, {"role": "assistant", "content": "ok"}, {"role": "user", "content": "x" * 4000}]
+
+    class GrowingAgent(MemoryAgent):
+        def run_conversation(self, **kwargs):
+            result = super().run_conversation(**kwargs)
+            if kwargs["user_message"] == "grow":
+                self._session_messages.append(grown[-1])
+            return result
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: GrowingAgent)
+    # Room for the grown transcript alone, not beside another session's.
+    monkeypatch.setattr(chat, "_AGENT_CACHE_MAX_BYTES", len(json.dumps(grown)) + len(json.dumps(TRANSCRIPT)) // 2, raising=False)
+    for sid in ("grows", "idle"):
+        assert chat.start(Ctx(), _params(f"st-{sid}", sid))["status"] == "completed"
+    assert chat.start(Ctx(), {**_params("st-grow", "grows"), "user_message": "grow"})["status"] == "completed"
+    assert len(GrowingAgent.instances) == 2
+    assert _ended("idle") == _released("idle")
+    assert list(chat._AGENT_CACHE) == ["grows"]
 
 
 def test_a_model_switch_releases_the_replaced_agent(monkeypatch) -> None:

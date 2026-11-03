@@ -1359,20 +1359,22 @@ def _build_agent(AIAgent, kwargs: dict, home, session_id: str, state_db: bool = 
 
 
 def _transcript_bytes(agent) -> int:
-    """The serialized size of ``agent._session_messages``, re-measured only when that list was replaced or grew."""
+    """The serialized size of ``agent._session_messages``. A list that only grew adds its new tail; a replaced or
+    shortened one is measured afresh."""
     messages = getattr(agent, "_session_messages", None)
     if not isinstance(messages, list):
         return 0
-    key = (id(messages), len(messages))
+    count = len(messages)
     sampled = getattr(agent, "_talaria_transcript_bytes", None)
-    if isinstance(sampled, tuple) and sampled[0] == key:
-        return sampled[1]
+    known = sampled if isinstance(sampled, tuple) and len(sampled) == 3 and sampled[0] == id(messages) and sampled[1] <= count else None
+    if known is not None and known[1] == count:
+        return known[2]
     try:
-        size = len(json.dumps(messages, default=str))
+        size = known[2] + len(json.dumps(messages[known[1]:count], default=str)) if known else len(json.dumps(messages[:count], default=str))
     except Exception:  # noqa: BLE001 - a running turn mutating a message mid-dump; keep the last sample
-        return sampled[1] if isinstance(sampled, tuple) else 0
+        return sampled[2] if isinstance(sampled, tuple) and len(sampled) == 3 else 0
     try:
-        agent._talaria_transcript_bytes = (key, size)
+        agent._talaria_transcript_bytes = (id(messages), count, size)
     except Exception:  # noqa: BLE001 - read-only stand-ins
         pass
     return size
@@ -1381,7 +1383,7 @@ def _transcript_bytes(agent) -> int:
 def _evict_idle_agents_locked() -> None:
     """Trim the agent LRU to its count and transcript-byte budgets (caller holds ``_AGENT_CACHE_LOCK``), never dropping
     a session whose turn is still running."""
-    # ponytail: re-dumps every changed transcript per insert (a cache miss); sample at turn end if inserts get hot.
+    # Runs at every insert and turn end; only transcripts that changed since their last sample are serialized.
     sizes = {sid: _transcript_bytes(entry[0]) for sid, entry in _AGENT_CACHE.items()}
     total = sum(sizes.values())
 
@@ -2381,6 +2383,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _release_vault_session(session_id)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
             _release_if_dropped_locked(run.agent, home)
+            # Its transcript grew during the turn, and the agents it protected from eviction are idle now.
+            _evict_idle_agents_locked()
 
 
 def _checkpoint_required() -> bool:
