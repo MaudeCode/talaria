@@ -119,7 +119,8 @@ export interface JournalBackend {
   iterRunEvents(sid: string, streamId: string, opts?: { afterSeq?: number | null; maxSeq?: number | null }): AsyncGenerator<JournalEvent>
   readRunEventTail(sid: string, streamId: string, maxBytes?: number, maxRows?: number): Promise<{ events: JournalEvent[]; truncated: boolean }>
   latestRunSummary(sid: string, streamId: string): Promise<RunSummary>
-  findRunSummary(streamId: string): Promise<RunSummary | null>
+  /** The run's summary from any session; `sid` restricts the lookup to that session. */
+  findRunSummary(streamId: string, sid?: string): Promise<RunSummary | null>
   sessionJournalFingerprint(sid: string): Promise<string>
   readSessionRunEvents(sid: string, cursor: string | null | undefined): Promise<SessionJournalReplay>
   staleInterruptedEvent(sid: string, streamId: string, afterSeq?: number | null, now?: number): Promise<JournalEvent | null>
