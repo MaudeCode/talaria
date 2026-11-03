@@ -14,13 +14,18 @@ from talaria_sidecar import SIDECAR_RPC_VERSION
 
 @requires_agent
 def test_standalone_resumes_native_guest_handoffs(tmp_path):
-    if not (AGENT_DIR / "hermes_cli/guest_handoff.py").is_file():
+    native = AGENT_DIR / "hermes_cli/guest_handoff.py"
+    if not native.is_file():
         pytest.skip("Agent predates native guest handoff")
+    # Agent 0.22.6 binds a record to its profile, not an account: no ``paused`` state, and a retry claims for
+    # whichever account the profile holds now.
+    account_bound = "def _account_bound_to" in native.read_text(encoding="utf-8")
     probe = Path(__file__).with_name("probe_guest_handoff.py")
     epoch = str(time.time())
     for scenario in ("retained", "plain_device", "wrong_account", "deleted_profile", "eof_retained"):
         case = tmp_path / scenario
-        launch, owner, shared = case / "launch", case / "profiles/owner", case / "shared"
+        launch, shared = case / "launch", case / "shared"
+        owner = launch / "profiles/owner"
         for home in (launch, owner, shared):
             home.mkdir(parents=True)
         for home in (launch, owner):
@@ -47,7 +52,7 @@ def test_standalone_resumes_native_guest_handoffs(tmp_path):
             def segment(value):
                 return base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
             wrong = ".".join([segment({"alg": "none"}), segment({"sub": "another_account", "exp": int(time.time()) + 86400}), "sig"])
-            (owner / "auth.json").write_text(json.dumps({"version": 1, "providers": {"nous": {"access_token": wrong}}}))
+            (owner / "auth.json").write_text(json.dumps({"version": 1, "providers": {"nous": {"access_token": wrong, "expires_at": "2099-01-01T00:00:00Z", "portal_base_url": "https://portal.example.invalid"}}}))
         process_home = owner if scenario == "plain_device" else launch
         peer = SidecarProcess(process_home, env=env,
             command=[AGENT_PYTHON, str(probe), str(AGENT_DIR), "serve"])
@@ -69,7 +74,9 @@ def test_standalone_resumes_native_guest_handoffs(tmp_path):
                 continue
             observed = peer.result("probe.tick")
             record = observed["records"][0]
-            if scenario in ("wrong_account", "deleted_profile", "eof_retained"):
+            if scenario == "wrong_account" and not account_bound:
+                assert observed["claimed_for"] == ["another_account"] and record["state"] == "claimed"
+            elif scenario in ("wrong_account", "deleted_profile", "eof_retained"):
                 assert observed["claims"] == 0 and record["state"] == "retrying"
                 assert record["attempts"] == 1 and record["credential_retained"]
                 if scenario == "wrong_account":
@@ -79,9 +86,11 @@ def test_standalone_resumes_native_guest_handoffs(tmp_path):
                 assert record["state"] == "claimed", "standalone sidecar left a due retained connector handoff unserviced"
                 assert record["attempts"] == 2 and not record["credential_retained"]
                 assert record["moved"] == ["calendar"]
+                assert peer.result("probe.tick")["claimed_for"] == ["account_fixture"] * observed["claims"]
+                assert observed["claims"] == (2 if scenario == "plain_device" else 1), "a due handoff was sent twice"
                 result = peer.result("providers.nous_account", {"profile_home": str(owner)})["nous_account"]
                 assert result["state"] == "claimed" and result["moved"] == ["calendar"]
-                assert "calendar" in " ".join(result["lines"])
+                assert "calendar" in " ".join(result["lines"]).lower()
                 assert result["dropped"] == ["gmail"] and result["reconnect"] == ["gmail"]
                 assert "fixture@example.invalid" not in json.dumps(result)
                 assert "anon_fixture" not in json.dumps(result) and "access_token" not in json.dumps(result)

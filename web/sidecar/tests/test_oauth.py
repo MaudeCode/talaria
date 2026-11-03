@@ -355,6 +355,27 @@ def stub_agent(monkeypatch, *, guest: bool, shape: str, sign_in: SignIn | None =
     return requests
 
 
+@pytest.mark.parametrize("handoff", ["drains", "fails", "absent"])
+def test_plain_nous_save_hands_a_replaced_free_tier_over_right_after_the_save(monkeypatch, handoff):
+    requests = stub_agent(monkeypatch, guest=False, shape="0.22")
+    sys.modules["hermes_cli.anon_auth"].settle_after_upgrade = lambda full_state: requests.append(("settle",))
+
+    def drain():
+        requests.append(("drain",))
+        if handoff == "fails":  # a busy records lock never undoes the saved sign-in; the retry worker picks it up
+            raise TimeoutError("busy")
+        return []
+
+    native = None
+    if handoff != "absent":
+        native = types.ModuleType("hermes_cli.guest_handoff")
+        native.drain = drain
+    monkeypatch.setitem(sys.modules, "hermes_cli.guest_handoff", native)
+    oauth._nous_save(None, {"portal": "https://portal.example.test", "client_id": "synthetic-client", "scope": "inference"},
+                     {"access_token": "synthetic-token"})
+    assert [request[0] for request in requests] == ["plain save", *(["drain"] if native else []), "settle"]
+
+
 @pytest.mark.parametrize("shape", ["0.22", "0.21"])
 def test_nous_without_a_guest_requests_a_device_code(monkeypatch, shape):
     requests = stub_agent(monkeypatch, guest=False, shape=shape)

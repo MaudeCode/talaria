@@ -125,13 +125,14 @@ def serve(portal, *, bearer: bool = True):
         server.shutdown()
 
 
-def seed_identity(home: pathlib.Path, origin: str) -> dict[str, str]:
+def seed_identity(home: pathlib.Path, origin: str, *, email: str | None = None) -> dict[str, str]:
     """A signed-in Nous identity the portal enabled connectors for; returns the env that points the Agent at ``origin``."""
 
     def b64(value: dict) -> str:
         return base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
 
-    token = f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64({'sub': 'user-synthetic', 'exp': int(time.time()) + 86400, 'managed_tools': True})}.sig"
+    claims = {"sub": "user-synthetic", "exp": int(time.time()) + 86400, "managed_tools": True, **({"email": email} if email else {})}
+    token = f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(claims)}.sig"
     state = {"access_token": token, "expires_at": "2099-01-01T00:00:00Z", "portal_base_url": origin}
     (home / "auth.json").write_text(json.dumps({"version": 1, "providers": {"nous": state}}), encoding="utf-8")
     return {"HERMES_PORTAL_BASE_URL": origin, "CONNECTOR_GATEWAY_URL": origin}

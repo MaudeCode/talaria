@@ -376,7 +376,12 @@ it alone. Credit, usage and other per-session notices keep their existing lifecy
 
 The shared Agent runtime starts the native Nous connected-app handoff worker when the installed
 Agent provides it. It runs without a Nous chat or auth keepalive, including retained work from
-other profiles. The Agent owns account proof, locks, backoff and credential cleanup. Sidecar
+other profiles. Agent 0.22.6's worker drains only the launch profile, so beside it the sidecar ticks
+the native `drain()` in each named profile (`profiles/*`) that owns an active record; the native
+lease keeps the two from sending one record twice. A plain Nous sign-in drains once right after its
+save. The Agent owns account proof, locks, backoff and credential cleanup. On 0.22.6, which binds a
+record to its profile rather than an account, the status read shows a claimed result only when its
+account email matches the signed-in one; a missing email on either side hides it. Sidecar
 shutdown, source drift and dependency/source mutation retirement join the worker before releasing
 custody; retained work remains resumable by a fresh process. Missing modules on older Agents are
 supported and skip worker retirement. Recovery acknowledges a matching ready runtime after reconnect

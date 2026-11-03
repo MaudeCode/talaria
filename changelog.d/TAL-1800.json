@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a free-tier Nous sign-in, Talaria Web shows which connected apps moved and offers Reconnect on Hermes Agent 0.22.6, and a transfer that failed on a named profile is retried.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

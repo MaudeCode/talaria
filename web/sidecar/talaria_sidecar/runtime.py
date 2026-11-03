@@ -42,6 +42,56 @@ _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 _MARKER_SAFE_OPEN_AVAILABLE = bool(_O_NOFOLLOW) and bool(_O_NONBLOCK)
 
 
+# Agent 0.22.6 retries only the launch profile's free-tier handoffs; 0.22.5's ``retry_all_profiles`` covered every
+# profile. This tick retries the named profiles' due ones beside the native worker. The native lease (``_reserve``)
+# keeps the two from sending one record twice.
+_PROFILE_HANDOFF_SECONDS = 60.0
+_profile_handoff_stop = threading.Event()
+_profile_handoff_thread: threading.Thread | None = None
+
+
+def _start_profile_handoffs(handoff) -> None:
+    global _profile_handoff_thread
+    _profile_handoff_stop.clear()
+    _profile_handoff_thread = threading.Thread(target=_profile_handoff_loop, args=(handoff,), daemon=True, name="talaria-profile-handoffs")
+    _profile_handoff_thread.start()
+
+
+def _stop_profile_handoffs() -> None:
+    global _profile_handoff_thread
+    _profile_handoff_stop.set()
+    if _profile_handoff_thread is not None:
+        _profile_handoff_thread.join()  # one bounded native attempt per profile at most
+        _profile_handoff_thread = None
+
+
+def _profile_handoff_loop(handoff) -> None:
+    while not _profile_handoff_stop.wait(_PROFILE_HANDOFF_SECONDS):
+        try:
+            drain_profile_handoffs(handoff)
+        except Exception:  # noqa: BLE001 - the records stay due for the next tick
+            log.warning("Named-profile free-tier handoff tick failed", exc_info=True)
+
+
+def drain_profile_handoffs(handoff) -> None:
+    """One native ``drain`` in each named profile that owns an active record; the launch profile is the native worker's."""
+    from hermes_constants import hermes_home_key
+
+    from .home import _PROCESS_HOME, scoped_home
+    from .methods.profiles import named_profile_homes
+
+    records = handoff._load(handoff._records_path())["records"].values()
+    owners = {home for record in records if record.get("state") in ("pending", "retrying") for home in record.get("profiles", ())}
+    for _, home in named_profile_homes(_PROCESS_HOME):
+        if hermes_home_key(home) not in owners:
+            continue
+        try:
+            with scoped_home(home, recover_processes=False):
+                handoff.drain()
+        except Exception:  # noqa: BLE001 - one profile's failure never starves the others
+            log.warning("Free-tier handoff retry failed for %s", home, exc_info=True)
+
+
 class AgentRuntimeStale(RpcError):
     def __init__(self, update_state: str | None, message: str | None = None, *, source_changed: bool = False):
         data = {"retryable": True, "restart_scheduled": False, "agent_source_changed": source_changed}
@@ -316,6 +366,8 @@ class AgentRuntime:
                     self._handoff = handoff
                     if not handoff.start_worker().is_alive():
                         raise RuntimeError("Native handoff worker did not start")
+                    if not hasattr(handoff, "retry_all_profiles"):
+                        _start_profile_handoffs(handoff)
             except Exception as exc:  # noqa: BLE001 - reported as a handshake condition
                 self._stop_handoff()
                 self.import_error = f"{type(exc).__name__}: {exc}"
@@ -334,6 +386,7 @@ class AgentRuntime:
                 log.warning("talaria toolset registration failed", exc_info=True)
 
     def _stop_handoff(self) -> None:
+        _stop_profile_handoffs()
         if self._handoff is not None:
             # Native requests are bounded. Join fully before code/dependencies may change.
             self._handoff.stop_worker(timeout=None)

@@ -51,11 +51,11 @@ def respond(request):
     assert path == "/api/anonymous/claim", path
     bearer = request.headers["authorization"].removeprefix("Bearer ")
     payload = bearer.split(".")[1]
-    assert json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["sub"] == "account_fixture"
-    claims.append(json.loads(request.content)["token"])
+    account = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    claims.append(account["sub"])  # the account the apps go to: the Bearer's
     if os.environ.get("HANDOFF_TRANSIENT") == "1" and len(claims) == 1:
         return httpx.Response(503, json={"error": "temporarily_unavailable"}, headers={"retry-after": "300"})
-    return httpx.Response(200, json={"status": "claimed", "account_email": "fixture@example.invalid",
+    return httpx.Response(200, json={"status": "claimed", "account_email": account.get("email"),
         "connectors": {"kind": "moved", "moved_toolkits": ["calendar"], "dropped_toolkits": ["gmail"]},
         "cohort_carried": False})
 
@@ -107,6 +107,10 @@ class ControlledStop:
 
 stop = ControlledStop()
 handoff._worker_stop = stop
+from talaria_sidecar import runtime as sidecar_runtime  # noqa: E402
+
+profile_stop = ControlledStop()  # the sidecar's named-profile tick on Agents without ``retry_all_profiles``
+sidecar_runtime._profile_handoff_stop = profile_stop
 
 
 def snapshot():
@@ -114,7 +118,8 @@ def snapshot():
     return {"records": [{"state": r["state"], "attempts": r["attempts"],
         "credential_retained": "anon_token" in r, "due": handoff._due(r, clock[0]),
         "moved": (r.get("result") or {}).get("moved_toolkits", [])} for r in records],
-        "claims": len(claims), "worker_alive": bool(handoff._worker_thread and handoff._worker_thread.is_alive())}
+        "claims": len(claims), "claimed_for": claims,
+        "worker_alive": bool(handoff._worker_thread and handoff._worker_thread.is_alive())}
 
 
 if sys.argv[2] == "seed":
@@ -132,9 +137,10 @@ else:
 
         def tick(ctx, params):
             clock[0] += params.get("advance", 301)
-            if handoff._worker_thread and handoff._worker_thread.is_alive():
-                assert stop.waiting.wait(10)
-                stop.tick()
+            for worker, controlled in ((handoff._worker_thread, stop), (sidecar_runtime._profile_handoff_thread, profile_stop)):
+                if worker and worker.is_alive():
+                    assert controlled.waiting.wait(10)
+                    controlled.tick()
             return snapshot()
 
         def inspect(ctx, params):
@@ -172,5 +178,6 @@ else:
     try:
         assert main.main() == 0
         assert handoff._worker_thread is None, "process teardown retained the native worker"
+        assert sidecar_runtime._profile_handoff_thread is None, "process teardown retained the profile handoff tick"
     finally:
         handoff.stop_worker()

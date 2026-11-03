@@ -266,6 +266,17 @@ def _nous_save(flow: Flow, state: dict, token_data: dict) -> None:
     }
     full_state = refresh_nous_oauth_from_state(auth_state, timeout_seconds=15.0, force_refresh=False)
     persist_nous_credentials(full_state)
+    try:
+        from hermes_cli.guest_handoff import drain
+    except ImportError:
+        pass  # Agents before 0.22.5 have no free-tier handoff
+    else:
+        # Agent 0.22.6 sign-ins drain right after the save (0.22.5 already drained inside it). A failed attempt stays
+        # due for the retry worker and never undoes the saved account.
+        try:
+            drain()
+        except Exception:  # noqa: BLE001
+            log.warning("Free-tier handoff after the Nous sign-in failed; the retry worker resumes it", exc_info=True)
     anon_auth.settle_after_upgrade(full_state)
 
 
