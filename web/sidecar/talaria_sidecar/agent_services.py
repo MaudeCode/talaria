@@ -1037,16 +1037,21 @@ class ServiceRecovery:
                 if attempts > 8:
                     raise RuntimeError(f'{_name(entry)} repeatedly respawned during drain; recovery remains owed.')
                 retired = {**entry.get('retired_processes', {}), **entry['processes']}
-                entry.update(candidate, retired_processes=retired, phase='retiring',
+                # Recorded until an ACK proves delivery: an undelivered ask must leave custody that
+                # recovery can adopt once the successor serves, never a retirement nothing re-asks.
+                entry.update(candidate, retired_processes=retired, phase='recorded',
                              drain_acknowledged=False, drain_acknowledged_at=None, settle_attempts=attempts)
                 self.save()  # Successor custody precedes its cooperative lifecycle request.
-                self.verify_processes(entry)
-                if _config_stamp(entry) != entry['config_stamp']:
-                    raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
-                if not self.pause._ask_to_drain(entry):
-                    raise RuntimeError(f'{_name(entry)} successor did not acknowledge cooperative drain; recovery remains owed.')
-                entry.update(drain_acknowledged=True, drain_acknowledged_at=time.time())
-                self.save()
+                while True:
+                    self.verify_processes(entry)
+                    if _config_stamp(entry) != entry['config_stamp']:
+                        raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
+                    # A published successor refuses until its control socket listens; it is never signalled.
+                    if self.pause._ask_to_drain(entry):
+                        break
+                    if stopped.wait(.05) or time.monotonic() >= deadline:
+                        raise RuntimeError(f'{_name(entry)} successor did not acknowledge cooperative drain; recovery remains owed.')
+                self.gateway_requested(entry, acknowledged=True)
             stopped.wait(.05)
 
     def resume(self, ledger, *, gateway_deadline=None):
@@ -1058,6 +1063,10 @@ class ServiceRecovery:
         failures, draining = [], True
         for entry in list(self.state['entries']):
             try:
+                if (entry['purpose'] == 'gateway' and entry['phase'] == 'retiring' and entry.get('settle_attempts')
+                        and not entry.get('drain_acknowledged') and self._gateway_writers_live(entry)):
+                    entry['phase'] = 'recorded'  # Older custody retired a successor before any ACK proved delivery.
+                    self.save()
                 if self._ready(entry, ledger):
                     self.state['entries'].remove(entry)
                     self.save()

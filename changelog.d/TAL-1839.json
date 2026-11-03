@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An Agent update no longer fails when a restarted gateway takes a few seconds to start listening, and recovery now resumes the running gateway instead of reporting that a drain is still owed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
