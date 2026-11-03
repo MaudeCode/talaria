@@ -246,7 +246,7 @@ describe('Agent notices (TAL-815)', () => {
 describe('webhook and cron deliveries (TAL-816)', () => {
   const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { delivery_session: { messages: Message[] } }).delivery_session.messages
 
-  it('shows each mirrored delivery as a notice in its place, and only the user\'s own rows as their messages', () => {
+  it('shows each mirrored delivery as a notice in its place, and only the user\'s own rows as their messages', async () => {
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
     const messages = fixture()
     const view = render(<Transcript rows={projectMessages(messages)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
@@ -256,7 +256,8 @@ describe('webhook and cron deliveries (TAL-816)', () => {
     expect(webhook).toHaveAccessibleName('Webhook “injury-report” delivered')
     expect(webhook).toHaveTextContent('Henderson OUT Wednesday (hamstring).')
     expect(cron).toHaveAccessibleName('Scheduled job “Morning Brief” delivered')
-    expect(cron).toHaveTextContent('Rain until noon.')
+    // The raw text shows until the lazy renderer arrives (TAL-1693).
+    await waitFor(() => { expect(cron).toHaveTextContent('Rain until noon.') }, { timeout: 5000 })
     expect(view.container).not.toHaveTextContent('[Webhook delivery:')
     expect(view.container).not.toHaveTextContent('[Cron delivery:')
   })

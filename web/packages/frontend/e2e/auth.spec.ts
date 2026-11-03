@@ -29,6 +29,17 @@ test.describe('password auth', () => {
     await expect(page).toHaveURL(authUrl('/?'))
   })
 
+  test('the login and onboarding pages do not load the Markdown renderer (TAL-1693)', async ({ page }) => {
+    const chunks: string[] = []
+    page.on('request', (req) => { if (/\/MarkdownRenderer-[^/]*\.js$/.test(new URL(req.url()).pathname)) chunks.push(req.url()) })
+    await page.goto(`${AUTH()}/login`)
+    await settle(page)
+    await expect(page.locator('#pw')).toBeVisible()
+    await page.goto('/onboarding')
+    await settle(page)
+    expect(chunks).toEqual([])
+  })
+
   test('API requests without a session are refused', async ({ request }) => {
     const res = await request.get(`${AUTH()}/api/settings`)
     expect(res.status()).toBe(401)

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a chat in Talaria Web no longer makes its messages jump while formatting loads.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

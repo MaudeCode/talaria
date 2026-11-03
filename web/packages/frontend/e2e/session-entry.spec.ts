@@ -126,12 +126,19 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
   test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
   const history = await liveHistory(page)
   // TAL-1637: one blocking render of all 300 answers held the live turn's attach for seconds. Record, at the commit
-  // that first shows the newest answer, whether the oldest had rendered too.
+  // that first renders the newest answer's Markdown, whether the oldest had rendered too. Before the renderer
+  // arrives each row shows its raw text (TAL-1693), so only rendered paragraphs count.
+  // The client preloads the renderer (TAL-1693), so it usually lands before the rows mount and they render at once,
+  // as on a session switch. Hold it until the history has mounted, as a slow network would, to cover the batch drain.
+  await page.route('**/MarkdownRenderer-*.js', async (route) => {
+    await page.locator('[data-message-key="600"]').waitFor({ state: 'attached' })
+    await route.continue()
+  })
   await page.addInitScript(() => {
     const w = window as unknown as { oldestWithNewest?: boolean }
     new MutationObserver((_, observer) => {
-      if (!document.querySelector('[data-message-key="600"] .msg-body')?.textContent?.includes('Paragraph 8:')) return
-      w.oldestWithNewest = !!document.querySelector('[data-message-key="2"] .msg-body')?.textContent
+      if (!document.querySelector('[data-message-key="600"] .msg-body p')) return
+      w.oldestWithNewest = !!document.querySelector('[data-message-key="2"] .msg-body p')
       observer.disconnect()
     }).observe(document, { childList: true, subtree: true })
   })
@@ -142,7 +149,7 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.goto(`/session/${history.sid}`)
     await expect(page.locator('.live-turn')).toBeAttached()
-    await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+    await expect(page.locator('[data-message-key="600"] .msg-body p').first()).toBeAttached()
     expect(await page.evaluate(() => (window as unknown as { oldestWithNewest?: boolean }).oldestWithNewest), 'the history renders newest first, a batch per task').toBe(false)
   } finally {
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
@@ -172,9 +179,9 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         history.run.stream?.end()
         history.run.stream = undefined
         await page.goto(`/session/${sid}`)
-        await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+        await expect(page.locator('[data-message-key="600"] .msg-body p').first()).toBeAttached()
         // History Markdown renders newest first, a batch per task (TAL-1637); measure only once all of it has.
-        await expect(page.locator('[data-message-key="2"] .msg-body')).toContainText('Paragraph 8:')
+        await expect(page.locator('[data-message-key="2"] .msg-body p').first()).toBeAttached()
         await expect(page.locator('[data-message-key]')).toHaveCount(600)
         await expect.poll(() => !!history.run.stream).toBe(true)
         await expect.poll(() => distance(page)).toBeLessThan(2)
@@ -232,8 +239,9 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
 /** Wait for the selected session and lazy Markdown before measuring scroll geometry. */
 async function shows(page: Page, sid: string): Promise<void> {
   await expect(page.locator('#messages').getByText(new RegExp(`^${sid} question`)).first()).toBeAttached()
-  // Markdown is lazy: mounted user rows alone do not mean the transcript has finished laying out.
-  await expect(page.locator('#messages [data-role="assistant"] .msg-body').last()).not.toBeEmpty()
+  // Markdown is lazy: mounted user rows, or a row's raw text before the renderer arrives (TAL-1693), do not mean the
+  // transcript has finished laying out.
+  await expect(page.locator('#messages [data-role="assistant"] .msg-body p').last()).toBeAttached()
 }
 
 /** Sidebar-style entry: the router changes the session without reloading the page, so the cached transcript shows at once. */
