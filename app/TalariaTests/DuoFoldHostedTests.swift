@@ -314,6 +314,11 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertTrue(HostedAccessibility.activate(reopen))
         let reopened = await awaitCondition { self.showsFiles(in: window) }
         XCTAssertTrue(reopened, "A new Files tap must reopen the inspector")
+        // UIKit can refuse that first presentation over a column it has not hidden yet and show it for a moment
+        // again; the tap must still leave Files open once the layout settles (TAL-1670).
+        settle(0.3)
+        let stays = await awaitCondition { self.showsFiles(in: window) }
+        XCTAssertTrue(stays, "Files closed again after the tap reopened it")
     }
 
     private func showsFiles(in window: UIWindow) -> Bool {

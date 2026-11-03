@@ -517,8 +517,12 @@ struct SessionListView: View {
             .onChange(of: navigationState.filesInspectorPresented) { _, presented in
                 if !presented { setFilesInspectorPresented(false) }
             }
-            .onChange(of: nativeFilesInspectorPresented) { _, presented in
-                if !presented || !sidebarPresentation.showsFilesInspector { setFilesInspectorPresented(false) }
+            // A fold, a rotation or compact width clears the intent itself (the hinge handler and
+            // `dismissesFilesInspector`), and the reader closes Files with the Files button or the inspector's close
+            // button. UIKit dropping the presentation while the layout still shows Files is UIKit refusing it over a
+            // column it has not hidden yet: the intent stays, and the next room measurement admits it (TAL-1670).
+            .onChange(of: nativeFilesInspectorPresented) {
+                if !sidebarPresentation.showsFilesInspector { setFilesInspectorPresented(false) }
             }
             .onReceive(
                 NotificationCenter.default.publisher(for: .talariaSessionNotificationArrived)
