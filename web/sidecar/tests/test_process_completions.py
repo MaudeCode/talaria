@@ -350,3 +350,40 @@ print(json.dumps({'first': [e['process_id'] for e in first], 'second': [e['proce
 """))
     assert result['first'] == [f'deleg_{i:03}' for i in range(200)]
     assert result['second'] == ['deleg_200'], 'later deliveries must reach admission even while accepted rows remain eligible'
+
+
+def test_drain_polls_enter_each_profile_scope_once_per_sweep_interval(monkeypatch, tmp_path):
+    """TAL-1746: the server polls drain every 1-10 s; the Agent's sweep is rate-limited, so the scope entry is too."""
+    import contextlib
+    import queue
+    import threading
+    import types
+
+    from talaria_sidecar.methods import process
+
+    delegation = types.ModuleType('tools.async_delegation')
+    delegation.ORPHAN_SWEEP_INTERVAL_S = 30.0
+    delegation.maybe_sweep_orphaned_completions = lambda target_queue: 0
+    delegation.restore_undelivered_completions = lambda target_queue: None
+    tools = types.ModuleType('tools')
+    tools.async_delegation = delegation
+    monkeypatch.setitem(sys.modules, 'tools', tools)
+    monkeypatch.setitem(sys.modules, 'tools.async_delegation', delegation)
+    registry = SimpleNamespace(completion_queue=queue.Queue(), restore_completions=lambda: None, _lock=threading.Lock(), _running={})
+    homes = [tmp_path / 'default', tmp_path / 'profiles' / 'work']
+    entered = []
+
+    @contextlib.contextmanager
+    def scoped(home):
+        entered.append(home)
+        yield home
+
+    monkeypatch.setattr(process, '_registry', lambda: registry)
+    monkeypatch.setattr(process, '_completion_homes', lambda: homes)
+    monkeypatch.setattr(process, '_reconcile_delivered_notifications', lambda: [])
+    monkeypatch.setattr(process, 'scoped_home', scoped)
+    monkeypatch.setattr(process, '_LAST_COMPLETION_SWEEP', {}, raising=False)
+
+    for _ in range(10):
+        assert process.drain(256) == []
+    assert entered == homes

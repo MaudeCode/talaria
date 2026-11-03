@@ -119,6 +119,18 @@ def test_a_finished_turn_never_interrupts_the_cached_agent(monkeypatch) -> None:
     assert agent.cleared == 2
 
 
+def test_a_cached_agent_turn_never_probes_the_agent_signature(monkeypatch) -> None:
+    """TAL-1746: the constructor probe ran ``inspect.signature`` (~43 µs for the real AIAgent) per kwarg per turn."""
+    _patch(monkeypatch)
+    assert chat.start(Ctx(), _params("st-probe-1", "probe"))["status"] == "completed"
+    probes = []
+    signature = chat.inspect.signature
+    monkeypatch.setattr(chat.inspect, "signature", lambda target: probes.append(target) or signature(target))
+    assert chat.start(Ctx(), _params("st-probe-2", "probe"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 1
+    assert probes == []
+
+
 def test_each_turn_reports_its_cached_agents_counters_when_it_began(monkeypatch) -> None:
     """TAL-1076: ``usage_start`` is the bound agent's counters at the turn's start, so the server can stamp the turn's own
     usage; a cached agent's second turn begins from the first turn's totals."""

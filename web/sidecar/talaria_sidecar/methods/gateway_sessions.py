@@ -25,6 +25,8 @@ _REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
 _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
+# Queued on a watch's event queue when its call is cancelled, so the watch ends without polling the flag (TAL-1746).
+_WAKE = object()
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
@@ -107,6 +109,24 @@ def _snapshot(value: dict) -> dict:
             and isinstance(reaction.get("emoji"), str) and reaction["emoji"] in _REACTION_EMOJIS] if isinstance(reactions, list) else []})
     return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys},
             **({"todo_state": _todo_state(value["todo_state"])} if "todo_state" in value else {})}
+
+
+def _wake_on_cancel(ctx, events: asyncio.Queue) -> None:
+    """Queue ``_WAKE`` on the running loop when ``ctx`` is cancelled. A full queue already wakes the watch, and a loop
+    that closed with the call has nothing to wake."""
+    loop = asyncio.get_running_loop()
+
+    def nudge() -> None:
+        with suppress(asyncio.QueueFull):
+            events.put_nowait(_WAKE)
+
+    def waker() -> None:
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(nudge)
+
+    add_waker = getattr(getattr(ctx, "cancel_event", None), "add_waker", None)
+    if callable(add_waker):
+        add_waker(waker)
 
 
 def _refused(state: str, reason: str) -> dict:
@@ -367,6 +387,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         ctx.emit("event", _event(event))
                 sequence = replay["last_sequence"]
             ctx.emit("replay_complete", {})
+            _wake_on_cancel(ctx, events)
             checked = asyncio.get_running_loop().time()
             while not ctx.cancelled:
                 now = asyncio.get_running_loop().time()
@@ -383,8 +404,10 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                             ctx.emit("snapshot", {**result, "snapshot": current, "reaction_only": True})
                         snap = current
                 try:
-                    frame = await asyncio.wait_for(events.get(), .25)
+                    frame = await asyncio.wait_for(events.get(), 1.0)
                 except TimeoutError:
+                    continue
+                if frame is _WAKE:
                     continue
                 if isinstance(frame, Exception):
                     raise frame

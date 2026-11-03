@@ -338,3 +338,67 @@ def test_the_yielding_decoder_rejects_what_json_loads_rejects(line) -> None:
         json.loads(line)
     with pytest.raises(ValueError):
         _loads_yielding(line.encode())
+
+
+def test_an_idle_loop_rarely_wakes_and_still_cancels_and_shuts_down_promptly(monkeypatch) -> None:
+    """TAL-1746: the idle loop polled its input queue 10x/s; input and shutdown now both arrive on the queue."""
+    import queue
+    import time
+    from types import SimpleNamespace
+
+    from talaria_sidecar import rpc
+
+    class SimulatedQueue(queue.Queue):
+        """Each empty timed wait returns at once and advances a simulated clock by its timeout, ending after 5 s."""
+
+        waits = 0
+        elapsed = 0.0
+
+        def get(self, block=True, timeout=None):
+            if timeout is not None and self.empty():
+                type(self).waits += 1
+                type(self).elapsed += timeout
+                if type(self).elapsed >= 5:
+                    return None
+                raise queue.Empty
+            return super().get(block, timeout)
+
+    # Open inputs that never send a line: one per server, since a finished loop's reader thread keeps reading its own.
+    (idle_read, idle_write), (read_fd, write_fd) = os.pipe(), os.pipe()
+    idle, pipe = os.fdopen(idle_read, 'rb'), os.fdopen(read_fd, 'rb')
+    try:
+        monkeypatch.setattr(rpc, 'queue', SimpleNamespace(Queue=SimulatedQueue, Empty=queue.Empty, Full=queue.Full))
+        RpcServer({}, stdin=idle, stdout=io.BytesIO()).serve_forever()
+        assert SimulatedQueue.waits <= 10
+        monkeypatch.undo()
+
+        cancelled_at, started = [], threading.Event()
+
+        def slow(ctx, params):
+            started.set()
+            ctx.cancel_event.wait(5)
+            cancelled_at.append(time.monotonic())
+            raise Cancelled()
+
+        server = RpcServer({'slow': slow}, stdin=pipe, stdout=io.BytesIO())
+        result = []
+        reader = threading.Thread(target=lambda: result.append(server.serve_forever()), daemon=True)
+        reader.start()
+        os.write(write_fd, b'{"jsonrpc":"2.0","id":1,"method":"slow"}\n')
+        assert started.wait(5)
+        sent = time.monotonic()
+        os.write(write_fd, b'{"jsonrpc":"2.0","id":"c","method":"rpc.cancel","params":{"id":1}}\n')
+        deadline = time.monotonic() + 5
+        while not cancelled_at and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert cancelled_at and cancelled_at[0] - sent < 0.1
+        time.sleep(0.2)  # the loop is idle again, parked in its queue wait
+        stopping = time.monotonic()
+        server.request_shutdown(exit_code=4)
+        reader.join(1)
+        assert result == [4] and time.monotonic() - stopping < 0.1
+    finally:
+        os.close(idle_write)
+        os.close(write_fd)
+        idle.close()
+        pipe.close()

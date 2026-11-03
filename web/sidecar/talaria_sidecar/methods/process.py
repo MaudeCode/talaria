@@ -117,6 +117,9 @@ def _publish_recovered_exits(registry) -> None:
 
 _COMPLETION_BASE_HOME: Path | None = None
 _RESTORED_COMPLETION_HOMES: set[Path] = set()
+# TAL-1746: the server polls drain every 1-10 s, but the Agent's sweep runs at most once per ``ORPHAN_SWEEP_INTERVAL_S``
+# per home; a home's profile scope is entered only when its sweep can run again.
+_LAST_COMPLETION_SWEEP: dict[Path, float] = {}
 
 
 def _completion_homes() -> list[Path]:
@@ -138,7 +141,10 @@ def _restore_and_sweep_completions(registry) -> None:
         return  # Older Agents already restore at registry import and have no orphan sweep.
     # The Agent binds the launch home itself, even when the first drain is in a named profile.
     restore()
+    interval = float(getattr(async_delegation, "ORPHAN_SWEEP_INTERVAL_S", 0) or 0)
     for home in _completion_homes():
+        if time.monotonic() - _LAST_COMPLETION_SWEEP.get(home, -float("inf")) < interval:
+            continue
         try:
             with scoped_home(home):
                 if _is_named_profile(home) and home not in _RESTORED_COMPLETION_HOMES:
@@ -147,6 +153,8 @@ def _restore_and_sweep_completions(registry) -> None:
                 sweep = getattr(async_delegation, "maybe_sweep_orphaned_completions", None)
                 if callable(sweep):
                     sweep(registry.completion_queue)
+            # Taken after the Agent stamped its own sweep, so the next entry never lands inside its interval.
+            _LAST_COMPLETION_SWEEP[home] = time.monotonic()
         except Exception:  # noqa: BLE001 - retry this home without blocking other profiles or queued events
             log.debug("Failed to restore or sweep delegation completions for %s", home, exc_info=True)
 

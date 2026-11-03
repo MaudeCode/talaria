@@ -137,6 +137,29 @@ def call_server(method: str, params: dict, *, timeout: float | None = None):
     return server.call_server(method, params, timeout=timeout)
 
 
+class WakeEvent(threading.Event):
+    """An event that also calls its wakers when set, so a waiter parked on something else (a queue, a prompt) wakes
+    at once instead of polling the flag."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._wakers: list[Callable[[], None]] = []
+
+    def add_waker(self, waker: Callable[[], None]) -> None:
+        """Call ``waker`` on every ``set``; at once when already set. It runs on the setting thread and must not block."""
+        self._wakers.append(waker)
+        if self.is_set():
+            waker()
+
+    def set(self) -> None:
+        super().set()
+        for waker in list(self._wakers):
+            try:
+                waker()
+            except Exception:  # noqa: BLE001 - a failed waker never stops the event or the others
+                log.debug("wake callback failed", exc_info=True)
+
+
 class CallContext:
     """Per-request handle: stream emission and cooperative cancellation."""
 
@@ -144,7 +167,7 @@ class CallContext:
         self.server = server
         self.id = request_id
         self.method = method
-        self.cancel_event = threading.Event()
+        self.cancel_event = WakeEvent()
         self.timing = StartupTiming(request) if method == "chat.start" and request is not None else None
         self._seq = 0
         self._seq_lock = threading.Lock()
@@ -182,6 +205,8 @@ class RpcServer:
         self._active: dict[Any, CallContext] = {}
         self._active_lock = threading.Lock()
         self._closed = threading.Event()
+        # The reader's line queue; ``_close`` puts its ``None`` sentinel so the idle loop needs no poll (TAL-1746).
+        self._incoming: queue.Queue[bytes | None] = queue.Queue(maxsize=1)
         self.exit_code = 0
         self._server_calls: dict[str, dict] = {}
         self._server_calls_lock = threading.Lock()
@@ -205,12 +230,21 @@ class RpcServer:
                 self._out.write(data)
                 self._out.flush()
             except (BrokenPipeError, OSError, ValueError):
-                self._closed.set()
                 broken = True
             else:
                 broken = False
         if broken:
+            self._close()
             self._fail_server_calls()
+
+    def _close(self) -> None:
+        """Stop reading: wake the main loop through its own queue. A full queue already wakes it, and the loop checks
+        ``_closed`` after every item."""
+        self._closed.set()
+        try:
+            self._incoming.put_nowait(None)
+        except queue.Full:
+            pass
 
     def notify(self, method: str, params: dict) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})
@@ -278,7 +312,7 @@ class RpcServer:
 
     def request_shutdown(self, exit_code: int = 0) -> None:
         self.exit_code = exit_code
-        self._closed.set()
+        self._close()
         self._fail_server_calls()
         with self._active_lock:
             for ctx in self._active.values():
@@ -361,7 +395,7 @@ class RpcServer:
         """Read requests until stdin closes or shutdown is requested."""
         global _ACTIVE
         _ACTIVE = self
-        incoming = queue.Queue(maxsize=1)
+        incoming = self._incoming
         def read_input():
             try:
                 try:
@@ -389,7 +423,8 @@ class RpcServer:
         threading.Thread(target=read_input, name="rpc-input", daemon=True).start()
         while not self._closed.is_set():
             try:
-                raw = incoming.get(timeout=.1)
+                # Input and shutdown both arrive on the queue; the timeout is only a backstop.
+                raw = incoming.get(timeout=1.0)
             except queue.Empty:
                 continue
             if raw is None or self._closed.is_set():

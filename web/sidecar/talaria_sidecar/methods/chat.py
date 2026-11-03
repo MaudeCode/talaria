@@ -33,7 +33,7 @@ from types import SimpleNamespace
 
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home, session_workspace
-from ..rpc import CallContext
+from ..rpc import CallContext, WakeEvent
 from .checkpoints import checkpoint_kwargs
 from .providers import require_runtime_ownership, runtime_failure
 from .state_db import release_all, release_home, release_session_db
@@ -42,6 +42,8 @@ from .toolsets import disabled_toolsets
 log = logging.getLogger("talaria_sidecar.chat")
 
 _AGENT_CACHE_MAX = 32
+# Each cached agent keeps its whole transcript; the LRU also trims to this many serialized transcript bytes (TAL-1746).
+_AGENT_CACHE_MAX_BYTES = 256 * 1024 * 1024
 # Shutdown waits this long for evicted agents' memory providers; the server kills the sidecar 5 s after closing stdin.
 _AGENT_RELEASE_TIMEOUT = 4.0
 # Profile deletion waits this long for the profile's memory flushes, under the server's 120 s call timeout.
@@ -58,9 +60,9 @@ class _Run:
         self.session_id = session_id
         self.ctx = ctx
         self.agent = None
-        self.cancel = threading.Event()
+        self.cancel = WakeEvent()
         # Set when the turn is over for any reason; the cancel watcher must not mistake it for a cancellation.
-        self.finished = threading.Event()
+        self.finished = WakeEvent()
         self.clarify_entries: dict[str, "_ClarifyEntry"] = {}
         self.lock = threading.Lock()
         # The Agent's transcript list from before this turn: a Stop while the Agent still holds it has no checkpoint.
@@ -71,11 +73,22 @@ class _Run:
         self.home = None  # the profile home its agent runs under, set by ``start``
         self.mcp_discovery_outcome = "ok"
         self.deadline: float | None = None
+        # TAL-1746: a cancel, a Stop or the turn's end releases parked prompts at once rather than on their next poll.
+        for event in (self.cancel, self.finished, getattr(ctx, "cancel_event", None)):
+            if callable(getattr(event, "add_waker", None)):
+                event.add_waker(self.wake_prompts)
 
     def prompt_cancelled(self, data: dict) -> bool:
         # Vault answers racing a clear retain their existing unlock-then-release cleanup at turn end.
         ended = self.session_ended and not str(data.get("kind") or "").startswith("vault_")
         return self.ctx.cancelled or self.cancel.is_set() or self.finished.is_set() or ended
+
+    def wake_prompts(self) -> None:
+        """Release each parked prompt this run's state now cancels; its waiter rechecks and returns None. Takes no lock,
+        so a setter may hold any (the tuple copy is atomic under the GIL)."""
+        for entry in tuple(self.clarify_entries.values()):
+            if self.prompt_cancelled(entry.data):
+                entry.event.set()
 
 
 class _ClarifyEntry:
@@ -105,13 +118,11 @@ def _ask_clarify(run: _Run, data: dict, timeout: int, emit=None) -> str | None:
         while not entry.event.is_set():
             if run.prompt_cancelled(data):
                 break
-            if entry.deadline is None:
-                entry.event.wait(0.1)
-                continue
-            remaining = entry.deadline - time.monotonic()
+            remaining = 1.0 if entry.deadline is None else entry.deadline - time.monotonic()
             if remaining <= 0:
                 break
-            entry.event.wait(min(0.1, remaining))
+            # An answer or ``run.wake_prompts`` sets the event; the timeout only backstops the deadline.
+            entry.event.wait(min(1.0, remaining))
     finally:
         with run.lock:
             run.clarify_entries.pop(entry.clarify_id, None)
@@ -1347,18 +1358,49 @@ def _build_agent(AIAgent, kwargs: dict, home, session_id: str, state_db: bool = 
     return agent
 
 
+def _transcript_bytes(agent) -> int:
+    """The serialized size of ``agent._session_messages``. A list that only grew adds its new tail; a replaced or
+    shortened one is measured afresh."""
+    messages = getattr(agent, "_session_messages", None)
+    if not isinstance(messages, list):
+        return 0
+    count = len(messages)
+    sampled = getattr(agent, "_talaria_transcript_bytes", None)
+    known = sampled if isinstance(sampled, tuple) and len(sampled) == 3 and sampled[0] == id(messages) and sampled[1] <= count else None
+    if known is not None and known[1] == count:
+        return known[2]
+    try:
+        size = known[2] + len(json.dumps(messages[known[1]:count], default=str)) if known else len(json.dumps(messages[:count], default=str))
+    except Exception:  # noqa: BLE001 - a running turn mutating a message mid-dump; keep the last sample
+        return sampled[2] if isinstance(sampled, tuple) and len(sampled) == 3 else 0
+    try:
+        agent._talaria_transcript_bytes = (id(messages), count, size)
+    except Exception:  # noqa: BLE001 - read-only stand-ins
+        pass
+    return size
+
+
 def _evict_idle_agents_locked() -> None:
-    """Trim the agent LRU (caller holds ``_AGENT_CACHE_LOCK``), never dropping a session whose turn is still running."""
-    if len(_AGENT_CACHE) <= _AGENT_CACHE_MAX:
+    """Trim the agent LRU to its count and transcript-byte budgets (caller holds ``_AGENT_CACHE_LOCK``), never dropping
+    a session whose turn is still running."""
+    # Runs at every insert and turn end; only transcripts that changed since their last sample are serialized.
+    sizes = {sid: _transcript_bytes(entry[0]) for sid, entry in _AGENT_CACHE.items()}
+    total = sum(sizes.values())
+
+    def within() -> bool:
+        return len(_AGENT_CACHE) <= _AGENT_CACHE_MAX and total <= _AGENT_CACHE_MAX_BYTES
+
+    if within():
         return
     with _RUNS_LOCK:
         live = {sid for sid, sid_stream in _RUNS_BY_SESSION.items() if (r := _RUNS.get(sid_stream)) is not None and not r.finished.is_set()}
     dropped = []
     for sid in list(_AGENT_CACHE):
-        if len(_AGENT_CACHE) <= _AGENT_CACHE_MAX:
+        if within():
             break
         if sid not in live:
             dropped.append(_AGENT_CACHE.pop(sid))
+            total -= sizes[sid]
     _release_agents_locked(dropped)
 
 
@@ -1678,11 +1720,19 @@ def _has_voice_turn_route() -> bool:
 
 def _supported(cls, name: str) -> bool:
     """Whether ``cls.__init__`` accepts ``name`` (named, or through ``**kwargs``)."""
+    names, var_keyword = _init_parameters(cls)
+    return var_keyword or name in names
+
+
+@lru_cache(maxsize=32)
+def _init_parameters(cls) -> tuple[frozenset[str], bool]:
+    """``cls.__init__``'s parameter names and whether it takes ``**kwargs``, probed once per class: a turn asks about
+    dozens of names (TAL-1746)."""
     try:
         parameters = inspect.signature(cls.__init__).parameters
     except (TypeError, ValueError):
-        return False
-    return name in parameters or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+        return frozenset(), False
+    return frozenset(parameters), any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
 @lru_cache(maxsize=32)
@@ -2215,9 +2265,6 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 agent.interrupt("Cancelled by user")
             except Exception:  # noqa: BLE001
                 log.debug("agent.interrupt failed", exc_info=True)
-            with run.lock:
-                for entry in list(run.clarify_entries.values()):
-                    entry.event.set()
 
         watcher = threading.Thread(target=_watch_cancel, daemon=True, name=f"chat-cancel-{stream_id[:8]}")
         watcher.start()
@@ -2336,6 +2383,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _release_vault_session(session_id)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
             _release_if_dropped_locked(run.agent, home)
+            # Its transcript grew during the turn, and the agents it protected from eviction are idle now.
+            _evict_idle_agents_locked()
 
 
 def _checkpoint_required() -> bool:
@@ -2723,6 +2772,7 @@ def register(registry) -> None:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
                 if end_session and run is not None:
                     run.session_ended = True
+                    run.wake_prompts()
             if not end_session and run is not None and not run.finished.is_set():
                 return {"evicted": False}
             entry = _AGENT_CACHE.pop(session_id, None)
