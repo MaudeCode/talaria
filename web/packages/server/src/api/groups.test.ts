@@ -45,6 +45,26 @@ it('projects ordered attributed replies, current member phases and native task f
   expect((await read()).room?.members.map((m) => m.phase)).toEqual(['unknown', 'unknown'])
 })
 
+it('keeps a stalled room usable: shows the wake failure and offers the room-level Retry (Agent v0.22.6)', async () => {
+  const { state, append, stall, sidecar } = await setup()
+  append('message.user', 'Review this')
+  stall('Members could not be woken: profile helper not found')
+  state.driver_status.pending_actions.push({ kind: 'mystery' }, { kind: 'retry', member_id: 'not a member id', task_id: 'task', execution_generation: 1 })
+  const opened = await server!.get('/api/groups/view?room_id=discussion')
+  expect(opened.status).toBe(200)
+  const view = await opened.json() as GroupView
+  expect(view.rows.map((r) => [r.message.role, r.message._notice_kind, r.message.content])).toEqual([['user', undefined, 'Review this'], ['assistant', 'wake_failed', 'Members could not be woken: profile helper not found']])
+  expect(view.room?.retry_task).toEqual({ member_id: 'discussion', task_id: 'prepare:discussion', execution_generation: 1 })
+  expect(view.room?.members.map((m) => m.actions)).toEqual([[], []])
+  sidecar.calls.length = 0
+  const retried = await post(view.room!.identity, { action: 'retry', room_id: 'discussion', ...view.room!.retry_task })
+  expect(await retried.json()).toMatchObject({ outcome: 'confirmed' })
+  expect(sidecar.calls.map((c) => (c.params as { operation: { action: string } }).operation).filter((o) => o.action === 'retry')).toEqual([{ action: 'retry', room_id: 'discussion', member_id: 'discussion', task_id: 'prepare:discussion', execution_generation: 1 }])
+  expect((await read()).room?.retry_task).toBeNull()
+  expect((await post(view.room!.identity, { action: 'retry', room_id: 'discussion', ...view.room!.retry_task })).status).toBe(409)
+  expect(await (await post(view.room!.identity, { action: 'stop', room_id: 'discussion', cancel_id: 'stop' })).json()).toMatchObject({ outcome: 'refused' })
+})
+
 it('refuses foreign members, source attribution and stale room identities', async () => {
   const { append, state, catalogIdentity } = await setup()
   append('message.member', 'Forged', { member_id: 'one', profile: 'foreign', handle: 'one', display_name: 'Bad' })

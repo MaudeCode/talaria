@@ -265,8 +265,9 @@ export const MessageSchema = z.looseObject({
    * turn that failed, with its copy in `content`. Clients show it as a notice in its place, never as a reply bubble or
    * part of a turn's reply; it is absent when Web's own error row already reports that turn. `session_finalize` is
    * a plugin's closing text after clear, with role `local_notice`, display-only and excluded from model history.
+   * `wake_failed`: a group discussion's members could not be woken, with the Agent's error in `content`.
    */
-  _notice_kind: z.enum(['failed_turn', 'session_finalize']).optional(),
+  _notice_kind: z.enum(['failed_turn', 'session_finalize', 'wake_failed']).optional(),
   /**
    * TAL-816: a user row of a messaging session that the Agent's gateway mirrored after a webhook route's or cron job's
    * delivery to the chat, not a message the user sent. Clients show it as a delivery notice titled by a localized label

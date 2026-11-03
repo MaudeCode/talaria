@@ -182,7 +182,8 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
       {room?.members.flatMap((member) => member.actions.map((action) => action.kind === 'approval' && action.request_id ? <ApprovalCard key={`${room.identity}:${action.task_id}:${action.request_id}`} sessionId={`group:${room.identity}:${member.member_id}`} pending={{ approval_id: action.request_id, command: action.approval?.command, description: action.approval?.description, title: member.display_name || member.profile, allowed_choices: action.approval?.choices ?? ['once', 'deny'], can_enable_yolo: false }} onResolved={() => { void refresh() }} transport={{
         send: async (choice) => { if (choice !== 'once' && choice !== 'deny') throw new Error(m.group_write_refused()); return write({ action: 'approve', room_id: roomId, member_id: member.member_id, task_id: action.task_id, execution_generation: action.execution_generation, request_id: action.request_id ?? '', choice }) },
         waiting: () => groupActionWaiting(room, action),
-      }} /> : action.kind !== 'approval' ? <GroupRecoveryAction key={`${room.identity}:${action.task_id}:${action.kind}`} room={room} member={member} action={action} focus={focus} onControl={write} onResolved={() => { void refresh() }} /> : null))}
+      }} /> : action.kind !== 'approval' ? <GroupRecoveryAction key={`${room.identity}:${action.task_id}:${action.kind}`} room={room} label={`${member.display_name || member.profile} · ${phaseLabel[member.phase]()}`} action={{ ...action, kind: action.kind }} focus={focus} onControl={write} onResolved={() => { void refresh() }} /> : null))}
+      {room?.retry_task && <GroupRecoveryAction key={`${room.identity}:${room.retry_task.task_id}:retry`} room={room} label={`${room.name} · ${m.group_failed()}`} action={{ kind: 'retry', ...room.retry_task }} focus={focus} onControl={write} onResolved={() => { void refresh() }} />}
       {currentIntent?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const id = currentIntent.id; void api.fetchGroupReceipt(roomId, id).then((receipt) => { void refresh(); if (receipt.outcome === 'confirmed') setIntent((current) => current?.id === id ? null : current) }).catch(showErrorToast) } } }]} />}
       {currentRename?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'rename-unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const pending = currentRename; void api.fetchGroup(roomId).then((next) => { if (next.room?.identity !== pending.identity) return; qc.setQueryData(key, next) }).catch(showErrorToast) } } }]} />}
     </div>
@@ -193,24 +194,27 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
 }
 
 
-/** Native Retry/Discard use the shared optimistic prompt-answer and status-chip owners. */
-function GroupRecoveryAction({ room, member, action, focus, onControl, onResolved }: {
-  room: GroupRoom; member: GroupRoom['members'][number]; action: GroupRoom['members'][number]['actions'][number];
+type GroupTask = NonNullable<GroupRoom['retry_task']> & { kind: GroupRoom['members'][number]['actions'][number]['kind']; request_id?: string | undefined }
+
+/** Native Retry/Discard, a member's or the room's own, use the shared optimistic prompt-answer and status-chip owners. */
+function GroupRecoveryAction({ room, label, action, focus, onControl, onResolved }: {
+  room: GroupRoom; label: string; action: GroupTask & { kind: 'retry' | 'discard' };
   focus: RefObject<HTMLElement | null>; onControl: (operation: GroupOperation) => Promise<unknown>; onResolved: () => void
 }) {
   const resource = `group:${room.identity}:${action.member_id}:${action.task_id}:${action.execution_generation}:${action.kind}`
   const { answer, answered } = usePromptAnswer({
     resource: () => resource, queryKey: ['groups'],
-    send: () => onControl({ action: action.kind === 'retry' ? 'retry' : 'discard', room_id: room.id, member_id: member.member_id, task_id: action.task_id, execution_generation: action.execution_generation }),
+    send: () => onControl({ action: action.kind, room_id: room.id, member_id: action.member_id, task_id: action.task_id, execution_generation: action.execution_generation }),
     waiting: () => groupActionWaiting(room, action),
     onAnswered: onResolved,
   })
   if (answered(resource)) return null
-  return <ComposerNotices fallbackFocus={focus} notices={[{ id: resource, content: <span>{member.display_name || member.profile} · {phaseLabel[member.phase]()}</span>, action: { label: action.kind === 'retry' ? m.retry() : m.discard(), run: () => answer(undefined) } }]} />
+  return <ComposerNotices fallbackFocus={focus} notices={[{ id: resource, content: <span>{label}</span>, action: { label: action.kind === 'retry' ? m.retry() : m.discard(), run: () => answer(undefined) } }]} />
 }
 
-async function groupActionWaiting(room: GroupRoom, action: GroupRoom['members'][number]['actions'][number]): Promise<boolean> {
+async function groupActionWaiting(room: GroupRoom, action: GroupTask): Promise<boolean> {
   const next = (await api.fetchGroup(room.id)).room
   if (!next) return true
-  return next.identity === room.identity && next.members.some((member) => member.member_id === action.member_id && member.actions.some((current) => current.kind === action.kind && current.task_id === action.task_id && current.execution_generation === action.execution_generation && current.request_id === action.request_id))
+  const roomTask = action.kind === 'retry' && next.retry_task?.task_id === action.task_id && next.retry_task.execution_generation === action.execution_generation
+  return next.identity === room.identity && (roomTask || next.members.some((member) => member.member_id === action.member_id && member.actions.some((current) => current.kind === action.kind && current.task_id === action.task_id && current.execution_generation === action.execution_generation && current.request_id === action.request_id)))
 }

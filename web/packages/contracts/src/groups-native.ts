@@ -10,14 +10,21 @@ export const GroupAttachmentSchema = z.object({ attachment_id: Id, kind: z.enum(
 export const GroupMemberSchema = z.object({ member_id: Id, profile: z.string().min(1).max(128), handle: Id, display_name: z.string().max(128).optional() })
 const NativeMember = GroupMemberSchema.extend({ target: z.object({ kind: z.enum(['local', 'peer']), profile: z.string() }).optional() })
 const Room = z.object({ room_id: Id, name: z.string().max(GROUP_ROOM_NAME_LIMIT), members: z.array(NativeMember).max(6), authority_gateway_id: z.string(), authority_epoch: z.number().int(), revision: z.number().int(), latest_seq: z.number().int().optional(), disbanded_at: z.number().optional() })
+/** A room's own task carries the Agent's `prepare:` prefix in front of its room id (Agent v0.22.6 stalled preparation). */
+export const GROUP_ROOM_TASK_PREFIX = 'prepare:'
+const TaskId = z.string().regex(/^(?:prepare:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
 export const GroupTaskActionSchema = z.object({ kind: z.enum(['retry', 'discard', 'approval']), member_id: Id, task_id: Id, execution_generation: z.number().int().positive(), request_id: z.string().optional(), approval: z.object({ command: z.string().optional(), description: z.string().optional(), choices: z.array(z.enum(['once', 'deny'])).optional() }).optional() })
-const Driver = z.object({ running: z.boolean(), working: z.boolean(), blocked: z.boolean(), pending_actions: z.array(GroupTaskActionSchema), member_activity: z.array(z.object({ member_id: Id, status: z.enum(['queued', 'running', 'stopping', 'indeterminate', 'deferred']) })).optional() })
+/** Native room-level Retry: `member_id` joins the unwoken handles, so only the room-scoped task fence is trusted. */
+export const NativeGroupRoomRetrySchema = z.object({ kind: z.literal('retry'), member_id: z.string(), task_id: TaskId, execution_generation: z.number().int().positive() })
+/** Rows are checked one at a time by the server, so one it cannot use never hides the room. */
+const Driver = z.object({ running: z.boolean(), working: z.boolean(), blocked: z.boolean(), pending_actions: z.array(z.unknown()), member_activity: z.array(z.object({ member_id: Id, status: z.enum(['queued', 'running', 'stopping', 'indeterminate', 'deferred']) })).optional() })
 export const NativeGroupCapabilitiesSchema = z.object({ driver: z.boolean(), authority_gateway_id: z.string(), methods: z.array(z.string()), seatable_profiles: z.array(z.string()), max_log_limit: z.number().int().positive() })
 export const NativeGroupStateSchema = z.object({ room: Room, driver_status: Driver.optional() })
 export const NativeGroupListSchema = z.object({ rooms: z.array(Room), next_offset: z.number().int().nullable() })
 export const NativeGroupEventSchema = z.object({ room_id: Id, seq: z.number().int().positive(), event_id: Id, kind: z.string(), authority_epoch: z.number().int().nullable(), actor: z.object({ kind: z.string(), id: z.string(), profile: z.string().optional() }), payload: z.object({ text: z.string().optional(), member_id: Id.optional(), discussion_event_id: Id.optional(), task_id: Id.optional(), turn_id: Id.optional(), error: z.string().optional(), reason_code: z.string().optional(), attachments: z.array(GroupAttachmentSchema).optional() }), created_at: z.number() })
 export const NativeGroupLogSchema = z.object({ events: z.array(NativeGroupEventSchema), cursor: z.number().int().nonnegative(), latest_seq: z.number().int().nonnegative(), has_more: z.boolean(), authority: z.object({ gateway_id: z.string(), epoch: z.number().int() }) })
-const Task = z.object({ member_id: Id, task_id: Id, execution_generation: z.number().int().positive() })
+export const GroupTaskFenceSchema = z.object({ member_id: Id, task_id: TaskId, execution_generation: z.number().int().positive() })
+const Task = GroupTaskFenceSchema
 export const GroupOperationSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('capabilities') }),
   z.object({ action: z.literal('list'), offset: z.number().int().nonnegative().optional(), limit: z.number().int().positive().max(100).optional() }),

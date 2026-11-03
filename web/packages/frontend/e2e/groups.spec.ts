@@ -85,6 +85,37 @@ test('creates a discussion, sends once, shows member replies and reconnects afte
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 
+test('shows a stalled room\'s wake failure and retries it optimistically, restoring Retry on refusal', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')!
+  let hold: PromiseWithResolvers<undefined> | null = null
+  sidecar.respond('gateway.groups', async (params, emit, options) => {
+    if (params.operation.action === 'retry' && hold) await hold.promise
+    return native(params, emit, options)
+  })
+  try {
+    fixture.append('message.user', 'Review this')
+    fixture.stall('Members could not be woken: profile helper not found')
+    await page.goto(`${server.base}/groups?room=discussion`)
+    await expect(page.locator('.msg-row[data-role=notice]')).toHaveText('Members could not be woken: profile helper not found')
+    const retry = page.getByRole('button', { name: 'Retry', exact: true })
+    await expect(retry).toBeVisible()
+    if (process.env.TALARIA_GROUP_EVIDENCE) { mkdirSync(process.env.TALARIA_GROUP_EVIDENCE, { recursive: true }); await page.screenshot({ path: `${process.env.TALARIA_GROUP_EVIDENCE}/stalled-${info.project.name}.png` }) }
+    fixture.state.refuseRetry = true
+    const refused = hold = Promise.withResolvers<undefined>()
+    await retry.click()
+    await expect(retry).toHaveCount(0)
+    refused.resolve(undefined)
+    await expect(page.getByText('The Agent refused this discussion action.', { exact: true })).toBeVisible()
+    await expect(retry).toBeVisible()
+    fixture.state.refuseRetry = false; hold = null
+    await retry.click()
+    await expect(retry).toHaveCount(0)
+    await expect.poll(() => fixture.state.driver_status.pending_actions).toEqual([])
+    await expect(retry).toHaveCount(0)
+  } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
 for (const refusal of ['receipt', 'http'] as const) test(`restores a ${refusal}-refused send when reconciliation reads fail`, async ({ page, errors }) => {
   const { server } = await discussionServer()
   let reads = 0
