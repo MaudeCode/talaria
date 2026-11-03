@@ -188,14 +188,19 @@ export interface SceneRow {
 }
 
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+const normalizedSceneRows = new WeakMap<unknown[], SceneRow[]>()
 
 /**
  * Stored rows in durable order (numeric `order_index`, else source position), malformed rows dropped, and one explicit
  * shape per role: legacy `thinking` is `reasoning`, a tool is `done` unless still `running`, `failed`/`error` statuses
  * are errors, and steering is consumed only when marked so. A repeated row id keeps its first position, last content.
+ * Normalized once per stored row list (TAL-1741): a scene read 2–3× per hydration, and again per page, shares its rows,
+ * so callers copy a row before changing it.
  */
 export function normalizeSceneRows(value: unknown): SceneRow[] {
   if (!Array.isArray(value)) return []
+  const cached = normalizedSceneRows.get(value)
+  if (cached) return cached
   const ordered = value.map((raw, index) => {
     const row = isDict(raw) ? raw : {}
     const order = typeof row.order_index === 'number' || (typeof row.order_index === 'string' && /^-?\d+$/.test(row.order_index.trim())) ? Number(row.order_index) : NaN
@@ -250,7 +255,9 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
       } })
     }
   }
-  return rows.map((row, i) => ({ ...row, order_index: i }))
+  const normalized = rows.map((row, i) => ({ ...row, order_index: i }))
+  normalizedSceneRows.set(value, normalized)
+  return normalized
 }
 
 /**
@@ -506,16 +513,21 @@ function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, num
   return turns
 }
 
-/** The stored record for a message: a unique content ref first, then its absolute index when the content agrees. */
-function storedRecordFor(message: Record<string, unknown>, index: number, lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Pick<Map<string, number>, 'get'> }): Record<string, unknown> | undefined {
-  const ref = assistantAnchorSceneMessageRef(message)
+interface SceneLookup { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Pick<Map<string, number>, 'get'> }
+
+/** The stored record for a message (`ref` is its content ref): a unique content ref first, then its absolute index when the content agrees. */
+function storedRecordFor(message: Record<string, unknown>, ref: string, index: number, lookup: SceneLookup): Record<string, unknown> | undefined {
   const record = (lookup.refCounts.get(ref) ?? 0) <= 1 ? lookup.byRef.get(ref) : undefined
   if (record) return record
   const candidate = lookup.byIndex.get(index)
   return candidate && anchorSceneCandidateMatchesScene(message, candidate.scene ?? {}) ? candidate : undefined
 }
 
-function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
+/**
+ * Stored records by content ref and by index. Ref counts over the transcript hash every assistant row, so a window that
+ * already counted them (the prefix index) supplies its own, and no record at all needs none; `null` says skip lookups.
+ */
+function sceneLookup(messages: unknown[], records: Record<string, unknown>, refCounts?: Pick<Map<string, number>, 'get'>): SceneLookup | null {
   const byRef = new Map<string, Record<string, unknown>>()
   const byIndex = new Map<number, Record<string, unknown>>()
   for (const [key, record] of Object.entries(records)) {
@@ -525,14 +537,16 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
     const idx = anchorSceneIntOrNull(record.message_index)
     if (idx !== null) byIndex.set(idx, record)
   }
-  const refCounts = new Map<string, number>()
+  if (!byRef.size && !byIndex.size) return null
+  if (refCounts) return { byRef, byIndex, refCounts }
+  const counts = new Map<string, number>()
   for (const m of messages) {
     if (isDict(m) && m.role === 'assistant') {
       const r = assistantAnchorSceneMessageRef(m)
-      if (r) refCounts.set(r, (refCounts.get(r) ?? 0) + 1)
+      if (r) counts.set(r, (counts.get(r) ?? 0) + 1)
     }
   }
-  return { byRef, byIndex, refCounts }
+  return { byRef, byIndex, refCounts: counts }
 }
 
 /**
@@ -546,8 +560,7 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  */
 export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean; baseIndex?: number; refCounts?: Pick<Map<string, number>, 'get'>; showReasoning?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
-  const lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Pick<Map<string, number>, 'get'> } = sceneLookup(messages, records)
-  if (opts.refCounts) lookup.refCounts = opts.refCounts
+  const lookup = sceneLookup(messages, records, opts.refCounts)
   // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
   const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref), opts.showReasoning, str(m._turn_id)) } : m))
   for (const [turnId, turn] of turnsOf(messages)) {
@@ -558,16 +571,19 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     const [message, index] = lastEntry
     const absoluteTurn: [Record<string, unknown>, number][] = opts.baseIndex ? turn.map(([m, i]) => [m, i + opts.baseIndex!]) : turn
     const built = buildTurnScene(absoluteTurn, { clipToolResults: opts.clipToolResults === true, running })
-    const record = running ? undefined : storedRecordFor(message, index + (opts.baseIndex ?? 0), lookup)
+    // The turn's content ref, hashed at most once: the record lookup key and the scene ref the client pages by.
+    let messageRef: string | undefined
+    const refOf = (): string => (messageRef ??= assistantAnchorSceneMessageRef(message))
+    const record = running || !lookup ? undefined : storedRecordFor(message, refOf(), index + (opts.baseIndex ?? 0), lookup)
     const inline = running ? undefined : message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }
     if (record && isDict(record.scene)) {
-      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || assistantAnchorSceneMessageRef(message), opts.showReasoning, turnId), built)
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || refOf(), opts.showReasoning, turnId), built)
       if (record.stream_id) next._anchor_stream_id = str(record.stream_id)
     } else if (isDict(inline)) {
       next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(inline, built), str(inline.activity_scene_ref), opts.showReasoning, turnId), built)
     } else if (built) {
-      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, assistantAnchorSceneMessageRef(message), opts.showReasoning, turnId)
+      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, refOf(), opts.showReasoning, turnId)
     }
     out[index] = next
   }

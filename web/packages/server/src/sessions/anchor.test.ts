@@ -2,10 +2,22 @@ import { sessionPath, useJsonStorage } from '../test/storage.js'
 /** Anchor activity scenes: one normalized row shape for both clients, identical in the detail preview and the paged rows. */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { anchorActivitySceneTransportPreview, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, withTurnIds } from './anchor.js'
+import { anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, withTurnIds } from './anchor.js'
+import { splitDisplayText } from './merge.js'
 import { withSceneToolDisplay } from '../redact.js'
+
+// Pass-through spies: hydration cost is counted in SHA-256 digests (message refs) and prose-row splits (row normalization).
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>()
+  return { ...actual, createHash: vi.fn(actual.createHash) }
+})
+vi.mock('./merge.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./merge.js')>()
+  return { ...actual, splitDisplayText: vi.fn(actual.splitDisplayText) }
+})
 
 useJsonStorage()
 
@@ -313,6 +325,55 @@ describe('running turn scenes (TAL-374)', () => {
     expect(journaled.slice(2).every((scene) => scene === undefined)).toBe(true)
     expect(unjournaled[1]).toEqual(journaled[1])
     expect(journaled[1]).toMatchObject({ final_answer: 'Earlier answer.', terminal_state: 'completed' })
+  })
+})
+
+describe('hydration cost (TAL-1741)', () => {
+  // Two settled turns of two assistant rows each: counting refs over every row costs twice what one ref per turn does.
+  const transcript = withTurnIds<Json>([
+    { role: 'user', content: 'First', _turn_id: 'run-1' },
+    { role: 'assistant', content: 'Step one.', tool_calls: [{ id: 't1', name: 'read_file' }], _turn_id: 'run-1' },
+    { role: 'tool', tool_call_id: 't1', content: 'A', _turn_id: 'run-1' },
+    { role: 'assistant', content: 'First answer.', _turn_id: 'run-1' },
+    { role: 'user', content: 'Second', _turn_id: 'run-2' },
+    { role: 'assistant', content: 'Step two.', tool_calls: [{ id: 't2', name: 'read_file' }], _turn_id: 'run-2' },
+    { role: 'tool', tool_call_id: 't2', content: 'B', _turn_id: 'run-2' },
+    { role: 'assistant', content: 'Second answer.', _turn_id: 'run-2' },
+  ])
+  const refs = transcript.flatMap((m) => (m.role === 'assistant' ? [assistantAnchorSceneMessageRef(m)] : []))
+  const refCounts = new Map(refs.map((ref) => [ref, 1]))
+  /** The first turn's scene as a browser stored it: no final answer, so completing it reads the rows too. */
+  const storedRecords = (): Json => ({ [refs[1]!]: { version: 'anchor_activity_scene_record_v1', message_index: 3, message_ref: refs[1], scene: { version: 'activity_scene_v1', activity_rows: [{ row_id: 'p', role: 'prose', text: 'Stored prose row.' }], terminal_state: 'completed' } } })
+  const sha256Digests = () => vi.mocked(createHash).mock.calls.filter(([algorithm]) => algorithm === 'sha256').length
+  const proseSplits = () => vi.mocked(splitDisplayText).mock.calls.filter(([text]) => text === 'Stored prose row.').length
+  const scenes = (hydrated: unknown[]) => (hydrated as Json[]).map((m) => m._anchor_activity_scene)
+  beforeEach(() => { vi.mocked(createHash).mockClear(); vi.mocked(splitDisplayText).mockClear() })
+
+  it('hashes no row for ref counting when the window supplies the counts, and ships the same scenes', () => {
+    const expected = scenes(hydrateAnchorActivityScenes(transcript, storedRecords()))
+    vi.mocked(createHash).mockClear()
+    const windowed = scenes(hydrateAnchorActivityScenes(transcript, storedRecords(), { refCounts }))
+    expect(windowed).toEqual(expected)
+    expect(windowed[3]).toMatchObject({ activity_rows: [{ role: 'prose', text: 'Stored prose row.' }] })
+    expect(windowed[7]).toMatchObject({ final_answer: 'Second answer.' })
+    // One ref per settled turn: its record lookup key, reused as the built scene's ref.
+    expect(sha256Digests(), 'ref counting over every assistant row must not run when counts are supplied').toBe(2)
+  })
+
+  it('hashes each settled turn once for its scene ref and nothing for record lookup when no scene is stored', () => {
+    const hydrated = scenes(hydrateAnchorActivityScenes(transcript, {}))
+    expect(hydrated[3]).toMatchObject({ final_answer: 'First answer.', activity_scene_ref: refs[1] })
+    expect(hydrated[7]).toMatchObject({ final_answer: 'Second answer.', activity_scene_ref: refs[3] })
+    expect(sha256Digests(), 'no ref counting and no record lookup without stored records').toBe(2)
+  })
+
+  it('normalizes a stored scene\'s rows once across repeated hydrations of the same record', () => {
+    const records = storedRecords()
+    const first = scenes(hydrateAnchorActivityScenes(transcript, records))
+    const second = scenes(hydrateAnchorActivityScenes(transcript, records))
+    expect(second).toEqual(first)
+    expect(first[3]).toMatchObject({ activity_rows: [{ role: 'prose', text: 'Stored prose row.' }] })
+    expect(proseSplits(), 'an unchanged stored scene normalizes its rows once').toBe(1)
   })
 })
 
