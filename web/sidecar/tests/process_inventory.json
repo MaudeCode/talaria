@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_agent_imports_contract.py::test_agent_catalog_ships_a_reviewed_importer": {
+      "layer": "compatibility",
+      "reason": "Reads the selected Agent's real in-tree plugin catalog entry with its own interpreter, so a release that re-pins agent-importers fails even though the fast import matrix stubs admission. Offline, disposable home.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_imports_contract.py::test_reviewed_native_importer_contract": {
       "layer": "compatibility",
       "reason": "Real reviewed plugin structured API, native profile selection, memory merge, MCP conflict/secret stripping and sync registration require the installed Agent interpreter. Immutable plugin bytes are provisioned before tests; every source and profile is disposable and the test is offline.",

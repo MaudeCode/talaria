@@ -15,6 +15,7 @@
  "tests/test_agent_imports.py::test_snapshot_preserves_empty_conflicts_and_script_modes": 0.004,
  "tests/test_agent_imports.py::test_unavailable_does_not_touch_profile_and_result_never_executes": 0.005,
  "tests/test_agent_imports.py::test_unknown_outcome_is_durable_and_never_blindly_replayed": 0.005,
+ "tests/test_agent_imports_contract.py::test_agent_catalog_ships_a_reviewed_importer": 0.5,
  "tests/test_agent_imports_contract.py::test_reviewed_native_importer_contract": 6.903,
  "tests/test_agent_mutation.py::test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment": 2.093,
  "tests/test_agent_mutation.py::test_a_failed_best_effort_checkpoint_cannot_authorize_a_stop_request": 0.607,

@@ -1,4 +1,5 @@
 """Real pinned native structured API and Talaria adapter, with disposable profile/source trees."""
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -17,8 +18,11 @@ home = get_hermes_home().resolve()
 home.mkdir(parents=True)
 plugin = home / 'plugins/agent-importers'
 plugin.parent.mkdir()
-shutil.copytree(sys.argv[2], plugin)
-pin = 'b5932f1b03ccd0f7738cb4975318df990408f3a3'
+reviewed = json.loads((Path(plugin_catalog.__file__).parents[2] / 'agent_importer.json').read_text())['revisions']
+entry = catalog.get_catalog_entry('agent-importers')
+# The revision this Agent's catalog pins; an unreviewed or missing pin installs any reviewed tree and must refuse.
+pin = entry.sha if entry is not None and entry.sha in reviewed else next(iter(reviewed))
+shutil.copytree(Path(sys.argv[2]) / pin, plugin)
 repo = 'https://github.com/NousResearch/hermes-official-plugins'
 (plugin.parent / '.install-metadata.json').write_text(json.dumps({'agent-importers': {'revision': pin, 'catalog': {'name': 'agent-importers', 'sha': pin, 'pin': pin, 'repo': repo}}}))
 (home / 'config.yaml').write_text('plugins:\n  enabled: [agent-importers]\nmcp_servers:\n  existing:\n    command: keep-me\n')
@@ -40,7 +44,6 @@ for name in ('one', 'existing'):
 methods = build_methods(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 def call(action, **params):
     return methods['profiles.import'](None, dict(profile_home=str(home), action=action, **params))
-entry = catalog.get_catalog_entry('agent-importers')
 if entry is None or entry.sha != pin:
     before = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
     unavailable = call('discover')
@@ -51,6 +54,15 @@ if entry is None or entry.sha != pin:
     sys.exit(0)
 with patch.object(catalog, 'fetch_live_catalog', side_effect=AssertionError('Import must never fetch the catalog')), patch.object(agent_imports, '_refresh_runtime', return_value=True):
     assert plugin_catalog.reviewed_importer(home) is not None, 'Reviewed native API admission failed'
+    # An unreviewed catalog pin or a changed reviewed file refuses admission.
+    unreviewed = dataclasses.replace(entry, sha='0' * 40)
+    with patch.object(catalog, 'load_catalog', return_value=[unreviewed]):
+        assert plugin_catalog.reviewed_importer(home) is None, 'Unreviewed catalog pin was admitted'
+    body = (plugin / 'importer.py').read_bytes()
+    (plugin / 'importer.py').write_bytes(body + b'\n')
+    assert plugin_catalog.reviewed_importer(home) is None, 'Changed reviewed file was admitted'
+    (plugin / 'importer.py').write_bytes(body)
+    assert plugin_catalog.reviewed_importer(home) is not None
     assert call('discover')['sources'] == [{'agent': 'cursor', 'label': 'Cursor'}]
     before = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
     preview = call('preview', agent='cursor')

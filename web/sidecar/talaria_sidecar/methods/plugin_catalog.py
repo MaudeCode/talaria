@@ -208,14 +208,15 @@ def reviewed_importer(home):
     import sys
     import types
     from . import dashboard_plugins
-    reviewed = json.loads((Path(__file__).parents[2] / 'agent_importer.json').read_text())
-    pin, hashes = reviewed['revision'], reviewed['files']
+    reviewed = json.loads((Path(__file__).parents[2] / 'agent_importer.json').read_text())['revisions']
     # Older Agent config imports initialize files. Check the pure in-tree catalog before importing their command owner.
     try:
         from hermes_cli import plugin_catalog as source
         entry = next((e for e in source.load_catalog() if e.name == 'agent-importers'), None)
-        if entry is None or entry.sha != pin:
+        if entry is None or entry.sha not in reviewed:
             return None
+        # Each supported Agent release ships its own pin; admit only the one this Agent's catalog names.
+        pin, hashes = entry.sha, reviewed[entry.sha]
     except (ImportError, AttributeError, OSError, ValueError):
         return None
     agent = _agent()
