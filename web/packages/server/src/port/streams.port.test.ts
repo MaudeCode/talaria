@@ -4,7 +4,7 @@ import { jsonJournal, useJsonStorage } from '../test/storage.js'
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -425,6 +425,43 @@ describe('chat streams, cancel, and error settlement', () => {
     const before = await messagesOf(s, sid)
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: false })
     expect(await messagesOf(s, sid)).toEqual(before)
+  })
+
+  it('a follow-up started once a turn\'s terminal frame is journaled is admitted (TAL-1840)', async () => {
+    // A replaying subscriber reads the terminal frame from the journal while its append still settles (a terminal row
+    // waits for its fsync); the hook starts the follow-up there, before the worker resumes.
+    let armed: string | null = null
+    const admitted: Record<string, number> = {}
+    const followUps: string[] = []
+    const journal = s.deps.journal
+    const writer = journal.writer.bind(journal)
+    const spy = vi.spyOn(journal, 'writer').mockImplementation(async (sid, streamId) => {
+      const w = await writer(sid, streamId)
+      const append = w.appendSseEvent.bind(w)
+      w.appendSseEvent = async (event, payload, meta) => {
+        const row = append(event, payload, meta)
+        if (sid === armed && ['done', 'cancel', 'apperror'].includes(event)) {
+          armed = null
+          const res = await post(s, '/api/chat/start', { session_id: sid, message: 'follow-up' })
+          admitted[event] = res.status
+          if (res.status === 200) followUps.push(String((await json(res)).stream_id))
+        }
+        return row
+      }
+      return w
+    })
+    try {
+      const outcomes: [string, Partial<ChatResult>][] = [['done', {}], ['cancel', { status: 'cancelled' }], ['apperror', { status: 'error', failed: true, error: 'provider exploded' }]]
+      for (const [event, extra] of outcomes) {
+        const sid = await newSession(s)
+        sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer' }], str(params.user_message) === 'follow-up' ? {} : extra))
+        armed = sid
+        const streamId = await start(sid, 'first')
+        await s.deps.turns.finished(streamId)
+        expect(admitted[event], event).toBe(200)
+      }
+      for (const streamId of followUps) await s.deps.turns.finished(streamId)
+    } finally { spy.mockRestore() }
   })
 
   /** TAL-364: a completed first turn, so the stopped turn has earlier context to keep. Returns that context. */
