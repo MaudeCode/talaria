@@ -110582,7 +110582,7 @@
     },
     "/api/sessions/gateway/stream": {
       "get": {
-        "summary": "Standalone gateway-session feed: an initial `sessions_changed {sessions}` snapshot, then the watcher events, with `: keepalive` comments. `/api/sessions/events?gateway=1` carries the same feed merged.",
+        "summary": "Standalone gateway-session feed: an initial `sessions_changed {sessions}` snapshot, then the watcher events, with `: keepalive` comments. `/api/sessions/events?gateway=1` carries the watcher events merged, its `initial` frame standing in for the snapshot.",
         "tags": [
           "sessions"
         ],
