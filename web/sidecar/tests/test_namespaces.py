@@ -68,7 +68,7 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
             _seed_state_db(home)
         if method == "commands.bundles":
             (profile / "skill-bundles").mkdir(exist_ok=True)
-            (profile / "skill-bundles" / "media-kit.yaml").write_text("name: media-kit\ndescription: Find media\nskills: [gif-search, not-installed]\n", encoding="utf-8")
+            (profile / "skill-bundles" / "media-kit.yaml").write_text("name: media-kit\ndescription: Find media\nskills: [youtube-content, not-installed]\n", encoding="utf-8")
         if method == "plugins.settings":
             (home / "plugins" / "fake-settings").mkdir(parents=True, exist_ok=True)
             (home / "plugins" / "fake-settings" / "plugin.yaml").write_text(PLUGIN_SETTINGS_MANIFEST, encoding="utf-8")

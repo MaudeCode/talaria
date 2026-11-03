@@ -24,6 +24,14 @@ canonical_agent = pytest.mark.skipif(
     AGENT_DIR is None or not (AGENT_DIR / "cron/scheduler_authority.py").exists(),
     reason="Agent predates canonical cron ownership",
 )
+# v0.22.6 books a manual run as an extra fire: no repeat spent and the schedule kept (upstream PR #146113).
+EXTRA_FIRE = AGENT_DIR is not None and (AGENT_DIR / "cron/extra_fire.py").exists()
+
+
+def assert_manual_run_booked(stored, before):
+    assert stored["repeat"]["completed"] == (0 if EXTRA_FIRE else 1), stored
+    if EXTRA_FIRE:
+        assert stored["next_run_at"] == before["next_run_at"], (stored, before)
 
 
 def wait_for(read, timeout=60):
@@ -314,7 +322,7 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
             assert active.result("cron.output", params)["outputs"] == []
         else:
             assert stored["canonical_completions"] == [record["execution_id"]]
-            assert stored["repeat"]["completed"] == 1
+            assert_manual_run_booked(stored, job)
             assert stored["state"] == "scheduled"
             assert len(active.result("cron.output", params)["outputs"]) == 1
     finally:
@@ -385,7 +393,10 @@ def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(
     assert result["success"] is True, result
     stored = sidecar.result("cron.get", params)["job"]
     assert (stored["state"], stored["enabled"], stored.get("paused_reason")) == (before["state"], before["enabled"], before.get("paused_reason"))
-    assert stored["repeat"]["completed"] == 1
+    if state == "scheduled":
+        assert_manual_run_booked(stored, before)
+    else:
+        assert stored["repeat"]["completed"] == 1  # TAL-997 owns the paused/disabled booking.
     assert len(sidecar.result("cron.output", params)["outputs"]) == 1
     assert len(model.requests) == 1
     assert len(admissions(home)) == 1

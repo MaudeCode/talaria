@@ -413,7 +413,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.bundles', params: { profile_home: s.deps.profileHome('default') } })
     res = await post(s, '/api/commands/bundles/resolve', { command: '/media-kit find a cat' })
     expect(res.status).toBe(200)
-    expect(await json(res)).toMatchObject({ name: 'media-kit', source: 'bundle', loaded_skills: ['gif-search'], missing_skills: ['not-installed'] })
+    expect(await json(res)).toMatchObject({ name: 'media-kit', source: 'bundle', loaded_skills: ['youtube-content'], missing_skills: ['not-installed'] })
     expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.bundle_resolve', params: { profile_home: s.deps.profileHome('default'), command: '/media-kit find a cat' } })
     res = await post(s, '/api/commands/bundles/resolve', { command: '  ' })
     expect(res.status).toBe(400)

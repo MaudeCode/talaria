@@ -120,7 +120,7 @@ try:
     assert not recovery_ready()
    for path,field,value in ((home/'gateway.pid','hermes_home',str(root/'foreign')),
                            (home/'gateway.lock','hermes_home',str(root/'foreign')),
-                           (home/'gateway.pid','start_time',0),
+                           (home/'gateway.lock','start_time',0),
                            (home/'gateway.lock','pid',child.pid+1)):
     original=path.read_text(); data=json.loads(original); data[field]=value; path.write_text(json.dumps(data))
     assert not ready(status._read_process_cmdline(child.pid)), (path,field)
