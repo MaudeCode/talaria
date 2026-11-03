@@ -405,7 +405,7 @@ switches render translated from the first frame; the service worker keeps the ac
 ## 6. Runtime and startup
 
 ```
-talaria-web            .env → discover Agent → sidecar preflight → detached start (or attached under a supervisor)
+talaria-web            .env → discover Agent → detached start (or attached under a supervisor); the handshake checks the Agent import
   └─ serve             supervisor: spawns the worker, forwards signals, respawns on exit code 75
        └─ worker       loadConfig → launchSidecar (handshake) → createDeps → HTTP listen → workers
                         (relay publisher, completion drain, hygiene ticker, gateway watchers, MCP probes)

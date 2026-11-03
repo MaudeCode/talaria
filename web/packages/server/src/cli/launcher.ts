@@ -1,15 +1,14 @@
 /**
  * `talaria-web` launcher (Python `bootstrap.py`): Agent discovery with the
- * `hermes` CLI walk-up, sidecar preflight, optional Agent install, foreground
+ * `hermes` CLI walk-up, optional Agent install, foreground
  * (supervisor) versus detached start, TLS-aware health wait, browser open.
  */
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, openSync, closeSync } from 'node:fs'
-import { delimiter, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { discoverAgentDirForLaunch, discoverAgentPython, which } from '../sidecar/discover.js'
-import { AGENT_IMPORT_ENV } from '../sidecar/env.js'
 export { agentDirFromHermesCli, discoverAgentDirForLaunch } from '../sidecar/discover.js'
 
 export const SUPERVISOR_ENV_VARS = ['INVOCATION_ID', 'JOURNAL_STREAM', 'NOTIFY_SOCKET', 'XPC_SERVICE_NAME', 'SUPERVISOR_ENABLED'] as const
@@ -19,14 +18,6 @@ export function isWsl(env: Record<string, string | undefined>, release = ''): bo
   if (process.platform !== 'linux') return false
   const r = release.toLowerCase()
   return r.includes('microsoft') || r.includes('wsl') || Boolean(env.WSL_DISTRO_NAME)
-}
-
-/** Python `_python_can_run_webui_and_agent`: the sidecar preflight. */
-export function sidecarPreflight(python: string, agentDir: string, env: Record<string, string | undefined>): { ok: boolean; detail: string } {
-  const pythonPath = env.PYTHONPATH ? `${agentDir}${delimiter}${env.PYTHONPATH}` : agentDir
-  const result = spawnSync(python, ['-c', 'from run_agent import AIAgent\ntry:\n    import hermes_yaml\nexcept Exception:\n    import yaml\n'], { env: { ...env, ...AGENT_IMPORT_ENV, PYTHONPATH: pythonPath }, encoding: 'utf8', timeout: 60_000 })
-  if (result.error) return { ok: false, detail: result.error.message }
-  return { ok: result.status === 0, detail: (result.stderr || '').trim().split('\n').slice(-1)[0] ?? '' }
 }
 
 /** Python `install_hermes_agent`: the official installer pinned to the compatible revision (POSIX only). */
@@ -153,12 +144,11 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
     installHermesAgent(ctx.compatibleAgentRevision, log)
     agentDir = discoverAgentDirForLaunch(discover)
   }
-  const python = discoverAgentPython(env, agentDir, ctx.hermesHome)
-  if (agentDir && python) {
-    const preflight = sidecarPreflight(python, agentDir, env)
-    if (!preflight.ok) throw new Error(`Python environment at ${python} cannot import Hermes Agent (${preflight.detail || 'preflight failed'}). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.`)
-  } else if (scriptedSidecar) log('[bootstrap] Using the sidecar command from HERMES_WEBUI_SIDECAR_COMMAND; no Hermes Agent checkout required')
-  else log('[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until HERMES_WEBUI_AGENT_DIR points at an installed Agent')
+  // The Agent import is checked once, by the sidecar handshake (`launchSidecar` reports an import failure).
+  if (!agentDir || !discoverAgentPython(env, agentDir, ctx.hermesHome)) {
+    log(scriptedSidecar ? '[bootstrap] Using the sidecar command from HERMES_WEBUI_SIDECAR_COMMAND; no Hermes Agent checkout required'
+      : '[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until HERMES_WEBUI_AGENT_DIR points at an installed Agent')
+  }
   const stateDir = resolve((env.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, ctx.home) || join(ctx.hermesHome, 'webui'))
   mkdirSync(stateDir, { recursive: true })
   env.HERMES_WEBUI_HOST = args.host

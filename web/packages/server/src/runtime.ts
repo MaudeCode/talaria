@@ -891,7 +891,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
     // A running retention sweep stops before the exit, like on shutdown.
     // TAL-1628: local runs still going when the restart-safety wait ends are saved as interrupted through the stop path's drain.
-    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => turns.drain({ waitMs: 0, settleMs: RUN_SETTLE_MS })).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => deps.promptQueues.close()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => turns.drain({ waitMs: 0, settleMs: RUN_SETTLE_MS })).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => deps.promptQueues.close()).then(() => store.close()).then(async () => { deps.terminals.closeAll({ immediate: true }); await purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
     pruneAdvice,
@@ -943,7 +943,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     const crons = runningCronJobs.size
     return { active_streams: streams.length, active_runs: runs.length, active_terminals: terminals, active_cron_jobs: crons, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 || terminals > 0 || crons > 0 }
   }
-  const purgeAgentPycache = (): void => { const dir = sidecar?.describe?.agent_dir; if (dir) purgePycache(dir) }
+  const purgeAgentPycache = async (): Promise<void> => { const dir = sidecar?.describe?.agent_dir; if (dir) await purgePycache(dir) }
   const agentDrain = (frame: { event: string; data: unknown }) => {
     const parsed = SIDECAR_METHODS['runtime.agent_mutation'].stream.safeParse({ event: frame.event, data: frame.data })
     return parsed.success ? parsed.data.data : null
