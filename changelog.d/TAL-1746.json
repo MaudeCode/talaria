@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web uses less CPU while idle and less memory when many long chats stay open.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

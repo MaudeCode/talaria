@@ -15,6 +15,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -57,7 +58,10 @@ def _session_id(params: dict) -> str:
 # _IDLE_RELEASE_S after its last write; the registry hands out a fresh generation once the file is replaced.
 _IDLE_RELEASE_S = 60.0
 _pins_lock = threading.Lock()
-_pins: dict[str, tuple[object, threading.Timer]] = {}
+# home -> (pinned reference, monotonic idle deadline). One idle thread per pinned home re-arms itself to the latest
+# deadline, so a burst of writes moves a deadline instead of starting a thread per write (TAL-1746).
+_pins: dict[str, tuple[object, float]] = {}
+_idle_threads: dict[str, threading.Thread] = {}
 
 
 def release_session_db(db) -> None:
@@ -105,27 +109,34 @@ def _write(home: Path, what: str, op, *, level: int = logging.DEBUG) -> bool:
 
 
 def _pin(key: str, db) -> None:
-    """Make ``db`` (this call's reference) the home's pin with a fresh idle timer, giving back the previous pin."""
+    """Make ``db`` (this call's reference) the home's pin with a fresh idle deadline, giving back the previous pin."""
     with _pins_lock:
         previous = _pins.pop(key, None)
-        if previous is not None:
-            previous[1].cancel()
         if db is not None:
-            timer = threading.Timer(_IDLE_RELEASE_S, lambda: _expire(key, timer))
-            timer.daemon = True
-            _pins[key] = (db, timer)
-            timer.start()
+            _pins[key] = (db, time.monotonic() + _IDLE_RELEASE_S)
+            if key not in _idle_threads:
+                thread = threading.Thread(target=_expire, args=(key,), daemon=True, name="state-db-idle-release")
+                _idle_threads[key] = thread
+                thread.start()
     if previous is not None:  # outside the lock: a final release checkpoints
         release_session_db(previous[0])
 
 
-def _expire(key: str, timer: threading.Timer) -> None:
-    with _pins_lock:
-        pinned = _pins.get(key)
-        if pinned is None or pinned[1] is not timer:
-            return
-        del _pins[key]
-    release_session_db(pinned[0])
+def _expire(key: str) -> None:
+    """The home's idle thread: sleep to the pin's current deadline and release it once no write moved it. It exits
+    when the pin is gone, and a later write starts a new one."""
+    while True:
+        with _pins_lock:
+            pinned = _pins.get(key)
+            remaining = pinned[1] - time.monotonic() if pinned is not None else 0.0
+            if pinned is None or remaining <= 0:
+                if pinned is not None:
+                    del _pins[key]
+                _idle_threads.pop(key, None)
+                break
+        time.sleep(remaining)
+    if pinned is not None:
+        release_session_db(pinned[0])
 
 
 def release_home(home) -> None:
