@@ -42,16 +42,25 @@ export function stampStateDbGeneration(rows: Message[], generation: string | nul
   }
 }
 
+/** The role/timestamp prefix of `stateDbMessageKey`: rows in different buckets never share a key, so it is checked first. */
+export function stateDbMessageBucket(message: Message): string {
+  const timestamp = Number(message.timestamp)
+  return `${String(message.role)}\0${String(Number.isFinite(timestamp) ? timestamp : '')}`
+}
+
 /** The append-only merge's role/timestamp/content comparison, shared with archived-source matching. */
 export function stateDbMessageKey(message: Message): string {
-  const timestamp = Number(message.timestamp)
   const content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? null)
-  return `${String(message.role)}\0${String(Number.isFinite(timestamp) ? timestamp : '')}\0${content}`
+  return `${stateDbMessageBucket(message)}\0${content}`
 }
 
 /** Fixed-width replay metadata; UTF-16 preserves JavaScript string equality, including lone surrogates. */
+export function stateDbKeyFingerprint(key: string): string {
+  return createHash('sha256').update(key, 'utf16le').digest('hex')
+}
+
 export function stateDbMessageFingerprint(message: Message): string {
-  return createHash('sha256').update(stateDbMessageKey(message), 'utf16le').digest('hex')
+  return stateDbKeyFingerprint(stateDbMessageKey(message))
 }
 
 /** The last recorded database generation remains the numeric identity's owner when a marker becomes stale. */
