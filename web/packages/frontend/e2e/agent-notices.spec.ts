@@ -100,8 +100,12 @@ test('idle native plugin notices refresh both viewers through one observation', 
     return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { aborted = true; resolve(attached()) }, { once: true }) })
   })
   const second = await context.newPage()
-  // The second viewer reads its detail cold; the first page's boot snapshot in the shared storage would supply it fresh.
-  await second.addInitScript(() => { localStorage.removeItem('hermes-boot:queries') })
+  // The second viewer reads its detail cold: it never hydrates the first page's boot snapshot, which shares its storage
+  // and is rewritten after every refetch, so it could supply a fresh transcript whenever this tab boots.
+  await second.addInitScript(() => {
+    const getItem = Object.getOwnPropertyDescriptor(Storage.prototype, 'getItem')!.value as (this: Storage, key: string) => string | null
+    Storage.prototype.getItem = function (this: Storage, key: string) { return this === localStorage && key === 'hermes-boot:queries' ? null : getItem.call(this, key) }
+  })
   let releaseDetail!: () => void
   let detailCaptured!: () => void
   const heldDetail = new Promise<void>((resolve) => { releaseDetail = resolve })
