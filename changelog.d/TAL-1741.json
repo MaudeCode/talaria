@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Opening a long chat no longer rehashes and renormalizes every worklog scene on each page read.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
