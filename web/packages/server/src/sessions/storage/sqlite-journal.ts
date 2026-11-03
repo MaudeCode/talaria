@@ -167,13 +167,13 @@ export class SqliteJournal implements JournalBackend {
     const summary = await this.latest(sessionId, runId)
     return summary.event_count || summary.journal_pruned ? summary : null
   }
-  async findRunSummary(runId: string): Promise<RunSummary | null> {
+  async findRunSummary(runId: string, sessionId?: string): Promise<RunSummary | null> {
     try { validateId(runId, 'run_id') } catch { return null }
     this.flushAll()
     const live = this.db.get<{ session_id: string }>('SELECT session_id FROM journal_rows WHERE stream_id = ? LIMIT 1', runId) ?? this.db.get<{ session_id: string }>('SELECT session_id FROM journal_archives WHERE stream_id = ? LIMIT 1', runId)
-    if (live) return await this.latest(live.session_id, runId)
+    if (live) return sessionId === undefined || live.session_id === sessionId ? await this.latest(live.session_id, runId) : null
     const pruned = this.db.get<{ session_id: string }>('SELECT session_id FROM journal_summaries WHERE stream_id = ? LIMIT 1', runId)
-    return pruned ? this.prunedSummary(pruned.session_id, runId) : null
+    return pruned && (sessionId === undefined || pruned.session_id === sessionId) ? this.prunedSummary(pruned.session_id, runId) : null
   }
   async sessionJournalFingerprint(sessionId: string): Promise<string> {
     try { validateId(sessionId, 'session_id') } catch { return '0:0:0' }

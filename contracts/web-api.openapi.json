@@ -110459,6 +110459,15 @@
             }
           },
           {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "description": "Session that owns the stream; the journal lookup then reads only that session.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "after_event_id",
             "in": "query",
             "required": false,

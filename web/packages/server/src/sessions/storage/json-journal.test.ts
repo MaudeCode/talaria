@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import * as fsp from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -7,6 +8,10 @@ import { JsonJournal } from './json-journal.js'
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
   return { ...real, readdirSync: vi.fn(real.readdirSync), existsSync: vi.fn(real.existsSync), mkdirSync: vi.fn(real.mkdirSync), fsync: vi.fn(real.fsync), closeSync: vi.fn(real.closeSync) }
+})
+vi.mock('node:fs/promises', async (original) => {
+  const real = await original<typeof fsp>()
+  return { ...real, readdir: vi.fn(real.readdir), access: vi.fn(real.access) }
 })
 
 const journals: JsonJournal[] = []
@@ -38,9 +43,9 @@ it.each([1, 100, 645, 1000])('warm lookup probes only its owner among %i session
   expect(await journal.findRunSummary('run')).toMatchObject({ session_id: sid, terminal: true })
   vi.clearAllMocks()
   for (let i = 0; i < 10; i++) expect(await journal.findRunSummary('run')).toMatchObject({ session_id: sid, terminal: true })
-  expect(fs.readdirSync).not.toHaveBeenCalled()
-  expect(vi.mocked(fs.existsSync).mock.calls.length).toBeLessThanOrEqual(20)
-  expect(vi.mocked(fs.existsSync).mock.calls.every(([path]) => dirname(String(path)) === join(journal.root(), sid))).toBe(true)
+  expect(fsp.readdir).not.toHaveBeenCalled()
+  expect(vi.mocked(fsp.access).mock.calls.length).toBeLessThanOrEqual(20)
+  expect(vi.mocked(fsp.access).mock.calls.every(([path]) => dirname(String(path)) === join(journal.root(), sid))).toBe(true)
 })
 
 it('reads fresh event and terminal metadata after appends and same-path replacement', async () => {
@@ -56,7 +61,44 @@ it('reads fresh event and terminal metadata after appends and same-path replacem
   expect(await journal.findRunSummary('run')).toMatchObject({ last_seq: 1, terminal: true })
 })
 
-it('does not cache misses and rediscovers disappeared, moved and recreated runs', async () => {
+it('an unknown run among 500 session directories never blocks the event loop and its miss is cached', async () => {
+  const journal = fixture()
+  for (let i = 0; i < 500; i++) fs.mkdirSync(join(journal.root(), `s${String(i).padStart(3, '0')}`), { recursive: true })
+  vi.clearAllMocks()
+  expect(await journal.findRunSummary('gone')).toBeNull()
+  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fs.existsSync).not.toHaveBeenCalled()
+  vi.clearAllMocks()
+  expect(await journal.findRunSummary('gone')).toBeNull()
+  expect(fsp.readdir).not.toHaveBeenCalled()
+  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fs.existsSync).not.toHaveBeenCalled()
+})
+
+it('a run journal written by another process invalidates a cached miss', async () => {
+  const journal = fixture()
+  expect(await journal.findRunSummary('run')).toBeNull()
+  const other = new JsonJournal(journal.sessionDir)
+  await writeRun(other, 'elsewhere')
+  await other.close()
+  expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'elsewhere', terminal: true })
+})
+
+it('a session hint resolves the run without probing other sessions', async () => {
+  const journal = fixture()
+  for (let i = 0; i < 50; i++) fs.mkdirSync(join(journal.root(), `s${String(i).padStart(2, '0')}`), { recursive: true })
+  const other = new JsonJournal(journal.sessionDir)
+  await writeRun(other, 's49')
+  await other.close()
+  vi.clearAllMocks()
+  expect(await journal.findRunSummary('run', 's49')).toMatchObject({ session_id: 's49', terminal: true })
+  expect(await journal.findRunSummary('missing', 's49')).toBeNull()
+  expect(await journal.findRunSummary('run', 's00')).toBeNull()
+  expect(fsp.readdir).not.toHaveBeenCalled()
+  expect(fs.readdirSync).not.toHaveBeenCalled()
+})
+
+it('rediscovers disappeared, moved and recreated runs', async () => {
   const journal = fixture()
   expect(await journal.findRunSummary('run')).toBeNull()
   await writeRun(journal, 'first')
@@ -85,7 +127,7 @@ it('keeps pruned summaries warm and fresh, and rediscovers their moves and repla
   vi.clearAllMocks()
   const pruned = await journal.findRunSummary('run')
   expect(pruned).toMatchObject({ journal_pruned: true, terminal: true, path: join(journal.root(), 'session/run.summary.json') })
-  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fsp.readdir).not.toHaveBeenCalled()
   fs.writeFileSync(pruned!.path!, JSON.stringify({ ...pruned, last_seq: 9, event_count: 9 }))
   expect(await journal.findRunSummary('run')).toMatchObject({ last_seq: 9, event_count: 9 })
   fs.renameSync(join(journal.root(), 'session'), join(journal.root(), 'moved'))
@@ -93,8 +135,8 @@ it('keeps pruned summaries warm and fresh, and rediscovers their moves and repla
   expect(await journal.findRunSummary('run')).toMatchObject({ path: movedPath, last_seq: 9 })
   vi.clearAllMocks()
   expect(await journal.findRunSummary('run')).toMatchObject({ path: movedPath })
-  expect(fs.readdirSync).not.toHaveBeenCalled()
-  expect(vi.mocked(fs.existsSync).mock.calls.every(([path]) => dirname(String(path)) === join(journal.root(), 'moved'))).toBe(true)
+  expect(fsp.readdir).not.toHaveBeenCalled()
+  expect(vi.mocked(fsp.access).mock.calls.every(([path]) => dirname(String(path)) === join(journal.root(), 'moved'))).toBe(true)
   fs.writeFileSync(movedPath, 'broken JSON')
   expect(await journal.findRunSummary('run')).toBeNull()
   await writeRun(journal, 'replacement')
@@ -176,12 +218,12 @@ it('invalidates session deletion, including an already removed directory', async
     expect(await journal.deleteSession('session')).toBe(!removedExternally)
     vi.clearAllMocks()
     expect(await journal.findRunSummary('run')).toBeNull()
-    expect(fs.readdirSync).toHaveBeenCalledTimes(1)
+    expect(fsp.readdir).toHaveBeenCalledTimes(1)
     // A recreated run's writer records its owner again.
     await writeRun(journal, 'session')
     vi.clearAllMocks()
     expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'session' })
-    expect(fs.readdirSync).not.toHaveBeenCalled()
+    expect(fsp.readdir).not.toHaveBeenCalled()
   }
 })
 
@@ -192,7 +234,7 @@ it('knows a run owner from its first writer, before any lookup', async () => {
   await writer.appendSseEvent('token', { text: 'live' })
   vi.clearAllMocks()
   expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 's199', terminal: false })
-  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fsp.readdir).not.toHaveBeenCalled()
   await writer.close()
 })
 
@@ -209,8 +251,8 @@ it('isolates identical run IDs in independent roots and rejects invalid IDs befo
   }
   vi.clearAllMocks()
   for (const id of ['', '.', '..', '../run', '/run', 'run/other']) expect(await first.findRunSummary(id)).toBeNull()
-  expect(fs.existsSync).not.toHaveBeenCalled()
-  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fsp.access).not.toHaveBeenCalled()
+  expect(fsp.readdir).not.toHaveBeenCalled()
 })
 
 it('evicts the least recently used owner above 1000 entries and releases ownership on close', async () => {
@@ -224,13 +266,13 @@ it('evicts the least recently used owner above 1000 entries and releases ownersh
   await journal.findRunSummary('run1000')
   vi.clearAllMocks()
   expect(await journal.findRunSummary('run0')).toMatchObject({ run_id: 'run0' })
-  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fsp.readdir).not.toHaveBeenCalled()
   expect(await journal.findRunSummary('run1')).toMatchObject({ run_id: 'run1' })
-  expect(fs.readdirSync).toHaveBeenCalledTimes(1)
+  expect(fsp.readdir).toHaveBeenCalledTimes(1)
   await journal.close()
   vi.clearAllMocks()
   for (let i = 0; i < 2; i++) expect(await journal.findRunSummary('run0')).toMatchObject({ run_id: 'run0' })
-  expect(fs.readdirSync).toHaveBeenCalledTimes(2)
+  expect(fsp.readdir).toHaveBeenCalledTimes(2)
   await expect(journal.writer('session', 'another')).rejects.toThrow('Storage is closed')
 })
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Synchronous JSON transactions implement the async storage port. */
 import { rmSync } from 'node:fs'
 import { closeSync, existsSync, fsync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
-import { lstat, open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
+import { access, lstat, open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { atomicWriteTextAsync, writeFully, writeFullyAsync } from '../../fs/atomic.js'
 import { dirname, join } from 'node:path'
@@ -13,6 +13,8 @@ import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, JournalReadLimit, NOF
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
 const PRUNED_SUMMARY_SUFFIX = '.summary.json'
 const RUN_OWNER_CACHE_MAX = 1000
+/** A run id no session holds stays unknown this long unless the journals root changes (a new session directory). */
+const RUN_MISS_TTL_MS = 30_000
 
 const TURN_JOURNAL_DIR = '_turn_journal'
 const TURN_JOURNAL_ID_RE = /^[A-Za-z0-9_.-]+$/
@@ -54,6 +56,8 @@ const NO_FILES: RunFiles = { archive: null, live: null, liveStat: null, close: a
 export { JournalArchiveError } from './json-journal-archive.js'
 export class JsonJournal implements JournalBackend {
   private readonly runOwners = new Map<string, string>()
+  /** Unknown run ids, with the journals root signature and time of the scan that missed them. */
+  private readonly runMisses = new Map<string, { signature: string; at: number }>()
   /** Bumped by each session deletion, so archival in flight never publishes into a deleted session. */
   private readonly deletions = new Map<string, number>()
   private readonly policy
@@ -150,7 +154,7 @@ export class JsonJournal implements JournalBackend {
     return new JsonJournalWriter(this, sessionId, runId, opts.durability, undefined, seq)
   }
   private closed = false
-  async close(): Promise<void> { this.closed = true; this.runOwners.clear(); await Promise.all([...this.writers].map(async (writer) => { await writer.close(); })) }
+  async close(): Promise<void> { this.closed = true; this.runOwners.clear(); this.runMisses.clear(); await Promise.all([...this.writers].map(async (writer) => { await writer.close(); })) }
 
   async *read(sessionId: string, runId: string, fromSeq: number): AsyncGenerator<JournalEvent> {
     yield* this.iterRunEvents(sessionId, runId, { afterSeq: fromSeq - 1 })
@@ -494,35 +498,56 @@ export class JsonJournal implements JournalBackend {
     }
   }
 
-  /** Locate a run across sessions (Python `find_run_summary`): live journals first, then archived and pruned runs. */
-  async findRunSummary(runId: string): Promise<RunSummary | null> {
+  /**
+   * Locate a run across sessions (Python `find_run_summary`): live journals first, then archived and pruned runs. A
+   * `sessionId` restricts the lookup to that session, so no other session is probed. A miss is remembered for
+   * `RUN_MISS_TTL_MS` while the journals root keeps its signature; a run this process writes clears it at once.
+   */
+  async findRunSummary(runId: string, sessionId?: string): Promise<RunSummary | null> {
     let rid: string
     try {
       rid = validateId(runId, 'run_id')
+      if (sessionId !== undefined) validateId(sessionId, 'session_id')
     } catch {
       return null
     }
+    if (sessionId !== undefined) return (await this.resolvedRunSummary(sessionId, rid, false)) ?? (await this.resolvedRunSummary(sessionId, rid, true))
     const cached = this.runOwners.get(rid)
     if (cached !== undefined) {
       this.runOwners.delete(rid)
       const summary = (await this.resolvedRunSummary(cached, rid, false)) ?? (await this.resolvedRunSummary(cached, rid, true))
       if (summary) return summary
     }
+    const signature = await this.rootSignature()
+    const miss = this.runMisses.get(rid)
+    if (miss?.signature === signature && Date.now() - miss.at < RUN_MISS_TTL_MS) return null
     let sessions: string[]
     try {
-      sessions = readdirSync(this.root()).filter((sid) => SAFE_ID_RE.test(sid) && !/^\.+$/.test(sid))
+      sessions = (await readdir(this.root())).filter((sid) => SAFE_ID_RE.test(sid) && !/^\.+$/.test(sid))
     } catch {
-      return null
+      sessions = []
     }
-    for (const sid of sessions) {
-      const summary = await this.resolvedRunSummary(sid, rid, false)
-      if (summary) return summary
+    for (const settled of [false, true]) {
+      for (const sid of sessions) {
+        const summary = await this.resolvedRunSummary(sid, rid, settled)
+        if (summary) return summary
+      }
     }
-    for (const sid of sessions) {
-      const summary = await this.resolvedRunSummary(sid, rid, true)
-      if (summary) return summary
-    }
+    if (this.closed) return null
+    this.runMisses.delete(rid)
+    this.runMisses.set(rid, { signature, at: Date.now() })
+    if (this.runMisses.size > RUN_OWNER_CACHE_MAX) this.runMisses.delete(this.runMisses.keys().next().value!)
     return null
+  }
+
+  /** The journals root's identity and mtime; a new session directory changes it. */
+  private async rootSignature(): Promise<string> {
+    try {
+      const st = await stat(this.root(), { bigint: true })
+      return `${String(st.ino)}:${String(st.mtimeNs)}`
+    } catch {
+      return 'absent'
+    }
   }
 
   private async resolvedRunSummary(sessionId: string, runId: string, settled: boolean): Promise<RunSummary | null> {
@@ -532,9 +557,9 @@ export class JsonJournal implements JournalBackend {
     let path: string
     if (!settled) path = journalPath
     else {
-      try { lstatSync(archivePath); path = archivePath } catch { path = summaryPath }
+      try { await lstat(archivePath); path = archivePath } catch { path = summaryPath }
     }
-    if (!existsSync(path)) return null
+    try { await access(path) } catch { return null }
     const summary = await this.summaryOf(sessionId, runId)
     if (!summary) return null
     this.rememberOwner(runId, sessionId)
@@ -545,6 +570,7 @@ export class JsonJournal implements JournalBackend {
   /** Cache ownership only; appends and retention summaries must always be read fresh. */
   private rememberOwner(runId: string, sessionId: string): void {
     if (this.closed) return
+    this.runMisses.delete(runId)
     this.runOwners.delete(runId)
     this.runOwners.set(runId, sessionId)
     if (this.runOwners.size > RUN_OWNER_CACHE_MAX) this.runOwners.delete(this.runOwners.keys().next().value!)

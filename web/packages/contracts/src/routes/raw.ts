@@ -39,7 +39,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   },
   {
     method: 'GET', path: '/api/chat/stream', summary: 'Live agent-turn relay (SSE). Journal-backed frames carry `id: <stream_id>:<seq>`; resume with `after_event_id`, `after_seq`, or `Last-Event-ID`.', tags: ['chat'],
-    query: { stream_id: { description: 'Stream returned by `/api/chat/start`.', required: true }, after_event_id: { description: 'Resume cursor (`<stream_id>:<seq>`).' }, after_seq: { description: 'Numeric resume cursor.' }, replay: { description: '`1` replays the journal from the start.' } },
+    query: { stream_id: { description: 'Stream returned by `/api/chat/start`.', required: true }, session_id: { description: 'Session that owns the stream; the journal lookup then reads only that session.' }, after_event_id: { description: 'Resume cursor (`<stream_id>:<seq>`).' }, after_seq: { description: 'Numeric resume cursor.' }, replay: { description: '`1` replays the journal from the start.' } },
     responses: { 200: { description: 'Event stream; ends after `stream_end`, `cancel`, `apperror`, or `error`.', contentType: 'text/event-stream' }, 404: { description: 'No live stream and no journal.', contentType: 'application/json' }, 503: { description: 'Client stream limit reached (`condition: client_stream_limit`).', contentType: 'application/json' } },
   },
   {

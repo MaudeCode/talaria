@@ -20,7 +20,7 @@ vi.mock('node:fs', async (original) => {
 vi.mock('node:fs/promises', async (original) => {
   const real = await original<typeof fsp>()
   const paths = new WeakMap<fsp.FileHandle, string>()
-  return { ...real, open: vi.fn(async (...args: Parameters<typeof fsp.open>) => {
+  return { ...real, readdir: vi.fn(real.readdir), open: vi.fn(async (...args: Parameters<typeof fsp.open>) => {
     const handle = await real.open(...args)
     const path = String(args[0])
     paths.set(handle, path)
@@ -215,6 +215,27 @@ it.each(['chat', 'session'])('%s stream backfill of dropped frames omits a settl
   expect(frames.filter((f) => f.id).map((f) => [f.event, f.id])).toEqual([['tool', 'live:1'], ['tool_complete', 'live:3'], ['approval', 'live:4'], ['token', 'live:5']])
 })
 
+/** Listings of the journals root, sync or async, since the last mock clear. */
+function rootListings(journal: JsonJournal): number {
+  return [...vi.mocked(fs.readdirSync).mock.calls, ...vi.mocked(fsp.readdir).mock.calls].filter(([path]) => String(path) === journal.root()).length
+}
+
+it('a cold chat reconnect that names its session resolves the journal without listing other sessions', async () => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  const journal = s.deps.journal as JsonJournal
+  for (let i = 0; i < 200; i++) fs.mkdirSync(join(journal.root(), `s${String(i).padStart(3, '0')}`), { recursive: true })
+  const before = new JsonJournal(journal.sessionDir)
+  const writer = await before.writer(sid, 'ended')
+  for (const [event, payload] of [['token', { text: 'a' }], ['done', {}]] as const) await writer.appendSseEvent(event, payload)
+  await writer.close()
+  await before.close()
+  vi.mocked(fs.readdirSync).mockClear(); vi.mocked(fsp.readdir).mockClear()
+  const frames = await s.sse(`/api/chat/stream?stream_id=ended&session_id=${sid}`, (f) => f.id === 'ended:2', { headers: { 'Last-Event-ID': 'ended:1' }, timeoutMs: 2000 })
+  expect(frames.map((f) => f.id)).toEqual(['ended:2'])
+  expect(rootListings(journal)).toBe(0)
+})
+
 it('chat reconnect among 200 session journals lists the journals root once in total and never once warm', async () => {
   const s = server = await bootTestServer()
   const sid = (await s.deps.sessionStore.newSession()).session_id
@@ -228,9 +249,9 @@ it('chat reconnect among 200 session journals lists the journals root once in to
   await before.close()
   const lookups = vi.spyOn(journal, 'findRunSummary')
   const reconnect = async (streamId: string, until: string): Promise<{ ids: (string | null)[]; listings: number; lookups: number }> => {
-    vi.mocked(fs.readdirSync).mockClear(); lookups.mockClear()
+    vi.mocked(fs.readdirSync).mockClear(); vi.mocked(fsp.readdir).mockClear(); lookups.mockClear()
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.id === until, { headers: { 'Last-Event-ID': `${streamId}:1` }, timeoutMs: 2000 })
-    return { ids: frames.map((f) => f.id), listings: vi.mocked(fs.readdirSync).mock.calls.filter(([path]) => String(path) === journal.root()).length, lookups: lookups.mock.calls.length }
+    return { ids: frames.map((f) => f.id), listings: rootListings(journal), lookups: lookups.mock.calls.length }
   }
   expect(await reconnect('ended', 'ended:3')).toEqual({ ids: ['ended:2', 'ended:3'], listings: 1, lookups: 1 })
   expect(await reconnect('ended', 'ended:3')).toEqual({ ids: ['ended:2', 'ended:3'], listings: 0, lookups: 1 })

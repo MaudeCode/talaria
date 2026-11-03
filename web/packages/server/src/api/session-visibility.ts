@@ -46,20 +46,23 @@ export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(
 /** A stream's owner, with the journal summary it came from; `summary` is undefined when the live registry answered. */
 export interface StreamOwner { owner: string | null; summary?: RunSummary | null }
 
-/** Python `_stream_id_owner_session_id`: the live registry first, then the run journal once the run has finished. */
-export async function resolveStreamOwner(ctx: RequestContext, streamId: string): Promise<StreamOwner> {
+/**
+ * Python `_stream_id_owner_session_id`: the live registry first, then the run journal once the run has finished. A
+ * `sessionId` the client named restricts the journal lookup to that session.
+ */
+export async function resolveStreamOwner(ctx: RequestContext, streamId: string, sessionId?: string): Promise<StreamOwner> {
   const id = streamId.trim()
   if (!id) return { owner: null }
   const live = ctx.deps.registry.ownerSessionId(id)
   if (live) return { owner: live }
   if (!isSafeSessionId(id)) return { owner: null }
-  const summary = await ctx.deps.journal.findRunSummary(id)
+  const summary = await ctx.deps.journal.findRunSummary(id, sessionId)
   return { owner: summary?.session_id || null, summary }
 }
 
 /** The resolved journal summary, read now only when the live registry answered the owner lookup. */
-export async function streamRunSummary(ctx: RequestContext, streamId: string, resolved: StreamOwner): Promise<RunSummary | null> {
-  return resolved.summary !== undefined ? resolved.summary : streamId ? await ctx.deps.journal.findRunSummary(streamId) : null
+export async function streamRunSummary(ctx: RequestContext, streamId: string, resolved: StreamOwner, sessionId?: string): Promise<RunSummary | null> {
+  return resolved.summary !== undefined ? resolved.summary : streamId ? await ctx.deps.journal.findRunSummary(streamId, sessionId) : null
 }
 
 /** Python `_stream_id_visible_to_request_profile`: a stream is visible when its owner session is (or it has no known owner). */

@@ -319,13 +319,14 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
-  const resolved = await resolveStreamOwner(ctx, streamId)
+  const sessionHint = ctx.query.get('session_id') || undefined
+  const resolved = await resolveStreamOwner(ctx, streamId, sessionHint)
   const { owner } = resolved
   if (!(await streamVisibleToRequest(ctx, streamId, resolved))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {
-    const summary = await streamRunSummary(ctx, streamId, resolved)
+    const summary = await streamRunSummary(ctx, streamId, resolved, sessionHint)
     if (!summary) { (await ctx.json({ error: 'stream not found' }, { status: 404 })); return }
     let afterSeq = cursor.afterSeq
     if (afterSeq !== null && afterSeq > (summary.last_seq || 0)) afterSeq = 0
@@ -352,7 +353,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
       const cursorCoversSnapshot = snapshotCutoff !== null && afterSeq >= snapshotCutoff
       const droppedGapRequired = snapshot.offline_dropped_events > 0 && !cursorCoversSnapshot && (firstBuffered === null || afterSeq < firstBuffered - 1)
       const gapRequired = droppedGapRequired || (replayMaxSeq !== null && replayMaxSeq > afterSeq)
-      const summary = await streamRunSummary(ctx, streamId, resolved)
+      const summary = await streamRunSummary(ctx, streamId, resolved, sessionHint)
       const covered = !gapRequired || (await journalCoversGap(ctx, streamId, summary, afterSeq, replayMaxSeq))
       let replayed = false
       let terminalReplayed = false

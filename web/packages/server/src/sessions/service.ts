@@ -1341,7 +1341,7 @@ export class SessionService {
     const turnId = str(s.active_stream_id).trim()
     const activeTurnToken = buildActiveTurnToken(turnId, s.pending_started_at)
     if (!turnId || !activeTurnToken || this.deps.runtime.journalDegraded(turnId)) return null
-    const summary = (await this.deps.journal?.findRunSummary(turnId))
+    const summary = (await this.deps.journal?.findRunSummary(turnId, s.session_id))
     if (summary?.session_id !== s.session_id || summary.journal_pruned) return null
     return { turnId, startedAt: Number(s.pending_started_at), activeTurnToken }
   }
