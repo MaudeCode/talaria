@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Pasting or dropping a file into the composer no longer reads chat state off the main thread.",
+      "highlight": false
+    }
+  ]
+}

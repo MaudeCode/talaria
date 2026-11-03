@@ -65,7 +65,7 @@ public struct PersonalitySetResponse: Decodable, Equatable {
     public let error: String?
 }
 
-public struct ProfilesResponse: Decodable, Equatable {
+public struct ProfilesResponse: Decodable, Equatable, Sendable {
     public let profiles: [ProfileSummary]?
     public let active: String?
     public let singleProfileMode: Bool?

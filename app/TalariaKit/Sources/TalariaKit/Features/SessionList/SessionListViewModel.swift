@@ -196,7 +196,7 @@ public final class SessionListViewModel {
     private let responseCache: ResponseCache?
     private let archiveUndoLifetime: Duration
     /// How long a chat archive stays undoable.
-    public static let defaultArchiveUndoLifetime: Duration = .seconds(5)
+    public nonisolated static let defaultArchiveUndoLifetime: Duration = .seconds(5)
 
     public init(
         server: URL,
@@ -1186,7 +1186,7 @@ public final class SessionListViewModel {
 
         var renamed: SessionSummary?
         return await changeSession(session, label: String(localized: "Rename"), title: title, modelContext: modelContext, reload: false, confirmed: {
-            if let renamed, let id = renamed.sessionId {
+            if let renamed, renamed.sessionId != nil {
                 self.refreshRow(with: renamed, modelContext: modelContext)
             }
         }) { id in

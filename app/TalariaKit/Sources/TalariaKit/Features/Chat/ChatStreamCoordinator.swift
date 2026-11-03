@@ -82,7 +82,6 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse)
     @discardableResult
     func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool
-    @discardableResult
     func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer)
     func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent)
     func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent)
