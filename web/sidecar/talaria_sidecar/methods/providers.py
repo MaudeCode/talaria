@@ -127,9 +127,11 @@ def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     for root in directories:
         try:
             # Reuse the Agent's cached extraction; provider ids need not match manifest or directory names.
-            profiles = load_hosted_profiles(root, providers._user_module_name(root, home_key))
-            for profile in profiles:
-                owners.setdefault(profile.name, set()).add(root)
+            loaded = load_hosted_profiles(root, providers._user_module_name(root, home_key))
+            # Agent 0.22.6+ returns (hosted proxies, {name: reason} for profiles it loads in-process); older ones a list.
+            hosted, in_process = loaded if isinstance(loaded, tuple) else (loaded, {})
+            for name in [*(profile.name for profile in hosted), *in_process]:
+                owners.setdefault(name, set()).add(root)
         except Exception:  # noqa: BLE001 - failed extraction keeps the manifest's not_loaded row
             log.debug("reading hosted provider plugin %s failed", root, exc_info=True)
     found: dict[Path, list] = {root: [] for root in roots}
