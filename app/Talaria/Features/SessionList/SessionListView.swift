@@ -517,10 +517,10 @@ struct SessionListView: View {
             .onChange(of: navigationState.filesInspectorPresented) { _, presented in
                 if !presented { setFilesInspectorPresented(false) }
             }
-            // Every layout that closes Files (a fold, a rotation, compact width) clears the intent through
-            // `dismissesFilesInspector`, and the reader closes it through the inspector's own button. UIKit dropping
-            // the presentation while the layout still shows Files is UIKit refusing it over a column it has not hidden
-            // yet: the intent stays, and the next room measurement admits it again (TAL-1670).
+            // A fold, a rotation or compact width clears the intent itself (the hinge handler and
+            // `dismissesFilesInspector`), and the reader closes Files with the Files button or the inspector's close
+            // button. UIKit dropping the presentation while the layout still shows Files is UIKit refusing it over a
+            // column it has not hidden yet: the intent stays, and the next room measurement admits it (TAL-1670).
             .onChange(of: nativeFilesInspectorPresented) {
                 if !sidebarPresentation.showsFilesInspector { setFilesInspectorPresented(false) }
             }
