@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Importing from Claude Code, Codex or Cursor now works with the Agent Importers plugin that Agent v0.22.4 and v0.22.6 install, instead of asking you to install it again.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
