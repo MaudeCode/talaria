@@ -74,11 +74,12 @@ def _read(home: Path, completed: Any = None) -> dict | None:
         if status.get("state") == "idle" and completed is not None:
             status = getattr(completed, "handoff_status", None) or status
         state = status.get("state") if status.get("state") in _STATES else "unknown"
-        received_by = status.get("account_email")
         if not hasattr(native, "_account_bound_to"):
             # Agent 0.22.6 binds a record to its profile, not an account: a retry claims for whichever account the
-            # profile holds. A result another account received is nothing this account has to report.
-            if isinstance(received_by, str) and raw_email and received_by.casefold() != raw_email.casefold():
+            # profile holds. Its claimed result names the account the apps went to; without proof that it is this
+            # one, the result is another account's and nothing this account has to report.
+            received_by = status.get("account_email")
+            if state == "claimed" and not (isinstance(received_by, str) and raw_email and received_by.casefold() == raw_email.casefold()):
                 status, state = {"state": "idle"}, "idle"
         # Agent 0.22.5's public read only fences *active* records. Prove terminal ownership
         # with the same native selector/binding helper before exposing any old app names.

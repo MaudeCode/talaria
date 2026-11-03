@@ -162,10 +162,11 @@ def test_result_reconnect_uses_an_account_fenced_native_operation(hermes_home, p
     shared.mkdir()
     (shared / "guest_handoff.json").write_text(json.dumps({"_schema": 1, "records": {"synthetic": {
         "state": "claimed", "destination": "user-synthetic", "profiles": [str(hermes_home.resolve())],
-        "updated_at": "2026-10-01T00:00:00Z", "result": {"connectors_kind": "moved", "moved_toolkits": ["calendar"], "dropped_toolkits": ["gmail"]},
+        "updated_at": "2026-10-01T00:00:00Z", "result": {"account_email": "synthetic@example.test", "connectors_kind": "moved",
+                                                       "moved_toolkits": ["calendar"], "dropped_toolkits": ["gmail"]},
     }}}))
     with serve(portal) as origin:
-        env = {**seed_identity(hermes_home, origin), "HERMES_SHARED_AUTH_DIR": str(shared)}
+        env = {**seed_identity(hermes_home, origin, email="synthetic@example.test"), "HERMES_SHARED_AUTH_DIR": str(shared)}
         proc = SidecarProcess(hermes_home, env=env)
         try:
             assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]

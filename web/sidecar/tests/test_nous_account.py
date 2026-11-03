@@ -83,11 +83,17 @@ def test_old_terminal_result_never_exposes_another_accounts_apps(native, tmp_pat
     assert result["state"] == "paused" and result["moved"] == [] and result["reconnect"] == []
 
 
-def test_profile_bound_result_another_account_received_is_not_shown(native, tmp_path):
+@pytest.mark.parametrize("unproven", ["other-account", "result-without-email", "token-without-email"])
+def test_profile_bound_result_another_account_received_is_not_shown(native, tmp_path, unproven):
     unfence(native)
     native.status["account_email"] = "Unmasked@Example.TEST"
     assert nous_account.read(tmp_path)["moved"] == ["calendar"]
-    native.status["account_email"] = "earlier@example.test"
+    if unproven == "other-account":
+        native.status["account_email"] = "earlier@example.test"
+    elif unproven == "result-without-email":
+        del native.status["account_email"]
+    else:
+        sys.modules["hermes_cli.auth_constants"]._decode_jwt_claims = lambda token: {"sub": native.subject}
     result = nous_account.read(tmp_path)
     assert (result["state"], result["moved"], result["reconnect"], result["poll_after"]) == ("idle", [], [], None)
     assert "earlier" not in str(result) and "calendar" not in str(result)
