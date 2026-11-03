@@ -1013,6 +1013,8 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   // row shares its role and timestamp (no other local row can match one).
   const keys = new Map<Message, string>()
   const key = (m: Message): string => { let k = keys.get(m); if (k === undefined) { k = stateDbMessageKey(m); keys.set(m, k) } return k }
+  // A state row's last use: the cache must not keep keys for rows the gates below reject.
+  const lastKey = (m: Message): string => { const k = keys.get(m) ?? stateDbMessageKey(m); keys.delete(m); return k }
   const stateBuckets = new Set(state.map(stateDbMessageBucket))
   const keyable = (m: Message): boolean => stateBuckets.has(stateDbMessageBucket(m))
   const seenId = opts.stateDbSeenId
@@ -1050,7 +1052,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const cutAt = opts.truncationCutAt
   const afterCut = (m: Message): boolean => { const t = ts(m); return typeof cutAt === 'number' && Number.isFinite(cutAt) && opts.compressedWatermark !== true && t !== null && t > cutAt }
   if (!sidecar.length) {
-    if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
+    if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = lastKey(m); if (seen.has(k)) return false; seen.add(k); return true }) }
     if (watermark === 0) return state.filter(afterCut)
     return state.filter((m) => { const t = ts(m); return t !== null && (afterCut(m) || (opts.compressedWatermark === true ? t > watermark : t <= watermark)) })
   }
@@ -1061,7 +1063,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const advanced = !hasWatermark || opts.compressedWatermark === true || (maxSidecar !== null && maxSidecar > watermark)
   const merged = [...sidecar]
   for (const m of state) {
-    const k = key(m)
+    const k = lastKey(m)
     if (seen.has(k)) continue
     const t = ts(m)
     // A kept-message compaction summary inherits the reply's old timestamp, but is new history.
