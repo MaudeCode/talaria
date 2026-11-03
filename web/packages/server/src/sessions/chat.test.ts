@@ -3457,6 +3457,7 @@ describe('chat turns through the sidecar', () => {
     seeded.messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
     seeded.context_messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
     await s.deps.sessionStore.save(seeded)
+    // The clone is deleted after the turn publishes its error frame, so each check waits for that cleanup.
     const leftovers = async (): Promise<string[]> => (await filterAsync([...(await s.deps.sessionStore.persistedIds())], async (id) => { try { return str((await s.deps.sessionStore.get(id, { metadataOnly: true })).title).startsWith('btw: ') } catch { return false } }))
     // A provider error: the Agent's failed result replays history plus the unanswered question, and the sidecar says `completed`.
     sidecar.respond('chat.start', (params) => ({
@@ -3467,8 +3468,7 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')
     expect(frames.find((f) => f.event === 'done')?.data).toBeUndefined()
     expect(str((frames.find((f) => f.event === 'apperror')?.data as Json | undefined)?.message)).toContain('401 invalid api key')
-    await new Promise((r) => setTimeout(r, 50))
-    expect((await leftovers())).toEqual([])
+    await expect.poll(leftovers, { timeout: 2000 }).toEqual([])
     // The run journal keeps the error for a late subscriber, but no copy of the parent conversation.
     const journaled = JSON.stringify((await s.deps.journal.readRunEvents(String(failed.session_id), String(failed.stream_id))))
     expect(journaled).toContain('apperror')
@@ -3482,14 +3482,12 @@ describe('chat turns through the sidecar', () => {
     const streamedFrames = await s.sse(`/api/chat/stream?stream_id=${String(streamed.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')
     expect(streamedFrames.find((f) => f.event === 'done')?.data).toBeUndefined()
     expect(streamedFrames.some((f) => f.event === 'apperror')).toBe(true)
-    await new Promise((r) => setTimeout(r, 50))
-    expect((await leftovers())).toEqual([])
+    await expect.poll(leftovers, { timeout: 2000 }).toEqual([])
     // A sidecar that throws mid-turn.
     sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
     const thrown = await json(await post(s, '/api/btw', { session_id: sid, question: 'side question' }))
     await s.sse(`/api/chat/stream?stream_id=${String(thrown.stream_id)}&replay=1`, (f) => f.event === 'apperror')
-    await new Promise((r) => setTimeout(r, 50))
-    expect((await leftovers())).toEqual([])
+    await expect.poll(leftovers, { timeout: 2000 }).toEqual([])
     // Admission refused.
     const turns = s.deps.turns as unknown as { deps: { profileDeleting: ((profile: string | null) => boolean) | undefined } }
     const original = turns.deps.profileDeleting
