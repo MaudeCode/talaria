@@ -615,9 +615,7 @@ public final class ComposerVoiceInputController {
         logger.info(
             "Voice input installing audio tap sampleRate=\(recordingFormat.sampleRate, privacy: .public) channels=\(recordingFormat.channelCount, privacy: .public)"
         )
-        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: recordingFormat) { [weak request] buffer, _ in
-            request?.append(buffer)
-        }
+        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: recordingFormat, block: Self.recognitionTap(appendingTo: request))
         audioTapInstalled = true
         logger.info("Voice input audio tap installed")
 
@@ -632,6 +630,14 @@ public final class ComposerVoiceInputController {
         try audioEngine.start()
         ComposerAudioCaptureState.shared.setCapturing(true)
         logger.info("Voice input audio engine started")
+    }
+
+    /// Built outside the main actor: `AVAudioNodeTapBlock` is not `@Sendable`, so a block formed in this main-actor
+    /// class would inherit its isolation and trap when the audio thread calls it.
+    private nonisolated static func recognitionTap(
+        appendingTo request: SFSpeechAudioBufferRecognitionRequest
+    ) -> AVAudioNodeTapBlock {
+        { [weak request] buffer, _ in request?.append(buffer) }
     }
 
     private func handleRecognition(result: SFSpeechRecognitionResult?, error: Error?) {
@@ -780,7 +786,8 @@ public final class ComposerVoiceInputController {
 
     private func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
         await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
+            // `@Sendable`: the handler runs on an arbitrary queue, and this class's main-actor isolation would trap there.
+            SFSpeechRecognizer.requestAuthorization { @Sendable status in
                 continuation.resume(returning: status)
             }
         }

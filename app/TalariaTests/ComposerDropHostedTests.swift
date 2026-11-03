@@ -313,17 +313,16 @@ private final class HostedDropSession: NSObject, UIDropSession {
 
     func loadObjects(ofClass aClass: NSItemProviderReading.Type, completion: @escaping ([NSItemProviderReading]) -> Void) -> Progress {
         let group = DispatchGroup()
-        var objects: [NSItemProviderReading?] = Array(repeating: nil, count: items.count)
+        let objects = LockedTestValue<[NSItemProviderReading?]>(Array(repeating: nil, count: items.count))
+        let completion = LockedTestValue(completion)
         for (index, item) in items.enumerated() where item.itemProvider.canLoadObject(ofClass: aClass) {
             group.enter()
             _ = item.itemProvider.loadObject(ofClass: aClass) { object, _ in
-                DispatchQueue.main.async {
-                    objects[index] = object
-                    group.leave()
-                }
+                objects.value[index] = object
+                group.leave()
             }
         }
-        group.notify(queue: .main) { completion(objects.compactMap { $0 }) }
+        group.notify(queue: .main) { completion.value(objects.value.compactMap { $0 }) }
         return progress
     }
 }

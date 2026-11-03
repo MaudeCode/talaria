@@ -988,10 +988,10 @@ private struct ForcedLeftToRightModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.layoutDirection, .leftToRight)
-            .alignmentGuide(.leading) { dimensions in
+            .alignmentGuide(.leading) { [parentDirection] dimensions in
                 parentDirection == .rightToLeft ? dimensions[.trailing] : dimensions[.leading]
             }
-            .alignmentGuide(.trailing) { dimensions in
+            .alignmentGuide(.trailing) { [parentDirection] dimensions in
                 parentDirection == .rightToLeft ? dimensions[.leading] : dimensions[.trailing]
             }
     }

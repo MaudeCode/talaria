@@ -45,6 +45,7 @@ final class ReasoningBlockViewTests: XCTestCase {
 }
 
 // TAL-448: a file edit's row speaks the server's counts beside its label; any other row is unchanged.
+@MainActor
 final class ToolCallCardViewTests: XCTestCase {
     func testAFileEditRowSpeaksItsAddedAndRemovedCounts() {
         var edit = ToolCall(id: "call-patch", name: "patch", preview: nil, args: nil, kind: .write, target: "src/app.ts", isCompleted: true)

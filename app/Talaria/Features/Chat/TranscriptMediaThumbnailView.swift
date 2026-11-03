@@ -8,9 +8,9 @@ import TalariaKit
 struct TranscriptMediaThumbnailView: View {
     let reference: TranscriptMediaReference
     let cacheNamespace: String
-    let loadMediaImage: ((TranscriptMediaReference) async -> Data?)?
-    let loadMediaData: ((TranscriptMediaReference) async -> Data?)?
-    let onPreviewMedia: ((TranscriptMediaReference) -> Void)?
+    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let loadMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
 
     @State private var image: UIImage?
     @State private var didAttemptLoad = false

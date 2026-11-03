@@ -88,15 +88,7 @@ struct TranscriptLinkPreviewView: View {
         let cancellableProvider = TranscriptLinkPreviewMetadataProviderCancellation(provider: provider)
 
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                provider.startFetchingMetadata(for: url) { metadata, error in
-                    if let metadata {
-                        continuation.resume(returning: metadata)
-                    } else {
-                        continuation.resume(throwing: error ?? URLError(.cannotParseResponse))
-                    }
-                }
-            }
+            try await provider.startFetchingMetadata(for: url)
         } onCancel: {
             cancellableProvider.cancel()
         }

@@ -380,7 +380,7 @@ enum SessionRowStateBadgeKind: String, Identifiable {
 }
 
 private enum SessionRelativeDateFormatter {
-    static let shared: RelativeDateTimeFormatter = {
+    @MainActor static let shared: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter

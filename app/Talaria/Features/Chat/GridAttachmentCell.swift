@@ -5,7 +5,7 @@ struct GridAttachmentCell: View {
     let attachment: MessageAttachment
     let cacheNamespace: String
     let localData: Data?
-    let loadAttachmentImage: ((String) async -> Data?)?
+    let loadAttachmentImage: (@MainActor (String) async -> Data?)?
     let onPreviewAttachment: ((MessageAttachment, Data?) -> Void)?
     let size: CGFloat
 

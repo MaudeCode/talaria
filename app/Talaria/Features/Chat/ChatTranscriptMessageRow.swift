@@ -17,13 +17,13 @@ struct ChatTranscriptMessageRow: View {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let disablesHistoryActions: Bool
-    let loadAttachmentImage: (String) async -> Data?
-    let loadAttachmentData: (String) async -> Data?
-    let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
-    let loadTranscriptMediaData: (TranscriptMediaReference) async -> Data?
+    let loadAttachmentImage: @MainActor (String) async -> Data?
+    let loadAttachmentData: @MainActor (String) async -> Data?
+    let loadTranscriptMediaImage: @MainActor (TranscriptMediaReference) async -> Data?
+    let loadTranscriptMediaData: @MainActor (TranscriptMediaReference) async -> Data?
     let transcriptMediaCacheNamespace: String
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
-    let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
+    let onPreviewTranscriptMedia: @MainActor (TranscriptMediaReference) -> Void
     let onToggleListening: (MessageActionContext) -> Void
     let onSelectText: (MessageActionContext) -> Void
     let onRegenerate: (MessageActionContext) -> Void

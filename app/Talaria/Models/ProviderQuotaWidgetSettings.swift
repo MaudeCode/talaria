@@ -12,8 +12,8 @@ enum ProviderQuotaWidgetWindowSelection: String, AppEnum {
     static let storageKey = ProviderQuotaWidgetStorageKeys.windowSelection
     static let defaultValue = ProviderQuotaWidgetWindowSelection.automatic
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota Window")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota Window")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .automatic: "Automatic",
         .session: "Session",
         .weekly: "Weekly",
@@ -28,8 +28,8 @@ enum ProviderQuotaWidgetStatusText: String, AppEnum, CaseIterable, Identifiable 
 
     static let storageKey = ProviderQuotaWidgetStorageKeys.statusText
     static let defaultValue = ProviderQuotaWidgetStatusText.percentage
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Status Text")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Status Text")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .percentage: "Used or Remaining",
         .pace: "Pace",
@@ -55,8 +55,8 @@ enum ProviderQuotaWidgetResetDisplay: String, AppEnum, CaseIterable, Identifiabl
 
     static let storageKey = ProviderQuotaWidgetStorageKeys.resetDisplay
     static let defaultValue = ProviderQuotaWidgetResetDisplay.compact
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Reset Display")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Reset Display")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .hidden: "Hidden",
         .compact: "Compact Countdown",
@@ -84,8 +84,8 @@ enum ProviderQuotaWidgetTapAction: String, AppEnum, CaseIterable, Identifiable {
 
     static let storageKey = ProviderQuotaWidgetStorageKeys.tapAction
     static let defaultValue = ProviderQuotaWidgetTapAction.insights
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Tap Action")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Tap Action")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .insights: "Open Insights",
         .settings: "Open Widget Settings",
@@ -122,8 +122,8 @@ enum ProviderQuotaWidgetBackground: String, AppEnum, CaseIterable, Identifiable 
     static let defaultValue = ProviderQuotaWidgetBackground.system
     static let defaultCustomColorHex = "#1C1C1E"
     static let defaultOpacityPercent = 100
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Background")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Background")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .system: "System",
         .clear: "Transparent",
@@ -166,8 +166,8 @@ enum ProviderQuotaWidgetColorOverride: String, AppEnum {
     case gray
     case custom
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Gauge Color")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Gauge Color")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .automatic: "Automatic",
         .accent: "Accent",
@@ -198,8 +198,8 @@ enum ProviderQuotaWidgetWeightOverride: String, AppEnum {
     case regular
     case bold
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Gauge Weight")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Gauge Weight")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .thin: "Thin",
         .regular: "Regular",
@@ -216,8 +216,8 @@ enum ProviderQuotaWidgetBasisOverride: String, AppEnum {
     case pace
     case overall
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Color Basis")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Color Basis")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .pace: "Pace",
         .overall: "Overall Percentage",
@@ -233,8 +233,8 @@ enum ProviderQuotaWidgetPercentageOverride: String, AppEnum {
     case used
     case remaining
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Percentage")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Percentage")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .used: "Used",
         .remaining: "Remaining",
@@ -250,8 +250,8 @@ enum ProviderQuotaWidgetPaceMarkerOverride: String, AppEnum {
     case shown
     case hidden
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Pace Marker")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Pace Marker")
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .appDefault: "App Default",
         .shown: "Shown",
         .hidden: "Hidden",

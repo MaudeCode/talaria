@@ -9,6 +9,7 @@ extension XCTestCase {
     /// (`KanbanFeatureState.load`, a `ChatViewModel` replay) are main-actor and
     /// async. This runs one iteration to completion on the main actor and keeps
     /// the metrics attached to the caller's test case.
+    @MainActor
     func measureAsync(
         metrics: [any XCTMetric],
         options: XCTMeasureOptions,
@@ -48,6 +49,7 @@ extension XCTestCase {
 /// every card on the Board. One keystroke in the filter field therefore costs a
 /// full pass per column, which is why the budget covers load plus filtering
 /// rather than load alone.
+@MainActor
 final class KanbanBoardPerformanceTests: KanbanDefaultsTestCase {
     /// A Board far denser than the fixture's four cards, and denser than a
     /// healthy real Board — enough that a per-card regression is visible
@@ -104,6 +106,7 @@ final class KanbanBoardPerformanceTests: KanbanDefaultsTestCase {
 /// `ImagePreviewDownsampler`, which decodes the original at full size before
 /// producing the preview. That decode is where a large photo costs both time
 /// and a memory spike, so it is budgeted directly rather than through the UI.
+@MainActor
 final class ImagePreviewPerformanceTests: XCTestCase {
     /// A 12 MP frame — a full-size iPhone capture, the largest thing the
     /// transcript preview is realistically asked to downsample.

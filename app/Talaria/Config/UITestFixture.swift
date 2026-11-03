@@ -451,7 +451,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     fileprivate var companionStepsReleased: Int { companionStep }
 }
 
-final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
+final class UITestFixtureURLProtocol: URLProtocol {
     static let forkSessionID = "ui-fixture-fresh-fork"
     static let sessionID = "ui-fixture-session"
     static let sessionTitle = "UI Fixture Session"
@@ -577,9 +577,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         if url.path == "/api/session",
            ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyLatencyArgument),
            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "msg_before" }) == true {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) { [weak self] in
-                guard let self, !self.isStopped else { return }
-                self.sendResponse(for: url)
+            let stub = OSAllocatedUnfairLock(uncheckedState: self)
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) {
+                let stub = stub.withLockUnchecked { $0 }
+                guard !stub.isStopped else { return }
+                stub.sendResponse(for: url)
             }
             return
         }
@@ -647,7 +649,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {
-        Self.nativeNoticeStreams.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(self)) }
+        Self.nativeNoticeStreams.withLockUnchecked { _ = $0.removeValue(forKey: ObjectIdentifier(self)) }
         lifecycleLock.withLock { stopped = true }
         Self.chatState.wakeWaiters()
     }
@@ -1139,51 +1141,53 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     /// A typed marker the user sent, a batched wakeup with its reply, and a wakeup whose reply was a silence marker, as
     /// the server marks them (TAL-371, TAL-460). TAL-372: a delegation row that shows its subagents' progress in place.
-    private static let backgroundUpdateMessages: [[String: Any]] = [
-        ["role": "user", "content": "Split the audit", "message_id": "split-user", "_ts": 1_999_999_990, "_turn_id": "split"],
+    private static var backgroundUpdateMessages: [[String: Any]] {
         [
-            "role": "assistant", "content": "Started three subagents.", "message_id": "split-reply", "_ts": 1_999_999_991, "_turn_id": "split",
-            "_anchor_activity_scene": [
-                "version": "activity_scene_v1", "final_answer": "Started three subagents.",
-                "activity_rows": [[
-                    "row_id": "tool:split-call", "order_index": 0, "role": "tool",
-                    "tool": ["id": "split-call", "name": "delegate_task", "kind": "delegate", "target": "", "args": [:], "preview": NSNull(), "result": NSNull(),
-                             "done": true, "is_error": false, "duration": NSNull(), "cost_usd": NSNull(),
-                             "background": ["task_ids": ["split-1", "split-2"], "status": "completed", "agents": ["total": 3, "completed": 2, "failed": 1, "running": 0]]]
+            ["role": "user", "content": "Split the audit", "message_id": "split-user", "_ts": 1_999_999_990, "_turn_id": "split"],
+            [
+                "role": "assistant", "content": "Started three subagents.", "message_id": "split-reply", "_ts": 1_999_999_991, "_turn_id": "split",
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1", "final_answer": "Started three subagents.",
+                    "activity_rows": [[
+                        "row_id": "tool:split-call", "order_index": 0, "role": "tool",
+                        "tool": ["id": "split-call", "name": "delegate_task", "kind": "delegate", "target": "", "args": [:], "preview": NSNull(), "result": NSNull(),
+                                 "done": true, "is_error": false, "duration": NSNull(), "cost_usd": NSNull(),
+                                 "background": ["task_ids": ["split-1", "split-2"], "status": "completed", "agents": ["total": 3, "completed": 2, "failed": 1, "running": 0]]]
+                    ]]
+                ]
+            ],
+            ["role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this", "message_id": "typed-marker-user", "_ts": 2_000_000_000],
+            ["role": "assistant", "content": "Noted.", "message_id": "typed-marker-reply", "_ts": 2_000_000_001],
+            [
+                "role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_ui]\nDelegated result body.\n\n[IMPORTANT: Background process proc_ui completed (exit_code=1).]",
+                "message_id": "wakeup-user", "_ts": 2_000_000_002, "_turn_id": "wake-ui",
+                "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui", "review_state": "reviewed", "lines": [
+                    ["kind": "agent", "status": "completed", "label": "Audit the fixture", "review_state": "reviewed"],
+                    ["kind": "command", "status": "failed", "label": "make test", "exit_code": 1, "review_state": "failed"]
                 ]]
-            ]
-        ],
-        ["role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this", "message_id": "typed-marker-user", "_ts": 2_000_000_000],
-        ["role": "assistant", "content": "Noted.", "message_id": "typed-marker-reply", "_ts": 2_000_000_001],
-        [
-            "role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_ui]\nDelegated result body.\n\n[IMPORTANT: Background process proc_ui completed (exit_code=1).]",
-            "message_id": "wakeup-user", "_ts": 2_000_000_002, "_turn_id": "wake-ui",
-            "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui", "review_state": "reviewed", "lines": [
-                ["kind": "agent", "status": "completed", "label": "Audit the fixture", "review_state": "reviewed"],
-                ["kind": "command", "status": "failed", "label": "make test", "exit_code": 1, "review_state": "failed"]
-            ]]
-        ],
-        ["role": "assistant", "content": "The audit finished and the test run failed.", "message_id": "wakeup-reply", "_ts": 2_000_000_003, "_turn_id": "wake-ui", "_background_reply": true],
-        [
-            "role": "user", "content": "[IMPORTANT: Background process proc_quiet completed (exit_code=0).]",
-            "message_id": "wakeup-quiet-user", "_ts": 2_000_000_004, "_turn_id": "wake-quiet",
-            "_background_update": ["kind": "process", "attention": false, "count": 1, "summary": "IMPORTANT: Background process proc_quiet completed (exit_code=0).", "review_state": "reviewed", "lines": [
-                ["kind": "command", "status": "completed", "label": "./backup.sh", "exit_code": 0, "review_state": "reviewed"]
-            ]]
-        ],
-        ["role": "assistant", "content": "[SILENT]", "message_id": "wakeup-quiet-reply", "_ts": 2_000_000_005, "_turn_id": "wake-quiet", "_background_reply": true, "_background_silent": true],
-        ["role": "user", "content": "More results", "message_id": "review-states", "_ts": 2_000_000_006,
-         "_background_update": ["kind": "delegation", "attention": false, "count": 3, "summary": "More results", "lines": [
-            ["kind": "agent", "status": "completed", "label": "Waiting result", "review_state": "waiting"],
-            ["kind": "agent", "status": "completed", "label": "Active review", "review_state": "reviewing"],
-            ["kind": "agent", "status": "notice", "label": "Unknown result", "review_state": "unknown"]
-         ]]],
-        ["role": "user", "content": "Older server results", "message_id": "legacy-review-states", "_ts": 2_000_000_007,
-         "_background_update": ["kind": "delegation", "attention": true, "count": 2, "summary": "Older server results", "lines": [
-            ["kind": "agent", "status": "failed", "label": "Legacy failed goal"],
-            ["kind": "agent", "status": "completed", "label": "Legacy completed goal"]
-         ]]]
-    ]
+            ],
+            ["role": "assistant", "content": "The audit finished and the test run failed.", "message_id": "wakeup-reply", "_ts": 2_000_000_003, "_turn_id": "wake-ui", "_background_reply": true],
+            [
+                "role": "user", "content": "[IMPORTANT: Background process proc_quiet completed (exit_code=0).]",
+                "message_id": "wakeup-quiet-user", "_ts": 2_000_000_004, "_turn_id": "wake-quiet",
+                "_background_update": ["kind": "process", "attention": false, "count": 1, "summary": "IMPORTANT: Background process proc_quiet completed (exit_code=0).", "review_state": "reviewed", "lines": [
+                    ["kind": "command", "status": "completed", "label": "./backup.sh", "exit_code": 0, "review_state": "reviewed"]
+                ]]
+            ],
+            ["role": "assistant", "content": "[SILENT]", "message_id": "wakeup-quiet-reply", "_ts": 2_000_000_005, "_turn_id": "wake-quiet", "_background_reply": true, "_background_silent": true],
+            ["role": "user", "content": "More results", "message_id": "review-states", "_ts": 2_000_000_006,
+             "_background_update": ["kind": "delegation", "attention": false, "count": 3, "summary": "More results", "lines": [
+                ["kind": "agent", "status": "completed", "label": "Waiting result", "review_state": "waiting"],
+                ["kind": "agent", "status": "completed", "label": "Active review", "review_state": "reviewing"],
+                ["kind": "agent", "status": "notice", "label": "Unknown result", "review_state": "unknown"]
+             ]]],
+            ["role": "user", "content": "Older server results", "message_id": "legacy-review-states", "_ts": 2_000_000_007,
+             "_background_update": ["kind": "delegation", "attention": true, "count": 2, "summary": "Older server results", "lines": [
+                ["kind": "agent", "status": "failed", "label": "Legacy failed goal"],
+                ["kind": "agent", "status": "completed", "label": "Legacy completed goal"]
+             ]]]
+        ]
+    }
 
     /// The original long-user crash case, or the same history with assistant Markdown and one full newest reply.
     private static var longBodyMessages: [[String: Any]] {
@@ -1211,52 +1215,56 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     /// A `diff` and a `patch` block whose lines are tinted by prefix, and `log` and `text` blocks with
     /// the same prefixes that stay plain (TAL-447).
-    private static let diffBlockMessages: [[String: Any]] = [
-        ["role": "user", "content": "Show the change.", "message_id": "diff-blocks-user", "_ts": 2_000_000_000],
+    private static var diffBlockMessages: [[String: Any]] {
         [
-            "role": "assistant",
-            "content": """
-            ```diff
-            diff --git a/Fixture.swift b/Fixture.swift
-            index 83db48f..bf269f4 100644
-            --- a/Fixture.swift
-            +++ b/Fixture.swift
-            @@ -1,2 +1,3 @@ struct Fixture {
-             let unchanged = true
-            -let fixtureRemoved = 1
-            +let fixtureAdded = 2
-            +
-            ```
+            ["role": "user", "content": "Show the change.", "message_id": "diff-blocks-user", "_ts": 2_000_000_000],
+            [
+                "role": "assistant",
+                "content": """
+                ```diff
+                diff --git a/Fixture.swift b/Fixture.swift
+                index 83db48f..bf269f4 100644
+                --- a/Fixture.swift
+                +++ b/Fixture.swift
+                @@ -1,2 +1,3 @@ struct Fixture {
+                 let unchanged = true
+                -let fixtureRemoved = 1
+                +let fixtureAdded = 2
+                +
+                ```
 
-            ```patch
-            @@ -4 +4 @@
-            -patch fixture removed
-            +patch fixture added
-            ```
+                ```patch
+                @@ -4 +4 @@
+                -patch fixture removed
+                +patch fixture added
+                ```
 
-            ```log
-            +log fixture line
-            -log fixture line
-            ```
+                ```log
+                +log fixture line
+                -log fixture line
+                ```
 
-            ```text
-            +text fixture line
-            ```
-            """,
-            "message_id": "diff-blocks-reply", "_ts": 2_000_000_001
+                ```text
+                +text fixture line
+                ```
+                """,
+                "message_id": "diff-blocks-reply", "_ts": 2_000_000_001
+            ]
         ]
-    ]
+    }
 
     /// A 24-line pasted prompt the server folds (TAL-452), between short replies.
-    private static let longPromptMessages: [[String: Any]] = [
-        ["role": "user", "content": "Short opening question.", "message_id": "long-prompt-opening", "_ts": 2_000_000_000],
-        ["role": "assistant", "content": "Short opening reply.", "message_id": "long-prompt-opening-reply", "_ts": 2_000_000_001],
+    private static var longPromptMessages: [[String: Any]] {
         [
-            "role": "user", "content": (1...24).map { "Fixture prompt line \($0)" }.joined(separator: "\n"),
-            "message_id": "long-prompt-user", "_ts": 2_000_000_002, "_collapsible": true
-        ],
-        ["role": "assistant", "content": "Read the whole prompt.", "message_id": "long-prompt-reply", "_ts": 2_000_000_003]
-    ]
+            ["role": "user", "content": "Short opening question.", "message_id": "long-prompt-opening", "_ts": 2_000_000_000],
+            ["role": "assistant", "content": "Short opening reply.", "message_id": "long-prompt-opening-reply", "_ts": 2_000_000_001],
+            [
+                "role": "user", "content": (1...24).map { "Fixture prompt line \($0)" }.joined(separator: "\n"),
+                "message_id": "long-prompt-user", "_ts": 2_000_000_002, "_collapsible": true
+            ],
+            ["role": "assistant", "content": "Read the whole prompt.", "message_id": "long-prompt-reply", "_ts": 2_000_000_003]
+        ]
+    }
 
     /// Mixed text-and-link content that pins deterministic long-press targets for
     /// the message-action interaction tests (TAL-49).
@@ -1330,22 +1338,24 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return data
     }()
 
-    private static let linkInteractionMessages: [[String: Any]] = [
+    private static var linkInteractionMessages: [[String: Any]] {
         [
-            "role": "user",
-            "content": "Fixture link request",
-            "message_id": "ui-fixture-link-user",
-            "_ts": 2_000_000_100
-        ],
-        [
-            "role": "assistant",
-            "content": "FixturePlainLead \(String(repeating: "deterministic filler prose that makes this bubble tall. ", count: 12))"
-                + "[FixtureLinkTarget](https://example.invalid/fixture-link) FixturePlainTail"
-                + "\n\n## Lead [HeadingLink](https://example.invalid/heading-link)",
-            "message_id": "ui-fixture-link-assistant",
-            "_ts": 2_000_000_101
+            [
+                "role": "user",
+                "content": "Fixture link request",
+                "message_id": "ui-fixture-link-user",
+                "_ts": 2_000_000_100
+            ],
+            [
+                "role": "assistant",
+                "content": "FixturePlainLead \(String(repeating: "deterministic filler prose that makes this bubble tall. ", count: 12))"
+                    + "[FixtureLinkTarget](https://example.invalid/fixture-link) FixturePlainTail"
+                    + "\n\n## Lead [HeadingLink](https://example.invalid/heading-link)",
+                "message_id": "ui-fixture-link-assistant",
+                "_ts": 2_000_000_101
+            ]
         ]
-    ]
+    }
 
     private static func chatSessionResponse() -> Data {
         let state = chatState.snapshot()
@@ -1686,8 +1696,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.runChatScript()
+        let stub = OSAllocatedUnfairLock(uncheckedState: self)
+        DispatchQueue.global(qos: .userInitiated).async {
+            stub.withLockUnchecked { $0 }.runChatScript()
         }
     }
 

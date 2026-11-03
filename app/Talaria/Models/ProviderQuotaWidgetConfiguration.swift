@@ -195,8 +195,8 @@ struct ProviderQuotaWidgetResolvedProfile {
 }
 
 struct ProviderQuotaWidgetProfileEntity: AppEntity, Identifiable {
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Widget Profile")
-    static var defaultQuery = ProviderQuotaWidgetProfileEntityQuery()
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Widget Profile")
+    static let defaultQuery = ProviderQuotaWidgetProfileEntityQuery()
 
     let id: String
     let name: String
@@ -229,8 +229,8 @@ struct ProviderQuotaWidgetProfileEntityQuery: EnumerableEntityQuery {
 }
 
 struct ProviderQuotaSourceEntity: AppEntity, Identifiable {
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota source")
-    static var defaultQuery = ProviderQuotaSourceEntityQuery()
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota source")
+    static let defaultQuery = ProviderQuotaSourceEntityQuery()
     static let noneID = "talaria:none"
     static var none: ProviderQuotaSourceEntity {
         ProviderQuotaSourceEntity(
@@ -305,8 +305,8 @@ struct ProviderQuotaPrimarySourceEntityQuery: EnumerableEntityQuery {
 }
 
 struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "Provider quotas"
-    static var description = IntentDescription("Choose the provider accounts shown in this widget.")
+    static let title: LocalizedStringResource = "Provider quotas"
+    static let description = IntentDescription("Choose the provider accounts shown in this widget.")
 
     @Parameter(title: "Source 1", query: ProviderQuotaPrimarySourceEntityQuery()) var source1: ProviderQuotaSourceEntity?
     @Parameter(title: "Source 2", query: ProviderQuotaSourceEntityQuery()) var source2: ProviderQuotaSourceEntity?

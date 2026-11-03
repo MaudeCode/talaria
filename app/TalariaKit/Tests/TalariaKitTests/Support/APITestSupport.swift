@@ -63,6 +63,11 @@ final class LockedTestValue<Value>: @unchecked Sendable {
     var value: Value {
         get { lock.withLock { stored } }
         set { lock.withLock { stored = newValue } }
+        _modify {
+            lock.lock()
+            defer { lock.unlock() }
+            yield &stored
+        }
     }
 }
 

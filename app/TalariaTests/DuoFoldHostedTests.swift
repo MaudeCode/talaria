@@ -115,7 +115,8 @@ final class DuoFoldHostedTests: XCTestCase {
     }
 
     private func chatRequests() -> [String] {
-        UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter(Self.chatPaths.contains) }
+        let chatPaths = Self.chatPaths
+        return UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter(chatPaths.contains) }
     }
 
     func testARunningResponseKeepsItsStreamAndFetchesNothingAcrossClosingAndOpening() async throws {

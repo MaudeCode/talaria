@@ -31,13 +31,11 @@ enum KanbanDetailDateFormatter {
         if let seconds = Double(value) {
             date = Date(timeIntervalSince1970: seconds > 100_000_000_000 ? seconds / 1_000 : seconds)
         } else {
-            date = iso8601.date(from: value)
+            date = ISO8601DateFormatter().date(from: value)
         }
         guard let date else { return value }
         return date.formatted(date: .abbreviated, time: .shortened)
     }
-
-    private static let iso8601 = ISO8601DateFormatter()
 }
 
 enum KanbanDurationFormatter {

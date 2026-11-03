@@ -1,5 +1,5 @@
 import Highlightr
-import MarkdownUI
+@preconcurrency import MarkdownUI
 import OSLog
 import Splash
 import SwiftUI
@@ -120,6 +120,16 @@ private struct TranscriptAwareTextSelection: ViewModifier {
 
 
 
+/// MarkdownUI's theme and image-provider closures are nonisolated but run while a view body evaluates. This defers
+/// their main-actor views to its own `body`, without asserting anything about the thread the closure runs on.
+nonisolated struct MarkdownMainActorBlock<Content: View>: View {
+    let content: @MainActor () -> Content
+
+    @MainActor var body: some View {
+        content()
+    }
+}
+
 extension MarkdownUI.Theme {
     static func chat(colorScheme: ColorScheme, isStreaming: Bool) -> MarkdownUI.Theme {
         MarkdownUI.Theme.gitHub
@@ -140,51 +150,57 @@ extension MarkdownUI.Theme {
             // Paragraphs and headings restate the base theme's own metrics; the
             // blocks exist so their text can report where links landed (TAL-49).
             .paragraph { configuration in
-                ChatMarkdownParagraph(configuration: configuration, tracksLinks: !isStreaming)
+                MarkdownMainActorBlock { ChatMarkdownParagraph(configuration: configuration, tracksLinks: !isStreaming) }
             }
-            .heading1 { ChatMarkdownHeading(level: 1, configuration: $0, tracksLinks: !isStreaming) }
-            .heading2 { ChatMarkdownHeading(level: 2, configuration: $0, tracksLinks: !isStreaming) }
-            .heading3 { ChatMarkdownHeading(level: 3, configuration: $0, tracksLinks: !isStreaming) }
-            .heading4 { ChatMarkdownHeading(level: 4, configuration: $0, tracksLinks: !isStreaming) }
-            .heading5 { ChatMarkdownHeading(level: 5, configuration: $0, tracksLinks: !isStreaming) }
-            .heading6 { ChatMarkdownHeading(level: 6, configuration: $0, tracksLinks: !isStreaming) }
+            .heading1 { configuration in MarkdownMainActorBlock { ChatMarkdownHeading(level: 1, configuration: configuration, tracksLinks: !isStreaming) } }
+            .heading2 { configuration in MarkdownMainActorBlock { ChatMarkdownHeading(level: 2, configuration: configuration, tracksLinks: !isStreaming) } }
+            .heading3 { configuration in MarkdownMainActorBlock { ChatMarkdownHeading(level: 3, configuration: configuration, tracksLinks: !isStreaming) } }
+            .heading4 { configuration in MarkdownMainActorBlock { ChatMarkdownHeading(level: 4, configuration: configuration, tracksLinks: !isStreaming) } }
+            .heading5 { configuration in MarkdownMainActorBlock { ChatMarkdownHeading(level: 5, configuration: configuration, tracksLinks: !isStreaming) } }
+            .heading6 { configuration in MarkdownMainActorBlock { ChatMarkdownHeading(level: 6, configuration: configuration, tracksLinks: !isStreaming) } }
             .codeBlock { configuration in
-                MathFenceOrCodeBlock(
-                    language: configuration.language,
-                    content: configuration.content,
-                    isStreaming: isStreaming
-                )
-                .markdownMargin(top: 4, bottom: 12)
+                MarkdownMainActorBlock {
+                    MathFenceOrCodeBlock(
+                        language: configuration.language,
+                        content: configuration.content,
+                        isStreaming: isStreaming
+                    )
+                    .markdownMargin(top: 4, bottom: 12)
+                }
             }
             .table { configuration in
-                ChatMarkdownTable(
-                    label: configuration.label,
-                    colorScheme: colorScheme
-                )
-                .markdownMargin(top: 0, bottom: 16)
+                MarkdownMainActorBlock {
+                    ChatMarkdownTable(
+                        label: configuration.label,
+                        colorScheme: colorScheme
+                    )
+                    .markdownMargin(top: 0, bottom: 16)
+                }
             }
             .tableCell { configuration in
-                TableCellWidthCap(
-                    minWidth: ChatMarkdownTable.cellMinWidth,
-                    maxWidth: ChatMarkdownTable.cellMaxWidth
-                ) {
-                    ChatMarkdownLinkTrackedText(
-                        content: configuration.content,
-                        tracksLinks: !isStreaming
+                MarkdownMainActorBlock {
+                    TableCellWidthCap(
+                        minWidth: ChatMarkdownTable.cellMinWidth,
+                        maxWidth: ChatMarkdownTable.cellMaxWidth
                     ) {
-                        configuration.label
-                    }
-                    .markdownTextStyle {
-                        if configuration.row == 0 {
-                            FontWeight(.semibold)
+                        ChatMarkdownLinkTrackedText(
+                            content: configuration.content,
+                            tracksLinks: !isStreaming
+                        ) {
+                            configuration.label
                         }
-                        BackgroundColor(nil)
+                        .markdownTextStyle {
+                            if configuration.row == 0 {
+                                FontWeight(.semibold)
+                            }
+                            BackgroundColor(nil)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 13)
+                    .relativeLineSpacing(.em(0.25))
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 13)
-                .relativeLineSpacing(.em(0.25))
             }
     }
 }

@@ -25,15 +25,15 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let disablesHistoryActions: Bool
-    let loadAttachmentImage: (String) async -> Data?
-    let loadAttachmentData: (String) async -> Data?
-    let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
-    let loadTranscriptMediaData: (TranscriptMediaReference) async -> Data?
+    let loadAttachmentImage: @MainActor (String) async -> Data?
+    let loadAttachmentData: @MainActor (String) async -> Data?
+    let loadTranscriptMediaImage: @MainActor (TranscriptMediaReference) async -> Data?
+    let loadTranscriptMediaData: @MainActor (TranscriptMediaReference) async -> Data?
     let transcriptMediaCacheNamespace: String
     let actionContext: (ChatMessage, Int) -> MessageActionContext?
     let shouldRenderMessageRow: (ChatMessage) -> Bool
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
-    let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
+    let onPreviewTranscriptMedia: @MainActor (TranscriptMediaReference) -> Void
     let onToggleListening: (MessageActionContext) -> Void
     let onSelectText: (MessageActionContext) -> Void
     let onRegenerate: (MessageActionContext) -> Void
@@ -47,7 +47,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     // `transcriptMessage`), so two blocks that compare equal render identically.
     // This lets `.equatable()` skip re-evaluating rows whose data is unchanged
     // even though their closure props are recreated on every parent body pass.
-    static func == (lhs: ChatTranscriptMessageBlock, rhs: ChatTranscriptMessageBlock) -> Bool {
+    nonisolated static func == (lhs: ChatTranscriptMessageBlock, rhs: ChatTranscriptMessageBlock) -> Bool {
         lhs.transcriptMessage == rhs.transcriptMessage &&
             lhs.transcriptBlockSpacing == rhs.transcriptBlockSpacing &&
             lhs.showsThinkingAndToolCards == rhs.showsThinkingAndToolCards &&

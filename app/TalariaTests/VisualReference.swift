@@ -166,7 +166,7 @@ enum VisualReference {
         )
     }
 
-    private static func record(_ image: CGImage, to url: URL, name: String) throws {
+    @MainActor private static func record(_ image: CGImage, to url: URL, name: String) throws {
         try FileManager.default.createDirectory(
             at: referencesDirectory,
             withIntermediateDirectories: true
@@ -257,7 +257,7 @@ enum VisualReference {
 
     // MARK: - Reporting
 
-    private static func attach(_ image: CGImage, name: String) {
+    @MainActor private static func attach(_ image: CGImage, name: String) {
         XCTContext.runActivity(named: name) { activity in
             let attachment = XCTAttachment(image: UIImage(cgImage: image))
             attachment.name = name

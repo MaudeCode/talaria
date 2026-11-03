@@ -587,10 +587,10 @@ struct ChatView: View {
 
     private var chatLayout: some View {
         GeometryReader { geometry in
-            let layoutSize = chatLayoutSize(in: geometry, width: targetChatLayoutWidth)
-            let viewportSize = chatLayoutSize(in: geometry)
+            let layoutSize = layoutInputs.size(in: geometry, width: targetChatLayoutWidth)
+            let viewportSize = layoutInputs.size(in: geometry)
             let blockSize = hasVerticalDivision && targetChatLayoutWidth == nil ? viewportSize : layoutSize
-            let frames = chatFrames(in: geometry, width: targetChatLayoutWidth)
+            let frames = layoutInputs.frames(in: geometry, width: targetChatLayoutWidth)
             // Both transcript and composer take their destination width before the column moves.
             let composerFrame = frames.composer
             ZStack(alignment: .bottom) {
@@ -621,7 +621,7 @@ struct ChatView: View {
                 ZStack(alignment: .bottom) {
                     BottomComposerMaterialFade(composerHeight: composerHeight)
                     composerAccessoryStack
-                        .onGeometryChange(for: CGFloat.self) { max(0, $0.size.height - composerHeight - 8) } action: {
+                        .onGeometryChange(for: CGFloat.self) { [composerHeight] in max(0, $0.size.height - composerHeight - 8) } action: {
                             composerAccessoriesHeight = $0
                         }
                     messageComposer(availableHeight: composerFrame.height)
@@ -675,11 +675,11 @@ struct ChatView: View {
             .frame(width: viewportSize.width, height: viewportSize.height, alignment: .trailing)
             .clipShape(PaneEdgeClip())
         }
-        .onGeometryChange(for: CGSize.self, of: { chatLayoutSize(in: $0, width: targetChatLayoutWidth) }) { size in
+        .onGeometryChange(for: CGSize.self, of: { [layoutInputs, targetChatLayoutWidth] in layoutInputs.size(in: $0, width: targetChatLayoutWidth) }) { size in
             guard !holdsForegroundLayout, size.width > 0, size.height > 0 else { return }
             lastActiveLayoutSize = size
         }
-        .onGeometryChange(for: DivisionRegionLayout.ChatFrames.self, of: { chatFrames(in: $0, width: targetChatLayoutWidth) }) { frames in
+        .onGeometryChange(for: DivisionRegionLayout.ChatFrames.self, of: { [layoutInputs, targetChatLayoutWidth] in layoutInputs.frames(in: $0, width: targetChatLayoutWidth) }) { frames in
             guard !holdsForegroundLayout, frames.composer.width > 0, frames.composer.height > 0 else { return }
             composerAvailableHeight = frames.composer.height
             tabletopIsActive = frames.isTabletop
@@ -699,34 +699,15 @@ struct ChatView: View {
         }
     }
 
-    /// The live pane size, or `width` in place of its width while the split moves toward it.
-    private func chatLayoutSize(in geometry: GeometryProxy, width: CGFloat? = nil) -> CGSize {
-        if (holdsForegroundLayout || geometry.size.width <= 0 || geometry.size.height <= 0),
-           lastActiveLayoutSize.width > 0, lastActiveLayoutSize.height > 0 {
-            return lastActiveLayoutSize
-        }
-        var size = geometry.size
-        if let width { size.width = width }
-        return size
-    }
-
-    /// Chat frames in the live pane; a split width starts them at the pane's live leading edge.
-    private func chatFrames(in geometry: GeometryProxy, width: CGFloat? = nil) -> DivisionRegionLayout.ChatFrames {
-        let divisions: [CGRect]
-        if let divisionGeometry {
-            divisions = divisionGeometry.localDivisions(in: geometry)
-        } else {
-            divisions = DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting).localDivisions(in: geometry)
-        }
-        let bounds = CGRect(origin: .zero, size: chatLayoutSize(in: geometry))
-        guard let width else {
-            return DivisionRegionLayout.chatFrames(in: bounds, divisions: divisions,
-                layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
-        }
-        // A split width already excludes the vertical division, even while the native origin is moving.
-        let pane = CGRect(origin: .zero, size: CGSize(width: width, height: bounds.height))
-        return DivisionRegionLayout.chatFrames(in: pane, divisions: divisions.filter { $0.height <= $0.width },
-            layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
+    private var layoutInputs: ChatLayoutInputs {
+        ChatLayoutInputs(
+            holdsForegroundLayout: holdsForegroundLayout,
+            lastActiveLayoutSize: lastActiveLayoutSize,
+            divisionGeometry: divisionGeometry,
+            divisionFramesForTesting: divisionFramesForTesting,
+            layoutDirection: layoutDirection,
+            keyboardIsVisible: keyboardIsVisible
+        )
     }
 
     private var hasVerticalDivision: Bool {
@@ -814,7 +795,7 @@ struct ChatView: View {
                 let modelContext = modelContext
                 let draftStore = draftStore
                 let draftKey = draftKey
-                let release = {
+                let release: @MainActor () -> Void = {
                     // Only a real leave: a view the navigation rebuilt keeps the queue live (TAL-850).
                     Task {
                         await chat.moveQueuedMessagesToDraft(in: draftStore, for: draftKey)
@@ -1109,7 +1090,7 @@ struct ChatView: View {
             .onChange(of: companionPageIsBeside, initial: true) { _, isBeside in
                 if isBeside { fadeInCompanionPage() } else { fadeOutCompanionPage() }
             }
-            .onGeometryChange(for: CGSize.self, of: {
+            .onGeometryChange(for: CGSize.self, of: { [holdsForegroundLayout, arrangementSize] in
                 holdsForegroundLayout && arrangementSize != .zero ? arrangementSize : $0.sizeIncludingSafeArea
             }) { size in
                 guard !holdsForegroundLayout, size.width > 0, size.height > 0 else { return }
@@ -3050,7 +3031,7 @@ struct ChatView: View {
     private func stageAttachments<Item>(
         _ items: [Item],
         onStaged: (Int, PendingAttachment) -> Void = { _, _ in },
-        load: (Item) async throws -> (data: Data, filename: String, preview: Data?)
+        load: @MainActor (Item) async throws -> (data: Data, filename: String, preview: Data?)
     ) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let context = viewModel.attachmentStagingContext
@@ -3939,5 +3920,46 @@ private struct ChatLiveSync: ViewModifier {
 struct PaneEdgeClip: Shape {
     func path(in rect: CGRect) -> Path {
         Path(CGRect(x: rect.minX, y: rect.minY - rect.height, width: rect.width, height: rect.height * 3))
+    }
+}
+
+/// The chat view's state its layout depends on, as a value: `onGeometryChange` measures in a `@Sendable` closure, which
+/// cannot read the view's main-actor state.
+private struct ChatLayoutInputs: Sendable {
+    let holdsForegroundLayout: Bool
+    let lastActiveLayoutSize: CGSize
+    let divisionGeometry: DivisionRegionGeometry?
+    let divisionFramesForTesting: [CGRect]?
+    let layoutDirection: LayoutDirection
+    let keyboardIsVisible: Bool
+
+    /// The live pane size, or `width` in place of its width while the split moves toward it.
+    func size(in geometry: GeometryProxy, width: CGFloat? = nil) -> CGSize {
+        if (holdsForegroundLayout || geometry.size.width <= 0 || geometry.size.height <= 0),
+           lastActiveLayoutSize.width > 0, lastActiveLayoutSize.height > 0 {
+            return lastActiveLayoutSize
+        }
+        var size = geometry.size
+        if let width { size.width = width }
+        return size
+    }
+
+    /// Chat frames in the live pane; a split width starts them at the pane's live leading edge.
+    func frames(in geometry: GeometryProxy, width: CGFloat? = nil) -> DivisionRegionLayout.ChatFrames {
+        let divisions: [CGRect]
+        if let divisionGeometry {
+            divisions = divisionGeometry.localDivisions(in: geometry)
+        } else {
+            divisions = DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting).localDivisions(in: geometry)
+        }
+        let bounds = CGRect(origin: .zero, size: size(in: geometry))
+        guard let width else {
+            return DivisionRegionLayout.chatFrames(in: bounds, divisions: divisions,
+                layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
+        }
+        // A split width already excludes the vertical division, even while the native origin is moving.
+        let pane = CGRect(origin: .zero, size: CGSize(width: width, height: bounds.height))
+        return DivisionRegionLayout.chatFrames(in: pane, divisions: divisions.filter { $0.height <= $0.width },
+            layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
     }
 }

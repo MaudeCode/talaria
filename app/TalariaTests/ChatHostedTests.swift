@@ -783,13 +783,12 @@ final class ChatHostedTests: XCTestCase {
         let window = try hostWindow(Text("History answer 1999."))
         let scroll = UIScrollView(frame: window.bounds)
         let host = ChatMessageMenuHostView(registry: ChatMessageMenuRegistry())
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: false) { _ in
-            MainActor.assumeIsolated {
-                scroll.addSubview(host)
-                window.addSubview(scroll)
-            }
+        let attach = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(20))
+            scroll.addSubview(host)
+            window.addSubview(scroll)
         }
-        defer { timer.invalidate() }
+        defer { attach.cancel() }
         XCTAssertTrue(try transcriptScrollView(in: window) === scroll,
                       "Visible text can precede the transcript's native attachment")
     }

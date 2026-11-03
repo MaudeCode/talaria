@@ -170,7 +170,7 @@ private extension UIApplication {
 }
 
 extension FeedbackClient {
-    static var current: Self {
+    @MainActor static var current: Self {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
         var size = 0
@@ -178,6 +178,6 @@ extension FeedbackClient {
         var machine = [CChar](repeating: 0, count: max(size, 1))
         sysctlbyname("hw.machine", &machine, &size, nil, 0)
         return Self(appVersion: "\(version) (\(build))", osVersion: UIDevice.current.systemVersion,
-                    deviceModel: String(cString: machine))
+                    deviceModel: String(decoding: machine.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self))
     }
 }
