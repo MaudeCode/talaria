@@ -22,18 +22,25 @@ def native(tmp_path, monkeypatch):
     return AgentRuntime(tmp_path / "home"), worker, events
 
 
-def test_worker_starts_once_and_retirement_prevents_restart(native, monkeypatch):
+@pytest.mark.parametrize("all_profiles", [True, False], ids=["native-all-profiles", "launch-profile-only"])
+def test_worker_starts_once_and_retirement_prevents_restart(native, monkeypatch, all_profiles):
     from talaria_sidecar import agent_mutation
+    from talaria_sidecar import runtime as module
 
-    runtime, _, events = native
+    runtime, worker, events = native
+    if all_profiles:  # Agent 0.22.5 retries every profile itself
+        worker.retry_all_profiles = lambda: []
     monkeypatch.setattr("talaria_sidecar.runtime.read_agent_revision", lambda *args: "a" * 40)
     runtime.load()
     runtime.load()
     runtime.describe()
     assert events == ["start"]
+    tick = module._profile_handoff_thread
+    assert (tick is None) is all_profiles and (all_profiles or tick.is_alive())
     runtime.retire()
     runtime.retire()
     assert events == ["start", ("stop", None)]
+    assert module._profile_handoff_thread is None and (tick is None or not tick.is_alive())
     described = runtime.describe()
     assert described["compatible"] is False, "retired runtime still advertises readiness to dependency recovery"
     assert described["stale"] is True
@@ -153,3 +160,48 @@ def test_only_an_accepted_update_lease_retires_runtime(native, monkeypatch, tmp_
     finally:
         agent_mutation.close_all()
         runtime.retire()
+
+
+def test_profile_tick_drains_each_named_profile_owning_an_active_record(tmp_path, monkeypatch):
+    import contextlib
+    from pathlib import Path
+    import re
+    from talaria_sidecar import home, runtime as module
+
+    base = tmp_path / "base"
+    for name in ("broken", "due", "settled", "unowned"):
+        (base / "profiles" / name).mkdir(parents=True)
+
+    def profile(name):
+        return str(base / "profiles" / name)
+
+    records = {"due": {"state": "retrying", "profiles": [profile("due"), str(base)]},
+               "broken": {"state": "pending", "profiles": [profile("broken")]},
+               "settled": {"state": "claimed", "profiles": [profile("settled")]},
+               "deleted": {"state": "retrying", "profiles": [profile("deleted")]}}
+    scope, drained = [], []
+
+    @contextlib.contextmanager
+    def scoped_home(path, **options):
+        assert options == {"recover_processes": False}
+        scope.append(Path(path).name)
+        yield path
+
+    def drain():
+        if scope[-1] == "broken":
+            raise TimeoutError("records lock busy")
+        drained.append(scope[-1])
+
+    profiles = ModuleType("hermes_cli.profiles")
+    profiles._PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    constants = ModuleType("hermes_constants")
+    constants.hermes_home_key = lambda path: str(Path(path).resolve())
+    monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", profiles)
+    monkeypatch.setitem(sys.modules, "hermes_constants", constants)
+    monkeypatch.setattr(home, "_PROCESS_HOME", base)
+    monkeypatch.setattr(home, "scoped_home", scoped_home)
+    native = SimpleNamespace(_load=lambda path: {"records": records}, _records_path=lambda: tmp_path / "records", drain=drain)
+    module.drain_profile_handoffs(native)
+    # The launch profile is the native worker's; a failing profile never starves the next one.
+    assert scope == ["broken", "due"] and drained == ["due"]

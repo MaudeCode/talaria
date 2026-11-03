@@ -44,8 +44,16 @@ def native(monkeypatch, tmp_path):
     return api
 
 
+def unfence(native):
+    """Agent 0.22.6 shape: no destination binding or per-record status helper; retries follow the profile's account."""
+    del native.handoff._account_bound_to, native.handoff._status_of
+
+
+@pytest.mark.parametrize("fenced", [True, False], ids=["destination-bound", "profile-bound"])
 @pytest.mark.parametrize("state", ["claimed", "idle", "retrying", "pending", "paused", "failed", "gone", "future"])
-def test_projection_is_allowlisted_and_auth_success_does_not_imply_handoff_success(native, tmp_path, state):
+def test_projection_is_allowlisted_and_auth_success_does_not_imply_handoff_success(native, tmp_path, state, fenced):
+    if not fenced:
+        unfence(native)
     native.status.update(state=state, anon_token="secret", access_token="secret", lines=["secret"], error="secret")
     native.status["moved_toolkits"] += ["https://evil.test", "SECRET=secret", "calendar"]
     result = nous_account.read(tmp_path)
@@ -73,6 +81,16 @@ def test_old_terminal_result_never_exposes_another_accounts_apps(native, tmp_pat
     native.subject = "another-user"
     result = nous_account.read(tmp_path)
     assert result["state"] == "paused" and result["moved"] == [] and result["reconnect"] == []
+
+
+def test_profile_bound_result_another_account_received_is_not_shown(native, tmp_path):
+    unfence(native)
+    native.status["account_email"] = "Unmasked@Example.TEST"
+    assert nous_account.read(tmp_path)["moved"] == ["calendar"]
+    native.status["account_email"] = "earlier@example.test"
+    result = nous_account.read(tmp_path)
+    assert (result["state"], result["moved"], result["reconnect"], result["poll_after"]) == ("idle", [], [], None)
+    assert "earlier" not in str(result) and "calendar" not in str(result)
 
 
 def test_account_change_during_read_discards_the_response(native, tmp_path):

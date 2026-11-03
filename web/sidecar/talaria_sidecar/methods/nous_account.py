@@ -18,7 +18,7 @@ _STATES = {"idle", "pending", "retrying", "claimed", "gone", "failed", "paused"}
 _ERRORS = {"client_not_allowed", "account_locked", "invalid_request", "retry_window_ended"}
 
 
-def _identity(home: Path) -> tuple[str, str | None] | None:
+def _identity(home: Path) -> tuple[str, str | None, str | None] | None:
     from hermes_cli.anon_auth import is_guest_state
     from hermes_cli.auth import get_provider_auth_state
 
@@ -28,7 +28,8 @@ def _identity(home: Path) -> tuple[str, str | None] | None:
     return _token_identity(home, state.get("access_token"))
 
 
-def _token_identity(home: Path, token: Any) -> tuple[str, str | None] | None:
+def _token_identity(home: Path, token: Any) -> tuple[str, str | None, str | None] | None:
+    """(account id, masked email, raw email); the raw email only fences results and never leaves this module."""
     from hermes_cli.auth_constants import _decode_jwt_claims
 
     claims = _decode_jwt_claims(token)
@@ -38,9 +39,9 @@ def _token_identity(home: Path, token: Any) -> tuple[str, str | None] | None:
     identity = hashlib.sha256(f"{home.resolve()}\0{subject}".encode()).hexdigest()
     email = claims.get("email")
     if not isinstance(email, str) or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(email) > 254:
-        return identity, None
+        return identity, None, None
     local, domain = email.rsplit("@", 1)
-    return identity, f"{local[0]}***@{domain}"
+    return identity, f"{local[0]}***@{domain}", email
 
 
 def _apps(value: Any) -> list[str]:
@@ -67,15 +68,21 @@ def _read(home: Path, completed: Any = None) -> dict | None:
         return None
     if identity is None:
         return None
-    account_id, email = identity
+    account_id, email, raw_email = identity
     try:
         status = native.handoff_status()
         if status.get("state") == "idle" and completed is not None:
             status = getattr(completed, "handoff_status", None) or status
         state = status.get("state") if status.get("state") in _STATES else "unknown"
-        # The public native read only fences *active* records. Prove terminal ownership
+        received_by = status.get("account_email")
+        if not hasattr(native, "_account_bound_to"):
+            # Agent 0.22.6 binds a record to its profile, not an account: a retry claims for whichever account the
+            # profile holds. A result another account received is nothing this account has to report.
+            if isinstance(received_by, str) and raw_email and received_by.casefold() != raw_email.casefold():
+                status, state = {"state": "idle"}, "idle"
+        # Agent 0.22.5's public read only fences *active* records. Prove terminal ownership
         # with the same native selector/binding helper before exposing any old app names.
-        if state not in {"idle", "unknown", "paused"}:
+        elif state not in {"idle", "unknown", "paused"}:
             records = native._load(native._records_path())["records"].values()
             mine = [r for r in records if native._home_key() in r.get("profiles", ())]
             record = max(mine, key=lambda r: str(r.get("updated_at") or "")) if mine else None
