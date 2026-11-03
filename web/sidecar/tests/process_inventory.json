@@ -1711,6 +1711,13 @@
         "[manifestless]"
       ]
     },
+    "tests/test_plugin_providers.py::test_a_hosted_plugin_profile_that_overrides_create_client_reports_its_own_name": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: under host isolation a provider profile that overrides create_client reports its own name and setup. Uses the real installed release; the synthetic plugin CLI is never spawned.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_providers.py::test_an_oauth_plugin_is_ready_only_once_the_agent_holds_a_sign_in": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: an oauth plugin is ready only once the agent holds a sign in. Uses the real installed release, not a fabricated API response.",

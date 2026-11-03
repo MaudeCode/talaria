@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Model-provider plugins show under their own names and can be set up on profiles that run plugins in an isolated host, with Agent 0.22.6.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

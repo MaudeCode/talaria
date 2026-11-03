@@ -209,6 +209,49 @@ def test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name(tmp
         sidecar.close()
 
 
+CREATE_CLIENT_PROFILE = textwrap.dedent(
+    """
+    from providers import register_provider
+    from providers.base import ProviderProfile
+
+    class ClientProfile(ProviderProfile):
+        def create_client(self, *args, **kwargs):
+            raise AssertionError("listing must never build a client")
+
+    register_provider(ClientProfile(
+        name="fake-client", display_name="Fake Client", auth_type="external_process", base_url="acp://fake-client",
+        process_command={command!r}, fallback_models=("client-1",),
+    ))
+    """
+)
+# Agent 0.22.6 loads a profile that cannot cross the host boundary in-process; older Agents drop its whole plugin.
+HOST_CHILD = AGENT_DIR / "hermes_cli/plugin_host_child.py" if AGENT_DIR is not None else None
+
+
+@requires_agent
+@pytest.mark.skipif(HOST_CHILD is None or not HOST_CHILD.is_file(), reason="Agent has no hosted profiles")
+def test_a_hosted_plugin_profile_that_overrides_create_client_reports_its_own_name(tmp_path: pathlib.Path) -> None:
+    home = tmp_path / "home" / ".hermes"
+    root = home / "plugins" / "fake-client"
+    root.mkdir(parents=True)
+    cli = tmp_path / "fake-client-cli"
+    cli.write_text("#!/bin/sh\nexit 97\n")  # Listing must never run it.
+    cli.chmod(0o755)
+    (root / "plugin.yaml").write_text("name: fake-client-provider\nkind: model-provider\nversion: 0.0.1\n")
+    (root / "__init__.py").write_text(CREATE_CLIENT_PROFILE.format(command=str(cli)))
+    (home / "config.yaml").write_text("plugins:\n  isolation: host\n")
+    sidecar = SidecarProcess(home)
+    try:
+        rows = sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"]
+        if "_host_unsupported_reason" in HOST_CHILD.read_text():
+            assert [(row["name"], row["setup"]) for row in rows] == [("fake-client", "ready")], rows
+            assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-client"})["model_ids"] == ["client-1"]
+        else:
+            assert [(row["name"], row["setup"]) for row in rows] == [("fake-client-provider", "not_loaded")], rows
+    finally:
+        sidecar.close()
+
+
 SIGN_IN_PROFILES = textwrap.dedent(
     """
     from providers import register_provider
