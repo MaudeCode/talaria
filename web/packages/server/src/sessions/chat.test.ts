@@ -2547,7 +2547,8 @@ describe('chat turns through the sidecar', () => {
     expect(btw.parent_session_id).toBe(sid)
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(btw.stream_id)}&replay=1`, (f) => f.event === 'done')
     expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ ephemeral: true, answer: 'answer to what time is it' })
-    expect((await s.get(`/api/session?session_id=${String(btw.session_id)}`)).status).toBe(404)
+    // The turn publishes `done` before it deletes the clone, so a request racing the frame may still find it briefly.
+    await expect.poll(async () => (await s.get(`/api/session?session_id=${String(btw.session_id)}`)).status, { timeout: 2000 }).toBe(404)
     expect(await json(await post(s, '/api/bg-task-complete-ack', { session_id: sid, task_id: 't1' }))).toEqual({ ok: true, session_id: sid, task_id: 't1', noop: true })
   })
 

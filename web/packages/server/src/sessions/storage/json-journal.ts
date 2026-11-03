@@ -501,7 +501,8 @@ export class JsonJournal implements JournalBackend {
   /**
    * Locate a run across sessions (Python `find_run_summary`): live journals first, then archived and pruned runs. A
    * `sessionId` restricts the lookup to that session, so no other session is probed. A miss is remembered for
-   * `RUN_MISS_TTL_MS` while the journals root keeps its signature; a run this process writes clears it at once.
+   * `RUN_MISS_TTL_MS` while the journals root keeps its signature. A run with an open writer here is never a miss, and a
+   * run this process starts writing clears its miss at once.
    */
   async findRunSummary(runId: string, sessionId?: string): Promise<RunSummary | null> {
     let rid: string
@@ -533,7 +534,8 @@ export class JsonJournal implements JournalBackend {
         if (summary) return summary
       }
     }
-    if (this.closed) return null
+    // A writer that has not written its first row resolves once it does.
+    if (this.closed || [...this.writers].some((writer) => writer.runId === rid)) return null
     this.runMisses.delete(rid)
     this.runMisses.set(rid, { signature, at: Date.now() })
     if (this.runMisses.size > RUN_OWNER_CACHE_MAX) this.runMisses.delete(this.runMisses.keys().next().value!)

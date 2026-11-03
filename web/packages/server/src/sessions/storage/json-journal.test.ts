@@ -84,6 +84,17 @@ it('a run journal written by another process invalidates a cached miss', async (
   expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'elsewhere', terminal: true })
 })
 
+it('never caches a miss for a run whose writer is open before its first row', async () => {
+  const journal = fixture()
+  // An earlier run already made the session directory, so the first row leaves the journals root unchanged.
+  await writeRun(journal, 'session', 'earlier')
+  const writer = await journal.writer('session', 'run')
+  expect(await journal.findRunSummary('run')).toBeNull()
+  await writer.appendSseEvent('token', { text: 'first' })
+  expect(await journal.findRunSummary('run')).toMatchObject({ session_id: 'session', last_seq: 1 })
+  await writer.close()
+})
+
 it('a session hint resolves the run without probing other sessions', async () => {
   const journal = fixture()
   for (let i = 0; i < 50; i++) fs.mkdirSync(join(journal.root(), `s${String(i).padStart(2, '0')}`), { recursive: true })
