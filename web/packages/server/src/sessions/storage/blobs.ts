@@ -37,8 +37,13 @@ export interface BlobStore {
   /** `prefix` names at least one session: `attachments/<sid>/`. */
   deletePrefix(prefix: string): Promise<number>
   list(prefix: string): AsyncIterable<BlobStat & { key: string }>
-  /** A real file path with the object's bytes; the path does not exist when the object does not. */
-  localPath(key: string): Promise<string>
+  /** The size of the copy already at `localPath(key)`, or null when using it would need the store. No network. */
+  cachedSize(key: string): number | null
+  /**
+   * A real file path with the object's bytes; the path does not exist when the object does not. `head` is a `stat` the
+   * caller just made, so a download need not repeat it.
+   */
+  localPath(key: string, head?: BlobStat): Promise<string>
   /** Store the file a local writer (archive extraction) left at `localPath(key)`. */
   commitLocal(key: string): Promise<BlobStat>
   /** The directory `localPath` maps `attachments/` into. */
@@ -86,23 +91,56 @@ export async function materializeAttachment(blobs: BlobStore, path: string): Pro
 /** ponytail: earlier turns' attachments are restored newest first up to this many bytes per turn; size it from the cache cap if that ever needs tuning. */
 export const HISTORY_ATTACHMENT_BUDGET = 256 * 1024 * 1024
 
+/** ponytail: a fixed per-turn limit on HEADs, then downloads, while earlier attachments are restored; share one limit per store if concurrent turns ever swamp it. */
+const HISTORY_ATTACHMENT_CONCURRENCY = 8
+
+async function eachLimited<T>(items: T[], run: (item: T) => Promise<void>): Promise<void> {
+  let next = 0
+  const worker = async (): Promise<void> => { while (next < items.length) await run(items[next++]!) }
+  await Promise.all(Array.from({ length: Math.min(HISTORY_ATTACHMENT_CONCURRENCY, items.length) }, worker))
+}
+
 /**
  * A turn's files on disk: every attachment it sends, then those of earlier turns, newest first, within
  * `HISTORY_ATTACHMENT_BUDGET`, since the Agent may reopen a path its history names. Only the current ones may fail.
+ * Files already in the local cache cost no request; the rest are looked up concurrently and each is HEADed once.
  */
 export async function materializeTurnAttachments(blobs: BlobStore, current: string[], earlier: string[]): Promise<void> {
   await Promise.all(current.map((path) => materializeAttachment(blobs, path)))
-  let budget = HISTORY_ATTACHMENT_BUDGET
-  for (const path of new Set(earlier)) {
+  const root = blobs.attachmentRoot()
+  const keys = new Set<string>()
+  for (const path of earlier) {
     if (current.includes(path) || !isAbsolute(path)) continue
-    try {
-      const key = blobKeyForPath(blobs.attachmentRoot(), resolvePathLikePython(path))
-      const stat = key ? await blobs.stat(key) : null
-      if (!key || !stat || stat.size > budget) continue
-      budget -= stat.size
-      await blobs.localPath(key)
-    } catch { /* an earlier file stays missing, as it would be on disk */ }
+    const key = blobKeyForPath(root, resolvePathLikePython(path))
+    if (key) keys.add(key)
   }
+  // An earlier file that cannot be read stays missing, as it would be on disk.
+  const sizes = new Map<string, { size: number; head?: BlobStat }>()
+  const uncached: string[] = []
+  for (const key of keys) {
+    let size: number | null
+    try { size = blobs.cachedSize(key) } catch { continue }
+    if (size === null) uncached.push(key)
+    else sizes.set(key, { size })
+  }
+  await eachLimited(uncached, async (key) => {
+    try {
+      const head = await blobs.stat(key)
+      if (head) sizes.set(key, { size: head.size, head })
+    } catch { /* stays missing */ }
+  })
+  let budget = HISTORY_ATTACHMENT_BUDGET
+  const restore: { key: string; head?: BlobStat }[] = []
+  for (const key of keys) {
+    const found = sizes.get(key)
+    if (!found || found.size > budget) continue
+    budget -= found.size
+    restore.push({ key, ...(found.head ? { head: found.head } : {}) })
+  }
+  // A cached file is still asked for, so the cache counts it as just used.
+  await eachLimited(restore, async ({ key, head }) => {
+    try { await blobs.localPath(key, head) } catch { /* stays missing */ }
+  })
 }
 
 /** The identity the upload inbox's rollback receipts always compared: inode, size and both change times. */
@@ -215,6 +253,13 @@ export class LocalBlobStore implements BlobStore {
         }
       }
     }
+  }
+
+  cachedSize(key: string): number | null {
+    try {
+      const st = lstatSync(this.file(key).path)
+      return st.isFile() ? st.size : null
+    } catch { return null }
   }
 
   async localPath(key: string): Promise<string> { return this.file(key).path }

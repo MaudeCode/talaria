@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "With attachments stored in S3, a reply in a chat with many earlier attachments starts sooner, because files already on the server are no longer re-checked one at a time before every message.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

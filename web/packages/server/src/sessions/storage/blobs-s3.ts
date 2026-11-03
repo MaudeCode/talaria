@@ -115,23 +115,23 @@ export class S3BlobStore implements BlobStore {
   /** The object write alone; the caller decides what the cache holds afterwards. */
   private async upload(key: string, body: Readable | Uint8Array, meta: BlobPutOptions): Promise<BlobStat> {
     blobKeyParts(key)
-    const hash = createHash('sha256')
+    // A digest known before the first part goes into the object's metadata; only a stream's is computed as it is sent.
+    let sha256 = meta.sha256 ?? (body instanceof Uint8Array ? createHash('sha256').update(body).digest('hex') : undefined)
+    const hash = sha256 ? null : createHash('sha256')
     const parts = chunked(body, MULTIPART_THRESHOLD)
     const nextPart = async (): Promise<Buffer | null> => { const next = await parts.next(); return next.done ? null : next.value }
     const first = (await nextPart()) ?? Buffer.alloc(0)
-    hash.update(first)
+    hash?.update(first)
     const second = await nextPart()
     const common = { Bucket: this.bucket, Key: this.objectKey(key), ContentType: meta.contentType ?? 'application/octet-stream' }
     let etag: string
     let size = first.length
-    let sha256: string | undefined
     try {
       if (!second) {
-        sha256 = meta.sha256 ?? hash.digest('hex')
+        sha256 ??= hash!.digest('hex')
         const out = await this.client.send(new PutObjectCommand({ ...common, Body: first, ContentLength: first.length, Metadata: { sha256 }, ...(meta.exclusive ? { IfNoneMatch: '*' } : {}) }))
         etag = stripEtag(out.ETag)
       } else {
-        sha256 = meta.sha256 ?? (body instanceof Uint8Array ? createHash('sha256').update(body).digest('hex') : undefined)
         const created = await this.client.send(new CreateMultipartUploadCommand({ ...common, ...(sha256 ? { Metadata: { sha256 } } : {}) }))
         const uploadId = created.UploadId!
         try {
@@ -144,11 +144,11 @@ export class S3BlobStore implements BlobStore {
           await send(first)
           for (let next: Buffer | null = second; next; next = await nextPart()) {
             if (!next.length) continue
-            hash.update(next)
+            hash?.update(next)
             size += next.length
             await send(next)
           }
-          sha256 ??= hash.digest('hex')
+          sha256 ??= hash!.digest('hex')
           const out = await this.client.send(new CompleteMultipartUploadCommand({ Bucket: this.bucket, Key: common.Key, UploadId: uploadId, MultipartUpload: { Parts: done }, ...(meta.exclusive ? { IfNoneMatch: '*' } : {}) }))
           etag = stripEtag(out.ETag)
         } catch (error) {
@@ -231,8 +231,14 @@ export class S3BlobStore implements BlobStore {
     } while (token)
   }
 
+  /** The cache index's entry, while its file is still there. */
+  cachedSize(key: string): number | null {
+    const size = this.cached.get(key)
+    return size !== undefined && this.cachedFile(this.cachePath(key)) ? size : null
+  }
+
   /** Concurrent calls for one key share one download; the bytes are checked against the etag they were asked for. */
-  async localPath(key: string): Promise<string> {
+  async localPath(key: string, head?: BlobStat): Promise<string> {
     const path = this.cachePath(key)
     const pending = this.downloads.get(key)
     if (pending) return pending
@@ -240,13 +246,13 @@ export class S3BlobStore implements BlobStore {
       this.remember(key, this.cached.get(key)!)
       return path
     }
-    const download = this.download(key, path).finally(() => this.downloads.delete(key))
+    const download = this.download(key, path, head).finally(() => this.downloads.delete(key))
     this.downloads.set(key, download)
     return download
   }
 
-  private async download(key: string, path: string): Promise<string> {
-    const head = await this.stat(key)
+  private async download(key: string, path: string, known?: BlobStat): Promise<string> {
+    const head = known ?? await this.stat(key)
     if (!head) {
       this.forget(key)
       return path
