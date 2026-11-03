@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A discussion whose members the Agent could not wake now opens in Talaria Web, shows why, and offers Retry, instead of failing to load until the gateway restarts.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

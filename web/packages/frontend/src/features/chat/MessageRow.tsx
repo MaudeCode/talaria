@@ -213,7 +213,7 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
 
 /** A server-classified notice, one quiet line in its place, never a reply. */
 export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage }) {
-  const failed = row.message._notice_kind === 'failed_turn'
+  const failed = row.message._notice_kind !== 'session_finalize'
   const Icon = failed ? AlertTriangle : Info
   return (
     <div className="msg-row" data-role="notice" data-msg-idx={row.index} data-message-key={row.key}>

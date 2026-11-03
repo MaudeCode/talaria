@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
-import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GroupAttachmentSchema, GroupMemberSchema, NativeGroupCapabilitiesSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
+import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
 import { HttpFailure } from './service.js'
 import { StreamChannel, type StreamSubscriber } from './streams.js'
@@ -23,6 +23,7 @@ const localMembers = (members: State['room']['members']) => members.every((m) =>
 
 export class Groups {
   private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void> }>()
+  private droppedAction = false
   constructor(private readonly deps: () => AppDeps, private readonly pollMs = 1000) {}
 
   /** Resolve protocol identity before dispatch so SSE can confirm an in-flight occurrence. No owner access. */
@@ -56,14 +57,29 @@ export class Groups {
   private authorityIdentity(scope: GroupScope, gatewayId: string): string { return hash([scope, gatewayId]) }
   private identity(scope: GroupScope, room: State['room']): string { return hash([this.authorityIdentity(scope, room.authority_gateway_id), room.room_id, room.authority_epoch]) }
 
+  /** Member task rows keep the strict id fence; the room's own Retry is recognized by its `prepare:<room>` task. Others are dropped. */
+  private pendingActions(state: State) {
+    const member: z.infer<typeof GroupTaskActionSchema>[] = []
+    let room: GroupRoom['retry_task'] = null
+    for (const row of state.driver_status?.pending_actions ?? []) {
+      const retry = NativeGroupRoomRetrySchema.safeParse(row)
+      if (retry.success && retry.data.task_id === `${GROUP_ROOM_TASK_PREFIX}${state.room.room_id}`) { room = { member_id: state.room.room_id, task_id: retry.data.task_id, execution_generation: retry.data.execution_generation }; continue }
+      const task = GroupTaskActionSchema.safeParse(row)
+      if (task.success) { member.push(task.data); continue }
+      if (!this.droppedAction) { this.droppedAction = true; this.deps().log('[webui] warning: ignoring a discussion task the Agent offered in an unrecognized shape. Shown once.') }
+    }
+    return { member, room }
+  }
+
   private project(scope: GroupScope, state: State, caps: Capabilities, events: NativeEvent[] = []): GroupRoom {
     const room = state.room, driver = state.driver_status
     const active = !room.disbanded_at && driver?.running === true
     const actions = new Set(caps.methods)
+    const pendingActions = active ? this.pendingActions(state) : { member: [], room: null }
     return { id: room.room_id, name: redactString(room.name), identity: this.identity(scope, room), revision: room.revision, disbanded: room.disbanded_at !== undefined,
       max_upload_bytes: Math.min(GROUP_ATTACHMENT_BYTES, this.deps().config.maxUploadBytes), attachment_limit: GROUP_ATTACHMENT_LIMIT,
       members: room.members.map((member) => {
-        const pending = active ? (driver?.pending_actions ?? []).filter((a) => a.member_id === member.member_id && actions.has(`groups.${a.kind === 'approval' ? 'approve' : a.kind}`)) : []
+        const pending = pendingActions.member.filter((a) => a.member_id === member.member_id && actions.has(`groups.${a.kind === 'approval' ? 'approve' : a.kind}`))
         const status = driver?.member_activity?.find((a) => a.member_id === member.member_id)?.status
         const terminal = events.findLast((e) => e.payload.member_id === member.member_id && ['turn.failed', 'turn.settled', 'turn.cancelled', 'turn.deferred'].includes(e.kind))
         const phase = pending.some((a) => a.kind === 'approval') ? 'approval' as const : status === 'indeterminate' || pending.some((a) => a.kind === 'discard') ? 'unknown' as const : status === 'deferred' || pending.some((a) => a.kind === 'retry') ? 'failed' as const : status ?? (driver?.working && driver.member_activity === undefined ? 'unknown' as const : terminal?.kind === 'turn.failed' ? 'failed' as const : 'idle' as const)
@@ -71,6 +87,7 @@ export class Groups {
           actions: pending.map((a) => ({ ...a, approval: a.approval ? { ...a.approval, command: a.approval.command ? redactString(a.approval.command) : undefined, description: a.approval.description ? redactString(a.approval.description) : undefined } : undefined })) }
       }),
       actions: active ? (['send', 'rename', 'disband', 'stop'] as const).filter((action) => actions.has(`groups.${action}`) && (action !== 'stop' || driver.working || driver.blocked)) : [],
+      retry_task: actions.has('groups.retry') ? pendingActions.room : null,
     }
   }
 
@@ -96,8 +113,12 @@ export class Groups {
   }
 
   private rows(scope: GroupScope, state: State, events: NativeEvent[]): GroupView['rows'] {
-    return events.flatMap((event) => {
+    return events.flatMap((event): GroupView['rows'] => {
       const member = state.room.members.find((m) => m.member_id === event.actor.id && m.member_id === event.payload.member_id && m.profile === event.actor.profile)
+      if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) {
+        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', attachments: [],
+          message: { role: 'assistant' as const, content: redactString(event.payload.error), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, _notice_kind: 'wake_failed' as const } }]
+      }
       const user = event.kind === 'message.user' && event.actor.kind === 'user'
       if (!user && (event.kind !== 'message.member' || event.actor.kind !== 'member' || !member)) return []
       const attachments = (event.payload.attachments ?? []).map((a) => ({ ...a, event_id: event.event_id, download_url: `/api/groups/file?${new URLSearchParams({ room_id: state.room.room_id, event_id: event.event_id, attachment_id: a.attachment_id, identity: this.identity(scope, state.room) }).toString()}` }))
@@ -174,7 +195,7 @@ export class Groups {
       const room = this.project(scope, current, caps)
       if (['send', 'rename', 'disband', 'stop'].includes(operation.action) && !room.actions.includes(operation.action as 'send' | 'rename' | 'disband' | 'stop')) return { ...result, reason: 'refused' }
       if (['retry', 'discard', 'approve'].includes(operation.action) && 'task_id' in operation) {
-        const permitted = room.members.flatMap((m) => m.actions).some((a) => a.kind === (operation.action === 'approve' ? 'approval' : operation.action) && a.member_id === operation.member_id && a.task_id === operation.task_id && a.execution_generation === operation.execution_generation && (operation.action !== 'approve' || a.request_id === operation.request_id))
+        const permitted = (operation.action === 'retry' && isDeepStrictEqual(room.retry_task, { member_id: operation.member_id, task_id: operation.task_id, execution_generation: operation.execution_generation })) || room.members.flatMap((m) => m.actions).some((a) => a.kind === (operation.action === 'approve' ? 'approval' : operation.action) && a.member_id === operation.member_id && a.task_id === operation.task_id && a.execution_generation === operation.execution_generation && (operation.action !== 'approve' || a.request_id === operation.request_id))
         if (!permitted) throw new HttpFailure(409, 'Discussion task changed')
       }
     }

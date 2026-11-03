@@ -6720,7 +6720,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -11164,7 +11165,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -14672,7 +14674,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -20266,7 +20269,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -25421,7 +25425,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -31304,7 +31309,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -34761,7 +34767,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -38280,7 +38287,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -41797,7 +41805,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -55408,7 +55417,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -58913,7 +58923,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -62810,7 +62821,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -66542,7 +66554,8 @@
                                   "_notice_kind": {
                                     "enum": [
                                       "failed_turn",
-                                      "session_finalize"
+                                      "session_finalize",
+                                      "wake_failed"
                                     ],
                                     "type": "string"
                                   },
@@ -107324,6 +107337,37 @@
                               ],
                               "type": "string"
                             }
+                          },
+                          "retry_task": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "member_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                  },
+                                  "task_id": {
+                                    "type": "string",
+                                    "pattern": "^(?:prepare:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                  },
+                                  "execution_generation": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "member_id",
+                                  "task_id",
+                                  "execution_generation"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -107335,7 +107379,8 @@
                           "max_upload_bytes",
                           "attachment_limit",
                           "members",
-                          "actions"
+                          "actions",
+                          "retry_task"
                         ]
                       }
                     },
@@ -107585,6 +107630,37 @@
                                 ],
                                 "type": "string"
                               }
+                            },
+                            "retry_task": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "member_id": {
+                                      "type": "string",
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                    },
+                                    "task_id": {
+                                      "type": "string",
+                                      "pattern": "^(?:prepare:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                    },
+                                    "execution_generation": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991,
+                                      "exclusiveMinimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "member_id",
+                                    "task_id",
+                                    "execution_generation"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -107596,7 +107672,8 @@
                             "max_upload_bytes",
                             "attachment_limit",
                             "members",
-                            "actions"
+                            "actions",
+                            "retry_task"
                           ]
                         },
                         {
@@ -109063,7 +109140,8 @@
                               "_notice_kind": {
                                 "enum": [
                                   "failed_turn",
-                                  "session_finalize"
+                                  "session_finalize",
+                                  "wake_failed"
                                 ],
                                 "type": "string"
                               },
@@ -109670,7 +109748,7 @@
                           },
                           "task_id": {
                             "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            "pattern": "^(?:prepare:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
                           },
                           "execution_generation": {
                             "type": "integer",
@@ -109703,7 +109781,7 @@
                           },
                           "task_id": {
                             "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            "pattern": "^(?:prepare:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
                           },
                           "execution_generation": {
                             "type": "integer",
@@ -109736,7 +109814,7 @@
                           },
                           "task_id": {
                             "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            "pattern": "^(?:prepare:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
                           },
                           "execution_generation": {
                             "type": "integer",
