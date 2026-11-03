@@ -124,7 +124,7 @@ def _wake_on_cancel(ctx, events: asyncio.Queue) -> None:
         with suppress(RuntimeError):
             loop.call_soon_threadsafe(nudge)
 
-    add_waker = getattr(ctx.cancel_event, "add_waker", None)
+    add_waker = getattr(getattr(ctx, "cancel_event", None), "add_waker", None)
     if callable(add_waker):
         add_waker(waker)
 
