@@ -8,15 +8,11 @@ import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from 
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
 import { ctlPaths, launchdConflictPid, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
 import { bootTestServer } from '../test/harness.js'
-import { launchSidecar } from '../sidecar/discover.js'
 
 vi.mock('node:child_process', async (original) => {
   const cp = await original<typeof import('node:child_process')>()
   return { ...cp, spawnSync: vi.fn(cp.spawnSync) }
 })
-
-/** The resolved interpreter, so a temporary HOME cannot break a version-manager shim. */
-const python = execFileSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).trim()
 
 function scratch(): string {
   const dir = join(tmpdir(), `talaria-cli-${String(process.pid)}-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`)
@@ -124,8 +120,10 @@ describe('launcher', () => {
     try {
       const agent = join(home, 'agent')
       mkdirSync(agent)
-      writeFileSync(join(agent, 'run_agent.py'), 'class AIAgent: pass\n')
-      writeFileSync(join(agent, 'hermes_yaml.py'), '')
+      writeFileSync(join(agent, 'run_agent.py'), '')
+      // A stand-in interpreter that would succeed if it were run.
+      const python = join(home, 'python')
+      writeFileSync(python, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
       const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_AGENT_DIR: agent, HERMES_WEBUI_PYTHON: python, HERMES_WEBUI_STATE_DIR: join(home, 'state') }
       const serve = vi.fn(() => Promise.resolve())
       vi.mocked(spawnSync).mockClear()
@@ -135,23 +133,6 @@ describe('launcher', () => {
       expect(vi.mocked(spawnSync).mock.calls.filter(([command]) => command === python)).toEqual([])
     } finally { rmSync(home, { recursive: true, force: true }) }
   })
-
-  it('a broken Agent import reports the launcher error from the first sidecar handshake', async () => {
-    const home = scratch()
-    const agent = join(home, 'agent')
-    mkdirSync(agent)
-    writeFileSync(join(agent, 'run_agent.py'), 'import talaria_missing_dependency\n')
-    const logs: string[] = []
-    const client = launchSidecar({ env: { PATH: process.env.PATH, HERMES_WEBUI_AGENT_DIR: agent, HERMES_WEBUI_PYTHON: python }, hermesHome: join(home, '.hermes'), webRoot: join(import.meta.dirname, '../../../..'), home, log: (line) => logs.push(line) })
-    try {
-      const describe = await client!.start()
-      expect(describe.import_error).toBe("ModuleNotFoundError: No module named 'talaria_missing_dependency'")
-      expect(logs).toContain(`[sidecar] Python environment at ${describe.python} cannot import Hermes Agent (ModuleNotFoundError: No module named 'talaria_missing_dependency'). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.`)
-    } finally {
-      await client?.close()
-      rmSync(home, { recursive: true, force: true })
-    }
-  }, 30_000)
 
   it('a detached launch passes the resolved host and port to the worker so a checkout .env cannot override them', async () => {
     const home = scratch()

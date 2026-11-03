@@ -359,6 +359,19 @@ describe('SidecarClient support warning against the verified Agent window (TAL-9
     return logs
   }
 
+  it('the first handshake reporting an Agent import failure logs the launcher error', async () => {
+    const root = webRoot(window)
+    const agent = resolve(root, 'agent')
+    mkdirSync(agent)
+    writeFileSync(resolve(agent, 'run_agent.py'), '')
+    const logs: string[] = []
+    spawnBoundary.next = () => fakeChild({ compatible: false, import_error: "ModuleNotFoundError: No module named 'yaml'", python: '/agent/venv/bin/python' })
+    client = launchSidecar({ env: { HERMES_WEBUI_AGENT_DIR: agent, HERMES_WEBUI_PYTHON: '/agent/venv/bin/python' }, hermesHome: root, webRoot: root, home: root, log: (l) => logs.push(l) })
+    await client!.start()
+    expect(client!.status).toBe('incompatible')
+    expect(logs).toContain("[sidecar] Python environment at /agent/venv/bin/python cannot import Hermes Agent (ModuleNotFoundError: No module named 'yaml'). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.")
+  })
+
   it('a window revision other than the pin logs no warning', async () => {
     expect(await startWith(webRoot(window), { agent_revision: WINDOW_REVISION, agent_version: '0.21.5' })).not.toContain(UNSUPPORTED)
   })
