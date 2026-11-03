@@ -185,6 +185,12 @@ digest, native runtime PID/birth, complete wrapper ancestry and canonical proces
 identities, and durably records that incarnation alongside its predecessor.
 It rechecks the configuration after that custody save and process verification,
 immediately before requesting the successor's cooperative drain.
+A successor can publish its PID identity before its control socket listens and
+refuse that request. The incarnation stays recorded while it refuses: settling
+re-verifies it and repeats the request within the same deadline, and only an
+acknowledged request marks it retiring. Recovery therefore adopts a serving
+successor whose request was never acknowledged, including older custody that
+marked it retiring before any acknowledgement.
 If the successor holds the runtime lock before publishing its PID identity,
 settling waits within that same deadline and retains predecessor custody.
 It grants no custody or lifecycle request until the complete identity is verified.
@@ -200,7 +206,7 @@ resolved with each home's own configuration), bounded at four hours for a native
 drain configured to wait indefinitely. Cancellation or a lost lease pipe ends the
 wait at once and retains the debt. Orphan recovery starts one fresh deadline per
 recovery attempt, shared by all gateways and capped at 300 seconds so it fits its
-recovery RPC. There are at most eight successor requests. There is no signal
+recovery RPC. Settling adopts at most eight successor incarnations. There is no signal
 escalation.
 
 After all recorded writers exit, the settling path takes the Agent's native

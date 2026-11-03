@@ -2198,8 +2198,9 @@ def test_gateway_successor_waits_for_runtime_identity_before_drain(gateway_succe
     class Waiting:
         def is_set(self): return False
         def wait(self, seconds):
-            assert calls == [], 'an unpublished successor received a lifecycle request'
-            assert json.loads(recovery.path.read_text())['entries'][0]['pid'] == 41002
+            if runtime[0] is None:
+                assert calls == [], 'an unpublished successor received a lifecycle request'
+                assert json.loads(recovery.path.read_text())['entries'][0]['pid'] == 41002
             clock[0] += 1
             if publishes: runtime[0] = (42002, 420020)
             return False
@@ -2207,31 +2208,91 @@ def test_gateway_successor_waits_for_runtime_identity_before_drain(gateway_succe
     pause._ask_to_drain = lambda e: calls.append(('drain', e['pid'])) or False
     with pytest.raises(RuntimeError, match='did not acknowledge' if publishes else 'gateway drain remains owed'):
         recovery.settle_gateway(entry, Waiting(), deadline=3)
-    assert clock[0] == (1 if publishes else 3)
-    assert calls == ([('drain', 42002)] if publishes else [])
+    assert clock[0] == 3
+    assert calls == ([('drain', 42002)] * 2 if publishes else [])
     assert recovery.path.exists()
 
 
-def test_gateway_successor_is_durable_before_drain_and_attempts_are_bounded(gateway_successor):
-    import threading
-    recovery, entry, calls, parents, pause, records, modules = gateway_successor
-    def drain(candidate):
-        saved = json.loads(recovery.path.read_text())['entries'][0]
-        assert saved['pid'] == 42002 and saved['drain_acknowledged'] is False
-        assert saved['retired_processes']
-        calls.append(('drain', candidate['pid']))
-        return False
-    pause._ask_to_drain = drain
+def test_gateway_successor_is_durable_before_drain_and_attempts_are_bounded(refusing_successor):
+    r = refusing_successor
+    # The fixture's ask proves the successor's recorded custody is durable before each request.
     with pytest.raises(RuntimeError, match='did not acknowledge'):
-        recovery.settle_gateway(entry, threading.Event())
-    assert calls == [('drain', 42002)]
-    entry.update(drain_acknowledged=True, settle_attempts=8)
-    parents.pop(42002)
-    parents[43002] = 42001
-    modules['gateway.status'].get_running_pid_identity_strict = lambda path: (43002, 430020)
+        r.recovery.settle_gateway(r.entry, r.Waiting(), deadline=1)
+    assert r.calls == [('drain', 42002)]
+    r.entry.update(drain_acknowledged=True, settle_attempts=8)
+    r.parents.pop(42002)
+    r.parents[43002] = 42001
+    r.modules['gateway.status'].get_running_pid_identity_strict = lambda path: (43002, 430020)
     with pytest.raises(RuntimeError, match='repeatedly respawned'):
-        recovery.settle_gateway(entry, threading.Event())
-    assert calls == [('drain', 42002)]
+        r.recovery.settle_gateway(r.entry, r.Waiting(), deadline=10)
+    assert r.calls == [('drain', 42002)]
+
+
+@pytest.fixture
+def refusing_successor(gateway_successor, monkeypatch):
+    """TAL-1839: the published successor refuses drain asks until its control socket listens, on a controlled clock."""
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    clock, refusals = [0], [None]
+    class Waiting:
+        def is_set(self): return False
+        def wait(self, seconds): clock[0] += 1; return False
+    def ask(candidate):
+        saved = json.loads(recovery.path.read_text())['entries'][0]
+        assert saved['pid'] == 42002 and saved['retired_processes'] and saved['settle_attempts'] == 1
+        assert saved['phase'] == 'recorded' and saved['drain_acknowledged'] is False, 'custody claimed delivery before an ACK'
+        assert ('disarm', 42001) not in calls, 'an unacknowledged successor was disarmed'
+        calls.append(('drain', candidate['pid']))
+        if refusals[0] is not None and len(calls) > refusals[0]:
+            # The ACK lets the successor finish its native drain and exit under its supervisor.
+            parents.pop(42001); parents.pop(42002)
+            modules['hermes_cli.gateway']._launchd_print_service_pid = lambda *args: (False, None)
+            modules['gateway.status']._try_acquire_file_lock = lambda file: True
+            return True
+        return False
+    pause._ask_to_drain = ask
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], time=lambda: clock[0], sleep=lambda s: None))
+    return types.SimpleNamespace(recovery=recovery, entry=entry, calls=calls, parents=parents, modules=modules,
+                                 clock=clock, refusals=refusals, Waiting=Waiting)
+
+
+def test_refused_successor_drain_is_retried_until_its_ack(refusing_successor):
+    r = refusing_successor
+    r.refusals[0] = 3
+    r.recovery.settle_gateway(r.entry, r.Waiting(), deadline=10)
+    assert r.calls == [('drain', 42002)] * 4 + [('disarm', 42001)]
+    saved = json.loads(r.recovery.path.read_text())['entries'][0]
+    assert saved['phase'] == 'stopped' and saved['drain_acknowledged'] is True and saved['drain_acknowledged_at'] == 3
+
+
+def test_unacknowledged_successor_stays_recorded_and_recovers_when_serving(refusing_successor):
+    from talaria_sidecar import agent_services as services
+    r = refusing_successor
+    with pytest.raises(RuntimeError, match='successor did not acknowledge cooperative drain'):
+        r.recovery.settle_gateway(r.entry, r.Waiting(), deadline=3)
+    assert r.clock[0] == 3, 'the refused ask failed before the shared gateway deadline'
+    assert r.calls == [('drain', 42002)] * 3
+    saved = json.loads(r.recovery.path.read_text())['entries'][0]
+    assert saved['phase'] == 'recorded' and saved['drain_acknowledged'] is False
+    recovered = services.ServiceRecovery(r.recovery.root, Path(r.entry['home']), r.recovery.records, r.recovery.identity, r.recovery.pause)
+    recovered.resume(lambda *args: [])
+    assert not recovered.path.exists(), 'the serving successor did not discharge the gateway obligation'
+    assert r.calls == [('drain', 42002)] * 3
+
+
+def test_legacy_undelivered_successor_retirement_recovers_the_serving_successor(gateway_successor):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    # Custody saved before TAL-1839: the successor was marked retiring before any ask was delivered.
+    retired = dict(entry['processes'])
+    entry.update(recovery._gateway_candidate(entry), retired_processes=retired, phase='retiring',
+                 drain_acknowledged=False, drain_acknowledged_at=None, settle_attempts=1)
+    recovery.save()
+    recovered = services.ServiceRecovery(recovery.root, Path(entry['home']), records, recovery.identity, pause)
+    recovered.resume(lambda *args: [])
+    assert not recovered.path.exists(), 'stranded successor custody still owes a drain'
+    assert calls == []
 
 
 @pytest.mark.parametrize('named', [False, True])
@@ -2619,7 +2680,7 @@ def test_successor_configuration_is_rechecked_before_drain(gateway_successor, mo
         recovery.settle_gateway(entry, threading.Event())
     assert calls == [], 'changed supervisor received a cooperative drain request'
     retained = json.loads(recovery.path.read_text())['entries'][0]
-    assert retained['pid'] == 42002 and retained['phase'] == 'retiring'
+    assert retained['pid'] == 42002 and retained['phase'] == 'recorded'
 
 
 
