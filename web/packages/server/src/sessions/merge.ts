@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
 import { selectAuthoritativeTerminalEvent, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
-import { stateDbMessageKey, stateDbMessageFingerprint, stateDbRowId, stateDbIdentityKeys, stateDbMessageRepresented } from './state-db-identity.js'
+import { stateDbMessageBucket, stateDbMessageKey, stateDbKeyFingerprint, stateDbRowId, stateDbIdentityKeys, stateDbMessageRepresented } from './state-db-identity.js'
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
@@ -1009,7 +1009,14 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
   const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
-  const key = stateDbMessageKey
+  // TAL-1740: content keys serialise whole messages, so each row gets at most one, and a local row only when a state.db
+  // row shares its role and timestamp (no other local row can match one).
+  const keys = new Map<Message, string>()
+  const key = (m: Message): string => { let k = keys.get(m); if (k === undefined) { k = stateDbMessageKey(m); keys.set(m, k) } return k }
+  // A state row's last use: the cache must not keep keys for rows the gates below reject.
+  const lastKey = (m: Message): string => { const k = keys.get(m) ?? stateDbMessageKey(m); keys.delete(m); return k }
+  const stateBuckets = new Set(state.map(stateDbMessageBucket))
+  const keyable = (m: Message): boolean => stateBuckets.has(stateDbMessageBucket(m))
   const seenId = opts.stateDbSeenId
   const generation = opts.stateDbGeneration ?? null
   const includeUids = state.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
@@ -1019,15 +1026,18 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const rememberIds = (m: Message): void => { for (const id of identities(m)) representedIds.add(id) }
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
     const localKeys = new Map<string, number>()
-    for (const m of sidecar) if (!identities(m).length) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
+    for (const m of sidecar) if (keyable(m) && !identities(m).length) { const k = key(m); localKeys.set(k, (localKeys.get(k) ?? 0) + 1) }
     return [...sidecar, ...appendStateDbIdentityRows(state, seenId, representedIds, localKeys, generation, includeUids)]
   }
   // Legacy sidecars may have no seen marker or row IDs. A verified copy can still match its archived
   // source's exact role/timestamp/content key. This only removes represented copies; the timestamp
   // and truncate/compress gates below continue to decide which remaining rows may be appended.
+  // Only a state.db row's archived source key is ever looked up here, so without one no row is fingerprinted.
   const represented = new Set<string>()
+  const sourced = state.some((message) => typeof message._state_db_source_key === 'string')
   const remember = (message: Message): void => {
-    represented.add(stateDbMessageFingerprint(message))
+    if (!sourced) return
+    represented.add(stateDbKeyFingerprint(key(message)))
     if (typeof message._state_db_source_key === 'string') represented.add(message._state_db_source_key)
   }
   for (const message of sidecar) remember(message)
@@ -1042,18 +1052,18 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const cutAt = opts.truncationCutAt
   const afterCut = (m: Message): boolean => { const t = ts(m); return typeof cutAt === 'number' && Number.isFinite(cutAt) && opts.compressedWatermark !== true && t !== null && t > cutAt }
   if (!sidecar.length) {
-    if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
+    if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = lastKey(m); if (seen.has(k)) return false; seen.add(k); return true }) }
     if (watermark === 0) return state.filter(afterCut)
     return state.filter((m) => { const t = ts(m); return t !== null && (afterCut(m) || (opts.compressedWatermark === true ? t > watermark : t <= watermark)) })
   }
-  const seen = new Set(sidecar.map(key))
+  const seen = new Set(sidecar.filter(keyable).map(key))
   let maxSidecar: number | null = null
   for (const m of sidecar) { const t = ts(m); if (t !== null && (maxSidecar === null || t > maxSidecar)) maxSidecar = t }
   // Until a new turn lands in the sidecar, every state.db row past the watermark is the deleted suffix.
   const advanced = !hasWatermark || opts.compressedWatermark === true || (maxSidecar !== null && maxSidecar > watermark)
   const merged = [...sidecar]
   for (const m of state) {
-    const k = key(m)
+    const k = lastKey(m)
     if (seen.has(k)) continue
     const t = ts(m)
     // A kept-message compaction summary inherits the reply's old timestamp, but is new history.

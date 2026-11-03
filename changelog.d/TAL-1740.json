@@ -1,0 +1,1 @@
+{"entries":[{"category":"Changed","summary":"Long chats in Talaria Web use less server memory when the server reconciles them with CLI history.","highlight":false,"components":["web"]}]}
