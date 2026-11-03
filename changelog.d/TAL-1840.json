@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A message sent the moment a reply finishes, fails or stops is accepted instead of being refused because the chat was still busy.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

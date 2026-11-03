@@ -788,6 +788,18 @@ export class TurnRunner {
         return
       }
       if (stopTerminal) this.stopTerminals.add(streamId)
+      if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
+        // Relay's phase follows the turn outcome, so a background Live Activity ends as the app would end it. It reads
+        // the run from admission, so it comes first.
+        const state = str(data.terminal_state)
+        const phase = state === 'completed' || state === 'tool_limit_reached' ? 'completed' : event === 'cancel' || state === 'cancelled' ? 'cancelled' : 'failed'
+        try { deps.onTerminal?.(streamId, phase) } catch { /* best effort */ }
+        // TAL-1840: the worker's outcome is persisted, so admission is released before its terminal frame is journaled:
+        // a client that starts the next turn on this frame (live, or replayed while its fsync settles) is admitted, and a
+        // Stop after it is no cancellation. The channel and journal stay open for the title and steer frames.
+        this.registry.activeRuns.delete(streamId)
+        this.settledStreams.add(streamId)
+      }
       let eventId: string | null = null
       if (writer && event !== 'tool_progress') {
         try {
@@ -799,12 +811,6 @@ export class TurnRunner {
       }
       channel.put([event, data, eventId, meta.redacted])
       timing?.frame(event, data)
-      if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
-        // Relay's phase follows the turn outcome, so a background Live Activity ends as the app would end it.
-        const state = str(data.terminal_state)
-        const phase = state === 'completed' || state === 'tool_limit_reached' ? 'completed' : event === 'cancel' || state === 'cancelled' ? 'cancelled' : 'failed'
-        try { deps.onTerminal?.(streamId, phase) } catch { /* best effort */ }
-      }
     }
     this.sessionPuts.set(sessionId, put)
     const activeRun = this.registry.activeRuns.get(streamId)
@@ -1400,13 +1406,10 @@ export class TurnRunner {
       if (result.tool_limit_reached) donePayload.terminal_reason = 'max_iterations'
       // TAL-397: the live meter ends on the persisted counters and turn rate.
       await put('metering', { session_id: sessionId, usage: meteringUsage(s), tps: doneUsage.tps ?? null, tps_available: doneUsage.tps !== undefined, estimated: false })
+      // `done` released admission, so a follow-up message is accepted while the (up to two) title prompts run; the
+      // channel and journal stay open for the `title` events (Python retired the worker before its title generation).
       await put('done', donePayload)
       for (const [event, payload] of steerEvents) (await put(event, payload))
-      // The turn is over: release admission before the title work so a follow-up message is accepted while the
-      // (up to two) title prompts run; the channel and journal stay open for the `title` events (Python retired the
-      // worker before its daemon-thread title generation).
-      this.registry.activeRuns.delete(streamId)
-      this.settledStreams.add(streamId)
       // TAL-1005: a turn that settled at or above the next turn's threshold starts the compaction now, so the next message
       // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
       void deps.service().ensureCompacted(sessionId)
