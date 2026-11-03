@@ -590,7 +590,8 @@ describe('state.db projection', () => {
       for (const path of ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1']) {
         const res = await s.get(path)
         expect(res.status).toBe(200)
-        expect(await res.text()).toContain('event: sessions_changed')
+        // Each response ends after its opening frames: the standalone snapshot, or the merged feed's gateway status.
+        expect(await res.text()).toContain(path === '/api/sessions/gateway/stream' ? 'event: sessions_changed' : 'event: gateway_status')
       }
     } finally { dropped.mockRestore() }
     await s.deps.settings.save({ show_cli_sessions: false })
@@ -602,12 +603,11 @@ describe('state.db projection', () => {
     expect(await json(offStream)).toEqual({ error: 'agent sessions not enabled' })
   })
 
-  it('serves the merged sidebar feed with state.db snapshots', async () => {
+  it('serves the merged sidebar feed with live state.db changes', async () => {
     await s.deps.settings.save({ show_cli_sessions: true })
-    const merged = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway', { timeoutMs: 3000 })
+    const merged = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'gateway_status', { timeoutMs: 3000 })
     expect(merged[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
     expect(merged[1]).toMatchObject({ event: 'gateway_status', data: { ok: true, watcher_running: true } })
-    expect(merged.some((f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway')).toBe(true)
     // A live insert reaches the merged feed through the 100 ms poll.
     const live = s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'), { timeoutMs: 4000 })
     await new Promise((r) => setTimeout(r, 150))
@@ -1727,17 +1727,15 @@ describe('gateway session feeds under person isolation (TAL-48)', () => {
       const owner = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: headers('olive', true), timeoutMs: 3000 })
       expect(rows(owner)).toContain('tg-shared')
       const alice = headers('alice')
-      for (const path of ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1']) {
-        // The initial gateway snapshot omits the unowned Agent chat.
-        const seen = await s.sse(path, (f) => f.event === 'sessions_changed' && (f.data as Json).stream !== 'sessions', { headers: alice, timeoutMs: 2500 })
-        expect(seen.some((f) => f.event === 'sessions_changed'), path).toBe(true)
-        expect(rows(seen), path).not.toContain('tg-shared')
-      }
-      // A live insert reaching the watcher is withheld too.
-      const live = s.sse('/api/sessions/gateway/stream', () => false, { headers: alice, timeoutMs: 2000 })
+      // The standalone feed's initial snapshot omits the unowned Agent chat.
+      const seen = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { headers: alice, timeoutMs: 2500 })
+      expect(seen.some((f) => f.event === 'sessions_changed')).toBe(true)
+      expect(rows(seen)).not.toContain('tg-shared')
+      // A live insert reaching the watcher is withheld from both feeds too.
+      const live = ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1'].map((path) => s.sse(path, () => false, { headers: alice, timeoutMs: 2000 }))
       await new Promise((r) => setTimeout(r, 150))
       insertSession(db, { id: 'tg-live', source: 'telegram', started_at: 600, title: 'Live gateway chat', messages: [['user', 601]], chat_id: 'c-2' })
-      const liveRows = rows(await live)
+      const liveRows = rows((await Promise.all(live)).flat())
       expect(liveRows).not.toContain('tg-live')
       expect(liveRows).not.toContain('tg-shared')
     } finally {
