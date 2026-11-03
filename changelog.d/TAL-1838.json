@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a chat in Talaria Web loads its messages once instead of two or three times.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

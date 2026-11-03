@@ -88,6 +88,12 @@ GET /api/sessions/events?gateway=1
   gateway half cannot attach, an unusable gateway never surfaces as a transport
   error; this frame is what tells a client to start its `fallback_poll_ms`
   polling instead.
+- The merged connection sends no connect-time gateway snapshot: `initial`
+  already makes the client re-read `/api/sessions`, which includes the Agent
+  rows. A gateway `sessions_changed` names no `session_id`, so a client
+  refreshes every cached session on it; sending one at connect would re-read
+  the open transcript on every page load (TAL-1838). Later `sessions_changed`
+  frames carry real watcher changes.
 - When the gateway watcher is replaced (a profile switch restarts it), the
   server ends the response rather than downgrading the gateway half in place, so
   the client's automatic reconnect resubscribes both halves against the live
