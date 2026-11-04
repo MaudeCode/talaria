@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Retrying interrupted work no longer puts a credential from your message into the composer when API redaction is on; re-enter it by hand before sending.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
