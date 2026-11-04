@@ -7,7 +7,7 @@ const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../.
 it('pins the shared discussion projection for independently delivered clients', () => {
   expect(GroupCatalogSchema.parse(fixture.catalog).profiles.map((p) => p.profile)).toEqual(['default', 'helper'])
   const view = GroupViewSchema.parse(fixture.view)
-  expect(view.rows.map((r) => r.author)).toEqual(['', 'Writer', 'Reviewer'])
+  expect(view.rows.map((r) => [r.author, r.scheduled])).toEqual([['', false], ['Writer', false], ['Reviewer', false], ['Nightly', true]])
   expect(view.room?.members.map((m) => m.phase)).toEqual(['queued', 'running'])
   expect(GroupCatalogSchema.parse(fixture.inactive)).toMatchObject({ available: false, profiles: [], actions: [] })
   expect(JSON.stringify(fixture)).not.toMatch(/profile_home|authority_gateway_id|data_base64/)

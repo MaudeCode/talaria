@@ -25,6 +25,13 @@ export function groupFixture(sidecar: FakeSidecar) {
     room.latest_seq = seq
     state.driver_status.pending_actions.push({ kind: 'retry', member_id: room.members.map((m) => m.handle).join(', '), task_id: `prepare:${room.room_id}`, execution_generation: 1 })
   }
+  /** Agent v0.22.7 `post_scheduled_message`: an ordinary `message.user` whose server-minted actor names the cron job. */
+  function scheduled(actor: { kind: 'user'; id: string; display_name?: string }, text: string) {
+    const seq = state.events.length + 1
+    const event = { room_id: room.room_id, seq, event_id: `cron-post:${seq}`, kind: 'message.user', authority_epoch: 1, actor, payload: { text, thread_id: `cron-${seq}` }, created_at: 1000 + seq }
+    state.events.push(event); room.latest_seq = seq
+    return event
+  }
   sidecar.respond('gateway.groups', ({ operation }: SidecarParams<'gateway.groups'>) => {
     if (!state.available) return { state: 'unavailable', reason: 'unsupported', value: null }
     let value: Record<string, unknown>
@@ -64,5 +71,5 @@ export function groupFixture(sidecar: FakeSidecar) {
     }
     return { state: 'available', reason: null, value }
   })
-  return { state, members, append, stall }
+  return { state, members, append, stall, scheduled }
 }

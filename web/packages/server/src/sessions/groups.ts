@@ -10,6 +10,8 @@ import { redactString } from '../redact.js'
 
 export interface GroupScope { home: string; subject: string; profile: string }
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+/** The only user actors that are not the person: the Agent's server-minted scheduled posts and failure notices. `groups.send` hard-codes `desktop`, so a client cannot claim these. */
+const SCHEDULED_ACTOR = /^cron(?:-notice)?:/
 const nativeEventId = (requestId: string) => `user:${createHash('sha256').update(requestId).digest('hex')}`
 type State = z.infer<typeof NativeGroupStateSchema>
 type NativeEvent = z.infer<typeof NativeGroupLogSchema>['events'][number]
@@ -116,14 +118,16 @@ export class Groups {
     return events.flatMap((event): GroupView['rows'] => {
       const member = state.room.members.find((m) => m.member_id === event.actor.id && m.member_id === event.payload.member_id && m.profile === event.actor.profile)
       if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) {
-        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', attachments: [],
+        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
           message: { role: 'assistant' as const, content: redactString(event.payload.error), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, _notice_kind: 'wake_failed' as const } }]
       }
       const user = event.kind === 'message.user' && event.actor.kind === 'user'
       if (!user && (event.kind !== 'message.member' || event.actor.kind !== 'member' || !member)) return []
+      const scheduled = user && SCHEDULED_ACTOR.test(event.actor.id)
+      const author = scheduled ? event.actor.display_name?.trim() || event.actor.id.replace(SCHEDULED_ACTOR, '') : user ? '' : member?.display_name || member?.profile || ''
       const attachments = (event.payload.attachments ?? []).map((a) => ({ ...a, event_id: event.event_id, download_url: `/api/groups/file?${new URLSearchParams({ room_id: state.room.room_id, event_id: event.event_id, attachment_id: a.attachment_id, identity: this.identity(scope, state.room) }).toString()}` }))
-      return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: user ? '' : redactString(member?.display_name || member?.profile || ''),
-        message: { role: user ? 'user' as const : 'assistant' as const, content: redactString(event.payload.text ?? ''), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, attachments: attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, is_image: a.kind === 'image', download_url: a.download_url })) }, attachments }]
+      return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: redactString(author), scheduled,
+        message: { role: user && !scheduled ? 'user' as const : 'assistant' as const, content: redactString(event.payload.text ?? ''), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, attachments: attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, is_image: a.kind === 'image', download_url: a.download_url })) }, attachments }]
     })
   }
 

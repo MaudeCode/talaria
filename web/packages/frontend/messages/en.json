@@ -2926,6 +2926,7 @@
 	"group_attachment_limit": "Attach up to {n} files per message.",
 	"group_unknown_phase": "Unknown",
 	"group_disbanded": "This discussion has been disbanded.",
+	"group_scheduled": "Scheduled",
   "profile_import": "Import agent setup",
   "profile_import_source": "Source",
   "profile_import_preview": "Preview",
