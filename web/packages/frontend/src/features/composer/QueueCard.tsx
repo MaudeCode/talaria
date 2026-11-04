@@ -4,6 +4,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { QueuedTurn } from './queue'
 import type { OwnerActionRequest, OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { isImeEnter } from '../../lib/isImeEnter'
 import { randomHex } from '../../lib/randomHex'
 import { Button } from '../../ui/Button'
 
@@ -79,7 +80,7 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
     if (tokens.length) void api.rollbackUpload(sessionId, tokens).catch(() => undefined)
   }
   const onEditKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' && e.key !== 'Escape') return
+    if (isImeEnter(e) || (e.key !== 'Enter' && e.key !== 'Escape')) return
     e.preventDefault()
     discard.current = e.key === 'Escape'
     e.currentTarget.blur()

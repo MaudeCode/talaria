@@ -11,6 +11,9 @@ export function sessionFixture(value: Partial<Session> & Pick<Session, 'session_
   }
 }
 
+/** TAL-1860: keydown init for both forms of a keystroke an IME owns; Safari's Enter after `compositionend` is the keyCode one. */
+export const IME_ENTERS = [['isComposing', { isComposing: true }], ['keyCode 229', { keyCode: 229 }]] as const
+
 export function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason: unknown) => void

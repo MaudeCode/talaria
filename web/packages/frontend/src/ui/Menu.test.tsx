@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useRef } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ContextMenu, Menu, MenuItem, MenuRadioGroup, MenuRadioItem } from './Menu'
+import { IME_ENTERS } from '../test/fixtures'
 
 /** TAL-1131: the shared menu pins an optional header and keeps the chosen or highlighted row inside its scrolling rows. */
 
@@ -60,6 +62,22 @@ describe('Menu', () => {
     act(() => { row.setAttribute('data-highlighted', ''); resize?.() })
     // row-12 ends at 240 px; the nearest edge puts it at the bottom of the view.
     expect(menu.scrollTop).toBe(140)
+  })
+
+  it.each(IME_ENTERS)('leaves a composing character on its row (%s), and a plain character then moves to search (TAL-1860)', async (_, ime) => {
+    function SearchMenu() {
+      const input = useRef<HTMLInputElement>(null)
+      return <Menu label="Search" search={input} trigger={<button type="button">Open</button>} header={<input ref={input} aria-label="Filter" />}><MenuItem>First row</MenuItem></Menu>
+    }
+    render(<SearchMenu />)
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }))
+    const filter = await screen.findByRole('textbox', { name: 'Filter' })
+    const row = screen.getByRole('menuitem', { name: 'First row' })
+    act(() => { row.focus() })
+    fireEvent.keyDown(row, { key: 'k', ...ime })
+    expect(row).toHaveFocus()
+    fireEvent.keyDown(row, { key: 'k' })
+    expect(filter).toHaveFocus()
   })
 
   it('leaves the scroll alone with no checked row', async () => {

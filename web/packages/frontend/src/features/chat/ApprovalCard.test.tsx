@@ -175,9 +175,9 @@ describe('ApprovalCard keyboard ownership', () => {
     expect(api.respondApproval).not.toHaveBeenCalled()
   })
 
-  it.each(['altKey', 'ctrlKey', 'metaKey', 'shiftKey', 'isComposing', 'repeat'])('ignores Enter with %s', async (flag) => {
+  it.each([{ altKey: true }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { isComposing: true }, { keyCode: 229 }, { repeat: true }])('ignores Enter with %o', async (init) => {
     render(card())
-    await act(async () => { fireEvent.keyDown(document.body, { key: 'Enter', [flag]: true }); await Promise.resolve() })
+    await act(async () => { fireEvent.keyDown(document.body, { key: 'Enter', ...init }); await Promise.resolve() })
     expect(api.respondApproval).not.toHaveBeenCalled()
   })
 
