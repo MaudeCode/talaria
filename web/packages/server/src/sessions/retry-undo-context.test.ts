@@ -68,6 +68,34 @@ describe('retry and undo cut the model context at the selected turn (TAL-1027)',
     expect(sent).toEqual([SUMMARY.content])
   })
 
+  it.each([
+    { stored: 'the eager checkpoint', content: 'typed prompt', meta: {} },
+    { stored: 'the Agent row', content: '[Message withheld: a pre_llm_call policy hook blocked it.]', meta: { display_metadata: { withheld_prompt: 'typed prompt' } } },
+  ])('resends and previews the typed text of a withheld turn stored as $stored, cutting the context at its placeholder (TAL-1824)', async ({ content, meta }) => {
+    const display = [...DISPLAY.slice(0, 2), { role: 'user', content, timestamp: 3, ...meta }, { role: 'assistant', content: 'Blocked.', timestamp: 4 }]
+    const context = [SUMMARY, { role: 'user', content: '[Message withheld: a pre_llm_call policy hook blocked it.]', display_metadata: { withheld_prompt: 'typed prompt' } }, { role: 'assistant', content: 'Blocked.' }]
+    for (const [path, body] of [['/api/session/retry', { last_user_text: 'typed prompt', last_user_prompt: 'typed prompt' }], ['/api/session/undo', { removed_preview: 'typed prompt' }]] as const) {
+      const sid = await seeded(display, context)
+      const res = await post(path, { session_id: sid })
+      expect(res.status, path).toBe(200)
+      expect(await res.json(), path).toMatchObject({ ok: true, removed_count: 2, ...body })
+      const { persisted, sent } = await afterReload(sid)
+      expect(persisted, path).toEqual([SUMMARY.content])
+      expect(sent, path).toEqual([SUMMARY.content])
+    }
+  })
+
+  it('masks a credential in a withheld prompt on Retry and in every Undo preview, as the transcript does (TAL-1824)', async () => {
+    const secret = 'ghp_abcdefghij0123456789'
+    const withheld = { role: 'user', content: '[Message withheld: a pre_llm_call policy hook blocked it.]', display_metadata: { withheld_prompt: `key ${secret}` }, timestamp: 1 }
+    const retried = await (await post('/api/session/retry', { session_id: await seeded([withheld], [withheld]) })).json() as Json
+    expect(retried).toMatchObject({ ok: true, last_user_text: 'key ghp_ab...6789', last_user_prompt: 'key ghp_ab...6789' })
+    for (const row of [withheld, { role: 'user', content: `key ${secret}`, timestamp: 1 }]) {
+      const undone = await (await post('/api/session/undo', { session_id: await seeded([row], [row]) })).json() as Json
+      expect(undone).toMatchObject({ ok: true, removed_preview: 'key ghp_ab...6789' })
+    }
+  })
+
   it('removes a turn the server just settled without clearing the earlier context', async () => {
     const sid = await seeded(DISPLAY.slice(0, 2), DISPLAY.slice(0, 2))
     await afterReload(sid)

@@ -63,10 +63,17 @@ function withoutMemoryContext(text: string): string {
   return stripped !== text && !stripped.trim() ? '' : stripped
 }
 
+/** What the user typed on a turn a `pre_llm_call` hook vetoed (TAL-1824); the row's content is the Agent's placeholder for the model. */
+export function withheldPromptText(message: unknown): string | null {
+  if (!isDict(message) || message.role !== 'user' || !isDict(message.display_metadata)) return null
+  const typed = message.display_metadata.withheld_prompt
+  return typeof typed === 'string' && typed ? typed : null
+}
+
 /** Display-only user projection shared by transcript hydration and turn identity; model history stays untouched. */
 export function normalizeUserDisplay<T>(message: T): T {
   if (!isDict(message) || message.role !== 'user') return message
-  const content = message.content
+  const content = withheldPromptText(message) ?? message.content
   if (typeof content === 'string') return { ...message, content: withoutMemoryContext(content) }
   if (!Array.isArray(content)) return message
   return { ...message, content: content.flatMap((part: unknown) => {
@@ -108,7 +115,9 @@ function sortKeysDeep(value: unknown): unknown {
 
 export function messagesHavePrefix(messages: unknown[], prefix: unknown[]): boolean {
   if (messages.length < prefix.length) return false
-  for (let i = 0; i < prefix.length; i += 1) if (messageIdentity(messages[i]) !== messageIdentity(prefix[i])) return false
+  // Both sides are model rows, and replay strips `display_metadata`: a vetoed row compares as its stored placeholder.
+  const modelIdentity = (m: unknown): string | null => messageIdentity(withheldPromptText(m) === null ? m : { ...(m as Message), display_metadata: null })
+  for (let i = 0; i < prefix.length; i += 1) if (modelIdentity(messages[i]) !== modelIdentity(prefix[i])) return false
   return true
 }
 

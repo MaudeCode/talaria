@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A message a policy plugin or shell hook blocked now shows what you typed after a reload, and Retry resends it, instead of the Agent's \"Message withheld\" placeholder.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
