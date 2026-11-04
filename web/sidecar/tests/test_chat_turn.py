@@ -417,6 +417,24 @@ def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> No
     assert FakeAgent.instances[0].cleared == 1  # only its own start cleared it
 
 
+@pytest.mark.parametrize(
+    ("flags", "offered", "can_skip"),
+    [
+        ({"allow_session": False, "allow_permanent": False, "smart_denied": True}, ["once", "deny"], False),
+        ({"allow_session": False}, ["once", "always", "deny"], False),
+        ({"allow_permanent": False, "allow_session": True}, ["once", "session", "deny"], None),
+        ({"allow_session": False, "allow_permanent": False, "allowed_choices": ["deny"]}, ["deny"], False),
+        ({"allow_session": True, "allow_permanent": True}, None, None),
+        ({}, None, None),
+    ],
+)
+def test_an_approval_offers_only_the_scopes_the_agent_allows(flags, offered, can_skip) -> None:
+    frames: list[tuple[str, dict]] = []
+    notify = chat._approval_notifier("s1", lambda event, data: frames.append((event, data)))
+    notify({"command": "fill card", "description": "payment", **flags})
+    assert [(event, data.get("allowed_choices"), data.get("can_enable_yolo")) for event, data in frames] == [("approval", offered, can_skip)]
+
+
 def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
     """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
     _patch(monkeypatch)
