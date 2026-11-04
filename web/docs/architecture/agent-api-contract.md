@@ -586,6 +586,14 @@ after a sidecar restart. Cleanup checks surviving session IDs before removing fi
 The mutated state layers are the Agent database and its transcript artifacts; the
 HTTP server removes its session projection only after the sidecar's busy check.
 
+## Prompt refresh after an edit
+
+A continuing session replays its stored system prompt so the provider's prefix cache stays warm, so a SOUL.md or skill
+edit would otherwise reach only new sessions. Agents that ship `SessionDB.request_prompt_refresh` (v0.22.6+) record a
+refresh epoch in the profile's `state.db`, and each continuing session rebuilds its prompt once on its next turn, which
+costs one prefix-cache break per session. The server asks through `state_db.request_prompt_refresh` after a SOUL.md
+save and a local skill save, delete or toggle. A failed request is logged and leaves the save successful.
+
 ## Session auto-prune question
 
 Agents that ship `hermes_cli.prune_advisor` (v0.22.3+) ask once, on every surface, whether to turn on

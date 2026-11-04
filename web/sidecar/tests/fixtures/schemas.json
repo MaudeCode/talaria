@@ -3909,6 +3909,19 @@
     ],
     "additionalProperties": false
   },
+  "state_db.request_prompt_refresh": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
   "state_db.delete_cli_session": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

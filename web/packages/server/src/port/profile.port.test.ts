@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadStartupEnv } from '../cli/dotenv.js'
@@ -591,6 +592,42 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(await json(res)).toEqual({ ok: true, name: 'gamma', enabled: false })
     expect(((configs.get(workHome)?.skills as Json | undefined)?.disabled as string[]) ?? []).toContain('gamma')
     expect(configs.get(s.state)?.skills ?? null).toBeNull()
+  })
+
+  it('a SOUL.md or skill edit asks the edited profile to rebuild open chats prompts; MEMORY.md and USER.md stay frozen (TAL-1821)', async () => {
+    sidecar.respond('memory.check', (params) => ({ count: params.content.length, limit: 2200 }))
+    sidecar.respond('memory.write', () => ({ written: true }))
+    const requests = () => sidecar.calls.filter((c) => c.method === 'state_db.request_prompt_refresh').map((c) => c.params)
+    const requestedBy = async (edit: () => Promise<Response>): Promise<unknown[]> => {
+      const before = requests().length
+      const res = await edit()
+      expect(res.status, await res.clone().text()).toBe(200)
+      return requests().slice(before)
+    }
+    const saveMemory = async (section: string): Promise<Response> => {
+      const revision = (await json(await s.get('/api/memory', { headers: asWork() })))[`${section}_revision`]
+      return post(s, '/api/memory/write', { section, content: 'edited', revision }, asWork())
+    }
+    const work = [{ profile_home: workHome }]
+    expect(await requestedBy(() => saveMemory('soul'))).toEqual(work)
+    expect(await requestedBy(() => saveMemory('memory'))).toEqual([])
+    expect(await requestedBy(() => saveMemory('user'))).toEqual([])
+    expect(await requestedBy(() => post(s, '/api/skills/save', { name: 'refreshed', content: '# r\n' }, asWork()))).toEqual(work)
+    expect(await requestedBy(() => post(s, '/api/skills/toggle', { name: 'refreshed', enabled: false }, asWork()))).toEqual(work)
+    expect(await requestedBy(() => post(s, '/api/skills/delete', { name: 'refreshed' }, asWork()))).toEqual(work)
+    // A refused save changed nothing, so open chats keep their prompt.
+    const before = requests().length
+    expect((await post(s, '/api/memory/write', { section: 'soul', content: 'stale', revision: 'stale' }, asWork())).status).toBe(409)
+    expect((await post(s, '/api/skills/delete', { name: 'refreshed' }, asWork())).status).toBe(404)
+    expect(requests().slice(before)).toEqual([])
+    // The file is already saved, so a failed request does not turn the save into an error.
+    const refresh = sidecar.responderFor('state_db.request_prompt_refresh')
+    sidecar.respond('state_db.request_prompt_refresh', () => { throw new SidecarError('state.db is locked', { condition: 'state_db_unavailable' }) })
+    try {
+      expect(await requestedBy(() => saveMemory('soul'))).toEqual(work)
+    } finally {
+      if (refresh) sidecar.respond('state_db.request_prompt_refresh', refresh)
+    }
   })
 
   it('a per-client switch is allowed while an agent stream runs', async () => {

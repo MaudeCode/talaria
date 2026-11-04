@@ -10,6 +10,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { dict, isDict, type AgentConfig, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { str } from '../util.js'
+import { requestPromptRefresh } from './memory.js'
 
 const EXCLUDED_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', '.hg', '.svn', 'dist', 'build'])
 
@@ -27,6 +28,10 @@ export class SkillsService {
     try { await this.sidecar().call('profiles.skills_stats_invalidate', { profile_home: profileHome }) } catch (error) {
       this.deps.log(`skill count refresh failed; counts catch up within 30 s: ${String(error)}`)
     }
+  }
+
+  private async refreshPrompts(profileHome: string): Promise<void> {
+    await requestPromptRefresh(this.deps.sidecar(), profileHome, this.deps.log)
   }
 
   static skillsDir(profileHome: string): string {
@@ -133,6 +138,7 @@ export class SkillsService {
     }
     try { writeFileSync(fd, content, 'utf8') } finally { closeSync(fd) }
     await this.forgetSkillStats(profileHome)
+    await this.refreshPrompts(profileHome)
     return { ok: true, name, path: file }
   }
 
@@ -144,6 +150,7 @@ export class SkillsService {
     // Delete through the anchored walk from the skills root so a symlinked root or category cannot redirect the removal.
     try { rmtreeAnchored(skillsDir, join(match, '..')) } catch { throw new HttpFailure(404, 'Skill not found') }
     await this.forgetSkillStats(profileHome)
+    await this.refreshPrompts(profileHome)
     return { ok: true, name: nameRaw }
   }
 
@@ -169,6 +176,7 @@ export class SkillsService {
       if (isDict(platform) && 'webui' in platform) platform.webui = toggle(platform.webui)
       c.skills = skills
     }, { profileFile: true })
+    await this.refreshPrompts(profileHome)
     return { ok: true, name, enabled }
   }
 }

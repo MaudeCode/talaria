@@ -2281,6 +2281,13 @@
         "[multiple]"
       ]
     },
+    "tests/test_state_db_prompt_refresh.py::test_each_request_advances_the_epoch_on_an_agent_that_has_it": {
+      "layer": "compatibility",
+      "reason": "Real installed SessionDB records the refresh epoch on releases that ship it and is left untouched on the supported release without it, which a boundary fake cannot prove. Disposable state.db, no network.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_state_db_title.py::test_a_manual_rename_replaces_a_generated_title": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: a manual rename replaces a generated title. Uses the real installed release, not a fabricated API response.",

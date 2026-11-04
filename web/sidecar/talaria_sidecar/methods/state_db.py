@@ -152,6 +152,16 @@ def release_all() -> None:
         _pin(key, None)
 
 
+def request_prompt_refresh(home: Path) -> bool:
+    """Every continuing session in ``home`` rebuilds its stored system prompt once, on its next turn. False without a
+    state.db, or on an Agent before v0.22.6, which has no refresh."""
+    from hermes_state import SessionDB
+
+    if not hasattr(SessionDB, "request_prompt_refresh"):
+        return False
+    return _write(home, "request a prompt refresh", lambda db: db.request_prompt_refresh(), level=logging.WARNING)
+
+
 def sync_session_start(home: Path, session_id: str, model=None) -> bool:
     return _write(home, "sync session start", lambda db: db.ensure_session(session_id=session_id, source="webui", model=model))
 
@@ -731,6 +741,10 @@ def register(registry) -> None:
     @registry.method("state_db.sync_title")
     def title(ctx: CallContext, params: dict) -> dict:
         return {"ok": sync_session_title(profile_home_param(params), _session_id(params), str(params.get("title") or ""), manual=params.get("manual") is True)}
+
+    @registry.method("state_db.request_prompt_refresh")
+    def prompt_refresh(ctx: CallContext, params: dict) -> dict:
+        return {"ok": request_prompt_refresh(profile_home_param(params))}
 
     @registry.method("state_db.append_message")
     def append(ctx: CallContext, params: dict) -> dict:

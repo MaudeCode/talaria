@@ -38,6 +38,16 @@
       }
     }
   ],
+  "state_db.request_prompt_refresh": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
   "state_db.append_message": [
     {
       "params": {

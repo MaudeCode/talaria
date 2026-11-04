@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Editing SOUL.md or a skill in Web now applies to the next turn of every open chat in that profile, not only to new chats.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

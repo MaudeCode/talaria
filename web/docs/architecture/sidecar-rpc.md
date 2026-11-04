@@ -21,6 +21,14 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v76 adds `state_db.request_prompt_refresh` (TAL-1821), which records the Agent's
+profile-wide prompt refresh epoch through `SessionDB.request_prompt_refresh`. The server
+calls it after a SOUL.md save and after a local skill save, delete or toggle, so each
+continuing session rebuilds its stored system prompt once on its next turn. MEMORY.md
+and USER.md saves do not call it, because a session's memory snapshot is frozen by design.
+An Agent before v0.22.6 has no refresh and answers `ok: false`, as does a profile without
+a `state.db`.
+
 RPC v75 adds `stripped_tools` and `stripped_by` to `toolsets.catalog` rows (TAL-1813);
 see "Toolset policy" in `agent-api-contract.md`.
 
