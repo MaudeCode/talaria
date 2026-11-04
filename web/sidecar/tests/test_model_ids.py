@@ -59,6 +59,23 @@ def test_native_plan_metadata_is_bounded_to_the_selected_provider(monkeypatch):
     assert providers.model_allowance_snapshot('foreign', force_refresh=False) == {}
 
 
+def test_an_agent_without_subscription_ids_gets_them_from_its_pricing_cache(monkeypatch):
+    from types import SimpleNamespace
+    plan = {'kind': 'usage_window', 'plan': 'Pro', 'gauges': [], 'top_tier_model_ids': [], 'featured_model_ids': [], 'paused_reason': None, 'credits_pay': None}
+    inventory = ModuleType('hermes_cli.inventory')
+    usage = ModuleType('hermes_cli.model_picker_usage')
+    models = ModuleType('hermes_cli.models')
+    pricing = ModuleType('hermes_cli.models_pricing')
+    inventory.load_picker_context = lambda: SimpleNamespace()
+    inventory.build_model_options_payload = lambda context, **kwargs: {'providers': [{'slug': 'nous', 'plan_usage': plan}]}
+    usage.nous_picker_usage = lambda: object()
+    models._is_subscription_billed = lambda row: row.get('billing_mode') == 'subscription'
+    pricing.get_pricing_for_provider = lambda provider, cached_only: {'subscribed': {'billing_mode': 'subscription'}, 'zero-priced': {'prompt': '0', 'completion': '0'}}
+    for module in (inventory, usage, models, pricing):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+    assert providers.model_allowance_snapshot('nous', force_refresh=False)['plan_usage'].get('subscription_model_ids') == ['subscribed']
+
+
 def test_pending_native_entitlement_is_unknown_not_unavailable(monkeypatch):
     inventory = ModuleType('hermes_cli.inventory')
     usage = ModuleType('hermes_cli.model_picker_usage')

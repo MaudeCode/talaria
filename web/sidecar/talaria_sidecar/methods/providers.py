@@ -337,6 +337,22 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool
         return [], False
 
 
+def _with_subscription_ids(plan: dict) -> dict:
+    """Agents before v0.22.6 omit ``subscription_model_ids``; the pricing cache their payload just read has the same mark."""
+    if isinstance(plan.get("subscription_model_ids"), list):
+        return plan
+    try:
+        from hermes_cli.models import _is_subscription_billed
+        from hermes_cli.models_pricing import get_pricing_for_provider
+
+        pricing = get_pricing_for_provider("nous", cached_only=True) or {}
+        ids = sorted(mid for mid, row in pricing.items() if _is_subscription_billed(row))
+    except Exception:  # noqa: BLE001 - the mark only decides a display tag
+        log.debug("subscription-billed models unavailable", exc_info=True)
+        ids = []
+    return {**plan, "subscription_model_ids": ids}
+
+
 def model_allowance_snapshot(provider_id: str, *, force_refresh: bool) -> dict:
     """Native picker metadata in this call's scoped home; no billing write or second usage poll."""
     if provider_id != "nous":
@@ -354,7 +370,7 @@ def model_allowance_snapshot(provider_id: str, *, force_refresh: bool) -> dict:
         fresh = nous_picker_usage() if isinstance(plan, dict) else None
         return {
             "metadata_status": "pending" if pending else "stale" if plan and fresh is None else "current",
-            "plan_usage": plan if isinstance(plan, dict) else None,
+            "plan_usage": _with_subscription_ids(plan) if isinstance(plan, dict) else None,
             "usage_levels": {mid: level for mid, level in (row.get("usage_levels") or {}).items()
                              if isinstance(mid, str) and level in ("free", "low", "medium", "top_tier")},
             "unavailable_model_ids": [mid for mid in row.get("unavailable_models", []) if isinstance(mid, str)] if not pending else [],

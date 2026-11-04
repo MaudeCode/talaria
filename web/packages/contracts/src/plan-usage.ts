@@ -6,7 +6,7 @@ export type PlanGauge = z.infer<typeof PlanGaugeSchema>
 export const PlanUsageSchema = z.object({
   kind: z.literal('usage_window'), plan: z.string().nullable(),
   gauges: z.array(z.object({ label: z.string(), left_fraction: z.number().min(0).max(1), style: z.enum(['green', 'yellow', 'red']), resets_at_ms: z.number().int().nonnegative().max(8_640_000_000_000_000).nullable(), scope: z.string(), title: z.string() })),
-  top_tier_model_ids: z.array(z.string()), featured_model_ids: z.array(z.string()), paused_reason: z.string().nullable(), credits_pay: z.boolean().nullable(),
+  top_tier_model_ids: z.array(z.string()), subscription_model_ids: z.array(z.string()).default([]), featured_model_ids: z.array(z.string()), paused_reason: z.string().nullable(), credits_pay: z.boolean().nullable(),
 })
 export type PlanUsage = z.infer<typeof PlanUsageSchema>
 export const ModelAllowanceSchema = z.object({

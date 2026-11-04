@@ -46,6 +46,19 @@ describe('native plan allowance (TAL-1508)', () => {
     } finally { await t.s.close() }
   })
 
+  it('keeps a subscription-billed model selectable without a Free tag, through a pending read (TAL-1817)', async () => {
+    const t = await setup()
+    t.setSnapshot({ ...native, usage_levels: { ...(native.usage_levels as object), included: 'free' }, plan_usage: { ...(native.plan_usage as object), subscription_model_ids: ['included'] } })
+    const rows = async () => (await t.s.deps.catalog.models(t.home)).groups.find((g) => g.provider_id === 'nous')!.models
+    try {
+      const fresh = await rows()
+      expect(fresh.find((m) => m.bare_id === 'included')?.allowance).toMatchObject({ state: 'free', usage_level: null })
+      expect(fresh.find((m) => m.bare_id === 'free')?.allowance).toMatchObject({ state: 'free', usage_level: 'free' })
+      t.setSnapshot({ ...native, metadata_status: 'pending', allowance_pending: true, usage_levels: {}, plan_usage: { ...(native.plan_usage as object), featured_model_ids: [] } })
+      expect((await rows()).find((m) => m.bare_id === 'included')?.allowance).toMatchObject({ state: 'unknown', usage_level: null })
+    } finally { await t.s.close() }
+  })
+
   it('shows included room and restricts the Large allowance to native Large models', async () => {
     const t = await setup()
     t.setSnapshot({ ...native, plan_usage: { ...(native.plan_usage as object), gauges: [
