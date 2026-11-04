@@ -1744,6 +1744,17 @@ def _run_conversation_parameters(cls) -> frozenset[str]:
         return frozenset()
 
 
+def _offer_allowed_scopes(payload: dict) -> None:
+    """The Agent marks a single-use approval with ``allow_session`` / ``allow_permanent``; Talaria's clients read
+    ``allowed_choices`` and ``can_enable_yolo``. An explicit ``allowed_choices`` stays as sent, and an approval with
+    neither flag offers all four. Skipping approvals covers the whole session, so it goes with the session scope."""
+    withheld = {choice for flag, choice in (("allow_session", "session"), ("allow_permanent", "always")) if flag in payload and not payload[flag]}
+    if withheld:
+        payload.setdefault("allowed_choices", [choice for choice in ("once", "session", "always", "deny") if choice not in withheld])
+    if "session" in withheld:
+        payload["can_enable_yolo"] = False
+
+
 def _approval_notifier(session_id: str, emit):
     """The Agent's gateway notify callback for one turn: emits each parked approval, then ``approval_resolved``
     (id plus the Agent's reason) once its wait ends by any path, an ``approvals.timeout`` expiry included (TAL-514)."""
@@ -1756,6 +1767,7 @@ def _approval_notifier(session_id: str, emit):
         payload = dict(data or {})
         payload.setdefault("session_id", session_id)
         payload.setdefault("approval_id", str(payload.get("request_id") or uuid.uuid4().hex))
+        _offer_allowed_scopes(payload)
         emit("approval", payload)
         request_id = str(payload.get("request_id") or "")
         if register_gateway_settle is None or not request_id:

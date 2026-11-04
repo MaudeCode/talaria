@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Approvals the Agent marks as single-use, such as MCP consent, payment-card fills and overrides of a smart denial, now offer only Allow once and Deny instead of Session and Always options that covered just that one call.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
