@@ -739,6 +739,13 @@
         ""
       ]
     },
+    "tests/test_chat_toolsets.py::test_catalog_names_tools_a_legacy_disabled_entry_strips": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the installed release's toolsets_partially_stripped reports what a legacy disabled_toolsets entry removes, and releases without it stay empty. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_toolsets.py::test_catalog_discovers_named_profile_plugin_before_any_turn": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: catalog discovers named profile plugin before any turn. Uses the real installed release, not a fabricated API response.",

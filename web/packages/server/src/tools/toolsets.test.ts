@@ -7,7 +7,10 @@ import { FakeSidecar } from '../sidecar/fake.js'
 
 it('serves the profile toolset policy and draft selection without dropping unavailable rows', async () => {
   const sidecar = new FakeSidecar()
-  const catalog = { toolsets: [{ name: 'todo', description: 'Tasks', available: false, selected: true, unavailable_reason: 'disabled' as const }], selected_toolsets: ['todo'], using_defaults: false }
+  const catalog = { toolsets: [
+    { name: 'todo', description: 'Tasks', available: false, selected: true, unavailable_reason: 'disabled' as const },
+    { name: 'web', description: 'Web', available: true, selected: false, unavailable_reason: null, stripped_tools: ['web_search'], stripped_by: ['search'] },
+  ], selected_toolsets: ['todo'], using_defaults: false }
   sidecar.respond('toolsets.catalog', (params) => {
     expect(params.enabled_toolsets).toEqual(['todo'])
     expect(params.profile_home).toBe(s.deps.config.hermesHome)

@@ -80546,6 +80546,18 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "stripped_tools": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "stripped_by": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [

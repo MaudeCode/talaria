@@ -610,6 +610,12 @@ broader defaults. Restoring defaults is an explicit action. The native app retai
 free-text editor only when an older Web server returns endpoint-not-found for the catalog.
 Session-not-found, authentication, transport, server, and decoding failures retain the error state.
 
+On Agents exposing `hermes_cli.tools_config.toolsets_partially_stripped` (v0.22.6+), a row whose
+tools `agent.disabled_toolsets` cuts down without removing them all carries `stripped_tools` and
+`stripped_by`, so `search` shows as the entry that took `web_search` from `web`. A toolset an entry
+empties reads `unavailable_reason: "disabled"` with both fields empty, even under a legacy name.
+Older Agents return both fields empty.
+
 Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
 on the next turn. The Agent's filter also scopes deferred tool search and calls.
