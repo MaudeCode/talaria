@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An Agent update on a Linux systemd host no longer reports a failed restart while a slow gateway is still starting, and a live gateway keeps blocking dependency repair after the system clock jumps.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

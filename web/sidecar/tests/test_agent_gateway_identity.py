@@ -29,6 +29,56 @@ def test_native_inline_recovery_preserves_unverified_sibling_debt(tmp_path):
     _native_proof(tmp_path, retained=True, sibling=True)
 
 
+def _run_on_agent(tmp_path, script):
+    home = tmp_path / 'home'
+    home.mkdir()
+    env = isolated_env(home, PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR))
+    result = subprocess.run([AGENT_PYTHON, '-c', script], cwd=AGENT_DIR, env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@requires_agent
+def test_native_systemd_start_past_its_client_timeout_stays_pending(tmp_path):
+    _run_on_agent(tmp_path, r'''
+import subprocess, types
+from hermes_cli import update_cmd_fleet as fleet, update_cmd_fleet_unit_budget as budget, update_cmd_posix_pause as pause
+from talaria_sidecar import agent_services as services
+def systemctl(argv, **kwargs):
+ if 'start' in argv: raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+ return subprocess.CompletedProcess(argv, 0, 'ActiveState=activating\nJob=7\n', '')
+fleet._systemctl = systemctl
+clock = iter(range(0, 100000, 60))  # Reaches the native job budget without waiting it out.
+budget.time = types.SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda seconds: None)
+entry = dict(kind='systemd', scope='user', unit='synthetic.gateway')
+entry['config_stamp'] = services._config_stamp(entry)
+if hasattr(budget, 'run_unit_job'):
+ services._start(entry, pause)
+else:
+ try: services._start(entry, pause)
+ except subprocess.TimeoutExpired: pass
+ else: raise AssertionError('an Agent without run_unit_job cannot outwait the start')
+''')
+
+
+@requires_agent
+def test_native_writer_liveness_survives_a_clock_step(tmp_path):
+    _run_on_agent(tmp_path, r'''
+import json, os, psutil
+from pathlib import Path
+from hermes_cli import process_identity as identity
+from talaria_sidecar.agent_mutation import _writer_ledger
+root = Path.cwd()
+identity._live_boot_id = lambda: 'synthetic-boot'  # Readable only on Linux; the entry's boot ticks are what is under test.
+identity.boot_start = lambda proc: 12.5
+def live_writers(boot_start):
+ identity._ledger_path().write_text(json.dumps([dict(pid=os.getpid(), create_time=psutil.Process().create_time() + 3600, purpose='gateway',
+                                                     install=identity.install_id(root), boot_id='synthetic-boot', boot_start=boot_start)]))
+ return [entry['pid'] for entry, _ in _writer_ledger(root, identity)]
+assert live_writers(12.5) == ([os.getpid()] if hasattr(identity, '_entry_boot') else []), 'a stepped clock dropped a live writer'
+assert live_writers(99.5) == [], 'a reused PID stayed a live writer'
+''')
+
+
 def _native_proof(tmp_path, *, retained=False, profile='named', sibling=False):
     home = tmp_path / 'home'
     served = home / 'profiles' / profile if profile != 'default' else home

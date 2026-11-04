@@ -2655,6 +2655,40 @@ def test_recovery_probe_rearms_on_retained_gateway_lifecycle_change(tmp_path, mo
     assert probe()['fingerprint'] != exited['fingerprint']
 
 
+@pytest.mark.parametrize('native, failure', [('still-running', None), ('refused', 'failed to start'), ('older-agent', None)])
+def test_systemd_start_past_its_client_timeout_is_left_to_readiness(gateway_successor, monkeypatch, native, failure):
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, _, _, pause, _, _ = gateway_successor
+    entry.update(kind='systemd', scope='user', unit=entry.pop('label'))
+    pause._manage_cmd = lambda scope: ['systemctl', '--user']
+    fleet = types.ModuleType('hermes_cli.update_cmd_fleet')
+    def systemctl(argv, timeout):
+        # A slow job outlives the client on every Agent; only an older one has no way to outwait it.
+        if native != 'older-agent': raise subprocess.TimeoutExpired(argv, timeout)
+        return subprocess.CompletedProcess(argv, 0, '', '')
+    fleet._systemctl = systemctl
+    budget = types.ModuleType('hermes_cli.update_cmd_fleet_unit_budget')
+    if native != 'older-agent':
+        budget.UNIT_JOB_STILL_RUNNING = 124
+        budget.run_unit_job = lambda manage, scope, verb, unit, *, timeout: subprocess.CompletedProcess(
+            manage + [verb, unit], {'still-running': 124, 'refused': 1}[native], '', '')
+    monkeypatch.setitem(sys.modules, fleet.__name__, fleet)
+    monkeypatch.setitem(sys.modules, budget.__name__, budget)
+    monkeypatch.setattr(services, '_config_stamp', lambda entry: entry['config_stamp'])
+    monkeypatch.setattr(services, '_service_pid', lambda entry: (False, None))
+    monkeypatch.setattr(recovery, '_settle_gateway', lambda *args, **kwargs: False)
+    readiness = iter([False, False, True])
+    monkeypatch.setattr(recovery, '_ready', lambda *args: next(readiness))
+    if failure:
+        with pytest.raises(RuntimeError, match=failure):
+            recovery.resume(lambda *args: [])
+        assert recovery.state['entries'] == [entry]
+    else:
+        recovery.resume(lambda *args: [])
+        assert recovery.state['entries'] == []
+
+
 @pytest.mark.parametrize('manager', ['launchd', 'systemd'])
 def test_successor_configuration_is_rechecked_before_drain(gateway_successor, monkeypatch, manager):
     import threading

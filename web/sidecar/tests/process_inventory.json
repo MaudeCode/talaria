@@ -96,6 +96,20 @@
       "reason": "Real Agent API compatibility: legacy releases refuse private history before execution; capable releases build Nous deny/ZDR routing while stripping message metadata. Requires the installed Agent interpreter; execution and HTTP clients are faked.",
       "cases": [""]
     },
+    "tests/test_agent_gateway_identity.py::test_native_systemd_start_past_its_client_timeout_stays_pending": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real run_unit_job's still-running exit reaches Talaria's systemd start. Uses the installed release; systemctl and its clock are faked.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_gateway_identity.py::test_native_writer_liveness_survives_a_clock_step": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real process_identity keeps a live writer by boot ticks after a clock step. Uses the installed release and a disposable ledger; only the Linux boot readers are faked.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_gateway_identity.py::test_native_inline_successor_readiness": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: native inline successor readiness. Uses the real installed release, not a fabricated API response.",
