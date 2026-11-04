@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a compaction, tool cards in sessions read from Hermes Agent show the real tool output once instead of its pruned stub.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
-"""Generate synthetic lifecycle snapshots using the released, unmodified Agent v0.21.6 or v0.22.3.
+"""Generate synthetic lifecycle snapshots using the released, unmodified Agent v0.21.6, v0.22.3 or v0.22.6.
 
-Usage: <agent-python> generate-compaction-replay.py <agent-checkout> [--carrier]
-Use --carrier with v0.22.3 for the kept-message summary fixture.
+Usage: <agent-python> generate-compaction-replay.py <agent-checkout> [--carrier | --tool-stub]
+Use --carrier with v0.22.3 for the kept-message summary fixture, --tool-stub with v0.22.6 for the pruned tool result.
 No model calls, account data or live store; fixed IDs and clock make the fixture reproducible.
 """
 from contextlib import closing
@@ -10,18 +10,28 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from unittest.mock import patch
 
 agent = Path(sys.argv[1]).resolve()
+
+
+def require_release(revision, release):
+    actual = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], text=True).strip()
+    assert actual == revision, f"Use the {release} release"
+    return actual
+
+
 sys.path.insert(0, str(agent))
 with tempfile.TemporaryDirectory(prefix="tal783-versions-") as home:
     os.environ["HERMES_HOME"] = home
     from hermes_state import SessionDB
     from hermes_state_common import SCHEMA_VERSION
     carrier_mode = "--carrier" in sys.argv[2:]
-    assert SCHEMA_VERSION == (32 if carrier_mode else 31), "Use unmodified v0.22.3 for --carrier, otherwise v0.21.6"
+    tool_stub_mode = "--tool-stub" in sys.argv[2:]
+    assert SCHEMA_VERSION == (32 if carrier_mode or tool_stub_mode else 31), "Use unmodified v0.22.3 for --carrier, v0.22.6 for --tool-stub, otherwise v0.21.6"
     from agent.context_compressor import ContextCompressor, SUMMARY_PREFIX, _SUMMARY_END_MARKER
 
     path = Path(home) / "state.db"
@@ -55,9 +65,7 @@ with tempfile.TemporaryDirectory(prefix="tal783-versions-") as home:
 
     if carrier_mode:
         from agent.context_compressor import _MERGED_PRIOR_CONTEXT_HEADER, _MERGED_SUMMARY_DELIMITER
-        import subprocess
-        revision = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], text=True).strip()
-        assert revision == "5b147ab036d6d19131bff8d20701b5001eab844a", "Use the v0.22.3 release"
+        revision = require_release("5b147ab036d6d19131bff8d20701b5001eab844a", "v0.22.3")
         sid = "compaction-carrier"
         messages = [
             {"role": "user", "content": "Inspect the parser."},
@@ -90,6 +98,31 @@ with tempfile.TemporaryDirectory(prefix="tal783-versions-") as home:
                    "before": before, "summary": summary + "\n\n" + _SUMMARY_END_MARKER,
                    "schema": schema, "snapshots": snapshots}
         Path(__file__).with_name("compaction-carrier.json").write_text(json.dumps(fixture, indent=2) + "\n")
+        sys.exit(0)
+
+    if tool_stub_mode:
+        revision = require_release("f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab", "v0.22.6")
+        sid = "compaction-tool-stub"
+        original, stub = "Full synthetic parser source", "[read_file] pruned stub"
+        with closing(SessionDB(path)) as db:
+            with patch("hermes_state_sessions.time.time", return_value=1000):
+                db.create_session(sid, source="cli")
+            db.append_messages_batch(sid, [
+                {"role": "user", "content": "Read the parser", "timestamp": 1000, "message_uid": "stub-user"},
+                {"role": "assistant", "content": "", "timestamp": 1001, "message_uid": "stub-call", "tool_call_uids": {"call_read": "stub-tool-call"}, "tool_calls": [{"id": "call_read", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
+                {"role": "tool", "content": original, "tool_call_id": "call_read", "tool_name": "read_file", "timestamp": 1002, "message_uid": "stub-tool"},
+                {"role": "assistant", "content": "The parser is small.", "timestamp": 1003, "message_uid": "stub-reply"},
+            ])
+            # The compressor's shape: the kept rows carried forward with the tool body replaced by a stub.
+            for name, clock in (("compacted", 2000), ("twiceCompacted", 2500)):
+                history = db.get_messages_as_conversation(sid, include_row_ids=True)
+                next(m for m in history if m["role"] == "tool")["content"] = stub
+                summary = {"role": "user", "content": SUMMARY_PREFIX + f"\nParser read at {clock}.\n" + _SUMMARY_END_MARKER, "timestamp": clock, "message_uid": f"stub-summary-{clock}"}
+                with patch("hermes_state_messages.time.time", return_value=clock):
+                    db.archive_and_compact(sid, [summary, *[m for m in history if not m.get("_compressed_summary")]])
+                snapshot(name)
+        fixture = {"agentRevision": revision, "agentRelease": "v0.22.6", "sessionId": sid, "original": original, "stub": stub, "schema": schema, "snapshots": snapshots}
+        Path(__file__).with_name("compaction-tool-stub.json").write_text(json.dumps(fixture, indent=2) + "\n")
         sys.exit(0)
 
     with closing(SessionDB(path)) as db:
