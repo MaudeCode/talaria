@@ -108,7 +108,30 @@ export function messageIdentity(msg: unknown, textLimit = 500): string | null {
     return null
   }
   const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
-  return JSON.stringify([role, text.split(/\s+/).join(' ').trim().slice(0, textLimit), str(msg.tool_call_id), JSON.stringify(sortKeysDeep(toolCalls))])
+  return JSON.stringify([role, collapsedPrefix(text, textLimit), str(msg.tool_call_id), JSON.stringify(sortKeysDeep(toolCalls))])
+}
+
+/** `text` with whitespace runs collapsed and trimmed, cut to `limit`, reading only the words that reach the limit. */
+function collapsedPrefix(text: string, limit: number): string {
+  let out = ''
+  for (const [word] of text.matchAll(/\S+/g)) {
+    out += out ? ` ${word}` : word
+    if (out.length >= limit) break
+  }
+  return out.slice(0, limit)
+}
+
+/** TAL-1688: one settlement's row identities, so a row object's identity is built once however many passes compare it. */
+export type IdentityCache = WeakMap<object, string | null>
+
+function cachedIdentity(msg: unknown, identities: IdentityCache): string | null {
+  if (!isDict(msg)) return null
+  let key = identities.get(msg)
+  if (key === undefined) {
+    key = messageIdentity(msg)
+    identities.set(msg, key)
+  }
+  return key
 }
 
 function sortKeysDeep(value: unknown): unknown {
@@ -121,10 +144,10 @@ function sortKeysDeep(value: unknown): unknown {
   return value
 }
 
-export function messagesHavePrefix(messages: unknown[], prefix: unknown[]): boolean {
+export function messagesHavePrefix(messages: unknown[], prefix: unknown[], identities: IdentityCache = new WeakMap()): boolean {
   if (messages.length < prefix.length) return false
   // Both sides are model rows, and replay strips `display_metadata`: a vetoed row compares as its stored placeholder.
-  const modelIdentity = (m: unknown): string | null => messageIdentity(withheldPromptText(m) === null ? m : { ...(m as Message), display_metadata: null })
+  const modelIdentity = (m: unknown): string | null => (withheldPromptText(m) === null ? cachedIdentity(m, identities) : messageIdentity({ ...(m as Message), display_metadata: null }))
   for (let i = 0; i < prefix.length; i += 1) if (modelIdentity(messages[i]) !== modelIdentity(prefix[i])) return false
   return true
 }
@@ -269,14 +292,14 @@ export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean
   return candidate === target || candidate.startsWith(`${target}\n`) || candidate.endsWith(target)
 }
 
-function stripReplayedPrefix(existing: unknown[], candidates: unknown[]): unknown[] {
+function stripReplayedPrefix(existing: unknown[], candidates: unknown[], identities: IdentityCache): unknown[] {
   // Drop candidates that replay the tail of the existing transcript (Python `_strip_replayed_prefix`).
   let overlap = 0
   const maxOverlap = Math.min(existing.length, candidates.length)
   for (let n = maxOverlap; n > 0; n -= 1) {
     let match = true
     for (let i = 0; i < n; i += 1) {
-      if (messageIdentity(existing[existing.length - n + i]) !== messageIdentity(candidates[i])) { match = false; break }
+      if (cachedIdentity(existing[existing.length - n + i], identities) !== cachedIdentity(candidates[i], identities)) { match = false; break }
     }
     if (match) { overlap = n; break }
   }
@@ -289,7 +312,7 @@ export function findCurrentUserTurn(messages: unknown[], msgText: string): numbe
 }
 
 /** `attachments`: the turn's files, which let an attachment-only prompt (no text to match) open its own user row (TAL-276). */
-export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string; attachments?: unknown[] }
+export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string; attachments?: unknown[]; identities?: IdentityCache }
 
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
 /** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
@@ -300,9 +323,9 @@ function assistantHasFinalVisibleText(msg: Message): boolean {
 }
 
 /** Python `_assistant_reply_added_after_current_turn`: only the just-finished turn counts, never replayed history. */
-export function assistantReplyAddedAfterCurrentTurn(resultMessages: Message[], previousContext: Message[], msgText: string): boolean {
+export function assistantReplyAddedAfterCurrentTurn(resultMessages: Message[], previousContext: Message[], msgText: string, identities?: IdentityCache): boolean {
   let candidates: Message[]
-  if (messagesHavePrefix(resultMessages, previousContext)) candidates = resultMessages.slice(previousContext.length)
+  if (messagesHavePrefix(resultMessages, previousContext, identities)) candidates = resultMessages.slice(previousContext.length)
   else {
     const idx = findCurrentUserTurn(resultMessages, msgText)
     candidates = idx === null ? resultMessages : resultMessages.slice(idx + 1)
@@ -328,9 +351,9 @@ export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
 }
 
 /** A completed result's final row wins; recover an omitted answer only from this turn's own output. */
-export function withFinalAssistantAnswer(messages: Message[], finalResponse: string, opts: { previousContext: Message[]; msgText: string; prompt: Message; streamedText: string; toolLimitReached: boolean }): Message[] {
+export function withFinalAssistantAnswer(messages: Message[], finalResponse: string, opts: { previousContext: Message[]; msgText: string; prompt: Message; streamedText: string; toolLimitReached: boolean; identities?: IdentityCache }): Message[] {
   const at = findCurrentUserTurn(messages, opts.msgText)
-  const replayedContext = messagesHavePrefix(messages, opts.previousContext)
+  const replayedContext = messagesHavePrefix(messages, opts.previousContext, opts.identities)
   const ownRows = replayedContext ? messages.slice(opts.previousContext.length)
     : at !== null ? messages.slice(at + 1)
     : messages.every((m) => m.role === 'assistant' || m.role === 'tool' || isContextCompressionMarker(m)) ? messages : []
@@ -358,6 +381,8 @@ export function withoutMaxIterationSummaryRequest(messages: Message[], request: 
 }
 
 export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[], previousContext: Message[], resultMessages: Message[], msgText: string, opts: MergeOptions = {}): Message[] {
+  const identities = opts.identities ?? new WeakMap()
+  const identity = (m: unknown): string | null => cachedIdentity(m, identities)
   // TAL-1566: compactions keep their rows where they are; the Agent's own markers among them become compaction rows.
   const display = previousDisplay.map((m) => (isContextCompressionMarker(m) ? compactionRowFromMarker(m) : m))
   const seenPartial = new Set<string>()
@@ -365,7 +390,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   for (let i = display.length - 1; i >= 0; i -= 1) {
     const m = display[i]!
     if (isDict(m) && m._partial) {
-      const key = messageIdentity(m)
+      const key = identity(m)
       if (key !== null) {
         if (seenPartial.has(key)) continue
         seenPartial.add(key)
@@ -380,13 +405,13 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   if (!result.length) return prev
   let candidates: Message[]
   let turnRows: Message[]
-  if (messagesHavePrefix(result, context)) {
+  if (messagesHavePrefix(result, context, identities)) {
     candidates = turnRows = result.slice(context.length)
     const currentUserIn = candidates.some((m) => looksLikeCurrentUserTurn(m, msgText))
     const assistantOnly = candidates.length > 0 && candidates.every((m) => isContextCompressionMarker(m) || (isDict(m) && (m.role === 'assistant' || m.role === 'tool')))
     if (!(assistantOnly && !currentUserIn)) {
-      candidates = stripReplayedPrefix(prevTurns, candidates) as Message[]
-      candidates = stripReplayedPrefix(context, candidates) as Message[]
+      candidates = stripReplayedPrefix(prevTurns, candidates, identities) as Message[]
+      candidates = stripReplayedPrefix(context, candidates, identities) as Message[]
     }
   } else {
     const idx = findCurrentUserTurn(result, msgText)
@@ -394,9 +419,8 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     candidates = turnRows = idx !== null ? result.slice(idx) : assistantOnly ? result : []
   }
   const merged: Message[] = [...prev]
-  const seen = new Set(merged.map(messageIdentity).filter((k): k is string => k !== null))
   const currentUserKey = messageIdentity({ role: 'user', content: msgText })
-  const currentUserIn = candidates.some((m) => (currentUserKey !== null && messageIdentity(m) === currentUserKey) || looksLikeCurrentUserTurn(m, msgText))
+  const currentUserIn = candidates.some((m) => (currentUserKey !== null && identity(m) === currentUserKey) || looksLikeCurrentUserTurn(m, msgText))
   const alreadyCheckpointed = Boolean(opts.activeTurnToken) && merged.some((m) => isDict(m) && m.role === 'user' && m._active_turn_token === opts.activeTurnToken)
   const promptless = currentUserKey === null && Boolean(opts.attachments?.length)
   if ((currentUserKey !== null || promptless) && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
@@ -411,14 +435,14 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   }
   for (const msg of candidates) {
     if (isContextCompressionMarker(msg)) continue
-    const key = messageIdentity(msg)
+    const key = identity(msg)
     const isCurrentUser = looksLikeCurrentUserTurn(msg, msgText)
     const last = merged[merged.length - 1]
-    if (((key !== null && key === currentUserKey) || isCurrentUser) && last && ((currentUserKey !== null && messageIdentity(last) === currentUserKey) || looksLikeCurrentUserTurn(last, msgText))) {
+    if (((key !== null && key === currentUserKey) || isCurrentUser) && last && ((currentUserKey !== null && identity(last) === currentUserKey) || looksLikeCurrentUserTurn(last, msgText))) {
       if (isDict(msg) && msg.id !== undefined && isDict(last) && last.id === undefined) last.id = msg.id
       continue
     }
-    if (key !== null && isDict(msg) && msg.role === 'assistant' && last && messageIdentity(last) === key) continue
+    if (key !== null && isDict(msg) && msg.role === 'assistant' && last && identity(last) === key) continue
     let display: Message = msg
     if (((key !== null && key === currentUserKey) || isCurrentUser) && isDict(msg) && msg.role === 'user') {
       display = { ...msg, content: msgText }
@@ -426,8 +450,9 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     }
     const row = structuredClone(display)
     if (opts.turnId) row._turn_id = opts.turnId
+    // The copy differs from an unchanged row only in `_turn_id`, which no identity reads.
+    if (display === msg) identities.set(row, key)
     merged.push(row)
-    if (key !== null) seen.add(key)
   }
   // TAL-1878: the Agent's vetoed row is dropped as a replay of this turn's checkpoint, or folds into it; the row shown records the veto either way.
   const vetoed = turnRows.find((m) => withheldPromptText(m) !== null && looksLikeCurrentUserTurn(m, msgText))
@@ -810,11 +835,11 @@ export function withoutToolImages(messages: Message[]): Message[] {
 }
 
 /** A settled model context without an assistant row repeated back to back, and without tool-result images. */
-export function dedupeContext(messages: Message[]): Message[] {
+export function dedupeContext(messages: Message[], identities: IdentityCache = new WeakMap()): Message[] {
   const out: Message[] = []
   let lastKey: string | null = null
   for (const m of withoutToolImages(messages)) {
-    const key = messageIdentity(m)
+    const key = cachedIdentity(m, identities)
     if (key !== null && key === lastKey && m.role === 'assistant') continue
     out.push(m)
     lastKey = key

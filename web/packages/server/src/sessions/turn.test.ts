@@ -6,6 +6,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
 import { walkSkillFiles } from '../tools/skills.js'
 import { classifyProviderError } from './turn.js'
+import { mergeDisplayMessagesAfterAgentResult } from './merge.js'
 import { persistentStateSnapshot } from './state-saved.js'
 import { ReasoningTitleTracker } from './reasoning-titles.js'
 import { sessionPath, useJsonStorage } from '../test/storage.js'
@@ -15,6 +16,7 @@ useJsonStorage()
 vi.mock('node:fs', { spy: true })
 vi.mock('../tools/skills.js', { spy: true })
 vi.mock('./state-saved.js', { spy: true })
+vi.mock('./merge.js', { spy: true })
 
 function completed(params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> {
   return {
@@ -371,6 +373,27 @@ describe('reasoning disclosure keys (TAL-1175)', () => {
       const rows = (detail.session.messages.at(-1)?._anchor_activity_scene as { activity_rows: { role: string; text?: string; disclosure_key?: string }[] }).activity_rows
       expect(rows.filter((row) => row.role === 'reasoning').map((row) => [row.text, row.disclosure_key])).toEqual([['Inline plan.', undefined], ['Check the result.', `${streamId}:reasoning:0`]])
       expect(detail.session.messages.some((m) => '_inline_thinking' in m)).toBe(false)
+    } finally { await server.close() }
+  })
+})
+
+describe('transcript settlement cost (TAL-1688)', () => {
+  it('merges once when the merged transcript decides whether the turn answered', async () => {
+    const sidecar = new FakeSidecar()
+    // No row of its own, so the turn counts only because the merged transcript ends on an answer.
+    sidecar.respond('chat.start', (params) => ({ ...completed(params), messages: params.conversation_history, final_response: '' }))
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'old' }, { role: 'assistant', content: 'Old answer' }]
+      session.context_messages = structuredClone(session.messages)
+      await server.deps.sessionStore.save(session)
+      vi.mocked(mergeDisplayMessagesAfterAgentResult).mockClear()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      expect(frames.find((f) => f.event === 'done')?.event).toBe('done')
+      expect(mergeDisplayMessagesAfterAgentResult).toHaveBeenCalledTimes(1)
     } finally { await server.close() }
   })
 })

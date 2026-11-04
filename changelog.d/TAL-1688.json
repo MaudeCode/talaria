@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Other chats' live updates in Talaria Web pause less while a long chat's turn finishes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
