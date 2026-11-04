@@ -133,6 +133,9 @@ test('the chat list keeps its filter, groups and scroll across pages and is out 
 
   await page.locator('#btnSidebarEdgeToggle').click()
   await expect(list).toBeHidden()
+  await expect(page.locator('#sessionSearch')).toBeHidden()
+  await page.locator('#sessionSearch').evaluate((el) => { (el as HTMLElement).focus() })
+  await expect(page.locator('#sessionSearch')).not.toBeFocused()
   await page.locator('.session-item').first().evaluate((el) => { (el as HTMLElement).focus() })
   await expect(page.locator('.session-item').first()).not.toBeFocused()
   await page.locator('#btnSidebarEdgeToggle').click()
