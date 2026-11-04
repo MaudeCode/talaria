@@ -681,6 +681,26 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('TAL-1829: a URL the 300-character cut split before its @ leaks no credential; a short reason keeps its host', async () => {
+    const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: false, kind: 'standalone', activation: 'disabled', hooks: [] }
+    const cut = 'https://user:ordinary-passwo'
+    // As the Agent's record cuts it, as the sidecar's limit cuts it, and a short reason.
+    const reasons = [`${'x'.repeat(300 - cut.length - 1)} ${cut}`, `${'x'.repeat(300 - cut.length - 2)} ${cut}…`, 'build failed at https://index.example.test']
+    expect(reasons[0]).toHaveLength(300)
+    expect(reasons[1]).toHaveLength(300)
+    sidecar.respond('plugins.list', () => ({ plugins: reasons.map((reason, i) => ({ ...row, key: `p${i}`, disabled_reason: { kind: 'update' as const, reason } })), supported_hooks: [] }))
+    try {
+      const plugins = (await json(await s.get('/api/plugins'))).plugins as Json[]
+      for (const plugin of plugins.slice(0, 2)) {
+        expect(JSON.stringify(plugin.disabled_reason)).not.toContain('ordinary-passwo')
+        expect(JSON.stringify(plugin.disabled_reason)).toContain('xxx')
+      }
+      expect(plugins[2]?.disabled_reason).toEqual({ kind: 'update', reason: reasons[2] })
+    } finally {
+      sidecar.respond('plugins.list', undefined)
+    }
+  })
+
   it('TAL-1275: exposes cached plugin updates and forwards consent under the selected profile', async () => {
     const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: false, kind: 'standalone', activation: 'disabled', hooks: [] }
     const calls: unknown[] = []
