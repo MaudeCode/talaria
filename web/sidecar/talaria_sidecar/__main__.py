@@ -27,6 +27,24 @@ def _claim_stdout():
     return os.fdopen(rpc_fd, "wb", buffering=0)
 
 
+def _apply_resource_limits() -> None:
+    """Cap glibc malloc arenas and raise the open-file soft limit, as the Agent's own servers do (Agent 0.22.6+).
+
+    glibc never unmaps an arena, so this must run before the first worker thread exists. The helpers
+    read the profile config themselves, are no-ops off Linux/glibc, and must never stop startup;
+    older Agents have no ``hermes_cli.resource_limits`` at all.
+    """
+    try:
+        from hermes_cli import resource_limits
+    except Exception:
+        return
+    for name in ("apply_malloc_arena_max", "apply_nofile_soft_limit"):
+        try:
+            getattr(resource_limits, name)()
+        except Exception:
+            logging.getLogger("talaria_sidecar").debug("%s failed", name, exc_info=True)
+
+
 def main() -> int:
     rpc_out = _claim_stdout()
     logging.basicConfig(stream=sys.stderr, level=os.environ.get("TALARIA_SIDECAR_LOG_LEVEL", "INFO"), format="[sidecar] %(levelname)s %(name)s: %(message)s")
@@ -38,6 +56,7 @@ def main() -> int:
         # Append, never prepend: the Agent venv's site-packages must win over
         # any same-named module in the checkout (api/config.py has the history).
         sys.path.append(str(runtime.agent_dir))
+    _apply_resource_limits()
     server = RpcServer(build_methods(runtime), stdout=rpc_out, max_calls=int(os.environ.get("TALARIA_SIDECAR_MAX_CALLS") or DEFAULT_MAX_CALLS))
     try:
         return server.serve_forever()
