@@ -1,1 +1,12 @@
-{"skip": "Compiler language mode and concurrency annotations only; no app behavior changes."}
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria now builds with Swift's strictest concurrency checks, which stop a whole class of threading crashes before a release.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
