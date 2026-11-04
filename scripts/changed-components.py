@@ -40,7 +40,6 @@ WORKFLOWS = {
     "relay-bridge-image.yml": {"relay", "tooling"},
     "repository-tooling.yml": {"tooling"},
     "web-docs.yml": {"tooling"},
-    "fuzz-soak.yml": {"app", "tooling"},
     "release.yml": {"tooling"},
     "release-set.yml": {"tooling"},
     "nightly.yml": {"tooling"},

@@ -1,14 +1,12 @@
 # The Nightly channel (TAL-1569). Once a day the newest main commit with green CI becomes Nightly: Web's forward-only
 # `nightly` GHCR tag moves to the newest Experimental build on its history, and an App that changed since the last
 # Nightly uploads to TestFlight as the next patch after Stable. The `nightly` git tag records the last completed
-# source; a failed run leaves it, so the next run retries.
+# source; a failed run leaves it, so the next run retries. The external GitHub Scheduler service
+# (MaudeCode/github-scheduler) owns the daily trigger.
 
 name: Nightly
 
 on:
-  schedule:
-    - cron: "7 3 * * *"
-      timezone: "America/New_York"
   workflow_dispatch:
 
 permissions:

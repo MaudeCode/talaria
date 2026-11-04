@@ -78,7 +78,6 @@ dependency:
 | `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on pull requests, main pushes and at release |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test); a release's hosted-tests call leaves it to `contracts` |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
-| `fuzz-soak.yml` | `soak` | `swift test` for TalariaKit's fuzz soak class |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
 | `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
@@ -306,10 +305,9 @@ the `experimental` and `nightly` targets. The `web-experimental.yml` workflow ru
 passing `main` push that selects a Web suite (`web_server`, `web_frontend`, or `web_sidecar`), which shared contract
 changes also select; only `advance` is serialized.
 
-The Nightly channel sits between Experimental and Stable. `nightly.yml` targets 03:07 `America/New_York` daily
-(and also accepts dispatch), preserving local time across daylight saving changes. An external T3 task checks at 03:37 Eastern and dispatches the workflow on `main` only
-when that day's Nightly run is missing and no earlier Nightly is still active. Queued runs count as present; API
-lookup failures never trigger a dispatch. Both schedules require their scheduler to be available.
+The Nightly channel sits between Experimental and Stable. `nightly.yml` has no GitHub cron: the external GitHub
+Scheduler service (`MaudeCode/github-scheduler`) dispatches it daily on `main`, and that service holds the schedule. A
+manual dispatch on `main` works the same way.
 
 For each run, `nightly.py select` picks the newest `main` commit whose push CI passed after the `nightly` git tag, and does
 nothing new when there is none, or while a production cutover is queued or running. `experimental.py advance SOURCE
@@ -340,7 +338,7 @@ the Info.plists with the live fixture and re-signs before testing (TAL-414).
 Measured locally on `fa370fac`, the gate took 80 s instead of 126 s, and
 `test-ios` 13 s instead of 61 s; on a hosted runner the build, about 7.5 of the
 13 minutes, no longer waits for the probe and the boot. `--package-suite` also
-runs every TalariaKit test but the fuzz soak against the live fixture.
+runs every TalariaKit test against the live fixture.
 
 ## Root workflow
 

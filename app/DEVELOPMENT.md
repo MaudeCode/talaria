@@ -92,7 +92,7 @@ Function coverage counts closures, so it trails line coverage. Local runs stay
 uninstrumented; to reproduce the report:
 
 ```zsh
-swift test --package-path TalariaKit --enable-code-coverage --skip UntrustedInputFuzzSoakTests
+swift test --package-path TalariaKit --enable-code-coverage
 ci/package-coverage
 ```
 
