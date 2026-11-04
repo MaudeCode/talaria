@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A full-screen program in the Web terminal now redraws when you reload the page or reopen the panel after a lot of output, instead of showing fragments until you resize the window.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
