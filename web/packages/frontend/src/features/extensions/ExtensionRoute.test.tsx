@@ -12,10 +12,8 @@ import { keys } from '../../api/queryKeys'
 import { EXTENSION_PROTOCOL_VERSION, type ExtensionManifest } from '../../contracts/extension'
 
 vi.mock('../../shell/AppShell', () => ({
-  AppShell: ({ children }: { children: ReactNode }) => <>{children}</>,
   HubPage: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
-vi.mock('../sessions/SessionListPanel', () => ({ SessionListPanel: () => null }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn(), Link: ({ children }: { children: ReactNode }) => <a>{children}</a> }))
 
 function manifest(version: string): ExtensionManifest {

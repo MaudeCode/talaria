@@ -7,6 +7,7 @@ import { legacyHashRoute } from '../contracts/url'
 import { checkExternalLink } from '../api/endpoints'
 import { LinkCheckContext } from '../features/chat/render/LinkCheckContext'
 import { ExtensionTtsHosts } from '../features/extensions/ExtensionRoute'
+import { AppShell } from '../shell/AppShell'
 
 /**
  * Authenticated application layout. Authorization is server-owned (the shell
@@ -32,5 +33,5 @@ function AppLayout() {
   useEffect(() => startPresence(), [])
   // Signed-in chat Markdown asks the server whether a link skips the warning.
   // Extension TTS engines stay registered on every page, not only while their panel is open.
-  return <LinkCheckContext value={checkExternalLink}><Outlet /><ExtensionTtsHosts /></LinkCheckContext>
+  return <LinkCheckContext value={checkExternalLink}><AppShell><Outlet /></AppShell><ExtensionTtsHosts /></LinkCheckContext>
 }

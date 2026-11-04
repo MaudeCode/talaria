@@ -45,7 +45,8 @@ it('counts shared static imports and styles once, follows cycles, and excludes d
 
 it('SessionListPanel ships React Compiler output', () => {
   const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
-  const chunks = Object.values<{ file: string }>(manifest).filter(({ file }) => /\/SessionListPanel-[^/]+\.js$/.test(file))
+  // The panel shares the shell's chunk; its list's element id survives minification.
+  const chunks = Object.values<{ file: string }>(manifest).filter(({ file }) => file.endsWith('.js')).map(({ file }) => readFileSync(resolve(clientDir, file), 'utf8')).filter((source) => source.includes('sessionList'))
   // Compiled components compare memo cache slots against this symbol; React DOM defines it in a different chunk.
-  expect(chunks.map(({ file }) => readFileSync(resolve(clientDir, file), 'utf8').includes('react.memo_cache_sentinel'))).toEqual([true])
+  expect(chunks.map((source) => source.includes('react.memo_cache_sentinel'))).toEqual([true])
 })

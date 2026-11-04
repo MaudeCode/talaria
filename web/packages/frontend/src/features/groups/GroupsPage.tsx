@@ -7,7 +7,7 @@ import * as api from '../../api/endpoints'
 import { openGroupStream } from '../../api/sse'
 import { useSettingsQuery } from '../../app/queries'
 import { useBootstrap } from '../../app/bootstrap'
-import { AppShell, HubPage, MAIN_VIEW } from '../../shell/AppShell'
+import { HubPage, MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { BackButton, Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
@@ -60,7 +60,7 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
       else if (result.outcome === 'unknown') showErrorToast(new Error(m.group_unknown()))
     }, (error: unknown) => { if (navigation.current === revision) { setProvisional(null); if (isDefiniteRefusal(error)) select(); showErrorToast(error) } })
   }
-  return <AppShell sidebar={null} hub showing="groups">
+  return <>
     {roomId ? <Discussion key={`${bootstrap.profile?.name}:${roomId}`} roomId={roomId} provisionalName={provisional?.id === roomId ? provisional.name : undefined} onBack={() => select()} onDisband={() => {
       qc.setQueryData<GroupCatalog>(catalogKey, (current) => current ? { ...current, rooms: current.rooms.filter((room) => room.id !== roomId) } : current)
       select()
@@ -84,7 +84,7 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
         <Button type="submit" disabled={!name.trim() || members.length < 2 || members.length > 6}>{m.group_create()}</Button>
       </form>
     </Dialog>
-  </AppShell>
+  </>
 }
 
 function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: string; provisionalName: string | undefined; onBack: () => void; onDisband: () => () => void }) {

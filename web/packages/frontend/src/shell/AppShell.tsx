@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useLocation, useParams, useSearch } from '@tanstack/react-router'
 import { Titlebar } from './Titlebar'
 import { Rail } from './Rail'
 import { Sidebar } from './Sidebar'
@@ -16,27 +17,38 @@ import { cn } from '../ui/cn'
 import { UpdateNotificationProvider } from '../features/notifications/UpdateNotificationCenter'
 import { FeedbackDialog } from '../features/settings/FeedbackDialog'
 import { WhatsNew } from '../features/whats-new/WhatsNew'
+import { SectionMenu } from '../features/settings/SettingsLayout'
+import { SessionListPanel } from '../features/sessions/SessionListPanel'
+import { panelForPath } from './nav'
 
-/** Titlebar + `.layout` (rail, sidebar, main) on the legacy island shell. Routes supply `sidebar` (null for pages without one; the phone drawer then only carries the nav) and render into `children`. */
-export function AppShell({ sidebar, children, title, subtitle, hub, showing }: { sidebar: ReactNode | null; children: ReactNode; title?: string; subtitle?: string; hub?: boolean; showing?: string }) {
+/** Titlebar + `.layout` (rail, sidebar, main) on the legacy island shell, mounted once by the authenticated layout. Its chrome follows the location; a page without a sidebar leaves the phone drawer only the nav. */
+export function AppShell({ children }: { children: ReactNode }) {
   useShortcuts()
+  const panel = useLocation({ select: (location) => panelForPath(location.pathname) })
+  const extensionId = useParams({ strict: false, select: (params) => params.extensionId })
+  const taskDetail = useSearch({ strict: false, select: (search) => !!search.job })
+  const sidebar = panel === 'settings' ? <SectionMenu /> : panel === 'chat' ? <SessionListPanel /> : null
+  // `hub` hides the shell's right panel, where a task's run output opens: only the Tasks list goes without one.
+  const hub = panel !== 'chat' && panel !== 'settings' && !(panel === 'tasks' && taskDetail)
+  const showing = panel === 'chat' ? undefined : panel
   const { collapsed } = useShellState()
   const isDesktop = useIsDesktop()
   const manifests = useExtensionManifests()
   useEffect(() => {
     if (manifests.data) { registerExtensionSkins(manifests.data.manifests); reapplyExtensionSkin() }
   }, [manifests.data])
+  const subtitle = extensionId && (manifests.data?.manifests.find((manifest) => manifest.id === extensionId)?.name ?? extensionId)
   // The html attribute is the pre-paint marker (prepaint.js/boot.ts); its CSS has no transition. Once the shell
   // owns the state through .layout.sidebar-collapsed the marker goes, so collapsing animates like expanding.
   useEffect(() => { delete document.documentElement.dataset.sidebarCollapsed }, [])
   useEffect(() => {
-    document.documentElement.classList.toggle('hub-active', !!hub)
+    document.documentElement.classList.toggle('hub-active', hub)
     return () => document.documentElement.classList.remove('hub-active')
   }, [hub])
   return (
     <TooltipProvider>
       <UpdateNotificationProvider>
-        <Titlebar {...(title !== undefined ? { title } : {})} {...(subtitle !== undefined ? { subtitle } : {})} />
+        <Titlebar subtitle={subtitle} />
         <div className={cn('layout flex w-full flex-[1_1_auto] min-h-0 gap-0 p-0 bg-(--canvas) max-[641px]:overflow-x-clip max-[641px]:box-border max-[641px]:pb-[calc(56px+env(safe-area-inset-bottom,0px))]', collapsed && 'sidebar-collapsed')}>
           <Rail hasSidebar={sidebar !== null} />
           {(sidebar !== null || !isDesktop) && <Sidebar panel={sidebar} />}
