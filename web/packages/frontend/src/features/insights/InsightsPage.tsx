@@ -80,7 +80,7 @@ export function InsightsPage() {
             ))}
           </div>
           {tab === 'quotas' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_percentage()} <Select value={percentMode} aria-label={m.insights_percentage()} onValueChange={(v) => choosePercentMode(toQuotaPercentMode(v))}>{QUOTA_PERCENT_MODES.map((k) => <option key={k} value={k}>{k === 'used' ? m.provider_quota_metric_used() : m.provider_quota_metric_remaining()}</option>)}</Select></label>}
-          {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
+          {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} aria-label={m.insights_period()} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
         </>
       }
     >
