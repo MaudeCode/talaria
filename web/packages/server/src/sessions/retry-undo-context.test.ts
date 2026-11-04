@@ -85,6 +85,17 @@ describe('retry and undo cut the model context at the selected turn (TAL-1027)',
     }
   })
 
+  it('masks a credential in a withheld prompt on Retry and in every Undo preview, as the transcript does (TAL-1824)', async () => {
+    const secret = 'ghp_abcdefghij0123456789'
+    const withheld = { role: 'user', content: '[Message withheld: a pre_llm_call policy hook blocked it.]', display_metadata: { withheld_prompt: `key ${secret}` }, timestamp: 1 }
+    const retried = await (await post('/api/session/retry', { session_id: await seeded([withheld], [withheld]) })).json() as Json
+    expect(retried).toMatchObject({ ok: true, last_user_text: 'key ghp_ab...6789', last_user_prompt: 'key ghp_ab...6789' })
+    for (const row of [withheld, { role: 'user', content: `key ${secret}`, timestamp: 1 }]) {
+      const undone = await (await post('/api/session/undo', { session_id: await seeded([row], [row]) })).json() as Json
+      expect(undone).toMatchObject({ ok: true, removed_preview: 'key ghp_ab...6789' })
+    }
+  })
+
   it('removes a turn the server just settled without clearing the earlier context', async () => {
     const sid = await seeded(DISPLAY.slice(0, 2), DISPLAY.slice(0, 2))
     await afterReload(sid)

@@ -2808,7 +2808,9 @@ export class SessionService {
       // and the prompt as typed. The attached-files line is the server's only when such files exist; otherwise the user
       // typed it. Nothing to resend fails before the exchange is removed.
       const prompt = normalizeUserDisplay(history[lastUser]!)
-      const lastUserText = extractText(prompt.content)
+      const shownText = extractText(prompt.content)
+      // A withheld prompt leaves masked, as the transcript shows it. An ordinary prompt's raw text is what Retry resends (TAL-1881).
+      const lastUserText = withheldPromptText(history[lastUser]) === null ? shownText : str(redactText(shownText, this.deps.redactEnabled()))
       const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
       const lastUserPrompt = stripWorkspacePrefix(lastUserAttachments.length ? stripAttachedFilesMarker(lastUserText) : lastUserText, true)
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
@@ -2828,7 +2830,7 @@ export class SessionService {
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'Nothing to undo.' }
-      const removedText = extractText(normalizeUserDisplay(history[lastUser])?.content)
+      const removedText = str(redactText(extractText(normalizeUserDisplay(history[lastUser])?.content), this.deps.redactEnabled()))
       const removed = history.length - lastUser
       shrinkTo(s, lastUser, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
