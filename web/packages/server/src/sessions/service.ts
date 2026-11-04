@@ -30,7 +30,7 @@ import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { isOrphanPrunableSource } from './source-kind.js'
@@ -2807,7 +2807,7 @@ export class SessionService {
       // What a client resends (TAL-515): the files that reached the model, which only ever got attachments with a path,
       // and the prompt as typed. The attached-files line is the server's only when such files exist; otherwise the user
       // typed it. Nothing to resend fails before the exchange is removed.
-      const prompt = history[lastUser]!
+      const prompt = normalizeUserDisplay(history[lastUser]!)
       const lastUserText = extractText(prompt.content)
       const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
       const lastUserPrompt = stripWorkspacePrefix(lastUserAttachments.length ? stripAttachedFilesMarker(lastUserText) : lastUserText, true)
@@ -2828,7 +2828,7 @@ export class SessionService {
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'Nothing to undo.' }
-      const removedText = extractText(history[lastUser]?.content)
+      const removedText = extractText(normalizeUserDisplay(history[lastUser])?.content)
       const removed = history.length - lastUser
       shrinkTo(s, lastUser, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
@@ -3635,7 +3635,7 @@ function identityKey(v: unknown): string | null {
 function rowSignature(row: unknown): string | null {
   if (!isDict(row)) return null
   const field = (v: unknown): string => (!pyTruthy(v) ? '' : typeof v === 'string' ? v : sortedJson(v))
-  return JSON.stringify([field(row.role), field(row.content), field(row.tool_call_id), field(row.tool_use_id), field(row.tool_name || row.name), field(row.tool_calls)])
+  return JSON.stringify([field(row.role), field(withheldPromptText(row) ?? row.content), field(row.tool_call_id), field(row.tool_use_id), field(row.tool_name || row.name), field(row.tool_calls)])
 }
 
 /** First index in sorted `positions` whose value is `>= start`. */
