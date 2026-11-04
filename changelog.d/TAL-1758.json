@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Delegated work in a chat's activity now shows its goals or subagent action instead of an unnamed Delegate row.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -66,6 +66,51 @@ describe('toolDisplay', () => {
     expect(toolDisplay('browser_exec', { code: '\n\n  goto("https://x")\n  print(title())', session: ' ' })).toEqual({ kind: 'web', target: 'goto("https://x")', focus_path: null })
   })
 
+  it.each([
+    ['one goal', { goal: 'Audit auth' }, 'Audit auth'],
+    ['a spawn action with a goal', { action: 'spawn', goal: 'Audit auth' }, 'Audit auth'],
+    ['a batch', { tasks: [{ goal: 'a' }, { goal: 'b' }, { goal: 'c' }] }, 'a · b · c'],
+    ['a one-item batch', { tasks: [{ goal: 'Audit auth', context: 'background' }] }, 'Audit auth'],
+    ['a listing', { action: 'list' }, 'list'],
+    ['a message to a subagent', { action: 'message', subagent_id: 'sa_1' }, 'message sa_1'],
+    ['a control action ignoring its goal', { action: 'stop', subagent_id: 'sa_1', goal: 'ignored' }, 'stop sa_1'],
+    ['a multi-line goal', { goal: 'First line\nSecond line' }, 'First line'],
+    ['multi-line goals in a batch', { tasks: [{ goal: 'One\nmore' }, { goal: 'Two\nmore' }] }, 'One · Two'],
+    ['goals that repr with quotes and escapes', { tasks: [{ goal: "it's" }, { goal: `say "it's"` }] }, `it's · say "it's"`],
+    ['a value that only reads like a goal key', { tasks: [{ context: "'goal': 'decoy'", goal: 'real' }] }, 'real'],
+    ['a non-string goal', { tasks: [{ goal: 42 }, { goal: 'real' }] }, 'real'],
+    ['an empty batch', { tasks: [] }, ''],
+    ['its batch over a goal, as the Agent runs it', { goal: 'ignored', tasks: [{ goal: 'real' }] }, 'real'],
+    ['its goal beside an empty batch', { tasks: [], goal: 'real' }, 'real'],
+    ['a tasks value sent as JSON text', { tasks: '[{"goal": "a"}, {"goal": "b"}]' }, 'a · b'],
+    ['JSON text with Unicode escapes', { tasks: String.raw`[{"goal": "caf\u00e9 \ud83d\ude00"}]` }, 'café 😀'],
+    ['JSON text cut inside a surrogate pair', { tasks: String.raw`[{"goal": "a\ud83d...` }, 'a�...'],
+    ['a literal backslash-u in a goal', { tasks: [{ goal: String.raw`C:\users` }] }, String.raw`C:\users`],
+    ['an action in any case', { action: ' LIST ' }, 'list'],
+  ])('names a delegate_task row by %s (TAL-1758)', (_, args, target) => {
+    expect(toolDisplay('delegate_task', args)).toEqual({ kind: 'delegate', target, focus_path: null })
+  })
+
+  it('reads goals from a snapshot-capped tasks value within the target cap (TAL-1758)', () => {
+    const g = 'g'.repeat(50)
+    const h = 'h'.repeat(50)
+    const tasks = [{ goal: g }, { goal: h }, { goal: 'i'.repeat(50) }]
+    // The 120-point snapshot cap falls inside the second goal, whether the call is raw or already a stored snapshot.
+    const expected = `${g} · ${'h'.repeat(45)}...`
+    expect(toolDisplay('delegate_task', { tasks }).target).toBe(expected)
+    expect(toolDisplay('delegate_task', { tasks: `[{'goal': '${g}'}, {'goal': '${'h'.repeat(45)}...` }).target).toBe(expected)
+    // One capped goal keeps its text; a cut before any goal names nothing.
+    expect(toolDisplay('delegate_task', { tasks: [{ goal: 'x'.repeat(300) }] }).target).toBe(`${'x'.repeat(109)}...`)
+    expect(toolDisplay('delegate_task', { tasks: [{ context: 'c'.repeat(300), goal: 'late' }] }).target).toBe('')
+    // The snapshot cap holds every delegate target below TOOL_TARGET_MAX, by code point.
+    expect(toolDisplay('delegate_task', { goal: '😀'.repeat(300) }).target).toBe(`${'😀'.repeat(120)}...`)
+  })
+
+  it('leaves subagent progress on its own target (TAL-1758)', () => {
+    expect(toolDisplay('subagent_progress', { goal: 'Audit auth', tasks: [{ goal: 'a' }], action: 'list' }).target).toBe('')
+    expect(toolDisplay('subagent_progress', { task: 'Summarize' }).target).toBe('Summarize')
+  })
+
   it('names a read or write call\'s workspace-relative file as its focus path (TAL-1458)', () => {
     expect(toolDisplay('read_file', { path: 'src/a.ts' }).focus_path).toBe('src/a.ts')
     expect(toolDisplay('write_file', { file_path: './web/b.ts', content: 'x' }).focus_path).toBe('web/b.ts')
