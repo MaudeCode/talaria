@@ -774,8 +774,10 @@ export const toolsRouter = os.router({
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
       // So does an OAuth status failure.
       const oauth = await pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() })
-      const plugins = result.plugins.map(({ update_available, latest_revision, ...plugin }) => ({
+      const plugins = result.plugins.map(({ update_available, latest_revision, disabled_reason, ...plugin }) => ({
         ...plugin,
+        // TAL-1829: the Agent's reason quotes installer output, which can hold an index URL's credentials.
+        ...(disabled_reason ? { disabled_reason: { ...disabled_reason, reason: redactString(disabled_reason.reason, ctx.deps.sessions.deps.redactEnabled()) } } : {}),
         ...(update_available === undefined ? {} : { update: { available: update_available, ...(latest_revision ? { latest_revision } : {}) } }),
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
         ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),

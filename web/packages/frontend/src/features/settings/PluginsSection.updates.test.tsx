@@ -32,6 +32,15 @@ it('asks for scan consent, suppresses duplicate requests, and refreshes after a 
   await waitFor(() => expect(api.fetchPlugins).toHaveBeenCalledTimes(2))
 })
 
+it('TAL-1829: says why an update turned a plugin off, on that row only', async () => {
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'probe', name: 'Probe', enabled: false, disabled_reason: { kind: 'update', reason: 'its dependencies could not be prepared' } }, { key: 'legacy', name: 'Legacy', enabled: false }] })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
+  const row = (await screen.findByText('Probe')).closest('li')!
+  expect(row).toHaveTextContent('Turned off by the last update: its dependencies could not be prepared; retried on the next update')
+  expect(screen.getByText('Legacy').closest('li')).not.toHaveTextContent('Turned off by the last update')
+})
+
 it('shows a dangerous scan without an override action', async () => {
   vi.mocked(api.updatePlugin).mockResolvedValue({ key: 'probe', status: 'blocked', verdict: 'dangerous', findings: 'Agent scan: credential exfiltration' })
   setup()

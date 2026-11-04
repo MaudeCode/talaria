@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Plugins settings says why a Hermes Agent update turned a plugin off and that the next update retries it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

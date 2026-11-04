@@ -667,6 +667,20 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('TAL-1829: carries the update reason on its row with credentials redacted', async () => {
+    const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: false, kind: 'standalone', activation: 'disabled', hooks: [] }
+    sidecar.respond('plugins.list', () => ({ plugins: [{ ...row, disabled_reason: { kind: 'update', reason: 'build failed at https://user:synthetic-secret@index.example.test/simple' } }, { ...row, key: 'by-hand' }], supported_hooks: [] }))
+    try {
+      const plugins = (await json(await s.get('/api/plugins'))).plugins as Json[]
+      const shown = JSON.stringify(plugins[0]?.disabled_reason)
+      expect(shown).toContain('{"kind":"update","reason":"build failed at ')
+      expect(shown).not.toContain('synthetic-secret')
+      expect(plugins[1]?.disabled_reason).toBeUndefined()
+    } finally {
+      sidecar.respond('plugins.list', undefined)
+    }
+  })
+
   it('TAL-1275: exposes cached plugin updates and forwards consent under the selected profile', async () => {
     const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: false, kind: 'standalone', activation: 'disabled', hooks: [] }
     const calls: unknown[] = []

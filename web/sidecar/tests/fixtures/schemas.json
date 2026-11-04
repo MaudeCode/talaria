@@ -1437,6 +1437,23 @@
             },
             "latest_revision": {
               "type": "string"
+            },
+            "disabled_reason": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "update"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "reason"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

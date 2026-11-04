@@ -651,6 +651,18 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
     return {"key": found[5], "status": "updated"}
 
 
+def _update_disabled_reasons() -> dict:
+    """``plugins.disabled_by_update`` reasons (Agent v0.22.6+) for plugins still in ``plugins.disabled``, the Agent doctor's own gate."""
+    from hermes_cli.config import load_config
+
+    plugins = (load_config() or {}).get("plugins")
+    record = plugins.get("disabled_by_update") if isinstance(plugins, dict) else None
+    if not isinstance(record, dict):
+        return {}
+    disabled = plugins.get("disabled") if isinstance(plugins.get("disabled"), list) else []
+    return {name: _clean_text(entry.get("reason"), 300) for name, entry in record.items() if name in disabled and isinstance(entry, dict)}
+
+
 def plugin_visibility(selected_providers: dict) -> dict:
     """Sanitized plugin/hook rows for Settings (Python ``_plugin_visibility_payload``); no paths or callbacks."""
     try:
@@ -666,6 +678,7 @@ def plugin_visibility(selected_providers: dict) -> dict:
         from hermes_cli.plugins_provenance import read_sidecar_rows
         from hermes_constants import get_hermes_home
         updates = modules[2](read_sidecar_rows(get_hermes_home() / "plugins"))
+    update_disabled = _update_disabled_reasons()
     rows = []
     for key, loaded in sorted((getattr(manager, "_plugins", {}) or {}).items(), key=lambda item: str(item[0])):
         manifest = getattr(loaded, "manifest", None)
@@ -704,6 +717,11 @@ def plugin_visibility(selected_providers: dict) -> dict:
             row["update_available"] = bool(revision)
             if revision:
                 row["latest_revision"] = revision
+        # The record may spell the plugin any way a plugins list can (pm.plugins_state.plugin_spellings).
+        spellings = (plugin_key, plugin_key.rsplit("/", 1)[-1], name, pathlib.Path(str(getattr(manifest, "path", "") or "")).name)
+        reason = next(filter(None, map(update_disabled.get, spellings)), "")
+        if reason and not enabled:
+            row["disabled_reason"] = {"kind": "update", "reason": reason}
         rows.append(row)
     return {"plugins": rows, "supported_hooks": list(PLUGIN_VISIBILITY_HOOKS)}
 

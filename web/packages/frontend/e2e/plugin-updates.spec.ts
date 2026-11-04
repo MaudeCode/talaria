@@ -61,3 +61,20 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
   await expect(consent).toHaveCount(0)
   await page.screenshot({ path: `/tmp/TAL-1275-evidence/blocked-${testInfo.project.name}.png` })
 })
+
+test('TAL-1829: a long update reason stays on its plugin row without widening the page', async ({ page }, testInfo) => {
+  const reason = `the dependency environment no longer builds with it: ${'no-solution-for-synthetic-package=='.repeat(8)}`
+  await page.route('**/api/plugins', (route) => route.fulfill({ json: {
+    read_only: false,
+    plugins: [
+      { key: 'weather', name: 'Weather', version: '1.0.0', description: 'Local weather tools', enabled: false, activation: 'disabled', disabled_reason: { kind: 'update', reason } },
+      { key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: false, activation: 'disabled' },
+    ],
+  } }))
+  await page.goto('/settings/plugins')
+  await settle(page)
+  const section = page.locator('[data-section="plugins"]')
+  await expect(section.locator('li', { hasText: 'Weather' })).toContainText('Turned off by the last update: the dependency environment no longer builds with it')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`after-${testInfo.project.name}.png`) })
+})
