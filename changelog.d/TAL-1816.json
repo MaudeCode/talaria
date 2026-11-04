@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Skill pages, Group Chat and Copy on messages, shared chats, session links, task diagnostics and the terminal now work when Talaria Web is opened over plain HTTP on a local network.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

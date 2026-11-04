@@ -255,6 +255,16 @@
             "object": "globalThis",
             "property": "fetch",
             "message": "Use the typed client in src/api/client.ts"
+          },
+          {
+            "object": "crypto",
+            "property": "randomUUID",
+            "message": "Plain-HTTP origins have no crypto.randomUUID. Use randomUuid from src/lib/randomHex.ts"
+          },
+          {
+            "object": "navigator",
+            "property": "clipboard",
+            "message": "Plain-HTTP origins have no navigator.clipboard. Use copyText or copyWithToast from src/lib/clipboard.ts"
           }
         ],
         "no-restricted-globals": [

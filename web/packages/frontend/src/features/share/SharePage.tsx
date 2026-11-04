@@ -3,7 +3,7 @@ import { Copy } from 'lucide-react'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { appUrl } from '../../lib/appRoot'
-import { showToast } from '../toast/toast'
+import { copyWithToast } from '../../lib/clipboard'
 import { Toaster } from '../toast/Toaster'
 import { m } from '../../paraglide/messages.js'
 import { SharedTranscript } from './SharedTranscript'
@@ -13,9 +13,7 @@ export function SharePage({ token }: { token: string }) {
   const share = useQuery({ queryKey: keys.share(token), queryFn: () => api.fetchShare(token), retry: false })
   const data = share.data?.share
   const title = data?.title ?? (share.isError ? m.share_unavailable_title() : m.loading())
-  const copy = () => {
-    void navigator.clipboard.writeText(window.location.href).then(() => showToast(m.copied()))
-  }
+  const copy = () => { copyWithToast(window.location.href) }
   return (
     <div className="share-shell min-h-full bg-bg text-text">
       <header className="share-topbar sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-sidebar px-5 py-4 max-[720px]:flex-col max-[720px]:items-start max-[720px]:px-3.5">

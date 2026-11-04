@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SkillRevisionsSchema, type SkillReplayJob, type SkillReplayPlan } from '@maudecode/talaria-web-contracts'
 import fixture from '../../../../../../contracts/fixtures/skill-revisions.json'
 import planFixture from '../../../../../../contracts/fixtures/skill-replay-plan.json'
@@ -23,6 +23,8 @@ beforeEach(() => {
   vi.mocked(api.startSkillReplay).mockReset().mockResolvedValue(jobFixture as unknown as SkillReplayJob)
   vi.mocked(api.cancelSkillReplay).mockReset()
 })
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 async function openHistory() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -80,6 +82,15 @@ it('asks consent for the exact revisions, cases, provider and budget before admi
   expect(api.startSkillReplay).toHaveBeenCalledTimes(1)
   const request = vi.mocked(api.startSkillReplay).mock.calls[0]![0]
   expect(request).toEqual({ request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) as unknown, name: 'demo', baseline: plan.revisions[0]!.id, candidate: plan.revisions[1]!.id, case_ids: plan.cases.map((row) => row.id), route: plan.route, max_cost_usd: 0.5 })
+})
+
+it('opens a skill and admits a replay on a plain-HTTP origin, where crypto.randomUUID does not exist', async () => {
+  const secure = globalThis.crypto
+  vi.stubGlobal('crypto', { getRandomValues: secure.getRandomValues.bind(secure) })
+  await openHistory()
+  await userEvent.click(await screen.findByRole('button', { name: 'Replay saved checks' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Replay' }))
+  expect(vi.mocked(api.startSkillReplay).mock.calls[0]![0].request_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 })
 
 it('reuses the request id after an uncertain admission so a retry cannot start a second replay', async () => {
