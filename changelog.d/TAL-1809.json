@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web now refuses media links to the Agent's secret caches, OAuth and pairing files, MCP tokens, browser profile, and Kanban database, in every profile.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

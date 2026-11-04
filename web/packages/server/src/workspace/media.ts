@@ -351,8 +351,9 @@ export interface MediaPolicyDeps<T = string | null | Promise<string | null>> {
   activeWorkspace: () => T
 }
 
-const DENY_FILENAMES = new Set(['settings.json', 'state.db', 'state.db-wal', 'state.db-shm', 'auth.json', 'auth.lock', 'config.yaml', 'config.yml', '.env', '.signing_key', '.pbkdf2_key', '.sessions.json', 'google_token.json', 'google_client_secret.json', 'gateway_state.json', 'channel_directory.json', 'jobs.json', 'passkeys.json', '.passkey_challenges.json', '.login_attempts.json'])
-const DENY_SUBDIRS = ['sessions', 'memories', 'cron', 'logs', 'checkpoints', 'backups', 'media_snapshots']
+const DENY_FILENAMES = new Set(['settings.json', 'state.db', 'state.db-wal', 'state.db-shm', 'state.db-journal', 'kanban.db', 'kanban.db-wal', 'kanban.db-shm', 'kanban.db-journal', 'auth.json', 'auth.lock', 'config.yaml', 'config.yml', '.env', '.signing_key', '.pbkdf2_key', '.sessions.json', 'google_token.json', 'google_client_secret.json', 'google_oauth.json', 'google_oauth_pending.json', '.anthropic_oauth.json', 'webhook_subscriptions.json', 'gateway_state.json', 'channel_directory.json', 'jobs.json', 'passkeys.json', '.passkey_challenges.json', '.login_attempts.json', 'bws_cache.json', 'bws_cache.enc.json', 'op_cache.json', 'photon-sidecar.json'])
+// `credentials` may be a file or a directory; the check below covers the path itself and anything inside it.
+const DENY_SUBDIRS = ['sessions', 'memories', 'cron', 'logs', 'checkpoints', 'backups', 'media_snapshots', 'credentials', 'pairing', 'mcp-tokens', 'webapp', 'browser-profile']
 const DENY_TMP_SUFFIXES = ['.sessions.tmp', '.login_attempts.tmp', '.passkeys.tmp', '.passkey_challenges.tmp']
 
 function norm(p: string): string {
