@@ -675,17 +675,22 @@ test('a sent message lands at its own height while a pinned transcript keeps its
   try {
     await page.goto(`/session/${sid}`)
     await expect(page.getByText('Earlier question 6', { exact: true })).toBeVisible()
-    // Sampled after each frame's layout, follow and paint: a message posted from a frame callback runs once it is drawn.
+    // Sampled after each frame's layout, follow and paint. A message posted from a frame callback usually runs once the
+    // frame is drawn, but a task already queued, such as the React commit for a streamed row, can run first. Reading
+    // scrollHeight then forces layout of a commit nobody has seen, before the ResizeObserver follow has run for it. So a
+    // sample is skipped when the DOM changed after its frame callback; the next frame draws that change with its follow.
     await page.evaluate(() => {
       const w = window as unknown as { samples: { below: number; user: number }[] }
       w.samples = []
       const scroller = document.getElementById('messages')!
+      let undrawn = false
+      new MutationObserver(() => { undrawn = true }).observe(scroller, { subtree: true, childList: true, characterData: true, attributes: true })
       const channel = new MessageChannel()
       channel.port1.onmessage = () => {
         const user = document.querySelector('[data-live-user]')
-        if (user) w.samples.push({ below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight, user: user.getBoundingClientRect().height })
+        if (user && !undrawn) w.samples.push({ below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight, user: user.getBoundingClientRect().height })
       }
-      const tick = () => { channel.port2.postMessage(0); requestAnimationFrame(tick) }
+      const tick = () => { undrawn = false; channel.port2.postMessage(0); requestAnimationFrame(tick) }
       requestAnimationFrame(tick)
     })
     await page.locator('#msg').fill(question)
