@@ -301,6 +301,8 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
   const profileLabel = (job.profile ?? '').trim() || m.cron_profile_server_default()
   const model = job.provider && job.model ? `${job.provider}/${job.model}` : job.model ?? job.provider ?? ''
   const contextFrom = contextFromList(job).map((ref) => jobs.find((j) => jobId(j) === ref)?.name || ref)
+  // A row the user just created has no server fields until the reread.
+  const unconfirmed = job.delivery_unconfirmed_platforms?.join(', ')
   const copyDiagnostics = () => { copyWithToast(cronDiagnostics(job), m.cron_diagnostics_copied()) }
   const toolbar = readOnly
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
@@ -339,6 +341,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
             {!readOnly && <div className="mt-2"><Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button></div>}
           </section>
         )}
+        {unconfirmed && <p role="status" className="text-xs text-warning">{m.cron_delivery_unconfirmed({ platforms: unconfirmed })}</p>}
         <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
           <section>
             <h2 className="mb-2 text-xs font-medium text-muted">{m.cron_schedule_preset_label()}</h2>

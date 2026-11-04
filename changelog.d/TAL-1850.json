@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Tasks page now says when a scheduled task's last delivery could not be confirmed, and on which platforms.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
