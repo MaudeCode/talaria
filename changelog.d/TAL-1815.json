@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On Linux, the Agent sidecar behind Talaria Web no longer grows in memory over long sessions and honors the Agent's memory-arena and open-file settings.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
