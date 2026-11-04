@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { showToast } from '../features/toast/toast'
 import { m } from '../paraglide/messages.js'
-import { copyText, copyWithToast } from './clipboard'
+import { copyText, copyWithToast, installClipboardShim } from './clipboard'
 
 vi.mock('../features/toast/toast', () => ({ showToast: vi.fn() }))
 
@@ -49,6 +49,14 @@ it.each([
   execCommand.mockImplementation(refuse)
   await expect(copyText('hello')).resolves.toBe(false)
   expect(document.querySelector('textarea')).toBeNull()
+})
+
+it('the startup shim copies through the textarea and rejects when the browser refuses', async () => {
+  installClipboardShim()
+  execCommand.mockReturnValue(true)
+  await expect(navigator.clipboard.writeText('hello')).resolves.toBeUndefined()
+  execCommand.mockReturnValue(false)
+  await expect(navigator.clipboard.writeText('hello')).rejects.toThrow('Copy refused')
 })
 
 it('turns a refused copy into an error toast instead of silence', async () => {

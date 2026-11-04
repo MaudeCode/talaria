@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, hideClipboardApi, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -79,17 +79,13 @@ test('right-click on a message opens its hover-bar actions, and Copy works from 
 test('Copy still reaches the clipboard on a plain-HTTP origin, where the Clipboard API does not exist', async ({ page, context }, info) => {
   test.skip(info.project.name !== 'desktop', 'right-click is the desktop route')
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  // 127.0.0.1 is a secure context, so hide the API the way http://<lan-ip> does and keep a private handle to read the result.
-  await page.addInitScript(() => {
-    ;(window as unknown as { realClipboard: Clipboard }).realClipboard = navigator.clipboard
-    Object.defineProperty(navigator, 'clipboard', { value: undefined })
-  })
+  const readClipboard = await hideClipboardApi(page)
   const { assistant } = await boot(page)
   const menu = page.getByRole('menu', { name: 'Message actions' })
   await assistant.locator('.msg-body').click({ button: 'right', position: { x: 6, y: 8 } })
   await menu.getByRole('menuitem', { name: 'Copy' }).click()
   await expect(page.getByText('Copied!', { exact: true })).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as { realClipboard: Clipboard }).realClipboard.readText())).toBe(ANSWER)
+  expect(await readClipboard()).toBe(ANSWER)
 })
 
 test('links and selected text inside a message keep the browser menu', async ({ page }, info) => {
