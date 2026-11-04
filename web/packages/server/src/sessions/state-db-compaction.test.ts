@@ -354,7 +354,7 @@ describe('micro-compacted user turns read as the originals the Agent displays (T
 
 describe('a compacted tool result reads as its archived original (TAL-1808)', () => {
   const sid = toolStub.sessionId
-  const seed = (db: DatabaseSync, stage: keyof typeof toolStub.snapshots): void => db.exec([...toolStub.schema, ...toolStub.snapshots[stage]].join('\n'))
+  const seed = (db: DatabaseSync, stage: keyof typeof toolStub.snapshots): void => { db.exec([...toolStub.schema, ...toolStub.snapshots[stage]].join('\n')) }
   const toolContents = (rows: Record<string, unknown>[]): unknown[] => rows.filter((m) => m.role === 'tool').map((m) => m.content)
 
   it.each(['compacted', 'twiceCompacted'] as const)('shows the original once on the tool card after %s, and the model keeps the stub', async (stage) => {
