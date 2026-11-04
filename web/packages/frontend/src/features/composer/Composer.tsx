@@ -23,6 +23,7 @@ import { useExecutionModesQuery, useTranscribeCapabilityQuery } from '../../app/
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
+import { isImeEnter } from '../../lib/isImeEnter'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
@@ -654,6 +655,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     wake()
+    if (isImeEnter(e)) return
     if (palette.handleKey(e, applySuggestion)) return
     if (e.key !== 'Enter') return
     // A clarification answer is short: Enter answers on every width, whatever the chat send-key rule.

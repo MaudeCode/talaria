@@ -8,6 +8,7 @@ import { IconButton } from '../../ui/Button'
 import { keys } from '../../api/queryKeys'
 import { usePromptAnswer } from './usePromptAnswer'
 import { cn } from '../../ui/cn'
+import { isImeEnter } from '../../lib/isImeEnter'
 
 // Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
 const interactiveTarget = [
@@ -46,7 +47,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
   useEffect(() => {
     if (dismissed || answered || !offersOnce) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.isComposing || e.repeat) return
+      if (e.key !== 'Enter' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || isImeEnter(e) || e.repeat) return
       if (e.composedPath().some((target) => target instanceof Element && target.closest(interactiveTarget))) return
       e.preventDefault()
       answerOnce()

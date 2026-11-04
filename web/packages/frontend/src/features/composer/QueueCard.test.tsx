@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueuedTurnsSchema } from '../../contracts/persisted'
 
@@ -8,6 +8,7 @@ vi.mock('../../api/endpoints', () => ({ rollbackUpload: vi.fn(() => Promise.reso
 import * as api from '../../api/endpoints'
 import { QueueCard } from './QueueCard'
 import type { QueuedTurn } from './queue'
+import { IME_ENTERS } from '../../test/fixtures'
 
 const turn = (id: string, text: string, attachments: QueuedTurn['attachments'] = []): QueuedTurn => ({ id, text, attachments, request: { profile: 'default' } })
 
@@ -103,6 +104,19 @@ describe('QueueCard (TAL-562)', () => {
     await userEvent.click(within(row('Second')).getByRole('button', { name: 'Edit queued message' }))
     expect(row('First, edited')).toBeDefined()
     expect(screen.getByRole('textbox', { name: 'Edit queued message' })).toHaveValue('Second')
+  })
+
+  it.each(IME_ENTERS)('keeps a queued edit open on an Enter committing a composition (%s), and a plain Enter then commits it (TAL-1860)', async (_, ime) => {
+    render(<Harness initial={[turn('1', 'First')]} />)
+    await userEvent.click(within(row('First')).getByRole('button', { name: 'Edit queued message' }))
+    const editor = screen.getByRole('textbox', { name: 'Edit queued message' })
+    await userEvent.clear(editor)
+    await userEvent.type(editor, '編集')
+    fireEvent.keyDown(editor, { key: 'Enter', ...ime })
+    expect(screen.getByRole('textbox', { name: 'Edit queued message' })).toHaveFocus()
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    expect(screen.queryByRole('textbox', { name: 'Edit queued message' })).not.toBeInTheDocument()
+    expect(row('編集')).toBeDefined()
   })
 
   it('restores any queue the composer can build, however long', () => {

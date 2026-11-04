@@ -11,7 +11,7 @@ import { ApiError } from '../../contracts/common'
 import { dispatch, getStreamState, resetStreamStoreForTests, getTurnIntent } from '../../stream/store'
 import { isTerminal, type LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './queue'
-import { deferred } from '../../test/fixtures'
+import { deferred, IME_ENTERS } from '../../test/fixtures'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
@@ -721,6 +721,44 @@ describe('Composer', () => {
     expect(within(card).getAllByText('summarize repo')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Background work · 2' })).toBeNull()
     expect(api.startBackground).toHaveBeenCalledOnce()
+  })
+
+  it.each(IME_ENTERS)('keeps the message on an Enter committing a composition (%s), and a plain Enter then sends it', async (_, ime) => {
+    vi.mocked(api.startChat).mockResolvedValue({ stream_id: 'run', session_id: 's1' })
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'こんにちは')
+    fireEvent.keyDown(box, { key: 'Enter', ...ime })
+    await act(() => Promise.resolve())
+    expect(api.startChat).not.toHaveBeenCalled()
+    expect(box).toHaveValue('こんにちは')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(api.startChat).toHaveBeenCalledOnce())
+  })
+
+  it.each(IME_ENTERS)('keeps a parked clarify answer on an Enter committing a composition (%s), and a plain Enter then answers', async (_, ime) => {
+    const step = { qid: 'q0', question: 'Which env?', choices: [], multi_select: false }
+    const send = vi.fn()
+    renderComposer(writable, null, noop, undefined, undefined, undefined, { clarify: { pending: { clarify_id: 'c1', question: step.question, steps: [step] }, step, index: 0, total: 1, inputRevision: 0, clearSelection: noop, selected: [], choose: noop, send } })
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, '本番')
+    fireEvent.keyDown(box, { key: 'Enter', ...ime })
+    expect(send).not.toHaveBeenCalled()
+    expect(box).toHaveValue('本番')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(send).toHaveBeenCalledWith('本番')
+  })
+
+  it.each(IME_ENTERS)('leaves the command palette alone on an Enter committing a composition (%s), and a plain Enter then picks', async (_, ime) => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'branch', aliases: [], handler: 'client', clients: ['web', 'ios'] }] })
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, '/bra')
+    await screen.findByRole('option', { name: /\/branch/ })
+    fireEvent.keyDown(box, { key: 'Enter', ...ime })
+    expect(box).toHaveValue('/bra')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(box).toHaveValue('/branch ')
   })
 
   // TAL-314: the server catalog resolves a typed alias and says which client runs each command.

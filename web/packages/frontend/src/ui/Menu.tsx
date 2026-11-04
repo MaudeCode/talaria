@@ -2,6 +2,7 @@ import { Menu as BaseMenu } from '@base-ui/react/menu'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import { useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import type { BaseUIEvent } from '@base-ui/react/types'
+import { isImeEnter } from '../lib/isImeEnter'
 import { cn } from './cn'
 
 export interface MenuProps {
@@ -88,7 +89,7 @@ function openingFocus(s: OpeningFocus, search: RefObject<HTMLElement | null> | u
       s.row = false
       const input = search?.current
       const { key } = event
-      if (!input || event.nativeEvent.isComposing) return
+      if (!input || isImeEnter(event)) return
       if (event.target === input) {
         // From search, ArrowDown and ArrowUp reach the first and last row; a row's focus moves Base UI's highlight with it.
         const rows = event.currentTarget.querySelectorAll<HTMLElement>('[role^=menuitem]:not([aria-disabled=true])')

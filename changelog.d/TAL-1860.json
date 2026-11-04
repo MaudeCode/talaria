@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Pressing Enter to accept a Japanese, Chinese or Korean input candidate in Talaria Web no longer sends the message, answers a clarification, picks a slash command or closes a queued edit.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
