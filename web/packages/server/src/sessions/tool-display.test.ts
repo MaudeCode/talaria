@@ -83,6 +83,9 @@ describe('toolDisplay', () => {
     ['its batch over a goal, as the Agent runs it', { goal: 'ignored', tasks: [{ goal: 'real' }] }, 'real'],
     ['its goal beside an empty batch', { tasks: [], goal: 'real' }, 'real'],
     ['a tasks value sent as JSON text', { tasks: '[{"goal": "a"}, {"goal": "b"}]' }, 'a · b'],
+    ['JSON text with Unicode escapes', { tasks: String.raw`[{"goal": "caf\u00e9 \ud83d\ude00"}]` }, 'café 😀'],
+    ['JSON text cut inside a surrogate pair', { tasks: String.raw`[{"goal": "a\ud83d...` }, 'a�...'],
+    ['a literal backslash-u in a goal', { tasks: [{ goal: String.raw`C:\users` }] }, String.raw`C:\users`],
     ['an action in any case', { action: ' LIST ' }, 'list'],
   ])('names a delegate_task row by %s (TAL-1758)', (_, args, target) => {
     expect(toolDisplay('delegate_task', args)).toEqual({ kind: 'delegate', target, focus_path: null })

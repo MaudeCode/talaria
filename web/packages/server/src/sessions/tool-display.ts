@@ -107,9 +107,14 @@ export function snapshotArgs(args: unknown): unknown {
 /** A `goal` key with its string value (group 3), else any other string, consumed whole so its text never reads as a key. */
 const TASK_GOAL = /(['"])goal\1:\s*(['"])((?:(?!\2)[^\\]|\\.)*)\2?|(['"])(?:(?!\4)[^\\]|\\.)*\4?/gs
 
-/** The first line of each `goal` in a `tasks` snapshot: `pythonStr` of the list, which the snapshot cap may cut mid-goal. */
+/** A string's backslash escapes, in `pythonStr` or JSON text. Well-formed, since the snapshot cap can split an escaped surrogate pair. */
+function unescapeGoal(goal: string): string {
+  return goal.replace(/\\(u[0-9a-fA-F]{4}|.)/gs, (_, c: string) => (c.length > 1 ? String.fromCharCode(parseInt(c.slice(1), 16)) : ({ b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' })[c] ?? c)).replace(/\p{Cs}/gu, '�')
+}
+
+/** The first line of each `goal` in a `tasks` snapshot: `pythonStr` of the list or JSON text, which the snapshot cap may cut mid-goal. */
 function taskGoals(tasks: string): string[] {
-  return Array.from(tasks.matchAll(TASK_GOAL), (m) => (m[3] ?? '').replace(/\\(.)/gs, (_, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? c).trim().split('\n')[0] ?? '').filter(Boolean)
+  return Array.from(tasks.matchAll(TASK_GOAL), (m) => unescapeGoal(m[3] ?? '').trim().split('\n')[0] ?? '').filter(Boolean)
 }
 
 /**
