@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Context7 API keys and Hermes Webapp sign-in links are now masked in chat transcripts and shared chats.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
