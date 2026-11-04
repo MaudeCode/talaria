@@ -357,11 +357,12 @@ const CLIENT_EVENT_FIELDS: Record<string, number> = { event: 64, source: 80, ses
 
 /**
  * TAL-1829: an Agent update reason as Settings shows it. It quotes installer output, which can hold an index URL's credentials,
- * and the Agent and sidecar both cut it at 300 characters. A cut can leave `https://user:passw` with no `@` for the redactor to
- * match, so a URL whose authority runs to the end of a reason at that length is dropped.
+ * and non-owners read this list, so `api_redact_enabled` does not turn this off. The Agent and sidecar both cut a reason at 300
+ * characters. A cut can leave `https://user:passw` with no `@` for the redactor to match, so a URL whose authority runs to the
+ * end of a reason at that length is dropped.
  */
-function pluginDisabledReason(reason: string, redact: boolean): string {
-  const masked = redactString(reason, redact)
+function pluginDisabledReason(reason: string): string {
+  const masked = redactString(reason, true)
   return reason.length < 300 ? masked : masked.replace(/\S*:\/\/[^\s/]*$/, '…')
 }
 
@@ -786,7 +787,7 @@ export const toolsRouter = os.router({
       const oauth = await pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() })
       const plugins = result.plugins.map(({ update_available, latest_revision, disabled_reason, ...plugin }) => ({
         ...plugin,
-        ...(disabled_reason ? { disabled_reason: { ...disabled_reason, reason: pluginDisabledReason(disabled_reason.reason, ctx.deps.sessions.deps.redactEnabled()) } } : {}),
+        ...(disabled_reason ? { disabled_reason: { ...disabled_reason, reason: pluginDisabledReason(disabled_reason.reason) } } : {}),
         ...(update_available === undefined ? {} : { update: { available: update_available, ...(latest_revision ? { latest_revision } : {}) } }),
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
         ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),

@@ -676,7 +676,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(shown).toContain('{"kind":"update","reason":"build failed at ')
       expect(shown).not.toContain('synthetic-secret')
       expect(plugins[1]?.disabled_reason).toBeUndefined()
+      // The setting is not a way to read an index credential.
+      await post(s, '/api/settings', { api_redact_enabled: false })
+      expect(JSON.stringify(((await json(await s.get('/api/plugins'))).plugins as Json[])[0]?.disabled_reason)).not.toContain('synthetic-secret')
     } finally {
+      await post(s, '/api/settings', { api_redact_enabled: true })
       sidecar.respond('plugins.list', undefined)
     }
   })
