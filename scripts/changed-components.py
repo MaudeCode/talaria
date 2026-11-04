@@ -184,9 +184,12 @@ def path_suites(path):
     return SUITES
 
 
-def affected(paths):
+def affected(paths, deleted_workflows=frozenset()):
+    """A deleted workflow can no longer run, so it needs only the tooling checks rather than an unknown path's full run."""
     paths = list(paths)
-    return set().union(*(path_suites(path) for path in paths)) if paths else set(SUITES)
+    if not paths:
+        return set(SUITES)
+    return set().union(*({"tooling"} if path in deleted_workflows else path_suites(path) for path in paths))
 
 
 def git(*args):
@@ -213,6 +216,11 @@ def git_diff(base, head, merge_base=False):
     if data and not data.endswith(b"\0"):
         raise ValueError("invalid NUL-delimited diff")
     return [os.fsdecode(path) for path in data.split(b"\0") if path]
+
+
+def git_deleted_workflows(base, head):
+    data = git("diff", "--no-renames", "--name-only", "--diff-filter=D", "-z", base, head, "--", ".github/workflows/")
+    return {os.fsdecode(path) for path in data.split(b"\0") if path}
 
 
 def check_diff(base, head, merge_base=False):
@@ -259,7 +267,7 @@ def main():
         if args.base:
             base, head = diff_refs(args.base, args.head, args.merge_base)
             paths = git_diff(base, head)
-            selected = affected(paths)
+            selected = affected(paths, git_deleted_workflows(base, head))
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("Could not classify the complete diff; running all suites.", file=sys.stderr)
         selected = SUITES

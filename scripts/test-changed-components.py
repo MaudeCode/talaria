@@ -226,6 +226,16 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(classify("--output=should-not-exist", head), ALL)
             self.assertFalse((root / "should-not-exist").exists())
 
+            # A new unknown workflow can run anything, but a deleted one can no longer run.
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / ".github/workflows/retired.yml").write_text("on: workflow_dispatch\n")
+            before_workflow = git("rev-parse", "HEAD")
+            with_workflow = commit("add a workflow")
+            self.assertEqual(classify(before_workflow, with_workflow), ALL)
+            git("rm", ".github/workflows/retired.yml")
+            without_workflow = commit("delete the workflow")
+            self.assertEqual(classify(with_workflow, without_workflow), {"tooling"})
+
             (root / "scripts").mkdir()
             (root / "scripts/new-unknown-tool.py").write_text("unknown shared tooling\n")
             unknown = commit("unknown shared tool")
