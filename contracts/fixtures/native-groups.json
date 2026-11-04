@@ -91,6 +91,7 @@
         "key": "1:event-1",
         "index": 1,
         "author": "",
+        "scheduled": false,
         "message": {
           "role": "user",
           "content": "Review the proposal",
@@ -105,6 +106,7 @@
         "key": "2:event-2",
         "index": 2,
         "author": "Writer",
+        "scheduled": false,
         "message": {
           "role": "assistant",
           "content": "Writer reply",
@@ -119,6 +121,7 @@
         "key": "3:event-3",
         "index": 3,
         "author": "Reviewer",
+        "scheduled": false,
         "message": {
           "role": "assistant",
           "content": "Reviewer reply",
@@ -128,9 +131,24 @@
           "attachments": []
         },
         "attachments": []
+      },
+      {
+        "key": "4:cron-post:event-4",
+        "index": 4,
+        "author": "Nightly",
+        "scheduled": true,
+        "message": {
+          "role": "assistant",
+          "content": "Nightly report",
+          "message_id": "cron-post:event-4",
+          "timestamp": 1004,
+          "_turn_id": "cron-post:event-4",
+          "attachments": []
+        },
+        "attachments": []
       }
     ],
-    "cursor": 3,
+    "cursor": 4,
     "has_more": false,
     "next_before_seq": null
   },

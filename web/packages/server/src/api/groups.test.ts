@@ -65,6 +65,26 @@ it('keeps a stalled room usable: shows the wake failure and offers the room-leve
   expect(await (await post(view.room!.identity, { action: 'stop', room_id: 'discussion', cancel_id: 'stop' })).json()).toMatchObject({ outcome: 'refused' })
 })
 
+it('attributes a scheduled job\'s post and failure notice to the job, never to the user (Agent v0.22.7)', async () => {
+  const { append, scheduled } = await setup()
+  const secret = `sk-${'a'.repeat(40)}`
+  scheduled({ kind: 'user', id: 'cron:job42', display_name: 'Nightly' }, 'Report ready')
+  scheduled({ kind: 'user', id: 'cron-notice:job42', display_name: 'Nightly' }, 'Job failed')
+  scheduled({ kind: 'user', id: 'cron:job43' }, 'Unnamed')
+  scheduled({ kind: 'user', id: 'cron:job44', display_name: `Nightly ${secret}` }, 'Redacted')
+  scheduled({ kind: 'user', id: 'desktop', display_name: 'Nightly' }, 'Typed by a person')
+  append('message.user', 'Typed by me')
+  const rows = (await read()).rows
+  expect(rows.slice(0, 3).map((r) => [r.message.role, r.author, r.scheduled, r.message.content])).toEqual([
+    ['assistant', 'Nightly', true, 'Report ready'],
+    ['assistant', 'Nightly', true, 'Job failed'],
+    ['assistant', 'job43', true, 'Unnamed'],
+  ])
+  expect(rows[3]!.author).toContain('Nightly')
+  expect(rows[3]!.author).not.toContain(secret)
+  expect(rows.slice(4).map((r) => [r.message.role, r.author, r.scheduled])).toEqual([['user', '', false], ['user', '', false]])
+})
+
 it('refuses foreign members, source attribution and stale room identities', async () => {
   const { append, state, catalogIdentity } = await setup()
   append('message.member', 'Forged', { member_id: 'one', profile: 'foreign', handle: 'one', display_name: 'Bad' })

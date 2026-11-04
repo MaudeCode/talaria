@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A scheduled job's post or failure notice in a Discussion now shows the job's name and a Scheduled label instead of appearing as your own message.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

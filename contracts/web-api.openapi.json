@@ -107751,6 +107751,9 @@
                           "author": {
                             "type": "string"
                           },
+                          "scheduled": {
+                            "type": "boolean"
+                          },
                           "message": {
                             "type": "object",
                             "properties": {
@@ -109300,6 +109303,7 @@
                           "key",
                           "index",
                           "author",
+                          "scheduled",
                           "message",
                           "attachments"
                         ]

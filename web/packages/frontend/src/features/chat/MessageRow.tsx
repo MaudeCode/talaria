@@ -14,6 +14,7 @@ import type { LiveTurn } from '../../stream/reducer'
 import { TurnActivityView } from './TurnActivityView'
 import { CollapsedBody } from './CollapsedBody'
 import type { VisibleMessage } from './useTranscript'
+import { Badge } from '../../ui/Badge'
 import { IconButton } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { formatDate } from '../../ui/States'
@@ -290,7 +291,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
   ]
   return <MessageMenu items={items} row={
     <div ref={ref} className="msg-row assistant-turn" data-role="assistant" data-member-author={row.author === undefined ? undefined : '1'} data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
-      <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
+      <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.scheduled && <Badge tone="border-border text-muted">{m.group_scheduled()}</Badge>}{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />
         {parts.map((part) => <AttachmentList key={part.key} message={part.message} sessionId={undefined} />)}

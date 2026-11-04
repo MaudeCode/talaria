@@ -380,6 +380,11 @@ occurrence id to its native event id without querying or changing an owner.
 The optimistic row uses that server-issued identity to converge on a streamed
 persisted row, including while the POST response is delayed. Definite refusals
 restore the draft and files immediately, without reconciliation reads.
+
+A native `message.user` whose user actor id starts with `cron:` or `cron-notice:`
+is a scheduled job's post or failure notice, not the user's message. The server
+projects it as an assistant row with `scheduled: true` and `author` set to the
+redacted job name, falling back to the actor id without its prefix.
 Multi-profile discussions require the existing server-owner authority. The
 shared authentication gate protects the whole group API namespace, including
 streams and file downloads, before native RPC. A profile-bound trusted-header

@@ -146,6 +146,23 @@ test('creates a discussion, sends once, shows member replies and reconnects afte
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 
+test('labels a scheduled job\'s post by its job and leaves the person\'s own message unlabelled', async ({ page }, info) => {
+  const { fixture, server } = await discussionServer()
+  try {
+    fixture.append('message.user', 'Typed by me')
+    fixture.scheduled({ kind: 'user', id: 'cron:job42', display_name: 'Nightly' }, 'Report ready')
+    await page.goto(`${server.base}/groups?room=discussion`)
+    const post = page.locator('.msg-row[data-role=assistant]').filter({ hasText: 'Report ready' })
+    await expect(post.locator('.msg-role-name')).toHaveText('Nightly')
+    await expect(post.locator('.msg-role')).toContainText('Scheduled')
+    const own = page.locator('.msg-row[data-role=user]').filter({ hasText: 'Typed by me' })
+    await expect(own).toBeVisible()
+    await expect(own).not.toContainText('Nightly')
+    await expect(own).not.toContainText('Scheduled')
+    if (process.env.TALARIA_GROUP_EVIDENCE) { mkdirSync(process.env.TALARIA_GROUP_EVIDENCE, { recursive: true }); await page.screenshot({ path: `${process.env.TALARIA_GROUP_EVIDENCE}/scheduled-${info.project.name}.png` }) }
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
 test('shows a stalled room\'s wake failure and retries it optimistically, restoring Retry on refusal', async ({ page }, info) => {
   const { sidecar, fixture, server } = await discussionServer()
   const native = sidecar.responderFor('gateway.groups')!
