@@ -119,10 +119,18 @@ export class TerminalSession {
     }
   }
 
-  setSize(rows: unknown, cols: unknown): void {
+  /** The oldest output is gone, so a replay starts mid-screen. */
+  get backlogTrimmed(): boolean { return (this.backlog[0]?.seq ?? 1) > 1 }
+
+  /** A same-size resize sends no SIGWINCH, so `forceRedraw` passes through one row smaller to make a full-screen program repaint. */
+  setSize(rows: unknown, cols: unknown, forceRedraw = false): void {
     this.rows = Math.max(8, Math.min(pyIntOr(rows, this.rows) || this.rows || 24, 80))
     this.cols = Math.max(20, Math.min(pyIntOr(cols, this.cols) || this.cols || 80, 240))
-    if (!this.closed) { try { this.proc.resize(this.cols, this.rows) } catch { /* pty gone */ } }
+    if (this.closed) return
+    try {
+      if (forceRedraw) this.proc.resize(this.cols, this.rows - 1)
+      this.proc.resize(this.cols, this.rows)
+    } catch { /* pty gone */ }
   }
 }
 
@@ -168,7 +176,7 @@ export class TerminalRegistry {
     const cwd = resolve(workspace)
     if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error('workspace is not a directory')
     const current = this.terminals.get(sid)
-    if (current?.isAlive && !opts.restart && current.workspace === cwd) { current.setSize(opts.rows, opts.cols); return current }
+    if (current?.isAlive && !opts.restart && current.workspace === cwd) { current.setSize(opts.rows, opts.cols, current.backlogTrimmed); return current }
     if (current) { this.terminals.delete(sid); this.teardown(current) }
     this.enforceCap(sid)
     // Python exported the requested (unclamped) size into the shell's environment and clamped only the winsize.

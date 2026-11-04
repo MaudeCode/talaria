@@ -12,7 +12,7 @@ import { completedAtSeconds, jobForApi, jobFieldUpdates } from '../tools/crons.j
 import { readZip } from '../workspace/unzip.js'
 import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
-import { CLOSED_RETENTION_MS, TerminalRegistry } from '../tools/terminal.js'
+import { BACKLOG_MAX, CLOSED_RETENTION_MS, TerminalRegistry } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
 
 useJsonStorage()
@@ -25,11 +25,12 @@ class FakePtyProcess implements PtyProcessLike {
   pid = 4242
   written: string[] = []
   size = { cols: 0, rows: 0 }
+  resizes: { cols: number; rows: number }[] = []
   private dataCb: ((data: string) => void) | null = null
   private exitCb: ((e: { exitCode: number; signal?: number }) => void) | null = null
   killed: string[] = []
   write(data: string): void { this.written.push(data); this.dataCb?.(`echo:${data}`) }
-  resize(cols: number, rows: number): void { this.size = { cols, rows } }
+  resize(cols: number, rows: number): void { this.size = { cols, rows }; this.resizes.push({ cols, rows }) }
   kill(signal?: string): void { this.killed.push(signal ?? 'SIGTERM') }
   onData(cb: (data: string) => void): void { this.dataCb = cb }
   onExit(cb: (e: { exitCode: number; signal?: number }) => void): void { this.exitCb = cb }
@@ -923,6 +924,22 @@ describe('automation helpers', () => {
     off()
     reg.closeAll()
     expect(pty.spawned[1]?.killed).toEqual(['SIGHUP'])
+  })
+
+  it('terminal reattach forces a redraw only once the backlog was trimmed (TAL-1818)', () => {
+    const pty = fakePty()
+    const reg = new TerminalRegistry({ env: { PATH: '/bin' }, now: () => 0, log: () => undefined, pty })
+    const size = { rows: 30, cols: 100 }
+    reg.start('s1', '/tmp', size)
+    const proc = pty.spawned[0]!
+    for (let i = 0; i < BACKLOG_MAX; i += 1) proc.emit('x')
+    reg.start('s1', '/tmp', size)
+    expect(proc.resizes).toEqual([size])
+    proc.resizes.length = 0
+    proc.emit('x')
+    reg.start('s1', '/tmp', size)
+    expect(proc.resizes).toEqual([{ rows: 29, cols: 100 }, size])
+    reg.closeAll()
   })
 })
 
