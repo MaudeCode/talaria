@@ -11701,6 +11701,19 @@
     ],
     "additionalProperties": false
   },
+  "config.declares_key": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "declared": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "declared"
+    ],
+    "additionalProperties": false
+  },
   "config.env_write": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

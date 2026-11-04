@@ -130,6 +130,59 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('round-trips compression.prepare_ahead through the profile config, keeping the section\'s other keys (TAL-1825)', async () => {
+    const before = structuredClone(configs.get(s.state))
+    configs.set(s.state, { ...before, compression: { threshold: 0.5 } })
+    s.deps.agentConfig.invalidate(s.state)
+    try {
+      expect((await json(await s.get('/api/settings'))).compression_prepare_ahead).toBe(false)
+      for (const value of [true, false]) {
+        const saved = await post(s, '/api/settings', { compression_prepare_ahead: value })
+        expect(saved.status).toBe(200)
+        expect((await json(saved)).compression_prepare_ahead).toBe(value)
+        expect(configs.get(s.state)?.compression).toEqual({ threshold: 0.5, prepare_ahead: value })
+        expect((await json(await s.get('/api/settings'))).compression_prepare_ahead).toBe(value)
+      }
+      expect(await s.deps.settings.readRaw()).not.toHaveProperty('compression_prepare_ahead')
+      expect((await post(s, '/api/settings', { compression_prepare_ahead: 'yes' })).status).toBe(400)
+      expect(configs.get(s.state)?.compression).toEqual({ threshold: 0.5, prepare_ahead: false })
+    } finally {
+      configs.set(s.state, before ?? {})
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
+  // Same rule as the Agent's `is_truthy_value`, so a hand-edited config shows what the Agent will do.
+  it.each([['yes', true], ['Off', false], [1, true], [0, false], [null, false]])('reads a hand-written prepare_ahead of %j as the Agent does (TAL-1825)', async (value, expected) => {
+    const before = structuredClone(configs.get(s.state))
+    configs.set(s.state, { ...before, compression: { prepare_ahead: value } })
+    s.deps.agentConfig.invalidate(s.state)
+    try {
+      expect((await json(await s.get('/api/settings'))).compression_prepare_ahead).toBe(expected)
+    } finally {
+      configs.set(s.state, before ?? {})
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
+  it.each([
+    ['an Agent without the key', () => ({ declared: false })],
+    ['an Agent that cannot say', () => { throw new SidecarError('sidecar not ready', { condition: 'sidecar_unavailable' }) }],
+  ])('reports prepared compaction unavailable and refuses its write on %s (TAL-1825)', async (_name, answer) => {
+    const before = structuredClone(configs.get(s.state))
+    sidecar.respond('config.declares_key', answer)
+    try {
+      expect((await json(await s.get('/api/settings'))).compression_prepare_ahead).toBeNull()
+      const refused = await post(s, '/api/settings', { compression_prepare_ahead: true, bot_name: 'Refused' })
+      expect(refused.status).toBe(409)
+      expect(await json(refused)).toMatchObject({ condition: 'setting_unavailable' })
+      expect(configs.get(s.state)).toEqual(before)
+      expect((await json(await s.get('/api/settings'))).bot_name).not.toBe('Refused')
+    } finally {
+      sidecar.respond('config.declares_key', undefined)
+    }
+  })
+
   it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash', async () => {
     const res = await s.get('/api/settings')
     expect(res.status).toBe(200)
@@ -176,6 +229,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     try {
       for (const [path, input] of [
         ['/api/settings', { max_tokens: 1234 }],
+        ['/api/settings', { compression_prepare_ahead: true }],
         ['/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }],
         ['/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'anthropic', model: 'claude-opus-4-7' }],
       ] as const) {

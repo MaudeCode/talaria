@@ -16,7 +16,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, auxiliaryReasoning, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -143,6 +143,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.update_channel_version = deps.version
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
+  into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
 }
 
 async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
@@ -173,6 +174,9 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const maxTokensProvided = 'max_tokens' in body
   const maxTokensValue = body.max_tokens
   Reflect.deleteProperty(body, 'max_tokens')
+  const prepareAheadProvided = 'compression_prepare_ahead' in body
+  const prepareAhead = body.compression_prepare_ahead
+  Reflect.deleteProperty(body, 'compression_prepare_ahead')
   if (requestedPassword && !authEnabledBefore && !(await onboardingGateAllows(ctx, authEnabledBefore))) {
     throw new HttpError(403, 'First password setup is only available from local networks when auth is not enabled. To bootstrap this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
   }
@@ -186,6 +190,11 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   }
   const cfgHome = home(ctx)
   // A definite YAML refusal must precede every sibling settings or credential mutation.
+  if (prepareAheadProvided) {
+    if (typeof prepareAhead !== 'boolean') throw new HttpError(400, 'compression_prepare_ahead must be a boolean')
+    if (!(await deps.agentConfig.declaresKey(PREPARE_AHEAD_KEY))) throw new HttpError(409, 'This Agent does not offer prepared compaction.', { condition: 'setting_unavailable' })
+    await deps.agentConfig.update(cfgHome, (c) => { c.compression = { ...dict(c.compression), prepare_ahead: prepareAhead } })
+  }
   const maxTokens = maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : null
   if (!requestedPasswordless && requestedClear) await deps.clearPasskeys()
   const ack = body._auth_disabled_acknowledged

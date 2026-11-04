@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings can now prepare the next compaction in the background, so a message sent during automatic compaction waits less. It spends extra auxiliary-model calls and needs Agent v0.22.6 or newer.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -21,6 +21,10 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v77 adds `config.declares_key` (TAL-1825): whether the installed Agent's
+`DEFAULT_CONFIG` holds a dotted key, so the server offers a setting only on Agents
+that read it. The cached chat Agent's signature also gains `compression.prepare_ahead`.
+
 RPC v76 adds `state_db.request_prompt_refresh` (TAL-1821), which records the Agent's
 profile-wide prompt refresh epoch through `SessionDB.request_prompt_refresh`. The server
 calls it after a SOUL.md save and after a local skill save, delete or toggle, so each

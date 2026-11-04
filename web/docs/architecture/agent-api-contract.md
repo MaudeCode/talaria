@@ -624,6 +624,11 @@ tools `agent.disabled_toolsets` cuts down without removing them all carries `str
 empties reads `unavailable_reason: "disabled"` with both fields empty, even under a legacy name.
 Older Agents return both fields empty.
 
+`compression_prepare_ahead` in `/api/settings` is the profile's `compression.prepare_ahead`, or
+null on Agents whose `DEFAULT_CONFIG` lacks the key (before v0.22.6), where a write answers 409
+`setting_unavailable`. The Agent reads it once, at construction, so it is part of the cached chat
+Agent identity and a change replaces the Agent on the next turn.
+
 Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
 on the next turn. The Agent's filter also scopes deferred tool search and calls.

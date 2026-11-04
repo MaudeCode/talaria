@@ -12,6 +12,16 @@
       }
     }
   ],
+  "config.declares_key": [
+    {
+      "params": {
+        "key": "compression.prepare_ahead"
+      },
+      "result": {
+        "declared": true
+      }
+    }
+  ],
   "config.env_write": [
     {
       "params": {
