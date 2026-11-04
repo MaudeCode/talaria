@@ -1,7 +1,7 @@
 import { closeSync, createReadStream, fstatSync, linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestContext } from '../http/context.js'
 import type { Session } from '../sessions/session.js'
@@ -308,5 +308,53 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     deps.policy = { ...deps.policy, legacySnapshotDir: store }
     expect((await mediaAnchorRoot(join(store, `${'a'.repeat(64)}.snap`), null, deps))).toBeNull()
     expect((await mediaAnchorRoot(join(base, 'ws', 'a.png'), null, deps))).toBe(join(base, 'ws'))
+  })
+})
+
+describe('mediaAnchorRoot Agent credential stores (TAL-1809)', () => {
+  let base: string
+  let hermesHome: string
+  let deps: MediaAccessDeps
+  beforeEach(() => {
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'tal-1809-')))
+    const home = join(base, 'home')
+    const workspace = join(base, 'ws')
+    hermesHome = join(home, '.hermes')
+    mkdirSync(workspace)
+    mkdirSync(hermesHome, { recursive: true })
+    deps = {
+      home,
+      hermesHome,
+      extraRoots: '',
+      activeWorkspace: () => workspace,
+      policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), activeWorkspace: () => workspace },
+    }
+  })
+  afterEach(() => { rmSync(base, { recursive: true, force: true }) })
+
+  const authorize = async (homePath: string, relative: string): Promise<string | null> => {
+    const target = join(hermesHome, homePath, relative)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, 'bytes')
+    return mediaAnchorRoot(target, null, deps)
+  }
+
+  describe.each([['the root home', ''], ['a named profile home', join('profiles', 'work')]])('%s', (_name, homePath) => {
+    it.each([
+      'bws_cache.json', 'bws_cache.enc.json', 'op_cache.json', 'photon-sidecar.json',
+      'cache/bws_cache.json', 'cache/bws_cache.enc.json', 'cache/op_cache.json', 'runtime/photon-sidecar.json',
+      'credentials', 'credentials/token', '.anthropic_oauth.json', 'google_oauth_pending.json', 'auth/google_oauth.json', 'webhook_subscriptions.json',
+      'pairing/approved.json', 'mcp-tokens/server.json', 'webapp/credential.json', 'browser-profile/Default/Cookies',
+      'kanban.db', 'kanban.db-wal', 'kanban.db-shm', 'kanban.db-journal', 'state.db-journal',
+    ])('refuses %s', async (relative) => {
+      expect(await authorize(homePath, relative)).toBeNull()
+    })
+
+    it.each([
+      'cache/images/a.png', 'generated/report.pdf', 'credentials.png',
+      'generated/webapp/shot.png', 'skills/demo/pairing/diagram.png',
+    ])('serves %s', async (relative) => {
+      expect(await authorize(homePath, relative)).toBe(hermesHome)
+    })
   })
 })
