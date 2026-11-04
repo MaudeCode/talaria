@@ -106,7 +106,7 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_kanban_sessions()} settingKey="show_kanban_sessions" />
       <Toggle label={m.settings_label_previous_messaging_sessions()} settingKey="show_previous_messaging_sessions" />
       <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" />
-      <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback />
+      <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} />
       <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} />
       <FieldRow label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} htmlFor="settingsTrustedLinkHosts">
         <form className="flex items-start gap-2" onSubmit={(e) => { e.preventDefault(); if (trustedHosts !== null) { const submitted = trustedHosts; set({ trusted_link_hosts: submitted.split('\n') }, () => setTrustedHosts((draft) => draft === submitted ? null : draft)) } }}>
