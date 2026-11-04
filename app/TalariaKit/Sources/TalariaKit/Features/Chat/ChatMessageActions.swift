@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SelectableTextPresentation: Identifiable, Equatable {
+public struct SelectableTextPresentation: Identifiable, Equatable, Sendable {
     public let id: String
     public let text: String
 

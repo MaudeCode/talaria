@@ -4,6 +4,7 @@ import XCTest
 @testable import TalariaKit
 
 // The members of ComposerVoiceDraftComposerTests that need the App host; the rest run in TalariaKitTests (TAL-399).
+@MainActor
 final class ComposerVoiceDraftComposerTests: XCTestCase {
     func testReturnModeSendsOnReturnAndInsertsANewlineOnCommandReturn() {
         let commands = ComposerKeyboardCommand.commands(sendKey: .return, alternateBehavior: .queue)

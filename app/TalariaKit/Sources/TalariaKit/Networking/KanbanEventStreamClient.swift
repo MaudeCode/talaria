@@ -1,5 +1,5 @@
 import Foundation
-import LDSwiftEventSource
+@preconcurrency import LDSwiftEventSource
 
 public enum KanbanStreamFrame: Equatable, Sendable {
     case hello(cursor: Int, board: String)
@@ -108,7 +108,7 @@ public final class KanbanEventStreamClient: KanbanEventStreamingClient {
         CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
     }
 
-    private final class Handler: EventHandler {
+    private final class Handler: EventHandler, Sendable {
         private let onFrame: @MainActor (KanbanStreamFrame) -> Void
         private let onFailure: @MainActor () -> Void
 

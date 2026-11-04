@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ToolCall: Identifiable, Equatable {
+public struct ToolCall: Identifiable, Equatable, Sendable {
     public let id: String
     public var name: String?
     public var preview: String?
@@ -62,7 +62,7 @@ public struct ToolCall: Identifiable, Equatable {
 }
 
 /// Server-owned MCP progress. Unlike result sections, this value exists only while a tool runs.
-public struct ToolProgress: Decodable, Equatable {
+public struct ToolProgress: Decodable, Equatable, Sendable {
     public let percent: Double?
     public let message: String?
 
@@ -85,7 +85,7 @@ public struct ToolProgress: Decodable, Equatable {
 
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
-public struct ToolResultView: Decodable, Equatable {
+public struct ToolResultView: Decodable, Equatable, Sendable {
     public let text: String?
     public let stdout: String?
     public let stderr: String?
@@ -126,7 +126,7 @@ public struct ToolResultView: Decodable, Equatable {
 
 /// TAL-448: a file edit's change, decided on the server: `added` / `removed` count the whole diff, `diff` is the
 /// redacted unified diff, cut to 400 lines when `truncated`, and `hunks` is that diff parsed (TAL-604).
-public struct ToolEditDiff: Decodable, Equatable {
+public struct ToolEditDiff: Decodable, Equatable, Sendable {
     public let added: Int
     public let removed: Int
     public let diff: String
@@ -169,7 +169,7 @@ public struct ToolEditDiff: Decodable, Equatable {
     }
 }
 
-public struct PersistedToolCall: Decodable, Equatable {
+public struct PersistedToolCall: Decodable, Equatable, Sendable {
     let name: String?
     let snippet: String?
     let tid: String?
@@ -220,7 +220,7 @@ public struct PersistedToolCall: Decodable, Equatable {
     }
 }
 
-public struct ToolCallGroup: Identifiable, Equatable {
+public struct ToolCallGroup: Identifiable, Equatable, Sendable {
     public let id: String
     public let anchorMessageID: String?
     public let toolCalls: [ToolCall]
@@ -321,7 +321,7 @@ public struct ToolCallGroup: Identifiable, Equatable {
     }
 }
 
-public struct ToolCallGroupAnchorLookup: Equatable {
+public struct ToolCallGroupAnchorLookup: Equatable, Sendable {
     private let groupsByAnchor: [String?: [ToolCallGroup]]
 
     public init(groups: [ToolCallGroup] = []) {

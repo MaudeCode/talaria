@@ -4,7 +4,7 @@ import SwiftUI
 /// One line of a source file as the viewer draws it: its one-based number and
 /// its text in 500-character segments (see `PlainCodeBlockText.wraps`), coloured
 /// when the file's grammar was highlighted.
-public struct SourceLine: Identifiable, Equatable {
+public struct SourceLine: Identifiable, Equatable, Sendable {
     public let id: Int
     public let segments: [AttributedString]
 

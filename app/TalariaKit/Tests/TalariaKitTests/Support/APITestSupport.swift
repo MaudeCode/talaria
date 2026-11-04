@@ -52,37 +52,54 @@ class APIClientTestCase: XCTestCase {
     }
 }
 
+/// A stub's test-owned value, written by the test and read on `URLSession`'s thread.
+/// `@unchecked Sendable`: `lock` guards `stored`.
+final class LockedTestValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) { stored = value }
+
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+        _modify {
+            lock.lock()
+            defer { lock.unlock() }
+            yield &stored
+        }
+    }
+}
+
 final class MockURLProtocol: URLProtocol {
     typealias Handler = (URLRequest) throws -> (HTTPURLResponse, Data)
-    static var requestHandler: Handler?
+    private static let requestHandlerStorage = LockedTestValue<Handler?>(nil)
+    static var requestHandler: Handler? {
+        get { requestHandlerStorage.value }
+        set { requestHandlerStorage.value = newValue }
+    }
     /// A session whose configuration sends this header (see `register`) is served
     /// by its own handler, so a request that outlives its test — the completed-
     /// response title refresh, for example — can never reach the next test's
     /// global `requestHandler` (TAL-156).
     static let scopeHeader = "X-Talaria-Test-Handler"
-    private static let scopedHandlerLock = NSLock()
     /// Newest last. Only the most recent sessions are kept: a request that outlives
     /// its test lands within the next few tests, and a scope dropped after that
     /// fails with `badServerResponse` instead of retaining test state for the rest
     /// of the runner process.
-    private static var scopedHandlers: [(scope: String, handler: Handler)] = []
+    private static let scopedHandlers = LockedTestValue<[(scope: String, handler: Handler)]>([])
     private static let scopedHandlerLimit = 16
 
     /// Registers `handler` and returns the `scopeHeader` value that routes to it.
     static func register(_ handler: @escaping Handler) -> String {
         let scope = UUID().uuidString
-        scopedHandlerLock.withLock {
-            scopedHandlers.append((scope, handler))
-            if scopedHandlers.count > scopedHandlerLimit {
-                scopedHandlers.removeFirst()
-            }
-        }
+        scopedHandlers.value = (scopedHandlers.value + [(scope, handler)]).suffix(scopedHandlerLimit)
         return scope
     }
 
     private static func handler(for request: URLRequest) -> Handler? {
         guard let scope = request.value(forHTTPHeaderField: scopeHeader) else { return requestHandler }
-        return scopedHandlerLock.withLock { scopedHandlers.last { $0.scope == scope }?.handler }
+        return scopedHandlers.value.last { $0.scope == scope }?.handler
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -115,20 +132,19 @@ final class MockURLProtocol: URLProtocol {
 /// URLProtocol whose responses are completed manually so concurrent requests
 /// can be answered out of order.
 final class DeferredMockURLProtocol: URLProtocol {
-    static var onRequest: ((DeferredMockURLProtocol) -> Void)?
-    private static let handlerLock = NSLock()
-    private static var handlersByHost: [String: (DeferredMockURLProtocol) -> Void] = [:]
+    private static let onRequestStorage = LockedTestValue<((DeferredMockURLProtocol) -> Void)?>(nil)
+    static var onRequest: ((DeferredMockURLProtocol) -> Void)? {
+        get { onRequestStorage.value }
+        set { onRequestStorage.value = newValue }
+    }
+    private static let handlersByHost = LockedTestValue<[String: (DeferredMockURLProtocol) -> Void]>([:])
 
     static func setOnRequest(_ handler: ((DeferredMockURLProtocol) -> Void)?, forHost host: String) {
-        handlerLock.lock()
-        defer { handlerLock.unlock() }
-        handlersByHost[host] = handler
+        handlersByHost.value[host] = handler
     }
 
     private static func handler(for request: URLRequest) -> ((DeferredMockURLProtocol) -> Void)? {
-        handlerLock.lock()
-        defer { handlerLock.unlock() }
-        return request.url?.host.flatMap { handlersByHost[$0] } ?? onRequest
+        request.url?.host.flatMap { handlersByHost.value[$0] } ?? onRequest
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -371,18 +387,36 @@ final class RedirectingMockURLProtocol: URLProtocol {
         let to: URL
     }
 
-    static var redirect: Redirect?
+    private struct State {
+        var redirect: Redirect?
+        var firstHopRequest: URLRequest?
+        var secondHopRequest: URLRequest?
+        var responseData = Data("{}".utf8)
+    }
+
+    private static let state = LockedTestValue(State())
+
+    static var redirect: Redirect? {
+        get { state.value.redirect }
+        set { state.value.redirect = newValue }
+    }
     /// The request seen by the mocked origin before it emits the redirect.
-    static var firstHopRequest: URLRequest?
+    static var firstHopRequest: URLRequest? {
+        get { state.value.firstHopRequest }
+        set { state.value.firstHopRequest = newValue }
+    }
     /// The request `URLSession` issued for the hop after the redirect.
-    static var secondHopRequest: URLRequest?
-    static var responseData = Data("{}".utf8)
+    static var secondHopRequest: URLRequest? {
+        get { state.value.secondHopRequest }
+        set { state.value.secondHopRequest = newValue }
+    }
+    static var responseData: Data {
+        get { state.value.responseData }
+        set { state.value.responseData = newValue }
+    }
 
     static func reset() {
-        redirect = nil
-        firstHopRequest = nil
-        secondHopRequest = nil
-        responseData = Data("{}".utf8)
+        state.value = State()
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }

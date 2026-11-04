@@ -1,6 +1,6 @@
 import SwiftUI
 
-public enum KanbanAgeFormatter {
+public enum KanbanAgeFormatter: Sendable {
     public static func abbreviated(_ seconds: Double) -> String { format(seconds, style: .abbreviated) }
     public static func full(_ seconds: Double) -> String { format(seconds, style: .full) }
 

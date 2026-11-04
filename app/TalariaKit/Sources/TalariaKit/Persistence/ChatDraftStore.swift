@@ -155,7 +155,7 @@ extension ChatDraftAttachment {
 /// carried, so its durable copy must survive and its record must stay in the
 /// draft. Getting this wrong deletes files for attachments the user never sent.
 public enum ChatDraftSendReconciliation {
-    public struct Outcome: Equatable {
+    public struct Outcome: Equatable, Sendable {
         /// Records the send carried. Their durable copies are now unreferenced
         /// and can be deleted.
         var consumed: [ChatDraftAttachment] = []

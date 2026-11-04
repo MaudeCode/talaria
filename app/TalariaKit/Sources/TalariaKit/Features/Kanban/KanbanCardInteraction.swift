@@ -1,6 +1,6 @@
 import SwiftUI
 
-public enum KanbanCardAction: Equatable {
+public enum KanbanCardAction: Equatable, Sendable {
     case move(String)
     case block
     case unblock
@@ -10,7 +10,7 @@ public enum KanbanCardAction: Equatable {
     case retry
 }
 
-public enum KanbanCardRowPrimaryAction: Equatable {
+public enum KanbanCardRowPrimaryAction: Equatable, Sendable {
     case openDetail(String)
     case toggleSelection(String)
 
@@ -24,7 +24,7 @@ public enum KanbanCardRowPrimaryAction: Equatable {
     }
 }
 
-public struct KanbanPendingCardAction: Identifiable, Equatable {
+public struct KanbanPendingCardAction: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public let card: KanbanCard
     public let action: KanbanCardAction

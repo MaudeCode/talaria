@@ -19,7 +19,7 @@ public enum SessionListAutoRefresh {
     /// also how foregrounding and the list coming back on screen earn their
     /// immediate refresh, instead of waiting out an interval that elapsed while
     /// nothing was polling.
-    public struct TaskID: Equatable {
+    public struct TaskID: Equatable, Sendable {
         var server: URL
         var isSceneActive: Bool
         var isListVisible: Bool
@@ -87,7 +87,7 @@ extension SessionListAutoRefresh {
     }
 
     /// `.task(id:)` for the active-row monitor: the list's streaming rows and what gates asking about them.
-    public struct ActiveRowTaskID: Hashable {
+    public struct ActiveRowTaskID: Hashable, Sendable {
         public var streamIDs: [String]
         public var hasActiveRows: Bool
         public var isViewingCachedData: Bool

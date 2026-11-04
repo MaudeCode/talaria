@@ -1138,6 +1138,7 @@ final class ConfigurationSyncTests: XCTestCase {
 
 func XCTAssertThrowsErrorAsync(
     _ expression: @autoclosure () async throws -> Void,
+    isolation: isolated (any Actor)? = #isolation,
     file: StaticString = #filePath,
     line: UInt = #line
 ) async {

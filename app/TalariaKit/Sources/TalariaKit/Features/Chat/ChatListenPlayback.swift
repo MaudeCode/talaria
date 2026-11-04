@@ -1,15 +1,16 @@
 import AVFoundation
 import Foundation
-import MediaPlayer
+@preconcurrency import MediaPlayer
+import Synchronization
 
-public enum ListenPlaybackPhase: Equatable {
+public enum ListenPlaybackPhase: Equatable, Sendable {
     case idle
     case loading
     case playing
     case paused
 }
 
-public enum ListenPlaybackSpeed: Double, CaseIterable, Identifiable {
+public enum ListenPlaybackSpeed: Double, CaseIterable, Identifiable, Sendable {
     case half = 0.5
     case normal = 1
     case oneAndHalf = 1.5
@@ -35,7 +36,7 @@ public enum ListenPlaybackSpeed: Double, CaseIterable, Identifiable {
     }
 }
 
-public struct ListenNowPlayingSnapshot: Equatable {
+public struct ListenNowPlayingSnapshot: Equatable, Sendable {
     let title: String
     let duration: TimeInterval
     let elapsedTime: TimeInterval
@@ -57,13 +58,11 @@ public protocol ListenRemoteControlControlling {
 
 @MainActor
 final class ListenRemoteControlController: ListenRemoteControlControlling {
-    private var commandTargets: [(MPRemoteCommand, Any)] = []
+    /// A `Mutex` because `deinit` is nonisolated and still has to remove the targets.
+    private let commandTargets = Mutex<[(MPRemoteCommand, Any)]>([])
 
     deinit {
-        commandTargets.forEach { command, target in
-            command.removeTarget(target)
-            command.isEnabled = false
-        }
+        clearCommandTargets()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
@@ -77,35 +76,35 @@ final class ListenRemoteControlController: ListenRemoteControlControlling {
         clearCommandTargets()
 
         let commandCenter = MPRemoteCommandCenter.shared()
-        commandCenter.playCommand.isEnabled = true
-        commandTargets.append((commandCenter.playCommand, commandCenter.playCommand.addTarget { _ in
+        addTarget(to: commandCenter.playCommand) { _ in
             Task { @MainActor in play() }
             return .success
-        }))
-
-        commandCenter.pauseCommand.isEnabled = true
-        commandTargets.append((commandCenter.pauseCommand, commandCenter.pauseCommand.addTarget { _ in
+        }
+        addTarget(to: commandCenter.pauseCommand) { _ in
             Task { @MainActor in pause() }
             return .success
-        }))
-
-        commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandTargets.append((commandCenter.togglePlayPauseCommand, commandCenter.togglePlayPauseCommand.addTarget { _ in
+        }
+        addTarget(to: commandCenter.togglePlayPauseCommand) { _ in
             Task { @MainActor in togglePlayPause() }
             return .success
-        }))
-
-        commandCenter.changePlaybackPositionCommand.isEnabled = true
-        commandTargets.append((
-            commandCenter.changePlaybackPositionCommand,
-            commandCenter.changePlaybackPositionCommand.addTarget { event in
-                guard let event = event as? MPChangePlaybackPositionCommandEvent else {
-                    return .commandFailed
-                }
-                Task { @MainActor in changePlaybackPosition(event.positionTime) }
-                return .success
+        }
+        addTarget(to: commandCenter.changePlaybackPositionCommand) { event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
             }
-        ))
+            let position = event.positionTime
+            Task { @MainActor in changePlaybackPosition(position) }
+            return .success
+        }
+    }
+
+    private func addTarget(
+        to command: MPRemoteCommand,
+        handler: @escaping @Sendable (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus
+    ) {
+        command.isEnabled = true
+        let target = command.addTarget(handler: handler)
+        commandTargets.withLock { $0.append((command, target)) }
     }
 
     func update(_ snapshot: ListenNowPlayingSnapshot) {
@@ -126,12 +125,14 @@ final class ListenRemoteControlController: ListenRemoteControlControlling {
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
-    private func clearCommandTargets() {
-        commandTargets.forEach { command, target in
-            command.removeTarget(target)
-            command.isEnabled = false
+    private nonisolated func clearCommandTargets() {
+        commandTargets.withLock { targets in
+            targets.forEach { command, target in
+                command.removeTarget(target)
+                command.isEnabled = false
+            }
+            targets.removeAll()
         }
-        commandTargets.removeAll()
     }
 }
 

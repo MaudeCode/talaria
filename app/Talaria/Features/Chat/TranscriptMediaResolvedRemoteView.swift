@@ -8,8 +8,8 @@ import TalariaKit
 /// A remote item the server could not classify (`isUnknownRemoteMedia`), shown as whatever its bytes decode to.
 struct TranscriptMediaResolvedRemoteView: View {
     let reference: TranscriptMediaReference
-    let loadMediaData: (TranscriptMediaReference) async -> Data?
-    let onPreviewMedia: ((TranscriptMediaReference) -> Void)?
+    let loadMediaData: @MainActor (TranscriptMediaReference) async -> Data?
+    let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
 
     @State private var resolvedMedia: ResolvedMedia?
 

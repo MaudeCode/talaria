@@ -2,7 +2,7 @@ import Foundation
 
 /// TAL-833: the standing `/goal` chip above the composer, worded from the server's session `goal`. The status word and
 /// the turn count lead, so a narrow chip cuts the goal text rather than its state.
-public struct SessionGoalChipPresentation: Equatable {
+public struct SessionGoalChipPresentation: Equatable, Sendable {
     public let label: String
     public let symbol: String
 

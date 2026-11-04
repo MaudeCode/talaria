@@ -2,7 +2,7 @@ import Foundation
 
 /// TAL-1460: an iPhone Duo propped like a tent (outer display, landscape, hinge partly open) turns the Chats list's
 /// running and waiting rows into large run cards readable from arm's length. Any other pose keeps the regular rows.
-public enum SessionRunMonitor {
+public enum SessionRunMonitor: Sendable {
     /// The hinge as the session list root reads it; nil where the device reports no hinge.
     public enum HingeStatus: Sendable, Equatable {
         case closed, partiallyOpen, fullyOpen

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum Endpoint {
+public enum Endpoint: Sendable {
     case health
     case authStatus
     case login

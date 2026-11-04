@@ -84,7 +84,7 @@ struct SidebarLayoutInputs: Equatable {
 
 /// Coalesces hinge movement only; ordinary container geometry stays live.
 private struct SettledGeometryModifier: ViewModifier {
-    let measure: (GeometryProxy) -> DivisionRegionGeometry
+    let measure: @Sendable (GeometryProxy) -> DivisionRegionGeometry
     let hingeStatus: SessionRunMonitor.HingeStatus?
     let requiresSettlement: (DivisionRegionGeometry?, DivisionRegionGeometry) -> Bool
     let action: (DivisionRegionGeometry) -> Void
@@ -146,7 +146,7 @@ extension View {
     func onSettledGeometryChange(for type: DivisionRegionGeometry.Type,
         hingeStatus: SessionRunMonitor.HingeStatus? = nil,
         requiresSettlement: @escaping (DivisionRegionGeometry?, DivisionRegionGeometry) -> Bool,
-        of measure: @escaping (GeometryProxy) -> DivisionRegionGeometry,
+        of measure: @escaping @Sendable (GeometryProxy) -> DivisionRegionGeometry,
         action: @escaping (DivisionRegionGeometry) -> Void) -> some View {
         modifier(SettledGeometryModifier(measure: measure, hingeStatus: hingeStatus,
             requiresSettlement: requiresSettlement, action: action))

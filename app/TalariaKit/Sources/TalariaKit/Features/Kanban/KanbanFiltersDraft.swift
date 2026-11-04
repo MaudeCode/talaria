@@ -1,7 +1,7 @@
 import SwiftUI
 
 @MainActor
-public struct KanbanFiltersDraft {
+public struct KanbanFiltersDraft: Sendable {
     public var profile: String?
     public var tenant: String?
     public var includesArchived: Bool

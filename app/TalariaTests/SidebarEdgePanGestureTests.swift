@@ -10,15 +10,15 @@ import XCTest
 final class SidebarEdgePanArbiterTests: XCTestCase {
     private var window: UIWindow!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         window.isHidden = true
         window = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testOnlyAPushedOnScreenStackOwnsTheEdgeSwipe() {

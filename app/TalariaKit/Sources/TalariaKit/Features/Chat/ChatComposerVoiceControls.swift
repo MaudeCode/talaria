@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public struct ComposerVoiceStatus: Equatable {
+public struct ComposerVoiceStatus: Equatable, Sendable {
     public let text: String
     public let systemImage: String
     public let isError: Bool

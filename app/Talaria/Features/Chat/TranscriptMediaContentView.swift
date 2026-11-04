@@ -9,9 +9,9 @@ struct TranscriptMediaContentView: View {
     let markdown: String
     let display: TranscriptDisplayBody
     let cacheNamespace: String
-    let loadMediaImage: ((TranscriptMediaReference) async -> Data?)?
-    let loadMediaData: ((TranscriptMediaReference) async -> Data?)?
-    let onPreviewMedia: ((TranscriptMediaReference) -> Void)?
+    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let loadMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
     let isStreaming: Bool
 
     var body: some View {
@@ -57,21 +57,23 @@ struct TranscriptMediaContentView: View {
 struct TranscriptMediaImageProvider: ImageProvider {
     let display: TranscriptDisplayBody
     let cacheNamespace: String
-    let loadMediaImage: ((TranscriptMediaReference) async -> Data?)?
-    let loadMediaData: ((TranscriptMediaReference) async -> Data?)?
-    let onPreviewMedia: ((TranscriptMediaReference) -> Void)?
+    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let loadMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
 
     @ViewBuilder
     func makeImage(url: URL?) -> some View {
         if let reference = display.image(for: url) {
-            TranscriptMediaThumbnailView(
-                reference: reference,
-                cacheNamespace: cacheNamespace,
-                loadMediaImage: loadMediaImage,
-                loadMediaData: loadMediaData,
-                onPreviewMedia: onPreviewMedia
-            )
-            .forcedLeftToRight()
+            MarkdownMainActorBlock { [cacheNamespace, loadMediaImage, loadMediaData, onPreviewMedia] in
+                TranscriptMediaThumbnailView(
+                    reference: reference,
+                    cacheNamespace: cacheNamespace,
+                    loadMediaImage: loadMediaImage,
+                    loadMediaData: loadMediaData,
+                    onPreviewMedia: onPreviewMedia
+                )
+                .forcedLeftToRight()
+            }
         } else {
             DefaultImageProvider.default.makeImage(url: url)
         }
@@ -83,7 +85,7 @@ struct TranscriptMediaImageProvider: ImageProvider {
 struct TranscriptMediaInlineImageProvider: InlineImageProvider {
     let display: TranscriptDisplayBody
     let cacheNamespace: String
-    let loadMediaImage: ((TranscriptMediaReference) async -> Data?)?
+    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
 
     static let maxSize = CGSize(width: 210, height: 132)
 
@@ -115,9 +117,9 @@ struct TranscriptMediaInlineImageProvider: InlineImageProvider {
 struct TranscriptMediaParagraphImages {
     let display: TranscriptDisplayBody
     let cacheNamespace: String
-    let loadMediaImage: ((TranscriptMediaReference) async -> Data?)?
-    let loadMediaData: ((TranscriptMediaReference) async -> Data?)?
-    let onPreviewMedia: ((TranscriptMediaReference) -> Void)?
+    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let loadMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
 
     /// Each nested server image once, with its alt text, which stays its accessibility name.
     func nestedImages(in paragraphMarkdown: String) -> [NestedImage] {
@@ -134,7 +136,7 @@ struct TranscriptMediaParagraphImages {
         return images
     }
 
-    func thumbnail(_ image: NestedImage) -> some View {
+    @MainActor func thumbnail(_ image: NestedImage) -> some View {
         TranscriptMediaThumbnailView(
             reference: image.reference,
             cacheNamespace: cacheNamespace,
@@ -154,7 +156,7 @@ struct TranscriptMediaParagraphImages {
 }
 
 private struct TranscriptMediaParagraphImagesKey: EnvironmentKey {
-    static let defaultValue: TranscriptMediaParagraphImages? = nil
+    static var defaultValue: TranscriptMediaParagraphImages? { nil }
 }
 
 extension EnvironmentValues {

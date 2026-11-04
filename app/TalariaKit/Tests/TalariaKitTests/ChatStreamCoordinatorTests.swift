@@ -3,6 +3,7 @@ import SwiftData
 import XCTest
 @testable import TalariaKit
 
+@MainActor
 final class ChatStreamCoordinatorTests: APIClientTestCase {
     @MainActor
     func testUnrelatedSessionPhaseCannotMutateSharedActivity() {
@@ -1882,7 +1883,6 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         liveActivityManager: CoordinatorSpyLiveActivityManager? = nil,
         delegate: CoordinatorDelegateSpy? = nil,
         timing: ChatStreamCoordinatorTiming = .standard,
-        now: @escaping () -> Date = { ChatStreamCoordinatorTests.fixedNow },
         networkPath: (any NetworkPathObserving)? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
             apiTestJSONResponse(#"{"active": true}"#, for: request)
@@ -1897,7 +1897,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             liveActivityManager: liveActivityManager,
             showsLiveActivityResponseExcerpts: false,
             timing: timing,
-            now: now,
+            now: { ChatStreamCoordinatorTests.fixedNow },
             networkPath: networkPath
         )
         coordinator.attach(delegate: delegate)

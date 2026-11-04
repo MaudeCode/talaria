@@ -56,7 +56,7 @@ struct ApprovalRequestOverlay: View {
         return (divisionGeometry ?? DivisionRegionGeometry(geometry)).localDivisions(in: geometry)
     }
 
-    static func cardFrame(in bounds: CGRect, divisions: [CGRect], cardSize: CGSize,
+    nonisolated static func cardFrame(in bounds: CGRect, divisions: [CGRect], cardSize: CGSize,
                           layoutDirection: LayoutDirection = .leftToRight) -> CGRect {
         let available = DivisionRegionLayout.availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
         guard !available.isNull else { return CGRect(origin: bounds.origin, size: .zero) }

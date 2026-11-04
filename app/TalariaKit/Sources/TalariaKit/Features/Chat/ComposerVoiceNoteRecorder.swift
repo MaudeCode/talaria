@@ -12,13 +12,13 @@ import OSLog
 @MainActor
 @Observable
 public final class ComposerVoiceNoteRecorder {
-    public enum State: Equatable {
+    public enum State: Equatable, Sendable {
         case idle
         case requestingPermission
         case recording
     }
 
-    public struct RecordedVoiceNote {
+    public struct RecordedVoiceNote: Sendable {
         public let data: Data
         public let filename: String
         let duration: TimeInterval
@@ -26,9 +26,9 @@ public final class ComposerVoiceNoteRecorder {
 
     /// Hard cap on a single clip. AAC mono at ~32 kbps stays far under the 20 MB
     /// upload limit even at five minutes (~1.2 MB), so this bounds UX, not size.
-    public static let maximumDuration: TimeInterval = 5 * 60
+    public nonisolated static let maximumDuration: TimeInterval = 5 * 60
     /// Clips shorter than this are treated as accidental taps and discarded.
-    static let minimumDuration: TimeInterval = 0.5
+    nonisolated static let minimumDuration: TimeInterval = 0.5
 
     public private(set) var state: State = .idle
     public private(set) var elapsed: TimeInterval = 0
@@ -36,7 +36,7 @@ public final class ComposerVoiceNoteRecorder {
 
     @ObservationIgnored private var recorder: AVAudioRecorder?
     @ObservationIgnored private var fileURL: URL?
-    @ObservationIgnored private var ticker: Timer?
+    @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var didActivateSession = false
     @ObservationIgnored private let recorderFactory: (URL) throws -> AVAudioRecorder
     @ObservationIgnored private let permissionRequester: () async -> Bool
@@ -194,12 +194,7 @@ public final class ComposerVoiceNoteRecorder {
 
     private func startTicker() {
         stopTicker()
-        // `.common` so the timer keeps firing while the transcript scrolls.
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        ticker = timer
+        ticker = startMainActorTicker(every: .milliseconds(100)) { [weak self] in self?.tick() }
     }
 
     private func tick() {
@@ -208,7 +203,7 @@ public final class ComposerVoiceNoteRecorder {
     }
 
     private func stopTicker() {
-        ticker?.invalidate()
+        ticker?.cancel()
         ticker = nil
     }
 
@@ -217,7 +212,7 @@ public final class ComposerVoiceNoteRecorder {
     }
 
     deinit {
-        ticker?.invalidate()
+        ticker?.cancel()
     }
 }
 

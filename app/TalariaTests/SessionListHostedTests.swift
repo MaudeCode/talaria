@@ -1443,7 +1443,7 @@ final class SessionListHostedTests: XCTestCase {
 /// leaves the chat at least 320 pt, and Files hides the sidebar when that is what puts the browser beside the chat.
 @MainActor
 final class RegularSplitHostedTests: XCTestCase {
-    private struct Split {
+    @MainActor private struct Split {
         let fixture: FixtureApp
         let window: UIWindow
         let controller: UISplitViewController

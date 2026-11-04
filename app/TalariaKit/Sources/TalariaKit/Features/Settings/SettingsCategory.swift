@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SettingsCategory: String, Identifiable {
+public enum SettingsCategory: String, Identifiable, Sendable {
     case appearance
     case notificationsAndHaptics
     case chats

@@ -1,4 +1,4 @@
-public struct ChatPollingIntervals {
+public struct ChatPollingIntervals: Sendable {
     let approvalNanoseconds: UInt64
     let clarificationNanoseconds: UInt64
     let backgroundNanoseconds: UInt64

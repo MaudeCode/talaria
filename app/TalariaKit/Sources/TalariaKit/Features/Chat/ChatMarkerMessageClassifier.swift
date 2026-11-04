@@ -2,7 +2,7 @@ import Foundation
 
 /// Marker rows the agent writes around context compaction. The server classifies
 /// them and stamps `_marker_kind` (TAL-305); the app only renders that field.
-public enum ChatMarkerMessageKind: Equatable {
+public enum ChatMarkerMessageKind: Equatable, Sendable {
     case contextCompaction
     case preservedTaskList
 

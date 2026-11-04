@@ -5,7 +5,7 @@ import Foundation
 /// profile name to pin the new session to (the "New Chat in <Profile>" App Intent, #339).
 /// A fresh `id` each time so a repeat invocation re-triggers navigation even if the previous
 /// value lingers.
-public struct NewChatRequest: Equatable {
+public struct NewChatRequest: Equatable, Sendable {
     public let id: UUID
     public let autoStartsVoiceInput: Bool
     /// When set, the new session is created pinned to this profile; nil uses the server's

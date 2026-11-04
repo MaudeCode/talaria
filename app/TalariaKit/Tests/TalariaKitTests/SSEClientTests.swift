@@ -1053,30 +1053,23 @@ private struct DelayedSSEChunk {
 }
 
 private final class DelayedSSEURLProtocol: URLProtocol {
-    private static let lock = NSLock()
-    private static var chunks: [DelayedSSEChunk] = []
-    private static var lastRequest: URLRequest?
+    private static let chunks = LockedTestValue<[DelayedSSEChunk]>([])
+    private static let lastRequest = LockedTestValue<URLRequest?>(nil)
 
-    private var loadingTask: Task<Void, Never>?
+    private let loadingTask = LockedTestValue<Task<Void, Never>?>(nil)
 
     static func configure(chunks: [DelayedSSEChunk]) {
-        lock.lock()
-        self.chunks = chunks
-        lastRequest = nil
-        lock.unlock()
+        self.chunks.value = chunks
+        lastRequest.value = nil
     }
 
     static func reset() {
-        lock.lock()
-        chunks = []
-        lastRequest = nil
-        lock.unlock()
+        chunks.value = []
+        lastRequest.value = nil
     }
 
     static func capturedRequest() -> URLRequest? {
-        lock.lock()
-        defer { lock.unlock() }
-        return lastRequest
+        lastRequest.value
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -1088,11 +1081,8 @@ private final class DelayedSSEURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        let chunks: [DelayedSSEChunk]
-        Self.lock.lock()
-        Self.lastRequest = request
-        chunks = Self.chunks
-        Self.lock.unlock()
+        Self.lastRequest.value = request
+        let chunks = Self.chunks.value
 
         guard let url = request.url,
               let response = HTTPURLResponse(
@@ -1110,23 +1100,31 @@ private final class DelayedSSEURLProtocol: URLProtocol {
         }
 
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        loadingTask = Task { [weak self] in
-            guard let self else { return }
+        let stub = LockedTestValue(self)
+        loadingTask.value = Task {
             for chunk in chunks {
                 guard !Task.isCancelled else { return }
                 if chunk.delayNanoseconds > 0 {
                     try? await Task.sleep(nanoseconds: chunk.delayNanoseconds)
                 }
                 guard !Task.isCancelled else { return }
-                client?.urlProtocol(self, didLoad: Data(chunk.text.utf8))
+                stub.value.deliver(Data(chunk.text.utf8))
             }
 
             guard !Task.isCancelled else { return }
-            client?.urlProtocolDidFinishLoading(self)
+            stub.value.finish()
         }
     }
 
+    private func deliver(_ data: Data) {
+        client?.urlProtocol(self, didLoad: data)
+    }
+
+    private func finish() {
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
     override func stopLoading() {
-        loadingTask?.cancel()
+        loadingTask.value?.cancel()
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Sheet state for one linked skill file. Responses carry the file name they
 /// were requested for, so a slow request cannot land in a later presentation.
-public struct SkillLinkedFileSelection: Identifiable, Equatable {
+public struct SkillLinkedFileSelection: Identifiable, Equatable, Sendable {
     public let fileName: String
     public private(set) var content: String?
 

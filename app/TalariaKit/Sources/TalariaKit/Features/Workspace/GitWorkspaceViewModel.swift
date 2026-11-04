@@ -397,7 +397,7 @@ private func gitSemanticFailureMessage(_ message: String?) -> String {
     return String(localized: "The server rejected the request.")
 }
 
-public enum GitRemoteAction: String, Equatable, Identifiable {
+public enum GitRemoteAction: String, Equatable, Identifiable, Sendable {
     case fetch
     case pull
     case push
@@ -421,7 +421,7 @@ public enum GitRemoteAction: String, Equatable, Identifiable {
     }
 }
 
-public enum GitCheckoutOutcome: Equatable {
+public enum GitCheckoutOutcome: Equatable, Sendable {
     case success
     case requiresStash
     case failure
@@ -430,7 +430,7 @@ public enum GitCheckoutOutcome: Equatable {
 /// The visible phases of the one-tap commit pipeline (issue #315, Slice C). Staging
 /// happens under `generatingMessage` so the toast shows the same sequence the spec
 /// describes: "Generating commit message…" → "Committing…" → "Pushing…".
-public enum GitCommitPhase: Equatable {
+public enum GitCommitPhase: Equatable, Sendable {
     case generatingMessage
     case committing
     case pushing
@@ -452,7 +452,7 @@ public enum GitCommitPhase: Equatable {
     }
 }
 
-public struct GitQuickCommitResult: Equatable {
+public struct GitQuickCommitResult: Equatable, Sendable {
     public let shortSHA: String?
     public let branch: String?
     let message: String?
@@ -463,7 +463,7 @@ public struct GitQuickCommitResult: Equatable {
     public var pushFailureMessage: String? = nil
 }
 
-public enum GitQuickCommitOutcome: Equatable {
+public enum GitQuickCommitOutcome: Equatable, Sendable {
     case success(GitQuickCommitResult)
     case nothingToCommit
     /// The server truncated the status list (>500 changed files), so the client only knows
@@ -472,7 +472,7 @@ public enum GitQuickCommitOutcome: Equatable {
     case failure
 }
 
-public struct GitWriteAvailability: Equatable {
+public struct GitWriteAvailability: Equatable, Sendable {
     let isStreaming: Bool
     public let isViewingCachedData: Bool
 
@@ -488,7 +488,7 @@ public struct GitWriteAvailability: Equatable {
 /// Shared gate for the turn-end git surfaces in chat — the inline "Commit & Push" button
 /// and the "File changes" recap. Pure so the Settings > Chats > Git Actions toggle and the
 /// turn conditions are testable together (TAL-140).
-public struct ChatTurnGitSurfaceVisibility: Equatable {
+public struct ChatTurnGitSurfaceVisibility: Equatable, Sendable {
     /// Settings > Chats > Git Actions.
     let settingEnabled: Bool
     public let hasRepository: Bool
@@ -507,12 +507,12 @@ public struct ChatTurnGitSurfaceVisibility: Equatable {
     }
 }
 
-public enum GitToolbarStatusDot: Equatable {
+public enum GitToolbarStatusDot: Equatable, Sendable {
     case gray
 }
 
 /// Pure presentation state for the toolbar menu, kept outside UIKit so its edge cases are testable.
-public struct GitToolbarPresentation: Equatable {
+public struct GitToolbarPresentation: Equatable, Sendable {
     public let hasRepository: Bool
     public let isLoading: Bool
     let info: GitInfo?
@@ -558,7 +558,7 @@ public struct GitToolbarPresentation: Equatable {
 
 /// Which mutating operation the advanced staging sheet is currently running, used to
 /// disable controls and show the right inline spinner.
-public enum GitCommitOperation: Equatable {
+public enum GitCommitOperation: Equatable, Sendable {
     case staging
     case unstaging
     case discarding

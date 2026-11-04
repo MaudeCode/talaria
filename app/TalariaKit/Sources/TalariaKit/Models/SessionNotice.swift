@@ -3,8 +3,8 @@ import Foundation
 /// TAL-831: an out-of-band notice the Agent raised for the session (a memory provider that failed to load, a credit
 /// warning), one per `key` (session `notices`, SSE `notices`). The server keeps the list and clears it; the App shows
 /// it. Decoded with `convertFromSnakeCase`.
-public struct SessionNotice: Decodable, Equatable, Hashable {
-    public enum Level: String, Equatable, Hashable {
+public struct SessionNotice: Decodable, Equatable, Hashable, Sendable {
+    public enum Level: String, Equatable, Hashable, Sendable {
         case info, warn, error, success
     }
 
@@ -36,7 +36,7 @@ public struct SessionNotice: Decodable, Equatable, Hashable {
 }
 
 /// TAL-831: the session's notices changed (SSE `notices`); `notices` replaces the session's list.
-public struct SessionNoticesEvent: Decodable, Equatable {
+public struct SessionNoticesEvent: Decodable, Equatable, Sendable {
     public let sessionId: String?
     public let notices: [SessionNotice]
 

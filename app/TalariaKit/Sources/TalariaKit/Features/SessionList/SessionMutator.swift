@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SessionDuplicateResult {
+public struct SessionDuplicateResult: Sendable {
     public let session: SessionSummary?
     public let errorMessage: String?
 }
@@ -14,7 +14,7 @@ struct SessionMoveWhileStreamingError: LocalizedError, Equatable {
     }
 }
 
-public struct SessionMutator {
+public struct SessionMutator: Sendable {
     let client: APIClient
 
     public init(client: APIClient) {

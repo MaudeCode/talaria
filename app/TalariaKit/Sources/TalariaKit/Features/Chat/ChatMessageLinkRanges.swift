@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A rendered link's hit target inside a message row, in the row's coordinate
 /// space. A link that wraps contributes one region per line fragment.
-public struct ChatMessageLinkRegion: Equatable {
+public struct ChatMessageLinkRegion: Equatable, Sendable {
     let rect: CGRect
     let url: URL
 
@@ -14,7 +14,7 @@ public struct ChatMessageLinkRegion: Equatable {
 }
 
 /// A link's character range inside a paragraph's rendered plain text.
-public struct MarkdownLinkRange: Equatable {
+public struct MarkdownLinkRange: Equatable, Sendable {
     public let range: Range<Int>
     public let url: URL
 }
@@ -130,13 +130,14 @@ public enum MarkdownLinkRanges {
     /// Parsing is pure over the paragraph's Markdown, and SwiftUI re-evaluates
     /// transcript bodies for reasons unrelated to the text, so results are
     /// memoized the way `MarkdownMathLayoutCache` memoizes segmentation.
-    private static let cache: NSCache<NSString, CachedRanges> = {
+    /// `nonisolated(unsafe)`: `NSCache` serializes access with its own internal lock.
+    nonisolated(unsafe) private static let cache: NSCache<NSString, CachedRanges> = {
         let cache = NSCache<NSString, CachedRanges>()
         cache.countLimit = 240
         return cache
     }()
 
-    private final class CachedRanges {
+    private final class CachedRanges: Sendable {
         let ranges: [MarkdownLinkRange]
         init(_ ranges: [MarkdownLinkRange]) { self.ranges = ranges }
     }

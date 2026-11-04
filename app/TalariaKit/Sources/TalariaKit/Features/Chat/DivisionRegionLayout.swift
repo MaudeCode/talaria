@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Resolves panes around the fold using physical coordinates for every app section and chat overlay.
 public enum DivisionRegionLayout {
-    public struct ChatFrames: Equatable {
+    public struct ChatFrames: Equatable, Sendable {
         public let transcript: CGRect
         public let composer: CGRect
         public let isTabletop: Bool

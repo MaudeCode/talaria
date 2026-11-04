@@ -2,7 +2,7 @@
 public typealias ChatHapticFeedback = AppHapticFeedback
 
 @MainActor
-public enum ChatHaptics {
+public enum ChatHaptics: Sendable {
     public typealias Performer = @MainActor (ChatHapticFeedback) -> Void
 
     public static func messageSent(isEnabled: Bool, performer: Performer? = nil) {

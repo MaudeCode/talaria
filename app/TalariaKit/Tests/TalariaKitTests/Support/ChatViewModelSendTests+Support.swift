@@ -247,7 +247,8 @@ extension ChatViewModelSendTests {
     }
 }
 
-final class LockedCounter {
+/// `@unchecked Sendable`: `lock` guards `value`.
+final class LockedCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
 

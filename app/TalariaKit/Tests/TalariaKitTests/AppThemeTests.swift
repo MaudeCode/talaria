@@ -266,6 +266,7 @@ final class ResponseCompletionNotificationPolicyTests: XCTestCase {
     }
 }
 
+@MainActor
 final class ResponseCompletionNotificationServiceTests: XCTestCase {
     func testRequestCarriesOnlySessionIDPayload() {
         func request(_ sessionID: String?) -> ResponseCompletionNotificationRequest {
@@ -381,6 +382,7 @@ final class ResponseCompletionNotificationTrackerTests: XCTestCase {
     }
 }
 
+@MainActor
 final class SpyResponseCompletionNotificationScheduler: ResponseCompletionNotificationScheduling {
     private let status: UNAuthorizationStatus
     private let requestAuthorizationResult: Bool

@@ -2,14 +2,14 @@ import Foundation
 
 /// TAL-426: a steer the Agent has not taken yet, owned by the server (session `pending_steers`, SSE `steer_pending`).
 /// The server decides which actions a client may offer. Decoded with `convertFromSnakeCase`.
-public struct PendingSteer: Decodable, Equatable {
-    public enum State: String, Equatable {
+public struct PendingSteer: Decodable, Equatable, Sendable {
+    public enum State: String, Equatable, Sendable {
         case pending
         /// A Send now is delivering it after the running tools yield.
         case sendingNow = "sending_now"
     }
 
-    public struct Actions: Decodable, Equatable {
+    public struct Actions: Decodable, Equatable, Sendable {
         public let edit: Bool
         public let cancel: Bool
         public let sendNow: Bool
@@ -68,8 +68,8 @@ public struct PendingSteer: Decodable, Equatable {
 }
 
 /// TAL-426: a pending steer is no longer pending without the Agent taking it (SSE `steer_withdrawn`).
-public struct SteerWithdrawnEvent: Decodable, Equatable {
-    public enum Reason: String, Equatable {
+public struct SteerWithdrawnEvent: Decodable, Equatable, Sendable {
+    public enum Reason: String, Equatable, Sendable {
         case edit, cancel, stopped, followup, other
     }
 
@@ -96,13 +96,13 @@ public struct SteerWithdrawnEvent: Decodable, Equatable {
     }
 }
 
-public struct SteerWithdrawResponse: Decodable, Equatable {
+public struct SteerWithdrawResponse: Decodable, Equatable, Sendable {
     public let withdrawn: Bool
     public let text: String?
 }
 
-public struct SteerSendNowResponse: Decodable, Equatable {
-    public enum Outcome: String, Equatable {
+public struct SteerSendNowResponse: Decodable, Equatable, Sendable {
+    public enum Outcome: String, Equatable, Sendable {
         case delivered, nextStep = "next_step", notRunning = "not_running", taken, failed, other
     }
 
@@ -118,7 +118,7 @@ public struct SteerSendNowResponse: Decodable, Equatable {
     }
 }
 
-public enum PendingSteerWithdrawReason: String, Encodable {
+public enum PendingSteerWithdrawReason: String, Encodable, Sendable {
     case edit, cancel
 }
 

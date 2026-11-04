@@ -14,27 +14,27 @@ struct MessageBubbleView: View {
     @ChatRetainedState("message-body") private var isExpanded = false
 
     let message: ChatMessage
-    let loadAttachmentImage: ((String) async -> Data?)?
-    let loadAttachmentData: ((String) async -> Data?)?
-    let loadTranscriptMediaImage: ((TranscriptMediaReference) async -> Data?)?
-    let loadTranscriptMediaData: ((TranscriptMediaReference) async -> Data?)?
+    let loadAttachmentImage: (@MainActor (String) async -> Data?)?
+    let loadAttachmentData: (@MainActor (String) async -> Data?)?
+    let loadTranscriptMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let loadTranscriptMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
     let transcriptMediaCacheNamespace: String
     let localAttachmentPreviews: [String: Data]?
     let onPreviewAttachment: ((MessageAttachment, Data?) -> Void)?
-    let onPreviewTranscriptMedia: ((TranscriptMediaReference) -> Void)?
+    let onPreviewTranscriptMedia: (@MainActor (TranscriptMediaReference) -> Void)?
     let isStreaming: Bool
     let liveTokensPerSecond: Double?
 
     init(
         message: ChatMessage,
-        loadAttachmentImage: ((String) async -> Data?)? = nil,
-        loadAttachmentData: ((String) async -> Data?)? = nil,
-        loadTranscriptMediaImage: ((TranscriptMediaReference) async -> Data?)? = nil,
-        loadTranscriptMediaData: ((TranscriptMediaReference) async -> Data?)? = nil,
+        loadAttachmentImage: (@MainActor (String) async -> Data?)? = nil,
+        loadAttachmentData: (@MainActor (String) async -> Data?)? = nil,
+        loadTranscriptMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)? = nil,
+        loadTranscriptMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)? = nil,
         transcriptMediaCacheNamespace: String = "",
         localAttachmentPreviews: [String: Data]? = nil,
         onPreviewAttachment: ((MessageAttachment, Data?) -> Void)? = nil,
-        onPreviewTranscriptMedia: ((TranscriptMediaReference) -> Void)? = nil,
+        onPreviewTranscriptMedia: (@MainActor (TranscriptMediaReference) -> Void)? = nil,
         isStreaming: Bool = false,
         liveTokensPerSecond: Double? = nil
     ) {
@@ -592,7 +592,7 @@ struct PendingSteerControls {
 }
 
 private struct PendingSteerControlsKey: EnvironmentKey {
-    static let defaultValue = PendingSteerControls()
+    static var defaultValue: PendingSteerControls { PendingSteerControls() }
 }
 
 extension EnvironmentValues {
@@ -616,7 +616,7 @@ struct VoiceNoteControls {
     var remove: (String) -> Void = { _ in }
 }
 private struct VoiceNoteControlsKey: EnvironmentKey {
-    static let defaultValue = VoiceNoteControls()
+    static var defaultValue: VoiceNoteControls { VoiceNoteControls() }
 }
 extension EnvironmentValues {
     var voiceNoteControls: VoiceNoteControls {

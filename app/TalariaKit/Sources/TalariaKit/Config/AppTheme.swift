@@ -3,7 +3,7 @@ import SwiftUI
 #if canImport(UIKit)
 #endif
 
-public enum AppTheme: String, CaseIterable, Identifiable {
+public enum AppTheme: String, CaseIterable, Identifiable, Sendable {
     case system
     case light
     case dark
@@ -39,7 +39,7 @@ public enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
-public struct HeaderLogoColorPreset: Identifiable, Equatable {
+public struct HeaderLogoColorPreset: Identifiable, Equatable, Sendable {
     public let name: String
     public let hex: String
 

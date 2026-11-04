@@ -1,6 +1,6 @@
 import Foundation
 
-public enum OnboardingFlowPolicy {
+public enum OnboardingFlowPolicy: Sendable {
     public static let pageCount = 5
     public static let connectPageIndex = 4
     static let agentPromptPageIndex = 2

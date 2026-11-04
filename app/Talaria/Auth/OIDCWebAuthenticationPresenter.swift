@@ -15,7 +15,7 @@ final class OIDCWebAuthenticationPresenter: NSObject,
             let session = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: callbackScheme
-            ) { [weak self] callback, error in
+            ) { @Sendable [weak self] callback, error in
                 Task { @MainActor in
                     self?.session = nil
                     if let callback {

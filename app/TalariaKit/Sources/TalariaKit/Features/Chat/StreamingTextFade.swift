@@ -277,13 +277,13 @@ public final class StreamingTextFadeStampStore<Key: Hashable>: @unchecked Sendab
 /// `fadeEnabled == false`: their multi-`Text` rendering would collide in one
 /// stamp store, so they reveal unfaded (code fade is an explicit non-goal).
 public enum StreamingTextFadeTailSplitter {
-    public struct Block: Equatable {
+    public struct Block: Equatable, Sendable {
         public let ordinal: Int
         public let text: String
         public let fadeEnabled: Bool
     }
 
-    public struct BlockSplit: Equatable {
+    public struct BlockSplit: Equatable, Sendable {
         public let head: String
         public let blocks: [Block]
         /// Ordinal of the current (still-growing) block == total boundaries.

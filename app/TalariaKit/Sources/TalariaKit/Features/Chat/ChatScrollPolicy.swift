@@ -86,7 +86,7 @@ public enum ChatScrollPolicy {
     /// provided the latch still follows. Without the replay a stream's last
     /// trigger can leave its final content below the viewport while the latch
     /// still reports following.
-    public struct DisclosureSettle: Equatable {
+    public struct DisclosureSettle: Equatable, Sendable {
         public private(set) var isSettling = false
         /// Identifies the current suspension, so an outdated expiry cannot end
         /// a later one.
@@ -136,7 +136,7 @@ public enum ChatScrollPolicy {
     }
 
     /// Scroll-gesture events that drive the follow latch.
-    public enum FollowEvent: Equatable {
+    public enum FollowEvent: Equatable, Sendable {
         /// An explicit jump to the latest content: scroll-to-bottom tap or send.
         case reset
         /// The user started dragging the transcript.
@@ -161,7 +161,7 @@ public enum ChatScrollPolicy {
     }
 
     /// The scroll geometry one metrics report is derived from.
-    public struct ScrollGeometry: Equatable {
+    public struct ScrollGeometry: Equatable, Sendable {
         var offsetY: CGFloat
         var contentHeight: CGFloat
         var visibleHeight: CGFloat
@@ -193,7 +193,7 @@ public enum ChatScrollPolicy {
 
     /// The follow latch. `isFollowing` is the answer; the second flag lets an
     /// explicit reset outlive a gesture that was still coasting when it landed.
-    public struct FollowLatch: Equatable {
+    public struct FollowLatch: Equatable, Sendable {
         public var isFollowing = true
         /// Set by `.reset`. Until the gesture settles or a new drag begins, live
         /// offset changes still flagged as user scrolling belong to momentum
@@ -279,7 +279,7 @@ public enum ChatScrollPolicy {
 /// can pin the reader's offset and suspend follow scrolls through the size
 /// change.
 struct ChatDisclosureToggledKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {}
+    static var defaultValue: () -> Void { {} }
 }
 
 extension EnvironmentValues {

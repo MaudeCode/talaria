@@ -394,7 +394,7 @@ private struct KanbanBulkActionBody: Encodable {
     }
 }
 
-public enum KanbanRequestError: Error, Equatable {
+public enum KanbanRequestError: Error, Equatable, Sendable {
     case runningStatusRequiresDispatcher
 }
 

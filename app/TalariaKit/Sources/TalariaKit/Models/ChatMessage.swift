@@ -14,7 +14,7 @@ public enum ReasoningTitleMetadata {
     }
 }
 
-public struct ChatMessage: Decodable, Equatable, Identifiable {
+public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public var id: String {
         messageId ?? "\(role ?? "unknown")-\(timestamp ?? 0)-\(content ?? "")"
     }
@@ -57,12 +57,12 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
 
     /// Device-owned preparation only; never decoded from server content.
     public internal(set) var localVoicePhase: LocalVoicePhase? = nil
-    public enum LocalVoicePhase: Equatable {
+    public enum LocalVoicePhase: Equatable, Sendable {
         case preparing, sending, failed(String), uncertain(String)
     }
 
     /// TAL-600: `row` on its own, `inScene` only inside its turn's activity scene, `hidden` not at all.
-    public enum Display: String, Equatable {
+    public enum Display: String, Equatable, Sendable {
         case row, hidden
         case inScene = "in_scene"
     }
@@ -256,7 +256,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     }
 }
 
-public enum SteeringHintState: String {
+public enum SteeringHintState: String, Sendable {
     case sending = "_talaria_steer_sending"
     case waiting = "_talaria_steer_waiting"
     case consumed = "_talaria_steer_consumed"
@@ -281,7 +281,7 @@ extension ChatMessage {
 }
 
 /// An automatic background wakeup the server classified (TAL-371), as one completion line per finished item (TAL-460).
-public struct BackgroundUpdate: Codable, Equatable {
+public struct BackgroundUpdate: Codable, Equatable, Sendable {
     public let lines: [BackgroundLine]
     public let reviewState: BackgroundReviewState?
 
@@ -302,17 +302,17 @@ public struct BackgroundUpdate: Codable, Equatable {
 }
 
 /// The explicit server-owned parent review or composed worker/review outcome.
-public enum BackgroundReviewState: String, Codable, Equatable, CaseIterable {
+public enum BackgroundReviewState: String, Codable, Equatable, CaseIterable, Sendable {
     case waiting, reviewing, reviewed, failed, unknown
 }
 
 /// One finished background item, rendered by its server-supplied label and review state.
-public struct BackgroundLine: Codable, Equatable {
-    public enum Kind: String, Codable, Equatable {
+public struct BackgroundLine: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Equatable, Sendable {
         case agent, command, other
     }
 
-    public enum Status: String, Codable, Equatable {
+    public enum Status: String, Codable, Equatable, Sendable {
         case completed, failed, notice
     }
 
@@ -351,7 +351,7 @@ public struct BackgroundLine: Codable, Equatable {
     }
 }
 
-public struct AssistantActivityScene: Codable, Equatable {
+public struct AssistantActivityScene: Codable, Equatable, Sendable {
     public let version: String?
     public let finalAnswer: String?
     /// The server's collapsed excerpt of a final answer too long to lay out whole (TAL-456).
@@ -416,7 +416,7 @@ public struct AssistantActivityScene: Codable, Equatable {
 }
 
 /// One page of a scene's earlier rows (`GET /api/session/anchor-scene`), in the same normalized row shape.
-public struct AnchorScenePageResponse: Decodable, Equatable {
+public struct AnchorScenePageResponse: Decodable, Equatable, Sendable {
     public let rows: [AssistantActivitySceneRow]
     public let start: Int
 
@@ -433,7 +433,7 @@ public struct AnchorScenePageResponse: Decodable, Equatable {
 }
 
 /// `GET /api/session/tool-result`: one tool call's whole result and its uncapped sections.
-public struct ToolResultResponse: Decodable, Equatable {
+public struct ToolResultResponse: Decodable, Equatable, Sendable {
     public let result: String
     public let resultView: ToolResultView?
 
@@ -464,7 +464,7 @@ extension AssistantActivityScene {
 
 /// One server-normalized scene row. The server decides order, role, tool completion and error, and
 /// steering consumption; the app reads those fields as sent.
-public struct AssistantActivitySceneRow: Codable, Equatable {
+public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     public let rowID: String?
     public let orderIndex: Int?
     public let role: String?

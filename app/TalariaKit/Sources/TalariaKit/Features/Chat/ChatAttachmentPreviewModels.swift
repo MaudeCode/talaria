@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-public struct ChatAttachmentPreviewItem: Identifiable, Equatable {
+public struct ChatAttachmentPreviewItem: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public let name: String?
     public let path: String?

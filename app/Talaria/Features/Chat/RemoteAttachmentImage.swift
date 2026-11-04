@@ -4,7 +4,7 @@ import TalariaKit
 struct RemoteAttachmentImage: View {
     let path: String
     let cacheNamespace: String
-    let loadAttachmentImage: (String) async -> Data?
+    let loadAttachmentImage: @MainActor (String) async -> Data?
     @State private var image: UIImage?
     @State private var didAttempt = false
 

@@ -42,7 +42,7 @@ final class ComposerAudioCaptureState {
 @MainActor
 @Observable
 public final class InlineAudioPlayerModel {
-    public enum Phase: Equatable {
+    public enum Phase: Equatable, Sendable {
         case idle
         case loading
         case ready
@@ -63,7 +63,7 @@ public final class InlineAudioPlayerModel {
 
     @ObservationIgnored private var player: AVAudioPlayer?
     @ObservationIgnored private let delegateProxy = AudioPlayerDelegateProxy()
-    @ObservationIgnored private var ticker: Timer?
+    @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var didLoad = false
 
     public func loadIfNeeded(using load: () async -> Data?) async {
@@ -208,12 +208,7 @@ public final class InlineAudioPlayerModel {
 
     private func startTicker() {
         stopTicker()
-        // `.common` so the timer keeps firing while the transcript is scrolling.
-        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        ticker = timer
+        ticker = startMainActorTicker(every: .milliseconds(200)) { [weak self] in self?.tick() }
     }
 
     private func tick() {
@@ -222,12 +217,12 @@ public final class InlineAudioPlayerModel {
     }
 
     private func stopTicker() {
-        ticker?.invalidate()
+        ticker?.cancel()
         ticker = nil
     }
 
     deinit {
-        ticker?.invalidate()
+        ticker?.cancel()
     }
 }
 

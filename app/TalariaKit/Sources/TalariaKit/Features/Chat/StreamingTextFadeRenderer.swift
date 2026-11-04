@@ -6,7 +6,7 @@ import SwiftUI
 /// fading word already sits at its final position and never reflows mid-fade.
 /// The renderer only repaints glyph slices at an opacity derived from when
 /// their characters first appeared; persisted content is untouched.
-public struct StreamingTextFadeRenderer: TextRenderer {
+public struct StreamingTextFadeRenderer: TextRenderer, Sendable {
     /// Wall-clock seconds supplied per frame by the driving `TimelineView`;
     /// frame delivery is guaranteed there, so no `Animatable` interpolation
     /// is involved (`AnimatableData` stays `EmptyAnimatableData`).

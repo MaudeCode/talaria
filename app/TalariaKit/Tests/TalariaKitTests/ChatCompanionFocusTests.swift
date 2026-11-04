@@ -98,7 +98,7 @@ final class ChatCompanionFocusTests: XCTestCase {
     func testTheAutoOpenSettingDecidesWhetherANewChatStartsHidden() throws {
         let suite = "ChatCompanionFocusTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         XCTAssertFalse(try makeChat(defaults: defaults, id: "on").companionFocus.isHidden, "The setting is on by default")
         defaults.set(false, forKey: ChatTranscriptDisplaySettings.opensCompanionPageKey)
         XCTAssertTrue(try makeChat(defaults: defaults, id: "off").companionFocus.isHidden)

@@ -7,6 +7,7 @@ final class SkillLinkedFileSelectionTests: XCTestCase {
 
     /// Stands in for `SkillDetailView`'s sheet state: the presented selection plus
     /// the load that only applies a response to the file that asked for it.
+    @MainActor
     private final class LinkedFileSheet {
         var selection: SkillLinkedFileSelection?
 

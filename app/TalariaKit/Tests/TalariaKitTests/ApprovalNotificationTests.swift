@@ -45,7 +45,7 @@ final class ApprovalNotificationTests: XCTestCase {
             approvalStreamClient: approvalStream, clarifyStreamClient: SpySSEStreamingClient(),
             pollingIntervals: .standard
         )
-        weak var weakCoordinator = coordinator
+        weak let weakCoordinator = coordinator
         coordinator?.delegate = delegate
         var shown: [String] = []
         coordinator?.approvalHeadDidBecomeVisible = { shown.append($0.pending.approvalId ?? "") }
@@ -222,6 +222,7 @@ private final class ApprovalNotificationTestDelegate: ChatPendingActionCoordinat
     func pendingActionCoordinatorDidFailAction(_ error: Error) {}
 }
 
+@MainActor
 private final class ApprovalNotificationSpy: ApprovalNotificationScheduling {
     let status: UNAuthorizationStatus
     var onAuthorization: () -> Void = {}

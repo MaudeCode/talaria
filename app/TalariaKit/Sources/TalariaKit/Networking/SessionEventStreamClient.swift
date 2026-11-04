@@ -1,5 +1,5 @@
 import Foundation
-import LDSwiftEventSource
+@preconcurrency import LDSwiftEventSource
 
 public enum SessionEventFrame: Equatable, Sendable {
     /// The HTTP response arrived. Opening alone does not prove a working stream: a proxy or a
@@ -93,7 +93,7 @@ public final class SessionEventStreamClient: SessionEventStreaming {
         CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
     }
 
-    private final class Handler: EventHandler {
+    private final class Handler: EventHandler, Sendable {
         private let onFrame: @MainActor (SessionEventFrame) -> Void
         private let onFailure: @MainActor () -> Void
 

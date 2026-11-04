@@ -434,7 +434,11 @@ private final class TranscriptMediaPreviewRequestRecorder {
 }
 
 private final class TranscriptMediaPreviewMockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let requestHandlerStorage = LockedTestValue<((URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
+    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        get { requestHandlerStorage.value }
+        set { requestHandlerStorage.value = newValue }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         true

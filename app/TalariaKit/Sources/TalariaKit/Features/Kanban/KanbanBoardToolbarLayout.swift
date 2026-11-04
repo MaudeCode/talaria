@@ -11,7 +11,7 @@ import CoreGraphics
 ///
 /// The reserves below are deliberate over-estimates of the measured bar. Reserving too
 /// much only truncates the name earlier; reserving too little brings the empty bar back.
-public struct KanbanBoardToolbarLayout: Equatable {
+public struct KanbanBoardToolbarLayout: Equatable, Sendable {
     /// Cap for the Board name, or `nil` while the bar width is still unknown.
     public let boardNameWidth: CGFloat?
     /// True when Select Cards and Card Filters move into a single overflow menu.

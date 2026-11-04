@@ -4,11 +4,11 @@ import Foundation
 /// On-device re-encoding of a feedback video (TAL-1597): H.264 in MP4, the long edge at most 1280 px, no audio
 /// track and no metadata, at a bitrate that fits any clip up to the server's length limit into its size limit.
 /// `AVAssetExportSession` presets are not used: their bitrates are too high to fit long clips.
-public enum FeedbackVideoEncoder {
+public enum FeedbackVideoEncoder: Sendable {
     public static let maxPixelSize = 1_280
     public static let maxBitrate = 2_500_000.0
 
-    public enum Failure: LocalizedError, Equatable {
+    public enum Failure: LocalizedError, Equatable, Sendable {
         case tooLong(maxSeconds: Int)
         case tooLarge
         case unreadable

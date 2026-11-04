@@ -47,7 +47,7 @@ public enum FilePreviewDisplaySettings {
 
 /// Which screen edge the chat's scroll-to-latest button sits on, beside the run status chip.
 /// Physical sides: the RTL chat layout does not mirror them.
-public enum ChatScrollToBottomButtonSide: String, CaseIterable, Identifiable {
+public enum ChatScrollToBottomButtonSide: String, CaseIterable, Identifiable, Sendable {
     case right
     case left
 
@@ -182,7 +182,7 @@ public enum SectionVisibilitySettings {
 
 /// The order of quota accounts on the Insights Quotas tab (TAL-1750): a device-local display preference, like the
 /// sidebar pins. Sources the saved order does not name follow in the server's order.
-public enum ProviderQuotaOrderSettings {
+public enum ProviderQuotaOrderSettings: Sendable {
     public static let storageKey = "providerQuota.insightsOrder"
 
     public static func sourceIDs(from data: Data) -> [String] {

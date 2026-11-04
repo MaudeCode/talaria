@@ -3,15 +3,13 @@ import TalariaKit
 
 #if DEBUG
 private enum AdaptiveGlassPreviewDefaults {
-    static let glassEnabled = configuredDefaults(
-        suiteName: "AdaptiveGlassPreviewDefaults.glassEnabled",
-        isEnabled: true
-    )
+    static var glassEnabled: UserDefaults {
+        configuredDefaults(suiteName: "AdaptiveGlassPreviewDefaults.glassEnabled", isEnabled: true)
+    }
 
-    static let materialFallback = configuredDefaults(
-        suiteName: "AdaptiveGlassPreviewDefaults.materialFallback",
-        isEnabled: false
-    )
+    static var materialFallback: UserDefaults {
+        configuredDefaults(suiteName: "AdaptiveGlassPreviewDefaults.materialFallback", isEnabled: false)
+    }
 
     private static func configuredDefaults(suiteName: String, isEnabled: Bool) -> UserDefaults {
         guard let defaults = UserDefaults(suiteName: suiteName) else {

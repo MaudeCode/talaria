@@ -1,13 +1,13 @@
 import Foundation
 import Observation
 
-public protocol InsightsDataClient {
+public protocol InsightsDataClient: Sendable {
     func insights(days: Int) async throws -> InsightsResponse
 }
 
 extension APIClient: InsightsDataClient {}
 
-public enum AnalyticsTimeframe: String, CaseIterable, Identifiable {
+public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
     case today
     case last7Days
     case last30Days

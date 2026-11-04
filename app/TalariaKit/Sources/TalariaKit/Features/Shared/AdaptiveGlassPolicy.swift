@@ -8,11 +8,11 @@ public enum AdaptiveReadableContentWidth {
     public static let chat: CGFloat = 800
 }
 
-public enum AdaptiveGlassStyle: Equatable {
+public enum AdaptiveGlassStyle: Equatable, Sendable {
     case regular
 }
 
-public enum AdaptiveGlassSurface: Equatable {
+public enum AdaptiveGlassSurface: Equatable, Sendable {
     case liquidGlass
     case material
     case opaque
@@ -34,7 +34,7 @@ public enum AdaptiveGlassSurface: Equatable {
     }
 }
 
-public enum AdaptiveScrollEdgeTreatment: Equatable {
+public enum AdaptiveScrollEdgeTreatment: Equatable, Sendable {
     case soft
     case disabled
 

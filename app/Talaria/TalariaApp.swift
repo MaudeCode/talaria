@@ -26,7 +26,7 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         }
     }
 
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
@@ -36,20 +36,22 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         if SessionNotificationRefresh.namesASession(
             userInfo: notification.request.content.userInfo
         ) {
-            NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)
+            await MainActor.run {
+                NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)
+            }
         }
 
         return Self.foregroundPresentation(for: notification.request.content)
     }
 
     /// Quota alerts also go to Notification Center's list so they outlive the banner; other families keep theirs.
-    static func foregroundPresentation(for content: UNNotificationContent) -> UNNotificationPresentationOptions {
+    nonisolated static func foregroundPresentation(for content: UNNotificationContent) -> UNNotificationPresentationOptions {
         content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier
             ? [.banner, .sound, .list]
             : [.banner, .sound]
     }
 
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
@@ -60,6 +62,10 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 publisherID: userInfo["publisherId"] as? String
               )
         else { return }
+        await Self.open(url)
+    }
+
+    @MainActor private static func open(_ url: URL) async {
         await UIApplication.shared.open(url)
     }
 }
@@ -244,7 +250,8 @@ enum ProviderQuotaBackgroundRefresh {
 
     static func register() {
         isRegistered = true
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+        // `.main`: this main-actor closure would trap on the scheduler's default background queue.
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { task in
             Task { @MainActor in
                 guard let refreshTask = task as? BGAppRefreshTask else {
                     task.setTaskCompleted(success: false)

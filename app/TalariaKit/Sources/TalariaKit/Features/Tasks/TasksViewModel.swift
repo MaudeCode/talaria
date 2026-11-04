@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-public enum CronJobListMutation: Equatable {
+public enum CronJobListMutation: Equatable, Sendable {
     case upsert(CronJob)
     case delete(jobID: String)
     /// Run-now found the job already running, possibly in another process (TAL-835).

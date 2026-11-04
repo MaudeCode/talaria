@@ -28,7 +28,7 @@ public struct CatalogAvailability: Codable, Equatable, Sendable {
     }
 }
 
-public struct ModelsResponse: Decodable, Equatable {
+public struct ModelsResponse: Decodable, Equatable, Sendable {
     public let availability: CatalogAvailability?
     let groups: [JSONValue]?
     let models: [JSONValue]?
@@ -64,12 +64,12 @@ public struct ModelsResponse: Decodable, Equatable {
 
 }
 
-public struct CommandsResponse: Decodable, Equatable {
+public struct CommandsResponse: Decodable, Equatable, Sendable {
     public let commands: [AgentCommand]?
 }
 
 /// `POST /api/commands/exec`: the command's output, as the server words it.
-public struct CommandExecResponse: Decodable, Equatable {
+public struct CommandExecResponse: Decodable, Equatable, Sendable {
     public let output: String?
 }
 
@@ -188,7 +188,7 @@ extension Array where Element == AgentCommand {
 /// from `custom_providers` in config.yaml (`is_custom == true`) omit `is_oauth`,
 /// `auth_error`, `is_self_hosted`, `base_url`, and `is_plugin_provider` — so every
 /// field stays optional and decoding never fails on a partial entry.
-public struct ProvidersResponse: Decodable, Equatable {
+public struct ProvidersResponse: Decodable, Equatable, Sendable {
     public let availability: CatalogAvailability?
     public let providers: [ProviderSummary]?
     public let activeProvider: String?

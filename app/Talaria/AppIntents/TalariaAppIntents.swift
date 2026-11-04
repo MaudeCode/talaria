@@ -6,11 +6,11 @@ import TalariaKit
 /// (no server session is created until the first message). Available to the Action button,
 /// Shortcuts, Spotlight, and Siri via `TalariaShortcuts`.
 struct NewChatIntent: AppIntent {
-    static var title: LocalizedStringResource = "New Chat"
-    static var description = IntentDescription("Open Talaria on a new, empty chat.")
+    static let title: LocalizedStringResource = "New Chat"
+    static let description = IntentDescription("Open Talaria on a new, empty chat.")
 
     /// Foregrounds the app so the navigation can run in-process.
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -26,11 +26,11 @@ struct NewChatIntent: AppIntent {
 /// Mic/speech permission is handled by the existing dictation path: if access is undetermined
 /// the system prompt appears, and if it's denied the composer shows a clear error instead.
 struct NewChatVoiceIntent: AppIntent {
-    static var title: LocalizedStringResource = "New Chat with Voice"
-    static var description = IntentDescription("Open Talaria on a new chat and start voice dictation.")
+    static let title: LocalizedStringResource = "New Chat with Voice"
+    static let description = IntentDescription("Open Talaria on a new chat and start voice dictation.")
 
     /// Foregrounds the app so the navigation — and the microphone — can run in-process.
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -45,11 +45,11 @@ struct NewChatVoiceIntent: AppIntent {
 /// other New Chat intents, on its own host (`new-chat-profile`) with the profile name as a
 /// query item, so `PendingNewChatView` can create the session pinned to it.
 struct NewChatInProfileIntent: AppIntent {
-    static var title: LocalizedStringResource = "New Chat in Profile"
-    static var description = IntentDescription("Open Talaria on a new chat pinned to a specific profile.")
+    static let title: LocalizedStringResource = "New Chat in Profile"
+    static let description = IntentDescription("Open Talaria on a new chat pinned to a specific profile.")
 
     /// Foregrounds the app so the navigation can run in-process.
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Profile")
     var profile: ProfileEntity

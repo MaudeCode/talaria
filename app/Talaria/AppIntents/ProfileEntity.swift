@@ -20,7 +20,7 @@ struct ProfileEntity: AppEntity, Identifiable {
         TypeDisplayRepresentation(name: "Profile")
     }
 
-    static var defaultQuery = ProfileEntityQuery()
+    static let defaultQuery = ProfileEntityQuery()
 
     var displayRepresentation: DisplayRepresentation {
         if let subtitle, !subtitle.isEmpty {

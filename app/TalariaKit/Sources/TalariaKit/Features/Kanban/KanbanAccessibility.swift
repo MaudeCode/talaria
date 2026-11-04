@@ -1,6 +1,6 @@
 import SwiftUI
 
-public struct KanbanBoardStatusLabelStyle: LabelStyle {
+public struct KanbanBoardStatusLabelStyle: LabelStyle, Sendable {
 
     public init() {
     }
@@ -70,7 +70,7 @@ public enum KanbanBoardAccessibility {
     }
 }
 
-public enum KanbanBoardRowAction: Equatable {
+public enum KanbanBoardRowAction: Equatable, Sendable {
     case edit
     case makeActive
     case archive
@@ -84,7 +84,7 @@ public enum KanbanBoardRowAction: Equatable {
     }
 }
 
-public struct KanbanBoardRowPresentation: Equatable {
+public struct KanbanBoardRowPresentation: Equatable, Sendable {
     public let browseSlug: String?
     public let actions: [KanbanBoardRowAction]
     public let mutationsAreEnabled: Bool

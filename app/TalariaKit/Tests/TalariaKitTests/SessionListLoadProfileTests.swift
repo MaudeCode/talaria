@@ -178,7 +178,7 @@ extension SessionListMutationTests {
             requests.request("/api/projects"),
             "recorded: \(requests.recordedPaths)"
         ).complete(withJSON: #"{"projects":[{"project_id":"doomed","name":"Doomed"}]}"#)
-        await reload.value
+        _ = await reload.value
 
         XCTAssertTrue(
             viewModel.projects.isEmpty,

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ModelFavoriteKey: Codable, Equatable, Hashable {
+public struct ModelFavoriteKey: Codable, Equatable, Hashable, Sendable {
     let modelID: String
     let providerID: String?
 }

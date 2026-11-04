@@ -1,13 +1,13 @@
 import Foundation
 import UniformTypeIdentifiers
 
-public struct ShareInput {
+public struct ShareInput: Sendable {
     public var textSnippets: [String] = []
     public var urls: [URL] = []
     public var attachments: [SharedAttachmentImport] = []
 }
 
-public enum ShareInputReader {
+public enum ShareInputReader: Sendable {
     public static func input(from context: NSExtensionContext?) async throws -> ShareInput {
         let providers = context?.inputItems
             .compactMap { $0 as? NSExtensionItem }
@@ -56,29 +56,17 @@ public enum ShareInputReader {
             return nil
         }
 
-        let item = await loadItem(from: provider, typeIdentifier: UTType.url.identifier)
-        if let url = item as? URL {
+        switch await loadItem(from: provider, typeIdentifier: UTType.url.identifier) {
+        case .url(let url):
             return webURL(url)
-        }
-
-        if let url = item as? NSURL {
-            return webURL(url as URL)
-        }
-
-        if let string = item as? String {
+        case .string(let string):
             return webURL(URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines)))
+        case .data(let data):
+            return String(data: data, encoding: .utf8)
+                .flatMap { webURL(URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines))) }
+        case .attributedText, nil:
+            return nil
         }
-
-        if let string = item as? NSString {
-            return webURL(URL(string: (string as String).trimmingCharacters(in: .whitespacesAndNewlines)))
-        }
-
-        if let data = item as? Data,
-           let string = String(data: data, encoding: .utf8) {
-            return webURL(URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines)))
-        }
-
-        return nil
     }
 
     private static func loadText(from provider: NSItemProvider) async -> String? {
@@ -89,24 +77,14 @@ public enum ShareInputReader {
             return nil
         }
 
-        let item = await loadItem(from: provider, typeIdentifier: typeIdentifier)
-        if let string = item as? String {
+        switch await loadItem(from: provider, typeIdentifier: typeIdentifier) {
+        case .string(let string), .attributedText(let string):
             return string
-        }
-
-        if let string = item as? NSString {
-            return string as String
-        }
-
-        if let attributedString = item as? NSAttributedString {
-            return attributedString.string
-        }
-
-        if let data = item as? Data {
+        case .data(let data):
             return String(data: data, encoding: .utf8)
+        case .url, nil:
+            return nil
         }
-
-        return nil
     }
 
     private static func webURL(_ url: URL?) -> URL? {
@@ -181,29 +159,17 @@ public enum ShareInputReader {
         return SharedAttachmentImport(filename: filename, typeIdentifier: typeIdentifier, data: data)
     }
 
-    private static func fileURL(from item: NSSecureCoding?) -> URL? {
-        if let url = item as? URL {
+    private static func fileURL(from item: LoadedItem?) -> URL? {
+        switch item {
+        case .url(let url):
             return url
-        }
-
-        if let url = item as? NSURL {
-            return url as URL
-        }
-
-        if let data = item as? Data {
+        case .data(let data):
             return URL(dataRepresentation: data, relativeTo: nil)
-        }
-
-        if let string = item as? String {
+        case .string(let string):
             return URL(string: string) ?? URL(fileURLWithPath: string)
+        case .attributedText, nil:
+            return nil
         }
-
-        if let string = item as? NSString {
-            let value = string as String
-            return URL(string: value) ?? URL(fileURLWithPath: value)
-        }
-
-        return nil
     }
 
     private static func attachmentDataTypeIdentifier(from provider: NSItemProvider) -> String? {
@@ -252,10 +218,28 @@ public enum ShareInputReader {
         return "\(baseName).\(fileExtension)"
     }
 
-    private static func loadItem(from provider: NSItemProvider, typeIdentifier: String) async -> NSSecureCoding? {
+    /// The value a provider's `NSSecureCoding` item carries, read on the provider's queue so it can cross actors.
+    private enum LoadedItem: Sendable {
+        case url(URL)
+        case string(String)
+        case attributedText(String)
+        case data(Data)
+
+        init?(_ item: NSSecureCoding?) {
+            switch item {
+            case let url as URL: self = .url(url)
+            case let string as String: self = .string(string)
+            case let attributed as NSAttributedString: self = .attributedText(attributed.string)
+            case let data as Data: self = .data(data)
+            default: return nil
+            }
+        }
+    }
+
+    private static func loadItem(from provider: NSItemProvider, typeIdentifier: String) async -> LoadedItem? {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
-                continuation.resume(returning: item)
+                continuation.resume(returning: LoadedItem(item))
             }
         }
     }

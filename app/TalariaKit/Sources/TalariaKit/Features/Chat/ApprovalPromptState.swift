@@ -1,5 +1,5 @@
 
-public struct ApprovalPromptState: Equatable, Identifiable {
+public struct ApprovalPromptState: Equatable, Identifiable, Sendable {
     public var id: String {
         "\(sessionID)-\(pending.id)"
     }

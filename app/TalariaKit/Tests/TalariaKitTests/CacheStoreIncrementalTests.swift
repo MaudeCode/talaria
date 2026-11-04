@@ -35,8 +35,8 @@ final class CacheStoreIncrementalTests: XCTestCase {
                         \.cachedAt, \.expiresAt,
                     ]
                     for field in fields { _ = row[keyPath: field] }
-                } onChange: {
-                    MainActor.assumeIsolated { _ = changedRows.insert(row.sessionID) }
+                } onChange: { [sessionID = row.sessionID] in
+                    MainActor.assumeIsolated { _ = changedRows.insert(sessionID) }
                 }
             }
         }

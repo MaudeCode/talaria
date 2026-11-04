@@ -85,10 +85,10 @@ struct ChatTranscriptView: View {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
-    let loadAttachmentImage: (String) async -> Data?
-    let loadAttachmentData: (String) async -> Data?
-    let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
-    let loadTranscriptMediaData: (TranscriptMediaReference) async -> Data?
+    let loadAttachmentImage: @MainActor (String) async -> Data?
+    let loadAttachmentData: @MainActor (String) async -> Data?
+    let loadTranscriptMediaImage: @MainActor (TranscriptMediaReference) async -> Data?
+    let loadTranscriptMediaData: @MainActor (TranscriptMediaReference) async -> Data?
     let transcriptMediaCacheNamespace: String
     let actionContext: (ChatMessage, Int) -> MessageActionContext?
     let shouldRenderMessageRow: (ChatMessage) -> Bool
@@ -105,7 +105,7 @@ struct ChatTranscriptView: View {
     let onScrollToLatestTranscriptMessage: (ChatTranscriptScrollProxy) -> Void
     let onScrollToLatestContent: (ChatTranscriptScrollProxy, Bool) -> Void
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
-    let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
+    let onPreviewTranscriptMedia: @MainActor (TranscriptMediaReference) -> Void
     let onToggleListening: (MessageActionContext) -> Void
     let onSelectText: (MessageActionContext) -> Void
     let onRegenerate: (MessageActionContext) -> Void
@@ -398,7 +398,7 @@ struct ChatTranscriptView: View {
         let controller = scrollPositionController
         let revision = historyLayoutRevision
         return row
-            .onGeometryChange(for: ChatScrollPositionController.RowGeometry.self) {
+            .onGeometryChange(for: ChatScrollPositionController.RowGeometry.self) { [transcriptContentID] in
                 ChatScrollPositionController.RowGeometry(revision: revision,
                     contentMinY: $0.frame(in: .named(transcriptContentID)).minY,
                     frame: $0.frame(in: .global))
@@ -535,7 +535,7 @@ struct ChatTranscriptView: View {
                 .id(element.id)
             }
         }
-        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(transcriptContentID)).minY }) {
+        .onGeometryChange(for: CGFloat.self, of: { [transcriptContentID] in $0.frame(in: .named(transcriptContentID)).minY }) {
             rowOriginY = $0
         }
     }

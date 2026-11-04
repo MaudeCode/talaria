@@ -13,7 +13,7 @@ public struct ChatMessageAction: Identifiable {
 
 /// The transcript state the action list depends on. Grouped so the catalog has
 /// one parameter per concern instead of a seven-argument call at every surface.
-public struct ChatMessageActionState: Equatable {
+public struct ChatMessageActionState: Equatable, Sendable {
     let listeningMessageID: String?
     let isViewingCachedData: Bool
     /// The server owns this session as view-only (TAL-152). Kept apart from

@@ -25,7 +25,7 @@ final class DuoFoldHostedTests: XCTestCase {
     private func openChatOnInnerDisplay(
         _ scenario: [String] = [],
         size inner: CGSize = HostedSize.duoInner,
-        list: (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
+        list: @MainActor (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
     ) async throws -> Folding {
         let fixture = try FixtureApp(scenario, for: self)
         let display = HostedDuoDisplay()
@@ -115,7 +115,8 @@ final class DuoFoldHostedTests: XCTestCase {
     }
 
     private func chatRequests() -> [String] {
-        UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter(Self.chatPaths.contains) }
+        let chatPaths = Self.chatPaths
+        return UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter(chatPaths.contains) }
     }
 
     func testARunningResponseKeepsItsStreamAndFetchesNothingAcrossClosingAndOpening() async throws {

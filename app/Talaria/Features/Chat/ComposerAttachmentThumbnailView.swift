@@ -151,7 +151,7 @@ struct ComposerAttachmentUploadStatus: View {
 }
 
 private struct RetryPendingAttachmentKey: EnvironmentKey {
-    static let defaultValue: (UUID) -> Void = { _ in }
+    static var defaultValue: (UUID) -> Void { { _ in } }
 }
 extension EnvironmentValues {
     var retryPendingAttachment: (UUID) -> Void {

@@ -2,7 +2,7 @@ import Foundation
 
 /// One open-source component or separately licensed asset shipped in the App, read from the bundled
 /// `ThirdPartyNotices/Acknowledgements.json` so Settings > About can show its notice offline.
-public struct Acknowledgement: Decodable, Hashable, Identifiable {
+public struct Acknowledgement: Decodable, Hashable, Identifiable, Sendable {
     public let name: String
     public let version: String?
     /// The Swift package identity in `Package.resolved`, for components shipped as packages.

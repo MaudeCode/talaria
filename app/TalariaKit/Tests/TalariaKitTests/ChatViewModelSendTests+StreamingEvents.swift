@@ -526,7 +526,12 @@ extension ChatViewModelSendTests {
         streamClient.emit(.token("Writing Alpha.swift."))
 
         let load = Task { @MainActor in await viewModel.loadMessages() }
-        await Task.detached { sessionRequested.wait() }.value
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                sessionRequested.wait()
+                continuation.resume()
+            }
+        }
 
         // The next step streams while the detail is in flight; the detail does not have it.
         streamClient.emit(.toolStarted(ToolStreamEvent(

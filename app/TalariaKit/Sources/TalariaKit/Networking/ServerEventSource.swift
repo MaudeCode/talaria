@@ -1,5 +1,5 @@
 import Foundation
-import LDSwiftEventSource
+@preconcurrency import LDSwiftEventSource
 
 /// Builds an `EventSource` for one of the server's SSE streams with the app's identity, cookies,
 /// custom headers and cross-origin redirect guard. Transport errors shut the source down; each
@@ -13,7 +13,7 @@ enum ServerEventSource {
         customHeaders: [CustomHeader]
     ) -> (source: EventSource, redirectPolicyHeader: String) {
         var config = EventSource.Config(handler: handler, url: url)
-        config.connectionErrorHandler = { _ in .shutdown }
+        config.connectionErrorHandler = { @Sendable _ in .shutdown }
         let cookieStorage = ServerCookieStore.shared.storage(for: url)
         var builtInHeaders = [
             AppConfig.clientIdentityHeaderName: AppConfig.clientIdentity,

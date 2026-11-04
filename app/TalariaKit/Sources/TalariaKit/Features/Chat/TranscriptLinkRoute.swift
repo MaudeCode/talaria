@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a tapped transcript link opens (TAL-442).
-public enum TranscriptLinkRoute: Equatable {
+public enum TranscriptLinkRoute: Equatable, Sendable {
     /// A workspace file: the source viewer at its line.
     case workspaceFile(WorkspaceFileLink)
     /// An `http` or `https` page: the in-app Safari sheet.

@@ -8,12 +8,12 @@ import os
 extension UITestFixtureURLProtocol {
     static let nativeNoticesArgument = "--ui-test-native-notices"
     static let nativeNoticePhase = OSAllocatedUnfairLock(initialState: 0)
-    static let nativeNoticeStreams = OSAllocatedUnfairLock<[ObjectIdentifier: UITestFixtureURLProtocol]>(initialState: [:])
+    static let nativeNoticeStreams = OSAllocatedUnfairLock<[ObjectIdentifier: UITestFixtureURLProtocol]>(uncheckedState: [:])
     static var servesNativeNotices: Bool { ProcessInfo.processInfo.arguments.contains(nativeNoticesArgument) }
 
     static func advanceNativeNotices() {
         nativeNoticePhase.withLock { $0 += 1 }
-        for stream in nativeNoticeStreams.withLock({ Array($0.values) }) {
+        for stream in nativeNoticeStreams.withLockUnchecked({ Array($0.values) }) {
             stream.client?.urlProtocol(stream, didLoad: Data("event: session-updated\ndata: {\"session_id\":\"\(sessionID)\"}\n\n".utf8))
         }
     }
@@ -21,7 +21,7 @@ extension UITestFixtureURLProtocol {
     func startNativeNoticeStream(url: URL) {
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/event-stream"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        Self.nativeNoticeStreams.withLock { $0[ObjectIdentifier(self)] = self }
+        Self.nativeNoticeStreams.withLockUnchecked { $0[ObjectIdentifier(self)] = self }
         client?.urlProtocol(self, didLoad: Data("event: initial\ndata: {\"session_id\":\"\(Self.sessionID)\"}\n\n".utf8))
         if Self.servesNativeNotices {
             client?.urlProtocol(self, didLoad: Data("event: session-updated\ndata: {\"session_id\":\"\(Self.sessionID)\"}\n\n".utf8))
@@ -51,7 +51,8 @@ extension UITestFixtureURLProtocol {
 
     static func ownerActionResponse(_ request: URLRequest) -> Data {
         let body = requestJSON(request)
-        ownerSettledAdmissions.withLock { _ = $0.insert(body["admission_id"] as? String ?? "") }
+        let admissionID = body["admission_id"] as? String ?? ""
+        ownerSettledAdmissions.withLock { _ = $0.insert(admissionID) }
         var answer: [String: Any] = ["ok": true, "session": ownerSessionDetail()]
         if body["action"] as? String == "retry" { answer["draft"] = ownerUnknownText }
         return json(answer)
@@ -69,7 +70,7 @@ extension UITestFixtureURLProtocol {
         if servesNativeNotices {
             let warning: [String: Any] = ["key": "owner-fixture:config-warning", "level": "warn", "text": "Project plugins were skipped", "expires_at": NSNull()]
             let plugin: [String: Any] = ["key": "owner-fixture:plugin:job", "level": "info", "text": "Plugin finished", "expires_at": NSNull()]
-            detail["notices"] = nativeNoticePhase.withLock { $0 == 1 ? [warning, plugin] : [warning] }
+            detail["notices"] = nativeNoticePhase.withLock { $0 } == 1 ? [warning, plugin] : [warning]
         }
         return detail
     }

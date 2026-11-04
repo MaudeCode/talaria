@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-public struct GitActionProgress: Equatable {
+public struct GitActionProgress: Equatable, Sendable {
     public let title: String
     public var subtitle: String?
     public var detailLines: [String] = []
@@ -14,7 +14,7 @@ public struct GitActionProgress: Equatable {
     }
 }
 
-public struct GitActionSuccess: Equatable, Identifiable {
+public struct GitActionSuccess: Equatable, Identifiable, Sendable {
     public let id = UUID()
     public let title: String
     public var subtitle: String?

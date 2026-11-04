@@ -1705,18 +1705,25 @@ enum ComposerDropItem: Equatable {
         case .attachment:
             return nil
         case .link:
-            return await Self.load(NSURL.self, from: provider)?.absoluteString.map { $0 + " " }
+            return await Self.loadText(NSURL.self, from: provider) { $0.absoluteString.map { $0 + " " } }
         case .text:
             if provider.canLoadObject(ofClass: NSString.self) {
-                return await Self.load(NSString.self, from: provider) as String?
+                return await Self.loadText(NSString.self, from: provider) { $0 as String }
             }
-            return await Self.load(NSAttributedString.self, from: provider)?.string
+            return await Self.loadText(NSAttributedString.self, from: provider) { $0.string }
         }
     }
 
-    private static func load<Object: NSObject & NSItemProviderReading>(_ type: Object.Type, from provider: NSItemProvider) async -> Object? {
+    @MainActor
+    private static func loadText<Object: NSObject & NSItemProviderReading & SendableMetatype>(
+        _ type: Object.Type,
+        from provider: NSItemProvider,
+        text: @escaping @Sendable (Object) -> String?
+    ) async -> String? {
         await withCheckedContinuation { continuation in
-            _ = provider.loadObject(ofClass: type) { object, _ in continuation.resume(returning: object as? Object) }
+            _ = provider.loadObject(ofClass: type) { object, _ in
+                continuation.resume(returning: (object as? Object).flatMap(text))
+            }
         }
     }
 }

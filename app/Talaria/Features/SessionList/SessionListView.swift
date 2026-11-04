@@ -622,7 +622,7 @@ struct SessionListView: View {
                 .environment(\.holdsForegroundLayout, scenePhase != .active || isResumingSidebarLayout)
                 .environment(\.targetChatLayoutWidth, targetChatWidth)
                 .onSettledGeometryChange(for: DivisionRegionGeometry.self, hingeStatus: hingeStatus,
-                    requiresSettlement: { $1.needsHingeSettlement(comparedTo: $0) }) { geometry in
+                    requiresSettlement: { $1.needsHingeSettlement(comparedTo: $0) }) { [divisionFramesForTesting] geometry in
                     DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting)
                 } action: { geometry in
                     observeSidebarLayout { $0.geometry = geometry }

@@ -14,6 +14,7 @@ import XCTest
 /// `testReplayCatchUpStaysWithinLinearScaling` reports the curve and fails on a
 /// superlinear regression; `testReplayCatchUpLargeBacklog` carries the absolute
 /// wall-clock, CPU and memory budget.
+@MainActor
 final class ReplayCatchUpPerformanceTests: XCTestCase {
     /// Token counts for the scaling curve. The span is 4x, so a linear path
     /// costs ~4x across it where a quadratic one costs ~16x. 4000 tokens is a

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The selectors in the composer's control strip, after model and reasoning (TAL-629).
-public struct ComposerSecondaryControlsState: Equatable {
+public struct ComposerSecondaryControlsState: Equatable, Sendable {
 
     public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
         self.workspaceTitle = workspaceTitle
@@ -14,7 +14,7 @@ public struct ComposerSecondaryControlsState: Equatable {
         self.workspaceIsDisabled = workspaceIsDisabled ?? isDisabled
     }
 
-    public struct GitBranch: Equatable {
+    public struct GitBranch: Equatable, Sendable {
         public let currentName: String
         public let branches: GitBranches?
         public let isLoading: Bool
@@ -28,7 +28,7 @@ public struct ComposerSecondaryControlsState: Equatable {
         }
     }
 
-    public enum Selector: Hashable {
+    public enum Selector: Hashable, Sendable {
         case workspace
         case gitBranch
         case toolsets
@@ -57,7 +57,7 @@ public struct ComposerSecondaryControlsState: Equatable {
 }
 
 /// Which ends of the control strip fade: only an edge that hides content (TAL-629).
-public struct ComposerStripEdgeFades: Equatable {
+public struct ComposerStripEdgeFades: Equatable, Sendable {
     public let leading: Bool
     public let trailing: Bool
 
@@ -74,7 +74,7 @@ public struct ComposerStripEdgeFades: Equatable {
 }
 
 
-public struct ReasoningEffortOption: Identifiable, CaseIterable {
+public struct ReasoningEffortOption: Identifiable, CaseIterable, Sendable {
     public let id: String
     public let title: String
 
