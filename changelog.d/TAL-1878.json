@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A message a policy plugin or shell hook blocked no longer reaches the model after Retry or Undo clears a chat's context, or in a fork of that chat. The chat still shows what you typed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
