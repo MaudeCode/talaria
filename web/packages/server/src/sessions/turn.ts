@@ -38,7 +38,7 @@ import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1210,8 +1210,10 @@ export class TurnRunner {
       const recoveredPrompt = pendingUserRow(msgText, opts.attachments ?? [], s.pending_started_at, opts.source ?? 'webui', streamId)
       if (typeof userMessage === 'string') recoveredPrompt.api_content = userMessage
       else recoveredPrompt.content = userMessage
+      // TAL-1688: the settlement's comparisons share each row's identity.
+      const identities: IdentityCache = new WeakMap()
       const withFallback = (rows: Message[], finalResponse = result.final_response): Message[] => (recoverAnswer || result.tool_limit_reached
-        ? withFinalAssistantAnswer(rows, finalResponse, { previousContext, msgText, prompt: recoveredPrompt, streamedText: recoverAnswer && !opts.ephemeral ? finalStreamedText : '', toolLimitReached: result.tool_limit_reached }) : rows)
+        ? withFinalAssistantAnswer(rows, finalResponse, { previousContext, msgText, prompt: recoveredPrompt, streamedText: recoverAnswer && !opts.ephemeral ? finalStreamedText : '', toolLimitReached: result.tool_limit_reached, identities }) : rows)
       const withoutRequest = (rows: Message[]): Message[] => (result.tool_limit_reached ? withoutMaxIterationSummaryRequest(rows, result.max_iterations_summary_request, msgText) : rows)
       const agentRows = withFallback(result.messages)
       const resultMessages = withoutRequest(agentRows)
@@ -1219,9 +1221,10 @@ export class TurnRunner {
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
       // ends on a final answer (the current user row or trailing tool activity makes it "lacking").
-      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
+      let merged: Message[] | undefined
+      const mergedDisplay = (): Message[] => (merged ??= mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [], identities }))
       // TAL-512: a btw answer must be a reply this turn added: everything before it is the parent's replayed history.
-      const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || (!opts.ephemeral && !sessionLacksFinalAssistantAnswer(mergedForCheck()))
+      const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText, identities) || (!opts.ephemeral && !sessionLacksFinalAssistantAnswer(mergedDisplay()))
       const lastErr = result.error ?? capturedTerminalError ?? ''
       // Python `_agent_result_terminal_failure`: the Agent's failed, partial, or compression-exhausted result ends the turn
       // even after text streamed; only a partial with no error text and a final answer still completes.
@@ -1277,8 +1280,8 @@ export class TurnRunner {
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
-      s.messages = withoutToolImages(mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] }))
-      s.context_messages = dedupeContext(context)
+      s.messages = withoutToolImages(mergedDisplay())
+      s.context_messages = dedupeContext(context, identities)
       // The settled turn's own figures: a compaction it waited on (TAL-1005) installed an estimate its prompt now supersedes.
       s.post_compression_context_tokens_estimate = result.compressed ? estimate : null
       if (result.compressed) {

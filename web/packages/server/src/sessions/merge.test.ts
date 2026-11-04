@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer } from './merge.js'
+import { describe, expect, it, vi } from 'vitest'
+import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, messageIdentity, messagesHavePrefix, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer } from './merge.js'
 
 describe('withFinalAssistantAnswer (TAL-1030)', () => {
   const opts = { previousContext: [], msgText: 'question', prompt: { role: 'user', content: 'question', api_content: 'Expanded prompt' }, streamedText: 'Streamed prose', toolLimitReached: false }
@@ -598,5 +598,46 @@ describe('mergeSessionMessagesAppendOnly by state.db row id (TAL-493)', () => {
     const late = [row(1, 'user', 'u1', 100), row(3, 'user', 'late CLI', 200)]
     expect(contents(mergeSessionMessagesAppendOnly(sidecar, late, {}))).toEqual(['u1', 'a1', 'web', 'web reply'])
     expect(contents(mergeSessionMessagesAppendOnly(sidecar, late.map(({ role, content, timestamp }) => ({ role, content, timestamp })), { stateDbSeenId: 2 }))).toEqual(['u1', 'a1', 'web', 'web reply'])
+  })
+})
+
+describe('settlement identity cost (TAL-1688)', () => {
+  it('builds each row identity once across the prefix check and merge of a 1600-row transcript', () => {
+    // On a row with text only the identity builder reads `tool_call_id`; non-enumerable so a row's copy never counts as a build.
+    const builds = vi.fn(() => '')
+    const counted = (row: Record<string, unknown>) => Object.defineProperty(row, 'tool_call_id', { get: builds, enumerable: false })
+    const transcript = () => Array.from({ length: 400 }, (_, turn) => [
+      { role: 'user', content: `Question ${String(turn)}` },
+      { role: 'assistant', content: `Writing ${String(turn)}`, tool_calls: [{ id: `call_${String(turn)}`, function: { name: 'write_file', arguments: 'x'.repeat(1000) } }] },
+      { role: 'tool', content: `Wrote ${String(turn)}` },
+      { role: 'assistant', content: `Answer ${String(turn)}` },
+    ]).flat().map(counted)
+    const display = transcript()
+    const context = transcript()
+    const candidates = [{ role: 'user', content: 'Next' }, { role: 'assistant', content: 'Sure.' }].map(counted)
+    const result = [...transcript(), ...candidates]
+    const identities = new WeakMap<object, string | null>()
+
+    expect(messagesHavePrefix(result, context, identities)).toBe(true)
+    const merged = mergeDisplayMessagesAfterAgentResult(display, context, result, 'Next', { identities })
+
+    expect(merged.slice(-2).map((m) => m.content)).toEqual(['Next', 'Sure.'])
+    expect(merged).toHaveLength(1602)
+    expect(builds.mock.calls.length).toBeLessThanOrEqual(result.length + context.length + candidates.length)
+  })
+
+  it.each<[string, number]>([
+    ['  leading and trailing  ', 500],
+    ['tabs\t\nand\u00a0unicode\u2003spaces\ufeffhere', 500],
+    ['abc  def', 4],
+    ['abc   ', 4],
+    ['abc def', 3],
+    ['abcdefgh ij', 3],
+    ['   ', 500],
+    ['a'.repeat(600), 500],
+    ['a  b\n c', Infinity],
+  ])('collapses %j to %d characters like splitting the whole text', (text, limit) => {
+    const collapsed = text.split(/\s+/).join(' ').trim().slice(0, limit)
+    expect(messageIdentity({ role: 'assistant', content: text }, limit)).toBe(JSON.stringify(['assistant', collapsed, '', '[]']))
   })
 })
