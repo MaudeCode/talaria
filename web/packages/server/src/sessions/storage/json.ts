@@ -235,7 +235,8 @@ class JsonSessions implements SessionBackend {
       for (const name of readdirSync(this.options.directory)) {
         if (!name.includes('.tmp.')) continue
         const path = join(this.options.directory, name)
-        try { if (statSync(path).mtimeMs / 1000 < this.options.now() - 3600) unlinkSync(path) } catch { /* best effort */ }
+        // mtime is wall-clock time, so the injectable server clock has no say in a temp file's age (TAL-1835).
+        try { if (statSync(path).mtimeMs < Date.now() - 3_600_000) unlinkSync(path) } catch { /* best effort */ }
       }
       const staged = await stageAtomic(indexPath, JSON.stringify(entries))
       try { renameSync(staged, indexPath) } catch (error) { await unlink(staged).catch(() => undefined); throw error }

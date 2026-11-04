@@ -340,3 +340,22 @@ it('drains a staged session write before close completes (TAL-1304)', async () =
     expect(fs.readdirSync(directory)).toEqual(['s.json'])
   })
 })
+
+it.each([
+  ['ahead of', 7200],
+  ['behind', -31_536_000],
+])('ages staged temp files by the wall clock when the server clock runs %s it (TAL-1835)', async (_label, offset) => {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-sweep-'))
+  onTestFinished(() => { fs.rmSync(directory, { recursive: true, force: true }) })
+  const storage = new JsonStorage({ directory, now: () => Date.now() / 1000 + offset, stampingSince: () => 0 })
+  const fresh = join(directory, 's.json.tmp.1.1')
+  const stale = join(directory, 's.json.tmp.1.2')
+  fs.writeFileSync(fresh, '{}')
+  fs.writeFileSync(stale, '{}')
+  const overAnHourAgo = Date.now() / 1000 - 3660
+  fs.utimesSync(stale, overAnHourAgo, overAnHourAgo)
+
+  await storage.sessions.writeIndex([])
+
+  expect({ fresh: fs.existsSync(fresh), stale: fs.existsSync(stale) }).toEqual({ fresh: true, stale: false })
+})
