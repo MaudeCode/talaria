@@ -609,7 +609,7 @@ export class GatewaySessions {
     return result
   }
 
-  /** The display preview is redacted; an explicit retry returns the original text for review. */
+  /** The draft only fills the composer for review, so it is masked like the display preview (TAL-1884). */
   async retry(sid: string, admissionId: string, generation: number): Promise<string> {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
@@ -619,7 +619,7 @@ export class GatewaySessions {
     const text = retryText(admission)
     if (text === null) throw new HttpFailure(409, 'The original input text is unavailable; inspect the owner before discarding this work')
     await this.action(sid, { action: 'discard', admission_id: admissionId, execution_generation: generation })
-    return text
+    return redactString(text, this.deps.redactEnabled())
   }
 
   private prompts(snapshot: GatewaySnapshot | null, sid: string, batch: Batch | null): PendingPrompts {
