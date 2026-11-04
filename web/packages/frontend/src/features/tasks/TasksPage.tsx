@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { copyWithToast } from '../../lib/clipboard'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -300,9 +301,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
   const profileLabel = (job.profile ?? '').trim() || m.cron_profile_server_default()
   const model = job.provider && job.model ? `${job.provider}/${job.model}` : job.model ?? job.provider ?? ''
   const contextFrom = contextFromList(job).map((ref) => jobs.find((j) => jobId(j) === ref)?.name || ref)
-  const copyDiagnostics = () => {
-    void navigator.clipboard.writeText(cronDiagnostics(job)).then(() => showToast(m.cron_diagnostics_copied()), () => showToast(m.copy_failed(), 3000, 'error'))
-  }
+  const copyDiagnostics = () => { copyWithToast(cronDiagnostics(job), m.cron_diagnostics_copied()) }
   const toolbar = readOnly
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
     : (

@@ -21,6 +21,7 @@ import type { PendingFile } from '../composer/Attachments'
 import { ComposerNotices } from '../composer/ComposerNotices'
 import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
+import { randomUuid } from '../../lib/randomHex'
 import { m } from '../../paraglide/messages.js'
 
 const phaseLabel: Record<GroupRoom['members'][number]['phase'], () => string> = {
@@ -49,7 +50,7 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
     void navigate({ to: '/groups', search: id ? { room: id } : {} })
   }
   const create = () => {
-    const id = crypto.randomUUID(), title = name.trim()
+    const id = randomUuid(), title = name.trim()
     setCreating(false); setProvisional({ id, name: title }); select(id)
     const revision = navigation.current
     void api.writeGroup(catalog.data?.identity ?? null, { action: 'create', room_id: id, name: title, members: members.map((profile, i) => ({ member_id: `member-${i}`, handle: `member-${i}`, profile })) }).then((result) => {
@@ -126,7 +127,7 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
     return result
   }
   const send = async (text: string, files: PendingFile[]) => {
-    const id = crypto.randomUUID(), identity = room?.identity ?? ''
+    const id = randomUuid(), identity = room?.identity ?? ''
     setIntent({ identity, text, id, eventId: null, unknown: false, files })
     const clear = () => setIntent((current) => current?.id === id ? null : current)
     const refuse = (error: unknown) => { clear(); showErrorToast(error); return false }
@@ -153,7 +154,7 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   }
   const renameRoom = () => {
     if (!currentDraft || !room) return
-    const id = crypto.randomUUID(), identity = room.identity, value = currentDraft.value
+    const id = randomUuid(), identity = room.identity, value = currentDraft.value
     setRenameDraft(null)
     setRenameIntent({ id, identity, value, revision: room.revision, unknown: false })
     void write({ action: 'rename', room_id: roomId, event_id: id, name: value }).then(() => {
@@ -172,8 +173,8 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
       <BackButton onClick={onBack} />
       {before !== undefined && <Button onClick={() => setBefore(undefined)}>{m.group_latest()}</Button>}
       {room?.actions.includes('rename') && <Button onClick={() => setRenameDraft({ identity: room.identity, value: currentRename?.value ?? room.name })}>{m.rename()}</Button>}
-      {room?.actions.includes('disband') && <Button onClick={() => { const rollback = onDisband(); void write({ action: 'disband', room_id: roomId, cancel_id: crypto.randomUUID() }).then(() => qc.invalidateQueries({ queryKey: ['groups'] }), (error: unknown) => { rollback(); showErrorToast(error) }) }}>{m.group_disband()}</Button>}
-      {room?.actions.includes('stop') && <PanelHeadButton label={m.composer_stop()} disabled={stopping === room.identity} onClick={() => { const identity = room.identity; setStopping(identity); void write({ action: 'stop', room_id: roomId, cancel_id: crypto.randomUUID() }).catch(showErrorToast).finally(() => setStopping((current) => current === identity ? null : current)) }}><Square size={14} aria-hidden="true" /></PanelHeadButton>}
+      {room?.actions.includes('disband') && <Button onClick={() => { const rollback = onDisband(); void write({ action: 'disband', room_id: roomId, cancel_id: randomUuid() }).then(() => qc.invalidateQueries({ queryKey: ['groups'] }), (error: unknown) => { rollback(); showErrorToast(error) }) }}>{m.group_disband()}</Button>}
+      {room?.actions.includes('stop') && <PanelHeadButton label={m.composer_stop()} disabled={stopping === room.identity} onClick={() => { const identity = room.identity; setStopping(identity); void write({ action: 'stop', room_id: roomId, cancel_id: randomUuid() }).catch(showErrorToast).finally(() => setStopping((current) => current === identity ? null : current)) }}><Square size={14} aria-hidden="true" /></PanelHeadButton>}
     </>} />
     {room && <ul aria-label={m.group_members()} className="flex flex-wrap gap-x-5 gap-y-2 px-4 py-2 text-xs text-muted">{room.members.map((member) => <li key={member.member_id}>{member.display_name || member.profile} · <span role="status">{phase(member)}</span></li>)}</ul>}
     {view.isPending && <LoadingState />}

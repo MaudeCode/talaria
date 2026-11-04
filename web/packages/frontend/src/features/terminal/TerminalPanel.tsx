@@ -4,12 +4,12 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
+import { copyWithToast } from '../../lib/clipboard'
 import { m } from '../../paraglide/messages.js'
 import { post } from '../../api/client'
 import { openTerminalStream, type SseHandle } from '../../api/sse'
 import { z } from 'zod'
 import { Button } from '../../ui/Button'
-import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
@@ -195,7 +195,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   return (
     <TerminalPanelFrame workspace={captured?.workspace ?? workspace} title={captured ? m.terminal_native_command() : undefined} status={status} onClose={close} onResize={startResize} actions={<>
       <Button variant="ghost" onClick={() => term.current?.clear()}>{m.terminal_clear()}</Button>
-      <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; void navigator.clipboard.writeText(sel).then(() => showToast(m.copied())) }}>{m.terminal_copy_output()}</Button>
+      <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; copyWithToast(sel) }}>{m.terminal_copy_output()}</Button>
       {!captured && status !== 'starting' && <Button variant="ghost" onClick={() => { void restart() }}>{m.terminal_restart()}</Button>}
     </>}>
       {captured && <form className="flex gap-2 border-b border-border px-2 py-2" onSubmit={(event) => { event.preventDefault(); void execute() }}>

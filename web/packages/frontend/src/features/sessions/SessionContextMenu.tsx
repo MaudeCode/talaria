@@ -11,6 +11,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { SessionRow, SessionsList } from '../../contracts'
 import { appUrl } from '../../lib/appRoot'
+import { copyText, copyWithToast } from '../../lib/clipboard'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Button, IconButton } from '../../ui/Button'
@@ -158,7 +159,8 @@ export function SessionMenuItems({ row, active, anchor }: { row: SessionRow; act
   /** Copy the server's share URL; when the clipboard refuses, the toast carries the link instead. */
   const copyShareLink = async (url: string) => {
     const href = appUrl(url).href
-    try { await navigator.clipboard.writeText(href); showToast(m.share_session_link_copied()) } catch { showToast(`${m.share_session_status_active()} — ${href}`, 6000) }
+    if (await copyText(href)) showToast(m.share_session_link_copied())
+    else showToast(`${m.share_session_status_active()} — ${href}`, 6000)
   }
   // Creating a share again refreshes its snapshot from the latest visible messages and keeps the token.
   const share = useMutation({
@@ -167,9 +169,7 @@ export function SessionMenuItems({ row, active, anchor }: { row: SessionRow; act
     onError: (e) => showToast(m.share_session_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
   })
   const sessionUrl = () => appUrl(`session/${encodeURIComponent(sid)}`).href
-  const copyLink = () => {
-    void navigator.clipboard.writeText(sessionUrl()).then(() => showToast(m.copied()), () => showToast(m.session_link_copy_failed(), 3000, 'error'))
-  }
+  const copyLink = () => { copyWithToast(sessionUrl(), m.copied(), m.session_link_copy_failed()) }
   const exportAs = (format: 'json' | 'markdown' | 'html') => {
     const a = document.createElement('a')
     a.href = appUrl(api.exportSessionUrl(sid, format)).href

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { SkillReplayJob, SkillReplayPlan } from '@maudecode/talaria-web-contracts'
 import { Search } from 'lucide-react'
+import { randomUuid } from '../../lib/randomHex'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -192,7 +193,7 @@ function replayConsent(plan: SkillReplayPlan, requestId: string): ReplayConsent 
 function SkillReplays({ name, comparison }: { name: string; comparison: { from_revision: string; to_revision: string } | null }) {
   const [consent, setConsent] = useState<ReplayConsent | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  const [requestId, setRequestId] = useState(() => randomUuid())
   const effects = useResourceEffects()
   const replays = useQuery({ queryKey: keys.skills.replays(name), queryFn: () => api.fetchSkillReplays(name), refetchInterval: (query) => query.state.data?.jobs.some((job) => job.active) ? 1500 : false })
   const jobs = withEffects(replays.data?.jobs ?? [], (job) => `skill-replay:${job.id}`, effects)
@@ -205,7 +206,7 @@ function SkillReplays({ name, comparison }: { name: string; comparison: { from_r
     mutationFn: (selected: ReplayConsent) => api.startSkillReplay({ request_id: selected.requestId, name, baseline: selected.baseline.id, candidate: selected.candidate.id,
       case_ids: selected.plan.cases.map((row) => row.id), route: selected.route, max_cost_usd: selected.budget.max_cost_usd }),
     // A definite answer retires the request id; an uncertain one keeps it, so a retry returns the admitted job.
-    onSettled: (_result, error) => { if (!error || ((error as { status?: number }).status ?? 500) < 500) setRequestId(crypto.randomUUID()); void replays.refetch() },
+    onSettled: (_result, error) => { if (!error || ((error as { status?: number }).status ?? 500) < 500) setRequestId(randomUuid()); void replays.refetch() },
     onError: (error) => showErrorToast(error),
   })
   const cancel = useResourceMutation({ resource: (id: string) => `skill-replay:${id}`, effect: () => ({ fields: { state: 'cancelling', can_cancel: false } }), queryKey: keys.skills.replays(name), mutationFn: (id: string) => api.cancelSkillReplay(id), onError: (e) => showErrorToast(e) })

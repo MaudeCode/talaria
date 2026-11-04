@@ -5,6 +5,7 @@ import type { DelegationWrite, FeedbackSubmitSchema, LoginDestinationSchema } fr
  * (uploads, downloads, exports) keep the raw transport in `client.ts`.
  * Dead endpoints were deleted in TAL-245; do not add untyped routes here.
  */
+import { randomUuid } from '../lib/randomHex'
 import { m } from '../paraglide/messages.js'
 import { orpc, timeout } from './orpc'
 import type { GroupOperation } from '@maudecode/talaria-web-contracts'
@@ -29,7 +30,7 @@ export async function uploadGroupFile(room_id: string, identity: string, file: F
     reader.onerror = () => reject(reader.error ?? new Error('File could not be read'))
     reader.readAsDataURL(file)
   })
-  return orpc().groups.upload({ room_id, identity, upload_id: crypto.randomUUID(), name: file.name, mime: file.type || 'application/octet-stream', data_base64 })
+  return orpc().groups.upload({ room_id, identity, upload_id: randomUuid(), name: file.name, mime: file.type || 'application/octet-stream', data_base64 })
 }
 
 const qs = (params: Record<string, string | number | boolean | undefined | null>) => {

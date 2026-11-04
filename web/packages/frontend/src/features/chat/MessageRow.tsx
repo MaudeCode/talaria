@@ -15,11 +15,11 @@ import { TurnActivityView } from './TurnActivityView'
 import { CollapsedBody } from './CollapsedBody'
 import type { VisibleMessage } from './useTranscript'
 import { IconButton } from '../../ui/Button'
-import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { formatDate } from '../../ui/States'
 import { rawFileUrl } from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
+import { copyWithToast } from '../../lib/clipboard'
 import { speak } from '../voice/tts'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 import { usageDetailLines } from '../composer/chips'
@@ -34,8 +34,6 @@ export interface RowActions {
   onRegenerate?: (row: VisibleMessage) => void
   onBranch?: (row: VisibleMessage) => void
 }
-
-const copyText = (text: string) => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }
 
 /** One message action. TAL-1154: the hover bar and the right-click and long-press menu render the same list. */
 interface MessageAction { label: string; Icon: LucideIcon; run: () => void; className?: string }
@@ -105,7 +103,7 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   const rowRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { if (lands && rowRef.current) landSent(rowRef.current, text) }, [lands, text])
   const items: MessageAction[] = pending ? [] : [
-    { label: m.copy(), Icon: Copy, run: () => copyText(text) },
+    { label: m.copy(), Icon: Copy, run: () => copyWithToast(text) },
     ...(actions.onEdit ? [{ label: m.edit_message(), Icon: Pencil, run: () => actions.onEdit?.(row, text) }] : []),
     ...(actions.onBranch ? [{ label: m.branch_from_here(), Icon: GitBranch, run: () => actions.onBranch?.(row) }] : []),
   ]
@@ -174,7 +172,7 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
           </CollapsedBody>
           <div className="msg-foot">
             {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
-            <IconButton label={m.copy()} className="h-6 w-6" onClick={() => copyText(text)}><Copy size={12} aria-hidden="true" /></IconButton>
+            <IconButton label={m.copy()} className="h-6 w-6" onClick={() => copyWithToast(text)}><Copy size={12} aria-hidden="true" /></IconButton>
           </div>
         </div>
       </details>
@@ -285,7 +283,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
     prev?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
   const items: MessageAction[] = [
-    { label: m.copy(), Icon: Copy, run: () => copyText(content) },
+    { label: m.copy(), Icon: Copy, run: () => copyWithToast(content) },
     ...(tts && content.trim() ? [{ label: m.speak_message(), Icon: Volume2, run: () => { void speak(content) } }] : []),
     ...(actions.onRegenerate && isLast ? [{ label: m.regenerate_response(), Icon: RotateCcw, run: () => actions.onRegenerate?.(row) }] : []),
     { label: m.jump_to_question_label(), Icon: ArrowUp, run: jumpToQuestion, className: 'msg-question-jump-btn' },
