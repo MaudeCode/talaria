@@ -876,6 +876,8 @@ extension ChatViewModelSendTests {
     func testRetrySlashCommandReloadsTruncatedSessionThenStartsChatWithLastUserText() async throws {
         var requestPaths: [String] = []
         var startedMessage: String?
+        var startedToken: String?
+        var startedAttachments: [[String: String]]?
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             requestPaths.append(request.url?.path ?? "")
@@ -887,6 +889,8 @@ extension ChatViewModelSendTests {
                 {
                   "ok": true,
                   "last_user_text": "Summarize the logs",
+                  "last_user_attachments": [{"filename": "notes.txt", "path": "/tmp/notes.txt"}],
+                  "retry_token": "held-prompt",
                   "removed_count": 2
                 }
                 """, for: request)
@@ -904,6 +908,8 @@ extension ChatViewModelSendTests {
             case "/api/chat/start":
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 startedMessage = body["message"] as? String
+                startedToken = body["retry_token"] as? String
+                startedAttachments = body["attachments"] as? [[String: String]]
                 return apiTestJSONResponse("""
                 {
                   "session_id": "session-abc",
@@ -921,6 +927,8 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(result, .executed(message: nil))
         XCTAssertEqual(requestPaths, ["/api/session/retry", "/api/session", "/api/chat/start"])
         XCTAssertEqual(startedMessage, "Summarize the logs")
+        XCTAssertEqual(startedToken, "held-prompt")
+        XCTAssertEqual(startedAttachments, [["filename": "notes.txt", "path": "/tmp/notes.txt"]])
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Earlier message", "Summarize the logs"])
         XCTAssertEqual(viewModel.activeStreamID, "stream-retry")
         XCTAssertEqual(streamClient.startedURLs.count, 1)

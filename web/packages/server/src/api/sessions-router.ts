@@ -330,7 +330,7 @@ export const sessionsRouter = os.router({
     })),
     retry: os.session.retry.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
-      return (await ctx.deps.sessions.retry(input.session_id)) as { ok: true; last_user_text: string; last_user_prompt: string; last_user_attachments: Attachment[]; removed_count: number } | { error: string }
+      return (await ctx.deps.sessions.retry(input.session_id)) as { ok: true; last_user_text: string; last_user_prompt: string; last_user_attachments: Attachment[]; removed_count: number; retry_token: string } | { error: string }
     })),
     undo: os.session.undo.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)

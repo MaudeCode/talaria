@@ -609,7 +609,7 @@ export class GatewaySessions {
     return result
   }
 
-  /** The display preview is redacted; an explicit retry returns the original text for review, like direct-chat retry. */
+  /** The display preview is redacted; an explicit retry returns the original text for review. */
   async retry(sid: string, admissionId: string, generation: number): Promise<string> {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')

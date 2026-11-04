@@ -684,7 +684,7 @@ export class TurnRunner {
       this.admissions.delete(streamId)
       admitted()
     }
-    const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: streamId, title: s.title }
+    const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: streamId, title: redactString(s.title, this.deps.redactEnabled()) }
     if (opts.normalizedModel && opts.model) response.effective_model = opts.model
     if (opts.modelProvider) response.effective_model_provider = opts.modelProvider
     return response
@@ -1922,7 +1922,13 @@ export class TurnRunner {
   }
 
   /** Python `_run_background_title_update` (spawned only when `_background_title_generation_inputs` is eligible). */
-  private async backgroundTitle(s: Session, put: (event: string, data: Record<string, unknown>) => Promise<void>): Promise<void> {
+  private async backgroundTitle(s: Session, emit: (event: string, data: Record<string, unknown>) => Promise<void>): Promise<void> {
+    // TAL-1881: a title can quote the prompt, so its frames mask it like session responses do.
+    const put = (event: string, data: Record<string, unknown>): Promise<void> => {
+      const masked = { ...data }
+      for (const key of ['title', 'raw_preview']) if (typeof data[key] === 'string') masked[key] = redactString(data[key], this.deps.redactEnabled())
+      return emit(event, masked)
+    }
     const sessionId = s.session_id
     const placeholder = str(s.title).trim()
     const invalidExisting = looksInvalidGeneratedTitle(s.title)

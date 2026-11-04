@@ -11,7 +11,8 @@ extension APIClient {
         explicitModelPick: Bool = false,
         attachments: [JSONValue]? = nil,
         voiceTurn: Bool = false,
-        submissionID: String? = nil
+        submissionID: String? = nil,
+        retryToken: String? = nil
     ) async throws -> ChatStartResponse {
         try await send(
             endpoint: .chatStart,
@@ -26,7 +27,8 @@ extension APIClient {
                 explicitModelPick: explicitModelPick ? true : nil,
                 attachments: attachments,
                 voiceTurn: voiceTurn ? true : nil,
-                submissionId: submissionID
+                submissionId: submissionID,
+                retryToken: retryToken
             )
         )
     }
@@ -216,6 +218,8 @@ private struct ChatStartRequest: Encodable {
     let voiceTurn: Bool?
     /// An owner chat's admission identity (TAL-1043); nil for a chat Talaria runs itself.
     let submissionId: String?
+    /// From `/api/session/retry`: the turn runs the prompt the server held, in place of `message` (TAL-1881).
+    let retryToken: String?
     /// The App renders the masked `skill_secret` prompt, so a skill's missing secret is asked for there (TAL-1046).
     let skillSecret = true
 }
