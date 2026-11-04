@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Only a server owner can turn secret redaction on or off.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

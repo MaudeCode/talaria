@@ -45,10 +45,11 @@ describe('PreferencesSection', () => {
     expect(saveSettings).toHaveBeenLastCalledWith({ trusted_link_hosts: ['docs.example.com', 'API.Example.com'] })
   })
 
-  it('lets only a server owner change link safety (TAL-279)', async () => {
+  it('lets only a server owner change link safety and redaction (TAL-279, TAL-1880)', async () => {
     renderSection(false)
     expect(await screen.findByRole('switch', { name: 'Confirm before opening external links' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByLabelText('Trusted link hosts')).toBeDisabled()
+    expect(screen.getByRole('switch', { name: 'Redact sensitive data in API responses' })).toHaveAttribute('aria-disabled', 'true')
   })
 })
 
