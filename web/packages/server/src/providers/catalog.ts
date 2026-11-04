@@ -836,6 +836,7 @@ export class ProviderCatalog {
         const prior = hit?.source === source ? hit.snapshot : undefined
         const plan = r.plan_usage && prior?.plan_usage && retaining ? { ...r.plan_usage,
           featured_model_ids: r.plan_usage.featured_model_ids.length ? r.plan_usage.featured_model_ids : prior.plan_usage.featured_model_ids,
+          subscription_model_ids: r.plan_usage.subscription_model_ids.length ? r.plan_usage.subscription_model_ids : prior.plan_usage.subscription_model_ids,
         } : r.plan_usage ?? (retaining ? prior?.plan_usage : undefined)
         const snapshot = retaining && prior ? { ...r, plan_usage: plan, usage_levels: { ...prior.usage_levels, ...r.usage_levels } } : r
         const ids = retaining && !r.model_ids.length && hit?.source === source ? hit.ids : r.model_ids
@@ -1246,7 +1247,8 @@ export class ProviderCatalog {
           ? plan.credits_pay === true ? 'credits' : plan.credits_pay === false ? 'blocked' : 'unknown'
           : 'included'
       }
-      entry.allowance = { state, usage_level: level, resets_at_ms: stale || expired ? null : reset }
+      // A subscription-billed row keeps its native level for the state above, but "Free" would read as free of charge.
+      entry.allowance = { state, usage_level: plan?.subscription_model_ids.includes(id) ? null : level, resets_at_ms: stale || expired ? null : reset }
     }
     if (plan) {
       const rank = new Map(plan.featured_model_ids.map((id, i) => [id, i]))

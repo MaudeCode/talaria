@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { PlanUsage } from '@maudecode/talaria-web-contracts'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
 
-const plan: PlanUsage = { kind: 'usage_window', plan: 'Pro', gauges: [{ label: 'week', title: 'Weekly', scope: 'all', left_fraction: 0, resets_at_ms: null, style: 'red' }], top_tier_model_ids: [], featured_model_ids: [], paused_reason: null, credits_pay: null }
+const plan: PlanUsage = { kind: 'usage_window', plan: 'Pro', gauges: [{ label: 'week', title: 'Weekly', scope: 'all', left_fraction: 0, resets_at_ms: null, style: 'red' }], top_tier_model_ids: [], subscription_model_ids: [], featured_model_ids: [], paused_reason: null, credits_pay: null }
 
 describe('native quota presentation', () => {
   it.each([true, false, null])('states credits coverage only for native credits_pay=%s', (credits_pay) => {

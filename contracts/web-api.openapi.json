@@ -73234,6 +73234,13 @@
                                       "type": "string"
                                     }
                                   },
+                                  "subscription_model_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "default": []
+                                  },
                                   "featured_model_ids": {
                                     "type": "array",
                                     "items": {
@@ -74083,6 +74090,13 @@
                                         "items": {
                                           "type": "string"
                                         }
+                                      },
+                                      "subscription_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "default": []
                                       },
                                       "featured_model_ids": {
                                         "type": "array",
@@ -76605,6 +76619,13 @@
                                         "type": "string"
                                       }
                                     },
+                                    "subscription_model_ids": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "default": []
+                                    },
                                     "featured_model_ids": {
                                       "type": "array",
                                       "items": {
@@ -77166,6 +77187,13 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "subscription_model_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "default": []
                                   },
                                   "featured_model_ids": {
                                     "type": "array",
@@ -78471,6 +78499,13 @@
                                           "type": "string"
                                         }
                                       },
+                                      "subscription_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "default": []
+                                      },
                                       "featured_model_ids": {
                                         "type": "array",
                                         "items": {
@@ -79372,6 +79407,13 @@
                                         "items": {
                                           "type": "string"
                                         }
+                                      },
+                                      "subscription_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "default": []
                                       },
                                       "featured_model_ids": {
                                         "type": "array",

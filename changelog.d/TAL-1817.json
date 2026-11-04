@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Nous models your subscription pays for no longer show a Free tag in the model picker. They stay selectable, and models that really are free keep the tag.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

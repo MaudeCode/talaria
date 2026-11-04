@@ -23,6 +23,7 @@
     "top_tier_model_ids": [
       "large"
     ],
+    "subscription_model_ids": [],
     "featured_model_ids": [
       "included"
     ],

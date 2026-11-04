@@ -7550,6 +7550,13 @@
                   "type": "string"
                 }
               },
+              "subscription_model_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "featured_model_ids": {
                 "type": "array",
                 "items": {
@@ -7574,6 +7581,7 @@
               "plan",
               "gauges",
               "top_tier_model_ids",
+              "subscription_model_ids",
               "featured_model_ids",
               "paused_reason",
               "credits_pay"
