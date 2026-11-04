@@ -27,6 +27,7 @@ const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
   ['delegate', (_, n) => n === 'subagent_progress' || n === 'delegate_task'],
   ['skill', (t) => t.has('skill') || t.has('skills')],
   ['memory', (t) => t.has('memory')],
+  ['web', (_, n) => n === 'browser_exec'],
   ['shell', (t, n) => ['terminal', 'shell', 'command', 'process', 'bash', 'exec'].some((k) => t.has(k)) || n === 'execute_code'],
   ['read', (t, n) => ['read', 'view', 'open'].some((k) => t.has(k)) || n === 'vision_analyze'],
   ['list', (t, n) => t.has('list') || n === 'todo'],
@@ -50,7 +51,7 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
   read: ['path', 'file_path', 'file', 'target', 'name'],
   write: ['path', 'file_path', 'file', 'target', 'name'],
   search: ['query', 'pattern', 'url', 'uri'],
-  web: ['query', 'pattern', 'url', 'uri'],
+  web: ['query', 'pattern', 'url', 'uri', 'session', 'code'],
 }
 const FALLBACK_KEYS = ['cmd', 'command', 'path', 'file_path', 'file', 'uri', 'url', 'query', 'pattern', 'dir', 'task', 'name']
 const TOOL_TARGET_MAX = 200
