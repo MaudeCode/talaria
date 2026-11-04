@@ -66,6 +66,7 @@ def _patch(monkeypatch):
     monkeypatch.setattr(chat, "disabled_toolsets", lambda cfg=None: [])
     monkeypatch.setattr(chat, "_profile_fallback_chain", lambda cfg=None: None)
     monkeypatch.setattr(chat, "_profile_prefill_messages", lambda cfg=None: None)
+    monkeypatch.setattr(chat, "_compression_prepare_ahead", lambda cfg=None: None)
     monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="", cfg=None: None)
     monkeypatch.setattr(chat, "_provider_routing_kwargs", lambda cfg=None: {})
     monkeypatch.setattr(chat, "checkpoint_kwargs", lambda cfg=None: {})

@@ -1260,9 +1260,11 @@ def _provider_routing_kwargs(cfg: dict | None = None) -> dict:
 
 def _compression_prepare_ahead(cfg: dict | None = None):
     """TAL-1825: the profile's ``compression.prepare_ahead``, which the Agent reads once, at construction. Runs under ``scoped_home``."""
-    from hermes_cli.config import load_config
+    if cfg is None:
+        from hermes_cli.config import load_config
 
-    section = ((load_config() or {}) if cfg is None else cfg).get("compression")
+        cfg = load_config() or {}
+    section = cfg.get("compression")
     return section.get("prepare_ahead") if isinstance(section, dict) else None
 
 
