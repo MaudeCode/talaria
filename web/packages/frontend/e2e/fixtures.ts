@@ -50,3 +50,12 @@ export async function settle(page: Page): Promise<void> {
   // Wait for the router to render the shell (the titlebar is hidden in desktop browsers, so wait for the layout or a full-page route).
   await expect(page.locator('#app :visible').first()).toBeVisible()
 }
+
+/** 127.0.0.1 is a secure context, so hide the API the way http://<lan-ip> does. The returned reader keeps a private handle on the real clipboard. */
+export async function hideClipboardApi(page: Page): Promise<() => Promise<string>> {
+  await page.addInitScript(() => {
+    ;(window as unknown as { realClipboard: Clipboard }).realClipboard = navigator.clipboard
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+  })
+  return () => page.evaluate(() => (window as unknown as { realClipboard: Clipboard }).realClipboard.readText())
+}

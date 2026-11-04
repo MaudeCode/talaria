@@ -43,7 +43,8 @@ function useLazyPlugin<T>(enabled: boolean, load: () => Promise<T>): T | null {
  */
 const urlTransform = (url: string): string => (/^\.?\/api\//.test(url) ? appUrl(url.replace(/^\./, '')).href : url)
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
-const CONTROLS = { code: { copy: true, download: true }, table: { copy: true, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }
+// Table Copy needs ClipboardItem, which only a secure context has and no shim can provide.
+const CONTROLS = { code: { copy: true, download: true }, table: { copy: window.isSecureContext, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }
 
 // ponytail: fixed budget so a direct open stays inside the click's user activation (popup blockers); slower answers warn.
 const LINK_CHECK_TIMEOUT_MS = 700

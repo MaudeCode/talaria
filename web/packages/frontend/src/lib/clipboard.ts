@@ -24,6 +24,14 @@ function copyFromTextarea(text: string): boolean {
   }
 }
 
+/** Streamdown's Copy controls call `navigator.clipboard.writeText` themselves, so a plain-HTTP origin gets one that uses the textarea route. Runs once at startup. */
+export function installClipboardShim(): void {
+  // oxlint-disable-next-line no-restricted-properties -- this helper owns the insecure-context fallback.
+  if (navigator.clipboard) return
+  const writeText = (text: string) => (copyFromTextarea(text) ? Promise.resolve() : Promise.reject(new Error('Copy refused')))
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+}
+
 /** Copies text and resolves false when the browser refuses. The one caller of `navigator.clipboard`. */
 export async function copyText(text: string): Promise<boolean> {
   try {

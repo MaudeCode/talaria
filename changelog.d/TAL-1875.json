@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Code block Copy works on plain-HTTP LAN installs, and table Copy no longer shows where the browser cannot do it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

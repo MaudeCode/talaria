@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { freezeAppRoot } from './lib/appRoot'
+import { installClipboardShim } from './lib/clipboard'
 import { applyBootAppearance } from './theme/boot'
 import { getRouter } from './router'
 import { createQueryClient } from './api/queryClient'
@@ -18,6 +19,7 @@ import { registerServiceWorker } from './app/pwa'
 import { preloadMarkdownRenderer } from './features/chat/render/Markdown'
 
 const appRoot = freezeAppRoot()
+installClipboardShim()
 applyBootAppearance()
 registerServiceWorker(appRoot)
 // TAL-1693: fetch the transcript renderer beside the bootstrap; the sign-in and onboarding pages never render Markdown.
