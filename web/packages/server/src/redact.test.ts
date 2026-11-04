@@ -862,6 +862,9 @@ const gitlab = ([prefix, body]: [string, string]): [string, string] => {
   const token = prefix + body
   return [token, `${token.slice(0, 6)}...${token.slice(-4)}`]
 }
+const CONTEXT7_KEY = `ctx7sk-${'0'.repeat(8)}-${'0'.repeat(4)}-${'0'.repeat(4)}-${'0'.repeat(4)}-${'0'.repeat(12)}`
+/** The shape `secrets.token_urlsafe(32)` prints: 43 characters. */
+const WEBAPP_CREDENTIAL = `Zq7_${'k3Lm'.repeat(9)}x9-`
 const AGENT_PARITY: Record<string, [string, string][]> = {
   'env names ending in _KEY, _PASS or _PW': [
     ['OPENAI_KEY=xyzzyplugh1234567890abcd', 'OPENAI_KEY=xyzzyp...abcd'],
@@ -903,6 +906,26 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['pk-lf-abcdef12-3456', 'pk-lf-...3456'],
     ['xapp-1-A0123456789-abcdefghijklmnop', 'xapp-1...mnop'],
     ['fw-tooshort xai-tooshort glpat-short', 'fw-tooshort xai-tooshort glpat-short'],
+  ],
+  'Context7 keys': [
+    [`key is ${CONTEXT7_KEY}`, 'key is ctx7sk...0000'],
+    [`["${CONTEXT7_KEY}"]`, '["ctx7sk...0000"]'],
+    ['the glossary explains context7 keys', 'the glossary explains context7 keys'],
+    ['ctx7sk-short', 'ctx7sk-short'],
+    [`myctx7sk-${'A'.repeat(20)}`, `myctx7sk-${'A'.repeat(20)}`],
+  ],
+  'Hermes Webapp sign-in links': [
+    [`Open this link in your browser:\n  http://127.0.0.1:9120/?profile=work#hermes-session=${WEBAPP_CREDENTIAL}`, 'Open this link in your browser:\n  http://127.0.0.1:9120/?profile=work#hermes-session=***'],
+    [`http://127.0.0.1:9120/webapp/launch#ticket=${WEBAPP_CREDENTIAL}&query=%3Fprofile%3Dwork`, 'http://127.0.0.1:9120/webapp/launch#ticket=***&query=%3Fprofile%3Dwork'],
+    // No URL scheme or other marker: the prefilter has to pass these on the credential's own name.
+    [`hermes-session=${WEBAPP_CREDENTIAL}`, 'hermes-session=***'],
+    [`/webapp/launch#query=%3Fprofile&ticket=${WEBAPP_CREDENTIAL}`, '/webapp/launch#query=%3Fprofile&ticket=***'],
+    // The 20-character floor leaves placeholders and code that builds such a link.
+    [`hermes-session=${'a'.repeat(20)}`, 'hermes-session=***'],
+    [`hermes-session=${'a'.repeat(19)}`, `hermes-session=${'a'.repeat(19)}`],
+    [`/webapp/launch#ticket=${'a'.repeat(19)}`, `/webapp/launch#ticket=${'a'.repeat(19)}`],
+    ["target.hash = `hermes-session=${token}`\nconst FRAGMENT_KEY = 'hermes-session'", "target.hash = `hermes-session=${token}`\nconst FRAGMENT_KEY = 'hermes-session'"],
+    [`xhermes-session=${WEBAPP_CREDENTIAL}`, `xhermes-session=${WEBAPP_CREDENTIAL}`],
   ],
   'GitLab tokens': ([
     ['glpat-', 'Zx9AbCdEfGhIjKlMnOpQ'], ['gloas-', 'a'.repeat(64)], ['gldt-', 'AbCdEfGhIjKlMnOpQrSt'], ['glrt-', 't1_AbCdEfGhIjKlMnOpQrSt'],

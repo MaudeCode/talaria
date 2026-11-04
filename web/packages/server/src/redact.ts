@@ -23,6 +23,7 @@ const assignmentScan = channel('talaria.redaction.assignment-scan')
 const CRED_RE = new RegExp(
   '(?<![A-Za-z0-9_-])(' +
     'sk-[A-Za-z0-9_-]{10,}' +
+    '|ctx7sk-[A-Za-z0-9_-]{10,}' +
     '|ghp_[A-Za-z0-9]{10,}' +
     '|github_pat_[A-Za-z0-9_]{10,}' +
     '|gho_[A-Za-z0-9]{10,}' +
@@ -80,6 +81,11 @@ const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?
 const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0-9!#$%&*+.^_|~-]+\s+(?=[^\s,\])]))?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s,\])][^\s'",\])]*)`, 'gi')
 /** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`), or its header alone or with its payload. */
 const JWT_RE = /\beyJ(?:[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}|[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2})/g
+/**
+ * What a `hermes webapp` sign-in link carries: the browser credential after `hermes-session=` or the one-use ticket of a
+ * `/webapp/launch` link. Both are URL-safe base64; the 20-character floor leaves placeholders and code (`${token}`).
+ */
+const WEBAPP_LINK_CREDENTIAL_RE = /((?<![A-Za-z0-9_-])hermes-session=|\/webapp\/launch#(?:[^\s#]*?&)?ticket=)[A-Za-z0-9_-]{20,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
@@ -1786,6 +1792,7 @@ function redactRules(text: string): string {
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
+  out = out.replace(WEBAPP_LINK_CREDENTIAL_RE, (_, head: string) => `${head}***`)
   out = redactHeaderCredentials(out, BEARER_RE)
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
@@ -1816,10 +1823,10 @@ function redactRules(text: string): string {
 }
 
 const CASE_MARKERS = [
-  'sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
+  'sk-', 'ctx7sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
-  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN',
+  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN', 'hermes-session=', '/webapp/launch#',
 ]
 /** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`) and `JWT_RE`, the JWT's also as `JWT_ONLY`'s. */
 const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_RE.lastIndex = 0), TOKEN_PREFIX_RUN_RE.test(`${m}0-`))), `${JWT_ONLY}eyJ`])
