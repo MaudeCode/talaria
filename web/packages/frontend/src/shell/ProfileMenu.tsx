@@ -24,7 +24,7 @@ export function ProfileMenu({ row }: { row?: boolean } = {}) {
           <span className="composer-mobile-config-copy"><span className="composer-mobile-config-kicker">{m.composer_control_profile()}</span><span className="composer-mobile-config-value">{active}</span></span>
         </button>
       ) : (
-        <Chip size="xs" icon={<UserRound size={13} aria-hidden="true" />} label={active} title={m.profile_switch_title()} />
+        <Chip size="xs" icon={<UserRound size={13} className="shrink-0" aria-hidden="true" />} label={active} title={m.profile_switch_title()} />
       )}
     >
       <MenuRadioGroup value={active} onValueChange={(value: string) => { if (value !== active) switchProfile.mutate(value, { onSuccess: () => { showToast(m.profile_switched({ name: value })); window.location.reload() } }) }}>
