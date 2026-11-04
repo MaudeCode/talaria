@@ -14,7 +14,7 @@ import { SessionNotFound } from '../sessions/store.js'
 import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
-import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory, previewMemoryCompaction, applyMemoryCompaction, type MemoryWriteDeps } from '../tools/memory.js'
+import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, requestPromptRefresh, writeMemory, previewMemoryCompaction, applyMemoryCompaction, type MemoryWriteDeps } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
 import { catalogNames, connectorOperation, connectorsPage, connectorTools, rememberCatalogNames } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
@@ -509,7 +509,10 @@ export const toolsRouter = os.router({
       const section = input.section ?? input.target
       if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
       const profileHome = home(ctx)
-      return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, memoryWriteDeps(ctx, profileHome))
+      const saved = await writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, memoryWriteDeps(ctx, profileHome))
+      // Only SOUL.md: a session's MEMORY.md and USER.md snapshot is frozen by design.
+      if (saved.section === 'soul') await requestPromptRefresh(ctx.deps.sidecar(), profileHome, ctx.deps.log)
+      return saved
     })),
   },
   pendingWrites: {

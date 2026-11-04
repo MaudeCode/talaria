@@ -247,6 +247,8 @@ export const STATE_DB_METHODS = {
   'state_db.sync_usage': { params: Session.extend({ input_tokens: z.number().int().optional(), output_tokens: z.number().int().optional(), estimated_cost: z.number().nullable().optional(), model: z.string().nullable().optional(), title: z.string().nullable().optional(), message_count: z.number().int().nullable().optional(), cache_read_tokens: z.number().int().optional(), cache_write_tokens: z.number().int().optional(), api_call_count: z.number().int().nullable().optional() }), result: Ok },
   /** TAL-574: `manual` writes a user-requested title (rename or regenerate) with `user` provenance; otherwise it is an `llm` auto title. */
   'state_db.sync_title': { params: Session.extend({ title: z.string(), manual: z.boolean().optional() }), result: Ok },
+  /** TAL-1821: every continuing session in the profile rebuilds its stored system prompt once, on its next turn. `ok: false` without a state.db or on an Agent before v0.22.6. */
+  'state_db.request_prompt_refresh': { params: ProfileHomeParams, result: Ok },
   /**
    * TAL-792: `include_compression_lineage` also removes the session's compression continuations, resolved and removed in the
    * same transaction (tip first). `refused` when another Agent process holds a live turn lease or compression lock on any

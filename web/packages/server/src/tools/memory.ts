@@ -6,7 +6,7 @@ import { hmacHex, safeEqual, splitSigned } from '../auth/crypto.js'
 import { spawnSync } from 'node:child_process'
 import { dict, isDict, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
-import { SidecarError } from '../sidecar/client.js'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { redactString } from '../redact.js'
 import { atomicWriteText } from '../fs/atomic.js'
 import { restoreMasks } from './memory-masks.js'
@@ -168,6 +168,18 @@ async function checkedMemoryContent(raw: Buffer, section: 'memory' | 'user' | 's
     }
   }
   return content
+}
+
+/**
+ * TAL-1821: open chats replay a stored system prompt, so an edit to one of its sources reaches them only through this
+ * request. The edit is already saved, so a failed request is logged rather than reported as a failed save.
+ */
+export async function requestPromptRefresh(sidecar: SidecarLike | null, profileHome: string, log: (line: string) => void): Promise<void> {
+  try {
+    await sidecar?.call('state_db.request_prompt_refresh', { profile_home: profileHome })
+  } catch (error) {
+    log(`prompt refresh request failed; open chats keep their current prompt: ${String(error)}`)
+  }
 }
 
 /**

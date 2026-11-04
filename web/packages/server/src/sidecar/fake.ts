@@ -49,6 +49,7 @@ export class FakeSidecar implements SidecarLike {
     this.respond('models.speed_tiers', (params) => ({ tiers: params.routes.map(() => []) }))
     this.respond('state_db.delete_cli_session', (params) => ({ ok: true, deleted_ids: [params.session_id] }))
     this.respond('profiles.skills_stats_invalidate', () => ({ ok: true as const }))
+    this.respond('state_db.request_prompt_refresh', () => ({ ok: true }))
     // Stands in for the Agent's locked `.env` writer so a test reads back what a save wrote.
     this.respond('config.env_write', (params) => {
       const path = join(params.profile_home, '.env')
