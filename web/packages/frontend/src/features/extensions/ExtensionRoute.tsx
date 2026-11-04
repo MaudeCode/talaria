@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
-import { AppShell, HubPage } from '../../shell/AppShell'
-import { SessionListPanel } from '../sessions/SessionListPanel'
+import { HubPage } from '../../shell/AppShell'
 import { useExtensionManifests, registerTtsEngine, subscribeLifecycle } from '../../extensions/registry'
 import { ExtensionHost, type HostStatus } from '../../extensions/host'
 import type { ExtensionManifest } from '../../contracts/extension'
@@ -113,7 +112,7 @@ export function ExtensionRoute({ extensionId }: { extensionId: string }) {
   const manifests = useExtensionManifests()
   const manifest = manifests.data?.manifests.find((mf) => mf.id === extensionId)
   return (
-    <AppShell sidebar={<SessionListPanel />} subtitle={manifest?.name ?? extensionId}>
+    <>
       {manifests.isPending && <LoadingState />}
       {manifests.isError && <div className="p-4"><ErrorState error={manifests.error} onRetry={() => { void manifests.refetch() }} /></div>}
       {manifests.isSuccess && !manifest && (
@@ -122,6 +121,6 @@ export function ExtensionRoute({ extensionId }: { extensionId: string }) {
       {manifest && !manifest.enabled && <HubPage title={manifest.name}><ErrorState error={new Error(m.extensions_disabled_panel())} /></HubPage>}
       {manifest && manifest.enabled && manifest.native_view === 'meshy_gallery' && <Suspense fallback={<LoadingState />}><MeshyGallery title={manifest.name} /></Suspense>}
       {manifest && manifest.enabled && !manifest.native_view && <ExtensionPanel key={manifestKey(manifest)} manifest={manifest} />}
-    </AppShell>
+    </>
   )
 }

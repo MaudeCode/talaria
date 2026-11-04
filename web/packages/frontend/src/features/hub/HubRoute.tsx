@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { AppShell } from '../../shell/AppShell'
 import type { PanelId } from '../../shell/nav'
 import { useLocale } from '../../i18n/useLocale'
 import { KanbanPage } from '../kanban/KanbanPage'
@@ -24,12 +23,8 @@ const PAGES: Record<HubPanel, () => ReactNode> = {
   logs: () => <LogsPage />,
 }
 
-/** Hub layout: the collection is the main view; there is no sidebar (the phone drawer still carries the nav). */
+/** Hub page: the collection is the main view. */
 export function HubRoute({ panel }: { panel: HubPanel }) {
   useLocale()
-  return (
-    <AppShell sidebar={null} hub showing={panel}>
-      {PAGES[panel]()}
-    </AppShell>
-  )
+  return PAGES[panel]()
 }

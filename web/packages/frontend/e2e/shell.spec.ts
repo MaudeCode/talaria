@@ -200,4 +200,79 @@ test.describe('shell', () => {
       expect((await page.request.post('/api/settings', { data: { language: 'en' } })).ok()).toBe(true)
     }
   })
+
+  test('one shell survives every section, which still sets its own sidebar and markers (TAL-1866)', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'the rail is desktop-only')
+    await page.goto('/')
+    await settle(page)
+    const rail = page.locator('nav.rail')
+    await rail.evaluate((el) => { el.dataset.shellMarker = 'kept' })
+    const sections = [
+      { panel: 'kanban', sidebar: null, hub: true },
+      { panel: 'settings', sidebar: '#panelSettings', hub: false },
+      { panel: 'tasks', sidebar: null, hub: true },
+      { panel: 'groups', sidebar: null, hub: true },
+      { panel: 'chat', sidebar: '#sessionList', hub: false },
+    ]
+    for (const { panel, sidebar, hub } of sections) {
+      const tab = rail.locator(`[data-panel="${panel}"]`)
+      await tab.click()
+      await expect(tab, panel).toHaveAttribute('aria-current', 'page')
+      await expect(rail, panel).toHaveAttribute('data-shell-marker', 'kept')
+      if (sidebar) await expect(page.locator(sidebar), panel).toBeVisible()
+      else await expect(page.locator('.sidebar'), panel).toHaveCount(0)
+      await expect(page.locator('main#main'), panel).toHaveClass(panel === 'chat' ? /^(?!.*showing-)/ : new RegExp(`showing-${panel}`))
+      await expect(page.locator('html'), panel).toHaveClass(hub ? /hub-active/ : /^(?!.*hub-active)/)
+    }
+  })
+
+  test('an extension route names itself in the titlebar over the session list (TAL-1866)', async ({ page }) => {
+    await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, manifests: [{ id: 'demo', name: 'Demo Extension', version: '1.0.0', enabled: false, can_toggle: true, source: 'manifest', panel: null, nav: null, capabilities: [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [] }] } }))
+    const subtitle = page.locator('#appTitlebarSub')
+    await page.goto('/ext/demo')
+    await settle(page)
+    await expect(subtitle).toHaveText('Demo Extension')
+    await expect(page.locator('#sessionList')).toBeAttached()
+    await page.goto('/ext/missing')
+    await settle(page)
+    await expect(subtitle).toHaveText('missing')
+    await page.getByRole('link', { name: 'Extensions', exact: true }).last().click()
+    await expect(page).toHaveURL(/\/settings\/extensions$/)
+    await expect(subtitle).toHaveCount(0)
+  })
+
+  test('a chat right panel is gone on a hub and reopens on return (TAL-1866)', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'the rail is desktop-only')
+    const { session } = await (await page.request.post('/api/session/new', { data: {} })).json() as { session: { session_id: string } }
+    try {
+      await page.goto(`/session/${session.session_id}`)
+      await settle(page)
+      const html = page.locator('html')
+      const panel = page.locator('.rightpanel[data-panel="pages"]')
+      await page.locator('#btnWorkspacePanelEdgeToggle').click()
+      await expect(panel).toBeVisible()
+      await expect(html).toHaveAttribute('data-workspace-panel', 'open')
+      await page.locator('nav.rail [data-panel="kanban"]').click()
+      await expect(panel).toHaveCount(0)
+      await expect(html).toHaveAttribute('data-workspace-panel', 'closed')
+      await page.locator('nav.rail [data-panel="chat"]').click()
+      await expect(panel).toBeVisible()
+      await expect(html).toHaveAttribute('data-workspace-panel', 'open')
+    } finally {
+      expect((await page.request.post('/api/session/delete', { data: { session_id: session.session_id } })).ok()).toBe(true)
+    }
+  })
+
+  test('going back dismisses the open tab bar sheet (TAL-1866)', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'the tab bar is phone-only')
+    await page.goto('/tasks')
+    await settle(page)
+    await page.locator('.tabbar [data-tab="kanban"]').click()
+    await expect(page).toHaveURL(/\/kanban$/)
+    await page.locator('.tabbar [data-tab="more"]').click()
+    await expect(page.locator('.tabbar-sheet')).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(/\/tasks$/)
+    await expect(page.locator('.tabbar-sheet')).toHaveCount(0)
+  })
 })

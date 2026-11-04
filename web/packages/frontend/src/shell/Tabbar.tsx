@@ -22,6 +22,9 @@ export function Tabbar() {
   const active = useLocation({ select: (location) => panelForPath(location.pathname) })
   const navigate = useNavigate()
   const [open, setOpen] = useState<string | null>(null)
+  // The shell outlives a section change, so one that skips the tabs (the browser's back) closes the sheet here.
+  const [sheetSection, setSheetSection] = useState(active)
+  if (active !== sheetSection) { setSheetSection(active); setOpen(null) }
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => { const t = e.target as HTMLElement | null; if (!t?.closest('.tabbar-sheet') && !t?.closest('.tabbar-btn')) setOpen(null) }

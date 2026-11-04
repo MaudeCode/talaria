@@ -10,7 +10,7 @@ import { Brandmark } from './Brandmark'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
 
 /** Legacy `.app-titlebar`: hidden in desktop browsers, visible on mobile and in installed PWAs. */
-export function Titlebar({ title, subtitle }: { title?: string; subtitle?: string }) {
+export function Titlebar({ subtitle }: { subtitle?: string | undefined }) {
   const bootstrap = useBootstrap()
   const navigate = useNavigate()
   const newChat = useNewChat()
@@ -29,7 +29,7 @@ export function Titlebar({ title, subtitle }: { title?: string; subtitle?: strin
       </div>
       <div className="app-titlebar-inner flex items-center gap-2 min-w-0 max-w-full justify-center max-[641px]:flex-[1_1_auto]">
         <Link to="/" className="app-titlebar-icon inline-flex items-center text-accent" aria-hidden="true" tabIndex={-1}><Brandmark className="brandmark" size={16} /></Link>
-        <span className="app-titlebar-title text-[12px] font-semibold text-text tracking-(--titlebar-title-tracking) whitespace-nowrap overflow-hidden text-ellipsis max-w-[60vw] max-[641px]:max-w-[72vw]" id="appTitlebarTitle">{title ?? panelLabel}</span>
+        <span className="app-titlebar-title text-[12px] font-semibold text-text tracking-(--titlebar-title-tracking) whitespace-nowrap overflow-hidden text-ellipsis max-w-[60vw] max-[641px]:max-w-[72vw]" id="appTitlebarTitle">{panelLabel}</span>
         {subtitle && <span className="app-titlebar-sub text-[10px] text-muted bg-hover py-0.5 px-[7px] rounded-[4px] font-mono whitespace-nowrap shrink-0 max-[641px]:text-[9px] max-[641px]:py-px max-[641px]:px-[5px]" id="appTitlebarSub">{subtitle}</span>}
       </div>
       <div className="app-titlebar-spacer hidden size-11 shrink-0 max-[901px]:flex" aria-hidden="true" />

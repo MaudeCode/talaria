@@ -11,7 +11,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { CronJob, CronStoreHealth } from '../../contracts'
-import { AppShell, HubPage } from '../../shell/AppShell'
+import { HubPage } from '../../shell/AppShell'
 import { PanelHeadButton } from '../../shell/Sidebar'
 import { useMediaQuery } from '../../shell/useShellState'
 import { useLocale } from '../../i18n/useLocale'
@@ -50,9 +50,7 @@ export function TasksRoute() {
   useLocale()
   const { job } = useSearch({ from: '/_app/tasks' })
   const navigate = useNavigate()
-  const main = useTasksWorkbench(job ?? null, (id) => { void navigate({ to: '/tasks', search: id ? { job: id } : {} }) })
-  // `hub` hides the shell's right panel, where a task's run output opens: only the list goes without one.
-  return <AppShell sidebar={null} hub={!job} showing="tasks">{main}</AppShell>
+  return useTasksWorkbench(job ?? null, (id) => { void navigate({ to: '/tasks', search: id ? { job: id } : {} }) })
 }
 
 /** The list and its details over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */

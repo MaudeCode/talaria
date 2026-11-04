@@ -3,7 +3,7 @@ import { Link, useParams } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { AppShell, MAIN_VIEW } from '../../shell/AppShell'
+import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead } from '../../shell/Sidebar'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
@@ -30,7 +30,7 @@ export const SECTION_LABEL: Record<Section, () => string> = {
   help: () => m.settings_section_help_title(),
 }
 
-function SectionMenu() {
+export function SectionMenu() {
   useLocale()
   const params: { section?: string } = useParams({ strict: false })
   // TAL-818: the server's connectors gate; the entry stays hidden until it answers true.
@@ -57,9 +57,5 @@ function SectionMenu() {
 }
 
 export function SettingsLayout({ children }: { children: ReactNode }) {
-  return (
-    <AppShell sidebar={<SectionMenu />} showing="settings">
-      <div className={MAIN_VIEW + ' active'} id="mainSettings">{children}</div>
-    </AppShell>
-  )
+  return <div className={MAIN_VIEW + ' active'} id="mainSettings">{children}</div>
 }
