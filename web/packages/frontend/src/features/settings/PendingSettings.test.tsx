@@ -50,6 +50,28 @@ it('renders actual preference and conversation controls before their writes fini
   expect(document.getElementById('settingsStructuredCodeAutoLines')).toHaveValue(80)
 })
 
+it('shows the prepared compaction choice at once and rolls back when the server refuses it (TAL-1825)', async () => {
+  vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, compression_prepare_ahead: false })
+  const held = deferred<typeof initial>()
+  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
+  const qc = setup()
+  qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: false })
+  const control = await screen.findByRole('switch', { name: 'Prepare compaction in the background' })
+  await user.click(control)
+  expect(control).toBeChecked()
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ compression_prepare_ahead: true }))
+  const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
+  held.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message, body: { error: message, condition: 'config_write_refused' } }))
+  await waitFor(() => expect(control).not.toBeChecked())
+  expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
+})
+
+it('offers no prepared compaction choice when the Agent has none (TAL-1825)', () => {
+  const qc = setup()
+  act(() => qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: null }))
+  expect(screen.queryByRole('switch', { name: 'Prepare compaction in the background' })).toBeNull()
+})
+
 it('keeps an empty numeric draft across unrelated refreshes and restores the confirmed value on blur', async () => {
   vi.mocked(api.saveSettings).mockReturnValue(deferred<typeof initial>().promise)
   const qc = setup()

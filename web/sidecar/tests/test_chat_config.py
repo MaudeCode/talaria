@@ -8,21 +8,12 @@ from unittest.mock import Mock
 import pytest
 
 from talaria_sidecar.methods import chat
+from talaria_sidecar.methods import config as config_methods
 from test_chat_turn import Ctx, FakeAgent, _params
 
 
-@pytest.mark.parametrize('override', [None, ['file']])
-@pytest.mark.parametrize('configured', [False, True])
-def test_turn_reads_config_once_and_refreshes_between_turns(monkeypatch, tmp_path, override, configured):
-    cfg = {
-        'model': {'default': 'm', 'extra_body': {'nested': ['original']}},
-        'agent': {'disabled_toolsets': ['todo']},
-        'platform_toolsets': {'cli': ['web']},
-        'provider_routing': {'only': ['provider-a']},
-        'checkpoints': {'enabled': True, 'max_snapshots': 7},
-        'fallback_providers': [{'provider': 'backup', 'model': 'fallback'}],
-    } if configured else {}
-    original = copy.deepcopy(cfg)
+def _stub_turn(monkeypatch, tmp_path, cfg, session_id):
+    """One session whose turns read ``cfg`` through a stubbed Agent config; returns that config module and the turn params."""
     config = types.ModuleType('hermes_cli.config')
     config.load_config = Mock(side_effect=lambda: copy.deepcopy(cfg))
     config.load_config_readonly = Mock(side_effect=lambda: cfg)
@@ -45,7 +36,23 @@ def test_turn_reads_config_once_and_refreshes_between_turns(monkeypatch, tmp_pat
     monkeypatch.setattr(chat, '_discover_mcp_tools', lambda run: None)
     FakeAgent.instances.clear()
     monkeypatch.setattr(chat, '_agent_class', lambda: FakeAgent)
-    params = {**_params('config-first', str(tmp_path)), 'profile_home': str(tmp_path), 'enabled_toolsets': override}
+    return config, {**_params(session_id, str(tmp_path)), 'profile_home': str(tmp_path)}
+
+
+@pytest.mark.parametrize('override', [None, ['file']])
+@pytest.mark.parametrize('configured', [False, True])
+def test_turn_reads_config_once_and_refreshes_between_turns(monkeypatch, tmp_path, override, configured):
+    cfg = {
+        'model': {'default': 'm', 'extra_body': {'nested': ['original']}},
+        'agent': {'disabled_toolsets': ['todo']},
+        'platform_toolsets': {'cli': ['web']},
+        'provider_routing': {'only': ['provider-a']},
+        'checkpoints': {'enabled': True, 'max_snapshots': 7},
+        'fallback_providers': [{'provider': 'backup', 'model': 'fallback'}],
+    } if configured else {}
+    original = copy.deepcopy(cfg)
+    config, params = _stub_turn(monkeypatch, tmp_path, cfg, 'config-first')
+    params = {**params, 'enabled_toolsets': override}
     for index in range(2):
         config.load_config.reset_mock()
         config.load_config_readonly.reset_mock()
@@ -71,3 +78,24 @@ def test_turn_reads_config_once_and_refreshes_between_turns(monkeypatch, tmp_pat
             cfg['agent'] = {'disabled_toolsets': ['changed'] if configured else []}
             cfg['checkpoints'] = {'enabled': configured, 'max_snapshots': 8 if configured else 3}
             original = copy.deepcopy(cfg)
+
+
+def test_a_prepare_ahead_change_rebuilds_the_resident_agent(monkeypatch, tmp_path):
+    """TAL-1825: the Agent reads ``compression.prepare_ahead`` once, at construction."""
+    cfg = {'compression': {'prepare_ahead': False}}
+    _config, params = _stub_turn(monkeypatch, tmp_path, cfg, 'prepare-ahead')
+    built = []
+    for index, value in enumerate((False, False, True)):
+        cfg['compression'] = {'prepare_ahead': value}
+        assert chat.start(Ctx(), {**params, 'stream_id': f'prepare-ahead-{index}'})['status'] == 'completed'
+        built.append(len(FakeAgent.instances))
+    assert built == [1, 1, 2]
+
+
+@pytest.mark.parametrize(('key', 'declared'), [('compression.prepare_ahead', True), ('compression.absent', False), ('compression.threshold.deeper', False), ('absent.prepare_ahead', False)])
+def test_declares_key_walks_the_agent_defaults(monkeypatch, key, declared):
+    module = types.ModuleType('hermes_cli.config')
+    module.DEFAULT_CONFIG = {'compression': {'threshold': 0.5, 'prepare_ahead': False}}
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', module)
+    assert config_methods.declares_key(key) is declared

@@ -120,6 +120,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("cron.status", {}),
     # providers / models / aux / text / process
     ("config.get", {"profile_home": "{home}", "config_path": "{home}/config.yaml"}),
+    ("config.declares_key", {"key": "compression.prepare_ahead"}),
     ("config.env_write", {"profile_home": "{home}", "updates": {"TALARIA_FIXTURE_KEY": "sk-fixture-1234", "TALARIA_ABSENT_KEY": None}}),
     ("models.reasoning_efforts", {"profile_home": "{home}", "model": "claude-sonnet-4-6", "provider": "anthropic"}),
     # TAL-901: a top-level block entry, case-folded, after the Agent's built-ins.

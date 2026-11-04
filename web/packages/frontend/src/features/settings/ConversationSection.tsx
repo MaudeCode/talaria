@@ -15,7 +15,7 @@ function Toggle({ label, hint, settingKey, fallback = false }: { label: string; 
 }
 
 export function ConversationSection() {
-  const { settings, str, set, setAsync, num } = useSettingField(['chat_activity_display_mode', 'default_message_mode', 'structured_code_default_view', 'structured_code_auto_tree_lines', 'max_tokens', 'auto_title_refresh_every'])
+  const { settings, str, set, setAsync, num } = useSettingField(['chat_activity_display_mode', 'default_message_mode', 'structured_code_default_view', 'structured_code_auto_tree_lines', 'max_tokens', 'compression_prepare_ahead', 'auto_title_refresh_every'])
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
@@ -55,6 +55,7 @@ export function ConversationSection() {
       <FieldRow label={m.settings_label_max_tokens()} htmlFor="settingsMaxTokens" inline>
         <TextInput id="settingsMaxTokens" type="number" retainDraft min={1} className="w-28" placeholder={m.settings_placeholder_max_tokens_none()} value={num('max_tokens', 0) || ''} onChange={(e) => { const raw = e.target.value.trim(); if (raw === '') return setAsync({ max_tokens: null }); else { const n = Number(raw); if (Number.isInteger(n) && n > 0) return setAsync({ max_tokens: n }) } }} />
       </FieldRow>
+      {typeof settings.data.compression_prepare_ahead === 'boolean' ? <Toggle label={m.settings_label_compression_prepare_ahead()} settingKey="compression_prepare_ahead" /> : null}
       <FieldRow label={m.settings_label_auto_title_refresh()} htmlFor="settingsAutoTitleRefresh" inline>
         <Select id="settingsAutoTitleRefresh" value={str('auto_title_refresh_every', '0')} onValueChange={(v) => set({ auto_title_refresh_every: v })}>
           <option value="0">{m.settings_auto_title_refresh_off()}</option>

@@ -729,6 +729,7 @@ export const SettingsSchema = z.looseObject({
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
+  compression_prepare_ahead: z.boolean().nullable().optional().describe('TAL-1825: the profile\'s `compression.prepare_ahead`; null when the Agent does not offer it.'),
   screen_reader_mode: z.boolean().optional().describe('TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one.'),
 })
 export type Settings = z.infer<typeof SettingsSchema>

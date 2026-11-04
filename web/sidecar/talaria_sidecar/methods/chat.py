@@ -1258,7 +1258,15 @@ def _provider_routing_kwargs(cfg: dict | None = None) -> dict:
     })
 
 
-def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
+def _compression_prepare_ahead(cfg: dict | None = None):
+    """TAL-1825: the profile's ``compression.prepare_ahead``, which the Agent reads once, at construction. Runs under ``scoped_home``."""
+    from hermes_cli.config import load_config
+
+    section = ((load_config() or {}) if cfg is None else cfg).get("compression")
+    return section.get("prepare_ahead") if isinstance(section, dict) else None
+
+
+def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict, cfg: dict | None = None) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
     itself only enters as a digest."""
@@ -1275,6 +1283,7 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
         "reasoning_config": kwargs.get("reasoning_config"),
         "request_overrides": kwargs.get("request_overrides"),
+        "compression_prepare_ahead": _compression_prepare_ahead(cfg),
         "provider_routing": [kwargs.get(name) for name in (
             "providers_allowed", "providers_ignored", "providers_order", "provider_sort", "provider_require_parameters",
             "provider_data_collection", "openrouter_min_coding_score")],
@@ -2179,7 +2188,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         ):
             if _supported(AIAgent, name) and value is not None:
                 kwargs[name] = value
-        signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
+        signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs, cfg)
         agent = None
 
         def bind(bound) -> None:

@@ -308,7 +308,23 @@ def personalities(config) -> list[dict]:
     return [{"name": name, "description": describe_personality(value), "prompt": render_personality_prompt(value)} for name, value in available_personalities(config).items()]
 
 
+def declares_key(key: str) -> bool:
+    """TAL-1825: whether the Agent's ``DEFAULT_CONFIG`` holds a dotted key."""
+    from hermes_cli.config import DEFAULT_CONFIG
+
+    node = DEFAULT_CONFIG
+    for part in key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False
+        node = node[part]
+    return True
+
+
 def register(registry) -> None:
+    @registry.method("config.declares_key")
+    def declares_key_(ctx: CallContext, params: dict) -> dict:
+        return {"declared": declares_key(str(params.get("key") or ""))}
+
     @registry.method("config.get", requires_agent=False)
     def get(ctx: CallContext, params: dict) -> dict:
         return read_config(config_path_param(params))

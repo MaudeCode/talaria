@@ -13,6 +13,8 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { LOCAL_RUNTIME_PROVIDER, OAUTH_PROVIDERS, PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_ENV_VAR, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
 import { fileStatKey } from '../fs/stat.js'
+import { truthy } from '../config.js'
+import { pyBool } from '../settings.js'
 
 export type SpeedTier = SidecarResult<'models.speed_tiers'>['tiers'][number][number]
 /** One auxiliary slot as the Agent lists it (TAL-800); the static catalog's rows carry no effort or inheritance. */
@@ -107,6 +109,15 @@ export class AgentConfig {
     })
     this.locks.set(file, run)
     return run
+  }
+
+  /** TAL-1825: whether the installed Agent's default config holds a dotted key; false when the sidecar cannot say. */
+  async declaresKey(key: string): Promise<boolean> {
+    try {
+      return (await this.deps.sidecar()?.call('config.declares_key', { key }))?.declared ?? false
+    } catch {
+      return false
+    }
   }
 
   /** The Agent owns speed eligibility. A failed lookup must not erase a saved tier. */
@@ -484,6 +495,21 @@ export async function setMaxTokens(store: AgentConfig, home: string, value: unkn
     } else c.max_tokens = parsed
   })
   return maxTokensStatus(config)
+}
+
+// ── compression ───────────────────────────────────────────────────────
+
+export const PREPARE_AHEAD_KEY = 'compression.prepare_ahead'
+
+/** TAL-1825: the profile's prepared compaction choice, by the Agent's `is_truthy_value`; null when the Agent does not offer it or the config is unavailable. */
+export async function compressionPrepareAhead(store: AgentConfig, home: string): Promise<boolean | null> {
+  if (!(await store.declaresKey(PREPARE_AHEAD_KEY))) return null
+  try {
+    const value = dict((await store.read(home)).compression).prepare_ahead
+    return typeof value === 'string' ? truthy(value) : pyBool(value)
+  } catch {
+    return null
+  }
 }
 
 // ── reasoning ─────────────────────────────────────────────────────────

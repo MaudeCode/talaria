@@ -70708,6 +70708,17 @@
                         "pace_minimum_elapsed_hours"
                       ]
                     },
+                    "compression_prepare_ahead": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
+                    },
                     "screen_reader_mode": {
                       "type": "boolean",
                       "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
@@ -70984,6 +70995,17 @@
                         "pace_critical_burn_rate_percent",
                         "pace_minimum_elapsed_hours"
                       ]
+                    },
+                    "compression_prepare_ahead": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
                     },
                     "screen_reader_mode": {
                       "type": "boolean",
