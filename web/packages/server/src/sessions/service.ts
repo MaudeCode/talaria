@@ -264,7 +264,7 @@ export class SessionService {
   private worktreesUnconfirmed = 0
   // ponytail: in memory, so a restart between Retry and its resend refuses the token; persist it if that window matters.
   /** TAL-1881: each session's unmasked Retry prompt, until `chat.start` spends its token. */
-  private readonly retryHolds = new Map<string, { token: string; prompt: string; expires: number }>()
+  private readonly retryHolds = new Map<string, { token: string; prompt: string | null; expires: number }>()
 
   constructor(readonly deps: SessionServiceDeps) {
     this.compressionJobs = new CompressionJobs()
@@ -2838,9 +2838,11 @@ export class SessionService {
   /** TAL-1881: spends the session's held Retry prompt; `release` puts it back for a start that admitted nothing. */
   claimRetryPrompt(sid: string, token: string): { prompt: string; release: () => void } {
     const hold = this.retryHolds.get(sid)
-    if (hold?.token !== token || hold.expires <= this.deps.now()) throw new HttpFailure(409, 'This retry is no longer available. Send the message again.', { code: 'retry_token_invalid' })
-    this.retryHolds.delete(sid)
-    return { prompt: hold.prompt, release: () => { if (!this.retryHolds.has(sid)) this.retryHolds.set(sid, hold) } }
+    if (hold?.token !== token || hold.prompt === null || hold.expires <= this.deps.now()) throw new HttpFailure(409, 'This retry is no longer available. Send the message again.', { code: 'retry_token_invalid' })
+    const { prompt } = hold
+    hold.prompt = null
+    // A newer Retry replaced this object in the map, so releasing it then revives nothing.
+    return { prompt, release: () => { hold.prompt = prompt } }
   }
 
   async undo(sid: string): Promise<Record<string, unknown>> {

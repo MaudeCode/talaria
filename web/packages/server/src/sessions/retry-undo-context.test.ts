@@ -201,6 +201,8 @@ describe('retry holds an unmasked prompt behind a single-use token', () => {
 
   it('invalidates a session\'s token when it retries again', async () => {
     const { sid, token } = await retried()
+    // A start of the first token is still in admission when the newer Retry runs.
+    const inFlight = s.deps.sessions.claimRetryPrompt(sid, token)
     const session = await s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'second', timestamp: 3 }, { role: 'assistant', content: 'done', timestamp: 4 }]
     await s.deps.sessionStore.save(session)
@@ -208,6 +210,9 @@ describe('retry holds an unmasked prompt behind a single-use token', () => {
     sent = []
     expect((await post('/api/chat/start', { session_id: sid, message: 'second', retry_token: token })).status).toBe(409)
     await finish(await post('/api/chat/start', { session_id: sid, message: 'second', retry_token: next.retry_token }))
+    // Its refusal arrives after the newer token is spent, and cannot bring the older prompt back.
+    inFlight.release()
+    expect((await post('/api/chat/start', { session_id: sid, message: 'second', retry_token: token })).status).toBe(409)
     expect(sent).toEqual(['second'])
   })
 })
