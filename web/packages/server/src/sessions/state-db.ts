@@ -1397,8 +1397,13 @@ export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; re
 // Agent v0.21.5+ `hermes_state_messages.py`: the display set (live rows plus compaction archives), minus model-only rows
 // (micro-compaction's join of adjacent user turns), and the probe for a visible row its read-only reader cannot index.
 const DISPLAY_ACTIVE_SQL = '(active = 1 OR compacted = 1)'
-const DISPLAY_VISIBLE_SQL = " AND COALESCE(json_extract(CASE WHEN json_valid(display_metadata) THEN display_metadata ELSE json_object() END, '$.model_only'), 0) = 0"
+const displayVisibleSql = (metadata: string): string => ` AND COALESCE(json_extract(CASE WHEN json_valid(${metadata}) THEN ${metadata} ELSE json_object() END, '$.model_only'), 0) = 0`
 const DISPLAY_INDEX_MISSING_SQL = `SELECT 1 FROM messages WHERE session_id = ? AND ${DISPLAY_ACTIVE_SQL} AND (display_order IS NULL OR display_identity IS NULL) LIMIT 1`
+// Agent v0.22.6 `not_a_later_tool_copy_sql`: compaction can carry a tool result forward as a stub in a later display slot;
+// the archived original in the earlier slot is the one that shows. Matched on identity only, never bodies.
+const notALaterToolCopySql = (row: string, originalVisible: string): string => ` AND NOT (${row}.role = 'tool' AND ${row}.message_uid IS NOT NULL AND EXISTS (
+  SELECT 1 FROM messages AS original WHERE original.session_id = ${row}.session_id AND original.timestamp = ${row}.timestamp AND original.message_uid = ${row}.message_uid
+    AND original.role = 'tool' AND original.active = 0 AND original.compacted = 1 AND +original.display_order < ${row}.display_order${originalVisible}))`
 
 /**
  * TAL-825: the Agent's `_display_rows_from_conn` on each segment, root to tip: one row per Agent-maintained `display_order`
@@ -1409,12 +1414,14 @@ function displayRows(db: DatabaseSync, available: Set<string>, selected: string[
   if (!['id', 'active', 'compacted', 'display_order', 'display_identity'].every((c) => available.has(c))) return null
   const missing = db.prepare(DISPLAY_INDEX_MISSING_SQL)
   if (chain.some((segment) => missing.get(segment))) return null
+  const hasMetadata = available.has('display_metadata')
   // Unqualified on purpose, as in the Agent: inside the correlated subquery it binds to `candidate`.
-  const visible = available.has('display_metadata') ? DISPLAY_VISIBLE_SQL : ''
-  const page = db.prepare(`WITH page AS (SELECT display_order FROM messages WHERE session_id = ? AND ${DISPLAY_ACTIVE_SQL}${visible} GROUP BY display_order)
+  const visible = hasMetadata ? displayVisibleSql('display_metadata') : ''
+  const notACopy = (row: string): string => available.has('message_uid') ? notALaterToolCopySql(row, hasMetadata ? displayVisibleSql('original.display_metadata') : '') : ''
+  const page = db.prepare(`WITH page AS (SELECT display_order FROM messages WHERE session_id = ? AND ${DISPLAY_ACTIVE_SQL}${visible}${notACopy('messages')} GROUP BY display_order)
     SELECT ${selected.map((c) => `chosen.${c}`).join(', ')}, chosen.session_id FROM page JOIN messages AS chosen ON chosen.id = (
       SELECT candidate.id FROM messages AS candidate WHERE candidate.session_id = ? AND candidate.display_order = page.display_order
-        AND (candidate.active = 1 OR candidate.compacted = 1)${visible} ORDER BY candidate.active DESC, candidate.id DESC LIMIT 1)
+        AND (candidate.active = 1 OR candidate.compacted = 1)${visible}${notACopy('candidate')} ORDER BY candidate.active DESC, candidate.id DESC LIMIT 1)
     ORDER BY page.display_order ASC`)
   return chain.flatMap((segment) => page.all(segment, segment) as Dict[])
 }

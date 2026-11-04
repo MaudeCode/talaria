@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fixture from '../test/fixtures/compaction-replay.json' with { type: 'json' }
 import carrier from '../test/fixtures/compaction-carrier.json' with { type: 'json' }
+import toolStub from '../test/fixtures/compaction-tool-stub.json' with { type: 'json' }
 import { bootTestServer, openStateDb } from '../test/harness.js'
 import { Session } from './session.js'
 import { markerKind, mergeSessionMessagesAppendOnly, stateDbSeenId } from './merge.js'
@@ -348,5 +349,39 @@ describe('micro-compacted user turns read as the originals the Agent displays (T
       expect(session!.context_messages).toEqual(stateDbSessionRead(join(server.state, 'state.db'), sid).rows)
       expect(contents(session!.context_messages)).toContain('q0\n\nq1')
     } finally { store.close(); await server.close() }
+  })
+})
+
+describe('a compacted tool result reads as its archived original (TAL-1808)', () => {
+  const sid = toolStub.sessionId
+  const seed = (db: DatabaseSync, stage: keyof typeof toolStub.snapshots): void => db.exec([...toolStub.schema, ...toolStub.snapshots[stage]].join('\n'))
+  const toolContents = (rows: Record<string, unknown>[]): unknown[] => rows.filter((m) => m.role === 'tool').map((m) => m.content)
+
+  it.each(['compacted', 'twiceCompacted'] as const)('shows the original once on the tool card after %s, and the model keeps the stub', async (stage) => {
+    const server = await bootTestServer()
+    const path = join(server.state, 'state.db')
+    const store = openStateDb(path)
+    try {
+      seed(store, stage)
+      const res = await server.get(`/api/session?session_id=${sid}`)
+      expect(res.status).toBe(200)
+      const messages = ((await res.json()) as { session: { messages: Record<string, unknown>[] } }).session.messages
+      const call = messages.find((m) => Array.isArray(m.tool_calls))?.tool_calls as Record<string, unknown>[]
+      expect(call[0]?.result).toBe(toolStub.original)
+      expect(toolContents(messages)).toEqual([toolStub.original])
+      expect(toolContents(stateDbSessionRead(path, sid).rows)).toEqual([toolStub.stub])
+    } finally { store.close(); await server.close() }
+  })
+
+  it.each([
+    ['an in-place prune keeps the slot of its archive', 'UPDATE messages SET display_order = 3 WHERE id = 8'],
+    ['the earlier archive is model-only', `UPDATE messages SET display_metadata = '{"model_only":true}' WHERE id = 3`],
+  ])('keeps the stub when %s', (_, change) => {
+    const dir = mkdtempSync(join(tmpdir(), 'compaction-tool-stub-')), path = join(dir, 'state.db'), db = openStateDb(path)
+    try {
+      seed(db, 'compacted')
+      db.exec(change)
+      expect(toolContents(stateDbSessionRead(path, sid, { display: true }).rows)).toEqual([toolStub.stub])
+    } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
   })
 })
