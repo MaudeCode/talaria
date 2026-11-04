@@ -24,11 +24,12 @@ const CACHE_SLOT_LIMIT = 200
 const BACKGROUND_KINDS = ['cron', 'webhook', 'kanban'] as const
 /**
  * Sources kept out of the default interactive window: the background kinds, which have their own bounded passes, and
- * one-shot `hermes -z` runs, which have none. A delegating agent can start hundreds of one-shots a day; inside the
- * window they push every CLI/TUI/Desktop conversation out (TAL-1379). An explicit `sourceFilter` and an exact-id lookup
- * still reach them, and a saved alias of one comes back through that lookup.
+ * two kinds with none: one-shot `hermes -z` runs and third-party integration runs tagged `--source tool`, which
+ * `hermes sessions list` also hides. A delegating agent or integration can start hundreds of these a day; inside the
+ * window they push every CLI/TUI/Desktop conversation out (TAL-1379, TAL-1861). An explicit `sourceFilter` and an
+ * exact-id lookup still reach them, and a saved alias of one comes back through that lookup.
  */
-const INTERACTIVE_WINDOW_EXCLUDED_SOURCES: readonly string[] = [...BACKGROUND_KINDS, 'oneshot']
+const INTERACTIVE_WINDOW_EXCLUDED_SOURCES: readonly string[] = [...BACKGROUND_KINDS, 'oneshot', 'tool']
 
 export interface CliSessionsDeps {
   store: SessionStore
