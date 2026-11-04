@@ -8,6 +8,7 @@ import pytest
 from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, SidecarProcess, isolated_env, requires_agent
 
 CRON_REFUSAL = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/native-cron-refusal.json").read_text())
+SUPPORTED_REVISIONS = [release["sourceRevision"] for release in json.loads((SIDECAR_ROOT / "agent_support.json").read_text())["releases"]]
 
 
 @requires_agent
@@ -211,7 +212,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
     monkeypatch.setattr(adapter, "_connect", connect)
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
-    endpoint = SimpleNamespace(code_sha="4d04303818b61bf3aa09278af48356315515965b", control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
+    endpoint = SimpleNamespace(code_sha=SUPPORTED_REVISIONS[-1], control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
     found = SimpleNamespace(endpoint=endpoint, state="ready")
     owner.endpoint, owner.discovery = endpoint, found
     monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(found)))
@@ -239,9 +240,9 @@ def test_idle_notice_replay_and_snapshot_warning(native_owner_stub, boundary):
 
 
 @pytest.mark.parametrize("sha,attached", [
-    ("4d04303818b61bf3aa09278af48356315515965b", True),
-    ("bf0203a794a07aac3ff764972ab9087baa4e4f4e", True),
+    *((revision, True) for revision in SUPPORTED_REVISIONS),
     ("bf0203a794a07aac3ff764972ab9087baa4e4f4f", False),
+    ("4d04303818b61bf3aa09278af48356315515965b", False),
     ("5b147ab036d6d19131bff8d20701b5001eab844a", False),
     ("0.22.4", False), ("0.22.5", False), (None, False), ("unknown", False),
 ])
@@ -264,7 +265,6 @@ def test_served_owner_requires_verified_runtime_revision(tmp_path, native_owner_
 def test_served_owner_rechecks_authenticated_identity(tmp_path, native_owner_stub, field, value):
     owner = native_owner_stub
     owner.endpoint.control_home = str(tmp_path.parent)
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
     owner.described[field] = value
     result = owner.run(None, {"session_id": "chat", "action": "snapshot"})
     assert (result["state"], result["reason"]) == ("incompatible", "owner_capabilities"), result
@@ -282,7 +282,6 @@ def test_unreadable_served_contract_fails_closed(tmp_path, native_owner_stub, mo
     monkeypatch.setattr(Path, "read_text", read)
     owner = native_owner_stub
     owner.endpoint.control_home = str(tmp_path.parent)
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
     result = owner.run(None, {"session_id": "chat", "action": "snapshot"})
     assert result["reason"] == "served_profile_sessions_unavailable", result
     assert owner.calls == []
@@ -292,7 +291,6 @@ def test_verified_served_owner_keeps_restart_and_diagnostic_gates(tmp_path, nati
     from talaria_sidecar.methods import gateway_sessions as adapter
     owner = native_owner_stub
     owner.endpoint.control_home = str(tmp_path.parent)
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
     owner.discovery.state = "draining"
     result = owner.run(None, {"session_id": "chat", "action": "submit", "text": "wait", "request_id": "wait"})
     assert (result["state"], result["reason"]) == ("refused", "gateway_restarting"), result
@@ -709,7 +707,7 @@ def test_supported_owner_captured_command_policy(tmp_path):
     assert json.loads(result.stdout)["code"] == 7
 
 
-@pytest.mark.parametrize("revision", ["5b147ab036d6d19131bff8d20701b5001eab844a", "4d04303818b61bf3aa09278af48356315515965b", "bf0203a794a07aac3ff764972ab9087baa4e4f4e", "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab"])
+@pytest.mark.parametrize("revision", SUPPORTED_REVISIONS)
 def test_captured_command_accepts_verified_supported_revision(native_owner_stub, revision):
     native_owner_stub.endpoint.code_sha = revision
     result = native_owner_stub.run(None, {"session_id": "native", "action": "terminal_info"})
@@ -733,7 +731,7 @@ def test_captured_command_rejects_invalid_owner_result(native_owner_stub, value)
     assert "shell" not in result
 
 
-@pytest.mark.parametrize("sha", ["4d04303818b61bf3aa09278af48356315515965b", "bf0203a794a07aac3ff764972ab9087baa4e4f4e"])
+@pytest.mark.parametrize("sha", SUPPORTED_REVISIONS)
 def test_reaction_snapshot_strips_private_metadata(native_owner_stub, sha):
     owner = native_owner_stub
     owner.endpoint.code_sha = sha
@@ -760,7 +758,6 @@ def test_another_viewers_reaction_refreshes_the_existing_watch(native_owner_stub
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
     owner = native_owner_stub
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
     owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42, "content": "answer", "display_metadata": {}}]}
     frames = []
     ctx = SimpleNamespace(cancelled=False, emit=lambda kind, data: frames.append((kind, data)))
@@ -779,7 +776,6 @@ def test_another_viewers_reaction_refreshes_the_existing_watch(native_owner_stub
 @pytest.mark.parametrize("emoji", ["👍", "❤️", None])
 def test_reactions_write_only_through_the_owner_as_user(native_owner_stub, tmp_path, emoji):
     owner = native_owner_stub
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
     owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42}]}
     result = owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "react", "row_id": 42, "emoji": emoji})
     assert result["state"] == "attached"
@@ -805,7 +801,6 @@ def test_reaction_vocabulary_matches_the_public_contract():
                                          ("request_failed", "unavailable"), ("storage_failed", "unavailable")])
 def test_reaction_rpc_failures_preserve_unknown_outcomes(native_owner_stub, reason, state):
     owner = native_owner_stub
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
     owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42}]}
     owner.reaction_failure = reason
     result = owner.run(None, {"session_id": "native", "action": "react", "row_id": 42, "emoji": "👍"})
