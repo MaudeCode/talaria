@@ -294,7 +294,7 @@ describe('session lifecycle over HTTP', () => {
     const file = { filename: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }
     await writeMessages(s, sid, [{ role: 'user', content: stored, attachments: [file, 'legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })
-    expect(await json(res)).toEqual({ ok: true, last_user_text: stored, last_user_prompt: 'Summarize the logs', last_user_attachments: [file], removed_count: 2 })
+    expect(await json(res)).toEqual({ ok: true, last_user_text: stored, last_user_prompt: 'Summarize the logs', last_user_attachments: [file], removed_count: 2, retry_token: expect.any(String) as string })
     // Without files to resend, a trailing attached-files line is the user's own text.
     await writeMessages(s, sid, [{ role: 'user', content: 'See\n\n[Attached files: example.txt]', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })

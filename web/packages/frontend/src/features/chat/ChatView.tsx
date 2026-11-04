@@ -271,7 +271,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       // Old-server payloads return to the composer for review rather than resending normalized text.
       if (r.last_user_prompt === undefined) { returnToComposer(sessionId, r.last_user_text); return }
       const attachments = r.last_user_attachments ?? []
-      await startTurn({ sessionId, message: r.last_user_prompt, recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
+      await startTurn({ sessionId, message: r.last_user_prompt, recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}), ...(r.retry_token ? { retry_token: r.retry_token } : {}) } })
     })
   }
 

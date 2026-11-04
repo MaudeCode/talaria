@@ -52,11 +52,19 @@ async function getSession(ctx: RequestContext, sid: string, metadataOnly = false
 async function startChat(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}): Promise<Record<string, unknown>> {
   ctx.enterChatStart()
   const timing = ctx.startupTiming
+  let held: { prompt: string; release: () => void } | null = null
   try {
-    const response = await startSessionChat(ctx.deps, body, settle, timing ?? undefined)
+    // TAL-1881: Retry showed the client a masked prompt; the turn runs the one the server held, whatever text came back.
+    if (typeof body.retry_token === 'string') held = ctx.deps.sessions.claimRetryPrompt(str(body.session_id), body.retry_token)
+    const response = await startSessionChat(ctx.deps, held ? { ...body, message: held.prompt } : body, settle, timing ?? undefined)
     if (!response.stream_id) timing?.finish('noop')
     return response
-  } catch (error) { timing?.finish(timingOutcome(error)); throw error }
+  } catch (error) {
+    // A refusal admitted nothing, so its Retry can resend; an unknown outcome stays spent and is never replayed.
+    if (error instanceof HttpFailure && !error.extra.outcome_unknown) held?.release()
+    timing?.finish(timingOutcome(error))
+    throw error
+  }
 }
 
 /**

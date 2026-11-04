@@ -36,7 +36,7 @@ import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, s
 import { isOrphanPrunableSource } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
-import { redactText } from '../redact.js'
+import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
 import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
@@ -248,6 +248,8 @@ function idleGeneration(row: Record<string, unknown>): string {
   return JSON.stringify([row.last_message_at, row.last_prompt_tokens, row.post_compression_context_tokens_estimate, row.threshold_tokens, row.model, row.model_provider, row.profile])
 }
 
+const RETRY_HOLD_SECONDS = 3600
+
 export class SessionService {
   owner: GatewaySessions | null = null
   /** TAL-255: one manual compression worker per session, shared by every compress route. */
@@ -260,6 +262,9 @@ export class SessionService {
   private readonly idleCompactionTried = new Map<string, string>()
   private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
   private worktreesUnconfirmed = 0
+  // ponytail: in memory, so a restart between Retry and its resend refuses the token; persist it if that window matters.
+  /** TAL-1881: each session's unmasked Retry prompt, until `chat.start` spends its token. */
+  private readonly retryHolds = new Map<string, { token: string; prompt: string | null; expires: number }>()
 
   constructor(readonly deps: SessionServiceDeps) {
     this.compressionJobs = new CompressionJobs()
@@ -2818,8 +2823,28 @@ export class SessionService {
       shrinkTo(s, lastUser, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
-      return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
+      const redact = this.deps.redactEnabled()
+      return { ok: true, last_user_text: redactString(lastUserText, redact), last_user_prompt: redactString(lastUserPrompt, redact), last_user_attachments: lastUserAttachments, removed_count: removed, retry_token: this.holdRetryPrompt(sid, lastUserPrompt) }
     })
+  }
+
+  /** TAL-1881: holds what `chat.start` resends for this session, replacing any earlier hold, and names it with a new token. */
+  private holdRetryPrompt(sid: string, prompt: string): string {
+    const now = this.deps.now()
+    for (const [held, hold] of this.retryHolds) if (hold.expires <= now) this.retryHolds.delete(held)
+    const token = randomUUID().replace(/-/g, '')
+    this.retryHolds.set(sid, { token, prompt, expires: now + RETRY_HOLD_SECONDS })
+    return token
+  }
+
+  /** TAL-1881: spends the session's held Retry prompt; `release` puts it back for a start that admitted nothing. */
+  claimRetryPrompt(sid: string, token: string): { prompt: string; release: () => void } {
+    const hold = this.retryHolds.get(sid)
+    if (hold?.token !== token || hold.prompt === null || hold.expires <= this.deps.now()) throw new HttpFailure(409, 'This retry is no longer available. Send the message again.', { code: 'retry_token_invalid' })
+    const { prompt } = hold
+    hold.prompt = null
+    // A newer Retry replaced this object in the map, so releasing it then revives nothing.
+    return { prompt, release: () => { hold.prompt = prompt } }
   }
 
   async undo(sid: string): Promise<Record<string, unknown>> {

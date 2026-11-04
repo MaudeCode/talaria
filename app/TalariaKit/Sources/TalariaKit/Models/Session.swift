@@ -262,6 +262,10 @@ public struct SessionUndoResponse: Decodable, Equatable, Sendable {
 public struct SessionRetryResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let lastUserText: String?
+    /// The files that reached the model, resent with the turn because the server's held prompt omits their line.
+    let lastUserAttachments: [JSONValue]?
+    /// Names the unmasked prompt the server holds for the resend (TAL-1881); `lastUserText` is masked.
+    let retryToken: String?
     let removedCount: Int?
     public let error: String?
 }

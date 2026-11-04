@@ -508,6 +508,8 @@ export const ChatStartRequestSchema = z.looseObject({
   connect_card: z.boolean().optional(),
   /** The starting client renders the masked `skill_secret` prompt; omitted by older and native clients. */
   skill_secret: z.boolean().optional(),
+  /** TAL-1881: from `/api/session/retry`; the turn runs the prompt the server held, in place of `message`. */
+  retry_token: z.string().min(1).max(128).optional(),
 })
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */

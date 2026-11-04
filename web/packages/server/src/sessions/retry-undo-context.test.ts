@@ -166,3 +166,81 @@ describe('retry and undo cut the model context at the selected turn (TAL-1027)',
     }
   })
 })
+
+/** TAL-1881: Retry shows the masked prompt, as the transcript does, and the raw one only ever goes back to the model. */
+describe('retry holds an unmasked prompt behind a single-use token', () => {
+  let s: TestServer
+  let sent: unknown[] = []
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', (params) => { sent.push(params.user_message); return completed(params) })
+  beforeAll(async () => { s = await bootTestServer({ sidecar }) })
+  afterAll(() => s.close())
+
+  const SECRET = 'ghp_abcdefghij0123456789'
+  const MASKED = 'Deploy with ghp_ab...6789'
+  const post = (path: string, body: Json): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+
+  async function retried(): Promise<{ sid: string; body: Json; token: string }> {
+    const session = await s.deps.sessionStore.newSession()
+    session.messages = [{ role: 'user', content: `Deploy with ${SECRET}`, timestamp: 1 }, { role: 'assistant', content: 'done', timestamp: 2 }]
+    await s.deps.sessionStore.save(session)
+    const res = await post('/api/session/retry', { session_id: session.session_id })
+    expect(res.status).toBe(200)
+    const body = await res.json() as Json
+    return { sid: session.session_id, body, token: body.retry_token as string }
+  }
+
+  async function finish(start: Response): Promise<void> {
+    const started = await start.text()
+    expect(start.status, started).toBe(200)
+    expect(started).not.toContain(SECRET)
+    const { stream_id: streamId } = JSON.parse(started) as { stream_id: string }
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    expect(JSON.stringify(frames)).not.toContain(SECRET)
+  }
+
+  it('returns the prompt masked', async () => {
+    const { body } = await retried()
+    expect(body).toMatchObject({ ok: true, last_user_text: MASKED, last_user_prompt: MASKED })
+    expect(JSON.stringify(body)).not.toContain(SECRET)
+  })
+
+  it('starts the turn with the unmasked prompt through the token, whatever message came with it', async () => {
+    const { sid, token } = await retried()
+    sent = []
+    await finish(await post('/api/chat/start', { session_id: sid, message: MASKED, retry_token: token }))
+    expect(sent).toEqual([`Deploy with ${SECRET}`])
+    const reloaded = await (await s.get(`/api/session?session_id=${sid}`)).text()
+    expect(reloaded).not.toContain(SECRET)
+  })
+
+  it('refuses a token for another session and after its single use, and keeps it through a refused start', async () => {
+    const { sid, body, token } = await retried()
+    const other = await retried()
+    const start = (session_id: string, extra: Json = {}): Promise<Response> => post('/api/chat/start', { session_id, message: body.last_user_prompt, retry_token: token, ...extra })
+    sent = []
+    expect((await start(other.sid)).status).toBe(409)
+    expect((await start(sid, { workspace: '/nonexistent/tal-1881' })).status).toBe(400)
+    await finish(await start(sid))
+    expect(sent).toEqual([`Deploy with ${SECRET}`])
+    expect((await start(sid)).status).toBe(409)
+    expect(sent).toHaveLength(1)
+  })
+
+  it('invalidates a session\'s token when it retries again', async () => {
+    const { sid, token } = await retried()
+    // A start of the first token is still in admission when the newer Retry runs.
+    const inFlight = s.deps.sessions.claimRetryPrompt(sid, token)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'second', timestamp: 3 }, { role: 'assistant', content: 'done', timestamp: 4 }]
+    await s.deps.sessionStore.save(session)
+    const next = await (await post('/api/session/retry', { session_id: sid })).json() as Json
+    sent = []
+    expect((await post('/api/chat/start', { session_id: sid, message: 'second', retry_token: token })).status).toBe(409)
+    await finish(await post('/api/chat/start', { session_id: sid, message: 'second', retry_token: next.retry_token }))
+    // Its refusal arrives after the newer token is spent, and cannot bring the older prompt back.
+    inFlight.release()
+    expect((await post('/api/chat/start', { session_id: sid, message: 'second', retry_token: token })).status).toBe(409)
+    expect(sent).toEqual(['second'])
+  })
+})

@@ -23425,7 +23425,7 @@
     "/api/session/retry": {
       "post": {
         "operationId": "session.retry",
-        "description": "`last_user_text` is the stored row's text; `last_user_prompt` and `last_user_attachments` are what to resend as the new turn.",
+        "description": "`last_user_text` is the stored row's text and `last_user_prompt` the prompt to show, both masked like the transcript. Resend `retry_token` and `last_user_attachments` through `/api/chat/start`: the token is bound to the session, works once, and runs the unmasked prompt.",
         "tags": [
           "sessions"
         ],
@@ -23505,6 +23505,9 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "retry_token": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -60703,6 +60706,11 @@
                   },
                   "skill_secret": {
                     "type": "boolean"
+                  },
+                  "retry_token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 },
                 "required": [

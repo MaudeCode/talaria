@@ -18,7 +18,7 @@ async function mockRetry(page: Page, sid: string) {
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/session/retry', async (route) => {
     retried = true
-    await route.fulfill({ json: { ok: true, last_user_text: '[Workspace::v1: /tmp/retry]\nSummarize the logs\n\n[Attached files: /tmp/retry/notes.txt]', last_user_prompt: 'Summarize the logs', last_user_attachments: [FILE], removed_count: 2 } })
+    await route.fulfill({ json: { ok: true, last_user_text: '[Workspace::v1: /tmp/retry]\nSummarize the logs\n\n[Attached files: /tmp/retry/notes.txt]', last_user_prompt: 'Summarize the logs', last_user_attachments: [FILE], removed_count: 2, retry_token: 'held-prompt' } })
   })
   await page.route('**/api/chat/start', async (route) => { starts.push(route.request().postDataJSON() as Record<string, unknown>); await route.fulfill({ json: { status: 'suppressed' } }) })
   return starts
@@ -38,7 +38,7 @@ test('/retry resends the last prompt with its attachments', async ({ page }) => 
   await page.locator('#msg').fill('/retry')
   await page.locator('#btnSend').click()
   await expect.poll(() => starts.length).toBe(1)
-  expect(starts[0]).toMatchObject({ session_id: 'slash', message: 'Summarize the logs', attachments: [FILE] })
+  expect(starts[0]).toMatchObject({ session_id: 'slash', message: 'Summarize the logs', attachments: [FILE], retry_token: 'held-prompt' })
 })
 
 test('against a server without the resend fields, Regenerate puts the stored text in the composer instead of sending it', async ({ page }) => {

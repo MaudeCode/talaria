@@ -4678,7 +4678,10 @@ public final class ChatViewModel {
                 model: currentModel,
                 modelProvider: requestModelProvider,
                 profile: requestProfileName,
-                explicitModelPick: explicitModelPick
+                explicitModelPick: explicitModelPick,
+                // Without a token the resent text is the stored row, which already names its files.
+                attachments: retryResponse.retryToken == nil ? nil : retryResponse.lastUserAttachments,
+                retryToken: retryResponse.retryToken
             )
 
             guard let streamID = chatResponse.streamId else {
