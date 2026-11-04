@@ -70,6 +70,14 @@ export function withheldPromptText(message: unknown): string | null {
   return typeof typed === 'string' && typed ? typed : null
 }
 
+/**
+ * A display row as the model may read it (TAL-1878): a withheld prompt holds the Agent's placeholder. `display_metadata`
+ * stays, so the row keeps its transcript identity; `sanitizeMessagesForApi` drops it before a turn.
+ */
+export function withheldRowForModel(row: Message): Message {
+  return withheldPromptText(row) === null ? row : { ...row, content: '[Message withheld: a pre_llm_call policy hook blocked it.]' }
+}
+
 /** Display-only user projection shared by transcript hydration and turn identity; model history stays untouched. */
 export function normalizeUserDisplay<T>(message: T): T {
   if (!isDict(message) || message.role !== 'user') return message
@@ -371,8 +379,9 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   const result = resultMessages.filter((m) => isDict(m))
   if (!result.length) return prev
   let candidates: Message[]
+  let turnRows: Message[]
   if (messagesHavePrefix(result, context)) {
-    candidates = result.slice(context.length)
+    candidates = turnRows = result.slice(context.length)
     const currentUserIn = candidates.some((m) => looksLikeCurrentUserTurn(m, msgText))
     const assistantOnly = candidates.length > 0 && candidates.every((m) => isContextCompressionMarker(m) || (isDict(m) && (m.role === 'assistant' || m.role === 'tool')))
     if (!(assistantOnly && !currentUserIn)) {
@@ -382,7 +391,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   } else {
     const idx = findCurrentUserTurn(result, msgText)
     const assistantOnly = result.every((m) => isContextCompressionMarker(m) || (isDict(m) && (m.role === 'assistant' || m.role === 'tool')))
-    candidates = idx !== null ? result.slice(idx) : assistantOnly ? result : []
+    candidates = turnRows = idx !== null ? result.slice(idx) : assistantOnly ? result : []
   }
   const merged: Message[] = [...prev]
   const seen = new Set(merged.map(messageIdentity).filter((k): k is string => k !== null))
@@ -420,6 +429,10 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     merged.push(row)
     if (key !== null) seen.add(key)
   }
+  // TAL-1878: the Agent's vetoed row is dropped as a replay of this turn's checkpoint, or folds into it; the row shown records the veto either way.
+  const vetoed = turnRows.find((m) => withheldPromptText(m) !== null && looksLikeCurrentUserTurn(m, msgText))
+  const shown = vetoed && merged.findLast((m) => looksLikeCurrentUserTurn(m, msgText))
+  if (shown && withheldPromptText(shown) === null) shown.display_metadata = structuredClone(vetoed.display_metadata)
   return merged
 }
 

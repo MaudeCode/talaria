@@ -30,7 +30,7 @@ import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { isOrphanPrunableSource } from './source-kind.js'
@@ -771,7 +771,7 @@ export class SessionService {
    * for a compressed context whose anchor cannot be verified — that stays context-only.
    */
   modelContext(s: Session, stateRows: Message[]): Message[] {
-    const local: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
+    const local: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial).map(withheldRowForModel)
     return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local, stateRows)
   }
 
@@ -2915,7 +2915,7 @@ export class SessionService {
     const forkKeep = keepCount ?? sourceMessages.length
     // The branch's model context must carry the retained state.db rows too: the new id has no state.db rows of its
     // own, and the runner prefers a non-empty context over the displayed messages.
-    const sourceContext = stateRows.length ? this.mergedTranscript(source, source.context_messages.length ? source.context_messages : source.messages, stateRows) : source.context_messages
+    const sourceContext = stateRows.length ? this.mergedTranscript(source, source.context_messages.length ? source.context_messages : source.messages.map(withheldRowForModel), stateRows) : source.context_messages
     const forkedContext = copyJson(truncateContextForDisplayKeep(sourceContext, sourceMessages, forkKeep))
     const branch = new Session(
       {
