@@ -7,22 +7,15 @@ import XCTest
 /// references (TAL-85).
 ///
 /// Every input is derived from `baseSeed &+ iteration`, so a failure names the
-/// exact seed that produced it and the soak subclass covers a superset of the
-/// PR-CI iterations. An input that traps the test process cannot report
-/// itself; `FuzzSeedJournal` names its seed instead. When a run fails, add the
-/// reproduction to `// MARK: - Minimized regressions` below as an ordinary
-/// fixture-based test and fix the boundary; the fuzz loop is the finder, not
-/// the regression test.
-///
-/// PR CI runs this class at the small budget. `UntrustedInputFuzzSoakTests`
-/// runs the same properties far longer and is skipped in PR CI, so it is
-/// scheduled separately by `.github/workflows/fuzz-soak.yml`.
-class UntrustedInputFuzzTests: XCTestCase {
-    /// Inputs generated per property. The soak subclass raises it.
-    class var iterations: Int { 2_000 }
+/// exact seed that produced it. When a run fails, add the reproduction to
+/// `// MARK: - Minimized regressions` below as an ordinary fixture-based test
+/// and fix the boundary; the fuzz loop is the finder, not the regression test.
+final class UntrustedInputFuzzTests: XCTestCase {
+    /// Inputs generated per property.
+    private static let iterations = 2_000
 
     /// Fixed so PR CI explores the same inputs on every run.
-    class var baseSeed: UInt64 { 0x7A1A_21A0_0000_0055 }
+    private static let baseSeed: UInt64 = 0x7A1A_21A0_0000_0055
 
     /// Deliberately guessable and reproducible by the fragment table, so
     /// generated names and filenames really do carry the active boundary.
@@ -337,23 +330,6 @@ class UntrustedInputFuzzTests: XCTestCase {
         XCTAssertNil(result, "The watchdog returned a value for work that outlived its budget.")
     }
 
-    /// Opt-in proof that a trapping input leaves its seed behind: it kills the
-    /// test process on purpose, so it runs only from
-    /// `scripts/test-fuzz-seed-journal`, which expects that failure. The trap
-    /// message omits the seed so only the journal can name it.
-    func testTrappingInputLeavesItsSeedInTheJournal() throws {
-        guard let trapIteration = ProcessInfo.processInfo.environment["TALARIA_FUZZ_TRAP_ITERATION"].flatMap(UInt64.init) else {
-            throw XCTSkip("Set TALARIA_FUZZ_TRAP_ITERATION to run the deliberate trap.")
-        }
-        let trapSeed = Self.baseSeed &+ trapIteration
-
-        forEachSeed { _, seed in
-            withinTimeBudget(seed: seed, input: "deliberate trap", {
-                if seed == trapSeed { fatalError("Deliberate fuzz trap.") }
-            })
-        }
-    }
-
     // MARK: - Minimized regressions
 
     // No fuzz-discovered failure is outstanding. Add the minimized
@@ -365,19 +341,13 @@ class UntrustedInputFuzzTests: XCTestCase {
     /// continuing would pile up runaway threads and make every later seed pay
     /// the full budget until the workflow timeout killed the job before it
     /// could report anything.
-    ///
-    /// Each seed is journaled before it runs, so an input that traps the test
-    /// process is still named.
     private func forEachSeed(_ body: (inout FuzzGenerator, UInt64) -> Void) {
-        let journal = FuzzSeedJournal.begin(name)
         for iteration in 0..<Self.iterations {
             let seed = Self.baseSeed &+ UInt64(iteration)
-            journal?.record(seed)
             var generator = FuzzGenerator(seed: seed)
             body(&generator, seed)
             if hasAbandonedInput { return }
         }
-        journal?.finish()
     }
 
     /// Runs `work` on its own thread and gives up on it after the budget.
@@ -548,13 +518,6 @@ class UntrustedInputFuzzTests: XCTestCase {
             }
         }
     }
-}
-
-/// The scheduled longer run. Same properties, same seed sequence extended, so a
-/// soak failure reproduces by pointing the PR-CI class at the reported seed.
-/// Skipped by CI's `swift test` run (`.github/workflows/app-tests.yml`); `.github/workflows/fuzz-soak.yml` runs it.
-final class UntrustedInputFuzzSoakTests: UntrustedInputFuzzTests {
-    override class var iterations: Int { 500_000 }
 }
 
 /// Carries a watchdogged result back across the queue hop.

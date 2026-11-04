@@ -105,7 +105,7 @@ jobs:
     # TalariaKit (models, networking, persistence, sync, view models) tests on macOS with `swift test`: no
     # simulator and no app host (TAL-399). It takes the build's macOS slot once the build ends, whatever its result,
     # and finishes well before the hosted test shards; a contract-only run has no build, so it starts at once. Only the
-    # live contract test waits for the Web probe. The fuzz soak class belongs to the scheduled Fuzz Soak workflow.
+    # live contract test waits for the Web probe.
     name: App package tests
     needs: app-build
     if: ${{ !cancelled() && inputs.package_tests }}
@@ -152,7 +152,7 @@ jobs:
             export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
           fi
           start_seconds=${SECONDS}
-          swift test --package-path TalariaKit --skip-build --enable-code-coverage --skip UntrustedInputFuzzSoakTests 2>&1 |
+          swift test --package-path TalariaKit --skip-build --enable-code-coverage 2>&1 |
             tee package-tests.log
           if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
             # A missing fixture makes the live test skip, so require an explicit pass.

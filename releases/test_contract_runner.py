@@ -257,7 +257,8 @@ class ContractRunnerTests(unittest.TestCase):
             self.assertFalse(any(str(command[0]).endswith("scripts/test-ios") for command in commands))
             # No hosted class: no simulator boot and no App build either (TAL-414).
             self.assertFalse(any(command[0] in ("xcodebuild", "xcrun") for command in commands))
-            # --package-suite runs every package test but the fuzz soak after the contract classes (TAL-414).
+            # --package-suite runs every package test after the contract classes (TAL-414), skipping the soak class that
+            # App sources from before TAL-1872 still have.
             tests = [command for command in commands if command[:2] == ["swift", "test"]]
             self.assertEqual(len(tests), 2)
             self.assertEqual(tests[1][4:], ["--skip-build", "--skip", "UntrustedInputFuzzSoakTests"])
