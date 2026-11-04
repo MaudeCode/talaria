@@ -103,6 +103,14 @@ test('Insights opens on Quotas with every window, pace and forecast; Usage holds
   await expect(models.locator('tbody tr').first()).toContainText('52.5%')
   await expect(models.locator('tbody tr').first()).toContainText('80%')
 
+  // The period select carries its own aria-label (design system, toolbar selects), and switching it reaches the URL.
+  const period = page.getByRole('combobox', { name: 'Period', exact: true })
+  await expect(period).toHaveAttribute('aria-label', 'Period')
+  await period.click()
+  await page.getByRole('option', { name: '7 days' }).click()
+  await expect(page).toHaveURL(/days=7/)
+  await expect(period).toHaveText('7 days')
+
   // The daily chart follows the metric select.
   await page.getByRole('combobox', { name: 'Metric' }).click()
   await page.getByRole('option', { name: 'Sessions' }).click()

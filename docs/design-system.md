@@ -190,7 +190,6 @@ The reference is the rule; these spots in Insights still differ and are owned:
 | --- | --- |
 | The App detail screen and the "No quota data" section use default `Section` headers instead of the uppercase header | TAL-1765 |
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
-| The Web Period select has no `aria-label` | TAL-1786 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
 
 ## 13. Checklist for a UI change
