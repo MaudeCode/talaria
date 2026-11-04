@@ -61,6 +61,7 @@ class RoutingTests(unittest.TestCase):
             (["web/sidecar/tests/fixtures/schemas.json"], {"web_server", "web_sidecar"}),
             (["web/sidecar/tests/fixtures/usage_account_available.json"], {"web_server", "web_sidecar"}),
             (["web/packages/frontend/package.json"], {"web_frontend"}),
+            (["web/.oxlintrc.json"], {"web_server", "web_frontend"}),
             (["web/static/brand/favicon.ico"], {"web_frontend", "web_server"}),
             (["web/sidecar/scripts/suite_runner.py", "web/sidecar/scripts/test.sh"], {"web_sidecar", "tooling"}),
             (["web/sidecar/tests/test_runtime.py", "web/sidecar/scripts/replay_sidecar.py"],

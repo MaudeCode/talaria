@@ -167,6 +167,9 @@ def path_suites(path):
             return {"web_server"}
         if local.startswith("packages/server/"):
             return {"web_server", "web_frontend", "contracts"}
+        # Only the contracts/server and frontend lint steps read the shared lint config.
+        if local == ".oxlintrc.json":
+            return {"web_server", "web_frontend"}
         # The lockfile and Node version feed both the workspace builds and the container image.
         if local in ("package.json", "package-lock.json", ".nvmrc"):
             return WEB_BUILD
