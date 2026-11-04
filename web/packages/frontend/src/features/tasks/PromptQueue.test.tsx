@@ -18,8 +18,8 @@ import * as api from '../../api/endpoints'
 const run = PromptQueueRunSchema.parse(fixtures.paused)
 function Workbench() {
   const [selected, setSelected] = useState<string | null>(`queue:${run.id}`)
-  const { sidebar, main } = useTasksWorkbench(selected, setSelected)
-  return <><aside data-testid="sidebar">{sidebar}</aside><main data-testid="main">{main}</main></>
+  const main = useTasksWorkbench(selected, setSelected)
+  return <main data-testid="main">{main}</main>
 }
 function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -27,12 +27,11 @@ function mount() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   vi.mocked(api.fetchPromptQueues).mockResolvedValue({ runs: [run] })
   vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [] })
   vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
 })
-afterEach(() => { cleanup(); teardownAll(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); teardownAll() })
 
 it('renders server progress in shared queue rows without dispatching during mount', async () => {
   mount()
@@ -51,7 +50,10 @@ it('shows Resume immediately and rolls back a definite refusal using the existin
   mount()
   await userEvent.click(await screen.findByRole('button', { name: 'Resume' }))
   await waitFor(() => expect(within(screen.getByTestId('main')).getByRole('status')).toHaveTextContent(/running/i))
-  expect(within(screen.getByTestId('sidebar')).getByRole('button', { name: /Summarise the changes/ })).toHaveTextContent(/running/i)
+  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+  const row = screen.getByRole('button', { name: /Summarise the changes/ })
+  expect(row).toHaveTextContent(/running/i)
+  await userEvent.click(row)
   act(() => { reject(new ApiError({ kind: 'http', status: 409, path: '/api/prompt-queues', message: 'Stale revision' })) })
   expect(await screen.findByRole('button', { name: 'Resume' })).toBeEnabled()
   expect(api.promptQueueAction).toHaveBeenCalledTimes(1)

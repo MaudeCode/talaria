@@ -1,4 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { ChevronLeft } from 'lucide-react'
+import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 
 type Variant = 'default' | 'primary' | 'ghost' | 'danger' | 'link'
@@ -21,6 +23,11 @@ export const buttonClass = (variant: Variant = 'default', className?: string): s
 
 export function Button({ variant = 'default', className, type = 'button', ...props }: ButtonProps) {
   return <button type={type} {...props} className={buttonClass(variant, className)} />
+}
+
+/** The way back from a detail to its list. */
+export function BackButton({ label = m.back(), ...props }: Omit<ButtonProps, 'variant' | 'children'> & { label?: string }) {
+  return <Button variant="ghost" {...props}><ChevronLeft size={14} aria-hidden="true" /> {label}</Button>
 }
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

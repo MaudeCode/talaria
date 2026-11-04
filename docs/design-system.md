@@ -59,7 +59,7 @@ strip, an optional toolbar row, the list body, an optional footnote.
 | Toolbar | Trailing `ToolbarItem`s: refresh (`RefreshToolbarButton`), then a `Menu` behind `ellipsis.circle` for secondary actions and pickers, then a tinted warning button that opens a popover when the server reports a notice | Selects in `<label className="ml-auto flex items-center gap-2 text-xs text-muted">`, each with an `aria-label`; the primary action is a `Button` at the right of the section heading |
 | Body | `List { … }.listStyle(.plain)` on `Color(.systemBackground)`; content that is not a row hides its separator | `<section data-section="<feature>">` containing `h2` + `ul`, or a `<dl>`, or a `<figure>`; the page body scrolls, not the section |
 | Background | `Color(.systemBackground)` everywhere, including behind the tabs | `bg-bg` from the shell; no `bg-surface` behind lists |
-| Detail | A push into the navigation stack or the split view's detail column (`SectionItem` case), never a sheet for content | A route or search param, never a modal for content |
+| Detail | A push into the navigation stack or the split view's detail column (`SectionItem` case), never a sheet for content | A route or search param, never a modal for content; `BackButton` (`ui/Button.tsx`) in the page actions returns to the list |
 | Footnote or notice | `.caption` secondary text in its own `Section`, separator hidden | `<p role="status" className="text-xs text-muted">` above the list for a server notice; no footnote yet |
 
 Sheets, popovers, menus and dialogs remain for interactions (pick a value,

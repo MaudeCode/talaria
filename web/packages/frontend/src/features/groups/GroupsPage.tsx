@@ -7,12 +7,12 @@ import * as api from '../../api/endpoints'
 import { openGroupStream } from '../../api/sse'
 import { useSettingsQuery } from '../../app/queries'
 import { useBootstrap } from '../../app/bootstrap'
-import { AppShell, MAIN_VIEW } from '../../shell/AppShell'
+import { AppShell, HubPage, MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
-import { Button } from '../../ui/Button'
+import { BackButton, Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { TextInput } from '../../ui/Field'
-import { ErrorState, LoadingState } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { Transcript } from '../chat/Transcript'
 import { ApprovalCard } from '../chat/ApprovalCard'
 import { usePromptAnswer } from '../chat/usePromptAnswer'
@@ -40,9 +40,12 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
   const [provisional, setProvisional] = useState<{ id: string; name: string } | null>(null)
   const navigation = useRef(0)
   useEffect(() => () => { navigation.current += 1 }, [])
-  const select = (id?: string) => {
+  const leaveFor = (id?: string) => {
     navigation.current += 1
     setProvisional((current) => current?.id === id ? current : null)
+  }
+  const select = (id?: string) => {
+    leaveFor(id)
     void navigate({ to: '/groups', search: id ? { room: id } : {} })
   }
   const create = () => {
@@ -57,22 +60,23 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
       else if (result.outcome === 'unknown') showErrorToast(new Error(m.group_unknown()))
     }, (error: unknown) => { if (navigation.current === revision) { setProvisional(null); if (isDefiniteRefusal(error)) select(); showErrorToast(error) } })
   }
-  return <AppShell sidebar={<div className="panel-view active flex min-h-0 flex-col">
-    <PanelHead title={m.group_discussions()} actions={<PanelHeadButton label={m.group_create()} disabled={!catalog.data?.actions.includes('create')} onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>} />
-    <Link to="/" className="px-3 py-3 text-sm text-muted">{m.tab_chat()}</Link>
-    {catalog.isPending && <LoadingState />}
-    {catalog.isError && <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} />}
-    <ul className="flex min-h-0 flex-col overflow-y-auto px-2">{catalog.data?.rooms.map((room) => <li key={room.id}><Button variant="ghost" className="w-full justify-start" aria-current={room.id === roomId ? 'page' : undefined} onClick={() => select(room.id)}>{room.name}</Button></li>)}</ul>
-    <div className="flex gap-2 p-2">{offset > 0 && <Button onClick={() => setOffset(0)}>{m.group_first_page()}</Button>}{catalog.data?.next_offset != null && <Button onClick={() => setOffset(catalog.data?.next_offset ?? 0)}>{m.group_next_page()}</Button>}</div>
-    {catalog.data && !catalog.data.available && <p role="status" className="p-3 text-sm text-muted">{m.group_unavailable()}</p>}
-  </div>}>
-    {roomId ? <Discussion key={`${bootstrap.profile?.name}:${roomId}`} roomId={roomId} provisionalName={provisional?.id === roomId ? provisional.name : undefined} onDisband={() => {
+  return <AppShell sidebar={null} hub showing="groups">
+    {roomId ? <Discussion key={`${bootstrap.profile?.name}:${roomId}`} roomId={roomId} provisionalName={provisional?.id === roomId ? provisional.name : undefined} onBack={() => select()} onDisband={() => {
       qc.setQueryData<GroupCatalog>(catalogKey, (current) => current ? { ...current, rooms: current.rooms.filter((room) => room.id !== roomId) } : current)
       select()
       const revision = navigation.current
       return () => { if (navigation.current === revision) { select(roomId); void catalog.refetch() } }
     }} />
-      : <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-semibold">{m.group_discussions()}</h1><Button disabled={!catalog.data?.actions.includes('create')} onClick={() => setCreating(true)}>{m.group_create()}</Button></div>}
+      : <HubPage title={m.group_discussions()} actions={<Button variant="primary" disabled={!catalog.data?.actions.includes('create')} onClick={() => setCreating(true)}><Plus size={12} aria-hidden="true" /> {m.group_create()}</Button>}>
+        {catalog.data && !catalog.data.available && <p role="status" className="mb-4 text-xs text-muted">{m.group_unavailable()}</p>}
+        {catalog.isPending && <LoadingState />}
+        {catalog.isError && <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} />}
+        {catalog.data?.available && catalog.data.rooms.length === 0 && <EmptyState>{m.group_no_discussions()}</EmptyState>}
+        <section data-section="groups">
+          <ul className="flex flex-col">{catalog.data?.rooms.map((room) => <li key={room.id} data-group-room={room.id} className="border-t border-border first:border-t-0"><Link to="/groups" search={{ room: room.id }} onClick={() => leaveFor(room.id)} className="block truncate py-4 text-sm font-semibold text-text hover:bg-hover">{room.name}</Link></li>)}</ul>
+          {(offset > 0 || catalog.data?.next_offset != null) && <div className="mt-4 flex gap-2">{offset > 0 && <Button onClick={() => setOffset(0)}>{m.group_first_page()}</Button>}{catalog.data?.next_offset != null && <Button onClick={() => setOffset(catalog.data?.next_offset ?? 0)}>{m.group_next_page()}</Button>}</div>}
+        </section>
+      </HubPage>}
     <Dialog open={creating} onOpenChange={setCreating} title={m.group_create()}>
       <form className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); create() }}>
         <label className="flex flex-col gap-1 text-sm">{m.group_name()}<TextInput value={name} onChange={(e) => setName(e.target.value)} required maxLength={GROUP_ROOM_NAME_LIMIT} /></label>
@@ -83,7 +87,7 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
   </AppShell>
 }
 
-function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; provisionalName: string | undefined; onDisband: () => () => void }) {
+function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: string; provisionalName: string | undefined; onBack: () => void; onDisband: () => () => void }) {
   const focus = useRef<HTMLDivElement>(null)
   const qc = useQueryClient(), settings = useSettingsQuery(), bootstrap = useBootstrap()
   const [before, setBefore] = useState<number | undefined>()
@@ -165,6 +169,7 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
   const phase = (member: GroupRoom['members'][number]) => stopping === room?.identity && member.phase !== 'idle' ? m.group_stopping() : phaseLabel[member.phase]()
   return <div ref={focus} tabIndex={-1} className={`${MAIN_VIEW} active`}>
     <PanelHead title={currentRename?.value ?? room?.name ?? provisionalName ?? m.group_discussions()} actions={<>
+      <BackButton onClick={onBack} />
       {before !== undefined && <Button onClick={() => setBefore(undefined)}>{m.group_latest()}</Button>}
       {room?.actions.includes('rename') && <Button onClick={() => setRenameDraft({ identity: room.identity, value: currentRename?.value ?? room.name })}>{m.rename()}</Button>}
       {room?.actions.includes('disband') && <Button onClick={() => { const rollback = onDisband(); void write({ action: 'disband', room_id: roomId, cancel_id: crypto.randomUUID() }).then(() => qc.invalidateQueries({ queryKey: ['groups'] }), (error: unknown) => { rollback(); showErrorToast(error) }) }}>{m.group_disband()}</Button>}

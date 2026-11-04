@@ -15,6 +15,67 @@ async function discussionServer() {
   return { sidecar, fixture, server }
 }
 
+test('the discussion list is the page, a primary nav entry, and a room opens with a way back', async ({ page }, info) => {
+  const { fixture, server } = await discussionServer()
+  const desktop = info.project.name === 'desktop'
+  const offsets: string[] = []
+  await page.route('**/api/groups?**', async (route) => {
+    const offset = new URL(route.request().url()).searchParams.get('offset') ?? '0'
+    offsets.push(offset)
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...await response.json() as object, next_offset: offset === '0' ? 5 : null } })
+  })
+  try {
+    await page.goto(`${server.base}/groups`)
+    const room = page.locator('#main [data-group-room="discussion"]').getByRole('link', { name: 'Design review', exact: true })
+    await expect(room).toBeVisible()
+    await expect(page.locator('#main').getByRole('heading', { level: 1, name: 'Discussions', exact: true })).toBeVisible()
+    await expect(page.locator('#main .main-view-actions').getByRole('button', { name: 'New discussion', exact: true })).toBeEnabled()
+    await expect(page.locator(desktop ? '.sidebar' : '.sidebar.mobile-open')).toHaveCount(0)
+    await page.screenshot({ path: info.outputPath('list.png') })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.locator('#main').getByRole('button', { name: 'Next page', exact: true }).click()
+    await expect.poll(() => offsets).toContain('5')
+    await page.locator('#main').getByRole('button', { name: 'First page', exact: true }).click()
+    await room.click()
+    await expect(page).toHaveURL(/\/groups\?room=discussion$/)
+    await expect(page.locator('#msg')).toBeVisible()
+    await page.screenshot({ path: info.outputPath('discussion.png') })
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await expect(page).toHaveURL(/\/groups$/)
+    await expect(room).toBeVisible()
+    await room.click()
+    await expect(page.locator('#msg')).toBeVisible()
+    await page.goBack()
+    await expect(room).toBeVisible()
+    if (desktop) {
+      const rail = page.locator('.rail [data-panel="groups"]')
+      await expect(rail).toHaveAttribute('aria-current', 'page')
+      await room.click()
+      await rail.click()
+      await expect(page).toHaveURL(/\/groups$/)
+      await page.goto(`${server.base}/`)
+      await expect(page.locator('#panelChat')).toBeVisible()
+      await expect(page.locator('#panelChat').getByRole('button', { name: 'Discussions', exact: true })).toHaveCount(0)
+      await rail.click()
+      await expect(page).toHaveURL(/\/groups$/)
+      await page.goto(`${server.base}/settings/preferences`)
+      await page.locator('#settingsHiddenTabs label', { hasText: 'Discussions' }).getByRole('switch').click()
+      await expect(rail).toHaveCount(0)
+    } else {
+      await page.locator('.tabbar [data-tab="more"]').click()
+      await page.locator('.tabbar-sheet').getByRole('menuitem', { name: 'Discussions', exact: true }).click()
+      await expect(page).toHaveURL(/\/groups$/)
+      await expect(page.locator('.tabbar [data-tab="more"]')).toHaveClass(/active/)
+    }
+    await page.goto(`${server.base}/groups`)
+    await expect(room).toBeVisible()
+    fixture.state.driver = false
+    await page.reload()
+    await expect(page.locator('#main').getByRole('status').filter({ hasText: 'Discussions are unavailable from the current Agent gateway.' })).toBeVisible()
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
 test('creates a discussion, sends once, shows member replies and reconnects after reload', async ({ page }, info) => {
   const { sidecar, fixture, server } = await discussionServer()
   const evidence = process.env.TALARIA_GROUP_EVIDENCE
@@ -29,7 +90,7 @@ test('creates a discussion, sends once, shows member replies and reconnects afte
       server.deps.spa = current
     }
     await page.goto(`${server.base}/groups`)
-    const create = page.getByRole('button', { name: 'New discussion', exact: true }).last()
+    const create = page.getByRole('button', { name: 'New discussion', exact: true })
     await expect(create).toBeEnabled()
     await create.click()
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Architecture discussion')

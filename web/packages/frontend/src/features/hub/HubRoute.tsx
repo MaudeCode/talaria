@@ -11,7 +11,7 @@ import { TodosPage } from '../todos/TodosPage'
 import { InsightsPage } from '../insights/InsightsPage'
 import { LogsPage } from '../logs/LogsPage'
 
-export type HubPanel = Exclude<PanelId, 'chat' | 'settings' | 'tasks'>
+export type HubPanel = Exclude<PanelId, 'chat' | 'settings' | 'tasks' | 'groups'>
 
 const PAGES: Record<HubPanel, () => ReactNode> = {
   kanban: () => <KanbanPage />,
