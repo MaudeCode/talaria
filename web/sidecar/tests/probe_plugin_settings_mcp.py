@@ -32,10 +32,10 @@ app.run()
     "type": "stdio", "command": "./run.sh", "cwd": "${PLUGIN_ROOT}", "env": {"DEMO_KEY": "${DEMO_KEY}", "DEMO_LABEL": "${DEMO_LABEL}"}}}}))
 (home / "config.yaml").write_text("plugins:\n  enabled: [envecho]\n")
 (home / ".env").write_text("DEMO_KEY=first\nDEMO_LABEL=original\n")
-other = home.parent / "borrower"
+other = home.parent / "other"
 (other / "plugins").mkdir(parents=True)
 (other / "plugins" / "envecho").symlink_to(plugin, target_is_directory=True)
-# Portable packages inject PLUGIN_DATA into launch inputs; share that disposable directory to exercise borrowing.
+# Portable packages inject PLUGIN_DATA into launch inputs; share that disposable directory so the profiles' inputs match.
 (home / "plugin-data").mkdir(exist_ok=True)
 (other / "plugin-data").symlink_to(home / "plugin-data", target_is_directory=True)
 (other / "config.yaml").write_text("plugins:\n  enabled: [envecho]\n")
@@ -52,14 +52,20 @@ def connection(profile=home):
         return _core._servers[key].session
 
 try:
-    # Register the same rendered portable launch config through the native API to establish a real shared connection.
-    from tools.mcp_tool_config import _interpolate_env_vars, _load_mcp_config
+    # Register the same rendered portable launch config through the native API for both profiles.
+    from tools.mcp_tool_config import _build_safe_env, _interpolate_env_vars, _load_mcp_config
     for profile in (other, home):
         with scoped_home(profile):
             discovery.register_mcp_servers(_interpolate_env_vars(_load_mcp_config()))
     assert "first" in read(), "initial child did not receive the synthetic launch secret"
     if hasattr(discovery, "restart_mcp_servers_with_new_inputs"):
-        assert connection() is connection(other), "fixture must exercise an actual borrowed connection"
+        # An Agent that pins the profile's HERMES_HOME into the child env gives each profile its own child; older ones share one.
+        with scoped_home(home):
+            per_profile = "HERMES_HOME" in _build_safe_env(None)
+        if per_profile:
+            assert connection() is not connection(other), "profiles with different child envs must hold separate sessions"
+        else:
+            assert connection() is connection(other), "fixture must exercise an actual borrowed connection"
     with scoped_home(home):
         config.env_write(home, {"DEMO_KEY": "second"})
     with scoped_home(home):
@@ -67,7 +73,7 @@ try:
     if hasattr(discovery, "restart_mcp_servers_with_new_inputs"):
         assert "second" in read(), "saved secret did not reach the live MCP child"
         assert saved["runtime_application"] == "applied", saved
-        assert "first" in read(other), "saving a borrower killed or replaced the other profile's child"
+        assert "first" in read(other), "saving one profile killed or replaced the other profile's child"
         current = connection()
         with scoped_home(home):
             commands.save_plugin_settings("envecho", {"label": "non-launch setting"})
