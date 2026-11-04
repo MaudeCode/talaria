@@ -64,6 +64,7 @@ test('reviews memory compaction, keeps a refused review, and applies a fresh pre
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await screenshot('applied')
   } finally {
+    await page.goto('about:blank')
     await server.close()
   }
 })

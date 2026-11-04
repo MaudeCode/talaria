@@ -492,7 +492,7 @@ test('typing never refits the composer footer; a viewport or chip change does (T
   await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
 
   // Narrower than the full labels: icon-only chips; wide again: full labels; phone width: the burger.
-  await page.setViewportSize({ width: 920, height: 800 })
+  await page.setViewportSize({ width: 905, height: 800 })
   await expect(footer).toHaveClass(/cf-icons/)
   await expect(footer).not.toHaveClass(/cf-burger/)
   await page.setViewportSize({ width: 1280, height: 800 })
