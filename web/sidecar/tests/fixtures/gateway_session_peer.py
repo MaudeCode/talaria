@@ -539,11 +539,8 @@ async def probe_profiles(home, peer, desc, proc, env):
     assert discovered.state == "ready" and discovered.endpoint.profile_id == str(alpha), discovered
     url, protocols = gateway_ws_target(discovered.endpoint, _session_ticket(alpha, discovered.endpoint))
     sidecar = SidecarProcess(home)
-    verified = getattr(discovered.endpoint, "code_sha", None) in {
-        "4d04303818b61bf3aa09278af48356315515965b",
-        "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
-        "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab",
-    }
+    verified = getattr(discovered.endpoint, "code_sha", None) in json.loads(
+        (Path(__file__).resolve().parents[2] / "agent_support.json").read_text())["nativeContracts"]["served-local-policy-v1"]
 
     async def call(target, sid, action, **extra):
         return await asyncio.to_thread(sidecar.result, "gateway.session", {
