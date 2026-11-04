@@ -21,6 +21,9 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v75 adds `stripped_tools` and `stripped_by` to `toolsets.catalog` rows (TAL-1813);
+see "Toolset policy" in `agent-api-contract.md`.
+
 RPC v73 adds `mcp.events` (TAL-1510): the installed Agent's MCP events support,
 whether `platforms.webhook.extra.public_url` is an https origin, and per server the
 registered event utilities and the durable subscription records counted by state

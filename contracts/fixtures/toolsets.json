@@ -5,14 +5,27 @@
       "description": "Read and write files",
       "available": true,
       "selected": true,
-      "unavailable_reason": null
+      "unavailable_reason": null,
+      "stripped_tools": [],
+      "stripped_by": []
     },
     {
       "name": "todo",
       "description": "Task lists",
       "available": false,
       "selected": false,
-      "unavailable_reason": "disabled"
+      "unavailable_reason": "disabled",
+      "stripped_tools": [],
+      "stripped_by": []
+    },
+    {
+      "name": "web",
+      "description": "Search and read the web",
+      "available": true,
+      "selected": false,
+      "unavailable_reason": null,
+      "stripped_tools": ["web_search"],
+      "stripped_by": ["search"]
     }
   ],
   "selected_toolsets": [

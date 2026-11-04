@@ -15,6 +15,7 @@ def disabled_toolsets(cfg: dict | None = None) -> list[str]:
 
 
 def catalog(override) -> dict:
+    from hermes_cli import tools_config
     from hermes_cli.plugins import discover_plugins
     from model_tools import get_tool_definitions
     import toolsets
@@ -34,13 +35,22 @@ def catalog(override) -> dict:
         enabled_toolsets=list(definitions), disabled_toolsets=effective_disabled,
         quiet_mode=True, skip_tool_search_assembly=True,
     )}
+    names = set(definitions) | set(selected)
+    # Agent v0.22.6+. The configured entries only: platform gating is not a setting the operator can repair.
+    strip_report = getattr(tools_config, 'toolsets_partially_stripped', None)
+    stripped = strip_report({'agent': {'disabled_toolsets': disabled}}, names) if strip_report else {}
     rows = []
-    for name in sorted(set(definitions) | set(selected)):
+    for name in sorted(names):
         available = name in definitions and name not in disabled and bool(set(resolve_toolset(name)) & tools)
+        stripped_tools, stripped_by, *_ = stripped.get(name, ([], []))
+        # A toolset an entry empties is disabled, whether or not the entry names it (legacy ``vision_tools``).
+        wholly_disabled = name in disabled or (bool(stripped_tools) and set(resolve_toolset(name)) <= set(stripped_tools))
         rows.append({
             'name': name, 'description': TALARIA_TOOLSET_DESCRIPTION if name == TALARIA_TOOLSET else str(definitions.get(name, {}).get('description') or ''),
             'available': available, 'selected': name in selected,
-            'unavailable_reason': None if available else 'disabled' if name in disabled else 'unavailable',
+            'unavailable_reason': None if available else 'disabled' if wholly_disabled else 'unavailable',
+            'stripped_tools': [] if wholly_disabled else list(stripped_tools),
+            'stripped_by': [] if wholly_disabled else list(stripped_by),
         })
     return {'toolsets': rows, 'selected_toolsets': selected, 'using_defaults': override is None}
 

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Web toolset picker names the tools a legacy disabled_toolsets entry removes from a toolset, and treats a toolset such an entry empties as disabled.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

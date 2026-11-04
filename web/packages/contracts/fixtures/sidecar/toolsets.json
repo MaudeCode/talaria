@@ -12,441 +12,567 @@
             "description": "Plugin toolset: a2a",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "bot_room",
             "description": "Verified text-only Group Chat turn capabilities",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "browser",
-            "description": "Browser automation for web interaction (navigate, click, type, scroll, iframes, hold-click)",
+            "description": "Browser automation: drive a real browser with Python over CDP (navigate, click, type, extract, screenshots), raw CDP, dialogs and vault logins",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "browser-cdp",
             "description": "Plugin toolset: browser-cdp",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "browser-use",
             "description": "Plugin toolset: browser-use",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "catalog",
             "description": "Desktop catalog plugin/skill install requests through the approval card (GUI sessions only)",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "clarify",
             "description": "Ask the user clarifying questions (multiple-choice or open-ended)",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "code_execution",
             "description": "Run Python scripts that call tools programmatically (reduces LLM round trips)",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "coding",
             "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision, browser",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "computer_use",
             "description": "Background desktop control via cua-driver (macOS/Windows/Linux) — screenshots, mouse, keyboard, scroll, drag. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model.",
             "available": false,
             "selected": true,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "connections",
             "description": "Remote connector discovery, execution, and account authorization",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "context_engine",
             "description": "Runtime tools exposed by the active context engine",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "cronjob",
             "description": "Cronjob management tool - create, list, update, pause, resume, remove, and trigger scheduled tasks",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "debugging",
             "description": "Debugging and troubleshooting toolkit",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "delegation",
             "description": "Spawn subagents with isolated context for complex subtasks",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "desktop_ui",
             "description": "Desktop GUI affordances — in-app terminal/browser panes, pane focus, reactions, appearance (GUI sessions only)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "discord",
             "description": "Discord read and participate tools (fetch messages, search members, create threads)",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "discord_admin",
             "description": "Discord server management (list channels/roles, pin messages, assign roles)",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "feishu_doc",
             "description": "Read Feishu/Lark document content",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "feishu_drive",
             "description": "Feishu/Lark document comment operations (list, reply, add)",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "file",
             "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-acp",
             "description": "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without messaging, audio, or clarify UI",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-api-server",
             "description": "OpenAI-compatible API server — full agent tools accessible via HTTP (no interactive UI tools like clarify or send_message)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-bluebubbles",
             "description": "BlueBubbles iMessage bot toolset - Apple iMessage via local BlueBubbles server",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-cli",
             "description": "Full interactive CLI toolset - all default tools plus cronjob management",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-cron",
             "description": "Default cron toolset - same core tools as hermes-cli; gated by `hermes tools`",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-dingtalk",
             "description": "DingTalk bot toolset - enterprise messaging platform (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-discord",
             "description": "Discord bot toolset - full access (terminal has safety checks via dangerous command approval)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-email",
             "description": "Email bot toolset - interact with Hermes via email (IMAP/SMTP)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-feishu",
             "description": "Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-gateway",
             "description": "Gateway toolset - union of all messaging platform tools",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-matrix",
             "description": "Matrix bot toolset - decentralized encrypted messaging (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-mattermost",
             "description": "Mattermost bot toolset - self-hosted team messaging (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-qqbot",
             "description": "QQBot toolset - QQ messaging via Official Bot API v2 (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-signal",
             "description": "Signal bot toolset - encrypted messaging platform (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-slack",
             "description": "Slack bot toolset - full access for workspace use (terminal has safety checks)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-sms",
             "description": "SMS bot toolset - interact with Hermes via SMS (Twilio)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-telegram",
             "description": "Telegram bot toolset - full access for personal use (terminal has safety checks)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-webhook",
             "description": "Webhook toolset - receive and process external webhook events",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-wecom",
             "description": "WeCom bot toolset - enterprise WeChat messaging (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-wecom-callback",
             "description": "WeCom callback toolset - enterprise self-built app messaging (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-weixin",
             "description": "Weixin bot toolset - personal WeChat messaging via iLink (full access)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-whatsapp",
             "description": "WhatsApp bot toolset - similar to Telegram (personal messaging, more trusted)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "hermes-yuanbao",
             "description": "Yuanbao Bot 元宝消息平台工具集 - 群信息、成员查询、私聊、贴纸表情",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "image_gen",
             "description": "Creative generation tools (images)",
             "available": false,
             "selected": true,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "kanban",
             "description": "Kanban multi-agent coordination — only active when the agent is spawned by the kanban dispatcher (HERMES_KANBAN_TASK env set). The dispatcher runs inside the gateway by default; see `kanban.dispatch_in_gateway` in config.yaml. Lets workers mark tasks done with structured handoffs, enter first-class review (request_review — not a block), return review changes, block for human input, heartbeat during long ops, comment on threads, attach files, and (for orchestrators) list, unblock, and fan out tasks.",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "memory",
             "description": "Persistent memory across sessions (personal notes + user profile)",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "onboarding",
             "description": "First-run onboarding cards; folded in only for the onboarding chat (tui_gateway/methods_onboarding.py)",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "project",
             "description": "Desktop Projects — create/switch named workspaces (GUI sessions only)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "safe",
             "description": "Safe toolkit without terminal access",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "search",
             "description": "Web search only (no content extraction/scraping)",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "session_search",
             "description": "Search and recall past conversations with summarization",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "skills",
             "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "talaria",
             "description": "List, start and message this profile's Talaria chats, wait on or stop their turns, and manage their queued messages.",
             "available": true,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "terminal",
             "description": "Terminal/command execution and process management tools",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "todo",
             "description": "Task planning and tracking for multi-step work",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "tts",
             "description": "Text-to-speech: convert text to audio with Edge TTS (free), ElevenLabs, OpenAI, or xAI",
             "available": false,
             "selected": true,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "video",
             "description": "Video analysis and understanding tools (opt-in, not in default toolset)",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "video_gen",
             "description": "Video generation tools. Single ``video_generate`` tool covers text-to-video (prompt only) and image-to-video (prompt + image_url), plus reference-to-video. Provider-specific edit/extend workflows may appear as separate tools. Configure via ``hermes tools`` → Video Generation.",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "vision",
             "description": "Image analysis and vision tools",
             "available": false,
             "selected": true,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "web",
             "description": "Web research and content extraction tools",
             "available": true,
             "selected": true,
-            "unavailable_reason": null
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "x_search",
             "description": "Search X (Twitter) posts and threads via xAI's built-in x_search Responses tool. Read-only public X discovery; use the xurl skill for authenticated X API reads and account actions. Available when xAI credentials are configured (SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `hermes tools` → X (Twitter) Search.",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           },
           {
             "name": "yuanbao",
             "description": "Yuanbao platform tools - group info, member queries, DM, stickers",
             "available": false,
             "selected": false,
-            "unavailable_reason": "unavailable"
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": []
           }
         ],
         "selected_toolsets": [

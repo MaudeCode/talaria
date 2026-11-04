@@ -2601,6 +2601,7 @@
 	"reasoning_default": "Default",
 	"toolsets_disabled": "Disabled by operator",
 	"toolsets_unavailable": "Unavailable",
+	"toolsets_stripped": "Missing {tools} (disabled by {entries})",
 	"toolsets_load_error": "Could not load toolsets.",
 	"toolsets_defaults": "Use profile defaults",
 	"toolsets_global": "Global",

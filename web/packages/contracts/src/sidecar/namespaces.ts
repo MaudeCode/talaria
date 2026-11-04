@@ -26,6 +26,8 @@ export const ToolsetsCatalogSchema = z.object({
   toolsets: z.array(z.object({
     name: z.string(), description: z.string(), available: z.boolean(), selected: z.boolean(),
     unavailable_reason: z.enum(['disabled', 'unavailable']).nullable(),
+    /** TAL-1813: the tools `agent.disabled_toolsets` cuts from a toolset it leaves standing, and the entries that do it; empty on Agents before v0.22.6. */
+    stripped_tools: z.array(z.string()).optional(), stripped_by: z.array(z.string()).optional(),
   })),
   selected_toolsets: z.array(z.string()), using_defaults: z.boolean(),
 })

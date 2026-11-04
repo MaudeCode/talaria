@@ -5,6 +5,7 @@ test('toolset selection respects operator policy and saves the draft', async ({ 
     toolsets: [
       { name: 'file', description: 'Read and write files', available: true, selected: true, unavailable_reason: null },
       { name: 'web', description: 'Search the web', available: true, selected: false, unavailable_reason: null },
+      { name: 'research', description: 'Search and read', available: true, selected: false, unavailable_reason: null, stripped_tools: ['web_search', 'web_extract'], stripped_by: ['search', 'web_tools'] },
       { name: 'todo', description: 'Task lists', available: false, selected: false, unavailable_reason: 'disabled' },
     ], selected_toolsets: ['file'], using_defaults: true,
   } }))
@@ -12,6 +13,7 @@ test('toolset selection respects operator policy and saves the draft', async ({ 
   await page.locator('#msg').fill('Plan a small project')
   await page.locator('.composer-toolsets-chip').click()
   await expect(page.getByRole('checkbox', { name: /todo/ })).toBeDisabled()
+  await expect(page.getByRole('checkbox', { name: 'research Missing web_search, web_extract (disabled by search, web_tools)', exact: true })).toBeEnabled()
   await expect(page.getByRole('checkbox', { name: 'file', exact: true })).toBeChecked()
   await page.getByRole('checkbox', { name: 'web', exact: true }).check()
   await page.screenshot({ path: testInfo.outputPath(`toolsets-${testInfo.project.name}.png`) })

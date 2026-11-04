@@ -148,8 +148,11 @@ function ToolsetsPicker({ value, sessionId, onChange }: { value: string[] | null
   return <form className="flex flex-col gap-2 p-2" onSubmit={(event) => { event.preventDefault(); onChange(draft === null && query.data.using_defaults ? null : selected) }}>
     <div className="max-h-64 overflow-y-auto">
       {query.data.toolsets.map((item) => <label key={item.name} title={item.description} className="flex min-h-11 items-center gap-2 text-sm">
-        <input type="checkbox" disabled={!item.available} checked={draft === null ? item.selected : draft.includes(item.name)} onChange={(event) => setDraft(event.target.checked ? [...selected, item.name] : selected.filter((name) => name !== item.name))} />
-        <span>{item.name}</span>
+        <input type="checkbox" className="shrink-0" disabled={!item.available} checked={draft === null ? item.selected : draft.includes(item.name)} onChange={(event) => setDraft(event.target.checked ? [...selected, item.name] : selected.filter((name) => name !== item.name))} />
+        <span className="min-w-0">
+          <span className="block">{item.name}</span>
+          {item.stripped_tools?.length ? <span className="block text-xs text-muted">{m.toolsets_stripped({ tools: item.stripped_tools.join(', '), entries: item.stripped_by?.join(', ') ?? '' })}</span> : null}
+        </span>
         {!item.available && <span className="ml-auto text-xs text-muted">{item.unavailable_reason === 'disabled' ? m.toolsets_disabled() : m.toolsets_unavailable()}</span>}
       </label>)}
     </div>
