@@ -355,6 +355,17 @@ export class WindowLimiter {
 
 const CLIENT_EVENT_FIELDS: Record<string, number> = { event: 64, source: 80, session_id: 128, stream_id: 128, visibility_state: 32, url_path: 256, reason: 160 }
 
+/**
+ * TAL-1829: an Agent update reason as Settings shows it. It quotes installer output, which can hold an index URL's credentials,
+ * and non-owners read this list, so `api_redact_enabled` does not turn this off. The Agent and sidecar both cut a reason at 300
+ * characters. A cut can leave `https://user:passw` with no `@` for the redactor to match, so a URL whose authority runs to the
+ * end of a reason at that length is dropped.
+ */
+function pluginDisabledReason(reason: string): string {
+  const masked = redactString(reason, true)
+  return reason.length < 300 ? masked : masked.replace(/\S*:\/\/[^\s/]*$/, '…')
+}
+
 /** Python `_sanitize_client_event_payload`: bounded scalar metadata only. */
 export function sanitizeClientEvent(payload: unknown): Dict {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { event: 'unknown' }
@@ -777,8 +788,9 @@ export const toolsRouter = os.router({
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
       // So does an OAuth status failure.
       const oauth = await pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() })
-      const plugins = result.plugins.map(({ update_available, latest_revision, ...plugin }) => ({
+      const plugins = result.plugins.map(({ update_available, latest_revision, disabled_reason, ...plugin }) => ({
         ...plugin,
+        ...(disabled_reason ? { disabled_reason: { ...disabled_reason, reason: pluginDisabledReason(disabled_reason.reason) } } : {}),
         ...(update_available === undefined ? {} : { update: { available: update_available, ...(latest_revision ? { latest_revision } : {}) } }),
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
         ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),

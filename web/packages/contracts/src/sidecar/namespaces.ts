@@ -94,6 +94,8 @@ export const PluginRuntimeApplicationSchema = z.enum(['applied', 'restart_requir
 export const PluginOAuthStateSchema = z.enum(['signed_in', 'sign_in_needed', 'revoked', 'logged_out'])
 export const PluginOAuthClientSchema = z.object({ id: z.string(), state: PluginOAuthStateSchema, authorize_host: z.string(), token_host: z.string() })
 export type PluginOAuthClient = z.infer<typeof PluginOAuthClientSchema>
+/** TAL-1829: why the plugin is off when something other than the user turned it off; `update` comes from the Agent's `plugins.disabled_by_update` record (v0.22.6+). */
+export const PluginDisabledReasonSchema = z.object({ kind: z.literal('update'), reason: z.string() })
 export const PluginUpdateResultSchema = z.discriminatedUnion('status', [
   z.object({ key: z.string(), status: z.literal('updated') }),
   z.object({ key: z.string(), status: z.literal('needs_consent'), verdict: z.literal('caution'), findings: z.string(), consent_token: z.string().min(1) }),
@@ -159,7 +161,7 @@ export const COMMANDS_METHODS = {
   /** Buffered HTTP only. Cancellation abandons the result; the Agent has no handler-cancel operation. */
   'plugins.dashboard_request': { params: DashboardNameParams.extend({ path: z.string(), method: z.string(), query: z.string(), headers: z.record(z.string(), z.string()), body: z.string(), authenticated: z.boolean(), websocket: z.boolean() }), result: AgentDashboardResponseSchema },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
-  'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional(), update_available: z.boolean().optional(), latest_revision: z.string().optional() })), supported_hooks: z.array(z.string()) }) },
+  'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional(), update_available: z.boolean().optional(), latest_revision: z.string().optional(), disabled_reason: PluginDisabledReasonSchema.optional() })), supported_hooks: z.array(z.string()) }) },
   'plugins.catalog': { params: ProfileHomeParams.extend(PluginCatalogQuerySchema.shape), result: PluginCatalogSchema },
   'plugins.install': { params: ProfileHomeParams.extend(PluginInstallInputSchema.shape), result: PluginInstallResultSchema },
   'plugins.update': { params: ProfileHomeParams.extend({ key: z.string().min(1), accept_caution: z.boolean().optional(), consent_token: z.string().min(1).max(128).optional() }), result: PluginUpdateResultSchema },

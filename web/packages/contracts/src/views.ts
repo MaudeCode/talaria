@@ -15,7 +15,7 @@ import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema } from './gateway-session.js'
-import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
+import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginDisabledReasonSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
 
@@ -1199,6 +1199,8 @@ export type PluginOAuthClientView = z.infer<typeof PluginOAuthClientViewSchema>
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional(),
   /** Stored Agent check, absent when the installed Agent lacks cached update support. */
   update: z.object({ available: z.boolean(), latest_revision: z.string().optional() }).optional(),
+  /** TAL-1829: an Agent update turned this plugin off and later updates retry it; absent otherwise and on Agents before v0.22.6. */
+  disabled_reason: PluginDisabledReasonSchema.optional(),
   /** TAL-806: the manifest's `config_schema` fields with current values; absent when the plugin declares none. */
   settings: z.array(PluginSettingViewSchema).optional(),
   /**

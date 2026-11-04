@@ -90388,6 +90388,21 @@
                               "available"
                             ]
                           },
+                          "disabled_reason": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "const": "update"
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "reason"
+                            ]
+                          },
                           "settings": {
                             "type": "array",
                             "items": {
