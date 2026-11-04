@@ -30,7 +30,7 @@ import { PruneAdvice } from './tools/prune-advice.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps, RequestScope } from './http/context.js'
-import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew } from './release.js'
+import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew, whenDescribeInputsChange } from './release.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE, RUN_SETTLE_MS } from './cli/supervise.js'
@@ -950,6 +950,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   let recoveredAgentRevision: string | null = null
   let pendingRuntimeRecovery: SidecarResult<'runtime.agent_recovery'> | null = null
+  // Describe again only while HEAD is still the running revision; a pending restart keeps the running label.
+  const refreshVersionLabel = whenDescribeInputsChange(config.webRoot, () => {
+    if (!opts.version && runningSourceRevision && checkoutRevision(config.webRoot) === runningSourceRevision) deps.version = detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
+  })
   deps.updates = new UpdateService({
     webRoot: config.webRoot,
     getJson: githubJson(lazyFetch, env),
@@ -958,11 +962,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     stateDir: config.stateDir,
     identity: { release: () => release, stamped: () => stampedRelease, runningSourceRevision: () => runningSourceRevision },
     webuiVersion: version,
-    // Describe again only while HEAD is still the running revision; a pending restart keeps the running label.
-    refreshWebuiVersion: () => {
-      if (!opts.version && runningSourceRevision && checkoutRevision(config.webRoot) === runningSourceRevision) deps.version = detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
-      return deps.version
-    },
+    refreshWebuiVersion: () => { refreshVersionLabel(); return deps.version },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
     agentHomes,
     ...(sidecar?.onHandshake ? { onAgentReconnect: (listener: (runtime: RuntimeDescribe) => void) => sidecar.onHandshake!(listener) } : {}),

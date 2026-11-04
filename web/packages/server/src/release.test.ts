@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ReleaseInfo, WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
-import { compatibleAgent, detectWebuiVersion, developmentInfo, loadReleaseInfo, loadWhatsNew, supportedAgents, validateReleaseInfo, whatsNewState } from './release.js'
+import { compatibleAgent, detectWebuiVersion, developmentInfo, loadReleaseInfo, loadWhatsNew, supportedAgents, validateReleaseInfo, whatsNewState, whenDescribeInputsChange } from './release.js'
 import { bootTestServer, WEB_ROOT } from './test/harness.js'
 import { readFileSync } from 'node:fs'
 
@@ -44,6 +44,43 @@ describe('release info', () => {
     writeFileSync(file, 'changed again\n')
     expect(detectWebuiVersion(dev, web)).not.toBe(changed)
     expect(readFileSync(indexPath)).toEqual(index)
+  })
+
+  it.each(['main checkout', 'linked worktree'])('re-reads the version only when HEAD, packed refs or a new loose tag changed (%s, TAL-1692)', (checkout) => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-version-'))
+    dirs.push(dir)
+    mkdirSync(join(dir, 'main', 'web'), { recursive: true })
+    writeFileSync(join(dir, 'main', 'web', 'index.js'), 'original\n')
+    const root = join(dir, checkout === 'main checkout' ? 'main' : 'linked')
+    const env = { PATH: process.env.PATH, HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { env, stdio: 'pipe' })
+    git(join(dir, 'main'), 'init', '-q')
+    git(join(dir, 'main'), 'add', '.')
+    git(join(dir, 'main'), '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture')
+    if (root.endsWith('linked')) git(join(dir, 'main'), 'worktree', 'add', '-q', '--detach', root)
+    let reads = 0
+    const refresh = whenDescribeInputsChange(join(root, 'web'), () => { reads += 1 })
+    refresh()
+    refresh()
+    expect(reads).toBe(1)
+    const changes = [['tag', 'web-v9.8.7'], ['pack-refs', '--all'], ['checkout', '-q', '-b', 'moved']]
+    for (const [index, change] of changes.entries()) {
+      git(root, ...change)
+      refresh()
+      refresh()
+      expect(reads, change.join(' ')).toBe(index + 2)
+    }
+  })
+
+  it('reads the version once where no checkout exists (TAL-1692)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-version-'))
+    dirs.push(dir)
+    mkdirSync(join(dir, 'web'))
+    let reads = 0
+    const refresh = whenDescribeInputsChange(join(dir, 'web'), () => { reads += 1 })
+    refresh()
+    refresh()
+    expect(reads).toBe(1)
   })
 
   it('packages the same contract versions the monorepo publishes (contracts/versions.json)', () => {

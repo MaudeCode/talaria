@@ -240,14 +240,20 @@ export type GetJson = (path: string, opts: { asset: boolean }) => Promise<unknow
  * `root` defaults to Talaria's repository; any other root (the public Agent repository) is read anonymously.
  */
 export function githubJson(fetchImpl: typeof fetch, env: Record<string, string | undefined>, root = API_ROOT): GetJson {
+  /** TAL-1692: release-list pages by path; a 304 reuses the parsed page and costs no rate limit. An ETag only speaks for the credential that received it. */
+  const pages = new Map<string, { etag: string; token: string; json: unknown }>()
   return async (path, { asset }) => {
     const headers: Record<string, string> = { Accept: asset ? 'application/octet-stream' : 'application/vnd.github+json', 'User-Agent': 'Talaria-Web', 'X-GitHub-Api-Version': '2026-03-10' }
     const token = root === API_ROOT ? (env.TALARIA_RELEASE_TOKEN ?? '').trim() : ''
     if (token) headers.Authorization = `Bearer ${token}`
+    const page = pages.get(path)
+    const known = page?.token === token ? page : undefined
+    if (known) headers['If-None-Match'] = known.etag
     const send = async (url: string, init: RequestInit): Promise<Response> => {
       try { return await fetchImpl(url, init) } catch (error) { throw new ReleaseUnavailable(`GitHub is unreachable: ${(error as Error).message}`, true) }
     }
     let res = await send(root + path, { headers, redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    if (known && res.status === 304) return known.json
     if (res.status >= 300 && res.status < 400) {
       const target = new URL(res.headers.get('location') ?? '', root + path)
       if (target.protocol !== 'https:' || target.hostname !== 'release-assets.githubusercontent.com') throw new ReleaseUnavailable('Unexpected release download redirect')
@@ -258,7 +264,13 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
     if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`, res.status >= 500 || res.status === 429)
     const body = await readCapped(res, 2_000_000)
     if (!body) throw new ReleaseUnavailable('Release metadata exceeds the download limit')
-    return JSON.parse(body.toString('utf8')) as unknown
+    const json = JSON.parse(body.toString('utf8')) as unknown
+    const etag = res.headers.get('etag')
+    if (path.startsWith('/releases?')) {
+      if (etag) pages.set(path, { etag, token, json })
+      else pages.delete(path)
+    }
+    return json
   }
 }
 
@@ -510,6 +522,18 @@ export async function npmInstallInfo(webRoot: string | null, npm: BuildRun = run
     if (lstatSync(expected).isSymbolicLink() || realpathSync(expected) !== realpathSync(webRoot)) return null
   } catch { return null }
   return { packageRoot: realpathSync(webRoot), version: metadata.version }
+}
+
+/** TAL-1692: an install's global npm root cannot move while it runs, so one success answers the process; a failure asks again. Package identity stays checked on every call. */
+function memoizeNpmRoot(npm: BuildRun): BuildRun {
+  let root: GitOutcome | null = null
+  return async (args, cwd, timeoutMs) => {
+    if (args.join(' ') !== 'root --global') return npm(args, cwd, timeoutMs)
+    if (root) return root
+    const answer = await npm(args, cwd, timeoutMs)
+    if (answer.ok) root = answer
+    return answer
+  }
 }
 
 function compareVersions(installed: string, latest: string): number {
@@ -1484,10 +1508,12 @@ export class UpdateService {
   private runtimeCurrentEpoch = 0
   private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
   private readonly git: GitRun
+  private readonly npm: BuildRun
   private readonly now: () => number
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.git = deps.git ?? runGit
+    this.npm = memoizeNpmRoot(deps.npm ?? runPackageNpm)
     this.now = deps.now ?? (() => Date.now() / 1000)
     if (deps.stateDir) {
       try {
@@ -1608,6 +1634,10 @@ export class UpdateService {
     return cached
   }
 
+  private cacheFresh(includeAgent: boolean, channel: WebChannel, agentChannel: Channel): boolean {
+    return this.cache.include_agent === includeAgent && this.cache.channel === channel && this.cache.agent_channel === agentChannel && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S
+  }
+
   /** 30 min cache keyed on both channels + include_agent; one in-flight check per key. */
   async check(force = false, includeAgent = this.deps.includeAgent(), channel = this.deps.channel(), agentChannel = this.agentChannel()): Promise<Dict> {
     const key = `${channel}:${agentChannel}:${String(includeAgent)}`
@@ -1617,15 +1647,14 @@ export class UpdateService {
       return this.check(force, includeAgent, channel, agentChannel)
     }
     if (this.applying) return this.cachedStatus(includeAgent, channel, agentChannel)
-    const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel && this.cache.agent_channel === agentChannel
-    if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) {
+    if (!force && this.cacheFresh(includeAgent, channel, agentChannel)) {
       this.preGenerateSummaries(this.cache)
       return this.statusSnapshot()
     }
     this.checkingKey = key
     this.checking = (async () => {
       try {
-        const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, this.deps.experimental))
+        const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.npm, this.deps.experimental))
         const rollback = readUpdateRollback(this.deps.stateDir)
         if (rollback?.failedVersion) webui.failed_update = { version: rollback.failedVersion, restored_version: rollback.previousVersion }
         // The check may have fetched release tags the startup `git describe` never saw.
@@ -1865,7 +1894,11 @@ export class UpdateService {
     try {
       const channel = this.deps.channel()
       const stillEnabled = (): boolean => lifecycle === this.lifecycle && Boolean(this.deps.autoApply?.()) && (this.deps.checkEnabled?.() ?? true) && channel === this.deps.channel()
-      const checked = await this.check(true, this.deps.includeAgent(), channel)
+      const includeAgent = this.deps.includeAgent()
+      // TAL-1692: only an install that applies updates forces a check per tick; otherwise a tick refreshes an expired status and does nothing else.
+      const force = Boolean(this.deps.autoApply?.())
+      if (!force && this.cacheFresh(includeAgent, channel, this.agentChannel())) return dict(this.cache.webui)
+      const checked = await this.check(force, includeAgent, channel)
       const web = dict(checked.webui)
       if (!stillEnabled()) return web
       if (web.error || web.manual_update) { this.deps.log(`[updates] automatic Web update unavailable: ${str(web.error || web.message)}`); return web }
@@ -1921,7 +1954,7 @@ export class UpdateService {
   private async applyInner(target: string, channel: WebChannel, canApply: () => boolean = () => true, options: UpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') {
       const lifecycle = this.lifecycle
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir, skipFailedVersion: options.skipFailedVersion }, options.version)
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.npm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir, skipFailedVersion: options.skipFailedVersion }, options.version)
       // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
       if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { await this.invalidate('webui', result); this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result

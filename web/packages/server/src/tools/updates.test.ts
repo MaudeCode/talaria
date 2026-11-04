@@ -21,7 +21,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, purgePycache, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, AUTO_UPDATE_INTERVAL_MS, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, purgePycache, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
@@ -172,6 +172,57 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     enabled = false
     expect(await svc.autoApplyOnce()).toBeNull()
     expect(check).toHaveBeenCalledTimes(1)
+  })
+
+  it('with auto-apply off the timer waits out the check TTL, and turning it on forces a check per interval (TAL-1692)', async () => {
+    let auto = false
+    const agent = join(tmp(), 'agent')
+    const { s, n, svc, installs } = npmService({
+      agentDir: agent, autoApply: () => auto, checkEnabled: () => true,
+      // Blocked so the forced checks are observable without a restart ending the loop.
+      blockers: () => ({ active_streams: 1, active_runs: 0, blocking_stream_ids: ['s'], blocking_run_ids: [], restart_blocked: true }),
+    })
+    git(tmp(), 'clone', '--quiet', s.upstream, agent)
+    const counts = () => ({ fetches: s.commands.filter((args) => args[0] === 'fetch').length, npm: n.calls.length, github: s.requests.length })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const tick = vi.spyOn(svc, 'autoApplyOnce')
+      const advance = async (ms: number): Promise<void> => {
+        await vi.advanceTimersByTimeAsync(ms)
+        await tick.mock.results.at(-1)!.value
+        await new Promise(setImmediate)
+      }
+      svc.startAutoApply()
+      await advance(0)
+      const first = counts()
+      expect(first).toMatchObject({ fetches: 1, npm: 1 })
+      expect(first.github).toBeGreaterThan(0)
+      for (let i = 0; i < 3; i += 1) await advance(AUTO_UPDATE_INTERVAL_MS)
+      expect(tick).toHaveBeenCalledTimes(4)
+      expect(counts()).toEqual(first)
+      // The TTL lapses on the sixth interval: one more check, still without another npm spawn.
+      for (let i = 0; i < 3; i += 1) await advance(AUTO_UPDATE_INTERVAL_MS)
+      expect(counts()).toMatchObject({ fetches: 2, npm: 1 })
+      auto = true
+      await advance(AUTO_UPDATE_INTERVAL_MS)
+      await advance(AUTO_UPDATE_INTERVAL_MS)
+      expect(counts()).toMatchObject({ fetches: 4, npm: 1 })
+      expect(installs()).toBe(0)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('asks npm for its global root once per service, and again only after a failure (TAL-1692)', async () => {
+    let roots = 0
+    const { svc } = npmService({ npm: (inner) => (args, cwd, t) => {
+      if (args[0] !== 'root') return inner(args, cwd, t)
+      roots += 1
+      return roots === 1 ? Promise.resolve({ ok: false, out: 'synthetic npm failure' }) : inner(args, cwd, t)
+    } })
+    expect((await svc.check(true)).webui).not.toHaveProperty('install_kind')
+    expect((await svc.check(true)).webui).toMatchObject({ install_kind: 'npm' })
+    await svc.check(true)
+    expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(roots).toBe(2)
   })
 
   it('runs the automatic loop immediately and periodically until stopped', async () => {
@@ -997,6 +1048,36 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
       const bad = ((): Promise<Response> => Promise.resolve(new Response(null, { status: 302, headers: { location } }))) as typeof fetch
       await expect(githubJson(bad, {})('/releases/assets/123', { asset: true })).rejects.toBeInstanceOf(ReleaseUnavailable)
     }
+  })
+
+  it('revalidates release pages with their ETag and answers a 304 from the parsed page (TAL-1692)', async () => {
+    const s = sourceInstall()
+    const page = '/releases?per_page=100&page=1'
+    const list = JSON.stringify(await s.getJson(page, { asset: false }))
+    const manifest = JSON.stringify(await s.getJson('/releases/assets/123', { asset: true }))
+    const env = { TALARIA_RELEASE_TOKEN: 'synthetic-a' }
+    let etag = 'W/"one"'
+    const sent: (string | undefined)[] = []
+    const fetchStub = ((input: string | URL, init?: RequestInit) => {
+      if (!input.toString().includes('/releases?')) return Promise.resolve(new Response(manifest))
+      const condition = (init?.headers as Record<string, string>)['If-None-Match']
+      sent.push(condition)
+      return Promise.resolve(condition === etag ? new Response(null, { status: 304, headers: { etag } }) : new Response(list, { headers: { etag } }))
+    }) as typeof fetch
+    const getJson = githubJson(fetchStub, env)
+    const first = await checkWebUpdate(null, 'web-v1.0.0', 'stable', s.run, getJson, s.identity)
+    expect(first).toMatchObject({ latest_version: 'web-v2.0.0' })
+    const parsed = await getJson(page, { asset: false })
+    expect(await checkWebUpdate(null, 'web-v1.0.0', 'stable', s.run, getJson, s.identity)).toEqual(first)
+    expect(await getJson(page, { asset: false })).toBe(parsed)
+    expect(sent).toEqual([undefined, 'W/"one"', 'W/"one"', 'W/"one"'])
+    // A changed list replaces the page and its ETag; another credential never revalidates this one's answer.
+    etag = 'W/"two"'
+    expect(await getJson(page, { asset: false })).not.toBe(parsed)
+    await getJson(page, { asset: false })
+    env.TALARIA_RELEASE_TOKEN = 'synthetic-b'
+    await getJson(page, { asset: false })
+    expect(sent.slice(4)).toEqual(['W/"one"', 'W/"two"', undefined])
   })
 
   it('marks only unreachable, slow, or overloaded GitHub answers as transient', async () => {
