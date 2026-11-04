@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With automatic updates off, Talaria Web now checks for updates every 30 minutes instead of running a forced network and git check every 5 minutes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

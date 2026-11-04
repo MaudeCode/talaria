@@ -6,8 +6,8 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { ReleaseInfoSchema, WhatsNewAnnouncementSchema, type ReleaseInfo, type WhatsNewAnnouncement, type WhatsNewState } from '@maudecode/talaria-web-contracts'
 
 const SHA_RE = /^[a-f0-9]{40}$/
@@ -82,6 +82,8 @@ export function checkoutRevision(root: string): string | null {
   }
 }
 
+const checkoutMarker = (webRoot: string): string | undefined => [resolve(webRoot, '.git'), resolve(webRoot, '..', '.git')].find((m) => existsSync(m))
+
 export function loadReleaseInfo(sources: ReleaseSources, opts: { verifyCheckout?: boolean } = {}): ReleaseInfo {
   const file = sources.releaseFile ?? resolve(sources.webRoot, '_release.json')
   let metadata: ReleaseInfo
@@ -92,8 +94,7 @@ export function loadReleaseInfo(sources: ReleaseSources, opts: { verifyCheckout?
     throw error
   }
   const webRoot = dirname(file)
-  const markers = [resolve(webRoot, '.git'), resolve(webRoot, '..', '.git')]
-  if ((opts.verifyCheckout ?? true) && markers.some((m) => existsSync(m)) && checkoutRevision(webRoot) !== metadata.sourceRevision) {
+  if ((opts.verifyCheckout ?? true) && checkoutMarker(webRoot) && checkoutRevision(webRoot) !== metadata.sourceRevision) {
     return developmentInfo(sources.webRoot)
   }
   return metadata
@@ -133,6 +134,38 @@ export function detectWebuiVersion(release: ReleaseInfo, webRoot: string, packag
   }
   if (packageVersion && packageVersion !== '0.0.0') return packageVersion.startsWith('web-') ? packageVersion : `web-v${packageVersion}`
   return 'unknown'
+}
+
+/**
+ * A stat signature of what decides `git describe`, read without spawning git: HEAD, packed refs, and the loose tag
+ * directory `git fetch` adds new tags to. A linked worktree keeps HEAD in its own gitdir and shares the rest through
+ * `commondir`. Empty outside a checkout; null when unreadable. Working-tree edits are not inputs, so a dirty suffix
+ * refreshes with the next signature change.
+ */
+function describeInputs(webRoot: string): string | null {
+  const marker = checkoutMarker(webRoot)
+  if (!marker) return ''
+  try {
+    const gitDir = statSync(marker).isDirectory() ? marker : resolve(dirname(marker), readFileSync(marker, 'utf8').replace(/^gitdir:/, '').trim())
+    const shared = existsSync(join(gitDir, 'commondir')) ? resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim()) : gitDir
+    return [join(gitDir, 'HEAD'), join(shared, 'packed-refs'), join(shared, 'refs', 'tags')].map((path) => {
+      const stat = statSync(path, { throwIfNoEntry: false })
+      return stat ? `${String(stat.ino)}:${String(stat.size)}:${String(stat.mtimeMs)}` : '-'
+    }).join('|')
+  } catch {
+    return null
+  }
+}
+
+/** `read`, run again only once `describeInputs` changed (TAL-1692): describing a checkout costs synchronous git spawns on the event loop. */
+export function whenDescribeInputsChange(webRoot: string, read: () => void): () => void {
+  let seen: string | null = null
+  return () => {
+    const inputs = describeInputs(webRoot)
+    if (inputs !== null && inputs === seen) return
+    seen = inputs
+    read()
+  }
 }
 
 /**
