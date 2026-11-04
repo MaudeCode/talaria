@@ -64,11 +64,28 @@ describe('Menu', () => {
     expect(menu.scrollTop).toBe(140)
   })
 
+  function SearchMenu() {
+    const input = useRef<HTMLInputElement>(null)
+    return <Menu label="Search" search={input} trigger={<button type="button">Open</button>} header={<input ref={input} aria-label="Filter" />}><MenuItem>First row</MenuItem><MenuItem>Last row</MenuItem></Menu>
+  }
+
+  it.each(IME_ENTERS)('keeps a composing arrow in search (%s), and a plain arrow then reaches the first and last row (TAL-1873)', async (_, ime) => {
+    render(<SearchMenu />)
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }))
+    const filter = await screen.findByRole('textbox', { name: 'Filter' })
+    expect(filter).toHaveFocus()
+    fireEvent.keyDown(filter, { key: 'ArrowDown', ...ime })
+    expect(filter).toHaveFocus()
+    fireEvent.keyDown(filter, { key: 'ArrowUp', ...ime })
+    expect(filter).toHaveFocus()
+    fireEvent.keyDown(filter, { key: 'ArrowDown' })
+    expect(screen.getByRole('menuitem', { name: 'First row' })).toHaveFocus()
+    act(() => { filter.focus() })
+    fireEvent.keyDown(filter, { key: 'ArrowUp' })
+    expect(screen.getByRole('menuitem', { name: 'Last row' })).toHaveFocus()
+  })
+
   it.each(IME_ENTERS)('leaves a composing character on its row (%s), and a plain character then moves to search (TAL-1860)', async (_, ime) => {
-    function SearchMenu() {
-      const input = useRef<HTMLInputElement>(null)
-      return <Menu label="Search" search={input} trigger={<button type="button">Open</button>} header={<input ref={input} aria-label="Filter" />}><MenuItem>First row</MenuItem></Menu>
-    }
     render(<SearchMenu />)
     await userEvent.click(screen.getByRole('button', { name: 'Open' }))
     const filter = await screen.findByRole('textbox', { name: 'Filter' })

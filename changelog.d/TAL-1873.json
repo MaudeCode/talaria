@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An arrow key pressed while an IME composition is active in a Talaria Web menu's search field, such as the model picker's, now stays in the field and keeps the composition going.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
