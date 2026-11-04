@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { toggleSidebarCollapsed } from './useShellState'
+import { toggleSidebar } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
 
 export function inTextField(target: EventTarget | null): boolean {
@@ -19,7 +19,7 @@ export function useShortcuts() {
       if (!mod || e.altKey) return
       if (!e.shiftKey && (e.key === 'b' || e.key === 'B') && !inTextField(e.target) && window.matchMedia('(min-width: 641px)').matches) {
         e.preventDefault()
-        toggleSidebarCollapsed()
+        toggleSidebar()
       } else if (e.key === '/' && !inTextField(e.target)) {
         e.preventDefault()
         document.getElementById('msg')?.focus()

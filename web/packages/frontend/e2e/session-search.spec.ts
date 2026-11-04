@@ -32,7 +32,7 @@ test('search retains server content matches while a replacement request loads (T
     const hamburger = page.locator('#btnHamburger')
     if (await hamburger.isVisible()) await hamburger.click()
     const input = page.getByRole('searchbox')
-    await page.getByRole('button', { name: 'Filter conversations...', exact: true }).click()
+    await page.locator('aside.sidebar').getByRole('button', { name: 'Search', exact: true }).click()
     await input.pressSequentially('zebra', { delay: 20 })
     const result = page.locator('[data-sid="search-content"]')
     await expect(result.locator('.session-search-preview')).toHaveText('A herd of zebras')

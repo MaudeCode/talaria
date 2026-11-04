@@ -55,14 +55,15 @@ test('Send feedback stays reachable on a short viewport with diagnostics open', 
   expect(box && box.y >= 0 && box.y + box.height <= 390).toBe(true)
 })
 
-/** TAL-1588: an opt-in rail button above Notifications opens the same Send feedback dialog. */
-test('Sidebar feedback button is opt-in and sits above Notifications in the rail', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === 'mobile', 'The rail is hidden on phone widths; Settings → Help remains the entry point.')
-  const railButton = page.locator('.rail').getByRole('button', { name: 'Send feedback' })
-  const notifications = page.locator('.rail').getByRole('button', { name: 'Notifications', exact: true })
+/** TAL-1588: an opt-in sidebar button beside Notifications opens the same Send feedback dialog, above it on the icon rail. */
+test('Sidebar feedback button is opt-in and sits above Notifications on the rail', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The sidebar is a drawer on phone widths; Settings → Help remains the entry point.')
+  const railButton = page.locator('aside.sidebar').getByRole('button', { name: 'Send feedback' })
+  const notifications = page.locator('aside.sidebar').getByRole('button', { name: 'Notifications', exact: true })
   try {
     await page.goto('/settings/preferences')
     await settle(page)
+    await page.locator('#btnSidebarEdgeToggle').click()
     await expect(notifications).toBeVisible()
     await expect(railButton).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-off.png') })

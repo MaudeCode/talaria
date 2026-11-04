@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { useLocation, useParams, useSearch } from '@tanstack/react-router'
 import { Titlebar } from './Titlebar'
-import { Rail } from './Rail'
 import { Sidebar } from './Sidebar'
 import { Tabbar } from './Tabbar'
 import { useShortcuts } from './useShortcuts'
@@ -12,7 +11,7 @@ import { m } from '../paraglide/messages.js'
 import { useEffect } from 'react'
 import { registerExtensionSkins, useExtensionManifests } from '../extensions/registry'
 import { reapplyExtensionSkin } from '../app/appearance'
-import { useIsDesktop, useShellState } from './useShellState'
+import { useIsSidebarRail } from './useShellState'
 import { cn } from '../ui/cn'
 import { UpdateNotificationProvider } from '../features/notifications/UpdateNotificationCenter'
 import { FeedbackDialog } from '../features/settings/FeedbackDialog'
@@ -21,18 +20,17 @@ import { SectionMenu } from '../features/settings/SettingsLayout'
 import { SessionListPanel } from '../features/sessions/SessionListPanel'
 import { panelForPath } from './nav'
 
-/** Titlebar + `.layout` (rail, sidebar, main) on the legacy island shell, mounted once by the authenticated layout. Its chrome follows the location; a page without a sidebar leaves the phone drawer only the nav. */
+/** Titlebar + `.layout` (sidebar, main) on the legacy island shell, mounted once by the authenticated layout. Its chrome follows the location. */
 export function AppShell({ children }: { children: ReactNode }) {
   useShortcuts()
   const panel = useLocation({ select: (location) => panelForPath(location.pathname) })
   const extensionId = useParams({ strict: false, select: (params) => params.extensionId })
   const taskDetail = useSearch({ strict: false, select: (search) => !!search.job })
-  const sidebar = panel === 'settings' ? <SectionMenu /> : panel === 'chat' ? <SessionListPanel /> : null
+  const sidebar = panel === 'settings' ? <SectionMenu /> : <SessionListPanel />
   // `hub` hides the shell's right panel, where a task's run output opens: only the Tasks list goes without one.
   const hub = panel !== 'chat' && panel !== 'settings' && !(panel === 'tasks' && taskDetail)
   const showing = panel === 'chat' ? undefined : panel
-  const { collapsed } = useShellState()
-  const isDesktop = useIsDesktop()
+  const rail = useIsSidebarRail()
   const manifests = useExtensionManifests()
   useEffect(() => {
     if (manifests.data) { registerExtensionSkins(manifests.data.manifests); reapplyExtensionSkin() }
@@ -49,9 +47,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <TooltipProvider>
       <UpdateNotificationProvider>
         <Titlebar subtitle={subtitle} />
-        <div className={cn('layout flex w-full flex-[1_1_auto] min-h-0 gap-0 p-0 bg-(--canvas) max-[641px]:overflow-x-clip max-[641px]:box-border max-[641px]:pb-[calc(56px+env(safe-area-inset-bottom,0px))]', collapsed && 'sidebar-collapsed')}>
-          <Rail hasSidebar={sidebar !== null} />
-          {(sidebar !== null || !isDesktop) && <Sidebar panel={sidebar} />}
+        <div className={cn('layout flex w-full flex-[1_1_auto] min-h-0 gap-0 p-0 bg-(--canvas) max-[641px]:overflow-x-clip max-[641px]:box-border max-[641px]:pb-[calc(56px+env(safe-area-inset-bottom,0px))]', rail && 'sidebar-collapsed')}>
+          <Sidebar panel={sidebar} />
           <main className={cn('main flex flex-1 flex-col overflow-hidden min-w-0 min-h-0 m-0 bg-(--main-surface) border-(length:--island-ring-width) border-(--island-ring) max-[769px]:m-0 min-[901px]:flex-[1_1_420px] min-[901px]:min-w-[420px] max-[769px]:rounded-none max-[769px]:border-0', showing && `showing-${showing}`)} id="main">
             {children}
           </main>

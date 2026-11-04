@@ -204,20 +204,11 @@ test('rail captions fit under their icons; the bell keeps its full accessible na
   await page.route('**/api/update-notifications**', (route) => route.fulfill({ json: { scope_id: 'rail-scope', notifications: [], unread_count: 0, clearable_count: 0, can_clear: false } }))
   await page.goto('/')
   await settle(page)
-  const bell = page.locator('.rail').getByRole('button', { name: 'Notifications', exact: true })
+  await page.locator('#btnSidebarEdgeToggle').click()
+  const bell = page.locator('aside.sidebar').getByRole('button', { name: 'Notifications', exact: true })
   await expect(bell).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
-  const captions = await page.locator('.rail .rail-btn.has-tooltip').evaluateAll((nodes) => {
-    const ctx = document.createElement('canvas').getContext('2d')!
-    return nodes.map((node) => {
-      const s = getComputedStyle(node, '::after')
-      const text = s.content.startsWith('attr(') ? node.getAttribute('data-tooltip') ?? '' : JSON.parse(s.content) as string
-      ctx.font = `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`
-      ctx.letterSpacing = s.letterSpacing
-      const room = parseFloat(s.maxWidth) - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
-      return { text, fits: ctx.measureText(text).width <= room }
-    })
-  })
-  await page.locator('.rail').screenshot({ path: testInfo.outputPath('rail-captions.png') })
+  const captions = await page.locator('aside.sidebar .sidebar-row .sidebar-row-label:visible').evaluateAll((nodes) => nodes.map((node) => ({ text: node.textContent, fits: node.scrollWidth <= node.clientWidth })))
+  await page.locator('aside.sidebar').screenshot({ path: testInfo.outputPath('rail-captions.png') })
   expect(captions.filter((caption) => !caption.fits)).toEqual([])
 })

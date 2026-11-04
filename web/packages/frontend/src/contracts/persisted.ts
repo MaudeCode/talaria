@@ -11,7 +11,7 @@ export type FontSize = z.infer<typeof FontSizeSchema>
 export const ChatWidthSchema = z.enum(['comfortable', 'wide', 'full'])
 export type ChatWidth = z.infer<typeof ChatWidthSchema>
 
-/** Sidebar/rail tab order and hidden tabs (`hermes-webui-tab-order`, `hermes-webui-hidden-tabs`). */
+/** Sidebar tab order and hidden tabs (`hermes-webui-tab-order`, `hermes-webui-hidden-tabs`). */
 export const TabIdListSchema = z.array(z.string().trim().min(1).max(64)).max(32)
 
 /**

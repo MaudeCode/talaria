@@ -470,6 +470,8 @@ test('typing never refits the composer footer; a viewport or chip change does (T
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'fit', title: 'Fit', model, messages: [] } } }))
   await page.route('**/api/session/update', (route) => { model = (route.request().postDataJSON() as { model: string }).model; return route.fulfill({ json: { session: { session_id: 'fit', title: 'Fit', model, messages: [] } } }) })
+  // The widest sidebar leaves the composer narrow enough for icon-only chips above the phone breakpoint.
+  await page.addInitScript(() => { localStorage.setItem('hermes-webui-sidebar-width', '480') })
   await page.goto('/session/fit')
   const footer = page.locator('.composer-footer')
   const msg = page.locator('#msg')
@@ -490,14 +492,14 @@ test('typing never refits the composer footer; a viewport or chip change does (T
   await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
 
   // Narrower than the full labels: icon-only chips; wide again: full labels; phone width: the burger.
-  await page.setViewportSize({ width: 800, height: 800 })
+  await page.setViewportSize({ width: 920, height: 800 })
   await expect(footer).toHaveClass(/cf-icons/)
   await expect(footer).not.toHaveClass(/cf-burger/)
   await page.setViewportSize({ width: 1280, height: 800 })
   await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
   await page.setViewportSize({ width: 600, height: 800 })
   await expect(footer).toHaveClass(/cf-burger/)
-  await page.setViewportSize({ width: 860, height: 800 })
+  await page.setViewportSize({ width: 976, height: 800 })
   await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
 
   // A longer model label (the chip's full 240 px) at the same width no longer fits: the chips change, the footer's size does not.

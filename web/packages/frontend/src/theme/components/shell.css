@@ -16,7 +16,6 @@
 .sidebar-search input:focus{border-color:var(--accent);box-shadow:var(--search-focus-shadow);background:var(--search-focus-bg)}
 .sidebar-search input::placeholder{color:var(--muted);opacity:.7}
 .sidebar-search-icon{position:absolute;left:22px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted);opacity:.7;pointer-events:none}
-.rail-btn.active::before{content:'';position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:var(--accent);border-radius:0 2px 2px 0}
 .has-tooltip{position:relative}
 .has-tooltip::after{content:attr(data-tooltip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%);background:var(--surface);border:1px solid var(--accent-bg-strong);color:var(--text);font-size:11.5px;font-weight:600;letter-spacing:.02em;padding:5px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:1500;box-shadow:0 8px 24px rgba(0,0,0,.65),0 0 0 1px rgba(0,0,0,.35),0 1px 0 var(--overlay-faint) inset;opacity:0;transition:opacity .14s ease;transition-delay:0s}
 .has-tooltip:hover::after,.has-tooltip:focus-visible::after{opacity:1;transition-delay:.15s}
@@ -24,14 +23,7 @@
 .has-tooltip--bottom-right::after{left:auto;right:0;top:calc(100% + 8px);bottom:auto;transform:none}
 .has-tooltip--left::after{left:auto;right:calc(100% + 8px);top:50%;transform:translateY(-50%)}
 @media (prefers-reduced-motion:reduce){.has-tooltip::after{transition:none;transition-delay:0s}}
-.rail .nav-tab.active::before{content:'';position:absolute;left:-6px;top:50%;bottom:auto;transform:translateY(-50%);width:3px;height:16px;background:var(--accent);border-radius:0 2px 2px 0}
 .dashboard-link{position:relative}
-@media (min-width:641px){.sidebar > .sidebar-nav{display:none}}
-.nav-tab{flex:1;padding:10px 4px 8px;font-size:20px;text-align:center;cursor:pointer;color:var(--muted);border:none;background:none;transition:color .15s;border-bottom:2px solid transparent;white-space:nowrap;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;border-radius:var(--nav-tab-radius)}
-.nav-tab:hover{color:var(--text);background:var(--nav-hover-bg)}
-.sidebar-nav .nav-tab:hover::after{content:attr(data-label);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent-bg-strong);color:var(--accent-text);font-size:12px;font-weight:700;letter-spacing:.02em;padding:6px 12px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,.3)}
-.nav-tab.active{color:var(--nav-active-fg);background:var(--nav-active-bg);box-shadow:var(--nav-active-shadow);font-weight:var(--nav-active-weight)}
-.nav-tab.active::before{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:20px;height:2px;background:var(--accent);border-radius:2px 2px 0 0}
 .panel-view{display:none;flex:1;overflow:hidden;flex-direction:column}
 .panel-view.active{display:flex}
 .icon-btn.composer-mobile-config-btn{position:relative;display:inline-flex;flex-shrink:0}
@@ -39,24 +31,13 @@
 .icon-btn{opacity:.75}
 .icon-btn:hover{background:var(--icon-btn-hover-bg);color:var(--text);opacity:1}
 .icon-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){width:0 !important;min-width:0;border-right-color:transparent;pointer-events:none;overflow:visible}}
-@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) > :not(.workspace-panel-edge-toggle,.seam){visibility:hidden}}
-@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) .workspace-panel-edge-toggle{pointer-events:auto}}
-@media (min-width:641px){.layout.sidebar-collapsed .sidebar .resize-handle{display:none}}
-@media (min-width:641px){html[data-sidebar-collapsed="1"] .sidebar:not(.mobile-open){width:0 !important;min-width:0;opacity:0;transform:translateX(-14px);border-right-color:transparent;pointer-events:none;overflow:hidden;transition:none}}
 @media (max-width:640px){.sidebar .resize-handle{display:none}}
 @media (max-width:640px){.app-titlebar-new-chat,.app-titlebar-reload{display:inline-flex;width:44px;height:44px}}
-@media (max-width:640px){.sidebar-nav .nav-tab{flex:0 0 44px;width:44px;min-width:44px;min-height:44px;padding:0;border-bottom:0;border-radius:var(--nav-tab-radius-mobile)}}
-@media (max-width:640px){.sidebar-nav .nav-tab svg{width:20px;height:20px}}
-@media (max-width:640px){.sidebar-nav .nav-tab.active{background:var(--accent-bg)}}
-@media (max-width:640px){.sidebar-nav .nav-tab.active::before{left:-4px;top:50%;bottom:auto;transform:translateY(-50%);width:3px;height:16px;border-radius:0 2px 2px 0}}
-@media (max-width:640px){.sidebar .panel-view{height:100%;margin-left:52px}}
-@media (max-width:640px){.sidebar .panel-head{padding-right:52px}}
 @media (max-width:640px){.mobile-sidebar-close{display:inline-flex !important;position:absolute;right:4px;top:calc(4px + var(--app-titlebar-safe-top));width:44px;height:44px;z-index:4}}
 @media (max-width:640px){.icon-btn{min-width:44px;min-height:44px}}
 @media (max-width:640px){.mobile-sidebar-close{line-height:1;overflow:hidden}}
-@media (max-width:640px){.app-titlebar-new-chat,.app-titlebar-reload,.sidebar-nav .nav-tab,.icon-btn{line-height:1;overflow:hidden}}
-@media (max-width:640px){.app-titlebar-hamburger svg,.app-titlebar-new-chat svg,.app-titlebar-reload svg,.mobile-sidebar-close svg,.sidebar-nav .nav-tab svg,.icon-btn svg{display:block;flex:0 0 auto}}
+@media (max-width:640px){.app-titlebar-new-chat,.app-titlebar-reload,.icon-btn{line-height:1;overflow:hidden}}
+@media (max-width:640px){.app-titlebar-hamburger svg,.app-titlebar-new-chat svg,.app-titlebar-reload svg,.mobile-sidebar-close svg,.icon-btn svg{display:block;flex:0 0 auto}}
 @media (max-width: 640px){.panel-head-btn.mobile-sidebar-close{display:inline-flex !important;align-items:center;justify-content:center;right:4px;top:calc(var(--app-titlebar-safe-top) - 2px);width:44px !important;height:44px !important;min-width:44px;min-height:44px;line-height:1;overflow:hidden}}
 @media (max-width: 640px){.panel-head-btn.mobile-sidebar-close svg{width:14px;height:14px;display:block}}
 /* Collapse/expand animation (a Tailwind transition-[…] class cannot carry durations, so it lives here). The corner seams wait out --sidebar-dur. */
@@ -84,6 +65,34 @@
 .sidebar:has(> .resize-handle:hover) .edge-tab-join-bottom{background:radial-gradient(circle at 100% 100%,transparent calc(var(--r-md) - 3.5px),var(--accent) calc(var(--r-md) - 3px),var(--accent) calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
 /* z above .composer-wrap (10): the resize handle overlaps the card's left edge, which the composer wrap spans. */
 @media (min-width:641px){.sidebar{z-index:11}}
+/* One column in two layouts. Expanded: labelled rows above the panel, which takes the height. On the rail (.layout.sidebar-collapsed): an icon over its caption, destinations scrolling above a pinned footer, and the panel out of the layout, out of the tab order, keeping its state and scroll. */
+.sidebar .panel-view{background:transparent}
+.sidebar-rows{flex:0 1 auto;overflow-y:auto;scrollbar-width:none}
+.sidebar-panel{flex:1 1 160px;min-height:160px}
+.sidebar-footer{padding-top:4px}
+.sidebar-footer > .sidebar-row:not(.sidebar-icon-row){flex:1 1 0;width:auto;min-width:0}
+.sidebar-icon-row{width:32px;padding:0;justify-content:center}
+@media (max-width:640px){.sidebar-icon-row{width:44px}}
+.sidebar-icon-row .sidebar-row-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.sidebar-brandmark{width:24px;height:24px;flex-shrink:0;color:var(--accent)}
+.sidebar-row-label{line-height:1.3}
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar{width:64px;min-width:64px;padding:8px 0;flex-shrink:0}}
+@media (min-width:641px){
+  .layout.sidebar-collapsed .sidebar-rows{flex:1 1 auto;align-items:center}
+  .layout.sidebar-collapsed .sidebar-panel{position:absolute;inset-block:0;inset-inline-start:0;width:300px;visibility:hidden;pointer-events:none}
+  .layout.sidebar-collapsed .sidebar-footer{flex-direction:column}
+  .layout.sidebar-collapsed .sidebar-brand{width:52px;padding:0;justify-content:center;margin-bottom:6px}
+  .layout.sidebar-collapsed .sidebar-brand .sidebar-row-label{display:none}
+  .layout.sidebar-collapsed .sidebar-brandmark{width:30px;height:30px}
+  .layout.sidebar-collapsed .sidebar-row{width:54px;min-height:48px;flex:none;flex-direction:column;justify-content:center;gap:3px;padding:0;text-align:center}
+  .layout.sidebar-collapsed .sidebar-row-label{position:static;width:auto;height:auto;clip-path:none;max-width:62px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:500;letter-spacing:-.01em}
+  .layout.sidebar-collapsed .sidebar-row.has-tooltip::after{display:none}
+  .layout.sidebar-collapsed .sidebar-rail-menu{min-height:36px}
+  .sidebar-rail-separator{flex:none;width:38px;height:1px;margin:4px 0;background:var(--border)}
+}
+html[data-sidebar-collapsed="1"] .sidebar{transition:none}
+/* 641-900px: the opened panel covers the page from the rail's slot; the negative margin keeps #main where the rail left it. */
+@media (min-width:641px) and (max-width:900px){.sidebar.mobile-open{width:300px;margin-inline-end:-236px;z-index:200;background:var(--sidebar-bg)}}
 main.main > #mainChat,main.main > #mainSettings{display:none}
 main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto}
@@ -94,36 +103,9 @@ main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto}
 .app-titlebar-new-chat:disabled,.app-titlebar-new-chat[aria-busy="true"]{opacity:.5;cursor:wait}
 .app-titlebar-new-chat:disabled:hover,.app-titlebar-new-chat[aria-busy="true"]:hover{background:transparent;color:var(--muted)}
 main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-header:has(.main-view-title:empty){display:none}
-.nav-tab{position:relative;border-radius:var(--nav-tab-radius)}
 .panel-head-btn.primary{background:var(--accent,var(--link));color:var(--panel-head-primary-fg);border:none}
 .panel-head-btn.primary:hover{background:var(--accent-hover,var(--accent,var(--link)));color:var(--panel-head-primary-fg)}
 .panel-head-btn.primary svg{color:var(--panel-head-primary-fg)}
-.layout.sidebar-collapsed .sidebar:not(.mobile-open){border-color:transparent}
-@media (max-width:768px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){margin-left:0}}
-.rail-btn.active::before{display:none}
-.rail .rail-btn.has-tooltip::after{content:attr(data-tooltip);position:static;transform:none;opacity:1;visibility:visible;pointer-events:none;background:none;border:0;box-shadow:none;padding:0;margin:0;font-size:10px;font-weight:500;letter-spacing:0;line-height:1;color:inherit;white-space:nowrap;max-width:54px;overflow:hidden;text-overflow:ellipsis;transition:none;z-index:auto}
-.rail .rail-btn.has-tooltip:hover::after{opacity:1;transform:none}
-.rail .rail-btn[data-panel="profiles"]::after{content:"Profiles"}
-.rail .rail-btn[data-panel="todos"]::after{content:"Todos"}
-.rail .rail-btn[data-panel="workspaces"]::after{content:"Spaces"}
-.rail .rail-btn[data-panel="chat"]{order:1}
-.rail .rail-btn[data-panel="workspaces"]{order:2}
-.rail .rail-btn[data-panel="groups"]{order:3}
-.rail .rail-btn[data-panel="tasks"]{order:10}
-.rail .rail-btn[data-panel="kanban"]{order:11}
-.rail .rail-btn[data-panel="todos"]{order:12}
-.rail .rail-btn[data-panel="skills"]{order:20}
-.rail .rail-btn[data-panel="memory"]{order:21}
-.rail .rail-btn[data-panel="profiles"]{order:22}
-.rail .rail-btn[data-panel="insights"]{order:30}
-.rail .rail-btn.dashboard-link{order:31}
-.rail .rail-btn[data-panel="logs"]{order:32}
-.rail .rail-spacer{order:90}
-.rail .rail-btn[data-panel="feedback"]{order:97}
-.rail .rail-btn[data-panel="update-notifications"]{order:98}
-.rail .rail-btn[data-panel="settings"]{order:99}
-.rail .rail-btn[data-panel="tasks"],.rail .rail-btn[data-panel="skills"],.rail .rail-btn[data-panel="insights"]{margin-top:10px;position:relative}
-.rail .rail-btn[data-panel="tasks"]::before,.rail .rail-btn[data-panel="skills"]::before,.rail .rail-btn[data-panel="insights"]::before{content:'';position:absolute;left:8px;right:8px;top:-6px;height:1px;background:var(--border);transform:none;width:auto;border-radius:0}
 .sidebar-search{padding:4px 12px 8px}
 .icon-btn{border-radius:var(--btn-radius);transition:background var(--dur) var(--ease),color var(--dur) var(--ease),opacity var(--dur) var(--ease)}
 .icon-btn:hover{background:var(--icon-btn-hover-bg);color:var(--text)}
@@ -141,45 +123,37 @@ main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-
 @media (max-width:768px){.main-view.hub-page .main-view-header{padding:12px 14px 6px}}
 @media (min-width:641px){.app-titlebar{display:none}}
 @media (min-width:641px) and (display-mode: window-controls-overlay){.app-titlebar{display:flex}}
-.rail .rail-btn.has-tooltip::after{font-size:10px;font-weight:500;letter-spacing:-.01em;line-height:1.3;padding:0 3px 1px;max-width:62px;box-sizing:border-box}
-.rail .rail-btn[data-panel="groups"]::after{padding-inline:0}
 .sidebar-search{padding:2px 10px 8px}
 .icon-btn{width:30px;height:30px}
 @media (max-width:768px){.icon-btn{width:44px;height:44px}}
 .main-view.hub-page .main-view-header{padding:14px 28px 6px}
 .has-tooltip::after{font-size:11px}
-.rail-brand svg,.rail-brand .app-titlebar-icon{width:30px;height:30px;display:inline-flex}
-.rail-brand .app-titlebar-icon svg{width:30px;height:30px}
 html.hub-active .rightpanel{width:0 !important;min-width:0 !important;opacity:0;pointer-events:none;overflow:hidden;border-color:transparent;margin-left:0;content-visibility:hidden}
 html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important}
-.rail-brand .rail-brandmark{width:30px;height:30px;color:var(--accent)}
 .main-view-actions .panel-head-btn{width:32px;height:32px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface)}
 .main-view-actions .panel-head-btn:hover{background:var(--hover-bg)}
 .main-view-actions .panel-head-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 @media (max-width:640px){.tabbar-sheet-item svg{width:18px;height:18px;color:var(--muted)}}
 @media (max-width:640px){.tabbar-sheet-item:active{background:var(--hover-bg)}}
-@media (max-width:640px){.sidebar > .sidebar-nav{display:none !important}}
-@media (max-width:640px){.sidebar > .panel-view{margin-left:0 !important;padding-left:0 !important}}
 .chat,.panel-view{background:var(--pane-bg)}
-.nav-tab.active svg{color:var(--nav-active-icon-fg)}
-/* Inset shell: the card keeps the frame gap on the sides where no frame element sits. */
-@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){padding:0}}
 @media (min-width:641px){.sidebar .panel-head{border-bottom-color:transparent}}
 /* First paint. #app is empty until the module entry mounts (about 50ms built, longer under the dev server),
-   so the inset frame (rail divider + main card) is drawn from pseudo-elements meanwhile; prepaint.js has
+   so the inset frame (the sidebar column + main card) is drawn from pseudo-elements meanwhile; prepaint.js has
    already set the theme, skin and sidebar state on <html>. A reload then keeps its frame instead of flashing
-   a bare canvas. */
+   a bare canvas. The column is 300px or the 64px rail, which is also what 641-900px always tiles. */
 #app:empty{flex-direction:row;background:var(--canvas)}
-#app:empty::before{content:"";width:64px;flex-shrink:0;background:var(--rail-bg);border-right:1px solid var(--border)}
-#app:empty::after{content:"";flex:1;min-width:0;margin:0 0 0 300px;background:var(--main-surface);border:var(--island-ring-width) solid var(--island-ring)}
-html[data-sidebar-collapsed="1"] #app:empty::after{margin-left:0}
-@media (max-width:768px){#app:empty::after{margin:0 0 0 300px;border:0;border-radius:0;box-shadow:none}}
-@media (max-width:640px){#app:empty::before{display:none}#app:empty::after{margin:0}}
+#app:empty::before{content:"";width:300px;flex-shrink:0;background:var(--rail-bg)}
+#app:empty::after{content:"";flex:1;min-width:0;background:var(--main-surface);border:var(--island-ring-width) solid var(--island-ring)}
+html[data-sidebar-collapsed="1"] #app:empty::before{width:64px}
+@media (max-width:900px){#app:empty::before{width:64px}}
+@media (max-width:768px){#app:empty::after{border:0;border-radius:0;box-shadow:none}}
+@media (max-width:640px){#app:empty::before{display:none}}
+#app:empty{flex-direction:row;background:var(--canvas)}
 /* Phone titlebar: the title block stays in the flex flow and takes the space the controls leave, so no control can
    run under it (TAL-1871). The profile chip and an extension name truncate to leave it room. The balancing spacer
    only matched the hamburger when the right side had no buttons. */
 @media (max-width:640px){.app-titlebar-spacer{display:none}.app-titlebar-left .composer-chip{max-width:88px}.app-titlebar-sub{flex:1 1 0;min-width:0;max-width:max-content;overflow:hidden;text-overflow:ellipsis}}
-/* Seams: where the sidebar, the rail (sidebar collapsed) or the workspace panel meets the main card, a card-coloured
+/* Seams: where the sidebar or the workspace panel meets the main card, a card-coloured
    concave fillet at the top and bottom, the same construction as the edge tab's joins, so the card flows into its
    neighbours instead of ending in a rounded corner with a wedge of canvas. Desktop only; the card has square corners. */
 .seam{position:absolute;width:calc(var(--island-radius) + 3px);height:var(--island-radius);pointer-events:none;z-index:1}
@@ -187,10 +161,7 @@ html[data-sidebar-collapsed="1"] #app:empty::after{margin-left:0}
 .seam-br{right:-3px;bottom:0;background:radial-gradient(circle at 0 0,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
 .seam-tl{left:-3px;top:0;background:radial-gradient(circle at 100% 100%,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
 .seam-bl{left:-3px;bottom:0;background:radial-gradient(circle at 100% 0,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
-/* Collapsing hands the corners to the rail only once the sidebar has reached width 0; expanding hands them back at once. */
-.rail-seam{visibility:hidden}
-.layout.sidebar-collapsed .rail-seam{visibility:visible;transition:visibility 0s var(--sidebar-dur)}
-.layout.sidebar-collapsed .sidebar .seam{visibility:hidden;transition:visibility 0s var(--sidebar-dur)}
 html.hub-active .rightpanel .seam,html[data-workspace-panel="closed"] .rightpanel .seam{display:none}
+.sidebar.mobile-open .seam{display:none}
 @media (max-width:769px){.seam{display:none}}
 }

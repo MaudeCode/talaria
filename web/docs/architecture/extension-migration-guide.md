@@ -12,7 +12,7 @@ Before: `extensions.json` listed `scripts` and `stylesheets` that ran inside the
 WebUI page with full session authority.
 
 After: add `panel` (an HTML file under your extension directory) and, if the
-panel should appear in the rail, `nav`. Your script runs inside that document,
+panel should appear in the sidebar, `nav`. Your script runs inside that document,
 in a sandboxed iframe. Move your stylesheet into the panel; it can no longer
 style the core page.
 

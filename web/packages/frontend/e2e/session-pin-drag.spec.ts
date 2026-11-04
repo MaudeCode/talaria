@@ -67,7 +67,7 @@ test('native sidebar drag pins and unpins through the optimistic action', async 
       await expect.poll(() => writes.length).toBe(3)
       await page.setViewportSize({ width: 900, height: 800 })
       await page.screenshot({ path: info.outputPath('after-laptop.png') })
-      await page.setViewportSize({ width: 600, height: 800 })
+      await page.setViewportSize({ width: 600, height: 1000 })
       if (await page.locator('#btnHamburger').isVisible()) await page.locator('#btnHamburger').click()
       await expect(beta).toBeVisible()
       for (const title of await page.locator('#sessionList .session-title').all()) await expect(title).toBeInViewport()

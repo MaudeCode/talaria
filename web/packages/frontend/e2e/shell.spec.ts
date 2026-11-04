@@ -14,7 +14,7 @@ test.describe('shell', () => {
     await page.goto('/')
     await settle(page)
     if (testInfo.project.name === 'mobile') {
-      // The rail is desktop-only; mobile reaches hubs by URL.
+      // The tiled column is desktop-only; mobile reaches hubs by URL.
       for (const path of HUBS) {
         await page.goto(path)
         await settle(page)
@@ -22,7 +22,9 @@ test.describe('shell', () => {
       }
       return
     }
-    const rail = page.locator('nav[aria-label="Primary navigation"] a[href]')
+    // The icon rail shows every destination at once.
+    await page.locator('#btnSidebarEdgeToggle').click()
+    const rail = page.locator('nav[aria-label="Primary navigation"] a[href]:visible')
     const count = await rail.count()
     expect(count).toBeGreaterThanOrEqual(HUBS.length)
     const visited = new Set<string>()
@@ -93,53 +95,14 @@ test.describe('shell', () => {
     expect(after ?? '').not.toContain('dark')
   })
 
-  test('corner seams follow the sidebar collapse animation', async ({ page }, testInfo) => {
+  test('the sidebar owns one pair of corner seams in both states', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'seams only render on desktop')
-    await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.goto('/')
     await settle(page)
-    const seams = () => page.evaluate(() => {
-      const shown = (sel: string) => [...document.querySelectorAll(sel)].map((el) => { const s = getComputedStyle(el); return s.display !== 'none' && s.visibility === 'visible' })
-      return { rail: shown('.rail-seam'), sidebar: shown('.sidebar .seam'), sidebarWidth: document.querySelector('.sidebar')!.getBoundingClientRect().width }
-    })
-    // Toggle, wait for the sidebar's width transition to start, then freeze every transition at `at` ms so the check is frame-exact.
-    const toggleAt = (at: number) => page.evaluate(async (at) => {
-      const layout = document.querySelector('.layout')!
-      const wasCollapsed = layout.classList.contains('sidebar-collapsed')
-      document.getElementById('btnSidebarEdgeToggle')!.click()
-      const transitions = () => document.getAnimations().filter((a): a is CSSTransition => a instanceof CSSTransition)
-      while (layout.classList.contains('sidebar-collapsed') === wasCollapsed || !transitions().some((a) => a.transitionProperty === 'width')) await new Promise(requestAnimationFrame)
-      for (const a of transitions()) { a.pause(); a.currentTime = at }
-    }, at)
-    const finish = () => page.evaluate(() => { for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.finish() })
-    const both = (n: boolean) => [n, n]
-
-    expect(await seams()).toMatchObject({ rail: both(false), sidebar: both(true) })
-
-    // Mid-collapse the sidebar still has width, so its own seams stay and the rail's wait.
-    await toggleAt(120)
-    const mid = await seams()
-    expect(mid.sidebarWidth).toBeGreaterThan(0)
-    expect(mid).toMatchObject({ rail: both(false), sidebar: both(true) })
-    await finish()
-    expect(await seams()).toMatchObject({ rail: both(true), sidebar: both(false), sidebarWidth: 0 })
-
-    // Expanding hands the corners back to the sidebar at once, never showing both sets.
-    await toggleAt(0)
-    expect(await seams()).toMatchObject({ rail: both(false), sidebar: both(true) })
-    await finish()
-    await toggleAt(0)
-    await finish()
-
-    // A persisted collapse renders the final corners on load without running a seam transition.
-    await page.reload()
-    await settle(page)
-    expect(await page.evaluate(() => document.getAnimations().some((a) => a instanceof CSSTransition && a.effect instanceof KeyframeEffect && !!a.effect.target?.matches('.seam')))).toBe(false)
-    expect(await seams()).toMatchObject({ rail: both(true), sidebar: both(false), sidebarWidth: 0 })
-
-    // With reduced motion the sidebar snaps closed, so the seams must not wait either.
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    expect(await page.locator('.rail-seam').first().evaluate((el) => getComputedStyle(el).transitionDelay)).toBe('0s')
+    const seams = () => page.evaluate(() => [...document.querySelectorAll('.layout > :not(.rightpanel) .seam')].map((el) => { const s = getComputedStyle(el); return s.display !== 'none' && s.visibility === 'visible' && el.closest('aside.sidebar') !== null }))
+    expect(await seams()).toEqual([true, true])
+    await page.locator('#btnSidebarEdgeToggle').click()
+    expect(await seams()).toEqual([true, true])
   })
 
   test('chat width setting sizes the chat column and persists', async ({ page }, testInfo) => {
@@ -202,25 +165,25 @@ test.describe('shell', () => {
   })
 
   test('one shell survives every section, which still sets its own sidebar and markers (TAL-1866)', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop', 'the rail is desktop-only')
+    test.skip(testInfo.project.name !== 'desktop', 'the tiled column is desktop-only')
     await page.goto('/')
     await settle(page)
-    const rail = page.locator('nav.rail')
+    const rail = page.locator('aside.sidebar')
     await rail.evaluate((el) => { el.dataset.shellMarker = 'kept' })
+    await page.locator('#btnSidebarEdgeToggle').click()
     const sections = [
-      { panel: 'kanban', sidebar: null, hub: true },
+      { panel: 'kanban', sidebar: '#panelChat', hub: true },
       { panel: 'settings', sidebar: '#panelSettings', hub: false },
-      { panel: 'tasks', sidebar: null, hub: true },
-      { panel: 'groups', sidebar: null, hub: true },
-      { panel: 'chat', sidebar: '#sessionList', hub: false },
+      { panel: 'tasks', sidebar: '#panelChat', hub: true },
+      { panel: 'groups', sidebar: '#panelChat', hub: true },
+      { panel: 'chat', sidebar: '#panelChat', hub: false },
     ]
     for (const { panel, sidebar, hub } of sections) {
       const tab = rail.locator(`[data-panel="${panel}"]`)
       await tab.click()
       await expect(tab, panel).toHaveAttribute('aria-current', 'page')
       await expect(rail, panel).toHaveAttribute('data-shell-marker', 'kept')
-      if (sidebar) await expect(page.locator(sidebar), panel).toBeVisible()
-      else await expect(page.locator('.sidebar'), panel).toHaveCount(0)
+      await expect(page.locator(sidebar), panel).toBeAttached()
       await expect(page.locator('main#main'), panel).toHaveClass(panel === 'chat' ? /^(?!.*showing-)/ : new RegExp(`showing-${panel}`))
       await expect(page.locator('html'), panel).toHaveClass(hub ? /hub-active/ : /^(?!.*hub-active)/)
     }
@@ -242,7 +205,7 @@ test.describe('shell', () => {
   })
 
   test('a chat right panel is gone on a hub and reopens on return (TAL-1866)', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop', 'the rail is desktop-only')
+    test.skip(testInfo.project.name !== 'desktop', 'the tiled column is desktop-only')
     const { session } = await (await page.request.post('/api/session/new', { data: {} })).json() as { session: { session_id: string } }
     try {
       await page.goto(`/session/${session.session_id}`)
@@ -252,10 +215,10 @@ test.describe('shell', () => {
       await page.locator('#btnWorkspacePanelEdgeToggle').click()
       await expect(panel).toBeVisible()
       await expect(html).toHaveAttribute('data-workspace-panel', 'open')
-      await page.locator('nav.rail [data-panel="kanban"]').click()
+      await page.locator('aside.sidebar [data-panel="kanban"]').click()
       await expect(panel).toHaveCount(0)
       await expect(html).toHaveAttribute('data-workspace-panel', 'closed')
-      await page.locator('nav.rail [data-panel="chat"]').click()
+      await page.goBack()
       await expect(panel).toBeVisible()
       await expect(html).toHaveAttribute('data-workspace-panel', 'open')
     } finally {

@@ -1,22 +1,21 @@
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
+import { Archive, ArchiveRestore, GitBranch, Search, Upload, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { SessionRow } from '../../contracts'
-import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
+import { PanelHead, PanelHeadButton } from '../../shell/PanelHead'
 import { cn } from '../../ui/cn'
 import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { Dialog } from '../../ui/Dialog'
-import { useNewChat } from './useNewChat'
 import { useProjectsQuery } from '../../app/queries'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { ContextMenu } from '../../ui/Menu'
 import { ProjectChip } from './ProjectChip'
-import { closeMobileSidebar } from '../../shell/useShellState'
+import { clearSessionSearchRequest, closeMobileSidebar, useShellState } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
 import { useLocale } from '../../i18n/useLocale'
 import { showToast } from '../toast/toast'
@@ -164,7 +163,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
         className={cn('session-item', nested && 'session-item-nested', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
       >
         {content}
-        {/* The rail shows status by color; this says it in words (TAL-365). */}
+        {/* The row's left edge shows status by color; this says it in words (TAL-365). */}
         <span className="sr-only" id={`${id}-status`}>{row.is_streaming ? m.status_streaming() : row.attention ? attentionLabel(row.attention.kind) : null}</span>
         <div className="session-actions">
           {row.can_archive && <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(row.session_id, !row.archived) }}>
@@ -188,13 +187,21 @@ export function SessionListPanel() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const searchInput = useRef<HTMLInputElement>(null)
+  // The sidebar's Search row asks from outside this panel; the open filter commits before the effect focuses it.
+  const { sessionSearchRequested } = useShellState()
+  if (sessionSearchRequested && !searchOpen) setSearchOpen(true)
+  useEffect(() => {
+    if (!sessionSearchRequested) return
+    searchInput.current?.focus()
+    clearSessionSearchRequest()
+  }, [sessionSearchRequested])
   const [source, setSource] = useState<'webui' | 'cli'>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const listParams = showArchived ? { include_archived: true } : {}
   const list = useSessionListQuery(listParams)
   const projects = useProjectsQuery()
-  const newChat = useNewChat()
   const data = list.data
   const effects = useResourceEffects()
   const rows = withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
@@ -364,20 +371,14 @@ export function SessionListPanel() {
     <SessionActions rows={filtered}>
     <div className={cn('panel-view active', searchOpen && 'search-open')} id="panelChat">
       <PanelHead
-        title={m.tab_chat()}
+        title={m.sidebar_chats()}
         actions={
           <>
-            <PanelHeadButton label={m.filter_conversations()} active={searchOpen} onClick={() => { setSearchOpen((o) => !o); if (searchOpen) setFilter('') }}>
-              <Filter size={16} aria-hidden="true" />
-            </PanelHeadButton>
             <PanelHeadButton label={showArchived ? m.session_hide_archived() : m.session_show_archived()} active={showArchived} onClick={() => setShowArchived((a) => !a)}>
               {showArchived ? <ArchiveRestore size={16} aria-hidden="true" /> : <Archive size={16} aria-hidden="true" />}
             </PanelHeadButton>
             <PanelHeadButton label={m.import_session_json_tooltip()} tooltipSide="bottom-right" onClick={() => importInput.current?.click()}>
               <Upload size={16} aria-hidden="true" />
-            </PanelHeadButton>
-            <PanelHeadButton label={m.new_conversation()} id="btnNewChat" tooltipSide="bottom-right" onClick={() => { void newChat() }}>
-              <Plus size={16} aria-hidden="true" />
             </PanelHeadButton>
           </>
         }
@@ -386,7 +387,7 @@ export function SessionListPanel() {
       <div className="session-search sidebar-search">
         <div className="session-search-field">
           <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-          <input id="sessionSearch" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" onKeyDown={(e) => { if (e.key === 'Escape') { setFilter(''); setSearchOpen(false) } }} />
+          <input ref={searchInput} id="sessionSearch" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" onKeyDown={(e) => { if (e.key === 'Escape') { setFilter(''); setSearchOpen(false) } }} />
           {filter && (
             <button type="button" className="sidebar-search-clear" aria-label={m.clear_conversation_filter()} onClick={() => setFilter('')}>
               <X size={14} aria-hidden="true" />
