@@ -18,7 +18,7 @@ const ROW = {
 }
 
 const coarse = (page: Page) => page.evaluate(() => matchMedia('(pointer: coarse)').matches)
-const heights = (menu: Locator) => menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => ({ label: item.textContent ?? '', height: item.getBoundingClientRect().height })))
+const heights = (menu: Locator) => menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => ({ label: item.textContent ?? '', height: Math.round(item.getBoundingClientRect().height * 100) / 100 })))
 
 async function expectRowHeights(page: Page, menu: Locator): Promise<void> {
   const rows = await heights(menu)
@@ -97,6 +97,8 @@ test('session menu rows stay touch-sized when disabled, and a long menu scrolls 
   await trigger.focus()
   await page.keyboard.press('Enter')
   await expect(menu).toBeVisible()
+  // The keyboard's End only reaches the menu once it has taken focus from its trigger.
+  await expect(menu.getByRole('menuitem').first()).toBeFocused()
   if (process.env.TAL1626_SHOTS) await page.screenshot({ path: `${process.env.TAL1626_SHOTS}/short-${testInfo.project.name}.png` })
   const viewport = page.viewportSize()?.height ?? 0
   const box = await menu.boundingBox()

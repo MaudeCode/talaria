@@ -4,7 +4,7 @@ import { expect, settle, test } from './fixtures'
 import { openServerState } from './server'
 
 /** TAL-704: a gallery-installed extension's real (unmocked) manifest row ships its panel, nav, source, and legacy flag. */
-test('a gallery extension with a panel gets a rail entry, Open, and Uninstall; a scripts-only one shows the migration notice', async ({ page }, testInfo) => {
+test('a gallery extension with a panel gets a sidebar entry, Open, and Uninstall; a scripts-only one shows the migration notice', async ({ page }, testInfo) => {
   const state = openServerState()
   const root = join(state, 'extensions')
   const seed = (id: string, manifest: object, files: Record<string, string>) => {
@@ -28,8 +28,11 @@ test('a gallery extension with a panel gets a rail entry, Open, and Uninstall; a
     await expect(old.getByRole('switch')).toHaveCount(0)
     await expect(old.getByRole('link', { name: 'Open' })).toHaveCount(0)
 
-    // The rail is desktop chrome; phones reach the panel from Settings.
-    if (testInfo.project.name === 'desktop') await expect(page.locator('nav.rail [data-extension="gal"]')).toHaveAttribute('aria-label', 'Gal')
+    // On a phone the entry waits in the closed drawer; there, Open from Settings reaches the panel.
+    if (testInfo.project.name === 'desktop') {
+      await page.locator('aside.sidebar').getByRole('button', { name: 'More', exact: true }).click()
+      await expect(page.locator('nav[aria-label="Primary navigation"] [data-extension="gal"]')).toHaveAttribute('aria-label', 'Gal')
+    }
     if (process.env.TAL704_SHOTS) await page.screenshot({ path: `${process.env.TAL704_SHOTS}/settings-${testInfo.project.name}.png` })
     await gal.getByRole('link', { name: 'Open' }).click()
     await expect(page.frameLocator('iframe').getByText('gallery panel body')).toBeVisible()

@@ -39,7 +39,7 @@ panels that should not live in core Hermes WebUI.
 Extensions can:
 
 - serve files from one configured local directory at `/extensions/...`
-- add a rail entry that opens their panel document at `/ext/<id>`
+- add a sidebar entry that opens their panel document at `/ext/<id>`
 - declare **capabilities** and call the matching host methods: `settings`,
   `storage`, `sidecar`, `lifecycle` (turn start/complete/error/cancel events),
   `theme`, `tts`, `navigate`, `toast`, `session`
@@ -124,7 +124,7 @@ Open **Settings → Extensions**, pick an extension from the gallery, and click
 **Install** — it just works. The first install creates a WebUI-managed
 extension directory under your state dir (`STATE_DIR/extensions`, e.g.
 `~/.hermes/webui/extensions/`) and installs into it; gallery-installed
-extensions appear in the rail on the next reload with no environment
+extensions appear in the sidebar on the next reload with no environment
 variables and no restart of your shell.
 
 The gallery registry is cached for five minutes. A refresh runs as a single
@@ -483,4 +483,4 @@ See [`examples/extensions/hello-panel/`](examples/extensions/hello-panel/): a
 manifest, an `index.html` that loads the SDK, and `panel.js` that reads
 settings, counts clicks in storage, shows a toast and logs lifecycle events.
 Copy the directory into your extension root, add the entry to `extensions.json`,
-reload the WebUI and open **Hello** in the rail.
+reload the WebUI and open **Hello** in the sidebar.

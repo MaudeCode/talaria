@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web now has one left sidebar on every page: labelled destinations and your chats when expanded, an icon rail when collapsed, and an overlay at tablet widths.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "One sidebar",
+        "description": "Destinations and chats share one panel on every page, and it collapses to an icon rail.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}

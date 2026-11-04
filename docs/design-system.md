@@ -65,6 +65,20 @@ strip, an optional toolbar row, the list body, an optional footnote.
 Sheets, popovers, menus and dialogs remain for interactions (pick a value,
 confirm, enter text). They do not hold content a user reads for its own sake.
 
+### Sidebar
+
+Both clients have one left sidebar. On the App it is a drawer at compact widths
+and a tiled column in landscape. On Web it is `shell/Sidebar.tsx`, on every page:
+
+| State | Web |
+| --- | --- |
+| Expanded | Default 300px, 180..480 resizable. Brand row, New chat, Search, then `text-sm` rows for Tasks, Kanban, Skills, Memory and Insights in that order, then a `More` disclosure, the page's panel (Chats, or Settings' section list), and a footer with the Settings row and icon-only Feedback and Notifications. The panel scrolls; everything above it stays put |
+| Collapsed | A 64px icon rail, each icon over its caption: brand, Search, Chat, Spaces, Discussions, then Tasks, Kanban, Todos, then Skills, Memory, Profiles, then Insights, the dashboard, Logs and extensions, with Feedback, Alerts and Settings pinned at the bottom. It never collapses to nothing. The panel stays mounted, hidden and out of the tab order, so it keeps its state |
+| Toggles | The edge tab and ⌘B write `hermes-webui-sidebar-collapsed`, the one stored choice, which applies on every page. No page collapses it by itself |
+| 641–900px | The rail stays tiled. Its hamburger, Search and ⌘B open the expanded panel over the page with a scrim, without touching the stored choice. Esc, the scrim and choosing a row close it |
+| 640px and below | The expanded content in a full-width drawer, no icon strip; the bottom `Tabbar` stays |
+| Surface | One surface on `--rail-bg`, with `--rail-active-*` on the active row in both states and one pair of corner seams against the page. Destinations live in `SIDEBAR_PRIMARY`, `SIDEBAR_MORE` and `SIDEBAR_RAIL_GROUPS` (`shell/nav.ts`); `hidden_tabs` filters them all |
+
 ## 3. Lists and rows
 
 | Rule | App | Web |

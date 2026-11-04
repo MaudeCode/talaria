@@ -659,6 +659,8 @@
 	"workspace_panel_hide": "Hide workspace panel",
 	"sidebar_show": "Show sidebar",
 	"sidebar_hide": "Hide sidebar",
+	"sidebar_new_chat": "New chat",
+	"sidebar_chats": "Chats",
 	"workspace_panel_close": "Close workspace panel",
 	"workspace_panel_toggle": "Toggle workspace files panel",
 	"workspace_panel_views": "Workspace panel views",

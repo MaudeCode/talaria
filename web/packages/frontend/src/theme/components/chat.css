@@ -180,8 +180,8 @@ textarea#msg::placeholder{color:var(--muted)}
 .msg-body{line-height:1.6;letter-spacing:var(--msg-tracking)}
 .msg-role,.msg-time{font-family:var(--font-mono);font-size:11px;letter-spacing:0}
 #panelChat{position:relative}
-#panelChat .sidebar-search{position:absolute;top:0;left:0;right:0;height:44px;margin:0;padding:7px 8px 7px 10px;display:flex;align-items:center;background:var(--sidebar);z-index:3;opacity:0;pointer-events:none;transform:scaleX(.97);transform-origin:right center;transition:opacity .15s ease,transform .15s ease}
-#panelChat.search-open .sidebar-search{opacity:1;pointer-events:auto;transform:none}
+#panelChat .sidebar-search{position:absolute;top:0;left:0;right:0;height:44px;margin:0;padding:7px 8px 7px 10px;display:flex;align-items:center;background:var(--sidebar);z-index:3;visibility:hidden;opacity:0;pointer-events:none;transform:scaleX(.97);transform-origin:right center;transition:opacity .15s ease,transform .15s ease}
+#panelChat.search-open .sidebar-search{visibility:inherit;opacity:1;pointer-events:auto;transform:none}
 #panelChat .session-search-field{width:100%}
 #panelChat .sidebar-search input{height:30px;background:var(--input-bg);border-color:var(--border);padding-left:34px !important}
 #panelChat .sidebar-search .sidebar-search-icon{left:11px;top:50%}

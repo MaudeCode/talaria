@@ -189,7 +189,7 @@ describe('notification writes show their result at once (TAL-1179)', () => {
     server.rows = rows
     vi.mocked(api.fetchUpdateNotifications).mockImplementation(() => Promise.resolve({ ...list(), unread_count: rows.filter((row) => row.unread).length, clearable_count: rows.filter((row) => row.can_dismiss).length, can_clear: true }))
     qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={qc}><UpdateNotificationProvider><UpdateNotificationCenterButton placement="rail" /></UpdateNotificationProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={qc}><UpdateNotificationProvider><UpdateNotificationCenterButton placement="sidebar" /></UpdateNotificationProvider></QueryClientProvider>)
     return screen.findByRole('button', { name: 'Notifications' })
   }
 
@@ -237,7 +237,7 @@ describe('adaptive notification polling (TAL-1246)', () => {
   function Controls() {
     const current = useUpdateProgress()
     useEffect(() => { progress = current }, [current])
-    return <UpdateNotificationCenterButton placement="rail" />
+    return <UpdateNotificationCenterButton placement="sidebar" />
   }
   async function advance(ms = 0) {
     await act(async () => { await vi.advanceTimersByTimeAsync(ms) })

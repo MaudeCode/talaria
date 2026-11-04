@@ -4,11 +4,11 @@ import { m } from '../paraglide/messages.js'
 import { cn } from '../ui/cn'
 import { NAV_ITEMS, panelForPath, type PanelId } from './nav'
 import { useLocale } from '../i18n/useLocale'
-import { closeMobileSidebar, openMobileSidebar } from './useShellState'
+import { closeMobileSidebar, openMobileSidebar, useIsDesktop } from './useShellState'
 
 interface Tab { key: string; label: () => string; panel?: PanelId; items?: PanelId[] }
 
-/** Phone bottom tab bar (Chat · Tasks · Kanban · Agent · More); the stylesheet shows it only below 641px. */
+/** Phone bottom tab bar (Chat · Tasks · Kanban · Agent · More), rendered only below 641px, where the sidebar is a closed drawer. */
 const TABS: Tab[] = [
   { key: 'chat', label: () => m.tab_chat(), panel: 'chat' },
   { key: 'tasks', label: () => m.tab_tasks(), panel: 'tasks' },
@@ -19,6 +19,7 @@ const TABS: Tab[] = [
 
 export function Tabbar() {
   useLocale()
+  const isDesktop = useIsDesktop()
   const active = useLocation({ select: (location) => panelForPath(location.pathname) })
   const navigate = useNavigate()
   const [open, setOpen] = useState<string | null>(null)
@@ -41,6 +42,7 @@ export function Tabbar() {
   }
   const iconFor = (panel: PanelId) => { const it = NAV_ITEMS.find((n) => n.id === panel); return it ? <it.icon size={20} strokeWidth={1.5} aria-hidden="true" /> : null }
   const sheet = open ? TABS.find((t) => t.key === open) : undefined
+  if (isDesktop) return null
   return (
     <>
       <nav className="tabbar hidden max-[641px]:flex fixed inset-x-0 bottom-0 z-[150] h-[calc(56px+env(safe-area-inset-bottom,0px))] px-1 pt-0 pb-[env(safe-area-inset-bottom,0px)] bg-sidebar border-t border-t-border" aria-label="Primary navigation">

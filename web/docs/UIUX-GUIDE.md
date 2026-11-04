@@ -18,7 +18,8 @@ built into `static/dist/`.
 
 The primary layout is three-panel:
 
-- left sidebar for sessions and navigation,
+- one left sidebar for navigation and sessions on every page, which collapses to an
+  icon rail (`docs/design-system.md`, "Sidebar"),
 - center panel for chat,
 - right panel for workspace file browsing and previews.
 
@@ -313,7 +314,8 @@ on layout or scroll. Keep these invariants when touching it:
 ## Responsive behavior
 
 Mobile is not an afterthought. The repository documents a responsive layout with
-a hamburger sidebar, mobile-accessible top tabs, a right-edge file slide-over,
+a hamburger sidebar (a tiled icon rail with an overlay at 641–900px, a full-width
+drawer below), a bottom tab bar on phones, a right-edge file slide-over,
 full-height chat/composer behavior on phones, and touch-friendly controls.
 
 For UI changes, verify the relevant states:

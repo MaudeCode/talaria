@@ -112,7 +112,7 @@ test('the search field and selected row text keep the browser menu', async ({ pa
   test.skip(info.project.name !== 'desktop', 'right-click is the desktop route')
   const { item } = await boot(page)
   const nativeMenus = await watchNativeMenu(page)
-  await page.getByRole('button', { name: 'Filter conversations...' }).click()
+  await page.locator('aside.sidebar').getByRole('button', { name: 'Search', exact: true }).click()
   const search = page.locator('#sessionSearch')
   await search.click({ button: 'right' })
   await expect(page.getByRole('menu')).toHaveCount(0)

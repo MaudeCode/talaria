@@ -10,7 +10,7 @@ export interface NavItem {
   label: () => string
 }
 
-/** Rail and mobile nav entries in legacy order. `chat` and `settings` are fixed; the rest can be reordered or hidden. */
+/** Every destination the sidebar and Settings know. `chat` and `settings` are fixed; the rest can be hidden. */
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'chat', to: '/', icon: MessageSquare, label: () => m.tab_chat() },
   { id: 'tasks', to: '/tasks', icon: CalendarCheck, label: () => m.tab_tasks() },
@@ -27,6 +27,21 @@ export const NAV_ITEMS: readonly NavItem[] = [
 ]
 export const DASHBOARD_ICON = LayoutDashboard
 export const FIXED_TABS: ReadonlySet<PanelId> = new Set(['chat', 'settings'])
+
+/** A place in the sidebar: a destination, the dashboard link, or the enabled extensions. */
+export type SidebarSlot = PanelId | 'dashboard' | 'extensions'
+/** Expanded: the App's order, above the `More` disclosure. */
+export const SIDEBAR_PRIMARY: readonly SidebarSlot[] = ['tasks', 'kanban', 'skills', 'memory', 'insights']
+export const SIDEBAR_MORE: readonly SidebarSlot[] = ['workspaces', 'groups', 'todos', 'profiles', 'logs', 'extensions', 'dashboard']
+/** Collapsed: the icon rail's groups, with a separator between them. Settings sits in the footer. */
+export const SIDEBAR_RAIL_GROUPS: readonly (readonly SidebarSlot[])[] = [
+  ['chat', 'workspaces', 'groups'],
+  ['tasks', 'kanban', 'todos'],
+  ['skills', 'memory', 'profiles'],
+  ['insights', 'dashboard', 'logs', 'extensions'],
+]
+/** One row in both states: `shell.css` lays it out as a labelled row, or as an icon over its caption on the rail. */
+export const SIDEBAR_ROW = 'sidebar-row relative flex w-full min-h-8 flex-none items-center gap-2.5 rounded-(--rail-btn-radius) border-0 bg-transparent px-2.5 text-left text-sm text-muted no-underline cursor-pointer transition-[color,background] duration-(--dur) ease-(--ease) max-[641px]:min-h-11 hover:text-text hover:bg-hover [&.active]:text-(--rail-active-fg) [&.active]:bg-(--rail-active-bg) [&.active]:shadow-(--rail-active-shadow) [&.active]:[font-weight:var(--rail-active-weight)] [&.active_svg]:text-(--rail-active-icon-fg) [&_svg]:shrink-0 [&_svg]:size-[18px]'
 
 /** Apply persisted order and hidden set the way the legacy boot script did: fixed tabs stay, unknown ids are dropped, missing ids append. */
 export function orderedNav(order: string[] | null, hidden: string[] | null): { visible: NavItem[]; hiddenIds: Set<PanelId> } {

@@ -1,10 +1,10 @@
-/** Shell interaction state: sidebar collapse (persisted), mobile drawer, and viewport class. */
+/** Shell interaction state: sidebar collapse (persisted), the overlay or drawer, and viewport class. */
 import { useSyncExternalStore, useEffect, useState } from 'react'
 import { readPersisted, writePersisted, readPersistedJson } from '../lib/persisted'
 import { TabIdListSchema } from '../contracts/persisted'
 
-interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean }
-let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open' }
+interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean; sessionSearchRequested: boolean }
+let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open', sessionSearchRequested: false }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<ShellState>) => { state = { ...state, ...patch }; for (const l of listeners) l() }
 
@@ -25,6 +25,15 @@ export function toggleSidePanel(): void { setSidePanelOpen(!state.sidePanelOpen)
 export function openMobileSidebar(): void { set({ mobileOpen: true }) }
 export function closeMobileSidebar(): void { set({ mobileOpen: false }) }
 export function toggleMobileSidebar(): void { set({ mobileOpen: !state.mobileOpen }) }
+/** The stored choice only tiles from 901px; below that the panel opens over the page and the choice stays as it is. */
+const TILED = '(min-width: 901px)'
+export function toggleSidebar(): void { if (window.matchMedia(TILED).matches) toggleSidebarCollapsed(); else toggleMobileSidebar() }
+/** Sidebar Search: shows the panel and asks `SessionListPanel`, which may mount only after a navigation, to open its filter. */
+export function requestSessionSearch(): void {
+  if (window.matchMedia(TILED).matches) toggleSidebarCollapsed(false)
+  set({ sessionSearchRequested: true, mobileOpen: !window.matchMedia(TILED).matches })
+}
+export function clearSessionSearchRequest(): void { set({ sessionSearchRequested: false }) }
 export function setSidebarWidth(width: number): void {
   const w = Math.min(480, Math.max(180, Math.round(width)))
   writePersisted('hermes-webui-sidebar-width', String(w))
@@ -45,6 +54,14 @@ export function useMediaQuery(query: string): boolean {
   }, [query])
   return matches
 }
-/** Legacy breakpoints: rail and desktop sidebar from 641px; compact chrome at 768px and below. */
+/** Legacy breakpoints: a tiled column from 641px; compact chrome at 768px and below. */
 export const useIsDesktop = () => useMediaQuery('(min-width: 641px)')
+export const useIsTiled = () => useMediaQuery(TILED)
+/** Whether the column shows as the icon rail: the stored choice from 901px, unless opened over the page at 641-900px, never on a phone. */
+export function useIsSidebarRail(): boolean {
+  const { collapsed, mobileOpen } = useShellState()
+  const isDesktop = useIsDesktop()
+  const isTiled = useIsTiled()
+  return isDesktop && (isTiled ? collapsed : !mobileOpen)
+}
 export const useIsNarrow = () => useMediaQuery('(max-width: 768px)')

@@ -39,7 +39,7 @@ packages/frontend/              editable source (npm workspace "@maudecode/talar
     api/                        the single typed same-origin client and Query hooks
     stream/                     chat stream reducer, connection, lifecycle hooks
     features/                   UI by domain (auth, onboarding, sessions, chat, composer, panels, settings...)
-    shell/                      titlebar, rail, sidebar, layout, shortcuts
+    shell/                      titlebar, sidebar, layout, shortcuts
     theme/                      skins.ts (tokens and skins), theme.css, components/*.css, tailwind.css, boot.ts, prepaint.js
     i18n/                       Paraglide runtime glue, locale metadata, speech locales
     extensions/                 sandboxed host, bridge, manifest loading
@@ -385,7 +385,7 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
   `<head>` (a hashed asset, never inlined as a `data:` URL, precached by the
   service worker) that applies the persisted theme, skin, collapsed sidebar and
   workspace-panel state before first paint. While `#app` is empty, pseudo-element
-  rules in `shell.css` draw the frame (rail divider and main card). The query
+  rules in `shell.css` draw the frame (sidebar column and main card). The query
   client hydrates a `dehydrate()` snapshot of the shell queries from
   `hermes-boot:queries` (validated with the contract schemas on the way in,
   stale on arrival, written 500 ms after each successful fetch and on
@@ -403,8 +403,8 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
   session remembered in `hermes-webui-session-empty` opens in the hero layout.
 - **Stylesheets** are imported by the root route, not the client entry, so the
   dev document links them in `<head>` too.
-- **Shell geometry.** The main pane has no outer margin; the sidebar, the rail
-  (while the sidebar is collapsed) and the workspace panel carry `.seam`
+- **Shell geometry.** The main pane has no outer margin; the sidebar, in both
+  of its states, and the workspace panel carry `.seam`
   children, card-coloured concave fillets built from radial gradients, the same
   construction as the workspace edge tab's joins. The side columns stack above
   `.composer-wrap` so their resize handles are never covered. Both resize

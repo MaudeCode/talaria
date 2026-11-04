@@ -66,9 +66,12 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
 
   await actions('notes.txt', 'Rename')
   await page.getByRole('textbox', { name: 'New name:' }).fill('plan.txt')
+  // The row renames at once; the old path is only free to reuse when the server has answered.
+  const renamed = page.waitForResponse('**/api/file/rename')
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(item('plan.txt')).toBeVisible()
   await expect(item('notes.txt')).toHaveCount(0)
+  await renamed
   // A new file at the renamed file's old path opens empty, not with the old file's cached text.
   await page.getByRole('button', { name: 'New File' }).click()
   await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')

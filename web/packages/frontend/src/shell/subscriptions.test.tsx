@@ -4,10 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ComponentType } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { keys } from '../api/queryKeys'
-import { Rail } from './Rail'
+import { Sidebar } from './Sidebar'
 import { Titlebar } from './Titlebar'
 import { Tabbar } from './Tabbar'
-import { MobileNav } from './MobileNav'
 
 const { rendered } = vi.hoisted(() => ({ rendered: vi.fn() }))
 vi.mock('../i18n/useLocale', () => ({ useLocale: () => { rendered(); return 'en' } }))
@@ -17,9 +16,12 @@ vi.mock('./ProfileMenu', () => ({ ProfileMenu: () => null }))
 vi.mock('../features/notifications/UpdateNotificationCenter', () => ({ UpdateNotificationCenterButton: () => null }))
 vi.mock('../extensions/registry', () => ({ useExtensionManifests: () => ({ data: { manifests: [{ id: 'fixture', enabled: true, name: 'Fixture', panel: {}, nav: {} }] } }) }))
 vi.mock('../app/queries', async (original) => ({ ...await original<object>(), useDashboardStatusQuery: () => ({ data: {} }) }))
-vi.mock('./useShellState', async (original) => ({ ...await original<object>(), useIsDesktop: () => true }))
 
-beforeEach(() => { vi.clearAllMocks(); window.scrollTo = vi.fn() })
+beforeEach(() => {
+  vi.clearAllMocks()
+  window.scrollTo = vi.fn()
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
+})
 
 async function setup(Component: ComponentType) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -33,7 +35,9 @@ async function setup(Component: ComponentType) {
   return router
 }
 
-it.each([{ name: 'Rail', Component: Rail }, { name: 'Titlebar', Component: Titlebar }, { name: 'Tabbar', Component: Tabbar }, { name: 'MobileNav', Component: MobileNav }])('$name does not render for session or search changes but updates its active panel', async ({ Component }) => {
+const FixtureSidebar = () => <Sidebar panel={null} />
+
+it.each([{ name: 'Sidebar', Component: FixtureSidebar }, { name: 'Titlebar', Component: Titlebar }, { name: 'Tabbar', Component: Tabbar }])('$name does not render for session or search changes but updates its active panel', async ({ Component }) => {
   const router = await setup(Component)
   const before = rendered.mock.calls.length
   await act(async () => { await router.navigate({ to: '/session/$sessionId', params: { sessionId: 'second' } }) })
@@ -52,7 +56,7 @@ it('keeps the titlebar session control scoped to session routes', async () => {
 })
 
 it('keeps extension navigation highlighted for the selected extension', async () => {
-  const router = await setup(Rail)
+  const router = await setup(FixtureSidebar)
   await act(async () => { await router.navigate({ to: '/ext/$extensionId', params: { extensionId: 'fixture' } }) })
   expect(screen.getByRole('link', { name: 'Fixture' })).toHaveAttribute('aria-current', 'page')
 })
