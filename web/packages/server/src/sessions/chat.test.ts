@@ -2722,6 +2722,23 @@ describe('chat turns through the sidecar', () => {
     expect((await s.deps.background.receipts(sid))).toEqual([])
   })
 
+  it('names a persisted delegate_task call by its goals on the message and its activity row (TAL-1758)', async () => {
+    const sid = await newSession(s)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'split it up', timestamp: 100 },
+      { role: 'assistant', content: '', timestamp: 101, tool_calls: [{ id: 'call_b', type: 'function', function: { name: 'delegate_task', arguments: '{"tasks":[{"goal":"Write docs"},{"goal":"Run tests"}]}' } }] },
+      { role: 'tool', tool_call_id: 'call_b', timestamp: 102, content: JSON.stringify({ status: 'dispatched' }) },
+    ]
+    await s.deps.sessionStore.save(session)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const messages = detail.messages as Json[]
+    const named = { kind: 'delegate', target: 'Write docs · Run tests' }
+    expect((messages[1]?.tool_calls as Json[])[0]).toMatchObject(named)
+    const rows = messages.flatMap((m) => ((m._anchor_activity_scene as Json | undefined)?.activity_rows as Json[] | undefined) ?? [])
+    expect(rows.find((r) => (r.tool as Json | undefined)?.name === 'delegate_task')?.tool).toMatchObject(named)
+  })
+
   it('shows the work a delegation row started on that row, updated in place (TAL-372)', async () => {
     const sid = await newSession(s)
     const session = (await s.deps.sessionStore.get(sid))

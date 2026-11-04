@@ -104,6 +104,24 @@ export function snapshotArgs(args: unknown): unknown {
   return Object.fromEntries(Object.entries(args).slice(0, 4).filter(([, v]) => v !== undefined).map(([k, v]) => [k, snapshotValue(k, v)]))
 }
 
+/** A `goal` key with its string value (group 3), else any other string, consumed whole so its text never reads as a key. */
+const TASK_GOAL = /(['"])goal\1:\s*(['"])((?:(?!\2)[^\\]|\\.)*)\2?|(['"])(?:(?!\4)[^\\]|\\.)*\4?/gs
+
+/** The first line of each `goal` in a `tasks` snapshot: `pythonStr` of the list, which the snapshot cap may cut mid-goal. */
+function taskGoals(tasks: string): string[] {
+  return Array.from(tasks.matchAll(TASK_GOAL), (m) => (m[3] ?? '').replace(/\\(.)/gs, (_, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? c).trim().split('\n')[0] ?? '').filter(Boolean)
+}
+
+/**
+ * TAL-1758: a `delegate_task` call's label, in the Agent's own precedence: a control action (it ignores goals), else its
+ * `tasks`, else the legacy single `goal`. Empty for neither, which leaves the fallback keys to name the call.
+ */
+function delegateTarget(arg: (keys: string[]) => string): string {
+  const action = arg(['action']).trim().toLowerCase()
+  if (action && action !== 'spawn') return [action, arg(['subagent_id']).trim()].filter(Boolean).join(' ')
+  return taskGoals(arg(['tasks'])).join(' · ') || arg(['goal'])
+}
+
 /**
  * A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. TAL-1458:
  * `focus_path` is a read or write call's file inside the session's `workspace` root, the file a companion page shows.
@@ -112,7 +130,7 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const kind = toolKind(name)
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
-  const first = arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS).trim().split('\n')[0] ?? ''
+  const first = ((name === 'delegate_task' ? delegateTarget(arg) : '') || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return { kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null }
 }
