@@ -61,6 +61,11 @@ describe('toolDisplay', () => {
     expect(toolDisplay('terminal', { command: 42 })).toEqual({ kind: 'shell', target: '42', focus_path: null })
   })
 
+  it('shows a browser_exec step as a web call labeled by its session, else its code\'s first non-empty line (TAL-1805)', () => {
+    expect(toolDisplay('browser_exec', { code: 'goto("https://x")', session: 'checkout' })).toEqual({ kind: 'web', target: 'checkout', focus_path: null })
+    expect(toolDisplay('browser_exec', { code: '\n\n  goto("https://x")\n  print(title())', session: ' ' })).toEqual({ kind: 'web', target: 'goto("https://x")', focus_path: null })
+  })
+
   it('names a read or write call\'s workspace-relative file as its focus path (TAL-1458)', () => {
     expect(toolDisplay('read_file', { path: 'src/a.ts' }).focus_path).toBe('src/a.ts')
     expect(toolDisplay('write_file', { file_path: './web/b.ts', content: 'x' }).focus_path).toBe('web/b.ts')

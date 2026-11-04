@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Browser steps on Hermes Agent 0.22.6 and later show as browser actions with a label instead of unlabeled terminal calls.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
