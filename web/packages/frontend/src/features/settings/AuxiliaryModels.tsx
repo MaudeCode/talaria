@@ -1,12 +1,12 @@
 import { catalogGroupLabel, catalogModelSections, ModelOptionContent } from '../../lib/modelEntry'
 import { useState, type ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { fetchAuxiliaryModels } from '../../api/endpoints'
 import { auxResource, useAuxiliaryModelsQuery, useModelsQuery, useSetAuxiliaryModel, useSetDelegation } from '../../app/queries'
 import type { DelegationSettings, DelegationRoute } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, withEffects } from '../sessions/useResourceMutation'
-import { Button } from '../../ui/Button'
+import { BackButton, Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { ReasoningChip } from '../composer/chips'
 import { FieldRow, TextInput } from '../../ui/Field'
@@ -134,7 +134,7 @@ function AuxiliaryModelPicker({ task, models, onDone, onPick }: { task: AuxTask;
   return (
     <div className="flex min-h-0 flex-col gap-3">
       {onDone && <div>
-        <Button variant="ghost" className="-ml-2" onClick={onDone}><ChevronLeft size={14} aria-hidden="true" />{m.back()}</Button>
+        <BackButton className="-ml-2" onClick={onDone} />
       </div>}
       <TextInput type="search" aria-label={m.model_search_placeholder()} placeholder={m.model_search_placeholder()} value={query} onChange={(e) => setQuery(e.target.value)} />
       <div className="-mx-2 max-h-[45vh] overflow-y-auto px-2">
@@ -198,7 +198,7 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
     setEditing(null)
   }} />
   return <div className="flex min-h-0 flex-col gap-3 [&_button]:min-h-11">
-    <Button variant="ghost" className="self-start" onClick={section ? () => setSection(null) : onDone}><ChevronLeft size={14} aria-hidden="true" />{m.back()}</Button>
+    <BackButton className="self-start" onClick={section ? () => setSection(null) : onDone} />
     {section ? <>
       <h3 className="text-sm font-medium">{section === 'model_map' ? m.delegation_routes() : m.delegation_profiles()}</h3>
       <FieldRow label={m.delegation_default()} htmlFor="delegationDefault">

@@ -8,7 +8,7 @@ test.describe('shell', () => {
     expect(errors).toEqual([])
   })
 
-  const HUBS = ['/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs']
+  const HUBS = ['/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/groups', '/profiles', '/todos', '/insights', '/logs']
 
   test('every hub renders', async ({ page }, testInfo) => {
     await page.goto('/')

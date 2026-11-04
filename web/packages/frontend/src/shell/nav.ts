@@ -1,7 +1,7 @@
-import { CalendarCheck, Columns3, FileText, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, Settings, TrendingUp, UserRound, FolderOpen, Brain, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, Columns3, FileText, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, Settings, TrendingUp, UserRound, Users, FolderOpen, Brain, type LucideIcon } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 
-export type PanelId = 'chat' | 'tasks' | 'kanban' | 'skills' | 'memory' | 'workspaces' | 'profiles' | 'todos' | 'insights' | 'logs' | 'settings'
+export type PanelId = 'chat' | 'tasks' | 'kanban' | 'skills' | 'memory' | 'workspaces' | 'groups' | 'profiles' | 'todos' | 'insights' | 'logs' | 'settings'
 
 export interface NavItem {
   id: PanelId
@@ -18,6 +18,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'skills', to: '/skills', icon: GraduationCap, label: () => m.tab_skills() },
   { id: 'memory', to: '/memory', icon: Brain, label: () => m.tab_memory() },
   { id: 'workspaces', to: '/workspaces', icon: FolderOpen, label: () => m.tab_workspaces() },
+  { id: 'groups', to: '/groups', icon: Users, label: () => m.group_discussions() },
   { id: 'profiles', to: '/profiles', icon: UserRound, label: () => m.tab_profiles() },
   { id: 'todos', to: '/todos', icon: ListChecks, label: () => m.tab_todos() },
   { id: 'insights', to: '/insights', icon: TrendingUp, label: () => m.tab_insights() },

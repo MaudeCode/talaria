@@ -1,7 +1,7 @@
 /**
- * Tasks workbench: the sidebar lists scheduled jobs, the main view shows the
- * selected job (or the create/edit form). Selection lives in `?job=` so a task
- * can be linked and the browser back button works; the editor is transient.
+ * Tasks workbench: the page lists scheduled jobs and prompt queues, and an item
+ * opens as a detail with a way back (or the create/edit form). Selection lives in
+ * `?job=` so a task can be linked and the browser back button works; the editor is transient.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,10 +12,10 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { CronJob, CronStoreHealth } from '../../contracts'
 import { AppShell, HubPage } from '../../shell/AppShell'
-import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
-import { closeMobileSidebar, openMobileSidebar, useIsDesktop, useMediaQuery } from '../../shell/useShellState'
+import { PanelHeadButton } from '../../shell/Sidebar'
+import { useMediaQuery } from '../../shell/useShellState'
 import { useLocale } from '../../i18n/useLocale'
-import { Button } from '../../ui/Button'
+import { BackButton, Button } from '../../ui/Button'
 import { HelpTip } from '../../ui/Field'
 import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
@@ -50,15 +50,13 @@ export function TasksRoute() {
   useLocale()
   const { job } = useSearch({ from: '/_app/tasks' })
   const navigate = useNavigate()
-  const isDesktop = useIsDesktop()
-  // On a phone the list is a drawer; landing here without a task means the user wants the list.
-  useEffect(() => { if (!isDesktop && !job) openMobileSidebar() }, [isDesktop, job])
-  const { sidebar, main } = useTasksWorkbench(job ?? null, (id) => { void navigate({ to: '/tasks', search: id ? { job: id } : {} }) })
-  return <AppShell sidebar={sidebar} showing="tasks">{main}</AppShell>
+  const main = useTasksWorkbench(job ?? null, (id) => { void navigate({ to: '/tasks', search: id ? { job: id } : {} }) })
+  // `hub` hides the shell's right panel, where a task's run output opens: only the list goes without one.
+  return <AppShell sidebar={null} hub={!job} showing="tasks">{main}</AppShell>
 }
 
-/** Both panes over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */
-export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void): { sidebar: ReactNode; main: ReactNode } {
+/** The list and its details over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */
+export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void): ReactNode {
   const qc = useQueryClient()
   const context = useStreamContext()
   const selection = useRef(selectedId)
@@ -125,27 +123,11 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     if (act === 'delete' && selection.current === jobId(job)) onSelect(null)
     action.mutate({ action: act, job, context })
   }
-  const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id); closeMobileSidebar() }
-  const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }); closeMobileSidebar() }
+  const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id) }
+  const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }) }
 
   const queues = usePromptQueues(selectedId, select)
-  const sidebar = (
-    <TaskListPanel
-      queues={queues.runs}
-      onNewQueue={() => select('queue:new')}
-      jobs={jobs}
-      pending={crons.isPending}
-      error={crons.isError ? crons.error : null}
-      otherProfileCount={crons.data?.other_profile_count ?? 0}
-      allProfiles={allProfiles}
-      running={running}
-      selectedId={editor ? null : selectedId}
-      onSelect={select}
-      onNew={() => startEditor('create', null)}
-      onRefresh={() => { void crons.refetch() }}
-      onToggleAllProfiles={() => setAllProfiles((v) => !v)}
-    />
-  )
+  const back = <BackButton onClick={() => select(null)} />
 
   let main: ReactNode
   if (queues.body) {
@@ -161,12 +143,31 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         onCreated={(id) => { if (id && context === getStreamContext()) onSelect(id) }}
       />
     )
+  } else if (!selectedId) {
+    main = (
+      <TaskList
+        queues={queues.runs}
+        onNewQueue={() => select('queue:new')}
+        jobs={jobs}
+        pending={crons.isPending}
+        error={crons.isError ? crons.error : null}
+        otherProfileCount={crons.data?.other_profile_count ?? 0}
+        allProfiles={allProfiles}
+        running={running}
+        unavailable={!!crons.data?.cron_unavailable}
+        unwritable={unwritable}
+        onSelect={select}
+        onNew={() => startEditor('create', null)}
+        onRefresh={() => { void crons.refetch() }}
+        onToggleAllProfiles={() => setAllProfiles((v) => !v)}
+      />
+    )
   } else if (crons.isPending) {
-    main = <HubPage title={m.tab_tasks()}><LoadingState /></HubPage>
+    main = <HubPage title={m.tab_tasks()} actions={back}><LoadingState /></HubPage>
   } else if (crons.isError) {
-    main = <HubPage title={m.tab_tasks()}><ErrorState error={crons.error} onRetry={() => { void crons.refetch() }} /></HubPage>
+    main = <HubPage title={m.tab_tasks()} actions={back}><ErrorState error={crons.error} onRetry={() => { void crons.refetch() }} /></HubPage>
   } else if (!selected) {
-    main = <TasksEmpty missing={!!selectedId} unavailable={!!crons.data.cron_unavailable} unwritable={unwritable} onNew={() => startEditor('create', null)} />
+    main = <HubPage title={m.tab_tasks()} actions={back}><EmptyState>{m.cron_task_not_found()}</EmptyState></HubPage>
   } else {
     main = (
       <TaskDetail
@@ -175,6 +176,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         state={cronState(selected, running.has(jobId(selected)))}
         starting={starting.has(cronResource(selected))}
         unwritable={unwritable}
+        back={back}
         onAction={(act) => run(act, selected)}
         onEdit={() => startEditor('edit', selected)}
         onDuplicate={() => startEditor('duplicate', selected)}
@@ -197,61 +199,62 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
       />
     </>
   )
-  return { sidebar, main }
+  return main
 }
 
-// ── Sidebar ──────────────────────────────────────────────────────────────────
+// ── List ─────────────────────────────────────────────────────────────────────
 
-function TaskListPanel({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, running, selectedId, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
-  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>
-  selectedId: string | null; onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
+function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, running, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
+  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>; unavailable: boolean; unwritable: CronStoreHealth[]
+  onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
 }) {
   const rows = jobs.map((job) => ({ job, id: jobId(job), state: cronState(job, running.has(jobId(job))) }))
   // Paused jobs are folded away so they do not drown the live ones (legacy #4026).
   const live = rows.filter((r) => r.state !== 'paused' && r.state !== 'off')
   const parked = rows.filter((r) => r.state === 'paused' || r.state === 'off')
-  const item = ({ job, id, state }: typeof rows[number]) => {
-    const st = statusLabel(state)
-    const active = id === selectedId
-    return <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={st} active={active} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} details={job.schedule_display} />
-  }
+  const item = ({ job, id, state }: typeof rows[number]) => <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={statusLabel(state)} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} details={job.schedule_display} />
   return (
-    <div className="panel-view active flex min-h-0 flex-1 flex-col" id="panelTasks">
-      <PanelHead title={m.tab_tasks()} actions={
-        <>
-          <PanelHeadButton label={m.refresh()} onClick={onRefresh}><RefreshCw size={14} aria-hidden="true" /></PanelHeadButton>
-          <PanelHeadButton label={m.prompt_queue_new()} onClick={onNewQueue}><ListOrdered size={14} aria-hidden="true" /></PanelHeadButton>
-          <PanelHeadButton label={m.cron_new_job()} onClick={onNew}><Plus size={14} aria-hidden="true" /></PanelHeadButton>
-        </>
-      } />
-      <nav className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto p-2" aria-label={m.tab_tasks()}>
-        {pending && <div className="session-list-note" role="status">{m.loading()}</div>}
-        {error !== null && <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={onRefresh}>{m.retry()}</button></div>}
-        {!pending && error === null && jobs.length === 0 && <div className="session-list-note">{otherProfileCount > 0 && !allProfiles ? m.cron_no_jobs_in_profile() : m.cron_no_jobs()}</div>}
-        {queues.map((queue) => <AutomationListItem key={queue.id} id={queueSelection(queue.id)} title={queue.title} state={queue.phase} status={statusLabel(queue.phase)} active={selectedId === queueSelection(queue.id)} onSelect={onSelect} />)}
-        {live.map(item)}
+    <HubPage title={m.tab_tasks()} actions={
+      <>
+        <PanelHeadButton label={m.refresh()} onClick={onRefresh}><RefreshCw size={14} aria-hidden="true" /></PanelHeadButton>
+        <Button onClick={onNewQueue}><ListOrdered size={12} aria-hidden="true" /> {m.prompt_queue_new()}</Button>
+        <Button variant="primary" onClick={onNew}><Plus size={12} aria-hidden="true" /> {m.cron_new_job()}</Button>
+      </>
+    }>
+      <UnwritableStores stores={unwritable} className="mb-4" />
+      {unavailable && <p role="status" className="mb-4 text-xs text-warning">{m.cron_gateway_unavailable()}</p>}
+      {pending && <LoadingState />}
+      {error !== null && <ErrorState error={error} onRetry={onRefresh} />}
+      {!pending && error === null && jobs.length === 0 && queues.length === 0 && <EmptyState>{otherProfileCount > 0 && !allProfiles ? m.cron_no_jobs_in_profile() : m.cron_no_jobs()}</EmptyState>}
+      <section data-section="tasks">
+        <ul className="flex flex-col">
+          {queues.map((queue) => <AutomationListItem key={queue.id} id={queueSelection(queue.id)} title={queue.title} state={queue.phase} status={statusLabel(queue.phase)} onSelect={onSelect} />)}
+          {live.map(item)}
+        </ul>
         {parked.length > 0 && (
-          <details className="mt-1" open={parked.some((r) => r.id === selectedId) || undefined}>
-            <summary className="session-date-header list-none">{m.cron_paused_group({ n: parked.length })}</summary>
-            {parked.map(item)}
+          <details className="mt-4" data-section="tasks-paused">
+            <summary className="cursor-pointer py-2 text-xs font-medium uppercase tracking-wider text-muted">{m.cron_paused_group({ n: parked.length })}</summary>
+            <ul className="flex flex-col">{parked.map(item)}</ul>
           </details>
         )}
         {(otherProfileCount > 0 || allProfiles) && (
-          <button type="button" className="linklike mt-2 px-2.5 text-left text-[12px] text-muted" onClick={onToggleAllProfiles}>
+          <button type="button" className="linklike mt-4 text-left text-xs text-muted" onClick={onToggleAllProfiles}>
             {allProfiles ? m.cron_hide_other_profiles() : m.cron_show_other_profiles({ n: otherProfileCount })}
           </button>
         )}
-      </nav>
-    </div>
+      </section>
+    </HubPage>
   )
 }
 
-/** One automation sidebar row for scheduled jobs and explicit prompt runs. */
-function AutomationListItem({ id, title, state, status, active, onSelect, disabled = false, readOnly = false, details }: { id: string; title: string; state: string; status: { label: string; tone: string }; active: boolean; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string }) {
-  return <button type="button" disabled={disabled} onClick={() => onSelect(id)} aria-current={active ? 'page' : undefined} data-job-id={id} data-state={state} className={cn('side-menu-item flex w-full flex-col gap-0.5 rounded-(--r-sm) border-0 bg-transparent px-2.5 py-[7px] text-left text-text hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg)', active && 'active', readOnly && 'opacity-75')}>
-    <span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</span><span className={cn('shrink-0 text-[11px]', active ? 'opacity-80' : status.tone)}>{status.label}</span></span>
-    {details && <span className="truncate font-mono text-[11px] opacity-70">{details}</span>}
-  </button>
+/** One automation row for scheduled jobs and explicit prompt runs. */
+function AutomationListItem({ id, title, state, status, onSelect, disabled = false, readOnly = false, details }: { id: string; title: string; state: string; status: { label: string; tone: string }; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string }) {
+  return <li className="border-t border-border first:border-t-0">
+    <button type="button" disabled={disabled} onClick={() => onSelect(id)} data-job-id={id} data-state={state} className={cn('flex w-full flex-col gap-1.5 border-0 bg-transparent py-4 text-left text-text hover:bg-hover', readOnly && 'opacity-75')}>
+      <span className="flex w-full min-w-0 items-baseline gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span><span className={cn('shrink-0 text-xs', status.tone)}>{status.label}</span></span>
+      {details && <span className="w-full truncate font-mono text-xs text-muted">{details}</span>}
+    </button>
+  </li>
 }
 
 // ── Main view ────────────────────────────────────────────────────────────────
@@ -260,7 +263,7 @@ function AutomationListItem({ id, title, state, status, active, onSelect, disabl
 function UnwritableStores({ stores, className }: { stores: CronStoreHealth[]; className?: string }) {
   if (!stores.length) return null
   return (
-    <section className={cn('rounded-lg border border-warning px-4 py-3', className)} role="alert">
+    <section className={className} role="alert">
       <div className="text-sm font-medium text-warning">{m.cron_store_unwritable_title()}</div>
       {stores.map((store) => (
         <div key={store.store} className="mt-2 text-[13px] text-text">
@@ -270,23 +273,6 @@ function UnwritableStores({ stores, className }: { stores: CronStoreHealth[]; cl
         </div>
       ))}
     </section>
-  )
-}
-
-function TasksEmpty({ missing, unavailable, unwritable, onNew }: { missing: boolean; unavailable: boolean; unwritable: CronStoreHealth[]; onNew: () => void }) {
-  const isDesktop = useIsDesktop()
-  return (
-    <HubPage title={m.tab_tasks()}>
-      <UnwritableStores stores={unwritable} className="mb-3" />
-      {unavailable && <div className="mb-3 rounded-lg border border-warning px-3 py-2 text-sm text-warning" role="status">{m.cron_gateway_unavailable()}</div>}
-      <EmptyState>
-        <div>{missing ? m.cron_task_not_found() : m.cron_select_task()}</div>
-        <div className="mt-3 flex justify-center gap-2">
-          {!isDesktop && <Button onClick={openMobileSidebar}>{m.cron_browse_tasks()}</Button>}
-          <Button variant="primary" onClick={onNew}><Plus size={12} aria-hidden="true" /> {m.cron_new_job()}</Button>
-        </div>
-      </EmptyState>
-    </HubPage>
   )
 }
 
@@ -301,8 +287,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const DL = 'grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]'
 
-function TaskDetail({ job, jobs, state, starting, unwritable, onAction, onEdit, onDuplicate, onDelete }: {
-  job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; onAction: (action: CronAction) => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void
+function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, onEdit, onDuplicate, onDelete }: {
+  job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; back: ReactNode; onAction: (action: CronAction) => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void
   starting: boolean
 }) {
   const id = jobId(job)
@@ -332,11 +318,11 @@ function TaskDetail({ job, jobs, state, starting, unwritable, onAction, onEdit, 
       </fieldset>
     )
   return (
-    <HubPage title={job.name || m.untitled()} toolbar={toolbar} id="taskDetail">
+    <HubPage title={job.name || m.untitled()} actions={back} toolbar={toolbar} id="taskDetail">
       <div className="mx-auto flex max-w-3xl flex-col gap-6" data-testid="cron-detail" data-state={state}>
         <UnwritableStores stores={unwritable} />
         {!readOnly && attention && (
-          <section className="rounded-lg border border-warning px-4 py-3" role="alert">
+          <section role="alert">
             <div className="text-sm font-medium text-warning">{m.cron_status_needs_attention()}</div>
             <p className="mt-1 text-[13px] text-text">{m.cron_attention_desc()}</p>
             {job.attention_hint === 'croniter_missing' && <p className="mt-1 text-[13px] text-text">{m.cron_attention_croniter_hint()}</p>}
@@ -350,7 +336,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, onAction, onEdit, 
           </section>
         )}
         {!attention && (job.last_error || job.last_delivery_error) && (
-          <section className="rounded-lg border border-border px-4 py-3" role="alert">
+          <section role="alert">
             {job.last_error && <div className="text-[13px]"><span className="text-muted">{m.cron_last_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_error}</span></div>}
             {job.last_delivery_error && <div className="mt-1 text-[13px]"><span className="text-muted">{m.cron_delivery_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_delivery_error}</span></div>}
             {!readOnly && <div className="mt-2"><Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button></div>}
@@ -419,22 +405,20 @@ function RunHistory({ jobId: id, isScript }: { jobId: string; isScript: boolean 
       <h2 className="mb-2 text-xs font-medium text-muted">{title} {runs.length > 0 && `(${total > runs.length ? m.cron_runs_showing({ total, shown: runs.length }) : String(total)})`}</h2>
       {runs.length === 0 && <div className="text-[13px] text-muted">{m.cron_no_runs_yet()}</div>}
       {runs.length > 0 && (
-        <div className="rounded-md border border-border">
-          <table className="w-full border-collapse text-[13px]">
-            <tbody>
-              {runs.map((run) => {
-                const active = open && run.filename === current?.filename
-                return (
-                  <tr key={run.filename} className={cn('cursor-pointer border-b border-border-subtle last:border-b-0 hover:bg-hover', active && 'bg-(--menu-active-bg) text-(--menu-active-fg)')} onClick={() => pick(run.filename)}>
-                    <td className="px-3 py-2"><button type="button" className="text-left" aria-pressed={active} title={run.filename} onClick={(e) => { e.stopPropagation(); pick(run.filename) }}>{formatDate(run.modified)}</button></td>
-                    <td className="px-3 py-2 text-xs text-muted">{isScript ? '' : usageStrip(run.usage)}</td>
-                    <td className="px-3 py-2 text-right text-xs text-muted">{formatBytes(run.size)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <table className="w-full border-collapse text-[13px]">
+          <tbody>
+            {runs.map((run) => {
+              const active = open && run.filename === current?.filename
+              return (
+                <tr key={run.filename} className={cn('cursor-pointer border-b border-border-subtle last:border-b-0 hover:bg-hover', active && 'bg-(--menu-active-bg) text-(--menu-active-fg)')} onClick={() => pick(run.filename)}>
+                  <td className="px-3 py-2"><button type="button" className="text-left" aria-pressed={active} title={run.filename} onClick={(e) => { e.stopPropagation(); pick(run.filename) }}>{formatDate(run.modified)}</button></td>
+                  <td className="px-3 py-2 text-xs text-muted">{isScript ? '' : usageStrip(run.usage)}</td>
+                  <td className="px-3 py-2 text-right text-xs text-muted">{formatBytes(run.size)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       )}
       {current && (hasRightPanel
         ? (

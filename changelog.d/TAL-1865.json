@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Tasks and Discussions now list their items on the page itself, with Back on each item, and Discussions has its own navigation entry.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

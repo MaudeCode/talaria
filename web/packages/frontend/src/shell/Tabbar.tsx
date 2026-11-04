@@ -14,7 +14,7 @@ const TABS: Tab[] = [
   { key: 'tasks', label: () => m.tab_tasks(), panel: 'tasks' },
   { key: 'kanban', label: () => m.tab_kanban(), panel: 'kanban' },
   { key: 'agent', label: () => m.tab_agent(), items: ['skills', 'memory', 'profiles', 'workspaces'] },
-  { key: 'more', label: () => m.tab_more(), items: ['todos', 'insights', 'logs', 'settings'] },
+  { key: 'more', label: () => m.tab_more(), items: ['todos', 'groups', 'insights', 'logs', 'settings'] },
 ]
 
 export function Tabbar() {

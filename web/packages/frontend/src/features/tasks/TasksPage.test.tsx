@@ -36,9 +36,9 @@ const foreign: CronJob = { ...feed, id: 'f0e1f0e1f0e1', name: 'Other profile job
 /** The route without the app shell: selection is local state instead of `?job=`. */
 function Workbench() {
   const [selected, setSelected] = useState<string | null>(null)
-  const { sidebar, main } = useTasksWorkbench(selected, setSelected)
+  const main = useTasksWorkbench(selected, setSelected)
   // The shell's right-panel slot: the run panel portals into it.
-  return <><aside data-testid="sidebar">{sidebar}</aside><main data-testid="main">{main}</main><div id="rightpanelSlot" /></>
+  return <><main data-testid="main">{main}</main><div id="rightpanelSlot" /></>
 }
 
 function cronList(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []): Awaited<ReturnType<typeof api.fetchCrons>> {
@@ -57,8 +57,12 @@ async function openJob(name: string, jobs: CronJob[] = [full, feed]) {
   return selectJob(name)
 }
 
+const back = () => userEvent.click(screen.getByRole('button', { name: /^back$/i }))
+
+/** Opens a job from the list, leaving the detail on screen for its list first. */
 async function selectJob(name: string) {
-  await userEvent.click(await within(screen.getByTestId('sidebar')).findByRole('button', { name: new RegExp(name) }))
+  if (screen.queryByRole('button', { name: /^back$/i })) await back()
+  await userEvent.click(await within(screen.getByTestId('main')).findByRole('button', { name: new RegExp(name) }))
   await screen.findByTestId('cron-detail')
   return within(screen.getByTestId('main'))
 }
@@ -74,7 +78,7 @@ function deferred<T>() {
 
 describe('TasksPage', () => {
   beforeEach(() => {
-    // jsdom has no matchMedia; the empty state asks whether the sidebar is a drawer.
+    // jsdom has no matchMedia; a task's run history asks whether the shell has a right panel.
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
     vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: input.profile || 'work', sources: [{ job_id: feed.id!, label: 'Feed', selectable: true }] }))
     vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [] })
@@ -88,7 +92,7 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', provider_id: 'openai-codex', bare_id: 'gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra', provider_id: 'openai-codex', bare_id: 'gpt-6-astra' }] }] })
   })
 
-  it('shows a pause in row and detail at once, keeping controls usable and history in place', async () => {
+  it('shows a pause in the detail at once, keeping controls usable and history in place', async () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
     const detail = await openJob('Digest')
@@ -98,7 +102,6 @@ describe('TasksPage', () => {
     await waitFor(() => expect(api.fetchCronRun).toHaveBeenLastCalledWith(full.id, picked))
     await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
     expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
-    expect(within(screen.getByTestId('sidebar')).getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
     expect(detail.getByRole('button', { name: /^resume$/i })).toBeEnabled()
     expect(screen.queryByText(/Pending/)).toBeNull()
     vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, feed]))
@@ -122,16 +125,17 @@ describe('TasksPage', () => {
     await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
     await selectJob('Feed')
     await userEvent.click(detail.getByRole('button', { name: /^resume$/i }))
-    const sidebar = within(screen.getByTestId('sidebar'))
-    expect(sidebar.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
-    expect(sidebar.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active')
+    await back()
+    const list = within(screen.getByTestId('main'))
+    expect(list.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
+    expect(list.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active')
     await act(async () => { oldList.resolve(cronList([full, paused])); await stale })
-    expect(sidebar.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
-    expect(sidebar.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active')
+    expect(list.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
+    expect(list.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active')
     vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, { ...feed, derived_state: 'active', resumable: false }]))
     await act(async () => { pause.resolve({ ok: true }); resume.resolve({ ok: true }); await Promise.all([pause.promise, resume.promise]) })
-    await waitFor(() => expect(sidebar.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active'))
-    expect(sidebar.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
+    await waitFor(() => expect(list.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active'))
+    expect(list.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
   })
 
   it('removes a deleted job at once after confirmation; Cancel changes nothing; a refusal brings it back', async () => {
@@ -145,12 +149,12 @@ describe('TasksPage', () => {
     await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^delete$/i }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    const sidebar = within(screen.getByTestId('sidebar'))
-    expect(sidebar.queryByRole('button', { name: /Digest/ })).toBeNull()
+    const list = within(screen.getByTestId('main'))
+    expect(list.queryByRole('button', { name: /Digest/ })).toBeNull()
     expect(screen.queryByTestId('cron-detail')).toBeNull()
-    expect(sidebar.getByRole('button', { name: /Feed/ })).toBeEnabled()
+    expect(list.getByRole('button', { name: /Feed/ })).toBeEnabled()
     act(() => { held.resolve({ ok: false, error: 'Delete refused' }) })
-    await waitFor(() => expect(sidebar.getByRole('button', { name: /Digest/ })).toBeInTheDocument())
+    await waitFor(() => expect(list.getByRole('button', { name: /Digest/ })).toBeInTheDocument())
     expect(showToast).toHaveBeenCalledWith('Delete refused', 4000, 'error')
   })
 
@@ -158,17 +162,17 @@ describe('TasksPage', () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
     await openJob('Digest')
-    const sidebar = within(screen.getByTestId('sidebar'))
+    const list = within(screen.getByTestId('main'))
     await userEvent.click(within(screen.getByTestId('main')).getByRole('button', { name: /^delete$/i }))
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^delete$/i }))
     vi.mocked(api.fetchCronStatus).mockRejectedValue(new Error('Offline'))
     act(() => { held.reject(new ApiError({ kind: 'network', path: '/x', message: 'Unknown result' })) })
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Unknown result', 4000, 'error'))
-    expect(sidebar.queryByRole('button', { name: /Digest/ })).toBeNull()
+    expect(list.queryByRole('button', { name: /Digest/ })).toBeNull()
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
     vi.mocked(api.fetchCrons).mockResolvedValue(cronList([full, feed]))
     await act(async () => { await qc.invalidateQueries({ queryKey: keys.crons.all }) })
-    await waitFor(() => expect(sidebar.getByRole('button', { name: /Digest/ })).toBeInTheDocument())
+    await waitFor(() => expect(list.getByRole('button', { name: /Digest/ })).toBeInTheDocument())
     expect(api.cronAction).toHaveBeenCalledTimes(1)
   })
 
@@ -256,9 +260,9 @@ describe('TasksPage', () => {
     if (pickAnother) await selectJob('Feed')
     vi.mocked(api.fetchCrons).mockResolvedValue(cronList([feed]))
     await act(async () => { held.resolve({ ok: true }); await held.promise })
-    await waitFor(() => expect(within(screen.getByTestId('sidebar')).queryByRole('button', { name: /Digest/ })).toBeNull())
+    await waitFor(() => expect(within(screen.getByTestId('main')).queryByRole('button', { name: /Digest/ })).toBeNull())
     if (pickAnother) expect(detail.getByRole('heading', { level: 1 })).toHaveTextContent('Feed')
-    else expect(detail.getByText(/select a task/i)).toBeVisible()
+    else expect(detail.getByRole('button', { name: /Feed/ })).toBeVisible()
     expect(detail.queryByText(/this task no longer exists/i)).toBeNull()
   })
 
@@ -328,11 +332,10 @@ describe('TasksPage', () => {
     await userEvent.type(name, 'Digest v2')
     await userEvent.click(within(form).getByRole('button', { name: /^save$/i }))
     expect(screen.queryByRole('form', { name: /edit job/i })).toBeNull()
-    const sidebar = within(screen.getByTestId('sidebar'))
-    expect(sidebar.getByRole('button', { name: /Digest v2/ })).toBeInTheDocument()
+    expect(detail.getByRole('heading', { level: 1 })).toHaveTextContent('Digest v2')
     act(() => { held.resolve({ ok: false, error: 'Schedule refused' }) })
-    await waitFor(() => expect(sidebar.queryByRole('button', { name: /Digest v2/ })).toBeNull())
-    expect(sidebar.getByRole('button', { name: /^Digest/ })).toBeInTheDocument()
+    await waitFor(() => expect(detail.getByRole('heading', { level: 1 })).not.toHaveTextContent('Digest v2'))
+    expect(detail.getByRole('heading', { level: 1 })).toHaveTextContent('Digest')
     expect(showToast).toHaveBeenCalledWith('Schedule refused', 4000, 'error')
   })
 
@@ -340,20 +343,21 @@ describe('TasksPage', () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
     renderPage([full])
-    await userEvent.click(await within(screen.getByTestId('sidebar')).findByRole('button', { name: /new job/i }))
+    await userEvent.click(await within(screen.getByTestId('main')).findByRole('button', { name: /new job/i }))
     const form = await screen.findByRole('form', { name: /new job/i })
     await userEvent.type(within(form).getByLabelText(/^name$/i), 'Weekly report')
     await userEvent.type(within(form).getByLabelText(/^schedule$/i), '0 8 * * 1')
     await userEvent.type(within(form).getByLabelText(/^prompt$/i), 'Write the report')
     await userEvent.click(within(form).getByRole('button', { name: /^save$/i }))
     expect(screen.queryByRole('form', { name: /new job/i })).toBeNull()
-    const sidebar = within(screen.getByTestId('sidebar'))
-    expect(sidebar.getByRole('button', { name: /Weekly report/ })).toBeInTheDocument()
+    const list = within(screen.getByTestId('main'))
+    expect(list.getByRole('button', { name: /Weekly report/ })).toBeInTheDocument()
     const created: CronJob = { ...feed, id: 'week0000week', name: 'Weekly report', schedule_display: '0 8 * * 1' }
     vi.mocked(api.fetchCrons).mockResolvedValue(cronList([full, created]))
     await act(async () => { held.resolve({ ok: true, job: created }); await held.promise })
     await waitFor(() => expect(screen.getByTestId('cron-detail')).toBeInTheDocument())
-    expect(sidebar.getAllByRole('button', { name: /Weekly report/ })).toHaveLength(1)
+    await back()
+    expect(list.getAllByRole('button', { name: /Weekly report/ })).toHaveLength(1)
   })
 
   it('shows a changed model in the task at once after Save (TAL-1383)', async () => {
@@ -399,8 +403,9 @@ describe('TasksPage', () => {
   it('shows the server schedule text and prefills the editor with the value the scheduler accepts back (TAL-298)', async () => {
     const runAt = '2026-10-05T09:00:00+02:00'
     const once: CronJob = { ...feed, id: '0nce0000once', name: 'Once', schedule: { kind: 'once', run_at: runAt }, schedule_display: `once at ${runAt}`, schedule_input: runAt, repeat: { times: 1, completed: 0 } }
-    const detail = await openJob('Once', [once])
-    expect(within(screen.getByTestId('sidebar')).getByText(`once at ${runAt}`)).toBeVisible()
+    renderPage([once])
+    expect(await within(screen.getByTestId('main')).findByText(`once at ${runAt}`)).toBeVisible()
+    const detail = await selectJob('Once')
     expect(detail.getByText(`once at ${runAt}`, { selector: 'code' })).toBeVisible()
     await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
     const dialog = await screen.findByRole('form', { name: /edit job/i })
@@ -523,9 +528,9 @@ describe('TasksPage', () => {
     const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
     Object.assign(navigator, { clipboard: { writeText } })
     renderPage([attention, feed])
-    const sidebar = within(screen.getByTestId('sidebar'))
-    expect(await sidebar.findByRole('button', { name: /Stuck/ })).toHaveTextContent(/needs attention/i)
-    expect(sidebar.getByRole('button', { name: /Feed/ })).toHaveTextContent(/active/i)
+    const list = within(screen.getByTestId('main'))
+    expect(await list.findByRole('button', { name: /Stuck/ })).toHaveTextContent(/needs attention/i)
+    expect(list.getByRole('button', { name: /Feed/ })).toHaveTextContent(/active/i)
     const detail = await selectJob('Stuck')
     const banner = detail.getByRole('alert')
     expect(banner).toHaveTextContent(/no next run time/i)
@@ -556,7 +561,7 @@ describe('TasksPage', () => {
     expect(detail.getByText('provider timeout')).toBeVisible()
     cleanup()
     renderPage([feed])
-    await within(screen.getByTestId('sidebar')).findByRole('button', { name: /Feed/ })
+    await within(screen.getByTestId('main')).findByRole('button', { name: /Feed/ })
     expect(within(screen.getByTestId('main')).queryByRole('alert')).toBeNull()
   })
 
@@ -598,7 +603,7 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [{ key: 'team:brief', title: 'Team brief', description: 'A digest', category: 'daily', source: 'plugin', plugin: 'team', schedule_label: 'Daily', slots: [{ name: 'topic', type: 'text', label: 'Topic', default: null, options: [], optional: false, strict: true, help: '' }] }] })
     vi.mocked(api.fillCronBlueprint).mockResolvedValue({ draft: { name: 'Team brief', prompt: 'Server-filled releases prompt', schedule: '30 8 * * *', deliver: 'local', skills: ['summary'] } })
     renderPage([])
-    await userEvent.click(within(screen.getByTestId('sidebar')).getByRole('button', { name: /new job/i }))
+    await userEvent.click(within(screen.getByTestId('main')).getByRole('button', { name: /new job/i }))
     await userEvent.click(await screen.findByRole('button', { name: 'Start from a blueprint' }))
     await userEvent.click(await screen.findByRole('button', { name: /Team brief.*team/ }))
     await userEvent.type(screen.getByLabelText('Topic'), 'releases')
@@ -615,7 +620,7 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [{ key: 'brief', title: 'Morning brief', description: 'Daily news', category: 'daily', source: 'builtin', plugin: null, schedule_label: 'Daily', slots: [{ name: 'topic', type: 'text', label: 'Topic', default: 'news', options: [], optional: false, strict: true, help: '' }] }] })
     vi.mocked(api.fillCronBlueprint).mockRejectedValue(new Error('Unknown slot value'))
     renderPage([])
-    await userEvent.click(within(screen.getByTestId('sidebar')).getByRole('button', { name: /new job/i }))
+    await userEvent.click(within(screen.getByTestId('main')).getByRole('button', { name: /new job/i }))
     await userEvent.click(await screen.findByRole('button', { name: 'Start from a blueprint' }))
     await userEvent.click(screen.getByRole('button', { name: /Morning brief/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Use blueprint' }))
@@ -627,7 +632,7 @@ describe('TasksPage', () => {
   it('can leave the blueprint step when its catalog becomes empty', async () => {
     vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [{ key: 'brief', title: 'Morning brief', description: 'Daily news', category: 'daily', source: 'builtin', plugin: null, schedule_label: 'Daily', slots: [] }] })
     renderPage([])
-    await userEvent.click(within(screen.getByTestId('sidebar')).getByRole('button', { name: /new job/i }))
+    await userEvent.click(within(screen.getByTestId('main')).getByRole('button', { name: /new job/i }))
     await userEvent.click(await screen.findByRole('button', { name: 'Start from a blueprint' }))
     act(() => { qc.setQueryData(keys.crons.blueprints, { blueprints: [] }) })
     const step = screen.getByRole('region', { name: 'Start from a blueprint' })

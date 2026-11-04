@@ -6,7 +6,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { HubPage } from '../../shell/AppShell'
-import { Button } from '../../ui/Button'
+import { BackButton, Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { randomHex } from '../../lib/randomHex'
@@ -71,8 +71,9 @@ export function usePromptQueues(selectedId: string | null, select: (id: string |
     onSuccess: (run, { owner }) => { if (owner === getStreamContext()) { setDraft(null); select(queueSelection(run.id)) } },
     onError: (error) => { showErrorToast(error); if (isDefiniteRefusal(error)) select('queue:new') },
   })
+  const back = <BackButton onClick={() => select(null)} />
   let body: ReactNode = null
-  if (selectedId === 'queue:new') body = <QueueBuilder key="new-queue" initial={draft?.owner === context ? draft : null} onSave={(cards, requestId) => {
+  if (selectedId === 'queue:new') body = <QueueBuilder key="new-queue" initial={draft?.owner === context ? draft : null} back={back} onSave={(cards, requestId) => {
     setDraft({ owner: context, cards, requestId })
     const id = newResource('prompt-queue')
     const temporary: PromptQueueRun = { id, title: cards[0]?.text ?? '', profile: '', revision: 0, phase: 'draft', current_step: 0, cards: cards.map((c) => ({ ...c, request_id: randomHex(), title: c.session_id, backend: 'direct', authority_epoch: null, status: 'waiting', stream_id: null, admission_id: null, outcome: null })), actions: [], editable: false, error: null }
@@ -81,9 +82,9 @@ export function usePromptQueues(selectedId: string | null, select: (id: string |
   }} />
   else if (selectedId?.startsWith('queue:')) {
     const run = runs.find((r) => queueSelection(r.id) === selectedId)
-    if (query.isPending) body = <HubPage title={m.prompt_queue_title()}><LoadingState /></HubPage>
-    else if (query.isError) body = <HubPage title={m.prompt_queue_title()}><ErrorState error={query.error} onRetry={() => { void query.refetch() }} /></HubPage>
-    else if (run) body = <HubPage title={run.title} help={m.prompt_queue_help()} actions={run.actions.map((act) => <Button key={act} variant="ghost" onClick={() => action.mutate({ run, action: act, owner: context })}>{actionLabel(act)}</Button>)}>
+    if (query.isPending) body = <HubPage title={m.prompt_queue_title()} actions={back}><LoadingState /></HubPage>
+    else if (query.isError) body = <HubPage title={m.prompt_queue_title()} actions={back}><ErrorState error={query.error} onRetry={() => { void query.refetch() }} /></HubPage>
+    else if (run) body = <HubPage title={run.title} help={m.prompt_queue_help()} actions={<>{back}{run.actions.map((act) => <Button key={act} variant="ghost" onClick={() => action.mutate({ run, action: act, owner: context })}>{actionLabel(act)}</Button>)}</>}>
       <p role="status" className="mb-4 text-sm text-muted">{statusLabel(run.phase).label}</p>
       {run.error && <p role="alert" className="mb-4 text-sm text-error">{run.error}</p>}
       <QueueCard sessionId="" ariaLabel={run.title} queued={run.cards.map((card) => queued(card, run.profile))} readOnly={!run.editable} rowLabel={(id) => <span className="truncate text-xs text-muted">{run.cards.find((c) => c.request_id === id)?.title}</span>} rowStatus={(id) => <span className="shrink-0 text-xs text-muted">{run.cards.find((c) => c.request_id === id) && statusLabel(run.cards.find((c) => c.request_id === id)?.status ?? 'unknown').label}</span>} onChange={(rows) => {
@@ -98,7 +99,7 @@ export function usePromptQueues(selectedId: string | null, select: (id: string |
 
 type Draft = QueuedTurn & PromptQueueCardInput & { title: string }
 /** Only device-local drafts live here. Saving creates a draft run; starting is always a separate action. */
-function QueueBuilder({ initial, onSave }: { initial: { cards: Draft[]; requestId: string } | null; onSave: (cards: Draft[], requestId: string) => void }) {
+function QueueBuilder({ initial, back, onSave }: { initial: { cards: Draft[]; requestId: string } | null; back: ReactNode; onSave: (cards: Draft[], requestId: string) => void }) {
   const context = useStreamContext()
   const [owner] = useState(context)
   const [cards, setCards] = useState<Draft[]>(initial?.cards ?? [])
@@ -113,7 +114,7 @@ function QueueBuilder({ initial, onSave }: { initial: { cards: Draft[]; requestI
     setCards([...cards, { id: randomHex(), session_id: sid, project_id: target.project_id ?? null, title: target.title || sid, text: text.trim(), attachments: [], request: { profile: target.profile ?? 'default' } }])
     setText('')
   }
-  return <HubPage title={m.prompt_queue_new()} help={m.prompt_queue_help()} actions={<Button disabled={!cards.length || owner !== context} onClick={() => { if (owner === getStreamContext()) onSave(cards, requestId) }}>{m.prompt_queue_save()}</Button>}>
+  return <HubPage title={m.prompt_queue_new()} help={m.prompt_queue_help()} actions={<>{back}<Button disabled={!cards.length || owner !== context} onClick={() => { if (owner === getStreamContext()) onSave(cards, requestId) }}>{m.prompt_queue_save()}</Button></>}>
     {sessions.isError && <ErrorState error={sessions.error} onRetry={() => { void sessions.refetch() }} />}
     <div className="mb-5 flex max-w-2xl flex-col gap-3">
       <label className="text-sm" htmlFor="queue-target">{m.prompt_queue_chat()}</label>

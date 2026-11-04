@@ -22,7 +22,7 @@ import { openFeedback } from '../features/settings/FeedbackDialog'
 // effective values are the utilities here, so the class is no longer needed on the rail.
 const RAIL_BTN = 'rail-btn has-tooltip relative flex w-[54px] h-auto min-h-12 flex-none flex-col items-center justify-center gap-[3px] rounded-(--rail-btn-radius) border-0 bg-transparent text-muted cursor-pointer p-0 overflow-visible whitespace-nowrap text-center transition-[color,background] duration-(--dur) ease-(--ease) hover:text-text hover:bg-hover [&.active]:text-(--rail-active-fg) [&.active]:bg-(--rail-active-bg) [&.active]:shadow-(--rail-active-shadow) [&.active]:[font-weight:var(--rail-active-weight)] [&.active_svg]:text-(--rail-active-icon-fg) [&_svg]:size-[18px]'
 
-export function Rail() {
+export function Rail({ hasSidebar = true }: { hasSidebar?: boolean }) {
   useLocale()
   const current = useLocation({ select: (location) => panelForPath(location.pathname) })
   const extensionPath = useLocation({ select: (location) => location.pathname.startsWith('/ext/') ? location.pathname : null })
@@ -37,6 +37,7 @@ export function Rail() {
   const { visible } = orderedNav(readTabOrder(), hidden)
   const isDesktop = useIsDesktop()
   // Clicking the tab that is already active toggles the sidebar instead of re-navigating (desktop only; phones use the drawer).
+  // A page without a sidebar re-navigates, which takes a detail back to its list.
   const onActiveClick = (e: React.MouseEvent) => { if (isDesktop) { e.preventDefault(); toggleSidebarCollapsed() } }
   const DashboardIcon = DASHBOARD_ICON
   const settingsItem = visible.find((i) => i.id === 'settings')
@@ -50,7 +51,7 @@ export function Rail() {
         const Icon = item.icon
         const active = current === item.id
         return (
-          <Link key={item.id} to={item.to} className={cn(RAIL_BTN, active && 'active')} data-tooltip={item.label()} aria-label={item.label()} aria-current={active ? 'page' : undefined} data-panel={item.id} onClick={active ? onActiveClick : undefined}>
+          <Link key={item.id} to={item.to} className={cn(RAIL_BTN, active && 'active')} data-tooltip={item.label()} aria-label={item.label()} aria-current={active ? 'page' : undefined} data-panel={item.id} onClick={active && hasSidebar ? onActiveClick : undefined}>
             <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
           </Link>
         )

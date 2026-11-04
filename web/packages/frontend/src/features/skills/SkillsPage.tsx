@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { SkillReplayJob, SkillReplayPlan } from '@maudecode/talaria-web-contracts'
-import { ChevronLeft, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { HubPage } from '../../shell/AppShell'
-import { Button } from '../../ui/Button'
+import { BackButton, Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate, formatUsd } from '../../ui/States'
@@ -89,7 +89,7 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
   const linked = Object.entries(content.data?.linked_files ?? {})
   if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />
   return (
-    <HubPage title={name} actions={<Button variant="ghost" onClick={onBack}><ChevronLeft size={14} aria-hidden="true" /> {m.back()}</Button>}>
+    <HubPage title={name} actions={<BackButton onClick={onBack} />}>
       {content.isPending && <LoadingState />}
       {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
       {content.isSuccess && (
@@ -259,7 +259,7 @@ function ReplayRunRow({ label, run }: { label: string; run: ReplayRun }) {
 function SkillFile({ name, file, onBack }: { name: string; file: string; onBack: () => void }) {
   const content = useQuery({ queryKey: keys.skills.content(name, file), queryFn: () => api.fetchSkillContent(name, file) })
   return (
-    <HubPage title={name} actions={<Button variant="ghost" onClick={onBack}><ChevronLeft size={14} aria-hidden="true" /> {m.skills_back_to({ a0: name })}</Button>}>
+    <HubPage title={name} actions={<BackButton onClick={onBack} label={m.skills_back_to({ a0: name })} />}>
       {content.isPending && <LoadingState />}
       {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
       {content.isSuccess && (

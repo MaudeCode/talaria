@@ -14,7 +14,7 @@ test('blueprint fills the existing task editor', async ({ page }, testInfo) => {
   await page.route('**/api/models', (route) => route.fulfill({ json: { groups: [] } }))
   await page.route('**/api/crons/context-sources', (route) => route.fulfill({ json: { profile: 'default', sources: [] } }))
   await page.goto('/tasks')
-  await page.getByRole('button', { name: /new job/i }).first().click()
+  await page.getByRole('button', { name: /new job/i }).click()
   await page.getByRole('button', { name: 'Start from a blueprint' }).click()
   await expect(page.getByRole('button', { name: /Team brief.*team/ })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('catalog.png') })
