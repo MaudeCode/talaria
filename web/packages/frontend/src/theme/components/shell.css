@@ -175,10 +175,10 @@ html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important
 html[data-sidebar-collapsed="1"] #app:empty::after{margin-left:0}
 @media (max-width:768px){#app:empty::after{margin:0 0 0 300px;border:0;border-radius:0;box-shadow:none}}
 @media (max-width:640px){#app:empty::before{display:none}#app:empty::after{margin:0}}
-/* Phone titlebar: one hamburger on the left against two buttons on the right, so flex centring lands the title
-   off-centre (legacy had the same offset). Centre the title block on the bar itself and drop the balancing spacer,
-   which only matched the hamburger when the right side had no buttons. */
-@media (max-width:640px){.app-titlebar-spacer{display:none}.app-titlebar-new-chat{margin-left:auto}.app-titlebar-inner{position:absolute;left:50%;top:var(--app-titlebar-safe-top);bottom:0;transform:translateX(-50%);flex:none;max-width:calc(100% - 200px)}}
+/* Phone titlebar: the title block stays in the flex flow and takes the space the controls leave, so no control can
+   run under it (TAL-1871). The profile chip and an extension name truncate to leave it room. The balancing spacer
+   only matched the hamburger when the right side had no buttons. */
+@media (max-width:640px){.app-titlebar-spacer{display:none}.app-titlebar-left .composer-chip{max-width:88px}.app-titlebar-sub{flex:1 1 0;min-width:0;max-width:max-content;overflow:hidden;text-overflow:ellipsis}}
 /* Seams: where the sidebar, the rail (sidebar collapsed) or the workspace panel meets the main card, a card-coloured
    concave fillet at the top and bottom, the same construction as the edge tab's joins, so the card flows into its
    neighbours instead of ending in a rounded corner with a wedge of canvas. Desktop only; the card has square corners. */

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On phones the notification bell and profile chip no longer overlap the logo and page title in Talaria Web's titlebar.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
