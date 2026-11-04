@@ -398,13 +398,17 @@ def _endpoint(entry):
     return ('::1' if address.version == 6 else '127.0.0.1') if address.is_unspecified else host, port
 
 
+def _systemd_scope_cmd(entry):
+    return ['systemctl', '--user'] if entry['scope'] == 'user' else ['systemctl']
+
+
 def _service_pid(entry):
     if entry['kind'] == 'launchd':
         from hermes_cli.gateway import _launchd_print_service_pid
         loaded, pid = _launchd_print_service_pid(entry['domain'], entry['label'])
         return loaded, pid
     from hermes_cli.update_cmd_fleet import _systemctl, _unit_main_pid
-    cmd = ['systemctl', '--user'] if entry['scope'] == 'user' else ['systemctl']
+    cmd = _systemd_scope_cmd(entry)
     state = _systemctl(cmd + ['show', entry['unit'], '--property=ActiveState', '--value'], timeout=10)
     if state.returncode:
         raise RuntimeError(f'{_name(entry)} supervisor state is unreadable.')
@@ -676,8 +680,7 @@ def _config_stamp(entry):
     if entry['kind'] == 'launchd':
         return hashlib.sha256(Path(entry['plist']).read_bytes()).hexdigest()
     from hermes_cli.update_cmd_fleet import _systemctl
-    cmd = ['systemctl', '--user'] if entry['scope'] == 'user' else ['systemctl']
-    result = _systemctl(cmd + ['cat', entry['unit']], timeout=10)
+    result = _systemctl(_systemd_scope_cmd(entry) + ['cat', entry['unit']], timeout=10)
     if result.returncode:
         raise RuntimeError(f'{_name(entry)} original service configuration is unreadable.')
     return hashlib.sha256(result.stdout.encode()).hexdigest()
@@ -697,11 +700,19 @@ def _start(entry, pause):
         result = subprocess.run(['launchctl', 'kickstart', f"{entry['domain']}/{entry['label']}"],
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=False)
     else:
-        from hermes_cli.update_cmd_fleet import _systemctl
         cmd = pause._manage_cmd(entry['scope'])
         if cmd is None:
             raise RuntimeError(f'{_name(entry)} cannot be resumed with current service privileges.')
-        result = _systemctl(cmd + ['start', entry['unit']], timeout=30)
+        try:
+            from hermes_cli.update_cmd_fleet_unit_budget import UNIT_JOB_STILL_RUNNING, run_unit_job
+        except ImportError:  # Before Agent v0.22.6 nothing can outwait systemd's own job.
+            from hermes_cli.update_cmd_fleet import _systemctl
+            result = _systemctl(cmd + ['start', entry['unit']], timeout=30)
+        else:
+            # A client timeout cancels nothing: systemd keeps running the job, so readiness decides.
+            result = run_unit_job(cmd, _systemd_scope_cmd(entry), 'start', entry['unit'], timeout=30)
+            if result.returncode == UNIT_JOB_STILL_RUNNING:
+                return
     if result.returncode:
         raise RuntimeError(f'{_name(entry)} supervisor failed to start its backend.')
 

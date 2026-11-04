@@ -547,13 +547,16 @@ def _writer_ledger(root, identity):
         complete = json.loads(raw)
         if not isinstance(complete, list) or not all(isinstance(row, dict) for row in complete):
             raise RuntimeError("Agent process ownership evidence is malformed.")
+    # Agents from v0.22.6 record boot ticks, which still identify a live writer after a clock step.
+    entry_boot = getattr(identity, "_entry_boot", None)
     found = []
     for entry in ledger:
         if entry.get("purpose") in {"gateway", "serve", "dashboard"} and not entry.get("install"):
             raise RuntimeError("Agent process ownership evidence is incomplete.")
         if entry.get("install") != identity.install_id(root) or entry.get("purpose") not in {"gateway", "serve", "dashboard"}:
             continue
-        live = identity._pid_alive_matches(entry.get("pid"), entry.get("create_time"))
+        birth = {"boot": entry_boot(entry, "boot_start")} if entry_boot else {}
+        live = identity._pid_alive_matches(entry.get("pid"), entry.get("create_time"), **birth)
         if live is not False:
             found.append((entry, live))
     return found
