@@ -100336,13 +100336,20 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "delivery_unconfirmed_platforms": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
                           "schedule_display",
                           "schedule_input",
                           "attention_hint",
-                          "last_failure"
+                          "last_failure",
+                          "delivery_unconfirmed_platforms"
                         ],
                         "additionalProperties": {}
                       }
@@ -101140,13 +101147,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
-                        "last_failure"
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
                       ],
                       "additionalProperties": {}
                     },
@@ -101785,13 +101799,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
-                        "last_failure"
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
                       ],
                       "additionalProperties": {}
                     },
@@ -102234,13 +102255,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
-                        "last_failure"
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
                       ],
                       "additionalProperties": {}
                     },
@@ -102684,13 +102712,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
-                        "last_failure"
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
                       ],
                       "additionalProperties": {}
                     },
@@ -103144,13 +103179,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
-                        "last_failure"
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
                       ],
                       "additionalProperties": {}
                     },
@@ -103594,13 +103636,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
-                        "last_failure"
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
                       ],
                       "additionalProperties": {}
                     },

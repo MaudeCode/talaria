@@ -1332,6 +1332,8 @@ export const CronJobViewSchema = z.looseObject({
   attention_hint: z.enum(['croniter_missing']).nullable(),
   /** Server-normalized (TAL-810): the job's latest failed run, kept after later successes; `at` is epoch seconds, null when unparseable. */
   last_failure: z.object({ at: z.number().nullable(), detail: z.string() }).nullable(),
+  /** Server-derived (TAL-1850): the distinct platforms whose last delivery may not have arrived, empty when none. A re-send may duplicate the post, so clients offer no retry. */
+  delivery_unconfirmed_platforms: z.array(z.string()),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
 /** TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions), so its scheduler skips every run. `error` and `fix` are the Agent's text; `since` is the last write that landed (epoch seconds), null when unknown. */

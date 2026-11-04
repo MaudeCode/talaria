@@ -62,8 +62,16 @@ export function jobForApi(job: Dict, running = false): Dict {
   delete payload.running_elsewhere
   delete payload.recovery_only
   payload.last_failure = lastFailure(job.last_failure)
+  payload.delivery_unconfirmed_platforms = unconfirmedPlatforms(job.last_delivery_unverified)
+  delete payload.last_delivery_unverified
   Object.assign(payload, scheduleText(job))
   return payload
+}
+
+/** TAL-1850: the distinct platforms of the Agent's `platform:chat_id[:thread_id]` targets; the chat and thread ids stay on the server. */
+function unconfirmedPlatforms(targets: unknown): string[] {
+  if (!Array.isArray(targets)) return []
+  return [...new Set(targets.map((target) => str(target).split(':', 1)[0]!.trim()).filter(Boolean))]
 }
 
 /** TAL-810: the Agent's sticky `{at, detail}` stamp of the latest failed run, which survives later successes. */

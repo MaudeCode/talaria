@@ -183,6 +183,18 @@ describe('cron attention hint (TAL-599)', () => {
   })
 })
 
+describe('cron delivery confirmation (TAL-1850)', () => {
+  it('names only the distinct platforms of unverified targets, never their chat or thread ids', () => {
+    const row = jobForApi({ ...recurring, last_delivery_unverified: ['telegram:chat-a:thread-a', 'telegram:chat-b', 'slack:chat-c'] })
+    expect(row.delivery_unconfirmed_platforms).toEqual(['telegram', 'slack'])
+    expect(JSON.stringify(row)).not.toMatch(/chat-|thread-/)
+  })
+
+  it.each([['absent', {}], ['null', { last_delivery_unverified: null }]])('projects an empty list when the field is %s', (_, field) => {
+    expect(jobForApi({ ...recurring, ...field }).delivery_unconfirmed_platforms).toEqual([])
+  })
+})
+
 describe('cron schedule display and edit text (TAL-298)', () => {
   const text = (schedule: unknown, extra: Dict = {}) => {
     const { schedule_display, schedule_input } = jobForApi({ ...recurring, schedule, ...extra })

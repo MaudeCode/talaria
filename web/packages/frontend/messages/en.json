@@ -2264,6 +2264,7 @@
 	"cron_store_unwritable_title": "Scheduled tasks can't run",
 	"cron_store_last_saved": "Last saved {when}",
 	"cron_delivery_error_label": "Last delivery error",
+	"cron_delivery_unconfirmed": "Couldn't confirm delivery to {platforms}",
 	"cron_paused_reason_label": "Paused reason",
 	"cron_runs_showing": "latest {shown} of {total}",
 	"cron_run_load_failed": "Could not load this run.",
