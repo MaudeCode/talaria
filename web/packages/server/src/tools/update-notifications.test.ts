@@ -581,10 +581,12 @@ describe('UpdateNotificationStore', () => {
     })
 
     it('hands Reload back to the refresh notice once a later Web update replaces the one the tab started', async () => {
-      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()))))
+      let now = new Date('2026-09-26T12:00:00Z')
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()), () => now)))
       const started = (await store.begin(tabA, 'webui'))
       await store.transition(started.id, 'succeeded')
       expect((await store.syncTabBuild(tabA, oldBuild, newBuild)).notification_id).toBeNull()
+      now = new Date('2026-09-26T12:01:00Z')
       const automatic = (await store.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui'))
       await store.transition(automatic.id, 'succeeded')
       expect((await store.syncTabBuild(tabA, oldBuild, newBuild)).notification_id).not.toBeNull()
