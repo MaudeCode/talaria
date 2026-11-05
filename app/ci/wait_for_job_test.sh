@@ -66,7 +66,7 @@ expect_eq "$(cat "$work/calls")" 2
 # (TAL-1891), and a job that completed unsuccessfully still fails after its upload.
 for conclusion in failure skipped cancelled; do
   fixtures "$(job "App build" 2 in_progress null null)" "$(job "App build" 2 in_progress null "\"${conclusion}\"")"
-  if output=$("$script" "App build" 1 "Upload the test build" 2>&1); then echo "Expected a ${conclusion} upload to fail the wait." >&2; exit 1; fi
+  if output=$("$script" "App build" 30 "Upload the test build" 2>&1); then echo "Expected a ${conclusion} upload to fail the wait." >&2; exit 1; fi
   expect_eq "$(last_line "$output")" "App build: Upload the test build finished ${conclusion} (attempt 2)"
   expect_eq "$(cat "$work/calls")" 2
 done

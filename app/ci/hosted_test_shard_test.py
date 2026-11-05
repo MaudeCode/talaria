@@ -103,7 +103,7 @@ class HostedTestShardTests(unittest.TestCase):
             result = subprocess.run([script, "check", str(lists)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("SessionListHostedTests ran in shard 1 and shard 4", result.stderr)
-        self.assertEqual(subprocess.check_output([script, "args", "2"], text=True).split(), ["-only-testing:TalariaTests/ChatHostedTests"])
+        self.assertEqual(subprocess.check_output([script, "args", "2"], text=True).split(), ["-only-testing:TalariaTests/ChatHostedTests", "-only-testing:TalariaTests/RegularSplitHostedTests"])
 
 
 if __name__ == "__main__":
