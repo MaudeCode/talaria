@@ -137,8 +137,9 @@ final class FixtureApp {
 }
 
 /// A process's first chat render takes 20 to 50 s on a hosted runner, against about 3 s for the next: the Swift runtime
-/// resolves the generic conformances SwiftUI asks for by scanning every loaded image. It belongs to the run, not to
-/// whichever test comes first, so it happens before any test starts (TAL-1891). The bundle's principal class.
+/// resolves the generic conformances SwiftUI asks for by scanning every loaded image. Its first keyboard adds up to 40 s
+/// more. Both belong to the run, not to whichever test comes first, so they happen before any test starts (TAL-1891).
+/// The bundle's principal class.
 @objc(HostedTestBundle)
 final class HostedTestBundle: NSObject, XCTestObservation {
     override init() {
@@ -154,6 +155,10 @@ final class HostedTestBundle: NSObject, XCTestObservation {
             let warmer = XCTestCase()
             Task { @MainActor in
                 window = try? await warmer.hostFixtureChat()
+                if let window, let composer = await warmer.composerTextView(in: window) {
+                    composer.becomeFirstResponder()
+                    composer.resignFirstResponder()
+                }
                 finished = true
             }
             let deadline = Date(timeIntervalSinceNow: 120)
