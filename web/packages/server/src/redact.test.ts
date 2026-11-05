@@ -912,7 +912,17 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
     ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
   ],
+  'v0.23 Python-repr URL credentials': [
+    [String.raw`{'command': 'curl https://"\cA\cB\cC"@github.com'}`, `{'command': 'curl https://***@github.com'}`],
+    [`{'command': 'curl https://"correcthorse42"@github.com'}`, `{'command': 'curl https://***@github.com'}`],
+    [String.raw`{'command': 'curl https://\'correcthorse42\'@github.com "note"'}`, `{'command': 'curl https://***@github.com "note"'}`],
+    [String.raw`{'command': 'echo \'note\'; curl https://"correcthorse42"@github.com'}`, String.raw`{'command': 'echo \'note\'; curl https://***@github.com'}`],
+    [String.raw`{'command': 'echo note\n curl https://"correcthorse42"@github.com'}`, String.raw`{'command': 'echo note\n curl https://***@github.com'}`],
+    [`{'payload': {'command': 'curl https://"correcthorse42"@github.com'}}`, `{'payload': {'command': 'curl https://***@github.com'}}`],
+    [`{'command': 'curl https://example.com/search?q=user@example.com'}`, `{'command': 'curl https://example.com/search?q=user@example.com'}`],
+  ],
   'v0.23 serialized shell URL credentials': [
+    [String.raw`{"command":"curl https://\"correcthorse42\"@github.com...`, String.raw`{"command":"curl https://***@github.com...`],
     [JSON.stringify({ command: "curl https://'correcthorse42'@github.com" }), JSON.stringify({ command: 'curl https://***@github.com' })],
     [JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' }), JSON.stringify({ command: 'curl https://***@github.com' })],
     [JSON.stringify({ command: "curl https://cor'recthorse'42@github.com" }), JSON.stringify({ command: 'curl https://***@github.com' })],
@@ -1030,6 +1040,13 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
 }
 
 describe('Agent redactor parity', () => {
+  it.each(['complete', 'truncated'])('v0.23 masks Python-repr non-string snapshots when %s', (shape) => {
+    const host = shape === 'complete' ? 'github.com' : 'h'.repeat(200)
+    const frame = publicToolFrame({ name: 'search', args: { query: { command: `curl https://"correcthorse42"@${host}` } } }, true)
+    expect(frame.args).toEqual({ query: { command: `curl https://***@${host}` } })
+    expect(frame.target).toContain('curl https://***@')
+    expect(frame.target).not.toContain('correcthorse42')
+  })
   it.each(['signing_key', 'encryption_key', 'master_key', 'hmac_key', 'PGPASSWORD', 'MYSQL_PWD', 'SSHPASS', 'AccountKey', 'dbpassword'])('masks object credential %s in live and persisted tool arguments', (key) => {
     const call = { name: 'terminal', args: { [key]: 's3cretpw', passwordless: true } }
     expect(publicToolFrame(call, true).args).toEqual({ [key]: '***', passwordless: true })

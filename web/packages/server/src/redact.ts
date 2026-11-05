@@ -1344,22 +1344,42 @@ function expansionEnd(word: string, i: number): number {
   return i + 2
 }
 
-/** Redact decoded URL-bearing JSON strings, replacing only changed literals so surrounding JSON keeps its bytes. */
+/** Decode JSON/Python-repr URL strings and replace only changed literals, retaining their quote style and cap. */
 function redactSerializedUrls(text: string): string {
   let out = ''
   let last = 0
   for (let i = 0; i < text.length; ) {
-    if (text[i] !== '"') { i += 1; continue }
+    if (text[i] !== '"' && text[i] !== "'") { i += 1; continue }
     const start = i
+    const quote = text[i]!
     i += 1
-    while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1
+    while (i < text.length && text[i] !== quote) i += text[i] === '\\' ? 2 : 1
+    const contentEnd = Math.min(i, text.length)
+    const closed = i < text.length
     i = Math.min(i + 1, text.length)
     let value: unknown
-    try { value = JSON.parse(text.slice(start, i)) as unknown } catch { continue }
+    if (quote === '"' && closed) {
+      try { value = JSON.parse(text.slice(start, i)) as unknown } catch { /* Python repr or a capped literal. */ }
+    }
+    if (typeof value !== 'string') {
+      // The snapshot's repr uses common ANSI-C backslash escapes; its cap may omit the closing quote.
+      let decoded = ''
+      for (let at = start + 1; at < contentEnd; at += 1) {
+        if (text[at] !== '\\' || at + 1 >= contentEnd) { decoded += text[at]!; continue }
+        const escape = text[at + 1]!
+        const [char, span] = escape === '/' && quote === '"' ? ['/', 1] as const
+          : /['"\\abfnrtvxuU0-7]/.test(escape) ? ansiEscape(text, at + 1) : [`\\${escape}`, 1] as const
+        decoded += char
+        at += span
+      }
+      value = decoded
+    }
     if (typeof value !== 'string' || !value.includes('://') || !value.includes('@')) continue
     const masked = redactSensitive(value)
     if (masked === value) continue
-    out += text.slice(last, start) + JSON.stringify(masked)
+    const encoded = JSON.stringify(masked).slice(1, -1)
+    const body = quote === "'" ? encoded.replace(/\\"|'/g, (c) => c === "'" ? "\\'" : '"') : encoded
+    out += text.slice(last, start) + quote + body + (closed ? quote : '')
     last = i
   }
   return out + text.slice(last)
@@ -1380,7 +1400,9 @@ function redactComposedWords(text: string): string {
   const words: [start: number, end: number][] = []
   for (let i = 0; i < text.length; ) {
     if (/\s/.test(text[i]!)) { i += 1; continue }
-    const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
+    let end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
+    // A capped repr can stop at an unclosed quote; its remaining bytes still belong to the container.
+    if ('[{('.includes(text[i]!) && !']})'.includes(text[end - 1]!)) end = text.length
     words.push([i, end])
     i = end
   }
