@@ -4,7 +4,7 @@
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
 import type { SessionActivityPhase } from '@maudecode/talaria-web-contracts'
-import type { BackgroundActivity } from '../background-tasks.js'
+import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
 import type { PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
 import type { PresenceLeases } from '../relay.js'
@@ -96,7 +96,7 @@ export class ActivityStates {
       const session = await this.deps.store.get(sid)
       const latest = this.deps.activitySummary?.(session)
       const terminal = latest?.terminalState ?? null
-      const relay_phase = terminal === null ? undefined : terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'
+      const relay_phase = terminal === null ? undefined : settledActivityPhase(terminal)
       bySession.set(sid, { session_id: sid, stream_id: latest?.turnId ?? '', started_at: latest?.timestamp ?? 0, phase: 'settled', workspace: session.workspace, model: session.model, provider: session.model_provider, ephemeral: false,
         ...(relay_phase ? { relay_phase, terminal_at: Number(latest?.timestamp) || session.updated_at } : {}) })
     }

@@ -57,6 +57,11 @@ const CHILD_CANCELLED = new Set(['interrupted', 'cancelled'])
 
 export function isTerminal(status: Status): boolean { return TERMINAL.has(status) }
 
+/** The activity phase a settled turn's terminal state reads as. */
+export function settledActivityPhase(terminal: string | null | undefined): SessionActivityPhase {
+  return terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'
+}
+
 /** One line, never output: the goal, command or prompt a record is about. */
 export function taskTitle(text: unknown): string {
   const first = str(text).split('\n').map((l) => l.trim()).find(Boolean) ?? ''
@@ -443,6 +448,15 @@ export class BackgroundActivity {
       : settled === 'failed' || recent.some((task) => task.status === 'failed') ? 'failed'
       : settled === 'cancelled' || recent.some((task) => task.status === 'cancelled') ? 'cancelled' : settled)
     return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
+  }
+
+  /**
+   * TAL-1760: whether a delegation of `sid` that lists one of `childIds` is still running, from the same refreshed records
+   * the Agents page polls. Work nobody can confirm (`unknown`) may never settle, so it is not running.
+   */
+  async delegationRunning(sid: string, profile: string | null, childIds: ReadonlySet<string>): Promise<boolean> {
+    const { tasks } = await this.snapshot(sid, profile, { canStop: false })
+    return tasks.some((task) => task.kind === 'delegation' && RUNNING_LIKE.has(task.status) && task.child_sessions.some((child) => childIds.has(child.session_id)))
   }
 
   /**

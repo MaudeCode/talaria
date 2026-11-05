@@ -117,6 +117,12 @@ describe('contracts package', () => {
     for (const frame of [fixture.tool_a, fixture.tool_b, fixture.shell]) expect(ChatEventSchema.parse(frame)).toEqual(frame)
     expect(SessionSchema.shape.focus_path.parse(fixture.session.focus_path)).toBe(fixture.session.focus_path)
   })
+  it('carries a running delegated child\'s reread delay, and null once it settles (TAL-1760)', () => {
+    const fixture = shared('fixtures/running-subagent.json') as { running: unknown; settled: unknown }
+    expect(SessionSchema.parse(fixture.running)).toMatchObject({ activity_phase: 'running', refresh_after: 5 })
+    expect(SessionSchema.parse(fixture.settled)).toMatchObject({ activity_phase: 'completed', refresh_after: null })
+    expect(SessionSchema.shape.refresh_after.safeParse(0).success).toBe(false)
+  })
   it('accepts optional opaque startup correlation without requiring it from older peers', () => {
     const request = { jsonrpc: '2.0', id: 1, method: 'chat.start', params: {} }
     expect(RpcRequestSchema.parse(request)).toEqual(request)

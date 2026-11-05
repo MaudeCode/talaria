@@ -5021,6 +5021,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -9466,6 +9480,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -12974,6 +13002,20 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
                         },
                         "todo_state": {
                           "type": "object",
@@ -18570,6 +18612,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -23728,6 +23784,20 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
                         },
                         "todo_state": {
                           "type": "object",
@@ -29613,6 +29683,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -33070,6 +33154,20 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
                         },
                         "todo_state": {
                           "type": "object",
@@ -36591,6 +36689,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -40108,6 +40220,20 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
                         },
                         "todo_state": {
                           "type": "object",
@@ -53721,6 +53847,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -57226,6 +57366,20 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
                         },
                         "todo_state": {
                           "type": "object",
@@ -61130,6 +61284,20 @@
                           ],
                           "type": "string"
                         },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
+                        },
                         "todo_state": {
                           "type": "object",
                           "properties": {
@@ -64925,6 +65093,20 @@
                                 "stale"
                               ],
                               "type": "string"
+                            },
+                            "refresh_after": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent's delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it."
                             },
                             "todo_state": {
                               "type": "object",

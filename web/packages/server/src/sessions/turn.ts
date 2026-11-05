@@ -46,7 +46,7 @@ import { CHECKPOINT_STORE_BUSY_MESSAGE } from '../workspace/rollback.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
-import { startsBackgroundWork } from './background-tasks.js'
+import { settledActivityPhase, startsBackgroundWork } from './background-tasks.js'
 import { skillGeneration, successfulSkillViewName } from './skill-provenance.js'
 import { recordWakeupPause } from './wakeup-pause.js'
 import { displayName } from '../providers/catalog.js'
@@ -1549,7 +1549,7 @@ export class TurnRunner {
     const terminal = streamId ? this.deps.service().activitySummary(s, streamId)?.terminalState : null
     const payload = await this.deps.service().windowedDetail(s, TRANSCRIPT_WINDOW)
     if (!streamId) return payload
-    const terminalPhase = terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'
+    const terminalPhase = settledActivityPhase(terminal)
     payload.activity_phase = await this.deps.service().activityPhase(s, { excludeStreamId: streamId, terminalPhase })
     return payload
   }

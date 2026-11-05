@@ -73,6 +73,8 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     enabled: !!sessionId,
     staleTime: 5_000,
     refetchOnWindowFocus: false,
+    // TAL-1760: a transcript another process is still writing has no stream; the server says when to read it again.
+    refetchInterval: (q) => { const after = q.state.data?.session.refresh_after; return after ? after * 1000 : false },
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
   // The subscribed window; a moved boundary retires its prefix and pending pages together.

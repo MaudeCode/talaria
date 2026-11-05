@@ -21,7 +21,7 @@ import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { GatewaySessions, gatewayStreamVisible } from './sessions/gateway-sessions.js'
 import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
-import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
+import { BackgroundActivity, BackgroundTaskStore, settledActivityPhase } from './sessions/background-tasks.js'
 import { PromptQueues } from './sessions/prompt-queues.js'
 import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
@@ -346,6 +346,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     profileDeleting: (profile) => profiles.isDeleting(profile),
     sessionActivity: async (sid, profile, opts) => background.activityPhase(sid, profile, opts),
     backgroundReceipts: async (sid) => (await background.receipts(sid)),
+    delegationRunning: async (sid, profile, childIds) => background.delegationRunning(sid, profile, childIds),
     backgroundPending: async (sid) => (await completions.pendingDelegations(sid)),
     journal,
     clearRelayCompletions: async (sid, profile) => { (await notifications.clearDeleted(sid, profile)) },
@@ -510,7 +511,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       const terminal = latest?.terminalState ?? 'completed'
       return {
         foreground: ownerPhase ?? (pending.approvalPending(sid).pending ? 'waiting_for_approval' : pending.clarifyPending(sid).pending ? 'waiting_for_input' : run ? run.phase.endsWith('starting') ? 'starting' : 'running' : null),
-        settled: terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed',
+        settled: settledActivityPhase(terminal),
         since: latest?.timestamp ?? 0,
       }
     },
