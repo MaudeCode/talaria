@@ -1,38 +1,33 @@
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
-import { isDefiniteRefusal } from '../contracts/common'
+import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
+import { showErrorToast } from '../features/toast/errorToast'
 import { reconcileProviderQuotas } from './providerQuotas'
 
 type Quotas = Awaited<ReturnType<typeof api.fetchProviderQuotas>>
-type PinProjection = Pick<Quotas, 'sidebar_source_ids' | 'sidebar_can_pin'>
-interface PinWrites { latest: number; pending: number; confirmed: PinProjection; choice: PinProjection }
-// One per client, not per picker: a write outlives the Settings section that started it.
-const pinWrites = new WeakMap<QueryClient, PinWrites>()
-function pinOwner(qc: QueryClient): PinWrites {
-  let owner = pinWrites.get(qc)
-  if (!owner) { owner = { latest: 0, pending: 0, confirmed: {}, choice: {} }; pinWrites.set(qc, owner) }
-  return owner
-}
-const projection = (q: Quotas | undefined): PinProjection => ({ sidebar_source_ids: q?.sidebar_source_ids, sidebar_can_pin: q?.sidebar_can_pin })
+const SIDEBAR_PINS = 'sidebar-quota-pins'
 
-/**
- * TAL-1870: pin the sidebar's quota sources as an optimistic update with rollback over the server's projection. A choice
- * shows at once, a read during a pending write keeps showing it, and every choice settles on the next read. A definite
- * refusal of the latest choice restores the last confirmed projection, which pending choices never overwrite.
- */
-export async function setSidebarQuotaPins(qc: QueryClient, ids: string[], save: (onSaved: () => void, onError: (e: unknown) => void) => Promise<void>): Promise<void> {
-  const owner = pinOwner(qc)
-  const show = (shown: PinProjection) => { qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, ...shown }) }
-  await qc.cancelQueries({ queryKey: keys.providerQuotas })
-  const write = ++owner.latest
-  if (owner.pending++ === 0) owner.confirmed = projection(qc.getQueryData<Quotas>(keys.providerQuotas))
-  const choice = { sidebar_source_ids: ids, sidebar_can_pin: ids.length < 2 }
-  owner.choice = choice
-  show(choice)
-  await save(() => { owner.confirmed = choice }, (e) => { if (isDefiniteRefusal(e) && write === owner.latest) show(owner.confirmed) })
-  owner.pending--
-  if (owner.pending === 0) void qc.invalidateQueries({ queryKey: keys.providerQuotas })
+/** TAL-1870: pin the sidebar's quota sources; the shared owner shows the choice at once and settles on the reread (`useSetDefaultModel`'s sibling). */
+export function useSetSidebarQuotaPins() {
+  return useResourceMutation({
+    resource: () => SIDEBAR_PINS,
+    queryKey: [], readKeys: () => [keys.settings, keys.providerQuotas],
+    effect: (ids: string[]) => ({ value: ids }),
+    mutationFn: (ids) => api.saveSettings({ sidebar_quota_sources: ids }),
+    onError: showErrorToast,
+  })
+}
+
+/** The pins the user just chose, until the server's reread confirms them. */
+export function useSidebarQuotaPinChoice() {
+  return useResourceEffects<string[]>()[SIDEBAR_PINS]?.value
+}
+
+/** The server's pins and whether another fits, showing a pending choice until the reread confirms it. */
+export function useSidebarQuotaPins(quotas: Quotas | undefined) {
+  const choice = useSidebarQuotaPinChoice()
+  return { ids: choice ?? quotas?.sidebar_source_ids ?? [], canPin: choice ? choice.length < 2 : quotas?.sidebar_can_pin !== false }
 }
 
 /**
@@ -42,13 +37,7 @@ export async function setSidebarQuotaPins(qc: QueryClient, ids: string[], save: 
  */
 export function useProviderQuotas({ enabled = true }: { enabled?: boolean } = {}) {
   const qc = useQueryClient()
-  const fetchQuotas = async (refresh = false) => {
-    const read = reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), await api.fetchProviderQuotas(refresh))
-    const owner = pinOwner(qc)
-    if (owner.pending === 0) return read
-    owner.confirmed = projection(read)
-    return { ...read, ...owner.choice }
-  }
+  const fetchQuotas = async (refresh = false) => reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), await api.fetchProviderQuotas(refresh))
   const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000, enabled })
   const refresh = () => qc.cancelQueries({ queryKey: keys.providerQuotas })
     .then(() => qc.query({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 }))

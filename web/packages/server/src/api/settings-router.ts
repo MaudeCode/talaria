@@ -439,7 +439,7 @@ export const settingsRouter = os.router({
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
     quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(async () => {
       const body = await ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) })
-      return { ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources) } as never
+      return { ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative) } as never
     })),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)

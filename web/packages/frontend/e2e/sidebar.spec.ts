@@ -448,12 +448,8 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     await sidebar(page).getByRole('link', { name: 'Preferences' }).click()
     await source('OpenRouter').click()
     await expect(source('OpenRouter')).not.toBeChecked()
-    // The last refusal rereads settings before it rolls back; the first's rollback passes only briefly.
-    const settled = page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'GET')
     refuse()
-    await settled
     await expect(page.getByText('Refused').first()).toBeVisible()
-    await page.waitForTimeout(100)
     await expect(source('Z.ai')).not.toBeChecked()
     await expect(source('OpenRouter')).toBeChecked()
 

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { open } from 'node:fs/promises'
 import { atomicWriteText, atomicWriteTextAsync, writeFully, writeFullyAsync } from './fs/atomic.js'
 import { RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
-import { normalizeAppearance, QUOTA_THRESHOLD_DEFAULTS, SettingsStore } from './settings.js'
+import { normalizeAppearance, QUOTA_THRESHOLD_DEFAULTS, SettingsStore, sidebarQuotaProjection } from './settings.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-settings-')) })
@@ -234,6 +234,11 @@ describe('save', () => {
     expect((await store().load()).sidebar_quota_sources).toEqual(['qsrc_x', 'qsrc_y'])
     write({ sidebar_quota_sources: 'qsrc_x' })
     expect((await store().load()).sidebar_quota_sources).toEqual([])
+  })
+  it('keeps every sidebar pin while quota membership is unknown (TAL-1870)', () => {
+    const sources = [{ source_id: 'qsrc_a' }]
+    expect(sidebarQuotaProjection(['qsrc_gone', 'qsrc_a'], sources, true)).toEqual({ sidebar_source_ids: ['qsrc_a'], sidebar_can_pin: true })
+    expect(sidebarQuotaProjection(['qsrc_gone', 'qsrc_a'], sources, false)).toEqual({ sidebar_source_ids: ['qsrc_gone', 'qsrc_a'], sidebar_can_pin: false })
   })
   it('keeps the PTY screen-reader mode off until opted in, coercing writes to a boolean (TAL-1605)', async () => {
     write({ bot_name: 'Older' })

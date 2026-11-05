@@ -77703,7 +77703,7 @@
                       "items": {
                         "type": "string"
                       },
-                      "description": "TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows."
+                      "description": "TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false."
                     },
                     "sidebar_can_pin": {
                       "type": "boolean",

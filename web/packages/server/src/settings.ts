@@ -178,10 +178,10 @@ function normalizeSidebarQuotaSources(value: unknown): string[] {
   return [...new Set(ids)].slice(0, SIDEBAR_QUOTA_PIN_LIMIT)
 }
 
-/** TAL-1870: the pins a quota read lists, in pinned order, and whether another fits; an unlisted pin does not count. */
-export function sidebarQuotaProjection(pins: unknown, sources: unknown): { sidebar_source_ids: string[]; sidebar_can_pin: boolean } {
+/** TAL-1870: the pins a quota read lists, in pinned order, and whether another fits. An unlisted pin neither shows nor counts, unless the read cannot vouch for its list. */
+export function sidebarQuotaProjection(pins: unknown, sources: unknown, authoritative: boolean): { sidebar_source_ids: string[]; sidebar_can_pin: boolean } {
   const listed = new Set((Array.isArray(sources) ? sources as { source_id?: unknown }[] : []).map((s) => s.source_id))
-  const sidebar_source_ids = normalizeSidebarQuotaSources(pins).filter((id) => listed.has(id))
+  const sidebar_source_ids = normalizeSidebarQuotaSources(pins).filter((id) => !authoritative || listed.has(id))
   return { sidebar_source_ids, sidebar_can_pin: sidebar_source_ids.length < SIDEBAR_QUOTA_PIN_LIMIT }
 }
 

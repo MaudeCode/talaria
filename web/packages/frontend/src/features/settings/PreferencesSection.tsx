@@ -6,12 +6,11 @@ import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefault
 import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '../../ui/Button'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
-import { setSidebarQuotaPins, useProviderQuotas } from '../../lib/useProviderQuotas'
+import { useProviderQuotas, useSetSidebarQuotaPins, useSidebarQuotaPins } from '../../lib/useProviderQuotas'
 import { quotaSourceName } from '../insights/QuotaMeter'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
@@ -24,14 +23,12 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
   )
 }
 
-/** TAL-1870: pins the sidebar's quota sources from the server's projection; `setSidebarQuotaPins` owns the optimistic write. */
+/** TAL-1870: pins the sidebar's quota sources from the server's projection. */
 function SidebarQuotaSources() {
-  const { setAsync } = useSettingField([])
   const { quotas } = useProviderQuotas()
-  const qc = useQueryClient()
+  const setPins = useSetSidebarQuotaPins()
   const sources = quotas.data?.sources
-  const pinned = quotas.data?.sidebar_source_ids ?? []
-  const pin = (ids: string[]) => { void setSidebarQuotaPins(qc, ids, (onSaved, onError) => setAsync({ sidebar_quota_sources: ids }, onSaved, onError)) }
+  const { ids: pinned, canPin } = useSidebarQuotaPins(quotas.data)
   return (
     <FieldRow label={m.settings_label_sidebar_quotas()} hint={m.settings_desc_sidebar_quotas()} htmlFor="settingsSidebarQuotas">
       <div id="settingsSidebarQuotas" className="flex flex-wrap gap-3">
@@ -42,7 +39,7 @@ function SidebarQuotaSources() {
           const on = pinned.includes(s.source_id)
           return (
             <label key={s.source_id} className="flex items-center gap-1.5 text-sm">
-              <Switch checked={on} disabled={!on && quotas.data?.sidebar_can_pin === false} onCheckedChange={(checked) => { pin(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {s.display_name ?? quotaSourceName(s)}
+              <Switch checked={on} disabled={!on && !canPin} onCheckedChange={(checked) => { setPins.mutate(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {s.display_name ?? quotaSourceName(s)}
             </label>
           )
         })}
