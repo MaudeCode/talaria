@@ -2472,6 +2472,8 @@
 	"feedback_send_open": "Send feedback",
 	"feedback_rail_label": "Feedback",
 	"settings_label_sidebar_feedback": "Sidebar feedback button",
+	"settings_label_sidebar_quotas": "Sidebar quotas",
+	"settings_desc_sidebar_quotas": "Pin up to two.",
 	"feedback_kind": "Type",
 	"feedback_kind_bug": "Bug",
 	"feedback_kind_feature": "Feature request",

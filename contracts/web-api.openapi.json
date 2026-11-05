@@ -70548,6 +70548,13 @@
                       "type": "boolean",
                       "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
                     },
+                    "sidebar_quota_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
+                    },
                     "show_webhook_sessions": {
                       "type": "boolean"
                     },
@@ -70835,6 +70842,13 @@
                     "show_sidebar_feedback": {
                       "type": "boolean",
                       "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
+                    },
+                    "sidebar_quota_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
                     },
                     "show_webhook_sessions": {
                       "type": "boolean"

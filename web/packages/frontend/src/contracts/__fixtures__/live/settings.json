@@ -79,6 +79,7 @@
     "show_previous_messaging_sessions": false,
     "show_quota_chip": false,
     "show_sidebar_feedback": false,
+    "sidebar_quota_sources": [],
     "show_thinking": true,
     "show_titlebar_profile": false,
     "show_token_usage": false,

@@ -224,6 +224,17 @@ describe('save', () => {
     expect((await s.save({ show_sidebar_feedback: true })).show_sidebar_feedback).toBe(true)
     expect((await store().load()).show_sidebar_feedback).toBe(true)
   })
+  it('keeps at most two unique sidebar quota sources, on a write and on a hand-edited file (TAL-1870)', async () => {
+    const s = store()
+    expect((await s.load()).sidebar_quota_sources).toEqual([])
+    expect((await s.save({ sidebar_quota_sources: [' qsrc_a ', 'qsrc_a', 7, '', 'qsrc_b', 'qsrc_c'] })).sidebar_quota_sources).toEqual(['qsrc_a', 'qsrc_b'])
+    expect((await store().load()).sidebar_quota_sources).toEqual(['qsrc_a', 'qsrc_b'])
+    expect((await s.save({ sidebar_quota_sources: 'qsrc_c' })).sidebar_quota_sources).toEqual(['qsrc_a', 'qsrc_b'])
+    write({ sidebar_quota_sources: ['qsrc_x', 'qsrc_x', 'qsrc_y', 'qsrc_z'] })
+    expect((await store().load()).sidebar_quota_sources).toEqual(['qsrc_x', 'qsrc_y'])
+    write({ sidebar_quota_sources: 'qsrc_x' })
+    expect((await store().load()).sidebar_quota_sources).toEqual([])
+  })
   it('keeps the PTY screen-reader mode off until opted in, coercing writes to a boolean (TAL-1605)', async () => {
     write({ bot_name: 'Older' })
     expect((await store().load()).screen_reader_mode).toBe(false)

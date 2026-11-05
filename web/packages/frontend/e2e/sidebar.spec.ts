@@ -278,3 +278,136 @@ test('a hub keeps its page beside the widest panel with no page-level horizontal
   expect(await width(page, '#main')).toBeGreaterThanOrEqual(420)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+/** TAL-1870: synthetic sources; `urgency.pace` and the pace window differ per source so a level or figure can only come from the right field. */
+const quotaWindow = (label: string, used: number, level: string, expectedUsed: number | null) => ({
+  label, used_percent: used, remaining_percent: 100 - used, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: label === 'Weekly' ? 604800 : 18000, urgency: { remaining: level, pace: level },
+  pace: expectedUsed === null ? null : { expected_remaining_percent: 100 - expectedUsed, expected_used_percent: expectedUsed, pace_delta_percent: expectedUsed - used, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' }, forecast: null,
+})
+const quotas = {
+  version: 1, computed_at: '2030-01-01T00:00:00Z', scope_id: 'qscope_e2e', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false,
+  sources: [
+    { source_id: 'qsrc_weekly', provider_id: 'anthropic', provider_label: 'Claude', status: 'available', urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, windows: [quotaWindow('Session', 25, 'healthy', 40), quotaWindow('Weekly', 70, 'warning', 64)] },
+    { source_id: 'qsrc_stale', provider_id: 'openai-codex', provider_label: 'Codex', account_label: 'Work', status: 'stale', message: 'Last known usage', urgency: { remaining: 'stale', pace: 'stale' }, pace_window_index: 0, windows: [quotaWindow('Weekly', 40, 'healthy', null)] },
+    { source_id: 'qsrc_down', provider_id: 'zai', provider_label: 'Z.ai', status: 'unavailable', unavailable_reason: 'Sign in again', pace_window_index: 0, windows: [quotaWindow('Weekly', 90, 'critical', null)] },
+    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5 }, urgency: { remaining: 'healthy', pace: 'healthy' }, pace_window_index: null, windows: [] },
+  ],
+}
+const pin = (page: Page, sources: string[]) => page.request.post('/api/settings', { data: { sidebar_quota_sources: sources } })
+const quotaGroup = (page: Page) => sidebar(page).locator('[data-section="sidebar-quotas"]')
+const quotaRow = (page: Page, source: string) => quotaGroup(page).locator(`[data-quota-source="${source}"]`)
+
+/** Pin before the first load: the shell restores settings from its snapshot, so a later write would not show on a reload. */
+async function withPins(page: Page, sources: string[], run: () => Promise<void>) {
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
+  await pin(page, sources)
+  try {
+    await page.goto('/skills')
+    await settle(page)
+    await run()
+  } finally {
+    await pin(page, [])
+  }
+}
+const insightsLevel = (page: Page, source: string) => page.locator(`[data-section="insights-quotas"] [data-quota-source="${source}"] [data-quota-window="Weekly"]`).getAttribute('data-level')
+const openInsightsFrom = async (page: Page, source: string) => {
+  await quotaRow(page, source).click()
+  await expect(page).toHaveURL(/\/insights\?tab=quotas$/)
+  await expect(page.getByRole('tab', { name: 'Quotas' })).toHaveAttribute('aria-selected', 'true')
+}
+
+test('pinned quotas show the pace window figures in pinned order and open Insights at the same levels', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await withPins(page, ['qsrc_stale', 'qsrc_weekly'], async () => {
+    await expect(quotaGroup(page).getByRole('heading', { level: 3, name: 'Quotas' })).toBeVisible()
+    await expect(quotaGroup(page).locator('[data-quota-source]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-quota-source')))).resolves.toEqual(['qsrc_stale', 'qsrc_weekly'])
+    await expect(quotaRow(page, 'qsrc_weekly')).toHaveAttribute('aria-label', 'Claude: 70% Used')
+    await expect(quotaRow(page, 'qsrc_weekly')).toContainText('70%')
+    const meter = quotaRow(page, 'qsrc_weekly').getByRole('meter')
+    await expect(meter).toHaveAttribute('aria-valuenow', '70')
+    await expect(meter.locator('div').first()).toHaveAttribute('style', /width: 70%/)
+    await expect(meter.locator('div').first()).toHaveClass(/bg-warning/)
+    await expect(meter.locator('div').nth(1)).toHaveAttribute('style', /left: 64%/)
+    await expect(quotaRow(page, 'qsrc_stale')).toHaveAttribute('aria-label', 'Codex · Work: 40% Used, Last known usage')
+    await expect(quotaRow(page, 'qsrc_stale')).toContainText('Last known usage')
+    await expect(quotaRow(page, 'qsrc_stale').locator('[role="meter"] > div').first()).toHaveClass(/bg-muted/)
+    await page.locator('aside.sidebar').screenshot({ path: info.outputPath('quotas-expanded.png') })
+
+    await openInsightsFrom(page, 'qsrc_weekly')
+    await expect(quotaRow(page, 'qsrc_weekly')).toHaveAttribute('data-level', 'warning')
+    expect(await insightsLevel(page, 'qsrc_weekly')).toBe('warning')
+    await expect(quotaRow(page, 'qsrc_stale')).toHaveAttribute('data-level', 'stale')
+    expect(await insightsLevel(page, 'qsrc_stale')).toBe('stale')
+  })
+})
+
+test('an unavailable source shows its server status, and a source the server no longer lists takes its row with it', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await withPins(page, ['qsrc_gone', 'qsrc_down'], async () => {
+    await expect(quotaGroup(page).locator('[data-quota-source]')).toHaveCount(1)
+    await expect(quotaRow(page, 'qsrc_down')).toContainText('Sign in again')
+    await expect(quotaRow(page, 'qsrc_down')).toHaveAttribute('data-level', 'unavailable')
+    await openInsightsFrom(page, 'qsrc_down')
+    expect(await insightsLevel(page, 'qsrc_down')).toBe('unavailable')
+  })
+})
+
+test('a credit source shows its amount without a meter, and the rail has no quota element', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await withPins(page, ['qsrc_credits'], async () => {
+    await expect(quotaRow(page, 'qsrc_credits')).toContainText('12.5')
+    await expect(quotaRow(page, 'qsrc_credits').getByRole('meter')).toHaveCount(0)
+    await page.locator('#btnSidebarEdgeToggle').click()
+    await expect(row(page, 'Chat')).toBeVisible()
+    await expect(quotaGroup(page)).toHaveCount(0)
+  })
+})
+
+test('with nothing pinned the sidebar has no group and reads no quotas', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  let reads = 0
+  await page.route('**/api/provider/quotas**', (route) => { reads++; return route.fulfill({ json: quotas }) })
+  await page.goto('/skills')
+  await settle(page)
+  await expect(row(page, 'Skills')).toBeVisible()
+  await expect(quotaGroup(page)).toHaveCount(0)
+  expect(reads).toBe(0)
+})
+
+test('Preferences pins up to two listed sources and the sidebar follows at once', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
+  await pin(page, ['qsrc_gone'])
+  try {
+    await page.goto('/settings/preferences')
+    await settle(page)
+    const picker = page.locator('#settingsSidebarQuotas')
+    const source = (name: string) => picker.getByRole('switch', { name })
+    await expect(picker.getByRole('switch')).toHaveCount(4)
+    await expect(quotaGroup(page)).toHaveCount(0)
+    await source('Claude').click()
+    await expect(quotaRow(page, 'qsrc_weekly')).toBeVisible()
+    await source('OpenRouter').click()
+    await expect(source('OpenRouter')).toBeChecked()
+    await expect(source('Z.ai')).toBeDisabled()
+    await expect(source('Claude')).toBeEnabled()
+    await source('Claude').click()
+    await expect(quotaRow(page, 'qsrc_weekly')).toHaveCount(0)
+    await expect(source('Z.ai')).toBeEnabled()
+    await expect.poll(async () => (await (await page.request.get('/api/settings')).json() as { sidebar_quota_sources: string[] }).sidebar_quota_sources).toEqual(['qsrc_credits'])
+  } finally {
+    await pin(page, [])
+  }
+})
+
+test('the phone drawer shows pinned quotas and a row closes it into Insights', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'the drawer is phone chrome')
+  await withPins(page, ['qsrc_weekly', 'qsrc_stale'], async () => {
+    await page.locator('#btnHamburger').click()
+    await expect(quotaRow(page, 'qsrc_weekly')).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: info.outputPath('quotas-drawer.png') })
+    await quotaRow(page, 'qsrc_weekly').click()
+    await expect(page).toHaveURL(/\/insights\?tab=quotas$/)
+    await expect(page.locator('aside.sidebar.mobile-open')).toHaveCount(0)
+  })
+})

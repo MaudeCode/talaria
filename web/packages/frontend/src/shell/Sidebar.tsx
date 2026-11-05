@@ -5,6 +5,7 @@ import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
 import { useDashboardStatusQuery, useSetting } from '../app/queries'
 import { useExtensionManifests } from '../extensions/registry'
+import { SidebarQuotas } from '../features/insights/SidebarQuotas'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
 import { useNewChat } from '../features/sessions/useNewChat'
 import { openFeedback } from '../features/settings/FeedbackDialog'
@@ -101,6 +102,7 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
               </button>
             )}
             {moreOpen && moreRows}
+            <SidebarQuotas />
           </>
         )}
       </div>
