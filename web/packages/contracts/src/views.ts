@@ -832,6 +832,7 @@ export const QuotaSourceSchema = z.looseObject({
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
+  headline_window_index: QuotaWindowIndex.describe('TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows.'),
   session_window_index: QuotaWindowIndex.describe('The session (else 5h) window.'), weekly_window_index: QuotaWindowIndex.describe('The weekly window.'),
   urgency: QuotaUrgencySchema.optional().describe('TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it.'),
 })
@@ -854,6 +855,8 @@ export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailab
   version: z.number(), computed_at: z.string().describe('ISO-8601 UTC request reference time; coalesced or stale sources retain their own computed_at.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
   missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
   sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
+  sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows.'),
+  sidebar_can_pin: z.boolean().optional().describe('TAL-1870: whether another source can be pinned; a pin this read does not list does not count.'),
 })
 /** One day of OpenRouter spend on `/api/provider/cost-history` (TAL-412). */
 export const CostSnapshotSchema = z.looseObject({

@@ -408,7 +408,7 @@ function quotaLevel(window: QuotaWindow | undefined, status: string, basis: keyo
  * tolerance), and the source's `urgency` on the windows a widget shows by default (the first; the pace window for pace).
  */
 export interface ClassifiedQuotaWindow extends Omit<QuotaWindow, 'pace'> { pace: (QuotaPace & { status: 'over' | 'on' | 'under' }) | null; projection_eligible: boolean; urgency: QuotaUrgency }
-export function classifyQuotaSource<T extends { status: string; windows: QuotaWindow[]; pace_window_index: number | null }>(source: T, t: QuotaThresholds): Omit<T, 'windows'> & { windows: ClassifiedQuotaWindow[]; urgency: QuotaUrgency } {
+export function classifyQuotaSource<T extends { status: string; windows: QuotaWindow[]; pace_window_index: number | null }>(source: T, t: QuotaThresholds): Omit<T, 'windows'> & { windows: ClassifiedQuotaWindow[]; urgency: QuotaUrgency; headline_window_index: number | null } {
   const urgency = (w: QuotaWindow | undefined): QuotaUrgency => ({ remaining: quotaLevel(w, source.status, 'remaining', t), pace: quotaLevel(w, source.status, 'pace', t) })
   return {
     ...source,
@@ -419,6 +419,7 @@ export function classifyQuotaSource<T extends { status: string; windows: QuotaWi
       urgency: urgency(w),
     })),
     urgency: { remaining: urgency(source.windows[0]).remaining, pace: urgency(source.windows[source.pace_window_index ?? 0]).pace },
+    headline_window_index: source.windows.length === 0 ? null : source.pace_window_index ?? 0,
   }
 }
 

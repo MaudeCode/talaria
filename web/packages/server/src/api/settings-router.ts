@@ -22,7 +22,7 @@ import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
 import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
-import { displayBotName, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
+import { displayBotName, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
 import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plugin-oauth.js'
@@ -437,7 +437,10 @@ export const settingsRouter = os.router({
     })),
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
-    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) }) as never)),
+    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(async () => {
+      const body = await ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) })
+      return { ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources) } as never
+    })),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)
       const days = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 365)) : 7

@@ -77571,6 +77571,19 @@
                             ],
                             "description": "The window a pace-coloured widget shows: the weekly one, else the first 5h/session window."
                           },
+                          "headline_window_index": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows."
+                          },
                           "session_window_index": {
                             "anyOf": [
                               {
@@ -77636,6 +77649,17 @@
                         "additionalProperties": {}
                       },
                       "description": "Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row."
+                    },
+                    "sidebar_source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows."
+                    },
+                    "sidebar_can_pin": {
+                      "type": "boolean",
+                      "description": "TAL-1870: whether another source can be pinned; a pin this read does not list does not count."
                     }
                   },
                   "required": [

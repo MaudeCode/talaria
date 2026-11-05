@@ -9,12 +9,12 @@ import { closeMobileSidebar } from '../../shell/useShellState'
 import { cn } from '../../ui/cn'
 import { QuotaMeter, quotaCreditsText, quotaSourceTitle, quotaStatusText, quotaWindowFigures, type QuotaSource } from './QuotaMeter'
 
-/** TAL-1870: the expanded sidebar's Quotas group, the App's `AppSidebar` rows: the pinned sources the server still lists, in pinned order. */
+/** TAL-1870: the expanded sidebar's Quotas group, the App's `AppSidebar` rows: the server's `sidebar_source_ids`. The setting only decides whether to read at all. */
 export function SidebarQuotas() {
-  const pinned = useSetting('sidebar_quota_sources') ?? []
-  const { quotas } = useProviderQuotas({ enabled: pinned.length > 0 })
+  const pinned = (useSetting('sidebar_quota_sources') ?? []).length > 0
+  const { quotas } = useProviderQuotas({ enabled: pinned })
   const locale = useLocale()
-  const sources = pinned.flatMap((id) => quotas.data?.sources.find((s) => s.source_id === id) ?? [])
+  const sources = pinned ? (quotas.data?.sidebar_source_ids ?? []).flatMap((id) => quotas.data?.sources.find((s) => s.source_id === id) ?? []) : []
   if (sources.length === 0) return null
   return (
     <section className="mt-2 flex flex-none flex-col gap-0.5" data-section="sidebar-quotas">
@@ -25,8 +25,7 @@ export function SidebarQuotas() {
 }
 
 function SidebarQuotaRow({ source, locale }: { source: QuotaSource; locale: string }) {
-  // The server-selected window; its source urgency falls back to the first window the same way (`classifyQuotaSource`).
-  const w = source.windows?.[source.pace_window_index ?? 0]
+  const w = source.headline_window_index == null ? undefined : source.windows?.[source.headline_window_index]
   const { level, percent, marker, modeLabel } = quotaWindowFigures(source, w, 'used')
   const title = quotaSourceTitle(source)
   const status = source.status ?? 'unavailable'

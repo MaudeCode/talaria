@@ -287,19 +287,19 @@ const quotaWindow = (label: string, used: number, level: string, expectedUsed: n
 const quotas = {
   version: 1, computed_at: '2030-01-01T00:00:00Z', scope_id: 'qscope_e2e', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false,
   sources: [
-    { source_id: 'qsrc_weekly', provider_id: 'anthropic', provider_label: 'Claude', status: 'available', urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, windows: [quotaWindow('Session', 25, 'healthy', 40), quotaWindow('Weekly', 70, 'warning', 64)] },
-    { source_id: 'qsrc_stale', provider_id: 'openai-codex', provider_label: 'Codex', account_label: 'Work', status: 'stale', message: 'Last known usage', urgency: { remaining: 'stale', pace: 'stale' }, pace_window_index: 0, windows: [quotaWindow('Weekly', 40, 'healthy', null)] },
-    { source_id: 'qsrc_down', provider_id: 'zai', provider_label: 'Z.ai', status: 'unavailable', unavailable_reason: 'Sign in again', pace_window_index: 0, windows: [quotaWindow('Weekly', 90, 'critical', null)] },
-    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5 }, urgency: { remaining: 'healthy', pace: 'healthy' }, pace_window_index: null, windows: [] },
+    { source_id: 'qsrc_weekly', provider_id: 'anthropic', provider_label: 'Claude', status: 'available', urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, headline_window_index: 1, windows: [quotaWindow('Session', 25, 'healthy', 40), quotaWindow('Weekly', 70, 'warning', 64)] },
+    { source_id: 'qsrc_stale', provider_id: 'openai-codex', provider_label: 'Codex', account_label: 'Work', status: 'stale', message: 'Last known usage', urgency: { remaining: 'stale', pace: 'stale' }, pace_window_index: 0, headline_window_index: 0, windows: [quotaWindow('Weekly', 40, 'healthy', null)] },
+    { source_id: 'qsrc_down', provider_id: 'zai', provider_label: 'Z.ai', status: 'unavailable', unavailable_reason: 'Sign in again', pace_window_index: 0, headline_window_index: 0, windows: [quotaWindow('Weekly', 90, 'critical', null)] },
+    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5 }, urgency: { remaining: 'healthy', pace: 'healthy' }, pace_window_index: null, headline_window_index: null, windows: [] },
   ],
 }
 const pin = (page: Page, sources: string[]) => page.request.post('/api/settings', { data: { sidebar_quota_sources: sources } })
 const quotaGroup = (page: Page) => sidebar(page).locator('[data-section="sidebar-quotas"]')
 const quotaRow = (page: Page, source: string) => quotaGroup(page).locator(`[data-quota-source="${source}"]`)
 
-/** Pin before the first load: the shell restores settings from its snapshot, so a later write would not show on a reload. */
+/** Pin before the first load: the shell restores settings from its snapshot, so a later write would not show on a reload. The server's projection is owned by `api/settings.test.ts`. */
 async function withPins(page: Page, sources: string[], run: () => Promise<void>) {
-  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, sidebar_source_ids: sources, sidebar_can_pin: sources.length < 2 } }))
   await pin(page, sources)
   try {
     await page.goto('/skills')
@@ -341,10 +341,9 @@ test('pinned quotas show the pace window figures in pinned order and open Insigh
   })
 })
 
-test('an unavailable source shows its server status, and a source the server no longer lists takes its row with it', async ({ page }, info) => {
+test('an unavailable source shows its server status at its Insights level', async ({ page }, info) => {
   desktopOnly(info.project.name)
-  await withPins(page, ['qsrc_gone', 'qsrc_down'], async () => {
-    await expect(quotaGroup(page).locator('[data-quota-source]')).toHaveCount(1)
+  await withPins(page, ['qsrc_down'], async () => {
     await expect(quotaRow(page, 'qsrc_down')).toContainText('Sign in again')
     await expect(quotaRow(page, 'qsrc_down')).toHaveAttribute('data-level', 'unavailable')
     await openInsightsFrom(page, 'qsrc_down')
@@ -374,28 +373,51 @@ test('with nothing pinned the sidebar has no group and reads no quotas', async (
   expect(reads).toBe(0)
 })
 
-test('Preferences pins up to two listed sources and the sidebar follows at once', async ({ page }, info) => {
+test('Preferences pins from the server projection, shows a choice at once and rolls a refusal back', async ({ page, errors }, info) => {
   desktopOnly(info.project.name)
-  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
-  await pin(page, ['qsrc_gone'])
+  let projection = { sidebar_source_ids: [] as string[], sidebar_can_pin: true }
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, ...projection } }))
+  await page.goto('/settings/preferences')
+  await settle(page)
+  const picker = page.locator('#settingsSidebarQuotas')
+  const source = (name: string) => picker.getByRole('switch', { name })
+  await expect(picker.getByRole('switch')).toHaveCount(4)
+  await expect(quotaGroup(page)).toHaveCount(0)
   try {
-    await page.goto('/settings/preferences')
-    await settle(page)
-    const picker = page.locator('#settingsSidebarQuotas')
-    const source = (name: string) => picker.getByRole('switch', { name })
-    await expect(picker.getByRole('switch')).toHaveCount(4)
-    await expect(quotaGroup(page)).toHaveCount(0)
+    // The row shows while the write is still held, before the server has answered.
+    let release = () => {}
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() === 'POST') await new Promise<void>((resolve) => { release = resolve })
+      await route.fallback()
+    })
     await source('Claude').click()
     await expect(quotaRow(page, 'qsrc_weekly')).toBeVisible()
+    projection = { sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true }
+    release()
+    await expect.poll(async () => (await (await page.request.get('/api/settings')).json() as { sidebar_quota_sources: string[] }).sidebar_quota_sources).toEqual(['qsrc_weekly'])
+    await page.unroute('**/api/settings')
+
+    // The server's `sidebar_can_pin` closes the picker at two, and removing one reopens it.
+    projection = { sidebar_source_ids: ['qsrc_weekly', 'qsrc_credits'], sidebar_can_pin: false }
     await source('OpenRouter').click()
     await expect(source('OpenRouter')).toBeChecked()
     await expect(source('Z.ai')).toBeDisabled()
     await expect(source('Claude')).toBeEnabled()
+    projection = { sidebar_source_ids: ['qsrc_credits'], sidebar_can_pin: true }
     await source('Claude').click()
     await expect(quotaRow(page, 'qsrc_weekly')).toHaveCount(0)
     await expect(source('Z.ai')).toBeEnabled()
-    await expect.poll(async () => (await (await page.request.get('/api/settings')).json() as { sidebar_quota_sources: string[] }).sidebar_quota_sources).toEqual(['qsrc_credits'])
+
+    // A refused write takes the row back with the next read, and the error shows.
+    await page.route('**/api/settings', (route) => route.request().method() === 'POST' ? route.fulfill({ status: 400, json: { error: 'Refused' } }) : route.fallback())
+    await source('Z.ai').click()
+    await expect(page.getByText('Refused')).toBeVisible()
+    await expect(source('Z.ai')).not.toBeChecked()
+    await expect(quotaRow(page, 'qsrc_down')).toHaveCount(0)
+    await expect(quotaRow(page, 'qsrc_credits')).toBeVisible()
+    errors.length = 0 // The refusal this test stages.
   } finally {
+    await page.unroute('**/api/settings')
     await pin(page, [])
   }
 })

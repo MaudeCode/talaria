@@ -6,6 +6,8 @@ import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefault
 import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useBootstrap } from '../../app/bootstrap'
@@ -23,12 +25,19 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
   )
 }
 
-/** TAL-1870: which listed sources the expanded sidebar pins; a pin the server no longer lists neither shows nor counts. */
+/** TAL-1870: pins the sidebar's quota sources from the server's projection. A choice shows at once and settles on the next read, which also rolls back a refused write. */
 function SidebarQuotaSources() {
-  const { settings, set } = useSettingField(['sidebar_quota_sources'])
+  const { setAsync } = useSettingField([])
   const { quotas } = useProviderQuotas()
+  const qc = useQueryClient()
   const sources = quotas.data?.sources
-  const pinned = (settings.data?.sidebar_quota_sources ?? []).filter((id) => sources?.some((s) => s.source_id === id))
+  const pinned = quotas.data?.sidebar_source_ids ?? []
+  const pin = async (ids: string[]) => {
+    await qc.cancelQueries({ queryKey: keys.providerQuotas })
+    qc.setQueryData<typeof quotas.data>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids: ids, sidebar_can_pin: ids.length < 2 })
+    await setAsync({ sidebar_quota_sources: ids })
+    if (qc.isMutating({ mutationKey: keys.settings }) === 0) void qc.invalidateQueries({ queryKey: keys.providerQuotas })
+  }
   return (
     <FieldRow label={m.settings_label_sidebar_quotas()} hint={m.settings_desc_sidebar_quotas()} htmlFor="settingsSidebarQuotas">
       <div id="settingsSidebarQuotas" className="flex flex-wrap gap-3">
@@ -39,7 +48,7 @@ function SidebarQuotaSources() {
           const on = pinned.includes(s.source_id)
           return (
             <label key={s.source_id} className="flex items-center gap-1.5 text-sm">
-              <Switch checked={on} disabled={!on && pinned.length >= 2} onCheckedChange={(checked) => set({ sidebar_quota_sources: checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id) })} /> {quotaSourceTitle(s)}
+              <Switch checked={on} disabled={!on && quotas.data?.sidebar_can_pin === false} onCheckedChange={(checked) => { void pin(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {quotaSourceTitle(s)}
             </label>
           )
         })}

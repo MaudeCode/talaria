@@ -16,6 +16,9 @@ describe('quota cache authority', () => {
     expect(result.sources[0]?.windows).toEqual(cached.sources[0]?.windows)
     expect(result.sources[0]?.urgency).toEqual({ remaining: 'unavailable', pace: 'unavailable' })
     expect(reconcileProviderQuotas(undefined, unavailable).sources).toEqual([])
+    // Unknown membership keeps the sidebar's pins with their rows.
+    const pinned = { ...cached, sidebar_source_ids: [cached.sources[0]!.source_id], sidebar_can_pin: true }
+    expect(reconcileProviderQuotas(pinned, { ...unavailable, sidebar_source_ids: [], sidebar_can_pin: true }).sidebar_source_ids).toEqual(pinned.sidebar_source_ids)
   })
 
   it('applies confirmed empty lists and isolates profile, server scope and credential generations', () => {

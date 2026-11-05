@@ -677,6 +677,28 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(sources.find((q) => q.provider_id === 'anthropic')).toMatchObject({ status: 'available', windows: [expect.objectContaining({ label: 'Current session', used_percent: 12 })] })
   })
 
+  it('projects the pinned sources this read lists, in pinned order, for the Web sidebar (TAL-1870)', async () => {
+    const saved = configs.get(s.state)
+    const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    reset({ model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, custom_providers: [{ name: 'Zeta', base_url: 'http://zeta.test/v1' }, { name: 'Yota', base_url: 'http://yota.test/v1' }] })
+    const projection = async (pins: string[]) => {
+      await post(s, '/api/settings', { sidebar_quota_sources: pins })
+      const { sidebar_source_ids, sidebar_can_pin } = await json(await s.get('/api/provider/quotas'))
+      return { sidebar_source_ids, sidebar_can_pin }
+    }
+    try {
+      sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Limits', windows: [], details: [] } }))
+      const [first, second] = ((await json(await s.get('/api/provider/quotas'))).sources as { source_id: string }[]).map((q) => q.source_id) as [string, string]
+      expect(await projection([])).toEqual({ sidebar_source_ids: [], sidebar_can_pin: true })
+      expect(await projection([second, first])).toEqual({ sidebar_source_ids: [second, first], sidebar_can_pin: false })
+      // A pin the server no longer lists neither shows nor counts toward the two.
+      expect(await projection(['qsrc_gone', first])).toEqual({ sidebar_source_ids: [first], sidebar_can_pin: true })
+    } finally {
+      await post(s, '/api/settings', { sidebar_quota_sources: [] })
+      reset(saved)
+    }
+  })
+
   it('quota sources list each source id once, ordered by provider, account label, then source id (TAL-272)', async () => {
     const saved = configs.get(s.state)
     const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }

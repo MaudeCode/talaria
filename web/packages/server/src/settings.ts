@@ -169,11 +169,20 @@ const LANG_RE = /^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$/
 const TTS_ENGINE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/
 const LIST_KEYS = new Set(['hidden_tabs', 'tab_order', 'composer_control_order'])
 
+const SIDEBAR_QUOTA_PIN_LIMIT = 2
+
 /** TAL-1870: at most two unique trimmed source ids, in the order given; anything but a list is no pins. */
 function normalizeSidebarQuotaSources(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   const ids = value.flatMap((id: unknown) => (typeof id === 'string' && id.trim() ? [id.trim()] : []))
-  return [...new Set(ids)].slice(0, 2)
+  return [...new Set(ids)].slice(0, SIDEBAR_QUOTA_PIN_LIMIT)
+}
+
+/** TAL-1870: the pins a quota read lists, in pinned order, and whether another fits; an unlisted pin does not count. */
+export function sidebarQuotaProjection(pins: unknown, sources: unknown): { sidebar_source_ids: string[]; sidebar_can_pin: boolean } {
+  const listed = new Set((Array.isArray(sources) ? sources as { source_id?: unknown }[] : []).map((s) => s.source_id))
+  const sidebar_source_ids = normalizeSidebarQuotaSources(pins).filter((id) => listed.has(id))
+  return { sidebar_source_ids, sidebar_can_pin: sidebar_source_ids.length < SIDEBAR_QUOTA_PIN_LIMIT }
 }
 
 /** Python `int(v)`: ints, whole floats, and decimal strings; booleans count as 0/1. */
