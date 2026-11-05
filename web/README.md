@@ -160,6 +160,13 @@ naming a different address counts against the proxy's own budget.
 
 ### How chat runs
 
+Slash commands that only the Hermes CLI can run are hidden from suggestions.
+Typing one shows where to run it without starting a chat. The server also refuses
+these commands by name or alias if a client has an outdated command catalog.
+If the Agent command registry cannot be loaded, slash-command sends are unavailable;
+ordinary text is unaffected. Unknown slash words still pass through as text when
+the registry is available. Brackets in command hints mark optional arguments.
+
 `/reasoning hide` hides reasoning in Web and iOS streams, saved-history views,
 activity details and exports. `/reasoning show` restores it. Stored reasoning and
 the generic running indicator remain available. The Web-specific display setting

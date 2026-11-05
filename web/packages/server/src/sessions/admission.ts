@@ -9,7 +9,7 @@ import { compressionRecoveryPayload } from './session.js'
 import { isGenericContinuationIntent, type StartTurnOptions, type TurnRunner } from './turn.js'
 import { str } from '../util.js'
 import { SidecarError } from '../sidecar/client.js'
-import { unsupportedPromptMessage } from '../tools/commands.js'
+import { commandCatalog, unsupportedPromptMessage } from '../tools/commands.js'
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 export type QueueAdmissionFence = Pick<PromptQueueCard, 'project_id' | 'backend' | 'authority_epoch'> & { profile: string }
@@ -61,6 +61,22 @@ function visibleOrRetag(deps: AppDeps, s: Session, requestedProfile: string): vo
   throw new HttpFailure(404, 'Session not found')
 }
 
+/** Check the server catalog even when a client's catalog is missing or stale, before either backend receives text. */
+async function requireSupportedChatCommand(deps: AppDeps, msg: string): Promise<void> {
+  const name = /^\/([a-zA-Z][\w-]*)(?=\s|$)/.exec(msg)?.[1]?.toLowerCase()
+  if (!name) return
+  const sidecar = deps.sidecar()
+  if (!sidecar) throw new HttpFailure(503, 'Slash commands are unavailable because the Agent command registry could not be loaded.')
+  let registry: SidecarResult<'commands.registry'>
+  try {
+    registry = await sidecar.call('commands.registry', { profile_home: deps.profileHome(deps.activeProfile()) })
+  } catch {
+    throw new HttpFailure(503, 'Slash commands are unavailable because the Agent command registry could not be loaded.')
+  }
+  const command = commandCatalog(registry.commands).find((c) => c.name.toLowerCase() === name || c.aliases.some((alias) => alias.toLowerCase() === name))
+  if (command?.clients.length === 0) throw new HttpFailure(400, command.unsupported_message!)
+}
+
 /**
  * TAL-817: what the model gets for a typed Agent prompt built-in (`/plan`, `/initiate-setup`, …): the Agent's own expansion
  * of it for this session's profile, workspace and toolsets, while the transcript keeps the typed text; null when `msg` is
@@ -98,6 +114,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
   await measure('runtime_barrier', () => ensureAgentRuntimeCurrent(deps.sidecar()))
+  await requireSupportedChatCommand(deps, str(body.message).trim())
   const owner = deps.sessions.owner
   if (owner && (await measure('owner_routing', () => owner.isOwned(sid)))) {
     if (!(await deps.sessions.sessionIdVisible(sid))) throw new HttpFailure(404, 'Session not found')
@@ -163,6 +180,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
  * a background turn runs starts the user's turn through `start` instead (TAL-460).
  */
 export async function steerSessionChat(deps: AppDeps, sid: string, text: string, displayText: string, steerId: string, start: (body: Record<string, unknown>) => Promise<Record<string, unknown>>): Promise<SteerResponse> {
+  await requireSupportedChatCommand(deps, text.trim())
   const active = deps.registry.activeRunStreamForSession(sid)
   if (active && deps.registry.activeRuns.get(active)?.origin === 'background') {
     const started = await start({ session_id: sid, message: text })

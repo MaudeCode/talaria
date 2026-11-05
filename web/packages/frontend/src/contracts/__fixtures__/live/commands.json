@@ -211,7 +211,7 @@
           "web",
           "ios"
         ],
-        "args_hint": "<level>"
+        "args_hint": "[show|hide|<level>]"
       },
       {
         "name": "personality",
@@ -222,7 +222,7 @@
           "web",
           "ios"
         ],
-        "args_hint": "<name>"
+        "args_hint": "[name]"
       },
       {
         "name": "goal",
@@ -233,7 +233,7 @@
           "web",
           "ios"
         ],
-        "args_hint": "<text>"
+        "args_hint": "[text]"
       },
       {
         "name": "status",
@@ -301,7 +301,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/redraw runs only in the Hermes CLI."
+        "unsupported_message": "/redraw runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -314,7 +316,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/history runs only in the Hermes CLI."
+        "unsupported_message": "/history runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -326,10 +330,10 @@
         "name": "save",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/save runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -344,7 +348,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/prompt runs only in the Hermes CLI."
+        "unsupported_message": "/prompt runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -357,7 +363,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/handoff runs only in the Hermes CLI."
+        "unsupported_message": "/handoff runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -374,7 +382,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/worktree runs only in the Hermes CLI."
+        "unsupported_message": "/worktree runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -386,10 +396,10 @@
         "name": "rollback",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/rollback runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -404,7 +414,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/snapshot runs only in the Hermes CLI."
+        "unsupported_message": "/snapshot runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -417,7 +429,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/export runs only in the Hermes CLI."
+        "unsupported_message": "/export runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -430,7 +444,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/import runs only in the Hermes CLI."
+        "unsupported_message": "/import runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -444,10 +460,10 @@
         "name": "agents",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/agents runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -467,7 +483,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/journey runs only in the Hermes CLI."
+        "unsupported_message": "/journey runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -486,10 +504,10 @@
           "clear"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/heartbeat runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -504,7 +522,9 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": true,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -516,10 +536,10 @@
         "name": "review",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/review runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -533,10 +553,10 @@
         "name": "loop",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/loop runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -547,11 +567,13 @@
         "gateway_only": false,
         "name": "plan",
         "subcommands": [],
-        "handler": "agent",
+        "handler": "prompt",
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false,
+        "prompt": "expand"
       },
       {
         "aliases": [],
@@ -563,10 +585,10 @@
         "name": "moa",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/moa runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -578,10 +600,10 @@
         "name": "subgoal",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/subgoal runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -595,10 +617,10 @@
           "status"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/egress runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -614,10 +636,10 @@
           "all"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/context runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -629,10 +651,10 @@
         "name": "whoami",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/whoami runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -644,10 +666,10 @@
         "name": "profile",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/profile runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -659,10 +681,10 @@
         "name": "resume",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/resume runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -674,10 +696,10 @@
         "name": "sessions",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/sessions runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -690,7 +712,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/config runs only in the Hermes CLI."
+        "unsupported_message": "/config runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -707,7 +731,9 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": true,
+        "prompt": null
       },
       {
         "aliases": [
@@ -722,7 +748,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/statusbar runs only in the Hermes CLI."
+        "unsupported_message": "/statusbar runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -739,7 +767,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/battery runs only in the Hermes CLI."
+        "unsupported_message": "/battery runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -758,7 +788,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/timestamps runs only in the Hermes CLI."
+        "unsupported_message": "/timestamps runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -774,10 +806,10 @@
           "session"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/diff runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -790,7 +822,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/verbose runs only in the Hermes CLI."
+        "unsupported_message": "/verbose runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -807,7 +841,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/focus runs only in the Hermes CLI."
+        "unsupported_message": "/focus runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -823,10 +859,10 @@
           "status"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/footer runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -842,17 +878,17 @@
           "off"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/approvals runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
-        "args_hint": "[normal|fast|auto|cold|status] [--global]",
+        "args_hint": "[normal|fast|auto|cold|ultrafast|status] [--global]",
         "category": "Configuration",
         "cli_only": false,
-        "description": "Fast mode — OpenAI Priority Processing / Anthropic Fast Mode (normal/fast/auto/cold)",
+        "description": "Fast mode — OpenAI Priority Processing / Anthropic Fast Mode (normal/fast/auto/cold/ultrafast)",
         "gateway_only": false,
         "name": "fast",
         "subcommands": [
@@ -860,16 +896,18 @@
           "fast",
           "auto",
           "cold",
+          "ultrafast",
+          "ultra",
           "status",
           "on",
           "off",
           "--global"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/fast runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -882,7 +920,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/skin runs only in the Hermes CLI."
+        "unsupported_message": "/skin runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -900,7 +940,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/indicator runs only in the Hermes CLI."
+        "unsupported_message": "/indicator runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -917,7 +959,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/wake runs only in the Hermes CLI."
+        "unsupported_message": "/wake runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -934,10 +978,10 @@
           "status"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/busy runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -950,7 +994,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/tools runs only in the Hermes CLI."
+        "unsupported_message": "/tools runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -963,7 +1009,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/toolsets runs only in the Hermes CLI."
+        "unsupported_message": "/toolsets runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -980,10 +1028,10 @@
           "approval"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/memory runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -995,10 +1043,10 @@
         "name": "bundles",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/bundles runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1016,7 +1064,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/pet runs only in the Hermes CLI."
+        "unsupported_message": "/pet runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1031,7 +1081,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/hatch runs only in the Hermes CLI."
+        "unsupported_message": "/hatch runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1042,11 +1094,13 @@
         "gateway_only": false,
         "name": "learn",
         "subcommands": [],
-        "handler": "agent",
+        "handler": "prompt",
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false,
+        "prompt": "expand"
       },
       {
         "aliases": [],
@@ -1057,11 +1111,13 @@
         "gateway_only": false,
         "name": "init",
         "subcommands": [],
-        "handler": "agent",
+        "handler": "prompt",
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false,
+        "prompt": "expand"
       },
       {
         "aliases": [],
@@ -1083,7 +1139,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/cron runs only in the Hermes CLI."
+        "unsupported_message": "/cron runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1102,10 +1160,10 @@
           "clear"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/suggestions runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1119,10 +1177,10 @@
         "name": "blueprint",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/blueprint is not available in Talaria yet.",
+        "exec": false,
+        "prompt": "unsupported"
       },
       {
         "aliases": [],
@@ -1143,10 +1201,10 @@
           "list-archived"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/curator runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1192,10 +1250,10 @@
           "gc"
         ],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/kanban runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1208,7 +1266,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/reload runs only in the Hermes CLI."
+        "unsupported_message": "/reload runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1225,7 +1285,9 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": true,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1242,7 +1304,9 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": true,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1260,7 +1324,9 @@
         ],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/browser runs only in the Hermes CLI."
+        "unsupported_message": "/browser runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1273,7 +1339,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/plugins runs only in the Hermes CLI."
+        "unsupported_message": "/plugins runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1286,7 +1354,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/palette runs only in the Hermes CLI."
+        "unsupported_message": "/palette runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1301,7 +1371,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/subscription runs only in the Hermes CLI."
+        "unsupported_message": "/subscription runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1313,10 +1385,10 @@
         "name": "login",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/login runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1328,10 +1400,10 @@
         "name": "topup",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/topup runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1343,10 +1415,10 @@
         "name": "insights",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/insights runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1361,7 +1433,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/platforms runs only in the Hermes CLI."
+        "unsupported_message": "/platforms runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1374,7 +1448,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/copy runs only in the Hermes CLI."
+        "unsupported_message": "/copy runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1387,7 +1463,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/paste runs only in the Hermes CLI."
+        "unsupported_message": "/paste runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1400,7 +1478,9 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/image runs only in the Hermes CLI."
+        "unsupported_message": "/image runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1414,10 +1494,10 @@
         "name": "version",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/version runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [],
@@ -1429,10 +1509,10 @@
         "name": "debug",
         "subcommands": [],
         "handler": "agent",
-        "clients": [
-          "web",
-          "ios"
-        ]
+        "clients": [],
+        "unsupported_message": "/debug runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
       },
       {
         "aliases": [
@@ -1447,7 +1527,26 @@
         "subcommands": [],
         "handler": "agent",
         "clients": [],
-        "unsupported_message": "/quit runs only in the Hermes CLI."
+        "unsupported_message": "/quit runs only in the Hermes CLI.",
+        "exec": false,
+        "prompt": null
+      },
+      {
+        "name": "credits",
+        "description": "Show your Nous credits",
+        "aliases": [],
+        "args_hint": "",
+        "category": "Info",
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "cli_only": false,
+        "gateway_only": false,
+        "subcommands": [],
+        "exec": true,
+        "prompt": null
       }
     ]
   },

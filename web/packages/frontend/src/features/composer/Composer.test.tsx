@@ -15,6 +15,7 @@ import { deferred, IME_ENTERS } from '../../test/fixtures'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
+import { commandCatalog } from '../../../../server/src/tools/commands.ts'
 import { showToast } from '../toast/toast'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
@@ -759,6 +760,23 @@ describe('Composer', () => {
     expect(box).toHaveValue('/bra')
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(box).toHaveValue('/branch ')
+  })
+
+  it('refuses a non-dispatchable Agent command using the server catalog (TAL-1759)', async () => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: commandCatalog([
+      { name: 'agents', description: 'List agents', category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, prompt: null },
+    ]) })
+    vi.mocked(api.startChat).mockResolvedValue({ stream_id: 'unexpected', session_id: 's1' })
+    const onLocalCommand = vi.fn(() => Promise.resolve(false))
+    renderComposer(writable, null, noop, undefined, undefined, onLocalCommand)
+    await act(async () => { await Promise.resolve() })
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: '/agents' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('/agents runs only in the Hermes CLI.', 3000))
+    expect(box).toHaveValue('/agents')
+    expect(onLocalCommand).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
   })
 
   // TAL-314: the server catalog resolves a typed alias and says which client runs each command.
