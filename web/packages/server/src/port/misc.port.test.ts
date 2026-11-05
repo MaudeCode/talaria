@@ -11,7 +11,7 @@ import { AgentConfig, ConfigUnavailable } from '../config/agent-config.js'
 import { probeServer } from '../tools/mcp-health.js'
 import { agentHealth } from '../tools/health.js'
 import { githubJson } from '../tools/updates.js'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -112,7 +112,7 @@ describe('import scrubbing and ephemeral projection', () => {
     const session = done.session as Json
     expect(session.session_id).toBe(started.session_id)
     expect(session.messages).toEqual([{ role: 'user', content: expect.any(String) as unknown }, { role: 'assistant', content: 'because' }])
-    expect(existsSync(join(s.state, 'sessions', `${String(started.session_id)}.json`))).toBe(false)
+    await vi.waitFor(() => { expect(existsSync(join(s.state, 'sessions', `${String(started.session_id)}.json`))).toBe(false) })
   })
 })
 
