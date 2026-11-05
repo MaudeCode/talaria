@@ -24,6 +24,20 @@ provider fallback ladder. A main-model fallback retains the message metadata
 and checks that model's policy again; unverified routes are refused. Existing
 local title and handoff fallbacks remain available.
 
+## Custom provider identity
+
+The server reads legacy `custom_providers` entries first, then native
+`providers` entries whose identities the legacy list does not own. An empty,
+null or malformed legacy store has no winners and leaves the native view
+intact. Disabled and ambiguous native identities remain excluded.
+
+A bare built-in, alias or plugin provider selector keeps its registered route.
+Only a legacy custom entry with the matching name can claim it. A native
+`providers['custom:openai']` record requires the explicit `custom:openai`
+selector; its display name never takes over `openai`. The shared config
+resolver owns these rules for provider rows, model catalogs, endpoints and
+quota selection. Reading the view never rewrites the source config.
+
 ## Tested identity
 
 `sidecar/agent_dependency.json` records the tested external Agent: a stable

@@ -1515,7 +1515,8 @@ export class ProviderCatalog {
     const at = opts.at ?? this.deps.now()
     const computed_at = isoAt(at)
     const config = await this.deps.config.read(profileHome)
-    const provider = (providerRaw ?? activeProviderFromConfig(config) ?? '').trim().toLowerCase()
+    const plugins = providerRaw === null ? (await this.pluginProviders(profileHome)).value : null
+    const provider = (providerRaw ?? activeProviderFromConfig(config, new Set(plugins?.map((p) => p.name))) ?? '').trim().toLowerCase()
     if (!provider) return { computed_at, ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
     // A custom identity is named by its own record's label, as on its card (TAL-1654).
     const owner = provider.startsWith('custom:') ? customProviderOwner(config, provider).entry : null

@@ -69,12 +69,38 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     expect(((await pool.providers(home)).providers as unknown as Row[]).find((r) => r.id === 'custom:demo')).toMatchObject({ has_key: true, key_source: 'credential_pool' })
   })
 
-  it('keeps a selected owner key and context when an empty legacy store suppresses the view', async () => {
-    config = { ...config, custom_providers: [] }
+  it.each([[[]], [null], ['malformed'], [{}]])('keeps native cards, picker models and selected context under custom_providers=%j', async (legacy) => {
+    config = { ...config, custom_providers: legacy }
     const catalog = build({ DEMO_KEY: 'sk-synthetic-demo' })
     const rows = (await catalog.providers(home)).providers as unknown as Row[]
-    expect(rows.some((r) => r.id.startsWith('custom:') || r.id === 'omni')).toBe(false)
+    expect(rows.find((r) => r.id === 'custom:demo')).toMatchObject({ base_url: 'https://synthetic.invalid/v1', models: [{ id: 'demo-model' }] })
+    expect(rows.find((r) => r.id === 'custom:omni')).toMatchObject({ base_url: 'https://omni.invalid/v1' })
+    expect((await catalog.models(home)).groups.find((g) => g.provider_id === 'custom:demo')?.models.map((m) => m.bare_id ?? m.id)).toEqual(['demo-model'])
     expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', api_key: 'sk-synthetic-demo', config_context_length: 777777 })
+  })
+
+  it.each([false, true])('keeps the built-in active endpoint and quota target with native-first=%j', async (nativeFirst) => {
+    const entries = [['openai', { api_key: 'sk-synthetic-openai', base_url: 'https://builtin.invalid/v1' }], ['custom:openai', { api: 'https://proxy.invalid/v1', api_key: 'sk-synthetic-proxy', model: 'proxy-model' }]] as const
+    config = { model: { provider: 'openai', default: 'gpt-4.1' }, providers: Object.fromEntries(nativeFirst ? [...entries].reverse() : entries) }
+    sidecar.respond('usage.pool', () => ({ entries: [] }))
+    const catalog = build({})
+    const cards = await catalog.providers(home)
+    expect(cards.active_provider).toBe('openai')
+    expect(cards.providers.find((r) => r.id === 'openai')).toMatchObject({ base_url: 'https://builtin.invalid/v1' })
+    expect(cards.providers.find((r) => r.id === 'custom:openai')).toMatchObject({ base_url: 'https://proxy.invalid/v1' })
+    expect(await catalog.contextLengthInputs(home, 'gpt-4.1', String(cards.active_provider))).toMatchObject({ base_url: 'https://builtin.invalid/v1', api_key: 'sk-synthetic-openai' })
+    expect(await catalog.quota(home, null)).toMatchObject({ provider: 'openai', display_name: 'OpenAI' })
+    expect(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => c.params)).toContainEqual(expect.objectContaining({ provider: 'openai' }))
+  })
+
+  it('uses the registered plugin for default quota with an empty legacy store and a native namesake', async () => {
+    config = { model: { provider: 'myplugin' }, custom_providers: [], providers: { 'custom:myplugin': { api: 'https://proxy.invalid/v1' } } }
+    sidecar.respond('plugins.providers', () => ({ providers: [{ name: 'myplugin', display_name: 'My Plugin', auth_type: 'external_process', setup: 'ready' }] }))
+    sidecar.respond('usage.pool', () => ({ entries: [] }))
+    const catalog = build({})
+    expect((await catalog.providers(home)).active_provider).toBe('myplugin')
+    expect(await catalog.quota(home, null)).toMatchObject({ provider: 'myplugin' })
+    expect(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => c.params)).toEqual([expect.objectContaining({ provider: 'myplugin' })])
   })
 
   it('lists a keyed native record without a curated list from its live catalog, configured ids as the fallback', async () => {
@@ -122,9 +148,10 @@ describe('custom provider read view and owner (TAL-1654)', () => {
     expect(omni).toMatchObject({ model: 'omni-1', key_env: 'OMNI_KEY' })
   })
 
-  it.each([[[]], [null], ['malformed'], [{}]])('suppresses the native view under custom_providers=%j but keeps the owner', (legacy) => {
+  it.each([[[]], [null], ['malformed'], [{}]])('reads the native view under custom_providers=%j and keeps the owner', (legacy) => {
     const config: Config = { custom_providers: legacy, providers: { 'custom:demo': DEMO } }
-    expect(customProviderEntries(config)).toEqual([])
+    expect(customProviderEntries(config)).toEqual(customProviderEntries({ providers: { 'custom:demo': DEMO } }))
+    expect(customProviderEntries(config)).toHaveLength(1)
     expect(customProviderOwner(config, 'custom:demo')).toMatchObject({ entry: { base_url: 'https://synthetic.invalid/v1', key_env: 'DEMO_KEY' }, refused: null })
     expect(modelBaseUrl(config, 'custom:demo')).toBe('https://synthetic.invalid/v1')
   })
@@ -160,6 +187,15 @@ describe('custom provider read view and owner (TAL-1654)', () => {
     expect(activeProviderFromConfig(config)).toBe('custom:omni')
     expect(activeProviderFromConfig(config, new Set(['omni']))).toBe('omni')
     expect(modelBaseUrl(config, 'custom:omni')).toBe('https://omni.invalid/v1')
+  })
+
+  it.each(['openai', 'x-ai', 'myplugin'].flatMap((provider) => [false, true].map((nativeFirst) => ({ provider, nativeFirst }))))('keeps bare $provider on its route with native-first=$nativeFirst', ({ provider, nativeFirst }) => {
+    const entries = [[provider, { api_key: 'sk-synthetic-builtin' }], [`custom:${provider}`, { api: 'https://proxy.invalid/v1' }]] as const
+    const config: Config = { model: { provider }, providers: Object.fromEntries(nativeFirst ? [...entries].reverse() : entries) }
+    const plugins = new Set(['myplugin'])
+    expect(activeProviderFromConfig(config, plugins)).toBe(provider)
+    expect(activeProviderFromConfig({ ...config, model: { provider: `custom:${provider}` } }, plugins)).toBe(`custom:${provider}`)
+    expect(activeProviderFromConfig({ ...config, custom_providers: [{ name: provider, base_url: 'https://legacy.invalid/v1' }] }, plugins)).toBe(`custom:${provider}`)
   })
 
   it('projects read-only without changing the source config', () => {

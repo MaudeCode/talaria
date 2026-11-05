@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep built-in providers on their selected route and show native custom providers when the legacy provider list is empty.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

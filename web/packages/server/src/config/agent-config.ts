@@ -312,6 +312,13 @@ function recordBaseUrl(record: Dict): string {
   return ''
 }
 
+function isReservedProviderId(raw: string, plugins?: ReadonlySet<string>): boolean {
+  const canonical = canonicaliseProviderId(raw)
+  // A registered alias (`grok`, `local`) names its built-in even when the target has no table row of its own.
+  const builtIn = (id: string): boolean => id === 'custom' || id === LOCAL_RUNTIME_PROVIDER || id in PROVIDER_DISPLAY || id in PROVIDER_MODELS || id in PROVIDER_ENV_VAR || OAUTH_PROVIDERS.has(id)
+  return raw.replaceAll('_', '-') in PROVIDER_ALIASES || raw in PROVIDER_ALIASES || builtIn(canonical) || Boolean(plugins?.has(raw) || plugins?.has(canonical))
+}
+
 /**
  * Whether `providers.<key>` names a custom endpoint rather than a built-in's or plugin's settings (TAL-1654): every
  * `custom:` key, and a bare key that is no built-in, alias, local runtime or plugin id and declares its endpoint with
@@ -322,11 +329,7 @@ export function isNativeCustomProviderKey(key: string, record: unknown, plugins?
   const raw = key.trim().toLowerCase()
   if (!raw || !isDict(record)) return false
   if (raw.startsWith('custom:')) return true
-  const canonical = canonicaliseProviderId(raw)
-  // A registered alias (`grok`, `local`) names its built-in even when the target has no table row of its own.
-  const builtIn = (id: string): boolean => id === 'custom' || id === LOCAL_RUNTIME_PROVIDER || id in PROVIDER_DISPLAY || id in PROVIDER_MODELS || id in PROVIDER_ENV_VAR || OAUTH_PROVIDERS.has(id)
-  if (raw.replaceAll('_', '-') in PROVIDER_ALIASES || raw in PROVIDER_ALIASES || builtIn(canonical)) return false
-  if (plugins?.has(raw) || plugins?.has(canonical)) return false
+  if (isReservedProviderId(raw, plugins)) return false
   return Boolean(str(record.api).trim() || str(record.url).trim())
 }
 
@@ -384,12 +387,11 @@ function legacyCustomEntries(config: Config): Dict[] {
 /**
  * Read-only, legacy-shaped view of the configured custom providers: `custom_providers` entries, then each native
  * `providers` identity they do not already own. Native mapping keys are identities and their `name` is a label
- * (`display_name`). An explicitly empty, null or malformed `custom_providers` suppresses the native entries; disabled
- * and ambiguous native identities are left out. Never written back into config (TAL-1654).
+ * (`display_name`). An empty or malformed legacy store has no winners. Disabled and ambiguous native identities
+ * are left out. Never written back into config (TAL-1654, TAL-1757).
  */
 export function customProviderEntries(config: Config, plugins?: ReadonlySet<string>): Dict[] {
   const entries = legacyCustomEntries(config)
-  if ('custom_providers' in config && !entries.length) return entries
   const seen = new Set(entries.map((e) => customProviderSlug(e.name)))
   for (const [identity, group] of nativeCustomIdentities(config, plugins)) {
     if (seen.has(identity)) continue
@@ -401,8 +403,7 @@ export function customProviderEntries(config: Config, plugins?: ReadonlySet<stri
 
 /**
  * The record owning one `custom:<slug>` route, for credential, endpoint, context and default lookups: a legacy entry
- * wins, else the native owner. Unlike `customProviderEntries` it ignores a suppressing `custom_providers` value, so a
- * selected native owner keeps its key and metadata (TAL-1654).
+ * wins, else the native owner. A selected native owner keeps its key and metadata (TAL-1654).
  */
 export function customProviderOwner(config: Config, provider: unknown, plugins?: ReadonlySet<string>): CustomProviderOwner {
   const identity = customProviderSlug(provider)
@@ -462,7 +463,9 @@ export function activeProviderFromConfig(config: Config, plugins?: ReadonlySet<s
   if (!provider) return null
   if (provider === 'local') provider = 'custom'
   if (provider.startsWith('custom:')) return provider
-  const named = customProviderEntries(config, plugins).find((e) => customProviderSlug(e.name) === customProviderSlug(provider) || str(e.name).trim().toLowerCase() === provider)
+  // Only a legacy name can claim a bare built-in or plugin selector; native records need their explicit custom id.
+  const entries = isReservedProviderId(provider, plugins) ? legacyCustomEntries(config) : customProviderEntries(config, plugins)
+  const named = entries.find((e) => customProviderSlug(e.name) === customProviderSlug(provider) || str(e.name).trim().toLowerCase() === provider)
   if (named) return customProviderSlug(named.name) || 'custom'
   return canonicaliseProviderId(provider) || provider
 }
