@@ -431,7 +431,7 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     await expect(source('Claude')).not.toBeChecked()
     await expect(source('Z.ai')).toBeEnabled()
 
-    // Overlapping refusals restore the confirmed projection without a read, even when the read also fails.
+    // Overlapping refusals restore the confirmed projection without a read, across a remount, even when the read also fails.
     let refuse!: () => void
     const refused = new Promise<void>((resolve) => { refuse = resolve })
     await page.route('**/api/provider/quotas**', (route) => route.fulfill({ status: 500, json: { error: 'Down' } }))
@@ -442,10 +442,18 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     })
     await source('Z.ai').click()
     await expect(source('Z.ai')).toBeChecked()
+    // Leaving the section unmounts the picker while the write is still held.
+    await sidebar(page).getByRole('link', { name: 'Appearance' }).click()
+    await expect(picker).toHaveCount(0)
+    await sidebar(page).getByRole('link', { name: 'Preferences' }).click()
     await source('OpenRouter').click()
     await expect(source('OpenRouter')).not.toBeChecked()
+    // The last refusal rereads settings before it rolls back; the first's rollback passes only briefly.
+    const settled = page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'GET')
     refuse()
+    await settled
     await expect(page.getByText('Refused').first()).toBeVisible()
+    await page.waitForTimeout(100)
     await expect(source('Z.ai')).not.toBeChecked()
     await expect(source('OpenRouter')).toBeChecked()
 

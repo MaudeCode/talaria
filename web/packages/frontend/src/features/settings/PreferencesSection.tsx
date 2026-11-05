@@ -5,15 +5,13 @@ import { useSettingField } from './useSettingField'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
-import { useProviderQuotas } from '../../lib/useProviderQuotas'
-import { isDefiniteRefusal } from '../../contracts/common'
+import { setSidebarQuotaPins, useProviderQuotas } from '../../lib/useProviderQuotas'
 import { quotaSourceName } from '../insights/QuotaMeter'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
@@ -26,27 +24,14 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
   )
 }
 
-/** TAL-1870: pins the sidebar's quota sources from the server's projection. A choice shows at once and settles on the next read; a definite refusal of the latest choice restores the last confirmed projection, which pending choices never overwrite. */
+/** TAL-1870: pins the sidebar's quota sources from the server's projection; `setSidebarQuotaPins` owns the optimistic write. */
 function SidebarQuotaSources() {
   const { setAsync } = useSettingField([])
   const { quotas } = useProviderQuotas()
   const qc = useQueryClient()
-  const latest = useRef(0)
-  const pending = useRef(0)
-  const confirmed = useRef<Pick<NonNullable<typeof quotas.data>, 'sidebar_source_ids' | 'sidebar_can_pin'>>({})
   const sources = quotas.data?.sources
   const pinned = quotas.data?.sidebar_source_ids ?? []
-  const project = (projection: typeof confirmed.current) => { qc.setQueryData<typeof quotas.data>(keys.providerQuotas, (q) => q && { ...q, ...projection }) }
-  const pin = async (ids: string[]) => {
-    await qc.cancelQueries({ queryKey: keys.providerQuotas })
-    const write = ++latest.current
-    if (pending.current++ === 0) { const q = qc.getQueryData<typeof quotas.data>(keys.providerQuotas); confirmed.current = { sidebar_source_ids: q?.sidebar_source_ids, sidebar_can_pin: q?.sidebar_can_pin } }
-    const choice = { sidebar_source_ids: ids, sidebar_can_pin: ids.length < 2 }
-    project(choice)
-    await setAsync({ sidebar_quota_sources: ids }, () => { confirmed.current = choice }, (e) => { if (isDefiniteRefusal(e) && write === latest.current) project(confirmed.current) })
-    pending.current--
-    if (qc.isMutating({ mutationKey: keys.settings }) === 0) void qc.invalidateQueries({ queryKey: keys.providerQuotas })
-  }
+  const pin = (ids: string[]) => { void setSidebarQuotaPins(qc, ids, (onSaved, onError) => setAsync({ sidebar_quota_sources: ids }, onSaved, onError)) }
   return (
     <FieldRow label={m.settings_label_sidebar_quotas()} hint={m.settings_desc_sidebar_quotas()} htmlFor="settingsSidebarQuotas">
       <div id="settingsSidebarQuotas" className="flex flex-wrap gap-3">
@@ -57,7 +42,7 @@ function SidebarQuotaSources() {
           const on = pinned.includes(s.source_id)
           return (
             <label key={s.source_id} className="flex items-center gap-1.5 text-sm">
-              <Switch checked={on} disabled={!on && quotas.data?.sidebar_can_pin === false} onCheckedChange={(checked) => { void pin(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {s.display_name ?? quotaSourceName(s)}
+              <Switch checked={on} disabled={!on && quotas.data?.sidebar_can_pin === false} onCheckedChange={(checked) => { pin(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {s.display_name ?? quotaSourceName(s)}
             </label>
           )
         })}
