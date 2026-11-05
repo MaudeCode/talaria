@@ -487,6 +487,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
     static let sessionListFailures = OSAllocatedUnfairLock<[SessionListFailure]>(initialState: [])
     /// Every path the fixture has answered since the hosted test's reset, in order.
     static let answeredPaths = OSAllocatedUnfairLock<[String]>(initialState: [])
+    /// The source of every single-account quota read since the hosted test's reset, in order.
+    static let targetedQuotaReads = OSAllocatedUnfairLock<[String]>(initialState: [])
 
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
@@ -496,6 +498,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         sessionToolsets.withLock { $0 = nil }
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
+        targetedQuotaReads.withLock { $0 = [] }
         transcriptReads = 0
         archivedSessionIDs = []
         deletedSessionIDs = []
@@ -832,6 +835,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ])
         case "/api/provider/quotas":
             if panelScenario != nil { return json(["providers": []]) }
+            if let sourceID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "source" })?.value {
+                targetedQuotaReads.withLock { $0.append(sourceID) }
+            }
             return providerQuotasResponse()
         case "/api/insights":
             return insightsResponse(url)

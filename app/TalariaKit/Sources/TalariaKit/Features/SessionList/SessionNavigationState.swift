@@ -116,15 +116,21 @@ public struct SessionNavigationState: Equatable, Sendable {
         section = .chats
     }
 
-    /// Entering a section replaces the root and clears its inner pages.
+    /// Entering a section replaces the root and clears its inner pages. A source route also pushes its account, and
+    /// the root keeps no trace of it, so Back stays on Insights (TAL-1887).
     public mutating func select(_ utility: SessionListUtilityDestination) {
         guard let root = AppSection(utility) else { return }
         rootRevision += 1
         newChatSessionID = nil
-        destination = .utility(utility)
         section = root
         selectedSectionSession = nil
-        selectedItem = nil
+        if case .providers(let sourceID) = utility {
+            destination = .utility(.insights)
+            selectedItem = .quotaSource(id: sourceID)
+        } else {
+            destination = .utility(utility)
+            selectedItem = nil
+        }
     }
 
     public mutating func pushSectionSession(_ session: SessionSummary) {

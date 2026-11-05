@@ -19,7 +19,6 @@ enum InsightsTab: String, CaseIterable, Identifiable {
 struct InsightsView: View {
     let server: URL
     let onAPIError: (Error) -> Void
-    let initialQuotaSourceID: String?
     let openProviderSettings: () -> Void
     let quotaViewModel: ProvidersViewModel
     /// The section item the app pushes above this root; a tile sets it to its account.
@@ -50,14 +49,12 @@ struct InsightsView: View {
     init(
         server: URL,
         quotaViewModel: ProvidersViewModel? = nil,
-        initialQuotaSourceID: String? = nil,
         selection: Binding<SectionItem?> = .constant(nil),
         openProviderSettings: @escaping () -> Void = {},
         onAPIError: @escaping (Error) -> Void
     ) {
         self.server = server
         self.quotaViewModel = quotaViewModel ?? ProvidersViewModel(server: server)
-        self.initialQuotaSourceID = initialQuotaSourceID
         self._selection = selection
         self.openProviderSettings = openProviderSettings
         self.onAPIError = onAPIError
@@ -140,12 +137,9 @@ struct InsightsView: View {
             .refreshesLive(on: .runEnded, showsStatus: false) {
                 await loadInsights()
             }
-            .task(id: initialQuotaSourceID) {
-                if let initialQuotaSourceID {
-                    tab = .quotas
-                    selection = .quotaSource(id: initialQuotaSourceID)
-                }
-                await refreshPendingWidgetSourceIfNeeded()
+            // An account's page always sits above the Quotas tab, whichever route pushed it.
+            .onChange(of: selection) {
+                if case .quotaSource = selection { tab = .quotas }
             }
             // Also runs on appearance and when a pin syncs in or a provider is hidden.
             .onChange(
@@ -254,7 +248,7 @@ struct InsightsView: View {
     @ViewBuilder
     private func quotaRowMenu(_ source: ProviderQuotaSource) -> some View {
         Button {
-            Task { await refreshQuotaSource(source.id) }
+            Task { await quotaViewModel.refreshQuotaSource(source.id) }
         } label: {
             Label("Refresh", systemImage: "arrow.clockwise")
         }
@@ -532,23 +526,6 @@ struct InsightsView: View {
     private func refreshAll() async {
         await loadQuotas(refresh: true)
         await loadInsights()
-    }
-
-    private func refreshQuotaSource(_ sourceID: String) async {
-        if quotaViewModel.hasStableQuotaSources {
-            await quotaViewModel.refreshQuota(sourceID: sourceID)
-        } else {
-            await loadQuotas(refresh: true)
-        }
-    }
-
-    private func refreshPendingWidgetSourceIfNeeded() async {
-        let defaults = UserDefaults.standard
-        guard let sourceID = defaults.string(forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey),
-              sourceID == initialQuotaSourceID
-        else { return }
-        defaults.removeObject(forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
-        await refreshQuotaSource(sourceID)
     }
 
     private func loadQuotas(refresh: Bool = false) async {

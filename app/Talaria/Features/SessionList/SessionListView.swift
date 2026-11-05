@@ -1305,7 +1305,6 @@ struct SessionListView: View {
                 InsightsView(
                     server: server,
                     quotaViewModel: quotaViewModel,
-                    initialQuotaSourceID: insightsQuotaSourceID,
                     selection: sectionSelection,
                     openProviderSettings: {
                         openSection(.settings(.providerQuotas))
@@ -1398,15 +1397,7 @@ struct SessionListView: View {
             isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
             isPinned: pinnedIDs.contains(source.id),
             canPin: quotaViewModel.hasStableQuotaSources && pinnedIDs.count < 2,
-            refresh: {
-                Task {
-                    if quotaViewModel.hasStableQuotaSources {
-                        await quotaViewModel.refreshQuota(sourceID: source.id)
-                    } else {
-                        await quotaViewModel.loadQuotas(refresh: true)
-                    }
-                }
-            },
+            refresh: { Task { await quotaViewModel.refreshQuotaSource(source.id) } },
             togglePin: {
                 let slots = ProviderQuotaSidebarSettings.toggled(
                     first: firstSidebarQuotaSourceID, second: secondSidebarQuotaSourceID, sourceID: source.id
@@ -1451,7 +1442,7 @@ struct SessionListView: View {
     }
 
     private var insightsQuotaSourceID: String? {
-        guard case .utility(.providers(let sourceID)) = navigationState.destination else { return nil }
+        guard case .quotaSource(let sourceID) = navigationState.selectedItem else { return nil }
         return sourceID
     }
 
@@ -2252,6 +2243,11 @@ struct SessionListView: View {
         guard let sourceID = pendingQuotaSourceID else { return }
         pendingQuotaSourceID = nil
         openSection(.providers(sourceID))
+        // A widget's refresh request is consumed with its link, so nothing can replay it.
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey) == sourceID else { return }
+        defaults.removeObject(forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
+        Task { await quotaViewModel.refreshQuotaSource(sourceID) }
     }
 
     private func openProviderQuotaWidgetSettingsIfNeeded() {
