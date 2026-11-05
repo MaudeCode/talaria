@@ -97,7 +97,7 @@ class HostedTestShardTests(unittest.TestCase):
             for index, names in self.ran().items():
                 (lists / f"shard-{index}.txt").write_text("\n".join(names) + "\n")
             report = subprocess.check_output([script, "check", str(lists)], text=True)
-            self.assertIn("- Every one of 10 classes ran exactly once.", report)
+            self.assertIn("- Every one of 9 classes ran exactly once.", report)
             (lists / "shard-4.txt").write_text("SessionListHostedTests\n")
             result = subprocess.run([script, "check", str(lists)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)

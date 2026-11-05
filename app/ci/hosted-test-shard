@@ -19,11 +19,11 @@ TARGET = "TalariaTests"
 # Each listed class's "Test Suite" seconds, and every other class's together, from PR CI run 41980667369's four shards
 # (1289 s of tests). hosted_test_shard_test.py fails when they leave a shard more than 90 s over the mean; rebalance from
 # a current run's timings when a shard's job outgrows the others.
-SECONDS = {"SessionListHostedTests": 184.5, "TranscriptHostedTests": 82.3, "DuoFoldHostedTests": 124.2, "ChatHostedTests": 263.2,
+SECONDS = {"SessionListHostedTests": 184.5, "TranscriptHostedTests": 82.3, "ChatHostedTests": 263.2,
            "InsightsHostedTests": 37.0, "StreamHostedTests": 104.9, "SessionActionsHostedTests": 118.0, "RegularSplitHostedTests": 95.4}
-OTHER_SECONDS = 280.2
+OTHER_SECONDS = 404.4
 SHARDS = (
-    ("SessionListHostedTests", "TranscriptHostedTests", "DuoFoldHostedTests"),
+    ("SessionListHostedTests", "TranscriptHostedTests"),
     ("ChatHostedTests", "InsightsHostedTests"),
     ("StreamHostedTests", "SessionActionsHostedTests", "RegularSplitHostedTests"),
 )
