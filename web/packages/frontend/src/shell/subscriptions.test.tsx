@@ -58,5 +58,5 @@ it('keeps the titlebar session control scoped to session routes', async () => {
 it('keeps extension navigation highlighted for the selected extension', async () => {
   const router = await setup(FixtureSidebar)
   await act(async () => { await router.navigate({ to: '/ext/$extensionId', params: { extensionId: 'fixture' } }) })
-  expect(screen.getByRole('link', { name: 'Fixture' })).toHaveAttribute('aria-current', 'page')
+  for (const link of screen.getAllByRole('link', { name: 'Fixture' })) expect(link).toHaveAttribute('aria-current', 'page')
 })
