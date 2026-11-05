@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import XCTest
 @testable import Talaria
@@ -92,6 +93,18 @@ final class FeedbackHostedTests: XCTestCase {
         let confirmation = await awaitElement(in: window) { $0.accessibilityLabel == "Sent without attachments" }
         XCTAssertNotNil(confirmation)
         attachHostedScreenshot(window, name: "feedback-sent-without-attachments")
+    }
+
+    func testAPickedItemThatFailsToLoadShowsAnInlineError() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        let sheet = FeedbackSheet(model: model)
+        let window = try hostWindow(sheet)
+        await sheet.attach([PhotosPickerItem(itemIdentifier: "synthetic-missing")])
+        let message = await awaitElement(in: window) { $0.accessibilityLabel == "This file could not be attached." }
+        attachHostedScreenshot(window, name: "feedback-attachment-load-failed")
+        XCTAssertNotNil(message, "A picked item that cannot be loaded must not disappear silently")
+        XCTAssertTrue(model.attachments.isEmpty)
     }
 
     func testDisconnectedAboutDisablesFeedback() async throws {
