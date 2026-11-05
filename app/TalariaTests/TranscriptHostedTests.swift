@@ -338,20 +338,23 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertEqual(requests, 2, "One appearance must not chain pages")
     }
 
+    /// Pages of 400 rows reach the same 2000: one page's preservation does not depend on its length, and each prepend
+    /// waits out the one-second measurement window on a transcript that grows with every page (TAL-1891).
     func testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition() async throws {
+        let pageSize = 400
         var requested: [Int] = []
         var proxy: ChatTranscriptScrollProxy?
         var finishRequest: (() -> Void)?
         var insertedStart = 1_950
         defer { finishRequest?(); proxy = nil }
-        let window = try hostWindow(PagedHistoryTranscript(onInsert: { insertedStart = $0 }, onScrollRequest: { proxy = $0 }, onRequest: { cursor in
+        let window = try hostWindow(PagedHistoryTranscript(pageSize: pageSize, onInsert: { insertedStart = $0 }, onScrollRequest: { proxy = $0 }, onRequest: { cursor in
             requested.append(cursor)
             await withCheckedContinuation { continuation in finishRequest = { continuation.resume() } }
         }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
         let ready = await awaitCondition { proxy != nil }
         XCTAssertTrue(ready)
-        let pages = Array(stride(from: 1_950, through: 50, by: -50))
+        let pages = Array(stride(from: 1_950, to: 0, by: -pageSize))
         for start in pages {
             XCTAssertEqual(insertedStart, start)
             try XCTUnwrap(proxy).scrollTo("transcript:\(start + 2)", anchor: .top)
@@ -366,7 +369,7 @@ final class TranscriptHostedTests: XCTestCase {
             let release = try XCTUnwrap(finishRequest)
             finishRequest = nil
             release()
-            let committed = await awaitCondition { insertedStart == start - 50 && scroll.contentSize.height != oldHeight }
+            let committed = await awaitCondition { insertedStart == max(0, start - pageSize) && scroll.contentSize.height != oldHeight }
             XCTAssertTrue(committed)
             try await Task.sleep(for: .milliseconds(100))
             let afterElement = await awaitElement(in: window, label: label)
@@ -665,6 +668,7 @@ private struct PagedHistoryTranscript: View {
     let hasDisclosure: Bool
     let sparseOlderPages: Bool
     let richContent: Bool
+    let pageSize: Int
     let onMetrics: (ChatScrollMetrics) -> Void
     let onInsert: (Int) -> Void
     let shouldRender: (ChatMessage) -> Bool
@@ -675,7 +679,7 @@ private struct PagedHistoryTranscript: View {
     let onComplete: @MainActor () async -> Void
 
     init(initialStart: Int = 1_950, hasDisclosure: Bool = false, sparseOlderPages: Bool = false,
-         richContent: Bool = false,
+         richContent: Bool = false, pageSize: Int = 50,
          onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, onInsert: @escaping (Int) -> Void = { _ in },
          shouldRender: @escaping (ChatMessage) -> Bool = { _ in true },
          onReady: @escaping (@escaping () -> Void) -> Void = { _ in },
@@ -686,6 +690,7 @@ private struct PagedHistoryTranscript: View {
         self.hasDisclosure = hasDisclosure
         self.sparseOlderPages = sparseOlderPages
         self.richContent = richContent
+        self.pageSize = pageSize
         self.onMetrics = onMetrics
         self.onInsert = onInsert
         self.shouldRender = shouldRender
@@ -714,7 +719,7 @@ private struct PagedHistoryTranscript: View {
             if let load { return await load(beforePrepend) }
             await onRequest(start)
             beforePrepend()
-            start = max(0, start - 50)
+            start = max(0, start - pageSize)
             onInsert(start)
             await onComplete()
             return true

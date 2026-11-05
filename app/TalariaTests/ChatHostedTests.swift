@@ -574,11 +574,18 @@ final class ChatHostedTests: XCTestCase {
             XCTAssertTrue(HostedAccessibility.tap("Change Model", in: currentAlert))
             let refreshed = await awaitCondition { viewModel.modelSwitchConfirmation?.confirmToken == "token-\(update)" }
             XCTAssertTrue(refreshed, "The server's warning \(update) never reached the model")
-            settle(0.5)
-            let refreshedAlert = await presentedAlert(in: window)
-            let warning = try XCTUnwrap(refreshedAlert, "The server's warning \(update) never appeared")
             let title = update == 3 ? "Context changed" : "Context changed \(update)"
-            XCTAssertEqual(warning.message, "\(title)\n\nThe next reply will reread the updated context.")
+            let message = "\(title)\n\nThe next reply will reread the updated context."
+            // The previous alert is still leaving; its replacement can take a tap once it has finished presenting.
+            var refreshedAlert: UIAlertController?
+            _ = await awaitCondition {
+                var top = window.rootViewController
+                while let presented = top?.presentedViewController { top = presented }
+                refreshedAlert = top as? UIAlertController
+                return refreshedAlert?.message == message && refreshedAlert?.isBeingPresented == false
+            }
+            let warning = try XCTUnwrap(refreshedAlert, "The server's warning \(update) never appeared")
+            XCTAssertEqual(warning.message, message)
             XCTAssertEqual(viewModel.selectedModelID, "old-model")
             if update == 3 { attachHostedScreenshot(window, name: "model-refreshed") }
             currentAlert = warning
@@ -699,11 +706,7 @@ final class ChatHostedTests: XCTestCase {
 
     func testWorkingAndQueueShareOneRowWithIndependentActions() async throws {
         continueAfterFailure = false
-        let window = try await hostFixtureChat(["--ui-test-chat-controls"])
-        try await sendFromComposer("Run the deterministic fixture", in: window)
-        _ = try await requireElement(in: window, label: "Waiting for control input.")
-        try await sendFromComposer("/queue First queued message", in: window)
-        try await sendFromComposer("/queue Second queued message", in: window)
+        let window = try await hostChatWithTwoQueuedMessages()
         let queue = try await requireElement(in: window, label: "2 queued")
         let status = try await requireElement(in: window) { $0.accessibilityLabel?.hasSuffix("is working on the response") == true }
         settle(0.3)
@@ -717,6 +720,24 @@ final class ChatHostedTests: XCTestCase {
         HostedAccessibility.activate(status)
         XCTAssertNil(window.rootViewController?.presentedViewController)
         HostedAccessibility.activate(queue)
+        _ = try await requireElement(in: window, label: "First queued message")
+        _ = try await requireElement(in: window, label: "Second queued message")
+    }
+
+    private func hostChatWithTwoQueuedMessages() async throws -> UIWindow {
+        let window = try await hostFixtureChat(["--ui-test-chat-controls"])
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Waiting for control input.")
+        try await sendFromComposer("/queue First queued message", in: window)
+        try await sendFromComposer("/queue Second queued message", in: window)
+        return window
+    }
+
+    /// Removing queued messages drains the row's queue segment and leaves the run working; a new message queues again.
+    func testRemovingEveryQueuedMessageLeavesTheRunWorking() async throws {
+        continueAfterFailure = false
+        let window = try await hostChatWithTwoQueuedMessages()
+        HostedAccessibility.activate(try await requireElement(in: window, label: "2 queued"))
         _ = try await requireElement(in: window, label: "First queued message")
         _ = try await requireElement(in: window, label: "Second queued message")
         for remaining in [1, 0] {
