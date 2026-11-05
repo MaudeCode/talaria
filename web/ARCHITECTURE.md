@@ -65,6 +65,13 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+The server's shared credential redactor masks transcript text, tool arguments and
+results, exports, and public shares. It covers credential names and connection
+strings, provider tokens, and PEM, PGP, PuTTY and age private keys. MCP inventory
+uses the same credential-name check with its existing editable mask. URL
+userinfo matching stops at JSON string boundaries so JSON-LD stays readable.
+Redaction remains local to the server and never calls the Agent at runtime.
+
 JSON responses use compact serialization by default. Raw handlers can request
 pretty output explicitly. Raw and oRPC JSON responses share asynchronous gzip
 compression at level 6 when the serialized body exceeds 1 KiB and the client

@@ -6,19 +6,18 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { readCapped } from '../http/capped.js'
-import { redactString } from '../redact.js'
+import { isCredentialKey, redactString } from '../redact.js'
 import { str } from '../util.js'
 import type { McpHealthProber } from './mcp-health.js'
 
 const MASK = '••••••'
-const SENSITIVE = ['auth', 'token', 'key', 'secret', 'password', 'credential']
 const STDIO_LIFECYCLE_KEYS = ['idle_timeout_seconds', 'max_lifetime_seconds']
 
 export function maskSecrets(obj: unknown): unknown {
   if (!isDict(obj)) return obj
   const out: Dict = {}
   for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === 'string' && SENSITIVE.some((s) => k.toLowerCase().includes(s))) out[k] = MASK
+    if (typeof v === 'string' && isCredentialKey(k, true)) out[k] = MASK
     else if (isDict(v)) out[k] = maskSecrets(v)
     else out[k] = v
   }

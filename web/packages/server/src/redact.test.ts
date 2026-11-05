@@ -866,6 +866,54 @@ const CONTEXT7_KEY = `ctx7sk-${'0'.repeat(8)}-${'0'.repeat(4)}-${'0'.repeat(4)}-
 /** The shape `secrets.token_urlsafe(32)` prints: 43 characters. */
 const WEBAPP_CREDENTIAL = `Zq7_${'k3Lm'.repeat(9)}x9-`
 const AGENT_PARITY: Record<string, [string, string][]> = {
+  'v0.23 glued credential names': [
+    ['PGPASSWORD=s3cretpw psql -h db', 'PGPASSWORD=*** psql -h db'],
+    ['MYSQL_PWD=s3cretpw mysql', 'MYSQL_PWD=*** mysql'],
+    ['SSHPASS=s3cretpw sshpass -e host', 'SSHPASS=*** sshpass -e host'],
+    ['pgpassword="two words" next', 'pgpassword="***" next'],
+    ['PWD=/home/app', 'PWD=/home/app'],
+    ['PGPASSFILE=', 'PGPASSFILE='],
+    ['PGPASSFILE=/home/app/.pgpass', 'PGPASSFILE=/home/app/.pgpass'],
+    ['passwordless: true', 'passwordless: true'],
+  ],
+  'v0.23 qualified and affixed keys': [
+    ...['signing_key', 'encryption_key', 'encryptKey', 'master_key', 'hmac_key', 'symmetric_key', 'client-key-data', 'AccountKey', 'SharedAccessKey', 'dbpassword', 'rootpasswd', 'mySigningKey', 'my_api_key_value', 'secret_value', 'MY_API_KEY_B64'].map((key): [string, string] => [`{"${key}":"s3cretpw"}`, `{"${key}":"***"}`]),
+  ],
+  'v0.23 connection strings': [
+    ['Driver=ODBC;PWD={s3;cr}}et};Server=db', 'Driver=ODBC;PWD={***};Server=db'],
+    ['Host=db;Password="two;words";Database=x', 'Host=db;Password="***";Database=x'],
+    ["host=db password='two words' dbname=x", "host=db password='***' dbname=x"],
+    ['host=db password=two\\ words dbname=x', 'host=db password=*** dbname=x'],
+    ['AccountKey=s3cretpw;Endpoint=x', 'AccountKey=***;Endpoint=x'],
+    ['SharedAccessKey=s3cretpw;Endpoint=x', 'SharedAccessKey=***;Endpoint=x'],
+    ['https://x.test/?AccountKey=s3cretpw&x=1', 'https://x.test/?AccountKey=***&x=1'],
+    ['https://x.test/?sv=1&sig=s3cretpw&x=1', 'https://x.test/?sv=1&sig=***&x=1'],
+    ['SharedAccessSignature=sv=1&sig=s3cretpw;Endpoint=x', 'SharedAccessSignature=***;Endpoint=x'],
+    ['https://x.test/?SharedAccessSignature=sv=1&sig=s3cretpw&foo=bar', 'https://x.test/?SharedAccessSignature=***&foo=bar'],
+    ['Server=db;PWD=\"two\"\"words\";Database=x', 'Server=db;PWD=\"***\";Database=x'],
+    ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
+  ],
+  'v0.23 private key formats': [
+    ['-----BEGIN PGP PRIVATE KEY BLOCK-----\nsynthetic\n-----END PGP PRIVATE KEY BLOCK-----', '[REDACTED PRIVATE KEY]'],
+    [`AGE-SECRET-KEY-1${'A'.repeat(58)}`, '[REDACTED PRIVATE KEY]'],
+    [Buffer.from('-----BEGIN PRIVATE KEY-----\nsynthetic-key-material\n-----END PRIVATE KEY-----').toString('base64'), '[REDACTED PRIVATE KEY]'],
+    ['Private-Lines: 1\nQUJDREVGR0hJSktMTU5PUA==\nPrivate-MAC: abc', 'Private-Lines: 1\n[REDACTED PRIVATE KEY]\nPrivate-MAC: abc'],
+    ['Private-Lines: 1\\r\\n  4|QUJDREVGR0hJSktMTU5PUA==\\r\\nPrivate-MAC: abc', 'Private-Lines: 1\\r\\n[REDACTED PRIVATE KEY]\\r\\nPrivate-MAC: abc'],
+    [Buffer.from('-----BEGIN CERTIFICATE-----\nsynthetic-public-certificate\n-----END CERTIFICATE-----').toString('base64'), Buffer.from('-----BEGIN CERTIFICATE-----\nsynthetic-public-certificate\n-----END CERTIFICATE-----').toString('base64')],
+  ],
+  'v0.23 separator-glued tokens and network paths': [
+    [`backup-sk-${'A'.repeat(20)}`, 'backup-sk-AAA...AAAA'],
+    ['backup-sk-learn.txt', 'backup-sk-learn.txt'],
+    ['mount -t cifs //user:pw@host/share', 'mount -t cifs //user:***@host/share'],
+    ['MY_PROXY_BASIC=user:s3cretpw', 'MY_PROXY_BASIC=user:***'],
+    ['MY_LOGIN=user:pw', 'MY_LOGIN=user:***'],
+    ['MY_AUTH=user:pw', 'MY_AUTH=***'],
+    ['BASIC_AUTH=user:pw', 'BASIC_AUTH=***'],
+    ['MY_PROXY_BASIC="user:twoWords42"', 'MY_PROXY_BASIC="user:***"'],
+    ['IMAGE=redis:7-alpine', 'IMAGE=redis:7-alpine'],
+    ['{"@context":"https://schema.org","@type":"X"}', '{"@context":"https://schema.org","@type":"X"}'],
+    ['https://TOKENVALUE@github.com', 'https://***@github.com'],
+  ],
   'env names ending in _KEY, _PASS or _PW': [
     ['OPENAI_KEY=xyzzyplugh1234567890abcd', 'OPENAI_KEY=xyzzyp...abcd'],
     ['MYSQL_PASS=ghi789', 'MYSQL_PASS=***'],
@@ -954,10 +1002,23 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
 }
 
 describe('Agent redactor parity', () => {
+  it.each(['signing_key', 'encryption_key', 'master_key', 'hmac_key', 'PGPASSWORD', 'MYSQL_PWD', 'SSHPASS', 'AccountKey', 'dbpassword'])('masks object credential %s in live and persisted tool arguments', (key) => {
+    const call = { name: 'terminal', args: { [key]: 's3cretpw', passwordless: true } }
+    expect(publicToolFrame(call, true).args).toEqual({ [key]: '***', passwordless: true })
+    const row = redactSessionData({ messages: [{ role: 'assistant', tool_calls: [call] }] }, true)
+    expect(JSON.parse(JSON.stringify(row)) as unknown).toMatchObject({ messages: [{ tool_calls: [{ args: { [key]: '***', passwordless: true } }] }] })
+  })
   for (const [family, cases] of Object.entries(AGENT_PARITY)) {
     it.each(cases)(`masks ${family}: %j`, (input, expected) => {
       expect(redactText(input, true)).toBe(expected)
       expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
+      if (family.startsWith('v0.23')) {
+        const frame = publicToolFrame({ name: 'terminal', args: { command: input } }, true)
+        expect(frame.args).toEqual({ command: expected })
+        expect(frame.target).toBe(expected.trim().split('\n')[0]!.replace(/\s+/g, ' ').trim().slice(0, 120))
+        const row = redactSessionData({ messages: [{ role: 'assistant', content: input }] }, true)
+        expect(JSON.parse(JSON.stringify(row)) as unknown).toMatchObject({ messages: [{ content: expected }] })
+      }
     })
   }
   it('masks a lowercase env name beside a URL, and a prefix split by a control character, through the prefilter', () => {

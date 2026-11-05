@@ -21,7 +21,7 @@ const assignmentScan = channel('talaria.redaction.assignment-scan')
  */
 
 const CRED_RE = new RegExp(
-  '(?<![A-Za-z0-9_-])(' +
+  '(?<![A-Za-z0-9])(' +
     'sk-[A-Za-z0-9_-]{10,}' +
     '|ctx7sk-[A-Za-z0-9_-]{10,}' +
     '|ghp_[A-Za-z0-9]{10,}' +
@@ -116,7 +116,7 @@ const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?
  * (`${SCHEME}bob:pw@host`). The password runs from the first `:` to the `@`, colons included (`bob:hunter:2@`);
  * `git@host:org/repo` has no password before its `@`.
  */
-const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\]+)(?=@[^\s@/'"\\])/g
+const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])((?:\/\/)?[A-Za-z0-9._%+-]+:)([^\s@/'"\\]+)(?=@[^\s@/'"\\])/g
 /** A `key=value` whose key is percent-encoded (`api%5Fkey=`): the destination decodes the key once, so it is checked decoded. */
 const PERCENT_KEY_RE = /(?<![A-Za-z0-9_.%-])((?=[A-Za-z0-9_.%-]*%[0-9A-Fa-f]{2})[A-Za-z0-9_.%-]+=)([^&#\s"'<>]*)/g
 const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
@@ -133,7 +133,7 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
  * identifier, which must hold a keyword, so the scan stays linear on long runs (`PWPWPW…`). The value is the shell word
  * after `=`, read by `shellWordEnd` (quotes, escapes, `$'…'`).
  */
-const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])((?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
+const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])(PGPASSWORD|MYSQL_PWD|SSHPASS|(?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
 /** The prefilter's view of `ENV_SUFFIX_RE`. */
 const ENV_SUFFIX_TEST_RE = new RegExp(ENV_SUFFIX_RE.source)
 /**
@@ -150,8 +150,9 @@ const ENV_STRONG_NAME_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session
  * The Agent's env-assignment gate: a name holding a whole keyword whose value is a credential, because the name is strong
  * or the value opaque (`GITHUB_TOKEN=abc` and `MAX_TOKENS=100` stay). Env lookups (`os.getenv(…)`) name a variable.
  */
+const GLUED_CREDENTIAL_NAME_RE = /^(?:PGPASSWORD|MYSQL_PWD|SSHPASS)$/i
 const isEnvCredential = (key: string, value: string): boolean =>
-  !/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_KEYWORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value))
+  GLUED_CREDENTIAL_NAME_RE.test(key) || (!/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_KEYWORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value)))
 /** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
 function looksOpaque(value: string): boolean {
   if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
@@ -165,11 +166,11 @@ function looksOpaque(value: string): boolean {
  */
 const URL_USERINFO_RE = /(\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|(?:private|access|secret|session|signing|encryption|encrypt|master|hmac|symmetric|account|shared[_-]?access)[_-]?key|client[_-]?key[_-]?data|shared[_-]?access[_-]?signature|mysql_pwd|sshpass|sig|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
-const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
+const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}(?:_(?:value|data|b64|base64))?$`, 'i')
 /**
  * A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`),
  * and a JSON `\uXXXX` escape decoded as a JSON parser does (`"pass\u0077ord"` → `password`).
@@ -181,8 +182,12 @@ const dequote = (text: string): string => text.replace(/\\\r?\n/g, '').replace(/
  * (`--pass'word'`)
  * (`COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY`, `companyProdEuAwsSessionToken`).
  */
-function isCredentialKey(key: string): boolean {
+export function isCredentialKey(key: string, inventory = false): boolean {
+  // MCP historically masks substring names too; keep its editable-mask contract while sharing credential families.
+  if (inventory && (/auth|token|key|secret|password|credential/i.test(key) || ENV_STRONG_NAME_RE.test(key))) return true
+  if (GLUED_CREDENTIAL_NAME_RE.test(dequote(key))) return true
   return dequote(key).split(/[.:/[\]]/).some((segment) => {
+    if (/(?:password|passwd)$/i.test(segment)) return true
     const words = segment.replace(/^-+/, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
     for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
     return false
@@ -237,7 +242,7 @@ const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
  * A bare token as URL userinfo (`https://TOKEN@github.com`, `ssh://…@`): no `user:` part, at least 8 characters. Round-trip
  * URLs carry tokens in the query, so a bare userinfo credential is never one.
  */
-const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
+const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#"']{8,})(?=@\S)/gi
 /** C0, DEL, C1 and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
@@ -289,7 +294,7 @@ const PAYLOAD_RUN_CAP = 65_536
  */
 const TOKEN_TEST_RE = new RegExp(`${CRED_RE.source}|${JWT_RE.source}`)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
-const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
+const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
 const JWT_RUN_SOURCE = JWT_RE.source.replace(/^\\b/, '')
 /** A credential's or JWT's prefix and body from a position, without its boundaries. */
 const TOKEN_RUN_RE = new RegExp(`${CRED_RUN_RE.source}|${JWT_RUN_SOURCE}`, 'y')
@@ -303,12 +308,22 @@ const TOKEN_PREFIX_RE = new RegExp(`${CRED_START_RE.source.replace(/\{\d+,?\}/g,
 const TOKEN_PREFIX_RUN_RE = new RegExp(`${CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}')}|eyJ`, 'y')
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
+const B64_PEM_RE = /LS0tLS1CRUdJTi[A-Za-z0-9+/=]{60,}/g
+const AGE_KEY_RE = /AGE-SECRET-KEY-1[0-9A-Z]{20,}/g
+const PPK_EOL = String.raw`(?:\r?\n|\\r\\n|\\n)`
+const PPK_PRIVATE_RE = new RegExp(String.raw`(?<![\w-])(Private-Lines:[ \t]*[0-9]+[ \t]*(${PPK_EOL}))(?:[ \t]*(?:[0-9]+[|:\t][ \t]*)?[A-Za-z0-9+/=]{16,}[ \t]*(?:${PPK_EOL}|$))+`, 'g')
+const BASIC_PAIR_NAME_RE = /auth|basic|cred|login|proxy|userpass|userinfo/i
+const BASIC_PAIR_RE = /(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]*=)(["']?)([A-Za-z0-9._~-]{2,}):([^\s'"/:@]+)\2(?=$|[\s;,&|)\]}"'`])/g
+const CONNSTR_KEY_RE = /(?<![^\s;"'])(?:password|pwd)[ \t]*=[ \t]*/gi
+const CONNSTR_COMPANION_RE = /(?<![^\s;"'])(?:host|server|data\s+source|address|addr|network\s+address|user\s*id|uid|user(?:name)?|database|dbname|hostaddr|initial\s+catalog|port)[ \t]*=/i
+const CONNSTR_SEMICOLON_RE = /;[ \t]*(?:host|server|database|dbname|user(?:name)?|uid|pwd|password|driver|encrypt|port|sslmode|data\s+source)[ \t]*=/i
+const SAS_RE = /(?<![^;,?&'"\s])(SharedAccessSignature=)([^;\s'"),`|]+)/gi
 const PEM_OPENER = '-----BEGIN'
 /**
  * A private key through its end marker (captured) or, when that is missing (a display cap cut it off), to the end of the
  * text.
  */
-const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----(?:[\s\S]*?(-----END[A-Z ]*PRIVATE KEY-----)|[\s\S]*$)/g
+const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY(?: BLOCK)?-----(?:[\s\S]*?(-----END[A-Z ]*PRIVATE KEY(?: BLOCK)?-----)|[\s\S]*$)/g
 /** `PRIVKEY_RE` after its opener, from a position. */
 const PRIVKEY_REST_RE = new RegExp(PRIVKEY_RE.source.slice(PEM_OPENER.length), 'y')
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -795,6 +810,47 @@ function redactEnvSuffixes(text: string): string {
     ENV_SUFFIX_RE.lastIndex = Math.max(valueEnd, ENV_SUFFIX_RE.lastIndex)
   }
   return out + text.slice(last)
+}
+
+/** Connection-string values use ODBC braces/doubled quotes or libpq backslash escapes, once per line. */
+function redactConnectionStrings(text: string): string {
+  if (!/(?:password|pwd)[ \t]*=/i.test(text)) return text
+  return text.split('\n').map((line) => {
+    if (!CONNSTR_COMPANION_RE.test(line)) return line
+    const semicolon = CONNSTR_SEMICOLON_RE.test(line)
+    let out = ''
+    let last = 0
+    CONNSTR_KEY_RE.lastIndex = 0
+    for (let m = CONNSTR_KEY_RE.exec(line); m; m = CONNSTR_KEY_RE.exec(line)) {
+      const start = CONNSTR_KEY_RE.lastIndex
+      if (start < last) continue
+      let end = start
+      const open = line[start]
+      const close = semicolon && open === '{' ? '}' : open === '"' || open === "'" ? open : ''
+      if (close) {
+        end += 1
+        while (end < line.length) {
+          if (!semicolon && line[end] === '\\') { end += 2; continue }
+          if (line[end] === close) {
+            if (semicolon && line[end + 1] === close) { end += 2; continue }
+            end += 1
+            break
+          }
+          end += 1
+        }
+      } else {
+        while (end < line.length && !(semicolon ? /[;"'\r]/ : /[\s"']/).test(line[end]!)) end += !semicolon && line[end] === '\\' ? 2 : 1
+      }
+      end = Math.min(end, line.length)
+      if (start === end) continue
+      const closed = close && line[end - 1] === close
+      const replacement = close ? `${open}***${closed ? close : ''}` : '***'
+      out += line.slice(last, start) + replacement
+      last = end
+      CONNSTR_KEY_RE.lastIndex = end
+    }
+    return out + line.slice(last)
+  }).join('\n')
 }
 
 /** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
@@ -1789,6 +1845,16 @@ function redactRules(text: string): string {
   if (!text) return text
   const hasAssignment = text.includes('=')
   let out = maskSplitTokens(maskSpans(text, privateKeySpans(text), () => '[REDACTED PRIVATE KEY]')).replace(CRED_RE, (_, t: string) => mask(t))
+  out = out.replace(AGE_KEY_RE, '[REDACTED PRIVATE KEY]')
+  out = out.replace(B64_PEM_RE, (blob) => /^-----BEGIN[A-Z ]*PRIVATE KEY-----/.test(Buffer.from(blob, 'base64').toString('ascii', 0, 80)) ? '[REDACTED PRIVATE KEY]' : blob)
+  out = out.replace(PPK_PRIVATE_RE, (_, head: string, eol: string) => `${head}[REDACTED PRIVATE KEY]${eol}`)
+  if (hasAssignment) {
+    out = redactConnectionStrings(out).replace(SAS_RE, (_, head: string, value: string) => {
+      const signature = /(?:^|&)sig=[^&]*/i.exec(value)
+      return head + '***' + (signature ? value.slice(signature.index + signature[0].length) : '')
+    })
+    if (BASIC_PAIR_NAME_RE.test(out)) out = out.replace(BASIC_PAIR_RE, (whole, head: string, quote: string, user: string) => BASIC_PAIR_NAME_RE.test(head) ? `${head}${quote}${user}:***${quote}` : whole)
+  }
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1826,7 +1892,7 @@ const CASE_MARKERS = [
   'sk-', 'ctx7sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
-  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN', 'hermes-session=', '/webapp/launch#',
+  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN', 'LS0tLS1CRUdJTi', 'Private-Lines:', 'AGE-SECRET-KEY-1', 'hermes-session=', '/webapp/launch#',
 ]
 /** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`) and `JWT_RE`, the JWT's also as `JWT_ONLY`'s. */
 const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_RE.lastIndex = 0), TOKEN_PREFIX_RUN_RE.test(`${m}0-`))), `${JWT_ONLY}eyJ`])
@@ -1834,7 +1900,7 @@ const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_
 const PAYLOAD_MARKERS = new Set([...TOKEN_MARKERS, PEM_OPENER])
 const PAYLOAD_MARKER_STEMS = new Set([...PAYLOAD_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
 const LOWER_MARKERS = [
-  'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
+  'pgpassword', 'mysql_pwd', 'sshpass', 'pwd=', 'basic=', 'proxy', 'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
   'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'bearer ', 'cookie:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
@@ -1870,7 +1936,7 @@ function mightContainKeyword(text: string): boolean {
   if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
-  if (text.includes('=') && ENV_SUFFIX_TEST_RE.test(text)) return true
+  if (text.includes('=') && (ENV_SUFFIX_TEST_RE.test(text) || BASIC_PAIR_NAME_RE.test(text))) return true
   return false
 }
 
