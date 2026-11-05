@@ -318,13 +318,20 @@ describe('session writes show their result while the server is held (TAL-1179)',
 })
 
 describe('project writes show their result while the server is held (TAL-1179)', () => {
+  const openFilters = async () => {
+    await userEvent.click(screen.getByRole('button', { name: /^Chat filters/ }))
+    return screen.findByRole('menu', { name: /^Chat filters/ })
+  }
+  const closed = () => waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
   async function projectMenu(item: string | RegExp, role: 'menuitem' | 'menuitemradio' = 'menuitem') {
-    await userEvent.click(screen.getByRole('button', { name: 'Proj' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Project actions' }))
+    await userEvent.click(await within(await openFilters()).findByRole('menuitemradio', { name: 'Proj' }))
+    await closed()
+    await userEvent.click(await within(await openFilters()).findByRole('menuitem', { name: 'Selected project' }))
     await userEvent.click(await screen.findByRole(role, { name: item }))
+    await closed()
   }
 
-  it('renames a project chip at once', async () => {
+  it('renames a project at once', async () => {
     vi.mocked(api.renameProject).mockReturnValue(held())
     await panel()
     await projectMenu('Rename')
@@ -332,15 +339,15 @@ describe('project writes show their result while the server is held (TAL-1179)',
     await userEvent.clear(input)
     await userEvent.type(input, 'Renamed project{Enter}')
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Renamed project' })).toBeInTheDocument()
+    expect(document.querySelector('[data-chats-detail]')).toHaveTextContent('Renamed project')
   })
 
-  it('recolors a project chip at once', async () => {
+  it('recolors a project at once', async () => {
     vi.mocked(api.renameProject).mockReturnValue(held())
     await panel()
     await projectMenu('Gold', 'menuitemradio')
     expect(api.renameProject).toHaveBeenCalledWith('p1', 'Proj', '#f5c542')
-    expect(screen.getByRole('button', { name: 'Proj' }).querySelector<HTMLElement>('.color-dot')?.style.background).toBe('rgb(245, 197, 66)')
+    expect(within(await openFilters()).getByRole('menuitemradio', { name: 'Proj' }).querySelector<HTMLElement>('.session-project-dot')?.style.background).toBe('rgb(245, 197, 66)')
   })
 
   it('quick-creates a chat in the project (TAL-1032)', async () => {
@@ -370,15 +377,16 @@ describe('project writes show their result while the server is held (TAL-1179)',
     expect(toast).toHaveBeenCalledWith('Path does not exist: /w/alpha', 4000, 'error')
   })
 
-  it('removes a deleted project chip at once and restores it on refusal', async () => {
+  it('removes a deleted project at once and restores it on refusal', async () => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.deleteProject).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
     await panel()
     await projectMenu('Delete')
     await userEvent.click(screen.getByRole('button', { name: 'Delete project' }))
-    expect(screen.queryByRole('button', { name: 'Proj' })).toBeNull()
+    const menu = await openFilters()
+    expect(within(menu).queryByRole('menuitemradio', { name: 'Proj' })).toBeNull()
     refuse(refusal('Project in use'))
-    await screen.findByRole('button', { name: 'Proj' })
+    await within(menu).findByRole('menuitemradio', { name: 'Proj' })
     expect(toast).toHaveBeenCalledWith('Project in use', 4000, 'error')
   })
 })

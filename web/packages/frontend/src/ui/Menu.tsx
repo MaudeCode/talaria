@@ -1,4 +1,5 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
+import { ChevronRight } from 'lucide-react'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import { useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import type { BaseUIEvent } from '@base-ui/react/types'
@@ -21,6 +22,8 @@ export interface MenuProps {
   search?: RefObject<HTMLElement | null>
   /** Stays pinned above the scrolling rows, such as a search field (TAL-1131). */
   header?: ReactNode
+  /** How the popup keeps inside the viewport when its side lacks room; the default flips to the roomier side. */
+  collisionAvoidance?: ComponentProps<typeof BaseMenu.Positioner>['collisionAvoidance']
 }
 
 /** Menus share the Select popup layer above dialogs (z 1300/1301), so a menu opened inside a dialog takes clicks (TAL-1639). */
@@ -110,7 +113,7 @@ function openingFocus(s: OpeningFocus, search: RefObject<HTMLElement | null> | u
 }
 
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
-export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, search, header }: MenuProps) {
+export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, search, header, collisionAvoidance }: MenuProps) {
   // One stable container for the opening's mutable focus state, read and written only by the handlers.
   const [state] = useState<OpeningFocus>(() => ({ pointer: '', search: false, row: false, popup: null }))
   const focus = openingFocus(state, search, onOpenChange)
@@ -118,7 +121,7 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
     <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={focus.onOpenChange}>
       <BaseMenu.Trigger render={trigger} onPointerDown={focus.onTriggerPointerDown} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner side={side} align={align} sideOffset={6} className={POSITIONER}>
+        <BaseMenu.Positioner side={side} align={align} sideOffset={6} {...(collisionAvoidance ? { collisionAvoidance } : {})} className={POSITIONER}>
           <BaseMenu.Popup ref={header ? focus.ref : revealRows} aria-label={label} onFocus={focus.onFocus} onKeyDown={focus.onKeyDown} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
             {header ? <>{header}<div ref={revealRows} className="min-h-0 overflow-y-auto">{children}</div></> : children}
           </BaseMenu.Popup>
@@ -186,6 +189,9 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
 /** One row look for action and choice items: compact under a mouse, a 44 px target under a coarse pointer (TAL-1626). */
 export const MENU_ROW = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover pointer-coarse:min-h-11'
 
+/** A radio or checkbox row: the chosen one takes the accent colour. */
+export const MENU_CHOICE = cn(MENU_ROW, 'data-[checked]:text-accent-text')
+
 export function MenuItem({ className, ...props }: ComponentProps<typeof BaseMenu.Item>) {
   return <BaseMenu.Item {...props} className={cn(MENU_ROW, 'data-[disabled]:opacity-50', className as string | undefined)} />
 }
@@ -196,6 +202,23 @@ export function MenuSeparator() {
 
 export function MenuGroupLabel({ children }: { children: ReactNode }) {
   return <BaseMenu.GroupLabel className="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</BaseMenu.GroupLabel>
+}
+
+/** A nested menu behind one row: hover, click, tap or ArrowRight opens it; ArrowLeft or Escape steps back. */
+export function MenuSubmenu({ trigger, children }: { trigger: ReactNode; children: ReactNode }) {
+  return (
+    <BaseMenu.SubmenuRoot>
+      <BaseMenu.SubmenuTrigger className={cn(MENU_ROW, 'data-[popup-open]:bg-hover')}>
+        <span className="min-w-0 flex-1 truncate">{trigger}</span>
+        <ChevronRight size={14} className="shrink-0" aria-hidden="true" />
+      </BaseMenu.SubmenuTrigger>
+      <BaseMenu.Portal>
+        <BaseMenu.Positioner alignOffset={-4} className={POSITIONER}>
+          <BaseMenu.Popup className={cn(POPUP, 'overflow-y-auto')}>{children}</BaseMenu.Popup>
+        </BaseMenu.Positioner>
+      </BaseMenu.Portal>
+    </BaseMenu.SubmenuRoot>
+  )
 }
 
 export const MenuGroup = BaseMenu.Group

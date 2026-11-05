@@ -1921,7 +1921,6 @@
 	"project_unassigned_hint": "Show conversations not yet assigned to a project",
 	"project_new": "New project",
 	"project_new_prompt": "Project name",
-	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Zaktualizuj Agent",
 	"background_line_agent_completed": "Agent „{goal}” ukończony",

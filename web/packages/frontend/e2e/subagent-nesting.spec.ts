@@ -1,7 +1,7 @@
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { Session } from '../../server/dist/sessions/session.js'
-import { expect, settle, test } from './fixtures'
+import { expect, openChatFilters, settle, test } from './fixtures'
 import { openStateDb } from './server'
 
 test.use({ serviceWorkers: 'block' })
@@ -37,11 +37,12 @@ test('nests subagent sessions under the chat that started them', async ({ page }
     await page.screenshot({ path: testInfo.outputPath('webui-tab.png') })
     const shown = () => list.locator('.session-item').evaluateAll((items) => items.map((item) => `${item.getAttribute('data-sid') ?? ''}${item.classList.contains('session-item-nested') ? ' (nested)' : ''}`))
     expect(await shown()).toEqual(['web-parent', 'sub-tests (nested)', 'sub-notes (nested)'])
-    await page.getByRole('button', { name: 'CLI sessions (2)' }).click()
+    const pick = async (name: string) => { await (await openChatFilters(page)).getByRole('menuitemradio', { name }).click() }
+    await pick('CLI sessions (2)')
     await expect.poll(shown).toEqual(['cli-host', 'sub-cli (nested)'])
     await page.screenshot({ path: testInfo.outputPath('cli-tab.png') })
-    await page.getByRole('button', { name: 'WebUI sessions (3)' }).click()
-    await page.getByRole('button', { name: 'Unassigned' }).click()
+    await pick('WebUI sessions (3)')
+    await pick('Unassigned')
     await expect.poll(shown).toEqual([])
   } finally {
     await page.goto('about:blank')
