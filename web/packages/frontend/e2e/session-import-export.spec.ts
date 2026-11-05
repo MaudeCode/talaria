@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, openChatFilters, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -11,7 +11,7 @@ const TITLE = 'Imported transcript TAL-607'
 async function importFile(page: Page, file: { name: string; mimeType: string; buffer: Buffer }) {
   const before = page.url()
   const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: 'Import session from JSON' }).click()
+  await (await openChatFilters(page)).getByRole('menuitem', { name: 'Import session from JSON' }).click()
   const imported = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/session/import' && r.request().method() === 'POST')
   await (await chooser).setFiles(file)
   const response = await imported
@@ -57,7 +57,7 @@ test('a file that is not JSON reports the failure and creates nothing', async ({
   await page.goto('/')
   await settle(page)
   const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: 'Import session from JSON' }).click()
+  await (await openChatFilters(page)).getByRole('menuitem', { name: 'Import session from JSON' }).click()
   await (await chooser).setFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('not json') })
   await expect(page.getByText('Import failed: Invalid JSON')).toBeVisible()
   await expect(page).not.toHaveURL(/\/session\//)

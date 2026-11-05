@@ -1,12 +1,12 @@
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, GitBranch, Search, Upload, X } from 'lucide-react'
+import { Archive, ArchiveRestore, GitBranch, Search, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { SessionRow } from '../../contracts'
-import { PanelHead, PanelHeadButton } from '../../shell/PanelHead'
+import { PanelHead } from '../../shell/PanelHead'
 import { cn } from '../../ui/cn'
 import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
@@ -14,7 +14,7 @@ import { Dialog } from '../../ui/Dialog'
 import { useProjectsQuery } from '../../app/queries'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { ContextMenu } from '../../ui/Menu'
-import { ProjectChip } from './ProjectChip'
+import { NO_PROJECT, SessionFilterMenu, type SessionSource } from './SessionFilterMenu'
 import { clearSessionSearchRequest, closeMobileSidebar, useShellState } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
 import { useLocale } from '../../i18n/useLocale'
@@ -178,8 +178,6 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   )
 })
 
-const NO_PROJECT = '__none__'
-
 export function SessionListPanel() {
   useLocale()
   const params: { sessionId?: string } = useParams({ strict: false })
@@ -196,7 +194,7 @@ export function SessionListPanel() {
     searchInput.current?.focus()
     clearSessionSearchRequest()
   }, [sessionSearchRequested])
-  const [source, setSource] = useState<'webui' | 'cli'>('webui')
+  const [source, setSource] = useState<SessionSource>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const listParams = showArchived ? { include_archived: true } : {}
@@ -233,9 +231,7 @@ export function SessionListPanel() {
   const hasUnprojected = rows.some((r) => !r.project_id)
   const projectList = withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects)
   const projectsById = new Map(projectList.map((p) => [p.project_id, p]))
-  const newName = effects['project:new']?.fields?.name
-  // The provisional chip gives way as soon as the server's list carries the created project.
-  const newProject = typeof newName === 'string' && !projectList.some((p) => p.name === newName) ? newName : null
+  const filterDetail = project === NO_PROJECT ? m.project_unassigned() : project ? projectsById.get(project)?.name : undefined
   const { roots: filtered, children } = (() => {
     const term = q.toLowerCase()
     let visible = tree.roots
@@ -329,13 +325,6 @@ export function SessionListPanel() {
   })
   const mutateArchive = archive.mutate
   const onArchive = (id: string, archived: boolean) => mutateArchive({ id, archived })
-  const createProject = useResourceMutation({
-    resource: () => 'project:new',
-    effect: (name: string) => ({ fields: { name } }),
-    exclusive: true,
-    mutationFn: (name) => api.createProject(name),
-    onError: (e) => showErrorToast(e),
-  })
   const navigate = useNavigate()
   // Legacy J/K: open the next or previous shown session in sidebar order, unless typing, modified, or inside a dialog or menu (TAL-613).
   useEffect(() => {
@@ -371,17 +360,13 @@ export function SessionListPanel() {
     <SessionActions rows={filtered}>
     <div className={cn('panel-view active', searchOpen && 'search-open')} id="panelChat">
       <PanelHead
-        title={m.sidebar_chats()}
-        actions={
-          <>
-            <PanelHeadButton label={showArchived ? m.session_hide_archived() : m.session_show_archived()} active={showArchived} onClick={() => setShowArchived((a) => !a)}>
-              {showArchived ? <ArchiveRestore size={16} aria-hidden="true" /> : <Archive size={16} aria-hidden="true" />}
-            </PanelHeadButton>
-            <PanelHeadButton label={m.import_session_json_tooltip()} tooltipSide="bottom-right" onClick={() => importInput.current?.click()}>
-              <Upload size={16} aria-hidden="true" />
-            </PanelHeadButton>
-          </>
+        title={
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h3 className="shrink-0 text-xs font-medium uppercase tracking-wider text-muted">{m.sidebar_chats()}</h3>
+            {filterDetail && <span data-chats-detail className="min-w-0 truncate text-xs font-normal text-muted" title={filterDetail}>{filterDetail}</span>}
+          </div>
         }
+        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={hasUnprojected} showArchived={showArchived} onShowArchived={setShowArchived} onImport={() => importInput.current?.click()} />}
       />
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
       <div className="session-search sidebar-search">
@@ -397,21 +382,6 @@ export function SessionListPanel() {
       </div>
       <div className="session-list" id="sessionList" role="list">
         <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>
-        {cliCount > 0 && (
-          <div className="session-source-tabs">
-            <button type="button" className={cn('session-source-tab', source === 'webui' && 'active')} aria-pressed={source === 'webui'} onClick={() => setSource('webui')}>{m.sessions_source_webui({ n: webuiCount })}</button>
-            <button type="button" className={cn('session-source-tab', source === 'cli' && 'active')} aria-pressed={source === 'cli'} onClick={() => setSource('cli')}>{m.sessions_source_cli({ n: cliCount })}</button>
-          </div>
-        )}
-        {(projectList.length > 0 || hasUnprojected || newProject) && (
-          <div className="project-bar" role="group" aria-label={m.project_filter_label()}>
-            <span role="button" tabIndex={0} className={cn('project-chip', !project && 'active')} onClick={() => setProject(null)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(null) }}>{m.project_all()}</span>
-            {hasUnprojected && <span role="button" tabIndex={0} className={cn('project-chip no-project', project === NO_PROJECT && 'active')} title={m.project_unassigned_hint()} onClick={() => setProject(NO_PROJECT)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(NO_PROJECT) }}>{m.project_unassigned()}</span>}
-            {newProject && <span className="project-chip"><span>{newProject}</span></span>}
-            {projectList.map((p) => <ProjectChip key={p.project_id} project={p} active={project === p.project_id} onSelect={() => setProject(p.project_id)} onDeleted={() => setProject((cur) => (cur === p.project_id ? null : cur))} />)}
-            <span role="button" tabIndex={0} className="project-chip project-chip-add" title={m.project_new()} aria-label={m.project_new()} onClick={() => { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) } }}>+</span>
-          </div>
-        )}
         {storageNotice && (
           <div className="session-list-note session-list-error" role="status">
             <div>{storageNotice}{storage?.reason && <HelpTip label={m.field_help_about({ label: storageNotice })}>{storage.reason}</HelpTip>}</div>

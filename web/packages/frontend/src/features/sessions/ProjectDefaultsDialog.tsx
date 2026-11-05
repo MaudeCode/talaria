@@ -1,4 +1,4 @@
-/** TAL-1032: a project's chat defaults editor, loaded on first open (see ProjectChip). */
+/** TAL-1032: a project's chat defaults editor, loaded on first open (see ProjectMenuItems). */
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { z } from 'zod'
@@ -88,7 +88,7 @@ function ProjectDefaultsDialog({ project, initial, onCancel, onSave }: { project
 
 /**
  * The project's defaults editor and its save. The project shows the saved defaults at once; a refusal rolls them back and
- * reopens the editor on the draft. ProjectChip keeps this mounted after the first open, so a save outlives the closed editor.
+ * reopens the editor on the draft. ProjectDialogs keeps this mounted after the first open, so a save outlives the closed editor.
  */
 export function ProjectDefaults({ project, open, onOpenChange }: { project: Project; open: boolean; onOpenChange: (open: boolean) => void }) {
   const [draft, setDraft] = useState<Defaults | null>(null)

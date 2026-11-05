@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's chat list gets its space back: source, project, archived and import controls now live in one filter menu on the Chats heading, which names the selected project.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
