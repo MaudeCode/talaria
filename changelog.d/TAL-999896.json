@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Measurement branch for a CI change; never merged.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
