@@ -93,6 +93,16 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     expect(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => c.params)).toContainEqual(expect.objectContaining({ provider: 'openai' }))
   })
 
+  it('uses the registered plugin for default quota with an empty legacy store and a native namesake', async () => {
+    config = { model: { provider: 'myplugin' }, custom_providers: [], providers: { 'custom:myplugin': { api: 'https://proxy.invalid/v1' } } }
+    sidecar.respond('plugins.providers', () => ({ providers: [{ name: 'myplugin', display_name: 'My Plugin', auth_type: 'external_process', setup: 'ready' }] }))
+    sidecar.respond('usage.pool', () => ({ entries: [] }))
+    const catalog = build({})
+    expect((await catalog.providers(home)).active_provider).toBe('myplugin')
+    expect(await catalog.quota(home, null)).toMatchObject({ provider: 'myplugin' })
+    expect(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => c.params)).toEqual([expect.objectContaining({ provider: 'myplugin' })])
+  })
+
   it('lists a keyed native record without a curated list from its live catalog, configured ids as the fallback', async () => {
     config = { model: { provider: 'anthropic' }, providers: { omni: { url: 'https://omni.invalid/v1', api_key: 'sk-synthetic-omni', default_model: 'omni-1' }, 'custom:demo': structuredClone(DEMO) } }
     sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'omni' ? ['omni-live-a', 'omni-1'] : p.provider === 'custom:demo' ? ['demo-live'] : [] }))
