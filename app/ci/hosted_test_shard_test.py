@@ -17,7 +17,7 @@ loader.exec_module(shard)
 
 
 class HostedTestShardTests(unittest.TestCase):
-    def ran(self, last=("DuoFoldHostedTests", "TasksHostedTests")):
+    def ran(self, last=("WhatsNewHostedTests", "TasksHostedTests")):
         return {**{index: list(names) for index, names in enumerate(shard.SHARDS, start=1)}, shard.COUNT: list(last)}
 
     def test_listed_shards_run_their_classes_and_the_last_runs_every_other_class(self):
@@ -78,7 +78,7 @@ class HostedTestShardTests(unittest.TestCase):
             "ran in shard 1 and shard 4": self.ran(last=("SessionListHostedTests", "TasksHostedTests")),
             "ran in shard 3 and shard 4": self.ran(last=("TasksHostedTests", "TasksHostedTests")) | {3: [*shard.SHARDS[2], "TasksHostedTests"]},
             "shard 3 did not run RegularSplitHostedTests": self.ran() | {3: ["StreamHostedTests", "SessionActionsHostedTests"]},
-            "shard 1 ran unlisted TasksHostedTests": self.ran(last=("DuoFoldHostedTests",)) | {1: [*shard.SHARDS[0], "TasksHostedTests"]},
+            "shard 1 ran unlisted TasksHostedTests": self.ran(last=("WhatsNewHostedTests",)) | {1: [*shard.SHARDS[0], "TasksHostedTests"]},
             "shard 4 ran no classes": self.ran(last=()),
             "expected class lists for shards 1-4": {index: names for index, names in self.ran().items() if index != 3},
         }
