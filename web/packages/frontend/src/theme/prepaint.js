@@ -14,6 +14,8 @@
     var skin = (localStorage.getItem('hermes-skin') || '').toLowerCase()
     if (skin && skin !== 'default') root.dataset.skin = skin
     if (localStorage.getItem('hermes-webui-sidebar-collapsed') === '1') root.dataset.sidebarCollapsed = '1'
+    // Settings always draws the expanded column. Any segment matches, because the app can be mounted under a prefix.
+    if (/\/settings(\/|$)/.test(location.pathname)) root.dataset.settingsPage = '1'
     root.dataset.workspacePanel = localStorage.getItem('hermes-webui-workspace-panel') === 'open' ? 'open' : 'closed'
   } catch {
     root.classList.add('dark')

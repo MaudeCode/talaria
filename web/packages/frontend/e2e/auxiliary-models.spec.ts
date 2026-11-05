@@ -178,7 +178,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('button', { name: 'Edit Deep research' })).toBeVisible()
     await page.getByRole('button', { name: 'Delete Deep research' }).click()
     await expect(page.getByRole('button', { name: 'Edit Deep research' })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.locator('main#main').getByRole('button', { name: 'Back', exact: true }).click()
     await page.getByRole('button', { name: 'Profile routes', exact: true }).click()
     await page.getByRole('button', { name: 'Add route', exact: true }).click()
     await expect(page.getByText('This profile lends its credentials, SOUL, skills and terminal policy to subagents.')).toBeVisible()

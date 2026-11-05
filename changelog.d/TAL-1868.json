@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's Settings now shows a Back row and its section list in the one sidebar, so it never adds a second column.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

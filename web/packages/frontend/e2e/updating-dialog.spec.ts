@@ -380,7 +380,8 @@ test.describe('adaptive notification cadence', () => {
       server.tabUpdate = record(WEB_ID, 'applying')
       return route.fulfill({ json: { ok: true, notification_id: WEB_ID } })
     })
-    await page.goto('/settings/system')
+    // The sidebar's bell is not on Settings at desktop width, so the inbox opens elsewhere and Update Web follows in-app.
+    await page.goto('/skills')
     await settle(page)
     const idleReads = server.reads
     await page.clock.runFor(20_000)
@@ -403,6 +404,7 @@ test.describe('adaptive notification cadence', () => {
     await page.clock.runFor(20_000)
     expect(server.reads).toBe(closedReads)
 
+    await page.evaluate(() => { history.pushState({}, '', '/settings/system'); dispatchEvent(new PopStateEvent('popstate')) })
     await page.getByRole('button', { name: 'Update Web', exact: true }).click()
     await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
     await page.screenshot({ path: testInfo.outputPath('polling-active.png') })

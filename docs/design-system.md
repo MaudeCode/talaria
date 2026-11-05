@@ -72,12 +72,13 @@ and a tiled column in landscape. On Web it is `shell/Sidebar.tsx`, on every page
 
 | State | Web |
 | --- | --- |
-| Expanded | Default 300px, 180..480 resizable. Brand row, New chat, Search, then `text-sm` rows for Tasks, Kanban, Skills, Memory and Insights in that order, then a `More` disclosure, the page's panel (Chats, or Settings' section list), and a footer with the Settings row and icon-only Feedback and Notifications. The panel scrolls; everything above it stays put |
+| Expanded | Default 300px, 180..480 resizable. Brand row, New chat, Search, then `text-sm` rows for Tasks, Kanban, Skills, Memory and Insights in that order, then a `More` disclosure, the Chats panel, and a footer with the Settings row and icon-only Feedback and Notifications. The panel scrolls; everything above it stays put |
 | Collapsed | A 64px icon rail, each icon over its caption: brand, Search, Chat, Spaces, Discussions, then Tasks, Kanban, Todos, then Skills, Memory, Profiles, then Insights, the dashboard, Logs and extensions, with Feedback, Alerts and Settings pinned at the bottom. It never collapses to nothing. The panel stays mounted, hidden and out of the tab order, so it keeps its state |
-| Toggles | The edge tab and ⌘B write `hermes-webui-sidebar-collapsed`, the one stored choice, which applies on every page. No page collapses it by itself |
+| Toggles | The edge tab and ⌘B write `hermes-webui-sidebar-collapsed`, the one stored choice, which applies on every page but Settings. No page collapses it by itself |
 | Chats heading | A §4 `h3` with the selected project's name as its trailing detail, and one `SessionFilterMenu` trigger at its right, the App's `SessionFilterControls`: source (when CLI sessions exist), projects with New project, the selected project's actions in a submenu, Show archived and Import session. The icon takes the accent state and its `aria-label` says so when a filter differs from its default |
 | 641–900px | The rail stays tiled. Its hamburger, Search and ⌘B open the expanded panel over the page with a scrim, without touching the stored choice. Esc, the scrim and choosing a row close it |
 | 640px and below | The expanded content in a full-width drawer, no icon strip; the bottom `Tabbar` stays |
+| Settings | A Back row and the section list at the expanded width, whatever the stored choice, in place of the brand, New chat, Search, destinations, chat list and footer. Back returns to the last location outside Settings, or `/` after a direct load. No edge tab, ⌘B does nothing, and the stored choice is untouched. Tiled from 641px; the same content in the drawer at 640px and below. A panel rather than the App's modal, because the page has room and `/settings/$section` deep links stay |
 | Surface | One surface on `--rail-bg`, with `--rail-active-*` on the active row in both states and one pair of corner seams against the page. Destinations live in `SIDEBAR_PRIMARY`, `SIDEBAR_MORE` and `SIDEBAR_RAIL_GROUPS` (`shell/nav.ts`); `hidden_tabs` filters them all |
 
 ## 3. Lists and rows

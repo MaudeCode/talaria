@@ -14,7 +14,7 @@ import { cn } from '../ui/cn'
 import { Brandmark } from './Brandmark'
 import { PANEL_HEAD_BTN } from './PanelHead'
 import { DASHBOARD_ICON, SIDEBAR_MORE, SIDEBAR_PRIMARY, SIDEBAR_RAIL_GROUPS, SIDEBAR_ROW, orderedNav, panelForPath, type SidebarSlot } from './nav'
-import { closeMobileSidebar, readHiddenTabs, readTabOrder, requestSessionSearch, setSidebarWidth, toggleMobileSidebar, toggleSidebarCollapsed, useIsDesktop, useIsSidebarRail, useIsTiled, useShellState } from './useShellState'
+import { closeMobileSidebar, readHiddenTabs, readTabOrder, requestSessionSearch, setSidebarWidth, settingsBackHref, toggleMobileSidebar, toggleSidebarCollapsed, useIsDesktop, useIsSettings, useIsSidebarRail, useIsTiled, useShellState } from './useShellState'
 
 const MORE_OPEN_KEY = 'hermes-webui-sidebar-more-open'
 const ICON_PROPS = { size: 18, strokeWidth: 1.5, 'aria-hidden': true } as const
@@ -36,7 +36,6 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
   const bootstrap = useBootstrap()
   const dashboard = useDashboardStatusQuery(bootstrap.features.dashboard)
   const newChat = useNewChat()
-  const navigate = useNavigate()
   const manifests = useExtensionManifests(bootstrap.features.extensions || true)
   const extensions = (manifests.data?.manifests ?? []).filter((e) => e.enabled && (e.panel || e.native_view) && e.nav)
   const { visible } = orderedNav(readTabOrder(), hiddenTabs ?? readHiddenTabs())
@@ -62,9 +61,7 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
   const insideMore = !!extensionPath || SIDEBAR_MORE.includes(current)
   const moreOpen = moreStored || insideMore
   const toggleMore = () => { const next = !moreStored; writePersisted(MORE_OPEN_KEY, next ? '1' : '0'); setMoreStored(next) }
-  // Settings has no chat list, so Search takes the chat route, whose panel picks the request up when it mounts.
-  const openSearch = () => { requestSessionSearch(); if (current === 'settings') void navigate({ to: '/' }) }
-  const searchRow = <button type="button" className={SIDEBAR_ROW} aria-label={m.search()} onClick={openSearch}><SidebarRowContent icon={Search} label={m.search()} /></button>
+  const searchRow = <button type="button" className={SIDEBAR_ROW} aria-label={m.search()} onClick={requestSessionSearch}><SidebarRowContent icon={Search} label={m.search()} /></button>
   const settingsRow = destinationRow('settings')
   const feedbackRow = showsFeedback && <button key="feedback" type="button" className={cn(SIDEBAR_ROW, 'sidebar-icon-row has-tooltip')} data-panel="feedback" data-tooltip={m.feedback_rail_label()} aria-label={m.feedback_send_open()} onClick={openFeedback}><SidebarRowContent icon={MessageSquareWarning} label={m.feedback_rail_label()} /></button>
   const bell = <UpdateNotificationCenterButton key="notifications" placement="sidebar" />
@@ -112,16 +109,33 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
   )
 }
 
+/** Settings' column: Back and the section list, in place of the destinations, the chat list and the footer. */
+function SettingsNav({ panel }: { panel: ReactNode }) {
+  useLocale()
+  const navigate = useNavigate()
+  const back = () => { closeMobileSidebar(); void navigate({ href: settingsBackHref() }) }
+  return (
+    <nav className="sidebar-primary flex min-h-0 flex-1 flex-col" aria-label="Primary navigation">
+      <button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button>
+      <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
+    </nav>
+  )
+}
+
 /**
  * The one left column on every page. From 901px it tiles, expanded (resizable) or as the 64px icon rail by the stored
  * choice; at 641-900px the rail stays tiled and the hamburger opens the expanded panel over the page; at 640px and below
- * it is a full-width drawer. `panel` is the route's content below the destinations (session list, section menu).
+ * it is a full-width drawer. Settings always shows it expanded, tiled from 641px. `panel` is the route's content below the destinations (session list, section menu).
  */
 export function Sidebar({ panel }: { panel: ReactNode }) {
   const { collapsed, mobileOpen, sidebarWidth } = useShellState()
   const isDesktop = useIsDesktop()
   const isTiled = useIsTiled()
-  const overlay = mobileOpen && !isTiled
+  const settings = useIsSettings()
+  const rail = useIsSidebarRail()
+  // Settings' section list is the page's navigation, so nothing opens over the page there.
+  const noOverlay = isTiled || (settings && isDesktop)
+  const overlay = mobileOpen && !noOverlay
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
     if (!overlay) return
@@ -130,7 +144,7 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [overlay])
   // Widening past the overlay's range leaves the stored choice in charge, and narrowing again does not reopen it.
-  useEffect(() => { if (isTiled) closeMobileSidebar() }, [isTiled])
+  useEffect(() => { if (noOverlay) closeMobileSidebar() }, [noOverlay])
   // The hamburger leaves the rail while the panel covers the page, so focus moves in with it and back when it closes.
   useEffect(() => {
     if (!overlay || !isDesktop) return
@@ -165,7 +179,7 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
       <aside
         ref={ref}
         className={cn('sidebar flex w-[300px] shrink-0 flex-col overflow-visible bg-(--rail-bg) max-[641px]:bg-(--sidebar-bg) border-0 shadow-(--sidebar-shadow) min-[641px]:p-(--island-gap) min-[641px]:relative min-[901px]:shrink min-[901px]:min-w-[180px] max-[769px]:border-r max-[769px]:border-r-border max-[641px]:fixed max-[641px]:inset-y-0 max-[641px]:left-0 max-[641px]:w-screen max-[641px]:max-w-none max-[641px]:z-[200] max-[641px]:box-border max-[641px]:p-2 max-[641px]:pt-[calc(8px+var(--app-titlebar-safe-top))] max-[641px]:[transform:translateX(-100%)] max-[641px]:will-change-transform max-[641px]:pb-[calc(8px+env(safe-area-inset-bottom,0px))] max-[641px]:[&.mobile-open]:[transform:translateX(0)]', overlay && 'mobile-open')}
-        style={isTiled && !collapsed ? { width: sidebarWidth } : undefined}
+        style={isTiled && !rail ? { width: sidebarWidth } : undefined}
         aria-hidden={drawerClosed ? true : undefined}
         inert={drawerClosed}
         data-mobile-open={mobileOpen ? '1' : undefined}
@@ -175,14 +189,14 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
             <X size={18} aria-hidden="true" />
           </button>
         )}
-        <SidebarNav panel={panel} />
+        {settings ? <SettingsNav panel={panel} /> : <SidebarNav panel={panel} />}
         <span className="seam seam-tr" aria-hidden="true" />
         <span className="seam seam-br" aria-hidden="true" />
-        {isTiled && !collapsed && (
+        {isTiled && !rail && (
           <div className="resize-handle absolute top-0 bottom-0 w-[5px] cursor-col-resize z-10 transition-[background] duration-150 hover:bg-accent" id="sidebarResize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onPointerDown={startResize} />
         )}
         {/* Edge tab on the sidebar's right edge (the mirror of the right panel's). */}
-        {isTiled && (
+        {isTiled && !settings && (
           <button type="button" className="workspace-panel-edge-toggle has-tooltip" id="btnSidebarEdgeToggle" data-tooltip={collapsed ? m.sidebar_show() : m.sidebar_hide()} aria-label={collapsed ? m.sidebar_show() : m.sidebar_hide()} aria-expanded={!collapsed} onClick={() => toggleSidebarCollapsed()}>
             <span className="edge-tab-join edge-tab-join-top" aria-hidden="true" />
             <span className="edge-tab-join edge-tab-join-bottom" aria-hidden="true" />
