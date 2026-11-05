@@ -1869,6 +1869,50 @@ describe('chat turns through the sidecar', () => {
     expect(reloaded.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response' })
   })
 
+  it('refuses non-dispatchable registry commands before chat or steer reaches the Agent (TAL-1759)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('commands.registry', () => ({ commands: [{ name: 'agents', description: 'List agents', category: 'Session', aliases: ['agent-list'], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, prompt: null }] }))
+    sidecar.respond('commands.expand_prompt', () => ({ name: null, message: null }))
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }]))
+    const before = sidecar.calls.filter((c) => c.method === 'chat.start' || c.method === 'chat.steer').length
+    try {
+      for (const message of ['/agents list', '/AGENT-LIST', '/agents\nlist']) {
+        for (const [path, body] of [
+          ['/api/chat/start', { session_id: sid, message }],
+          ['/api/chat/steer', { session_id: sid, text: message }],
+        ] as const) {
+          const response = await post(s, path, body)
+          expect(response.status, `${path}: ${message}`).toBe(400)
+          expect((await json(response)).error).toBe('/agents runs only in the Hermes CLI.')
+        }
+      }
+      expect(sidecar.calls.filter((c) => c.method === 'chat.start' || c.method === 'chat.steer')).toHaveLength(before)
+      expect((await s.deps.sessionStore.get(sid)).messages).toEqual([])
+      const registry = sidecar.responderFor('commands.registry')!
+      sidecar.respond('commands.registry', () => { throw new SidecarError('registry unavailable', { condition: 'sidecar_unavailable' }) })
+      const unavailable = await post(s, '/api/chat/start', { session_id: sid, message: '/unknownword' })
+      expect(unavailable.status).toBe(503)
+      expect(sidecar.calls.filter((c) => c.method === 'chat.start' || c.method === 'chat.steer')).toHaveLength(before)
+      sidecar.respond('commands.registry', registry)
+      const owner = s.deps.sessions.owner!
+      const owned = vi.spyOn(owner, 'isOwned').mockResolvedValue(true)
+      const submit = vi.spyOn(owner, 'submit')
+      try {
+        const response = await post(s, '/api/chat/start', { session_id: sid, message: '/agents' })
+        expect(response.status).toBe(400)
+        expect(submit).not.toHaveBeenCalled()
+      } finally { owned.mockRestore(); submit.mockRestore() }
+      for (const message of ['ordinary text', '/unknownword', '/agents/file']) {
+        const response = await post(s, '/api/chat/start', { session_id: sid, message })
+        expect(response.status).toBe(200)
+        const started = await json(response)
+        await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+      }
+    } finally {
+      for (const method of ['commands.registry', 'commands.expand_prompt', 'chat.start'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
   it('starts a typed Agent prompt built-in with the Agent\'s expansion and refuses one it cannot expand (TAL-817)', async () => {
     const sid = await newSession(s)
     const asked: Json[] = []

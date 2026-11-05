@@ -31,9 +31,9 @@ export const CLIENT_COMMANDS: readonly Command[] = [
   client('yolo', 'Toggle YOLO mode (skip approvals)', webOnly('YOLO mode is not available in the mobile app.')),
   client('branch', 'Branch the conversation', { aliases: ['fork'] }),
   client('voice', 'Toggle voice mode', webOnly('Voice commands are not available in the mobile app.')),
-  client('reasoning', 'Set reasoning effort', { args_hint: '<level>' }),
-  client('personality', 'Set the personality', { args_hint: '<name>' }),
-  client('goal', 'Set or show the goal', { args_hint: '<text>' }),
+  client('reasoning', 'Set reasoning effort', { args_hint: '[show|hide|<level>]' }),
+  client('personality', 'Set the personality', { args_hint: '[name]' }),
+  client('goal', 'Set or show the goal', { args_hint: '[text]' }),
   client('status', 'Show session status'),
   client('btw', 'Side question without affecting the run', { args_hint: '<question>' }),
   client('background', 'Run in the background', { args_hint: '<message>', aliases: ['bg'] }),
@@ -53,7 +53,7 @@ const separatorVariants = (name: string): string[] => [...new Set([name.replace(
 /**
  * The client table followed by the Agent registry. An Agent command whose name is already a client name or alias is
  * dropped, and client-claimed aliases are removed from the rest, so every typed name resolves to one entry.
- * Gateway-only commands never reach a client; CLI-only ones and prompt built-ins the sidecar cannot expand stay listed
+ * Gateway-only commands never reach a client; commands without an execution or prompt-expansion path stay listed
  * for no client. An expandable prompt built-in is `handler: 'prompt'`: chat start sends the Agent's expansion (TAL-817).
  *
  * TAL-1577: a command `commands.exec` runs also answers to its other `_`/`-` spelling, published in `aliases` (`generated`
@@ -76,8 +76,9 @@ function buildCatalog(agent: readonly AgentCommand[]): { commands: Command[]; ge
     for (const c of tier) aliases.set(c, claim(c.aliases))
   }
   const rows = agent.filter((c) => aliases.has(c)).map((c): Command => {
-    const unsupported = c.cli_only ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
-    return { ...c, aliases: aliases.get(c) ?? [], exec: c.exec || SESSION_EXEC_COMMANDS.has(c.name), handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }
+    const exec = c.exec || SESSION_EXEC_COMMANDS.has(c.name)
+    const unsupported = c.cli_only || !exec && c.prompt === null ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
+    return { ...c, aliases: aliases.get(c) ?? [], exec, handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }
   })
   const generated = new Map<string, string>()
   for (const row of rows) {

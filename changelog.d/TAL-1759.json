@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "CLI-only slash commands explain where to run them instead of starting a chat, and optional command arguments are marked optional.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

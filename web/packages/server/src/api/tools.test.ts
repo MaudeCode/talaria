@@ -469,6 +469,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
         row('stop'), row('bg'), row('compress', { aliases: ['compact', 'squash'] }),
         row('reload-skills', { aliases: ['reload_skills'], exec: true }), row('history', { cli_only: true }), row('sethome', { gateway_only: true }),
         row('initiate-setup', { aliases: ['initiate_setup'], prompt: 'expand' }), row('blueprint', { prompt: 'unsupported' }),
+        row('agents', { aliases: ['agent-list'] }), row('reload-mcp', { exec: true }), row('autoprune', { exec: true }),
+        row('refine'), row('plugin-task', { category: 'Plugin', exec: true }),
       ],
     }))
     try {
@@ -486,10 +488,14 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       // Web-only commands carry the message other clients show.
       expect(commands.find((c) => c.name === 'terminal')).toMatchObject({ clients: ['web'], unsupported_message: 'Terminal is not available in the mobile app.' })
       expect(commands.find((c) => c.name === 'usage')?.clients).toEqual(['web'])
-      // Agent rows follow, run on every client unless CLI-only, and never list gateway-only commands.
-      expect(names.slice(-4)).toEqual(['reload-skills', 'history', 'initiate-setup', 'blueprint'])
+      // Agent rows follow; only executable commands and expandable prompts list clients.
+      expect(names.slice(-9)).toEqual(['reload-skills', 'history', 'initiate-setup', 'blueprint', 'agents', 'reload-mcp', 'autoprune', 'refine', 'plugin-task'])
       expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'], exec: true })
       expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.', exec: false })
+      expect(commands.find((c) => c.name === 'agents')).toMatchObject({ handler: 'agent', clients: [], aliases: ['agent-list'], unsupported_message: '/agents runs only in the Hermes CLI.', exec: false })
+      for (const name of ['reload-mcp', 'autoprune', 'refine', 'plugin-task']) {
+        expect(commands.find((c) => c.name === name)).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], exec: true })
+      }
       expect(names).not.toContain('sethome')
       // TAL-817: an Agent prompt built-in the sidecar expands runs everywhere as a prompt turn; one it cannot is offered nowhere.
       expect(commands.find((c) => c.name === 'initiate-setup')).toMatchObject({ handler: 'prompt', clients: ['web', 'ios'], aliases: ['initiate_setup'] })
@@ -498,6 +504,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     } finally {
       const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
       sidecar.respond('commands.registry', () => recorded as never)
+    }
+  })
+
+  it('commands mark arguments accepted without a value as optional (TAL-1759)', async () => {
+    const commands = (await json(await s.get('/api/commands'))).commands as Json[]
+    for (const [name, args_hint] of [['reasoning', '[show|hide|<level>]'], ['personality', '[name]'], ['goal', '[text]']]) {
+      expect(commands.find((c) => c.name === name)).toMatchObject({ args_hint })
     }
   })
 
