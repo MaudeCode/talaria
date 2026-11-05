@@ -388,6 +388,7 @@ export const SessionSchema = z.looseObject({
   plan_gauge: PlanGaugeSchema.nullable().optional(),
   show_reasoning: z.boolean().optional().describe('Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field.'),
   activity_phase: SessionActivityPhaseSchema.optional(),
+  refresh_after: z.number().int().positive().nullable().optional().describe('TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent\'s delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it.'),
   todo_state: TodoStateSchema.optional(),
   source_references: z.array(AcceptedSourceReferenceSchema).optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),

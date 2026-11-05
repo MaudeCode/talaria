@@ -34,7 +34,7 @@ import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageTe
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { isOrphanPrunableSource } from './source-kind.js'
-import { withBackgroundLinks, type Receipt } from './background-tasks.js'
+import { settledActivityPhase, withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -75,6 +75,10 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 
 /** The health probe is also the browser's server-reachability probe (30 s), so the readiness check answers well inside it. */
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
+/** TAL-1760: how often a client rereads a running delegated child's transcript. */
+const RUNNING_CHILD_REFRESH_SECONDS = 5
+/** The state.db row of a delegated child: a source the Agent gives one, and a link to the session that started it. */
+const isDelegatedChildRow = (row: Row | null | undefined): boolean => Boolean(row?.parent_session_id) && ['subagent', 'tool'].includes(str(row?.source).trim().toLowerCase())
 /** TAL-1254: how soon a worktree lock the sidecar could not confirm is tried again. */
 export const WORKTREE_RETAIN_RETRY_MS = 60_000
 
@@ -131,6 +135,7 @@ export interface SessionServiceDeps {
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
   sessionActivity?: (sid: string, profile: string | null, opts?: { excludeStreamId?: string; terminalPhase?: SessionActivityPhase }) => Promise<SessionActivityPhase>
   backgroundReceipts?: (sid: string) => Receipt[] | Promise<Receipt[]>
+  delegationRunning?: (sid: string, profile: string | null, childIds: ReadonlySet<string>) => Promise<boolean>
   backgroundPending?: (sid: string) => Promise<Set<string>>
   store: SessionStore
   drafts: DraftStore
@@ -1291,6 +1296,7 @@ export class SessionService {
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     Object.assign(raw, (await this.ownerLocked([raw], limited?.sources))[0])
     raw.activity_phase = await this.activityPhase(s)
+    raw.refresh_after = null
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = (await this.workspaceNames([s]))(s)
     raw.branched_from = (await this.branchedFrom(s))
@@ -1379,13 +1385,39 @@ export class SessionService {
   }
 
   /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  foreignMessages(messages: Message[], session: object, showReasoning = true): Message[] {
-    return hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(messages), session), [], null), {}, { showReasoning }) as Message[]
+  foreignMessages(messages: Message[], session: object, showReasoning = true, opts: { running?: boolean } = {}): Message[] {
+    const rows = withMarkerKinds(withTurnIds(messages), session)
+    // TAL-1760: a run another process is still writing: its last turn is the open one, with no answer split off yet.
+    const activeTurnId = opts.running ? str(rows.at(-1)?._turn_id) || null : null
+    return hydrateAnchorActivityScenes(withToolCallOutcomes(rows, [], activeTurnId), {}, { showReasoning, activeTurnId, runningScene: activeTurnId !== null }) as Message[]
+  }
+
+  /**
+   * TAL-1760: a delegated child runs while its own row has not ended and a live delegation of its parent lists it. Both
+   * are required: a child that crashed without writing `ended_at` settles once its delegation ends. `row` is the tip of
+   * the child's compression lineage, so a compressed child still runs; its root holds the link to the parent, and a
+   * delegation may have recorded any of its segments. An unknown read is not running.
+   */
+  private async delegatedChildRunning(sid: string, row: Awaited<ReturnType<SessionGateReads['row']>>): Promise<boolean> {
+    if (!row || !isDelegatedChildRow(row) || (row.ended_at ?? null) !== null || str(row.end_reason)) return false
+    const dbPath = this.stateDbPath(this.deps.activeProfile())
+    const lineage = await stateDbSessionReadAsync(emptyLineageReport(sid), 'stateDbLineageReport', dbPath, sid)
+    const rootId = str(lineage.lineage_key) || sid
+    const root = rootId === sid ? row : await stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, rootId)
+    const parentId = str(root?.parent_session_id)
+    if (!parentId) return false
+    try {
+      const parent = await this.store.get(parentId, { metadataOnly: true, cacheOnMiss: false, promote: false })
+      const segments = Array.isArray(lineage.segments) ? lineage.segments.map((segment) => str((segment as Row).session_id)) : []
+      return (await this.deps.delegationRunning?.(parentId, parent.profile, new Set([sid, ...segments]))) ?? false
+    } catch { return false }
   }
 
   private async foreignSessionDetail(sid: string, loadMessages: boolean, msgLimit: number | null, msgBefore: number | null): Promise<Record<string, unknown>> {
     // TAL-1249: the gates and a metadata-only read decide from the transcript's size; only a read with messages loads it.
     const { synth, meta, reads, summary } = (await this.foreignSession(sid, false))
+    const row = await reads.row()
+    const running = await this.delegatedChildRunning(synth.session_id, row)
     let msgs: Message[] = []
     let page: Message[] = []
     let offset = 0
@@ -1394,7 +1426,7 @@ export class SessionService {
       if (!read.ok && read.reason) throw new HttpFailure(503, read.reason)
       // The same turn projection as a WebUI session (turn ids, tool outcomes, then each completed turn's scene), over the
       // whole transcript so every page carries the same values; only the page is then clipped and redacted.
-      msgs = this.foreignMessages(read.rows, synth, await this.deps.showReasoning?.(synth.profile) ?? true)
+      msgs = this.foreignMessages(read.rows, synth, await this.deps.showReasoning?.(synth.profile) ?? true, { running })
       const [rows, start] = messageWindowForDisplay(msgs, msgLimit, msgBefore)
       page = msgLimit === null ? rows as Message[] : messagesForLimitedPayload(rows)
       offset = start
@@ -1409,6 +1441,12 @@ export class SessionService {
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: page, tool_calls: [], transcript_seq: null,
       assistant_name: this.assistantName(synth), workspace_name: (await this.workspaceNames([synth]))(synth), confirms_deep_truncate: true,
       _messages_truncated: loadMessages && msgLimit !== null && offset > 0, _messages_offset: offset, _msg_limit_max: MAX_MSG_LIMIT,
+      refresh_after: running ? RUNNING_CHILD_REFRESH_SECONDS : null,
+    }
+    if (running) sess.activity_phase = 'running'
+    else if (loadMessages && isDelegatedChildRow(row)) {
+      const scene = msgs.findLast((m) => isDict(m._anchor_activity_scene))?._anchor_activity_scene
+      sess.activity_phase = settledActivityPhase(str(isDict(scene) ? scene.terminal_state : ''))
     }
     if (loadMessages) attachTodoState(sess, msgs)
     const merged = withSessionWireFlags((await this.ownerLocked([meta ? mergeCliSidebarMetadata(sess, meta) : sess]))[0]!, this.deps.runtime.activeStreamIds)

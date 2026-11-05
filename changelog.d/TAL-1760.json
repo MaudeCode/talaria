@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A running subagent's transcript now shows its work as running and updates until the subagent ends.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
