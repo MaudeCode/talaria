@@ -101,17 +101,13 @@ jobs:
         if: inputs.mode != 'contracts'
         run: |
           set -euo pipefail
-          # Only what test-without-building reads: the xctestrun and the products it names (module files, objects and
-          # bundle copies stay behind). Artifacts drop file modes, so a tar keeps the bundles' executables and signatures
-          # intact. xz, not gzip: the artifact's own zip already gave gzip's size, 112 MB, which took 15 to 150 s to
-          # download; xz leaves under half that (TAL-1891).
+          # Only what test-without-building runs: the xctestrun and the App with its extensions (module files, objects
+          # and the top-level extension copies stay behind). Artifacts drop file modes, so a tar keeps the bundles'
+          # executables and signatures intact. xz, not gzip: the artifact's own zip already gave gzip's size, 112 MB, which
+          # took 15 to 150 s to download. xz itself, since this tar's built-in xz takes one core: 177 s at level 9 (TAL-1891).
           cd DerivedData/Build
-          products=(Products/*.xctestrun)
-          for product in Talaria.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
-            products+=("Products/Debug-iphonesimulator/${product}")
-          done
           start_seconds=${SECONDS}
-          tar --options xz:compression-level=9,xz:threads=0 -cJf "${RUNNER_TEMP}/app-build.tar.xz" "${products[@]}"
+          tar -cf - Products/*.xctestrun Products/Debug-iphonesimulator/Talaria.app | xz -8 -T0 > "${RUNNER_TEMP}/app-build.tar.xz"
           echo "- Test build package: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.tar.xz" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload the test build

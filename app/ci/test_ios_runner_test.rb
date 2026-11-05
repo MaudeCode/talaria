@@ -315,8 +315,7 @@ class TestIOSRunnerTest < Minitest::Test
     # Every mode with hosted tests packages and uploads its build for them; the build itself always runs to the end.
     build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal('ci/build-for-testing "${BUILD_DESTINATION}"', build_steps.fetch("Build for testing")["run"])
-    assert_includes(build_steps.fetch("Package the test build")["run"],
-                    "for product in Talaria.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do")
+    assert_includes(build_steps.fetch("Package the test build")["run"], "Products/*.xctestrun Products/Debug-iphonesimulator/Talaria.app")
     # The artifact is a compressed tar (TAL-1891): every shard unpacks the file the build wrote, and the upload does
     # not compress it again.
     archive = "app-build.tar.xz"
