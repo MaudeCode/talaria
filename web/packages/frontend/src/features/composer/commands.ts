@@ -6,6 +6,7 @@ import type { Command } from '../../contracts'
 
 export interface ParsedCommand { name: string; args: string; raw: string }
 
+// TAL-1927 tracks moving this classification to the server command contract.
 export function parseCommand(text: string): ParsedCommand | null {
   const t = text.trimStart()
   if (!t.startsWith('/')) return null
