@@ -28,6 +28,8 @@ run on macOS without a simulator: `swift test --package-path TalariaKit
 [--filter <Class>]`. Run them for any `TalariaKit/` change; they take seconds.
 
 Run simulator-hosted XCTest only through `scripts/test-ios [test-identifier ...]`.
+Prefix `TALARIA_TEST_SCREENSHOTS=1` when the run's screenshots are the evidence; other runs render only a failing test's
+window.
 
 1. Run the smallest focused test identifier that covers the change.
 2. Wait for it to finish.

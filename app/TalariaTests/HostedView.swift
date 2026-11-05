@@ -5,6 +5,12 @@ import XCTest
 @testable import Talaria
 import TalariaKit
 
+/// Set by `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`, as a marker in the run's directory.
+private let keepsHostedScreenshots = FileManager.default.fileExists(
+    atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent(".codex-tmp/xctest/test-screenshots").path
+)
+
 /// Window sizes hosted presentation tests lay a screen out in (TAL-856).
 enum HostedSize {
     static let phone = CGSize(width: 390, height: 844)
@@ -187,8 +193,24 @@ extension XCTestCase {
         try await transition()
     }
 
+    /// Evidence of what a passing test laid out, for `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`. Any other run skips
+    /// it: rendering every window took over a tenth of a run, before the wait that lets each picture finish (TAL-1897).
     @MainActor
-    func attachHostedScreenshot(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime = .keepAlways) {
+    func attachHostedScreenshot(_ window: UIWindow, name: String) {
+        guard keepsHostedScreenshots else { return }
+        settle(0.5)
+        attachWindowImage(window, name: name, lifetime: .keepAlways)
+    }
+
+    /// What a failing test was showing, once it has failed.
+    @MainActor
+    func attachFailureScreenshot(_ window: UIWindow, name: String) {
+        guard (testRun?.totalFailureCount ?? 0) > 0 else { return }
+        attachWindowImage(window, name: name, lifetime: .deleteOnSuccess)
+    }
+
+    @MainActor
+    private func attachWindowImage(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime) {
         let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         })
@@ -228,9 +250,7 @@ extension XCTestCase {
         settle()
         addTeardownBlock { [weak self] in
             MainActor.assumeIsolated {
-                if self?.testRun?.hasSucceeded == false {
-                    self?.attachHostedScreenshot(window, name: "\(self?.name ?? "hosted") window", lifetime: .deleteOnSuccess)
-                }
+                self?.attachFailureScreenshot(window, name: "\(self?.name ?? "hosted") window")
                 window.isHidden = true
                 window.rootViewController = nil
                 UIView.setAnimationsEnabled(animated)
@@ -440,5 +460,42 @@ extension HostedWindowTests {
         }, size: HostedSize.duoInnerLandscape)
         _ = await awaitCondition(timeout: 2) { !hinges.isEmpty }
         XCTAssertEqual(hinges, [], "A hosted window read the device's hinge")
+    }
+}
+
+/// Rendering a whole window took about a sixth of a run, so only a failing test pays for its image (TAL-1897).
+@MainActor
+final class HostedWindowFailureImageTests: XCTestCase {
+    /// Reports a failure to `hostWindow`'s teardown without recording one, which would fail the run.
+    private final class Run: XCTestCaseRun {
+        nonisolated(unsafe) static var reportsAFailure = false
+        override var totalFailureCount: Int { Self.reportsAFailure ? 1 : super.totalFailureCount }
+    }
+
+    private nonisolated(unsafe) var attached: [String] = []
+
+    override var testRunClass: AnyClass? { Run.self }
+
+    override func add(_ attachment: XCTAttachment) {
+        attached.append(attachment.name ?? "")
+        super.add(attachment)
+    }
+
+    /// Teardown blocks run last first, so this one sees what `hostWindow`'s attached.
+    private func hostAWindow(reportingAFailure: Bool, expectedImages: Int) throws {
+        addTeardownBlock { [self] in
+            Run.reportsAFailure = false
+            XCTAssertEqual(attached.count, expectedImages, "The test attached \(attached)")
+        }
+        Run.reportsAFailure = reportingAFailure
+        try hostWindow(Color.clear)
+    }
+
+    func testAPassingTestAttachesNoImage() throws {
+        try hostAWindow(reportingAFailure: false, expectedImages: 0)
+    }
+
+    func testAFailingTestAttachesItsWindowsImage() throws {
+        try hostAWindow(reportingAFailure: true, expectedImages: 1)
     }
 }

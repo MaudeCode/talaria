@@ -118,7 +118,6 @@ final class ChatHostedTests: XCTestCase {
         let initialFrame = editor.convert(editor.bounds, to: window)
         XCTAssertLessThan(initialFrame.minX, 430)
         XCTAssertTrue(editor.isFirstResponder)
-        settle(0.3)
         attachHostedScreenshot(window, name: "composer-before-book-fold")
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
@@ -132,7 +131,6 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(window.convert(send.accessibilityFrame, from: nil).minX, 470)
         let transcript = try transcriptScrollView(in: window)
         XCTAssertGreaterThan(transcript.bounds.width, 800, "The transcript must remain full width")
-        settle(0.3)
         attachHostedScreenshot(window, name: "composer-after-book-fold")
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
@@ -301,7 +299,6 @@ final class ChatHostedTests: XCTestCase {
         let window = try hostWindow(FoldHost(content: AnyView(fixture.chat(session))),
                                     size: CGSize(width: 900, height: 700))
         _ = try await requireElement(in: window, label: "Clarification Required")
-        settle(0.3)
         attachHostedScreenshot(window, name: "clarification-before-book-fold")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
         let choice = try await requireElement(in: window, label: "Use the deterministic path")
@@ -310,7 +307,6 @@ final class ChatHostedTests: XCTestCase {
         let header = try await requireElement(in: window, label: "Clarification Required")
         XCTAssertGreaterThanOrEqual(window.convert(header.accessibilityFrame, from: nil).minX, 470)
         XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
-        settle(0.3)
         attachHostedScreenshot(window, name: "clarification-after-book-fold")
     }
 
@@ -340,7 +336,6 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertLessThanOrEqual(window.convert(send.accessibilityFrame, from: nil).maxX, foldInWindow.minX)
         XCTAssertEqual(editor.text, "Retained RTL draft")
         XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
-        settle(0.3)
         attachHostedScreenshot(window, name: "composer-off-center-rtl-book-fold")
     }
 
@@ -393,14 +388,12 @@ final class ChatHostedTests: XCTestCase {
         let configured = await awaitCondition { viewModel.selectedReasoningEffort == "medium" }
         XCTAssertTrue(configured)
         let initialEffort = viewModel.selectedReasoningEffort
-        settle(0.5)
         attachHostedScreenshot(window, name: "\(evidenceName)-before")
         _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "high")
         let refusalElement = await awaitElement(in: window) { $0.accessibilityLabel?.contains(refusal) == true }
         XCTAssertNotNil(refusalElement)
         XCTAssertEqual(viewModel.selectedReasoningEffort, initialEffort)
         XCTAssertEqual(effortRequests, scopeSupported ? 1 : 0)
-        settle(0.5)
         attachHostedScreenshot(window, name: "\(evidenceName)-after")
     }
 
@@ -550,7 +543,6 @@ final class ChatHostedTests: XCTestCase {
             ChatView(session: SessionSummary(sessionId: "session-abc", title: "Model confirmation"), server: URL(string: "https://example.test")!,
                      onAPIError: { _ in }, loadsInitialMessages: false, viewModel: viewModel)
         }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
-        settle(0.5)
         attachHostedScreenshot(window, name: "model-before")
         _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "model")), args: "contributor")
         let firstAlert = await presentedAlert(in: window)
@@ -558,14 +550,12 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(first.title, "Change Model?")
         XCTAssertEqual(first.message, "Data policy\n\nThis model may use your conversation for training.")
         XCTAssertEqual(viewModel.selectedModelID, "old-model")
-        settle(0.4)
         attachHostedScreenshot(window, name: "model-warning")
         XCTAssertTrue(HostedAccessibility.tap("Cancel", in: first))
         let cancelled = await awaitCondition { window.rootViewController?.presentedViewController == nil }
         XCTAssertTrue(cancelled)
         XCTAssertEqual(updates, 1)
         XCTAssertEqual(viewModel.selectedModelID, "old-model")
-        settle(0.4)
         attachHostedScreenshot(window, name: "model-cancelled")
         _ = await viewModel.selectComposerModel(ModelCatalogOption(id: "contributor", displayName: "Contributor", providerID: "custom"))
         let secondAlert = await presentedAlert(in: window)
@@ -594,7 +584,6 @@ final class ChatHostedTests: XCTestCase {
         let applied = await awaitCondition { viewModel.selectedModelID == "contributor" }
         XCTAssertTrue(applied)
         XCTAssertEqual(updates, refusalCount + 1)
-        settle(0.3)
         attachHostedScreenshot(window, name: "model-confirmed")
     }
 
@@ -675,7 +664,6 @@ final class ChatHostedTests: XCTestCase {
         fixture.releaseHeldLoads()
         let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
         XCTAssertTrue(synced)
-        settle(0.5)
         attachHostedScreenshot(reopened, name: "cached-reopen-after-sync")
         let afterAnchor = try await requireElement(in: reopened, label: "Fixture link request")
         let metrics = XCTAttachment(string: "offset: \(beforeOffset) -> \(scroll.contentOffset.y); height: \(beforeHeight) -> \(scroll.contentSize.height); bottom inset: \(beforeInset) -> \(scroll.adjustedContentInset.bottom); anchor Y: \(beforeAnchorY) -> \(afterAnchor.accessibilityFrame.minY)")
@@ -709,7 +697,6 @@ final class ChatHostedTests: XCTestCase {
         let window = try await hostChatWithTwoQueuedMessages()
         let queue = try await requireElement(in: window, label: "2 queued")
         let status = try await requireElement(in: window) { $0.accessibilityLabel?.hasSuffix("is working on the response") == true }
-        settle(0.3)
         attachHostedScreenshot(window, name: "working-queue-phone")
         XCTAssertEqual(status.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1,
                        "Working and the queue must be segments of one row")
@@ -1410,7 +1397,6 @@ final class ChatHostedTests: XCTestCase {
             stream.emit(.streamEnd)
             settle(0.4)
             await viewModel.loadMessages()
-            settle(0.3)
             attachHostedScreenshot(window, name: follows ? "newest-reply-after-follow" : "newest-reply-after-reader")
             if follows {
                 XCTAssertLessThan(abs(scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height), 5)
@@ -1442,7 +1428,6 @@ final class ChatHostedTests: XCTestCase {
             try await sendFromComposer("/queue First queued message", in: window)
             try await sendFromComposer("/queue Second queued message", in: window)
             _ = try await requireElement(in: window, label: "2 queued")
-            settle(0.3)
             attachHostedScreenshot(window, name: size == HostedSize.phone ? "work-toolbar-phone" : "work-toolbar-pad")
 
             let background = try XCTUnwrap(HostedAccessibility.toolbarItem("Background tasks", in: window),
@@ -1475,7 +1460,6 @@ final class ChatHostedTests: XCTestCase {
         guard #available(iOS 26, *) else { throw XCTSkip("Requires toolbar badges") }
         let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatArgument])
         _ = try await requireElement(in: window, label: "Outcome unknown")
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-queue-toolbar")
         let item = try XCTUnwrap(HostedAccessibility.toolbarItem("Queued messages", in: window),
                                  "Missing Queued messages toolbar item for owner admissions")
@@ -1557,11 +1541,9 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertFalse(workspacePicker.accessibilityTraits.contains(.notEnabled), "An attached owner accepts workspace changes")
         let reasoning = try await requireElement(in: window, label: "Select reasoning effort")
         XCTAssertTrue(reasoning.accessibilityTraits.contains(.notEnabled), "Reasoning remains with its owner")
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-unknown-\(name)")
         HostedAccessibility.activate(workspacePicker)
         _ = try await requireElement(in: window, label: "Choose Workspace")
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-workspace-picker-\(name)")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
         let pickerClosed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
@@ -1573,7 +1555,6 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(elements(named: "Retry", in: window).count, 1, "Only the unknown input offers Retry")
         XCTAssertEqual(elements(named: "Discard", in: window).count, 1)
         XCTAssertEqual(elements(named: "Cancel", in: window).count, 1, "Only the queued input offers Cancel")
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-inputs-\(name)")
 
         HostedAccessibility.activate(try XCTUnwrap(elements(named: "Retry", in: window).first))
@@ -1584,7 +1565,6 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(draft?.text, UITestFixtureURLProtocol.ownerUnknownText, "Retry returns the text to review, unsent")
         let unknownGone = await awaitNoElement(in: window) { $0.accessibilityLabel == "Retry or discard the unknown input first." }
         XCTAssertTrue(unknownGone)
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-retried-\(name)")
     }
 
@@ -1592,7 +1572,6 @@ final class ChatHostedTests: XCTestCase {
     func testOwnerChatTheAppCannotReattachSaysWhy() async throws {
         let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatBatchArgument])
         _ = try await requireElement(in: window, label: "Continue this chat in its native CLI.")
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-batch-phone")
     }
 
@@ -1606,7 +1585,6 @@ final class ChatHostedTests: XCTestCase {
         for hidden in ["Allow session", "Always allow", "Skip all this session"] {
             XCTAssertNil(HostedAccessibility.element(in: window, label: hidden), "\(hidden) is not the owner's choice")
         }
-        settle(0.3)
         attachHostedScreenshot(window, name: "owner-approval-phone")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Allow once"))
         _ = try await requireElement(in: window, label: "Clarification Required")

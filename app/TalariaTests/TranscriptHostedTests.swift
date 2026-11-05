@@ -421,9 +421,7 @@ final class TranscriptHostedTests: XCTestCase {
         let scroll = try XCTUnwrap(historyScroll(in: window))
         referenceScroll = scroll
         defer {
-            if (testRun?.failureCount ?? 0) > 0 {
-                attachHostedScreenshot(window, name: "Held history navigation", lifetime: .deleteOnSuccess)
-            }
+            attachFailureScreenshot(window, name: "Held history navigation")
             window.isHidden = true
             window.rootViewController = nil
         }
@@ -762,7 +760,7 @@ extension TranscriptHostedTests {
                 VStack { Spacer(); TextField("Message", text: .constant("New typed draft")) }
                     .padding(20).background(Color(.systemBackground)), size: size
             )
-            attachMediaEvidence(before, name: size == HostedSize.phone ? "before-local-media-phone" : "before-local-media-pad")
+            attachHostedScreenshot(before, name: size == HostedSize.phone ? "before-local-media-phone" : "before-local-media-pad")
             before.isHidden = true
             var retries = 0
             let window = try hostWindow(
@@ -787,7 +785,7 @@ extension TranscriptHostedTests {
             XCTAssertNotNil(preparing)
             let play = await awaitElement(in: window, label: "Play Voice.wav")
             _ = try XCTUnwrap(play, "The local voice note must be replayable during preparation")
-            attachMediaEvidence(window, name: size == HostedSize.phone ? "local-media-phone" : "local-media-pad")
+            attachHostedScreenshot(window, name: size == HostedSize.phone ? "local-media-phone" : "local-media-pad")
             window.isHidden = true
         }
     }
@@ -820,7 +818,7 @@ extension TranscriptHostedTests {
                 _ = try await requireElement(in: window, label: "Retry upload saved.txt")
                 let send = try await requireElement(in: window, label: "Send")
                 XCTAssertTrue(send.accessibilityTraits.contains(.notEnabled), "Failed attachments must disable Send")
-                attachMediaEvidence(window, name: "restored-failed-attachment-send")
+                attachHostedScreenshot(window, name: "restored-failed-attachment-send")
             }
             let remove = try await requireElement(in: window, label: "Remove attachment saved.txt")
             HostedAccessibility.activate(remove)
@@ -845,16 +843,6 @@ extension TranscriptHostedTests {
             XCTAssertNil(removedCopy)
             window.isHidden = true
         }
-    }
-
-    private func attachMediaEvidence(_ window: UIWindow, name: String) {
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        let evidence = XCTAttachment(image: image)
-        evidence.name = name
-        evidence.lifetime = .keepAlways
-        add(evidence)
     }
 
 

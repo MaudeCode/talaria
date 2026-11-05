@@ -145,7 +145,6 @@ final class ComposerDropHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Remove attachment dropped-report.txt", "The file from Files was not staged")
 
         XCTAssertEqual(composerDraftText(in: window), "Hello dropped worldhttps://example.com/page ", "An attachment drop changed the draft")
-        settle(1)
         attachHostedScreenshot(window, name: "composer-drops-\(Int(size.width))x\(Int(size.height))")
     }
 
@@ -179,7 +178,6 @@ final class ComposerDropHostedTests: XCTestCase {
         let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
         settle()
         if let hoverScreenshot {
-            settle(0.3)
             attachHostedScreenshot(window, name: hoverScreenshot)
         }
         if operation == .copy || operation == .move {

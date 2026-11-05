@@ -83,6 +83,7 @@ prepare_run_marker() {
 }
 prepare_run_marker "$visual_reference_marker" "${TALARIA_RECORD_VISUAL_REFERENCES:-}"
 prepare_run_marker "$runtime_dir/native-history-drag" "${TALARIA_NATIVE_HISTORY_DRAG:-}"
+prepare_run_marker "$runtime_dir/test-screenshots" "${TALARIA_TEST_SCREENSHOTS:-}"
 
 typeset -a project=(
     -project Talaria.xcodeproj
