@@ -3,25 +3,29 @@
 # CI's build-for-testing into app/DerivedData, after a plain package resolve (both timed in the step summary).
 # Builds are signed ad hoc (CODE_SIGN_IDENTITY=-): no certificate, profile or secret, but the entitlements are
 # embedded, so the app group works and ShareExtensionUITests can hand content to the app (TAL-81). No index
-# store: nothing in CI reads it. A Swift warning from our sources fails the build (ci/check-swift-warnings).
+# store, debug info or coverage instrumentation: no test run reads them, and they took a tenth of the test build the
+# shards download (TAL-1891). A Swift warning from our sources fails the build (ci/check-swift-warnings).
 set -euo pipefail
 
 destination=${1:?usage: ci/build-for-testing DESTINATION}
 cd "$(dirname "$0")/.."
-project=(-project Talaria.xcodeproj -scheme Talaria -derivedDataPath DerivedData -disableAutomaticPackageResolution)
+project=(-project Talaria.xcodeproj -scheme Talaria -derivedDataPath DerivedData -disableAutomaticPackageResolution -skipPackageUpdates)
 start_seconds=${SECONDS}
-xcodebuild -resolvePackageDependencies "${project[@]}"
+# Restored checkouts are what Package.resolved pins, and the build resolves them itself in seconds (TAL-1891).
+[[ -d DerivedData/SourcePackages/checkouts ]] || xcodebuild -resolvePackageDependencies "${project[@]}"
 resolve_seconds=$((SECONDS - start_seconds))
 log=$(mktemp)
 xcodebuild build-for-testing "${project[@]}" \
   -destination "${destination}" \
   -showBuildTimingSummary \
+  -enableCodeCoverage NO \
   APP_IDENTIFIER_SUFFIX=.xctest \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGN_STYLE=Manual \
   PROVISIONING_PROFILE_SPECIFIER= \
-  COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee "${log}"
+  COMPILER_INDEX_STORE_ENABLE=NO \
+  GCC_GENERATE_DEBUGGING_SYMBOLS=NO 2>&1 | tee "${log}"
 ci/check-swift-warnings "${log}"
-echo "- Package resolve: ${resolve_seconds}s; build for testing: $((SECONDS - start_seconds - resolve_seconds))s" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+echo "- Package resolve: ${resolve_seconds}s; build for testing: $((SECONDS - start_seconds - resolve_seconds))s" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"

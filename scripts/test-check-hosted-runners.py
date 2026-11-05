@@ -140,10 +140,8 @@ jobs:
         # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that
         # needs it; moving a portable job onto macOS fails here. Xcode image jobs select Xcode explicitly.
         native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
-                  ("app-tests.yml", "app-build-only"): "ci/build-for-testing",
                   ("app-tests.yml", "app-test"): "xcodebuild",
-                  # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
-                  ("app-tests.yml", "package-test"): "swift test --package-path TalariaKit",
+                  ("app-tests.yml", "package-test"): "./.github/actions/app-package-tests",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   # Both App contract gates share one runner (TAL-414).
                   ("release-set.yml", "contracts"): "check-previous-app.py --app-ref",
@@ -159,6 +157,10 @@ jobs:
         self.assertEqual(set(found), set(native))
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)
+        # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
+        action = (hosted.ROOT / ".github/actions/app-package-tests/action.yml").read_text()
+        self.assertIn("swift test --package-path TalariaKit", action)
+        self.assertIn("./.github/actions/app-package-tests", found[("app-tests.yml", "app-build")])
 
     def test_artifacts_expire_within_thirty_days(self):
         # Actions storage is bounded by retention, never by a paid quota.

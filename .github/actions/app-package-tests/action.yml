@@ -1,0 +1,81 @@
+# Interface (app-tests.yml's two package-test callers share it):
+#   uses: ./.github/actions/app-package-tests   (after checkout and setup-xcode; the job grants actions: read)
+#   with:
+#     contracts: "true" also waits for this run's "Web contract probe" job and runs the live decoding test against its
+#       contract-fixture artifact.
+# TalariaKit's (models, networking, persistence, sync, view models) tests with `swift test`: no simulator and no app
+# host (TAL-399). Only the live contract test waits for the Web probe.
+name: App package tests
+description: Build and run the TalariaKit tests with coverage, and report it.
+inputs:
+  contracts:
+    description: Run the live decoding test against this run's Web contract probe.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    # The committed Package.resolved pins the App's revisions; resolution never drifts from it. Coverage is measured
+    # on this run, the one CI Gate counts (TAL-67).
+    - name: Build the package tests
+      shell: bash
+      working-directory: app
+      run: swift build --package-path TalariaKit --build-tests --enable-code-coverage --only-use-versions-from-resolved-file
+
+    - name: Wait for the Web contract probe
+      if: inputs.contracts == 'true'
+      shell: bash
+      working-directory: app
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: ci/wait-for-job "Web contract probe" 1500
+
+    - name: Download the probe's live response fixture
+      if: inputs.contracts == 'true'
+      uses: actions/download-artifact@v8
+      with:
+        name: contract-fixture
+        path: ${{ runner.temp }}/contract-fixture
+
+    - name: Test the package
+      shell: bash
+      working-directory: app
+      env:
+        CONTRACTS_SELECTED: ${{ inputs.contracts }}
+        LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
+      run: |
+        set -euo pipefail
+        fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+        if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
+          [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
+          export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
+        fi
+        start_seconds=${SECONDS}
+        swift test --package-path TalariaKit --skip-build --enable-code-coverage 2>&1 |
+          tee package-tests.log
+        if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
+          # A missing fixture makes the live test skip, so require an explicit pass.
+          grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log ||
+            { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
+        fi
+        {
+          echo "### Package tests"
+          echo "- swift test: $((SECONDS - start_seconds))s, $(grep -oE 'Executed [0-9]+ tests' package-tests.log | tail -1)"
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    # After a failure too: the report merges whatever profiles the run wrote. The numbers gate nothing.
+    - name: Report coverage
+      if: ${{ !cancelled() }}
+      shell: bash
+      working-directory: app
+      run: ci/package-coverage coverage >> "${GITHUB_STEP_SUMMARY}"
+
+    - name: Upload coverage
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: app-package-coverage
+        path: app/coverage/
+        retention-days: 14
+        overwrite: true
+        if-no-files-found: ignore

@@ -3,7 +3,8 @@
 # Wait for the newest record of JOB_NAME in this workflow run at or before this attempt and fail unless it
 # succeeded. "Re-run failed jobs" keeps an earlier successful job and copies its record into the new attempt,
 # so earlier attempts count. A job inside a called workflow matches too ("Caller / JOB_NAME"). With STEP_NAME, return as soon as that step of the job has succeeded: a job's
-# completion reaches the API a minute or more after its last step. Polls every 5 seconds without caching and
+# completion reaches the API a minute or more after its last step. A step that ended any other way fails at once: the
+# job can go on for minutes after it, and the step will never succeed in this attempt. Polls every 5 seconds without caching and
 # logs each observation with its call's duration; ci/gh-api-poll retries transient API errors within the timeout
 # (TAL-404). Needs GH_TOKEN with actions: read and the GITHUB_REPOSITORY/RUN_ID/RUN_ATTEMPT env.
 set -euo pipefail
@@ -28,6 +29,10 @@ while :; do
   if [[ -n "${step}" && "${step_conclusion}" == "success" ]]; then
     echo "${name} finished ${step} (attempt ${attempt})."
     exit 0
+  fi
+  if [[ -n "${step}" && "${step_conclusion}" =~ ^(failure|skipped|cancelled)$ ]]; then
+    echo "${name}: ${step} finished ${step_conclusion} (attempt ${attempt})" >&2
+    exit 1
   fi
   (( $(date +%s) < GH_API_POLL_DEADLINE )) || { echo "Timed out waiting for ${name} (${records:-missing})" >&2; exit 1; }
   sleep "${WAIT_FOR_JOB_POLL_SECONDS:-5}"

@@ -77,7 +77,7 @@ package strings into it.
 ### Package test coverage
 
 CI measures coverage on the same `swift test` run it gates on and reports it in
-the package tests job summary: line and function coverage of
+the job summary: line and function coverage of
 `TalariaKit/Sources` in total and per top-level directory. Package checkouts,
 generated resource accessors and the tests themselves are excluded. The
 `app-package-coverage` artifact keeps `coverage.txt`, the per-file table, and `coverage.json`, the

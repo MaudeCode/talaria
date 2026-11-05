@@ -74,10 +74,9 @@ dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
-| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the `app-test-build` artifact for the test job |
-| `app-tests.yml` | `app-build-only` | `app/ci/build-for-testing` with no upload, on a pull request without the `hosted-tests` label |
+| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once; in hosted mode, uploaded as the `app-test-build` artifact for the test job, then `swift test` for TalariaKit on the same runner (a release's hosted-tests call leaves that to `contracts`) |
 | `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on main pushes, manual runs, at release and on pull requests labelled `hosted-tests` |
-| `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test); a release's hosted-tests call leaves it to `contracts` |
+| `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) in build and contracts modes |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
 | `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
@@ -102,18 +101,19 @@ share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
 the slowest classes and a last shard that runs every other class, so a new
 class always runs. Its `App hosted tests` job then requires each shard's list
 of the classes it ran to show every class exactly once. The split comes from
-the class times main CI run 41114665116 measured (1433 s of tests), which the
-script records: SessionList (362 s), Chat (354 s), Transcript with Stream
-(353 s) and every other class (363 s). `hosted_test_shard_test.py` fails when
+the class times PR CI run 41980667369 measured (1289 s of tests), which the
+script records: SessionList with Transcript (267 s), Chat with Insights (300 s),
+Stream with SessionActions and RegularSplit (318 s) and every other class
+(404 s). `hosted_test_shard_test.py` fails when
 the recorded times leave a shard more than 90 s over the mean. Each shard job
 boots its simulator while the build runs, then prepares it in the background
 (`ci/background`) while it waits for and downloads the build. Booting and
 preparing took 3 to 8 minutes on hosted runners, mostly the notification
 service's restarts, so a shard job takes about 6 minutes of tests plus that.
-The App package tests start once the build ends, so the build and the four
-shards fill the five macOS slots. A pull request without the `hosted-tests`
-label takes two slots: the build and the package tests, side by side, and no
-shards.
+In hosted mode the build job runs the package tests after its upload, so the
+shards never wait on them, and the build job and the four shards fill the five
+macOS slots. A pull request without the `hosted-tests` label takes two slots:
+the build and the package tests, side by side, and no shards.
 
 The pinned Agent gate runs one `agent-release` job per supported Agent release
 of the selected Web source and shard of its sidecar suite: three shards each,

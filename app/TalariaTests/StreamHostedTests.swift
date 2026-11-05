@@ -113,7 +113,7 @@ final class StreamHostedTests: XCTestCase {
     func testWaitingRunKeepsItsStreamAlive() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-controls"])
         _ = try await startControlsRun(in: window)
-        let checking = await awaitElement(in: window, timeout: 22, where: label("Hermes is checking the response stream"))
+        let checking = await awaitElement(in: window, timeout: 20, where: label("Hermes is checking the response stream"))
         XCTAssertNil(checking, "A waiting run's stream looked stalled")
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Waiting for control input."), "The run was replayed by a reconnect")
     }
@@ -162,9 +162,8 @@ final class StreamHostedTests: XCTestCase {
         XCTAssertTrue(acknowledged, "The run that ended on screen was never acknowledged; stamps \(stamps), ended \(ending)")
     }
 
-    /// A batch of questions shows its choices inside the composer without raising the keyboard, resizes, steps between
-    /// questions keeping each answer, and submits typed and selected answers together (TAL-367).
-    func testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers() async throws {
+    /// A batch of questions shows its choices inside the composer without raising the keyboard, and resizes (TAL-367).
+    func testBatchClarificationChoicesShowWithoutTheKeyboardAndResize() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])
         _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "A movie"))
@@ -181,7 +180,12 @@ final class StreamHostedTests: XCTestCase {
             $0.accessibilityLabel == "Resize question area" && $0.accessibilityFrame.minY < originalTop - 30
         }
         XCTAssertNotNil(grown, "The question area did not grow")
+    }
 
+    /// A batch steps between questions keeping each answer, and submits typed and selected answers together (TAL-367).
+    func testBatchClarificationDeliversTypedAndMultiSelectAnswers() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])
+        _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
         try await typeIntoComposer("A movie", in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "Next"))
         _ = try await requireElement(in: window, label: "Which drinks?")

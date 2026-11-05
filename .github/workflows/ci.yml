@@ -149,8 +149,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
-      # App package tests start without waiting for this job. Before `swift test` they wait for this job through
-      # the jobs API, download this artifact and run the native live decoding test against it.
+      # The App package tests start without waiting for this job. Before `swift test` they wait for it through the jobs
+      # API, download this artifact and run the native live decoding test against it.
       - name: Upload the live response fixture
         uses: actions/upload-artifact@v7
         with:

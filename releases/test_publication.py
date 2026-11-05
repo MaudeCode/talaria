@@ -464,7 +464,9 @@ class PublicationTests(unittest.TestCase):
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/app-tests.yml")], text=True))
         self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode == 'hosted'")
-        self.assertEqual(app_tests["jobs"]["package-test"]["if"], "${{ !cancelled() && inputs.package_tests }}")
+        # The release's hosted call leaves out the package tests hosted mode runs in the build job (TAL-1891).
+        self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["uses"], "./.github/actions/app-package-tests")
+        self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["if"], "${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}")
         check = (root / "scripts/check-release-contracts.py").read_text()
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})
