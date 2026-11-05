@@ -37,7 +37,8 @@ export const FeedbackSubmitSchema = z.strictObject({
   title: feedbackText(120), body: feedbackText(8000),
   includeDiagnostics: z.boolean(),
   client: z.strictObject({ platform: z.enum(['web', 'ios']), appVersion: feedbackText(64).optional(), osVersion: feedbackText(64).optional(), deviceModel: feedbackText(64).optional() }),
-  attachmentIds: z.array(z.uuid()).min(1).max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments).refine((ids) => new Set(ids).size === ids.length, 'Must not repeat').optional(),
+  // Staging issues lowercase IDs and the App re-encodes them in uppercase; one form here means claiming, retry fingerprints and the repeat check agree.
+  attachmentIds: z.array(z.uuid().toLowerCase()).min(1).max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments).refine((ids) => new Set(ids).size === ids.length, 'Must not repeat').optional(),
 })
 export const FeedbackDiagnosticsSchema = z.object({ text: z.string().max(16384), bytes: z.number().int().min(0).max(16384) })
 /** What this server lets its clients attach; `enabled` is false unless this server is a registered (signed) Relay publisher. */

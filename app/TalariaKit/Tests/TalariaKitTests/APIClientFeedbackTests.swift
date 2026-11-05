@@ -108,12 +108,13 @@ final class APIClientFeedbackTests: APIClientTestCase {
                 XCTAssertTrue(text.contains("Content-Disposition: form-data; name=\"file\"; filename=\"screen.png\""))
                 XCTAssertNotNil(body.range(of: file), "The compressed bytes are sent unchanged")
                 XCTAssertTrue(text.hasSuffix("--\(boundary)--\r\n"))
-                return apiTestJSONResponse(#"{"attachmentId":"\#(staged.uuidString)","contentType":"image/png","bytes":8}"#, for: request)
+                return apiTestJSONResponse(#"{"attachmentId":"\#(staged.uuidString.lowercased())","contentType":"image/png","bytes":8}"#, for: request)
             default:
                 XCTAssertEqual(request.url?.path, "/api/feedback/submit")
                 let body = try apiTestJSONBody(from: request)
-                XCTAssertEqual(body["attachmentIds"] as? [String], [staged.uuidString, refused.uuidString])
-                return apiTestJSONResponse(#"{"status":"sent","reportId":"r","attachments":[{"attachmentId":"\#(staged.uuidString)","status":"sent"},{"attachmentId":"\#(refused.uuidString)","status":"refused","reason":"tier"}]}"#, for: request)
+                // The server issues lowercase IDs and matches them in either letter case.
+                XCTAssertEqual((body["attachmentIds"] as? [String])?.map { $0.lowercased() }, [staged.uuidString.lowercased(), refused.uuidString.lowercased()])
+                return apiTestJSONResponse(#"{"status":"sent","reportId":"r","attachments":[{"attachmentId":"\#(staged.uuidString.lowercased())","status":"sent"},{"attachmentId":"\#(refused.uuidString.lowercased())","status":"refused","reason":"tier"}]}"#, for: request)
             }
         }
         let options = try await client.feedbackOptions().attachments
@@ -122,7 +123,7 @@ final class APIClientFeedbackTests: APIClientTestCase {
         let uploaded = try await client.uploadFeedbackAttachment(file, contentType: "image/png", filename: "screen.png")
         XCTAssertEqual(uploaded, .init(attachmentId: staged, contentType: "image/png", bytes: 8))
         let result = try await client.submitFeedback(.init(title: "t", body: "b", client: .init(appVersion: "1", osVersion: "27", deviceModel: "x"),
-                                                           attachmentIds: [staged, refused]))
+                                                           attachmentIds: [uploaded.attachmentId, refused]))
         XCTAssertEqual(result.attachments, [.init(attachmentId: staged, status: "sent"),
                                             .init(attachmentId: refused, status: "refused", reason: "tier")])
     }
