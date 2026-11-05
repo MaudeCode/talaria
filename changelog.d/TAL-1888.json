@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Feedback with a photo or video sends from the App instead of being refused every time.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A picked photo or video that cannot be loaded now shows an error in the feedback sheet.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

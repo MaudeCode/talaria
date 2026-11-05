@@ -115,16 +115,21 @@ struct FeedbackSheet: View {
     }
 
     /// Videos arrive as a temporary file copy, removed once compressed; photos arrive as data.
-    private func attach(_ items: [PhotosPickerItem]) async {
+    func attach(_ items: [PhotosPickerItem]) async {
+        var loadFailed = false
         for item in items {
-            if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
-                guard let movie = try? await item.loadTransferable(type: PickedMovie.self) else { continue }
+            let isMovie = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+            if isMovie, let movie = try? await item.loadTransferable(type: PickedMovie.self) {
                 await model.addVideo(at: movie.url)?.value
                 try? FileManager.default.removeItem(at: movie.url)
-            } else if let data = try? await item.loadTransferable(type: Data.self) {
+            } else if !isMovie, let data = try? await item.loadTransferable(type: Data.self) {
                 model.addImage(data)
+            } else {
+                loadFailed = true
             }
         }
+        // After the loop, because adding a later item clears the attachment error.
+        if loadFailed { model.reportUnloadableAttachment() }
     }
 
     private func field<Value>(_ path: WritableKeyPath<FeedbackRequest, Value>) -> Binding<Value> {

@@ -391,7 +391,7 @@ it('rejects invalid files, references and staging floods before anything is forw
   expect(stagingFiles()).toEqual([])
   const mine = await staged('image/png', png())
   const theirs = await other(() => stageFeedbackAttachment(s.deps, 'image/png', png()))
-  for (const attachmentIds of [[theirs.attachmentId], [mine, crypto.randomUUID()], [mine, ...Array.from({ length: 5 }, () => crypto.randomUUID())], [mine, mine], [await staged('video/mp4', mp4()), await staged('video/webm', Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), randomBytes(32)]))]]) {
+  for (const attachmentIds of [[theirs.attachmentId], [theirs.attachmentId.toUpperCase()], [crypto.randomUUID().toUpperCase()], [mine, mine.toUpperCase()], [mine, crypto.randomUUID()], [mine, ...Array.from({ length: 5 }, () => crypto.randomUUID())], [mine, mine], [await staged('video/mp4', mp4()), await staged('video/webm', Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), randomBytes(32)]))]]) {
     expect(await rejected(submit({ ...input(), attachmentIds }), 400)).toEqual({ error: 'invalid' })
   }
   expect(calls).toHaveLength(0)
@@ -401,6 +401,23 @@ it('rejects invalid files, references and staging floods before anything is forw
   const bulky = Buffer.concat([PNG, Buffer.alloc(10_000_000 - PNG.length)])
   for (let i = 0; i < 10; i++) await other(() => stageFeedbackAttachment(s.deps, 'image/png', i < 9 ? bulky : Buffer.concat([PNG, Buffer.alloc(9_999_000)])))
   await expect(other(() => stageFeedbackAttachment(s.deps, 'image/png', Buffer.concat([PNG, Buffer.alloc(1_000)])))).rejects.toMatchObject({ status: 429, message: 'rate_limited' })
+})
+
+it('treats attachment IDs as the same in either letter case, as the App sends them uppercase', async () => {
+  await register()
+  const file = png()
+  const id = await staged('image/png', file)
+  const request = { ...input(), attachmentIds: [id.toUpperCase()] }
+  status = 503
+  expect((await submit(request)).status).toBe(502)
+  status = 202
+  const sent = { status: 'sent', reportId: 'report-1', attachments: [{ attachmentId: id, status: 'sent' }] }
+  // An unsettled retry and both settled retries are one report, whichever case they use.
+  for (const attachmentIds of [[id], [id], [id.toUpperCase()]]) expect(await (await submit({ ...request, attachmentIds })).json()).toEqual(sent)
+  expect(reports.size).toBe(1)
+  expect(new Set(calls.map((call) => call.raw)).size).toBe(1)
+  expect(puts.map((put) => put.body.equals(file))).toEqual([true])
+  expect(stagingFiles()).toEqual([])
 })
 
 it('resends the same manifest and files after relay_unreachable', async () => {

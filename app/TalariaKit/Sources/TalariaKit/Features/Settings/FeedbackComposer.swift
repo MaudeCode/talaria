@@ -198,6 +198,11 @@ public final class FeedbackComposer {
         }
     }
 
+    /// Shows the inline error for a picked item whose data never reached the composer.
+    public func reportUnloadableAttachment() {
+        attachmentError = SettingsErrorText(FeedbackVideoEncoder.Failure.unreadable)
+    }
+
     /// The compressed file exactly as it is sent, for the preview: the reference's `url` is that local file.
     /// Nil until compression has written it.
     public func previewReference(of id: UUID) -> TranscriptMediaReference? {
