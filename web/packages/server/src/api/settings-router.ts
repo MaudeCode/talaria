@@ -146,6 +146,12 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
 }
 
+/** TAL-1870: a quota read with the sidebar's pins projected over its rows. */
+async function quotasWithSidebar(ctx: RequestContext, opts: { sourceId?: string | null; refresh?: boolean }) {
+  const body = await ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), opts)
+  return { ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative) }
+}
+
 async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const deps = ctx.deps
   const auth = deps.auth
@@ -225,6 +231,13 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   await authFields(ctx, saved)
   saved.auth_enabled = authEnabledAfter
   await derivedFields(ctx, saved)
+  if ('sidebar_quota_sources' in input) {
+    // A write's own projection lets the client keep it without a reread; a failed read leaves that to the next read.
+    try {
+      const { sidebar_source_ids, sidebar_can_pin } = await quotasWithSidebar(ctx, {})
+      return { ...saved, sidebar_source_ids, sidebar_can_pin }
+    } catch { /* the write itself succeeded */ }
+  }
   return saved
 }
 
@@ -437,10 +450,7 @@ export const settingsRouter = os.router({
     })),
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
-    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(async () => {
-      const body = await ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) })
-      return { ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative) } as never
-    })),
+    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => quotasWithSidebar(ctx, { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) }) as never)),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)
       const days = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 365)) : 7

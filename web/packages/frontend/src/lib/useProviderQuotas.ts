@@ -19,9 +19,9 @@ export function useSetSidebarQuotaPins() {
     mutationFn: async (ids) => {
       const context = getStreamContext()
       const saved = await api.saveSettings({ sidebar_quota_sources: ids })
-      // The owner drops a replaced write's response; keep what the server confirmed so a later refusal reveals it without a read.
-      const pins = saved.sidebar_quota_sources
-      if (pins && context === getStreamContext()) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids: pins, sidebar_can_pin: pins.length < 2 })
+      // The owner drops a replaced write's response; keep the server's projection so a later refusal reveals it without a read.
+      const { sidebar_source_ids, sidebar_can_pin } = saved
+      if (sidebar_source_ids && context === getStreamContext()) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin })
       return saved
     },
     onError: showErrorToast,

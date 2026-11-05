@@ -70555,6 +70555,17 @@
                       },
                       "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
                     },
+                    "sidebar_source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed."
+                    },
+                    "sidebar_can_pin": {
+                      "type": "boolean",
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned."
+                    },
                     "show_webhook_sessions": {
                       "type": "boolean"
                     },
@@ -70849,6 +70860,17 @@
                         "type": "string"
                       },
                       "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
+                    },
+                    "sidebar_source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed."
+                    },
+                    "sidebar_can_pin": {
+                      "type": "boolean",
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned."
                     },
                     "show_webhook_sessions": {
                       "type": "boolean"

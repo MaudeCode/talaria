@@ -682,8 +682,10 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
     reset({ model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, custom_providers: [{ name: 'Zeta', base_url: 'http://zeta.test/v1' }, { name: 'Yota', base_url: 'http://yota.test/v1' }] })
     const projection = async (pins: string[]) => {
-      await post(s, '/api/settings', { sidebar_quota_sources: pins })
+      const saved = await json(await post(s, '/api/settings', { sidebar_quota_sources: pins }))
       const { sidebar_source_ids, sidebar_can_pin } = await json(await s.get('/api/provider/quotas'))
+      // The save answers with the same projection, so the client never derives one.
+      expect({ sidebar_source_ids: saved.sidebar_source_ids, sidebar_can_pin: saved.sidebar_can_pin }).toEqual({ sidebar_source_ids, sidebar_can_pin })
       return { sidebar_source_ids, sidebar_can_pin }
     }
     try {

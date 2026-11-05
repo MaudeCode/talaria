@@ -458,10 +458,12 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     let settle!: () => void
     const held = new Promise<void>((resolve) => { settle = resolve })
     let posts = 0
+    // The save's own projection decides the rollback state, not the stored pins, which still hold a source no longer listed.
+    const saved = { sidebar_quota_sources: ['qsrc_gone', 'qsrc_weekly'], sidebar_source_ids: ['qsrc_credits', 'qsrc_weekly'], sidebar_can_pin: false }
     await page.route('**/api/settings', async (route) => {
       if (route.request().method() !== 'POST') return route.fallback()
       await held
-      return ++posts === 1 ? route.fallback() : route.fulfill({ status: 400, json: { error: 'Refused' } })
+      return ++posts === 1 ? route.fulfill({ json: saved }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
     })
     await source('Claude').click()
     await expect(source('Claude')).toBeChecked()
