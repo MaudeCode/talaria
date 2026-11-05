@@ -23,7 +23,11 @@ function SidebarRowContent({ icon: Icon, label }: { icon: LucideIcon; label: str
   return <><Icon {...ICON_PROPS} /><span className="sidebar-row-label min-w-0 truncate">{label}</span></>
 }
 
-/** The destinations, the page's panel and the footer, as labelled rows or as the icon rail. */
+/**
+ * The destinations, the page's panel and the footer, as labelled rows and as the icon rail. From 641px both layers stay
+ * mounted so `shell.css` can fade one out and the other in; only the one showing carries `data-panel` and `data-extension`,
+ * so each destination has one.
+ */
 function SidebarNav({ panel }: { panel: ReactNode }) {
   useLocale()
   const rail = useIsSidebarRail()
@@ -42,69 +46,73 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
   const dashboardUrl = dashboard.data?.running ? (dashboard.data.browser_url ?? dashboard.data.url) : undefined
   const [moreStored, setMoreStored] = useState(() => readPersisted(MORE_OPEN_KEY) === '1')
 
-  const destinationRow = (id: string) => {
+  const destinationRow = (id: string, live: boolean) => {
     const item = visible.find((i) => i.id === id)
     if (!item) return []
     const active = current === item.id && !extensionPath
-    return [<Link key={item.id} to={item.to} className={cn(SIDEBAR_ROW, active && 'active')} aria-label={item.label()} aria-current={active ? 'page' : undefined} data-panel={item.id} onClick={closeMobileSidebar}><SidebarRowContent icon={item.icon} label={item.label()} /></Link>]
+    return [<Link key={item.id} to={item.to} className={cn(SIDEBAR_ROW, active && 'active')} aria-label={item.label()} aria-current={active ? 'page' : undefined} data-panel={live ? item.id : undefined} onClick={closeMobileSidebar}><SidebarRowContent icon={item.icon} label={item.label()} /></Link>]
   }
-  const rowsFor = (slots: readonly SidebarSlot[]) => slots.flatMap((slot) => {
+  const rowsFor = (slots: readonly SidebarSlot[], live: boolean) => slots.flatMap((slot) => {
     if (slot === 'dashboard') return dashboardUrl ? [<a key={slot} href={dashboardUrl} target="_blank" rel="noopener noreferrer" className={cn(SIDEBAR_ROW, 'dashboard-link')} aria-label={m.tab_dashboard()} onClick={closeMobileSidebar}><SidebarRowContent icon={DASHBOARD_ICON} label={m.tab_dashboard()} /></a>] : []
-    if (slot !== 'extensions') return destinationRow(slot)
+    if (slot !== 'extensions') return destinationRow(slot, live)
     return extensions.map((e) => {
       const active = extensionPath?.startsWith(`/ext/${e.id}`)
       const label = e.nav?.label ?? e.name
-      return <Link key={e.id} to="/ext/$extensionId" params={{ extensionId: e.id }} className={cn(SIDEBAR_ROW, active && 'active')} aria-label={label} aria-current={active ? 'page' : undefined} data-extension={e.id} onClick={closeMobileSidebar}><SidebarRowContent icon={Puzzle} label={label} /></Link>
+      return <Link key={e.id} to="/ext/$extensionId" params={{ extensionId: e.id }} className={cn(SIDEBAR_ROW, active && 'active')} aria-label={label} aria-current={active ? 'page' : undefined} data-extension={live ? e.id : undefined} onClick={closeMobileSidebar}><SidebarRowContent icon={Puzzle} label={label} /></Link>
     })
   })
-  const moreRows = rowsFor(SIDEBAR_MORE)
+  const moreRows = rowsFor(SIDEBAR_MORE, !rail)
   const insideMore = !!extensionPath || SIDEBAR_MORE.includes(current)
   const moreOpen = moreStored || insideMore
   const toggleMore = () => { const next = !moreStored; writePersisted(MORE_OPEN_KEY, next ? '1' : '0'); setMoreStored(next) }
   const searchRow = <button type="button" className={SIDEBAR_ROW} aria-label={m.search()} onClick={requestSessionSearch}><SidebarRowContent icon={Search} label={m.search()} /></button>
-  const settingsRow = destinationRow('settings')
   const feedbackRow = showsFeedback && <button key="feedback" type="button" className={cn(SIDEBAR_ROW, 'sidebar-icon-row has-tooltip')} data-panel="feedback" data-tooltip={m.feedback_rail_label()} aria-label={m.feedback_send_open()} onClick={openFeedback}><SidebarRowContent icon={MessageSquareWarning} label={m.feedback_rail_label()} /></button>
   const bell = <UpdateNotificationCenterButton key="notifications" placement="sidebar" />
 
+  const brand = (
+    <button type="button" className="sidebar-brand flex h-11 w-full flex-none items-center gap-2.5 rounded-(--r-md) border-0 bg-transparent px-2 text-left text-sm font-semibold text-text cursor-pointer transition-[background] duration-(--dur) ease-(--ease) hover:bg-hover" aria-label={m.new_conversation()} onClick={() => { void newChat() }}>
+      <Brandmark className="brandmark sidebar-brandmark" />
+      <span className="sidebar-row-label min-w-0 truncate">{bootstrap.bot_name}</span>
+    </button>
+  )
+
   return (
     <nav className="sidebar-primary flex min-h-0 flex-1 flex-col" aria-label="Primary navigation">
-      <div className="sidebar-rows flex min-h-0 flex-col gap-0.5">
-        <button type="button" className="sidebar-brand flex h-11 w-full flex-none items-center gap-2.5 rounded-(--r-md) border-0 bg-transparent px-2 text-left text-sm font-semibold text-text cursor-pointer transition-[background] duration-(--dur) ease-(--ease) hover:bg-hover" aria-label={m.new_conversation()} onClick={() => { void newChat() }}>
-          <Brandmark className="brandmark sidebar-brandmark" />
-          <span className="sidebar-row-label min-w-0 truncate">{bootstrap.bot_name}</span>
-        </button>
-        {rail ? (
-          <>
-            {isDesktop && !isTiled && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-rail-menu')} id="btnHamburger" aria-label={m.sidebar_show()} aria-expanded={false} onClick={toggleMobileSidebar}><MenuIcon {...ICON_PROPS} /></button>}
+      <div className="sidebar-content flex min-h-0 flex-1 flex-col min-[641px]:p-(--island-gap)" inert={rail}>
+        <div className="sidebar-rows flex min-h-0 flex-col gap-0.5">
+          {brand}
+          <button type="button" className={SIDEBAR_ROW} id="btnNewChat" aria-label={m.sidebar_new_chat()} onClick={() => { void newChat() }}><SidebarRowContent icon={SquarePen} label={m.sidebar_new_chat()} /></button>
+          {searchRow}
+          <span className="h-2 flex-none" aria-hidden="true" />
+          {rowsFor(SIDEBAR_PRIMARY, !rail)}
+          {moreRows.length > 0 && (
+            <button type="button" className={SIDEBAR_ROW} aria-label={m.tab_more()} aria-expanded={moreOpen} onClick={toggleMore}>
+              <ChevronDown {...ICON_PROPS} className={cn('transition-transform duration-(--dur)', !moreOpen && '-rotate-90')} />
+              <span className="sidebar-row-label min-w-0 truncate">{m.tab_more()}</span>
+              <span className="ms-auto text-xs tabular-nums text-muted" aria-hidden="true">{moreRows.length}</span>
+            </button>
+          )}
+          {moreOpen && moreRows}
+        </div>
+        <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
+        <div className="sidebar-footer flex flex-none items-center gap-0.5">{destinationRow('settings', !rail)}{feedbackRow}{bell}</div>
+      </div>
+      {isDesktop && (
+        <div className="sidebar-rail flex flex-col" inert={!rail}>
+          <div className="sidebar-rows flex min-h-0 flex-col gap-0.5">
+            {brand}
+            {!isTiled && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-rail-menu')} id="btnHamburger" aria-label={m.sidebar_show()} aria-expanded={false} onClick={toggleMobileSidebar}><MenuIcon {...ICON_PROPS} /></button>}
             {searchRow}
-            {SIDEBAR_RAIL_GROUPS.map((group) => rowsFor(group)).filter((rows) => rows.length > 0).map((rows, index) => (
+            {SIDEBAR_RAIL_GROUPS.map((group) => rowsFor(group, rail)).filter((rows) => rows.length > 0).map((rows, index) => (
               <Fragment key={index}>
                 {index > 0 && <span className="sidebar-rail-separator" aria-hidden="true" />}
                 {rows}
               </Fragment>
             ))}
-          </>
-        ) : (
-          <>
-            <button type="button" className={SIDEBAR_ROW} id="btnNewChat" aria-label={m.sidebar_new_chat()} onClick={() => { void newChat() }}><SidebarRowContent icon={SquarePen} label={m.sidebar_new_chat()} /></button>
-            {searchRow}
-            <span className="h-2 flex-none" aria-hidden="true" />
-            {rowsFor(SIDEBAR_PRIMARY)}
-            {moreRows.length > 0 && (
-              <button type="button" className={SIDEBAR_ROW} aria-label={m.tab_more()} aria-expanded={moreOpen} onClick={toggleMore}>
-                <ChevronDown {...ICON_PROPS} className={cn('transition-transform duration-(--dur)', !moreOpen && '-rotate-90')} />
-                <span className="sidebar-row-label min-w-0 truncate">{m.tab_more()}</span>
-                <span className="ms-auto text-xs tabular-nums text-muted" aria-hidden="true">{moreRows.length}</span>
-              </button>
-            )}
-            {moreOpen && moreRows}
-          </>
-        )}
-      </div>
-      <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
-      <div className="sidebar-footer flex flex-none items-center gap-0.5">
-        {rail ? <>{feedbackRow}{bell}{settingsRow}</> : <>{settingsRow}{feedbackRow}{bell}</>}
-      </div>
+          </div>
+          <div className="sidebar-footer flex flex-none items-center gap-0.5">{feedbackRow}{bell}{destinationRow('settings', rail)}</div>
+        </div>
+      )}
     </nav>
   )
 }
@@ -115,7 +123,7 @@ function SettingsNav({ panel }: { panel: ReactNode }) {
   const navigate = useNavigate()
   const back = () => { closeMobileSidebar(); void navigate({ href: settingsBackHref() }) }
   return (
-    <nav className="sidebar-primary flex min-h-0 flex-1 flex-col" aria-label="Primary navigation">
+    <nav className="sidebar-primary flex min-h-0 flex-1 flex-col min-[641px]:p-(--island-gap)" aria-label="Primary navigation">
       <button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button>
       <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
     </nav>
@@ -145,10 +153,11 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
   }, [overlay])
   // Widening past the overlay's range leaves the stored choice in charge, and narrowing again does not reopen it.
   useEffect(() => { if (noOverlay) closeMobileSidebar() }, [noOverlay])
-  // The hamburger leaves the rail while the panel covers the page, so focus moves in with it and back when it closes.
+  // The rail hides while the panel covers the page, so focus moves in with it and back to the hamburger when it closes.
   useEffect(() => {
     if (!overlay || !isDesktop) return
-    if (document.activeElement === document.body) document.getElementById('btnNewChat')?.focus()
+    const focused = document.activeElement
+    if (focused === document.body || focused?.closest('.sidebar-rail')) document.getElementById('btnNewChat')?.focus()
     return () => { document.getElementById('btnHamburger')?.focus() }
   }, [overlay, isDesktop])
 
@@ -178,8 +187,8 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
       {overlay && <div className="sidebar-scrim fixed inset-0 z-[190] bg-black/40" aria-hidden="true" onClick={closeMobileSidebar} />}
       <aside
         ref={ref}
-        className={cn('sidebar flex w-[300px] shrink-0 flex-col overflow-visible bg-(--rail-bg) max-[641px]:bg-(--sidebar-bg) border-0 shadow-(--sidebar-shadow) min-[641px]:p-(--island-gap) min-[641px]:relative min-[901px]:shrink min-[901px]:min-w-[180px] max-[769px]:border-r max-[769px]:border-r-border max-[641px]:fixed max-[641px]:inset-y-0 max-[641px]:left-0 max-[641px]:w-screen max-[641px]:max-w-none max-[641px]:z-[200] max-[641px]:box-border max-[641px]:p-2 max-[641px]:pt-[calc(8px+var(--app-titlebar-safe-top))] max-[641px]:[transform:translateX(-100%)] max-[641px]:will-change-transform max-[641px]:pb-[calc(8px+env(safe-area-inset-bottom,0px))] max-[641px]:[&.mobile-open]:[transform:translateX(0)]', overlay && 'mobile-open')}
-        style={isTiled && !rail ? { width: sidebarWidth } : undefined}
+        className={cn('sidebar flex w-[300px] shrink-0 flex-col overflow-visible bg-(--rail-bg) max-[641px]:bg-(--sidebar-bg) border-0 shadow-(--sidebar-shadow) min-[641px]:relative min-[901px]:shrink min-[901px]:min-w-[180px] max-[769px]:border-r max-[769px]:border-r-border max-[641px]:fixed max-[641px]:inset-y-0 max-[641px]:left-0 max-[641px]:w-screen max-[641px]:max-w-none max-[641px]:z-[200] max-[641px]:box-border max-[641px]:p-2 max-[641px]:pt-[calc(8px+var(--app-titlebar-safe-top))] max-[641px]:[transform:translateX(-100%)] max-[641px]:will-change-transform max-[641px]:pb-[calc(8px+env(safe-area-inset-bottom,0px))] max-[641px]:[&.mobile-open]:[transform:translateX(0)]', overlay && 'mobile-open')}
+        style={isTiled ? { width: rail ? undefined : sidebarWidth, '--sidebar-content-w': `${String(sidebarWidth)}px` } as React.CSSProperties : undefined}
         aria-hidden={drawerClosed ? true : undefined}
         inert={drawerClosed}
         data-mobile-open={mobileOpen ? '1' : undefined}

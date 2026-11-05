@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Collapsing and expanding the Web sidebar now fades its content in and out while the width moves, so rows never squeeze.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
