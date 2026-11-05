@@ -137,10 +137,6 @@ struct InsightsView: View {
             .refreshesLive(on: .runEnded, showsStatus: false) {
                 await loadInsights()
             }
-            // An account's page always sits above the Quotas tab, whichever route pushed it.
-            .onChange(of: selection) {
-                if case .quotaSource = selection { tab = .quotas }
-            }
             // Also runs on appearance and when a pin syncs in or a provider is hidden.
             .onChange(
                 of: [

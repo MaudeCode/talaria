@@ -228,58 +228,63 @@ final class InsightsHostedTests: XCTestCase {
 
     // MARK: Source routes
 
-    /// A widget link or pinned row pushes the account once (TAL-1887): the route never replays when the root reappears.
-    func testSourceRoutesPushTheDetailOnceAndBackStaysOnTheInsightsRoot() async throws {
+    /// A widget link or pinned row pushes the account once above the current screen, and Back returns there (TAL-1887).
+    func testSourceRoutesPushTheDetailOnceAndBackReturnsToThePreviousScreen() async throws {
         let sourceID = "ui-fixture-source"
         let defaults = UserDefaults.standard
         defaults.set(sourceID, forKey: ProviderQuotaSidebarSettings.firstSourceKey)
         addTeardownBlock { UserDefaults.standard.removeObject(forKey: ProviderQuotaSidebarSettings.firstSourceKey) }
         let fixture = try FixtureApp(for: self)
+        // A widget link that opens the app cold.
+        fixture.pendingQuotaSourceID = sourceID
         let window = try hostWindow(fixture.sessionList())
-        let rootRow: (NSObject) -> Bool = Self.identified("provider-quota-row-\(sourceID)")
+        let quotasRoot: (NSObject) -> Bool = Self.identified("provider-quota-row-\(sourceID)")
+        let usageRoot: (NSObject) -> Bool = Self.labelled(prefix: "Sessions, ")
+        let chatsRoot: (NSObject) -> Bool = { $0.accessibilityLabel == "Select model" }
 
         func showsDetail() -> Bool {
             window.navigationStacks.contains { $0.viewControllers.count > 1 }
                 && HostedAccessibility.element(in: window, label: "Reset schedule") != nil
         }
-        func assertOpensThenBackStays(_ route: String, line: UInt = #line) async throws {
+        func assertOpensThenBackReturns(
+            _ route: String, to previous: @escaping (NSObject) -> Bool, line: UInt = #line
+        ) async throws {
             let opened = await awaitCondition(showsDetail)
             XCTAssertTrue(opened, "\(route) did not open the detail", line: line)
             let stack = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 }, line: line)
             stack.popViewController(animated: false)
             let reopened = await awaitCondition(timeout: 2, showsDetail)
             XCTAssertFalse(reopened, "\(route): Back pushed the detail again", line: line)
-            _ = try await requireElement(in: window, "\(route): Back did not land on the Quotas root", line: line, where: rootRow)
+            _ = try await requireElement(in: window, "\(route): Back did not return to the previous screen", line: line, where: previous)
         }
 
-        // A widget link from the chats root.
-        fixture.pendingQuotaSourceID = sourceID
-        try await assertOpensThenBackStays("Widget link")
-
-        // The same link while Insights shows, now asking for a refresh as ContentView routes it.
-        defaults.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
-        fixture.pendingQuotaSourceID = sourceID
-        try await assertOpensThenBackStays("Refreshing widget link")
-        let refreshed = await awaitCondition { UITestFixtureURLProtocol.targetedQuotaReads.withLock { $0 == [sourceID] } }
-        XCTAssertTrue(refreshed, "The widget link did not refresh its account")
-
-        // From the Usage tab a link still returns to Quotas, and its refresh never replays.
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Usage"))
-        fixture.pendingQuotaSourceID = sourceID
-        try await assertOpensThenBackStays("Widget link from Usage")
-        XCTAssertEqual(UITestFixtureURLProtocol.targetedQuotaReads.withLock { $0 }, [sourceID],
-                       "The refresh must run once and never replay on Back")
+        try await assertOpensThenBackReturns("Cold widget link", to: chatsRoot)
 
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, where: Self.identified("app-sidebar-quota-\(sourceID)")))
-        try await assertOpensThenBackStays("Pinned row")
-        attachHostedScreenshot(window, name: "insights-root-after-back")
+        try await assertOpensThenBackReturns("Pinned row", to: chatsRoot)
+        attachHostedScreenshot(window, name: "chat-after-back")
 
-        // The root that used to trap the user still reaches the sidebar and another section.
+        // The screen that used to trap the user still reaches the sidebar and another section.
         try await openSidebar(in: window)
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Tasks"))
-        let left = await awaitCondition { !HostedAccessibility.elements(in: window).contains(where: rootRow) }
-        XCTAssertTrue(left, "The sidebar did not leave Insights")
-        XCTAssertFalse(showsDetail())
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Insights"))
+        _ = try await requireElement(in: window, "The sidebar did not reach Insights", where: quotasRoot)
+
+        // A link from Insights asking for a refresh, as ContentView routes it; Insights stays on its Usage tab.
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Usage"))
+        _ = try await requireElement(in: window, "Usage did not load", where: usageRoot)
+        defaults.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
+        fixture.pendingQuotaSourceID = sourceID
+        try await assertOpensThenBackReturns("Widget link from Usage", to: usageRoot)
+        let refreshed = await awaitCondition { UITestFixtureURLProtocol.targetedQuotaReads.withLock { $0 == [sourceID] } }
+        XCTAssertTrue(refreshed, "The widget link did not refresh its account")
+
+        // The same account again, from the Quotas tab; the refresh never replays.
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Quotas"))
+        _ = try await requireElement(in: window, "Quotas did not return", where: quotasRoot)
+        fixture.pendingQuotaSourceID = sourceID
+        try await assertOpensThenBackReturns("Repeated widget link", to: quotasRoot)
+        XCTAssertEqual(UITestFixtureURLProtocol.targetedQuotaReads.withLock { $0 }, [sourceID],
+                       "The refresh must run once and never replay on Back")
     }
 }

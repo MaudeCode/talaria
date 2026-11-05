@@ -220,7 +220,7 @@ struct SessionListView: View {
         #endif
         var navigation = SessionNavigationState(lastSelectedSessionID: SessionNavigationPersistence.load(for: server))
         let hasExplicitRoute = pendingSharedImport.wrappedValue != nil
-            || requestedNewChat.wrappedValue != nil || pendingQuotaSourceID.wrappedValue != nil
+            || requestedNewChat.wrappedValue != nil
             || opensProviderQuotaWidgetSettings.wrappedValue || hasWaitingSharedImport
             || AppIntentRouter.shared.pendingDeepLink != nil
         if let session = navigation.sessionToRestore(
@@ -1422,7 +1422,6 @@ struct SessionListView: View {
         let chatRevision = navigationState.chatRootRevision
         let compact = horizontalSizeClass != .regular
         return Binding {
-            guard case .utility = navigationState.destination else { return [] }
             var path: [CompactPage] = []
             if let item = navigationState.selectedItem { path.append(.item(item)) }
             if let session = navigationState.selectedSectionSession { path.append(.session(session)) }
