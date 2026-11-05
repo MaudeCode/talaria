@@ -222,6 +222,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const attachmentRoot = (): string => localAttachmentRoot(env, config.stateDir, home)
   // TAL-1069: attachments go through the blob port; S3 materializes them under its cache, the default stays this directory.
   const blobs = await createBlobStore(config, attachmentRoot)
+  // Trust this spelling once, before a workspace can plant a link that redirects share reads.
+  const shareAttachmentRoot = blobs.attachmentRoot()
   const sidecar = opts.sidecar ?? null
   const skillReplays = new SkillReplayService({ documents: storage.documents, sidecar: () => sidecar, now: () => new Date(now() * 1000), log })
   await skillReplays.initialize()
@@ -425,6 +427,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     },
     attachmentDir,
     blobs,
+    shareAttachmentRoot,
     hermesHome: config.hermesHome,
     home,
     // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.

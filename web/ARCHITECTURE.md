@@ -201,8 +201,10 @@ compared. The `s3` adapter (`blobs-s3.ts`) stores objects in an S3-compatible bu
 under `<stateDir>/blob-cache/attachments/...` through `localPath`: concurrent calls share one download, the bytes
 are checked against the etag, and a least-recently-used cap (`TALARIA_BLOB_CACHE_MAX_MB`) bounds the cache, which
 starts empty each run. Upload paths are those local paths in both modes, so the turn, `/api/file/raw`,
-`/api/media` and share snapshots keep their path-based anchored reads; each materializes the file first. A turn also
-restores earlier turns' attachments: `cachedSize` skips files already on disk, the rest are HEADed concurrently (at
+`/api/media` and share snapshots keep their path-based anchored reads; each materializes the file first. Public
+shares pin the resolved attachment root at server startup for materialization keys and anchored reads, so a later
+symlink cannot redirect their trusted boundary. The session workspace is resolved separately for each share.
+A turn also restores earlier turns' attachments: `cachedSize` skips files already on disk, the rest are HEADed concurrently (at
 most eight at once), and `localPath` reuses that HEAD for the download. Archive
 extraction writes into the local directory and `commitLocal` stores each file. Session delete removes the session
 prefix. An unknown kind or an unreachable bucket fails startup. `talaria-web storage copy-blobs` copies between

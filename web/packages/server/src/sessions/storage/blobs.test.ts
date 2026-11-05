@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,6 +44,44 @@ it('refuses malformed copy-blobs arguments before touching any store', async () 
     expect(await runStorage({ env: {}, webRoot: '/nonexistent', home: '/nonexistent', log: vi.fn(), warn }, args)).toBe(2)
   }
   expect(warn).toHaveBeenCalledWith('Usage: talaria-web storage copy-blobs --from <local|s3> --to <local|s3>')
+})
+
+it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share attachment root when its configured path is %s', async (kind) => {
+  const dir = realpathSync(temp('share-root'))
+  const workspace = join(dir, 'workspace'), configured = join(workspace, 'attachments')
+  const original = join(dir, 'original'), outside = join(dir, 'outside')
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const privateImage = Buffer.concat([png, Buffer.from('outside-private')])
+  const attachmentImage = Buffer.concat([png, Buffer.from('original-attachment')])
+  for (const root of [workspace, original, outside]) mkdirSync(root)
+  writeFileSync(join(outside, 'secret.png'), privateImage)
+  writeFileSync(join(original, 'allowed.png'), attachmentImage)
+  writeFileSync(join(workspace, 'workspace.png'), png)
+  if (kind !== 'missing') symlinkSync(kind === 'startup alias' ? original : configured, configured)
+  const s = await bootTestServer({ env: { HERMES_WEBUI_ATTACHMENT_DIR: configured, HERMES_WEBUI_DEFAULT_WORKSPACE: workspace } })
+  try {
+    const startupRoot = s.deps.blobs.attachmentRoot()
+    if (kind !== 'symlink loop') {
+      if (kind === 'startup alias') rmSync(configured)
+      symlinkSync(outside, configured)
+    }
+    const session = await s.deps.sessionStore.newSession()
+    session.messages = [{ role: 'assistant', content: [
+      join(configured, 'secret.png'), join(outside, 'secret.png'), 'secret.png', 'workspace.png',
+      ...(kind === 'startup alias' ? [join(original, 'allowed.png')] : []),
+    ].map((ref) => `MEDIA:${ref}`).join('\n') }]
+    await s.deps.sessionStore.save(session)
+    await s.deps.sessions.createShare(session.session_id)
+    const snapshot = JSON.stringify(await s.deps.sessions.deps.shares.load(session.share_token!))
+    expect.soft(snapshot).not.toContain(privateImage.toString('base64'))
+    expect.soft(snapshot.match(/Local attachment omitted/g)).toHaveLength(3)
+    expect(snapshot).toContain(`data:image/png;base64,${png.toString('base64')}`)
+    expect(s.deps.sessions.deps.shareAttachmentRoot).toBe(startupRoot)
+    if (kind === 'startup alias') {
+      expect(startupRoot).toBe(original)
+      expect(snapshot).toContain(`data:image/png;base64,${attachmentImage.toString('base64')}`)
+    }
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 
 // ── S3, against MinIO or any S3-compatible endpoint ──

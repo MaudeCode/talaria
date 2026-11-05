@@ -177,6 +177,8 @@ export interface SessionServiceDeps {
   attachmentDir: (sid: string) => string
   /** Chat attachment bytes (TAL-1069). */
   blobs: BlobStore
+  /** Startup-resolved attachment root, never re-resolved by public sharing. */
+  shareAttachmentRoot: string
   /** A deleted session can never be viewed, so its finished runs are cleared from the relay. */
   clearRelayCompletions?: (sid: string, profile: string | null) => Promise<void>
   /** Run journals are removed with their session (Python `delete_run_journal`). */
@@ -3433,16 +3435,17 @@ export class SessionService {
       let snapshot
       // A remote attachment store puts the images the snapshot embeds on disk, where it reads them, within a byte budget.
       const blobs = this.deps.blobs
+      const attachmentRoot = this.deps.shareAttachmentRoot
       let budget = SHARE_MATERIALIZE_MAX_BYTES
-      for (const path of shareMediaPaths(s.messages, shareAllowedRoots(s, blobs.attachmentRoot()), blobs.attachmentRoot(), this.deps.home)) {
-        const key = blobKeyForPath(blobs.attachmentRoot(), path)
+      for (const path of shareMediaPaths(s.messages, shareAllowedRoots(s, attachmentRoot, this.deps.home), attachmentRoot, this.deps.home)) {
+        const key = blobKeyForPath(attachmentRoot, path)
         const stat = key ? await blobs.stat(key) : null
         if (!key || !stat || !shareEmbeddable(key, stat.size) || stat.size > budget) continue
         budget -= stat.size
         await blobs.localPath(key)
       }
       try {
-        snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: blobs.attachmentRoot(), home: this.deps.home })
+        snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot, home: this.deps.home })
       } catch (error) {
         throw new HttpFailure(400, (error as Error).message)
       }

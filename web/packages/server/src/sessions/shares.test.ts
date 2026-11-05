@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Session } from './session.js'
 import { buildShareSnapshot, embedShareMedia } from './shares.js'
+import { LocalBlobStore } from './storage/blobs.js'
 
 /** One-shot hook: right after `fstatSync` samples the armed file's inode, append `bytes` to that same file. */
 const grow = vi.hoisted(() => ({ path: '', ino: 0, bytes: 0 }))
@@ -278,6 +279,21 @@ describe('public share root acquisition', () => {
     const session = new Session({ title: 'Swap', messages: [] }, { workspace: ws, model: null })
     return JSON.stringify(buildShareSnapshot(session, [{ role: 'assistant', content: `see MEDIA:${ref} here` }], { hermesHome: join(base, '.hermes'), attachmentRoot: attach, home: base }))
   }
+
+  it.each(['planted link', 'symlink loop'])('walks the trusted attachment root without resolving a later %s', (kind) => {
+    const { dir, ws, attach } = layout(kind.replaceAll(' ', '-'))
+    const blobs = new LocalBlobStore(() => attach)
+    const trustedRoot = blobs.attachmentRoot()
+    rmSync(attach, { recursive: true })
+    symlinkSync(kind === 'symlink loop' ? attach : join(dir, 'evil', 'ws'), attach)
+    for (const ref of [join(attach, 'pic.png'), join(dir, 'evil', 'ws', 'pic.png'), 'pic.png']) {
+      // No workspace fallback: the relative reference can only come from the trusted attachment root.
+      const text = snapshotText('', trustedRoot, ref)
+      expect.soft(text, ref).toContain('Local attachment omitted')
+      expect.soft(text, ref).not.toContain('base64')
+    }
+    expect(snapshotText(ws, trustedRoot, 'pic.png')).toContain(inside.toString('base64'))
+  })
 
   // Each swap runs after the reference resolved inside the approved root and immediately before the walk opens the root.
   it.each([
