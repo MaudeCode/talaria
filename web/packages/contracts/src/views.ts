@@ -724,7 +724,7 @@ export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional(), hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
-  show_cron_sessions: z.boolean().optional(), show_sidebar_feedback: z.boolean().optional().describe('TAL-1588: show Send feedback in the Web rail above Notifications.'), show_webhook_sessions: z.boolean().optional(), show_kanban_sessions: z.boolean().optional(), check_for_updates: z.boolean().optional(), summarize_updates_automatically: z.boolean().optional(), ignore_agent_updates: z.boolean().optional(),
+  show_cron_sessions: z.boolean().optional(), show_sidebar_feedback: z.boolean().optional().describe('TAL-1588: show Send feedback in the Web rail above Notifications.'), sidebar_quota_sources: z.array(z.string()).optional().describe('TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids.'), sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed.'), sidebar_can_pin: z.boolean().optional().describe('TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned.'), show_webhook_sessions: z.boolean().optional(), show_kanban_sessions: z.boolean().optional(), check_for_updates: z.boolean().optional(), summarize_updates_automatically: z.boolean().optional(), ignore_agent_updates: z.boolean().optional(),
   auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),
   auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), update_channels: z.array(WebUpdateChannelSchema).optional().describe('TAL-1569: the Web update channels this server offers, in display order.'), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
   max_tokens: NullableNumber.optional(), max_tokens_effective: NullableNumber.optional(), max_tokens_fallback: NullableNumber.optional(), tts_engine: z.string().optional(), tts_voice: z.string().optional(),
@@ -825,6 +825,7 @@ export const QuotaWindowSchema = z.looseObject({
   forecast: QuotaForecastSchema.nullable(),
   projection_eligible: z.boolean().optional().describe('TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset).'),
   urgency: QuotaUrgencySchema.optional(),
+  display_level: QuotaLevelSchema.optional().describe('TAL-1870, `/api/provider/quotas` only: the level this window\'s meter shows; the source status outranks the window\'s pace urgency.'),
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
@@ -833,6 +834,10 @@ export const QuotaSourceSchema = z.looseObject({
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
+  headline_window_index: QuotaWindowIndex.describe('TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows.'),
+  display_name: z.string().optional().describe('TAL-1870: the provider, with its account when that tells two sources of one provider apart.'),
+  status_message: z.string().nullable().optional().describe('TAL-1870: the server text a source status shows: its unavailable reason, else its message; null leaves the status word.'),
+  display_level: QuotaLevelSchema.optional().describe('TAL-1870: the effective level of a source with no window to show; the source status outranks its urgency.'),
   session_window_index: QuotaWindowIndex.describe('The session (else 5h) window.'), weekly_window_index: QuotaWindowIndex.describe('The weekly window.'),
   urgency: QuotaUrgencySchema.optional().describe('TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it.'),
 })
@@ -855,6 +860,9 @@ export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailab
   version: z.number(), computed_at: z.string().describe('ISO-8601 UTC request reference time; coalesced or stale sources retain their own computed_at.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
   missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
   sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
+  retained_display_level: QuotaLevelSchema.nullable().optional().describe('TAL-1870: the level of a cached row this read does not carry, shown with `availability.unavailable_reason`; null when `availability.authoritative`.'),
+  sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false.'),
+  sidebar_can_pin: z.boolean().optional().describe('TAL-1870: whether another source can be pinned; a pin this read does not list does not count.'),
 })
 /** One day of OpenRouter spend on `/api/provider/cost-history` (TAL-412). */
 export const CostSnapshotSchema = z.looseObject({

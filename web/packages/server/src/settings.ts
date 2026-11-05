@@ -47,6 +47,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     show_token_usage: false,
     show_quota_chip: false,
     show_sidebar_feedback: false,
+    sidebar_quota_sources: [],
     show_conversation_outline: false,
     show_busy_placeholder_hint: false,
     new_chat_on_workspace_switch: false,
@@ -167,6 +168,22 @@ const FLOAT_RANGES: Record<string, [number, number]> = { tts_rate: [0.5, 2.0], t
 const LANG_RE = /^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$/
 const TTS_ENGINE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/
 const LIST_KEYS = new Set(['hidden_tabs', 'tab_order', 'composer_control_order'])
+
+const SIDEBAR_QUOTA_PIN_LIMIT = 2
+
+/** TAL-1870: at most two unique trimmed source ids, in the order given; anything but a list is no pins. */
+function normalizeSidebarQuotaSources(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const ids = value.flatMap((id: unknown) => (typeof id === 'string' && id.trim() ? [id.trim()] : []))
+  return [...new Set(ids)].slice(0, SIDEBAR_QUOTA_PIN_LIMIT)
+}
+
+/** TAL-1870: the pins a quota read lists, in pinned order, and whether another fits. An unlisted pin neither shows nor counts, unless the read cannot vouch for its list. */
+export function sidebarQuotaProjection(pins: unknown, sources: unknown, authoritative: boolean): { sidebar_source_ids: string[]; sidebar_can_pin: boolean } {
+  const listed = new Set((Array.isArray(sources) ? sources as { source_id?: unknown }[] : []).map((s) => s.source_id))
+  const sidebar_source_ids = normalizeSidebarQuotaSources(pins).filter((id) => !authoritative || listed.has(id))
+  return { sidebar_source_ids, sidebar_can_pin: sidebar_source_ids.length < SIDEBAR_QUOTA_PIN_LIMIT }
+}
 
 /** Python `int(v)`: ints, whole floats, and decimal strings; booleans count as 0/1. */
 function pyInt(v: unknown): number | null {
@@ -328,6 +345,7 @@ export class SettingsStore {
     if (!('show_cli_sessions' in stored) && (pyBool(stored.onboarding_completed) || establishedKeys.length > 0)) settings.show_cli_sessions = false
     if (!pyBool(stored.virtualize_transcript_optin)) settings.virtualize_transcript = false
     settings.trusted_link_hosts = normalizeTrustedLinkHosts(settings.trusted_link_hosts)
+    settings.sidebar_quota_sources = normalizeSidebarQuotaSources(settings.sidebar_quota_sources)
     const hasStoredAppearance = 'theme' in stored || 'skin' in stored
     ;[settings.theme, settings.skin] = normalizeAppearance(
       hasStoredAppearance ? stored.theme : settings.theme,
@@ -467,6 +485,10 @@ export class SettingsStore {
         if (k === 'trusted_link_hosts') {
           if (!Array.isArray(v)) continue
           v = normalizeTrustedLinkHosts(v)
+        }
+        if (k === 'sidebar_quota_sources') {
+          if (!Array.isArray(v)) continue
+          v = normalizeSidebarQuotaSources(v)
         }
         if (k === 'provider_cost_budget') {
           if (v === null || v === undefined || v === '') { current[k] = null; continue }

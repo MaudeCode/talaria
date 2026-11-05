@@ -106,6 +106,13 @@ describe('quota urgency (TAL-411)', () => {
     return classifyQuotaSource({ status, windows, pace_window_index }, thresholds)
   }
 
+  it('names the window a one-figure row shows: the pace window, else the first, none without windows (TAL-1870)', () => {
+    const session = { label: 'Session', used_percent: 10, reset_at: resetIn(3600) }
+    expect(classify([session, weekly(30)]).headline_window_index).toBe(1)
+    expect(classify([{ label: 'Daily', used_percent: 10 }]).headline_window_index).toBe(0)
+    expect(classify([]).headline_window_index).toBeNull()
+  })
+
   it('matches the App calculator at default thresholds on both bases', () => {
     expect(classify([weekly(10)]).urgency).toEqual({ remaining: 'healthy', pace: 'healthy' })
     expect(classify([weekly(30)]).urgency).toEqual({ remaining: 'healthy', pace: 'healthy' })

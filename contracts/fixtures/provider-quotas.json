@@ -1,4 +1,10 @@
 {
+  "availability": {
+    "status": "available",
+    "authoritative": true,
+    "unavailable_reason": null,
+    "generation": "synthetic-generation"
+  },
   "version": 1,
   "computed_at": "2026-09-28T08:00:00Z",
   "scope_id": "qscope_7db910e89e3a2372073d47b80ac9f2cc",
@@ -8,6 +14,7 @@
   "missing_source": false,
   "sources": [
     {
+      "computed_at": "2026-09-28T08:00:00Z",
       "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
       "provider_id": "anthropic",
       "provider_label": "Anthropic",
@@ -46,7 +53,8 @@
           "urgency": {
             "remaining": "healthy",
             "pace": "healthy"
-          }
+          },
+          "display_level": "healthy"
         },
         {
           "label": "Weekly",
@@ -76,7 +84,8 @@
           "urgency": {
             "remaining": "healthy",
             "pace": "warning"
-          }
+          },
+          "display_level": "warning"
         },
         {
           "label": "Monthly",
@@ -91,7 +100,8 @@
           "urgency": {
             "remaining": "healthy",
             "pace": "healthy"
-          }
+          },
+          "display_level": "healthy"
         }
       ],
       "balances": [],
@@ -101,19 +111,19 @@
       "retry_after": null,
       "fetched_at": "2026-09-28T07:59:30Z",
       "pace_window_index": 1,
+      "headline_window_index": 1,
+      "display_name": "Anthropic",
+      "status_message": "Anthropic account limits loaded.",
+      "display_level": "warning",
       "session_window_index": 0,
       "weekly_window_index": 1,
       "urgency": {
         "remaining": "healthy",
         "pace": "warning"
-      },
-      "computed_at": "2026-09-28T08:00:00Z"
+      }
     }
   ],
-  "availability": {
-    "status": "available",
-    "authoritative": true,
-    "unavailable_reason": null,
-    "generation": "synthetic-generation"
-  }
+  "retained_display_level": null,
+  "sidebar_source_ids": [],
+  "sidebar_can_pin": true
 }

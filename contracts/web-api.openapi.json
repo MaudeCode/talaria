@@ -70730,6 +70730,24 @@
                       "type": "boolean",
                       "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
                     },
+                    "sidebar_quota_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
+                    },
+                    "sidebar_source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed."
+                    },
+                    "sidebar_can_pin": {
+                      "type": "boolean",
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned."
+                    },
                     "show_webhook_sessions": {
                       "type": "boolean"
                     },
@@ -71017,6 +71035,24 @@
                     "show_sidebar_feedback": {
                       "type": "boolean",
                       "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
+                    },
+                    "sidebar_quota_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
+                    },
+                    "sidebar_source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed."
+                    },
+                    "sidebar_can_pin": {
+                      "type": "boolean",
+                      "description": "TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned."
                     },
                     "show_webhook_sessions": {
                       "type": "boolean"
@@ -77120,6 +77156,17 @@
                                       "pace"
                                     ],
                                     "additionalProperties": {}
+                                  },
+                                  "display_level": {
+                                    "enum": [
+                                      "healthy",
+                                      "warning",
+                                      "critical",
+                                      "stale",
+                                      "unavailable"
+                                    ],
+                                    "type": "string",
+                                    "description": "TAL-1870, `/api/provider/quotas` only: the level this window's meter shows; the source status outranks the window's pace urgency."
                                   }
                                 },
                                 "required": [
@@ -77705,6 +77752,17 @@
                                     "pace"
                                   ],
                                   "additionalProperties": {}
+                                },
+                                "display_level": {
+                                  "enum": [
+                                    "healthy",
+                                    "warning",
+                                    "critical",
+                                    "stale",
+                                    "unavailable"
+                                  ],
+                                  "type": "string",
+                                  "description": "TAL-1870, `/api/provider/quotas` only: the level this window's meter shows; the source status outranks the window's pace urgency."
                                 }
                               },
                               "required": [
@@ -77738,6 +77796,45 @@
                               }
                             ],
                             "description": "The window a pace-coloured widget shows: the weekly one, else the first 5h/session window."
+                          },
+                          "headline_window_index": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows."
+                          },
+                          "display_name": {
+                            "type": "string",
+                            "description": "TAL-1870: the provider, with its account when that tells two sources of one provider apart."
+                          },
+                          "status_message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1870: the server text a source status shows: its unavailable reason, else its message; null leaves the status word."
+                          },
+                          "display_level": {
+                            "enum": [
+                              "healthy",
+                              "warning",
+                              "critical",
+                              "stale",
+                              "unavailable"
+                            ],
+                            "type": "string",
+                            "description": "TAL-1870: the effective level of a source with no window to show; the source status outranks its urgency."
                           },
                           "session_window_index": {
                             "anyOf": [
@@ -77804,6 +77901,35 @@
                         "additionalProperties": {}
                       },
                       "description": "Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row."
+                    },
+                    "retained_display_level": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "healthy",
+                            "warning",
+                            "critical",
+                            "stale",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1870: the level of a cached row this read does not carry, shown with `availability.unavailable_reason`; null when `availability.authoritative`."
+                    },
+                    "sidebar_source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false."
+                    },
+                    "sidebar_can_pin": {
+                      "type": "boolean",
+                      "description": "TAL-1870: whether another source can be pinned; a pin this read does not list does not count."
                     }
                   },
                   "required": [

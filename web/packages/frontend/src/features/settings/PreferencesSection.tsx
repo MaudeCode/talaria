@@ -10,6 +10,8 @@ import { Button } from '../../ui/Button'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
+import { useProviderQuotas, useSetSidebarQuotaPins, useSidebarQuotaPins } from '../../lib/useProviderQuotas'
+import { quotaSourceName } from '../insights/QuotaMeter'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
   const { bool, set } = useSettingField([settingKey])
@@ -17,6 +19,31 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
   return (
     <FieldRow label={label} htmlFor={id} {...(hint ? { hint } : {})} inline>
       <Switch id={id} disabled={disabled} checked={bool(settingKey, fallback)} onCheckedChange={(checked) => set({ [settingKey]: checked })} />
+    </FieldRow>
+  )
+}
+
+/** TAL-1870: pins the sidebar's quota sources from the server's projection. */
+function SidebarQuotaSources() {
+  const { quotas } = useProviderQuotas()
+  const setPins = useSetSidebarQuotaPins()
+  const sources = quotas.data?.sources
+  const { ids: pinned, canPin } = useSidebarQuotaPins(quotas.data)
+  return (
+    <FieldRow label={m.settings_label_sidebar_quotas()} hint={m.settings_desc_sidebar_quotas()} htmlFor="settingsSidebarQuotas">
+      <div id="settingsSidebarQuotas" className="flex flex-wrap gap-3">
+        {quotas.isPending && <LoadingState compact />}
+        {quotas.isError && !sources && <ErrorState error={quotas.error} onRetry={() => { void quotas.refetch() }} />}
+        {sources?.length === 0 && <span className="text-sm text-muted">{m.insights_quotas_empty()}</span>}
+        {sources?.map((s) => {
+          const on = pinned.includes(s.source_id)
+          return (
+            <label key={s.source_id} className="flex items-center gap-1.5 text-sm">
+              <Switch checked={on} disabled={!on && !canPin} onCheckedChange={(checked) => { setPins.mutate(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {s.display_name ?? quotaSourceName(s)}
+            </label>
+          )
+        })}
+      </div>
     </FieldRow>
   )
 }
@@ -126,6 +153,7 @@ export function PreferencesSection() {
           })}
         </div>
       </FieldRow>
+      <SidebarQuotaSources />
     </div>
   )
 }

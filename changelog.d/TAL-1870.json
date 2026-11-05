@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web can pin up to two provider quotas to the expanded sidebar from Settings › Preferences. Each row shows the current usage and pace, and clicking it opens Insights.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

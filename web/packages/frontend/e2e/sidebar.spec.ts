@@ -301,6 +301,232 @@ test('a hub keeps its page beside the widest panel with no page-level horizontal
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
+/** TAL-1870: synthetic sources; the server owns `display_level` (`api/settings.test.ts`), and each surface must render the same one. */
+const quotaWindow = (label: string, used: number, level: string, expectedUsed: number | null) => ({
+  label, used_percent: used, remaining_percent: 100 - used, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: label === 'Weekly' ? 604800 : 18000, display_level: level,
+  pace: expectedUsed === null ? null : { expected_remaining_percent: 100 - expectedUsed, expected_used_percent: expectedUsed, pace_delta_percent: expectedUsed - used, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' }, forecast: null,
+})
+const quotas = {
+  version: 1, computed_at: '2030-01-01T00:00:00Z', scope_id: 'qscope_e2e', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false,
+  sources: [
+    { source_id: 'qsrc_weekly', provider_id: 'anthropic', provider_label: 'Claude', display_name: 'Claude', status: 'available', display_level: 'warning', pace_window_index: 1, headline_window_index: 1, windows: [quotaWindow('Session', 25, 'healthy', 40), quotaWindow('Weekly', 70, 'warning', 64)] },
+    { source_id: 'qsrc_stale', provider_id: 'openai-codex', provider_label: 'Codex', account_label: 'Work', display_name: 'Codex · Work', status: 'stale', status_message: 'Last known usage', display_level: 'stale', pace_window_index: 0, headline_window_index: 0, windows: [quotaWindow('Weekly', 40, 'stale', null)] },
+    { source_id: 'qsrc_down', provider_id: 'zai', provider_label: 'Z.ai', display_name: 'Z.ai', status: 'unavailable', status_message: 'Sign in again', display_level: 'unavailable', pace_window_index: 0, headline_window_index: 0, windows: [quotaWindow('Weekly', 90, 'unavailable', null)] },
+    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', display_name: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5 }, display_level: 'healthy', pace_window_index: null, headline_window_index: null, windows: [] },
+  ],
+}
+const pin = (page: Page, sources: string[]) => page.request.post('/api/settings', { data: { sidebar_quota_sources: sources } })
+const quotaGroup = (page: Page) => sidebar(page).locator('[data-section="sidebar-quotas"]')
+const quotaRow = (page: Page, source: string) => quotaGroup(page).locator(`[data-quota-source="${source}"]`)
+
+/** Pin before the first load: the shell restores settings from its snapshot, so a later write would not show on a reload. The server's projection is owned by `api/settings.test.ts`. */
+async function withPins(page: Page, sources: string[], run: () => Promise<void>) {
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, sidebar_source_ids: sources, sidebar_can_pin: sources.length < 2 } }))
+  await pin(page, sources)
+  try {
+    await page.goto('/skills')
+    await settle(page)
+    await run()
+  } finally {
+    await pin(page, [])
+  }
+}
+const insightsLevel = (page: Page, source: string) => page.locator(`[data-section="insights-quotas"] [data-quota-source="${source}"] [data-quota-window="Weekly"]`).getAttribute('data-level')
+const openInsightsFrom = async (page: Page, source: string) => {
+  await quotaRow(page, source).click()
+  await expect(page).toHaveURL(/\/insights\?tab=quotas$/)
+  await expect(page.getByRole('tab', { name: 'Quotas' })).toHaveAttribute('aria-selected', 'true')
+}
+
+test('pinned quotas show the pace window figures in pinned order and open Insights at the same levels', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await withPins(page, ['qsrc_stale', 'qsrc_weekly'], async () => {
+    await expect(quotaGroup(page).getByRole('heading', { level: 3, name: 'Quotas' })).toBeVisible()
+    await expect(quotaGroup(page).locator('[data-quota-source]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-quota-source')))).resolves.toEqual(['qsrc_stale', 'qsrc_weekly'])
+    await expect(quotaRow(page, 'qsrc_weekly')).toHaveAttribute('aria-label', 'Claude: 70% Used')
+    await expect(quotaRow(page, 'qsrc_weekly')).toContainText('70%')
+    const meter = quotaRow(page, 'qsrc_weekly').getByRole('meter')
+    await expect(meter).toHaveAttribute('aria-valuenow', '70')
+    await expect(meter.locator('div').first()).toHaveAttribute('style', /width: 70%/)
+    await expect(meter.locator('div').first()).toHaveClass(/bg-warning/)
+    await expect(meter.locator('div').nth(1)).toHaveAttribute('style', /left: 64%/)
+    await expect(quotaRow(page, 'qsrc_stale')).toHaveAttribute('aria-label', 'Codex · Work: 40% Used, Last known usage')
+    await expect(quotaRow(page, 'qsrc_stale')).toContainText('Last known usage')
+    await expect(quotaRow(page, 'qsrc_stale').locator('[role="meter"] > div').first()).toHaveClass(/bg-muted/)
+    await page.locator('aside.sidebar').screenshot({ path: info.outputPath('quotas-expanded.png') })
+
+    await openInsightsFrom(page, 'qsrc_weekly')
+    await expect(quotaRow(page, 'qsrc_weekly')).toHaveAttribute('data-level', 'warning')
+    expect(await insightsLevel(page, 'qsrc_weekly')).toBe('warning')
+    await expect(quotaRow(page, 'qsrc_stale')).toHaveAttribute('data-level', 'stale')
+    expect(await insightsLevel(page, 'qsrc_stale')).toBe('stale')
+  })
+})
+
+test('an unavailable source shows its server status at its Insights level', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await withPins(page, ['qsrc_down'], async () => {
+    await expect(quotaRow(page, 'qsrc_down')).toContainText('Sign in again')
+    await expect(quotaRow(page, 'qsrc_down')).toHaveAttribute('data-level', 'unavailable')
+    await openInsightsFrom(page, 'qsrc_down')
+    expect(await insightsLevel(page, 'qsrc_down')).toBe('unavailable')
+  })
+})
+
+test('a credit source shows its amount without a meter, and the rail has no quota element', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await withPins(page, ['qsrc_credits'], async () => {
+    await expect(quotaRow(page, 'qsrc_credits')).toContainText('12.5')
+    await expect(quotaRow(page, 'qsrc_credits').getByRole('meter')).toHaveCount(0)
+    await page.locator('#btnSidebarEdgeToggle').click()
+    await expect(row(page, 'Chat')).toBeVisible()
+    await expect(page.locator('.sidebar-rail [data-section="sidebar-quotas"]')).toHaveCount(0)
+    await expect(quotaGroup(page)).toBeHidden()
+  })
+})
+
+test('with nothing pinned the sidebar has no group and reads no quotas', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  let reads = 0
+  await page.route('**/api/provider/quotas**', (route) => { reads++; return route.fulfill({ json: quotas }) })
+  await page.goto('/skills')
+  await settle(page)
+  await expect(row(page, 'Skills')).toBeVisible()
+  await expect(quotaGroup(page)).toHaveCount(0)
+  expect(reads).toBe(0)
+})
+
+test('Preferences pins from the server projection, shows a choice at once and rolls a refusal back', async ({ page, errors }, info) => {
+  desktopOnly(info.project.name)
+  let projection = { sidebar_source_ids: [] as string[], sidebar_can_pin: true }
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, ...projection } }))
+  await page.goto('/settings/preferences')
+  await settle(page)
+  const picker = page.locator('#settingsSidebarQuotas')
+  const source = (name: string) => picker.getByRole('switch', { name })
+  const toggle = (name: string) => Promise.all([page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'POST'), source(name).click()])
+  await expect(picker.getByRole('switch')).toHaveCount(4)
+  try {
+    // The choice shows while the write is still held, before the server has answered.
+    let release!: () => void
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() === 'POST') await new Promise<void>((resolve) => { release = resolve })
+      await route.fallback()
+    })
+    await source('Claude').click()
+    await expect(source('Claude')).toBeChecked()
+    projection = { sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true }
+    release()
+    await expect.poll(async () => (await (await page.request.get('/api/settings')).json() as { sidebar_quota_sources: string[] }).sidebar_quota_sources).toEqual(['qsrc_weekly'])
+    await page.unroute('**/api/settings')
+
+    // The server's `sidebar_can_pin` closes the picker at two, and removing one reopens it.
+    projection = { sidebar_source_ids: ['qsrc_weekly', 'qsrc_credits'], sidebar_can_pin: false }
+    await toggle('OpenRouter')
+    await expect(source('OpenRouter')).toBeChecked()
+    await expect(source('Z.ai')).toBeDisabled()
+    await expect(source('Claude')).toBeEnabled()
+    projection = { sidebar_source_ids: ['qsrc_credits'], sidebar_can_pin: true }
+    await toggle('Claude')
+    await expect(source('Claude')).not.toBeChecked()
+    await expect(source('Z.ai')).toBeEnabled()
+
+    // Overlapping refusals restore the confirmed projection without a read, across a remount, even when the read also fails.
+    let refuse!: () => void
+    const refused = new Promise<void>((resolve) => { refuse = resolve })
+    await page.route('**/api/provider/quotas**', (route) => route.fulfill({ status: 500, json: { error: 'Down' } }))
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      await refused
+      return route.fulfill({ status: 400, json: { error: 'Refused' } })
+    })
+    await source('Z.ai').click()
+    await expect(source('Z.ai')).toBeChecked()
+    // Leaving the section unmounts the picker while the write is still held.
+    await sidebar(page).getByRole('link', { name: 'Appearance' }).click()
+    await expect(picker).toHaveCount(0)
+    await sidebar(page).getByRole('link', { name: 'Preferences' }).click()
+    await source('OpenRouter').click()
+    await expect(source('OpenRouter')).not.toBeChecked()
+    refuse()
+    await expect(page.getByText('Refused').first()).toBeVisible()
+    await expect(source('Z.ai')).not.toBeChecked()
+    await expect(source('OpenRouter')).toBeChecked()
+
+    // A write that succeeded survives a later refusal, even with the reread failing.
+    await page.unroute('**/api/settings')
+    let settle!: () => void
+    const held = new Promise<void>((resolve) => { settle = resolve })
+    let posts = 0
+    // The save's own projection decides the rollback state, not the stored pins, which still hold a source no longer listed.
+    const saved = { sidebar_quota_sources: ['qsrc_gone', 'qsrc_weekly'], sidebar_source_ids: ['qsrc_credits', 'qsrc_weekly'], sidebar_can_pin: false }
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      await held
+      return ++posts === 1 ? route.fulfill({ json: saved }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
+    })
+    await source('Claude').click()
+    await expect(source('Claude')).toBeChecked()
+    await source('OpenRouter').click()
+    await expect(source('OpenRouter')).not.toBeChecked()
+    const refusal = page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.status() === 400)
+    settle()
+    await refusal
+    await expect(source('OpenRouter')).toBeChecked()
+    await expect(source('Claude')).toBeChecked()
+
+    // Settings has no destinations column, so the rows show on leaving it.
+    await sidebar(page).getByRole('button', { name: 'Back', exact: true }).click()
+    await expect(quotaRow(page, 'qsrc_credits')).toBeVisible()
+    await expect(quotaRow(page, 'qsrc_down')).toHaveCount(0)
+  } finally {
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+    await pin(page, [])
+    errors.splice(0, errors.length, ...errors.filter((e) => !/POST .*\/api\/settings|GET .*\/api\/provider\/quotas|status of (400|500)/.test(e)))
+  }
+})
+
+test('a confirmed first pin stays in the sidebar when a later choice is refused and the settings reread fails', async ({ page, errors }, info) => {
+  desktopOnly(info.project.name)
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let posts = 0
+  let readsFail = false
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, sidebar_source_ids: posts ? ['qsrc_weekly'] : [], sidebar_can_pin: true } }))
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'POST') return readsFail ? route.fulfill({ status: 500, json: { error: 'Down' } }) : route.fallback()
+    await held
+    return ++posts === 1 ? route.fulfill({ json: { sidebar_quota_sources: ['qsrc_weekly'], sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true } }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
+  })
+  await page.goto('/settings/preferences')
+  await settle(page)
+  const source = (name: string) => page.locator('#settingsSidebarQuotas').getByRole('switch', { name })
+  await source('Claude').click()
+  await expect(source('Claude')).toBeChecked()
+  await source('Z.ai').click()
+  await expect(source('Z.ai')).toBeChecked()
+  readsFail = true
+  const refusal = page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.status() === 400)
+  release()
+  await refusal
+  await sidebar(page).getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(quotaRow(page, 'qsrc_weekly')).toBeVisible()
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+  errors.splice(0, errors.length, ...errors.filter((e) => !/\/api\/settings|status of (400|500)/.test(e)))
+})
+
+test('the phone drawer shows pinned quotas and a row closes it into Insights', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'the drawer is phone chrome')
+  await withPins(page, ['qsrc_weekly', 'qsrc_stale'], async () => {
+    await page.locator('#btnHamburger').click()
+    await expect(quotaRow(page, 'qsrc_weekly')).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: info.outputPath('quotas-drawer.png') })
+    await quotaRow(page, 'qsrc_weekly').click()
+    await expect(page).toHaveURL(/\/insights\?tab=quotas$/)
+    await expect(page.locator('aside.sidebar.mobile-open')).toHaveCount(0)
+  })
+})
+
 /** TAL-1868: Settings shows Back and its section list in the one column, never the destinations or a second column. */
 test('Settings swaps the column for Back and its sections, whatever the stored choice, and leaving restores it', async ({ page }, info) => {
   desktopOnly(info.project.name)

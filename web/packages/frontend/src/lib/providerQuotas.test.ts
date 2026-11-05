@@ -9,11 +9,13 @@ const cached = ProviderQuotasSchema.parse(fixture.quotas)
 
 describe('quota cache authority', () => {
   it('retains last-confirmed values without marking them fresh during a cold server recovery', () => {
-    const unavailable = { ...cached, sources: [], availability: { ...cached.availability!, status: 'unavailable' as const } }
+    const unavailable = { ...cached, sources: [], retained_display_level: 'critical' as const, availability: { ...cached.availability!, status: 'unavailable' as const } }
     const result = reconcileProviderQuotas(cached, unavailable)
     expect(result.sources.map((s) => s.source_id)).toEqual(cached.sources.map((s) => s.source_id))
     expect(result.sources[0]?.status).toBe('unavailable')
-    expect(result.sources[0]?.windows).toEqual(cached.sources[0]?.windows)
+    // The level comes from the read, whatever the client would have derived from the status.
+    expect(result.sources[0]?.windows).toEqual(cached.sources[0]?.windows?.map((w) => ({ ...w, display_level: 'critical' })))
+    expect(result.sources[0]?.display_level).toBe('critical')
     expect(result.sources[0]?.urgency).toEqual({ remaining: 'unavailable', pace: 'unavailable' })
     expect(reconcileProviderQuotas(undefined, unavailable).sources).toEqual([])
   })

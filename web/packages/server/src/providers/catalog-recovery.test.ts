@@ -88,8 +88,9 @@ describe('catalog recovery authority (TAL-1110)', () => {
       for (const query of ['', `?source=${id}&refresh=true`]) {
         const stale = await t.get(`/api/provider/quotas${query}`)
         expect(stale.availability).toMatchObject({ authoritative: false, status: 'stale' })
+        expect(stale).toMatchObject({ retained_display_level: 'stale' })
         expect(stale.sources.map((s: { source_id: string }) => s.source_id)).toEqual([id])
-        expect(stale.sources[0]).toMatchObject({ status: 'stale', windows: initial.sources[0]!.windows })
+        expect(stale.sources[0]).toMatchObject({ status: 'stale', display_level: 'stale', status_message: 'Provider data is temporarily unavailable. Showing last-confirmed data.', windows: (initial.sources[0]!.windows as object[]).map((w) => ({ ...w, display_level: 'stale' })) })
         expect(stale.missing_source).toBe(false)
       }
       const staleModels = await t.get('/api/models')

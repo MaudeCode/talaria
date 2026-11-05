@@ -408,7 +408,7 @@ function quotaLevel(window: QuotaWindow | undefined, status: string, basis: keyo
  * tolerance), and the source's `urgency` on the windows a widget shows by default (the first; the pace window for pace).
  */
 export interface ClassifiedQuotaWindow extends Omit<QuotaWindow, 'pace'> { pace: (QuotaPace & { status: 'over' | 'on' | 'under' }) | null; projection_eligible: boolean; urgency: QuotaUrgency }
-export function classifyQuotaSource<T extends { status: string; windows: QuotaWindow[]; pace_window_index: number | null }>(source: T, t: QuotaThresholds): Omit<T, 'windows'> & { windows: ClassifiedQuotaWindow[]; urgency: QuotaUrgency } {
+export function classifyQuotaSource<T extends { status: string; windows: QuotaWindow[]; pace_window_index: number | null }>(source: T, t: QuotaThresholds): Omit<T, 'windows'> & { windows: ClassifiedQuotaWindow[]; urgency: QuotaUrgency; headline_window_index: number | null } {
   const urgency = (w: QuotaWindow | undefined): QuotaUrgency => ({ remaining: quotaLevel(w, source.status, 'remaining', t), pace: quotaLevel(w, source.status, 'pace', t) })
   return {
     ...source,
@@ -419,6 +419,25 @@ export function classifyQuotaSource<T extends { status: string; windows: QuotaWi
       urgency: urgency(w),
     })),
     urgency: { remaining: urgency(source.windows[0]).remaining, pace: urgency(source.windows[source.pace_window_index ?? 0]).pace },
+    headline_window_index: source.windows.length === 0 ? null : source.pace_window_index ?? 0,
+  }
+}
+
+/**
+ * TAL-1870: what a quota row renders, applied to the final rows so stale copies are covered. A source the server marks
+ * stale or unavailable outranks its cached windows' levels; otherwise the window's pace level, which already falls back
+ * to its remaining classification without a pace (TAL-411). The App's `ProviderQuotaPresentation.state` orders them the same way.
+ */
+function withQuotaDisplay<T extends QuotaSourceRow>(source: T): T {
+  const urgency = source.urgency as QuotaUrgency | undefined
+  const level = (w?: ClassifiedQuotaWindow): QuotaLevel => source.status !== 'available' ? urgency?.pace ?? 'unavailable' : w?.urgency.pace ?? urgency?.pace ?? 'healthy'
+  const name = str(source.provider_label) || source.provider_id || source.source_id
+  return {
+    ...source,
+    display_name: source.account_label && source.account_label !== name ? `${name} · ${source.account_label}` : name,
+    status_message: str(source.unavailable_reason) || str(source.message) || null,
+    display_level: level(),
+    windows: (source.windows as ClassifiedQuotaWindow[] | undefined ?? []).map((w) => ({ ...w, display_level: level(w) })),
   }
 }
 
@@ -1776,7 +1795,7 @@ export class ProviderCatalog {
     if (currentSource !== source) { poolUnknown = true; sources = [] }
     const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
     const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
-    return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), sources }
+    return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: sources.map(withQuotaDisplay) }
   }
 
   private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()
