@@ -52,9 +52,10 @@ it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share a
   const original = join(dir, 'original'), outside = join(dir, 'outside')
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   const privateImage = Buffer.concat([png, Buffer.from('outside-private')])
+  const attachmentImage = Buffer.concat([png, Buffer.from('original-attachment')])
   for (const root of [workspace, original, outside]) mkdirSync(root)
   writeFileSync(join(outside, 'secret.png'), privateImage)
-  writeFileSync(join(original, 'allowed.png'), png)
+  writeFileSync(join(original, 'allowed.png'), attachmentImage)
   writeFileSync(join(workspace, 'workspace.png'), png)
   if (kind !== 'missing') symlinkSync(kind === 'startup alias' ? original : configured, configured)
   const s = await bootTestServer({ env: { HERMES_WEBUI_ATTACHMENT_DIR: configured, HERMES_WEBUI_DEFAULT_WORKSPACE: workspace } })
@@ -76,7 +77,10 @@ it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share a
     expect.soft(snapshot.match(/Local attachment omitted/g)).toHaveLength(3)
     expect(snapshot).toContain(`data:image/png;base64,${png.toString('base64')}`)
     expect(s.deps.sessions.deps.shareAttachmentRoot).toBe(startupRoot)
-    if (kind === 'startup alias') expect(startupRoot).toBe(original)
+    if (kind === 'startup alias') {
+      expect(startupRoot).toBe(original)
+      expect(snapshot).toContain(`data:image/png;base64,${attachmentImage.toString('base64')}`)
+    }
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 
