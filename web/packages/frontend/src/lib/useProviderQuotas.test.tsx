@@ -23,7 +23,7 @@ describe('sidebar quota pins (TAL-1870)', () => {
     await waitFor(() => { expect(result.current.quotas.data?.sidebar_source_ids).toEqual(['a', 'b']) })
 
     await qc.refetchQueries({ queryKey: keys.providerQuotas })
-    expect(result.current.quotas.data?.sidebar_source_ids).toEqual(['a', 'b'])
+    expect(qc.getQueryData(keys.providerQuotas)).toMatchObject({ sidebar_source_ids: ['a', 'b'] })
 
     vi.mocked(api.fetchProviderQuotas).mockResolvedValue(read(['b', 'a']))
     saved()
