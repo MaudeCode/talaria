@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Reject oversized requests with invalid array element types without exhausting Web server memory.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

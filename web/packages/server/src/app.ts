@@ -8,7 +8,8 @@ import type { Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { ORPCError, type Router } from '@orpc/server'
+import { ORPCError, Procedure, type Router } from '@orpc/server'
+import { z } from 'zod'
 import type { AnyContractRouter } from '@orpc/contract'
 import { OpenAPIHandler } from '@orpc/openapi/node'
 import { sessionsRouter } from './api/sessions-router.js'
@@ -196,6 +197,21 @@ function bodyCap(path: string): { bytes: number; status: number } {
   return bytes === undefined ? { bytes: ORPC_MAX_BODY_BYTES, status: 413 } : { bytes, status: 400 }
 }
 
+/** Keep complete small-request diagnostics; large inputs stop at the first aborting validation issue. */
+function largeValidationInput(input: unknown): boolean {
+  const pending = [input]
+  let remaining = 1000
+  while (pending.length) {
+    const value = pending.pop()
+    if (!value || typeof value !== 'object') continue
+    const children: unknown[] = Array.isArray(value) ? value : Object.values(value)
+    remaining -= children.length
+    if (remaining < 0) return true
+    pending.push(...children)
+  }
+  return false
+}
+
 /**
  * Cap the bytes oRPC may buffer from a request body: a chunked body carries no `Content-Length`, so the declared-size
  * check cannot bound it. Counting in `emit` keeps the stream in whatever mode oRPC's reader puts it; once over the
@@ -325,7 +341,26 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     clientInterceptors: [
       async (options) => {
         try {
-          return await options.next()
+          const definition = options.procedure['~orpc']
+          const schema = definition.inputSchema
+          if (!(schema instanceof z.ZodType)) return await options.next()
+          return await options.next({
+            ...options,
+            procedure: new Procedure({
+              ...definition,
+              inputSchema: {
+                '~standard': {
+                  ...schema['~standard'],
+                  validate: async (input: unknown) => {
+                    // The pinned Zod parser supports early exit internally; Standard Schema does not enable it.
+                    const context: z.core.ParseContextInternal<z.core.$ZodIssue> = { abortEarly: largeValidationInput(input) }
+                    const result = await schema.safeParseAsync(input, context)
+                    return result.success ? { value: result.data } : { issues: result.error.issues }
+                  },
+                },
+              },
+            }),
+          })
         } catch (error) {
           if (error instanceof ORPCError) {
             if (options.context.ctx.path === '/api/feedback/submit' && error.status === 400) throw new HttpError(400, 'invalid')
