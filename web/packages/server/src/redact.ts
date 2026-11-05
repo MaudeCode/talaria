@@ -1344,6 +1344,27 @@ function expansionEnd(word: string, i: number): number {
   return i + 2
 }
 
+/** Redact decoded URL-bearing JSON strings, replacing only changed literals so surrounding JSON keeps its bytes. */
+function redactSerializedUrls(text: string): string {
+  let out = ''
+  let last = 0
+  for (let i = 0; i < text.length; ) {
+    if (text[i] !== '"') { i += 1; continue }
+    const start = i
+    i += 1
+    while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1
+    i = Math.min(i + 1, text.length)
+    let value: unknown
+    try { value = JSON.parse(text.slice(start, i)) as unknown } catch { continue }
+    if (typeof value !== 'string' || !value.includes('://') || !value.includes('@')) continue
+    const masked = redactSensitive(value)
+    if (masked === value) continue
+    out += text.slice(last, start) + JSON.stringify(masked)
+    last = i
+  }
+  return out + text.slice(last)
+}
+
 /**
  * Shell words whose quoting or escapes compose a delimiter, key or credential (`--password'='x`, `bob:pw'@'host`): each
  * is redacted as the program receives it. When the word as written, once redacted, still shows a token the dequoted
@@ -1368,7 +1389,13 @@ function redactComposedWords(text: string): string {
   for (let k = 0; k < words.length; k += 1) {
     const [start, end] = words[k]!
     const word = text.slice(start, end)
-    if (/^[[{(]/.test(word)) continue
+    if (/^[[{(]/.test(word)) {
+      if (word.includes('://') && word.includes('@')) {
+        const masked = redactSerializedUrls(word)
+        if (masked !== word) { out += text.slice(last, start) + masked; last = end }
+      }
+      continue
+    }
     const at = firstExpansion(word)
     const expanded = at >= 0 ? redactExpansionWord(word, at) : null
     if (expanded !== null) {

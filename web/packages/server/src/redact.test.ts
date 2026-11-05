@@ -912,6 +912,14 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
     ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
   ],
+  'v0.23 serialized shell URL credentials': [
+    [JSON.stringify({ command: "curl https://'correcthorse42'@github.com" }), JSON.stringify({ command: 'curl https://***@github.com' })],
+    [JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' }), JSON.stringify({ command: 'curl https://***@github.com' })],
+    [JSON.stringify({ command: "curl https://cor'recthorse'42@github.com" }), JSON.stringify({ command: 'curl https://***@github.com' })],
+    [JSON.stringify({ output: JSON.stringify({ command: "curl https://'correcthorse42'@github.com" }) }), JSON.stringify({ output: JSON.stringify({ command: 'curl https://***@github.com' }) })],
+    [`INFO: ${JSON.stringify({ command: "curl https://'correcthorse42'@github.com" })}`, `INFO: ${JSON.stringify({ command: 'curl https://***@github.com' })}`],
+    [JSON.stringify({ command: 'curl https://example.com/search?q=user@example.com' }), JSON.stringify({ command: 'curl https://example.com/search?q=user@example.com' })],
+  ],
   'v0.23 private key formats': [
     ['-----BEGIN PGP PRIVATE KEY BLOCK-----\nsynthetic\n-----END PGP PRIVATE KEY BLOCK-----', '[REDACTED PRIVATE KEY]'],
     [`AGE-SECRET-KEY-1${'A'.repeat(58)}`, '[REDACTED PRIVATE KEY]'],
