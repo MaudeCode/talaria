@@ -140,12 +140,13 @@ html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important
 /* First paint. #app is empty until the module entry mounts (about 50ms built, longer under the dev server),
    so the inset frame (the sidebar column + main card) is drawn from pseudo-elements meanwhile; prepaint.js has
    already set the theme, skin and sidebar state on <html>. A reload then keeps its frame instead of flashing
-   a bare canvas. The column is 300px or the 64px rail, which is also what 641-900px always tiles. */
+   a bare canvas. The column is 300px or the 64px rail, which is also what 641-900px tiles everywhere but Settings. */
 #app:empty{flex-direction:row;background:var(--canvas)}
 #app:empty::before{content:"";width:300px;flex-shrink:0;background:var(--rail-bg)}
 #app:empty::after{content:"";flex:1;min-width:0;background:var(--main-surface);border:var(--island-ring-width) solid var(--island-ring)}
 html[data-sidebar-collapsed="1"] #app:empty::before{width:64px}
 @media (max-width:900px){#app:empty::before{width:64px}}
+html[data-settings-page="1"] #app:empty::before{width:300px}
 @media (max-width:768px){#app:empty::after{border:0;border-radius:0;box-shadow:none}}
 @media (max-width:640px){#app:empty::before{display:none}}
 #app:empty{flex-direction:row;background:var(--canvas)}

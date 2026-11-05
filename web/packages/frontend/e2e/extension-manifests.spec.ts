@@ -28,14 +28,11 @@ test('a gallery extension with a panel gets a sidebar entry, Open, and Uninstall
     await expect(old.getByRole('switch')).toHaveCount(0)
     await expect(old.getByRole('link', { name: 'Open' })).toHaveCount(0)
 
-    // On a phone the entry waits in the closed drawer; there, Open from Settings reaches the panel.
-    if (testInfo.project.name === 'desktop') {
-      await page.locator('aside.sidebar').getByRole('button', { name: 'More', exact: true }).click()
-      await expect(page.locator('nav[aria-label="Primary navigation"] [data-extension="gal"]')).toHaveAttribute('aria-label', 'Gal')
-    }
     if (process.env.TAL704_SHOTS) await page.screenshot({ path: `${process.env.TAL704_SHOTS}/settings-${testInfo.project.name}.png` })
     await gal.getByRole('link', { name: 'Open' }).click()
     await expect(page.frameLocator('iframe').getByText('gallery panel body')).toBeVisible()
+    // On a phone the entry waits in the closed drawer; on desktop More opens itself on the extension's page.
+    if (testInfo.project.name === 'desktop') await expect(page.locator('nav[aria-label="Primary navigation"] [data-extension="gal"]')).toHaveAttribute('aria-label', 'Gal')
     if (process.env.TAL704_SHOTS) await page.screenshot({ path: `${process.env.TAL704_SHOTS}/panel-${testInfo.project.name}.png` })
   } finally {
     rmSync(root, { recursive: true, force: true })

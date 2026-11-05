@@ -1,7 +1,9 @@
 /** Shell interaction state: sidebar collapse (persisted), the overlay or drawer, and viewport class. */
 import { useSyncExternalStore, useEffect, useState } from 'react'
+import { useLocation } from '@tanstack/react-router'
 import { readPersisted, writePersisted, readPersistedJson } from '../lib/persisted'
 import { TabIdListSchema } from '../contracts/persisted'
+import { panelForPath } from './nav'
 
 interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean; sessionSearchRequested: boolean }
 let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open', sessionSearchRequested: false }
@@ -40,6 +42,11 @@ export function setSidebarWidth(width: number): void {
   set({ sidebarWidth: w })
 }
 
+/** Where Settings' Back row goes: the last location outside Settings, or the chat after a direct load of a Settings URL. */
+let outsideSettings = '/'
+export function rememberOutsideSettings(href: string): void { outsideSettings = href }
+export function settingsBackHref(): string { return outsideSettings }
+
 export function readTabOrder(): string[] | null { return readPersistedJson('hermes-webui-tab-order', TabIdListSchema) }
 export function readHiddenTabs(): string[] | null { return readPersistedJson('hermes-webui-hidden-tabs', TabIdListSchema) }
 
@@ -57,11 +64,13 @@ export function useMediaQuery(query: string): boolean {
 /** Legacy breakpoints: a tiled column from 641px; compact chrome at 768px and below. */
 export const useIsDesktop = () => useMediaQuery('(min-width: 641px)')
 export const useIsTiled = () => useMediaQuery(TILED)
-/** Whether the column shows as the icon rail: the stored choice from 901px, unless opened over the page at 641-900px, never on a phone. */
+export const useIsSettings = () => useLocation({ select: (location) => panelForPath(location.pathname) === 'settings' })
+/** Whether the column shows as the icon rail: the stored choice from 901px, unless opened over the page at 641-900px, never on a phone or on Settings. */
 export function useIsSidebarRail(): boolean {
   const { collapsed, mobileOpen } = useShellState()
   const isDesktop = useIsDesktop()
   const isTiled = useIsTiled()
-  return isDesktop && (isTiled ? collapsed : !mobileOpen)
+  const settings = useIsSettings()
+  return isDesktop && !settings && (isTiled ? collapsed : !mobileOpen)
 }
 export const useIsNarrow = () => useMediaQuery('(max-width: 768px)')

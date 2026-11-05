@@ -173,7 +173,6 @@ test.describe('shell', () => {
     await page.locator('#btnSidebarEdgeToggle').click()
     const sections = [
       { panel: 'kanban', sidebar: '#panelChat', hub: true },
-      { panel: 'settings', sidebar: '#panelSettings', hub: false },
       { panel: 'tasks', sidebar: '#panelChat', hub: true },
       { panel: 'groups', sidebar: '#panelChat', hub: true },
       { panel: 'chat', sidebar: '#panelChat', hub: false },

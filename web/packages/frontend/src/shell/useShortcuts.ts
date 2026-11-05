@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { toggleSidebar } from './useShellState'
+import { toggleSidebar, useIsSettings } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
 
 export function inTextField(target: EventTarget | null): boolean {
@@ -13,13 +13,14 @@ export function inTextField(target: EventTarget | null): boolean {
 export function useShortcuts() {
   const navigate = useNavigate()
   const newChat = useNewChat()
+  const settings = useIsSettings()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (!mod || e.altKey) return
       if (!e.shiftKey && (e.key === 'b' || e.key === 'B') && !inTextField(e.target) && window.matchMedia('(min-width: 641px)').matches) {
         e.preventDefault()
-        toggleSidebar()
+        if (!settings) toggleSidebar()
       } else if (e.key === '/' && !inTextField(e.target)) {
         e.preventDefault()
         document.getElementById('msg')?.focus()
@@ -33,5 +34,5 @@ export function useShortcuts() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [navigate, newChat])
+  }, [navigate, newChat, settings])
 }
