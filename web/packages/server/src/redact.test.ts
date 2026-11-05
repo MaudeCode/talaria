@@ -912,6 +912,19 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
     ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
   ],
+  'v0.23 multiline shell groups': [
+    ["{ echo ok\ncurl --'password' 's3cretpw'\n}", '{ echo ok\ncurl --password ***\n}'],
+    ["( echo ok\ncurl --'password' 's3cretpw'\n)", '( echo ok\ncurl --password ***\n)'],
+    ['{ echo ok\ncurl https://cor"recthorse42"@github.com\n}', '{ echo ok\ncurl https://***@github.com\n}'],
+  ],
+  'v0.23 standalone and shell-quoted serializations': [
+    [JSON.stringify('curl https://"correcthorse42"@github.com'), JSON.stringify('curl https://***@github.com')],
+    [`echo '${JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' })}'`, "echo '***'"],
+    [`echo ${JSON.stringify(JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' }))}`, `echo ${JSON.stringify(JSON.stringify({ command: 'curl https://***@github.com' }))}`],
+    [`don't log ${JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' })}`, `don't log ${JSON.stringify({ command: 'curl https://***@github.com' })}`],
+    [`'curl https://"correcthorse42"@github.com'`, "'curl https://***@github.com'"],
+    [`echo '{"@context":"https://schema.org","@type":"X"}'`, `echo '{"@context":"https://schema.org","@type":"X"}'`],
+  ],
   'v0.23 Python-repr URL credentials': [
     [String.raw`{'command': 'curl https://"\cA\cB\cC"@github.com'}`, `{'command': 'curl https://***@github.com'}`],
     [`{'command': 'curl https://"correcthorse42"@github.com'}`, `{'command': 'curl https://***@github.com'}`],

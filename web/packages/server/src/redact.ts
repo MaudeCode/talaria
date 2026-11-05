@@ -748,6 +748,9 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
   return Math.min(i, text.length)
 }
 
+const isProseApostrophe = (text: string, at: number): boolean =>
+  text[at] === "'" && /\p{L}/u.test(text[at - 1] ?? '') && /\p{L}/u.test(text[at + 1] ?? '')
+
 /**
  * The shell quote open at each position, read left to right once: `advance(index)` returns the quote (`'` or `"`) that
  * encloses `index`, or `''`. Quotes span lines (a multi-line argument); an apostrophe inside a word is prose.
@@ -761,7 +764,7 @@ function quoteTracker(text: string): (index: number) => string {
       const c = text[pos]
       if (c === '\\' && state !== "'") escaped = pos += 1
       // An apostrophe between two letters is prose (`don't`), not a quote.
-      else if (c === "'" && /\p{L}/u.test(text[pos - 1] ?? '') && /\p{L}/u.test(text[pos + 1] ?? '')) continue
+      else if (isProseApostrophe(text, pos)) continue
       // `$'…'` is ANSI-C quoted: a backslash inside escapes the next character, `\'` included.
       else if (state === '' && c === "'" && text[pos - 1] === '$' && escaped !== pos - 1) state = "$'"
       else if (state === '' && (c === "'" || c === '"')) state = c
@@ -1255,10 +1258,10 @@ function tokenCounts(text: string): Map<string, number> {
 }
 
 /** Whether `got` shows a whole token of `plain` more often than `wanted` does: a credential the rules masked in `wanted` survives. */
-function revealsMore(plain: string, got: string, wanted: string): boolean {
-  const source = tokenCounts(plain)
-  const allowed = tokenCounts(wanted)
-  for (const [token, count] of tokenCounts(got)) if (source.has(token) && count > (allowed.get(token) ?? 0)) return true
+function revealsMore(plain: string, got: string, wanted: string, counts = tokenCounts): boolean {
+  const source = counts(plain)
+  const allowed = counts(wanted)
+  for (const [token, count] of counts(got)) if (source.has(token) && count > (allowed.get(token) ?? 0)) return true
   return false
 }
 
@@ -1346,10 +1349,11 @@ function expansionEnd(word: string, i: number): number {
 
 /** Decode JSON/Python-repr URL strings and replace only changed literals, retaining their quote style and cap. */
 function redactSerializedUrls(text: string): string {
+  if (!/["']/.test(text)) return text
   let out = ''
   let last = 0
   for (let i = 0; i < text.length; ) {
-    if (text[i] !== '"' && text[i] !== "'") { i += 1; continue }
+    if ((text[i] !== '"' && text[i] !== "'") || isProseApostrophe(text, i)) { i += 1; continue }
     const start = i
     const quote = text[i]!
     i += 1
@@ -1375,7 +1379,14 @@ function redactSerializedUrls(text: string): string {
       value = decoded
     }
     if (typeof value !== 'string' || !value.includes('://') || !value.includes('@')) continue
-    const masked = redactSensitive(value)
+    let masked = redactSensitive(value)
+    const literal = text.slice(start + 1, contentEnd)
+    if (literal !== value) {
+      // Shell-quoted JSON keeps its backslashes; consider that reading before discarding any escape.
+      let jsonLiteral = false
+      try { JSON.parse(literal); jsonLiteral = true } catch { /* A plain command, not another serialization. */ }
+      if (jsonLiteral && revealsMore(literal, masked, redactSensitive(literal), secretTokenCounts)) masked = '***'
+    }
     if (masked === value) continue
     const encoded = JSON.stringify(masked).slice(1, -1)
     const body = quote === "'" ? encoded.replace(/\\"|'/g, (c) => c === "'" ? "\\'" : '"') : encoded
@@ -1400,9 +1411,7 @@ function redactComposedWords(text: string): string {
   const words: [start: number, end: number][] = []
   for (let i = 0; i < text.length; ) {
     if (/\s/.test(text[i]!)) { i += 1; continue }
-    let end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
-    // A capped repr can stop at an unclosed quote; its remaining bytes still belong to the container.
-    if ('[{('.includes(text[i]!) && !']})'.includes(text[end - 1]!)) end = text.length
+    const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
     words.push([i, end])
     i = end
   }
@@ -1411,13 +1420,7 @@ function redactComposedWords(text: string): string {
   for (let k = 0; k < words.length; k += 1) {
     const [start, end] = words[k]!
     const word = text.slice(start, end)
-    if (/^[[{(]/.test(word)) {
-      if (word.includes('://') && word.includes('@')) {
-        const masked = redactSerializedUrls(word)
-        if (masked !== word) { out += text.slice(last, start) + masked; last = end }
-      }
-      continue
-    }
+    if (/^[[{(]/.test(word)) continue
     const at = firstExpansion(word)
     const expanded = at >= 0 ? redactExpansionWord(word, at) : null
     if (expanded !== null) {
@@ -1774,7 +1777,8 @@ function redactShellText(text: string): string {
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
-  const out = redactRules(redactComposedWords(joined))
+  const literals = joined.includes('://') && joined.includes('@') ? redactSerializedUrls(joined) : joined
+  const out = redactRules(redactComposedWords(literals))
   const redacted = joined !== text && out === joined ? text : out
   if (!joined.includes('=') || !joined.includes('$')) return redacted
   // The views with the text's own assignments resolved only add masks to the redaction above, which keeps its own
