@@ -26,21 +26,25 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
   )
 }
 
-/** TAL-1870: pins the sidebar's quota sources from the server's projection. A choice shows at once and settles on the next read; a definite refusal restores the projection it replaced unless a newer choice followed. */
+/** TAL-1870: pins the sidebar's quota sources from the server's projection. A choice shows at once and settles on the next read; a definite refusal of the latest choice restores the last confirmed projection, which pending choices never overwrite. */
 function SidebarQuotaSources() {
   const { setAsync } = useSettingField([])
   const { quotas } = useProviderQuotas()
   const qc = useQueryClient()
   const latest = useRef(0)
+  const pending = useRef(0)
+  const confirmed = useRef<Pick<NonNullable<typeof quotas.data>, 'sidebar_source_ids' | 'sidebar_can_pin'>>({})
   const sources = quotas.data?.sources
   const pinned = quotas.data?.sidebar_source_ids ?? []
-  const project = (sidebar_source_ids: string[] | undefined, sidebar_can_pin: boolean | undefined) => { qc.setQueryData<typeof quotas.data>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin }) }
+  const project = (projection: typeof confirmed.current) => { qc.setQueryData<typeof quotas.data>(keys.providerQuotas, (q) => q && { ...q, ...projection }) }
   const pin = async (ids: string[]) => {
     await qc.cancelQueries({ queryKey: keys.providerQuotas })
     const write = ++latest.current
-    const previous = qc.getQueryData<typeof quotas.data>(keys.providerQuotas)
-    project(ids, ids.length < 2)
-    await setAsync({ sidebar_quota_sources: ids }, undefined, (e) => { if (isDefiniteRefusal(e) && write === latest.current) project(previous?.sidebar_source_ids, previous?.sidebar_can_pin) })
+    if (pending.current++ === 0) { const q = qc.getQueryData<typeof quotas.data>(keys.providerQuotas); confirmed.current = { sidebar_source_ids: q?.sidebar_source_ids, sidebar_can_pin: q?.sidebar_can_pin } }
+    const choice = { sidebar_source_ids: ids, sidebar_can_pin: ids.length < 2 }
+    project(choice)
+    await setAsync({ sidebar_quota_sources: ids }, () => { confirmed.current = choice }, (e) => { if (isDefiniteRefusal(e) && write === latest.current) project(confirmed.current) })
+    pending.current--
     if (qc.isMutating({ mutationKey: keys.settings }) === 0) void qc.invalidateQueries({ queryKey: keys.providerQuotas })
   }
   return (

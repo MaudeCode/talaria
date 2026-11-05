@@ -431,12 +431,23 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     await expect(source('Claude')).not.toBeChecked()
     await expect(source('Z.ai')).toBeEnabled()
 
-    // A definite refusal restores the confirmed projection without a read, even when the read also fails.
+    // Overlapping refusals restore the confirmed projection without a read, even when the read also fails.
+    let refuse!: () => void
+    const refused = new Promise<void>((resolve) => { refuse = resolve })
     await page.route('**/api/provider/quotas**', (route) => route.fulfill({ status: 500, json: { error: 'Down' } }))
-    await page.route('**/api/settings', (route) => route.request().method() === 'POST' ? route.fulfill({ status: 400, json: { error: 'Refused' } }) : route.fallback())
-    await toggle('Z.ai')
-    await expect(page.getByText('Refused')).toBeVisible()
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      await refused
+      return route.fulfill({ status: 400, json: { error: 'Refused' } })
+    })
+    await source('Z.ai').click()
+    await expect(source('Z.ai')).toBeChecked()
+    await source('OpenRouter').click()
+    await expect(source('OpenRouter')).not.toBeChecked()
+    refuse()
+    await expect(page.getByText('Refused').first()).toBeVisible()
     await expect(source('Z.ai')).not.toBeChecked()
+    await expect(source('OpenRouter')).toBeChecked()
 
     // Settings has no destinations column, so the rows show on leaving it.
     await sidebar(page).getByRole('button', { name: 'Back', exact: true }).click()
