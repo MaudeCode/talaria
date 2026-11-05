@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Public shares keep attachment access within the directory trusted at server startup.",
+      "components": ["web"],
+      "highlight": false
+    }
+  ]
+}

@@ -64,7 +64,7 @@ async function fixture() {
   vi.spyOn(store, 'writeIndex').mockResolvedValue()
   const shares = new ShareStore(documents, () => now)
   const service = new SessionService({
-    store, shares, now: () => now, home: '/synthetic', hermesHome: '/synthetic/agent',
+    store, shares, now: () => now, home: '/synthetic', hermesHome: '/synthetic/agent', shareAttachmentRoot: '/synthetic/attachments',
     profileHome: () => '/synthetic/agent', attachmentDir: () => '', blobs: new LocalBlobStore(() => '/synthetic/attachments'), activeProfile: () => 'default', isolatedProfileMode: () => false,
     profilesMatch: (a: string | null | undefined, b: string | null | undefined) => (a || 'default') === (b || 'default'), events: store.deps.events,
     runtime: { activeRunStream: () => null, activeStreamIds: new Set(), evictAgent: () => Promise.resolve(), closeTerminal: () => undefined },

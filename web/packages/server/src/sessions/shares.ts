@@ -168,9 +168,10 @@ function sanitizeShareText(text: string, redactPaths: string[], embed: (text: st
   return redactSharePaths(embed(omitInlineData(redactSensitive(text))), redactPaths)
 }
 
+/** Roots are already trusted: resolving them again would let a later symlink move the boundary. */
 export function embedShareMedia(text: string, allowedRoots: string[], home: string): string {
   if (!text) return text
-  const allowed = allowedRoots.filter(Boolean).map((r) => resolvePathLikePython(r, home))
+  const allowed = allowedRoots.filter(Boolean)
   return text.replace(SHARE_MEDIA_RE, (whole, rawRef: string) => {
     const raw = rawRef.trim()
     if (!raw) return whole
@@ -199,7 +200,7 @@ function shareProse(message: unknown): { message: Record<string, unknown>; role:
  * prose, resolved against `allowedRoots` like `embedShareMedia` does. A remote attachment store downloads only these.
  */
 export function shareMediaPaths(messages: unknown[], allowedRoots: string[], within: string, home: string): string[] {
-  const allowed = allowedRoots.filter(Boolean).map((r) => resolvePathLikePython(r, home))
+  const allowed = allowedRoots.filter(Boolean)
   const found = new Set<string>()
   for (const raw of messages) {
     const prose = shareProse(raw)
@@ -225,16 +226,17 @@ export function sanitizeShareMessage(message: unknown, redactPaths: string[], al
 
 export interface ShareSnapshot { title: string; messages: Record<string, unknown>[]; message_count: number }
 
-/** The roots a snapshot embeds images from: the session workspace, then the attachment directory. */
-export function shareAllowedRoots(session: Session, attachmentRoot: string): string[] {
-  return [...(session.workspace.trim() ? [session.workspace.trim()] : []), attachmentRoot]
+/** Resolve the session workspace, but keep the attachment root trusted at startup unchanged. */
+export function shareAllowedRoots(session: Session, attachmentRoot: string, home: string): string[] {
+  const workspace = session.workspace.trim()
+  return [...(workspace ? [resolvePathLikePython(workspace, home)] : []), attachmentRoot]
 }
 
 export function buildShareSnapshot(session: Session, messages: unknown[], opts: { hermesHome: string; attachmentRoot: string; home: string }): ShareSnapshot {
   const redactPaths: string[] = []
   for (const value of [session.workspace, session.worktree_path, session.worktree_repo_root]) if (value) redactPaths.push(value)
   redactPaths.push(opts.hermesHome, opts.home)
-  const allowedRoots = shareAllowedRoots(session, opts.attachmentRoot)
+  const allowedRoots = shareAllowedRoots(session, opts.attachmentRoot, opts.home)
   const safe: Record<string, unknown>[] = []
   for (const raw of messages) {
     const sanitized = sanitizeShareMessage(raw, redactPaths, allowedRoots, opts.home)
