@@ -1902,11 +1902,12 @@ describe('chat turns through the sidecar', () => {
         expect(response.status).toBe(400)
         expect(submit).not.toHaveBeenCalled()
       } finally { owned.mockRestore(); submit.mockRestore() }
-      for (const message of ['ordinary text', '/unknownword', '/agents/file']) {
+      for (const message of ['ordinary text', '/unknownword', '/agents/notes.md summarize', '/tmp/example.js explain']) {
         const response = await post(s, '/api/chat/start', { session_id: sid, message })
         expect(response.status).toBe(200)
         const started = await json(response)
         await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+        expect((await s.deps.sessionStore.get(sid)).messages.filter((m) => m.role === 'user').at(-1)?.content).toBe(message)
       }
     } finally {
       for (const method of ['commands.registry', 'commands.expand_prompt', 'chat.start'] as const) sidecar.respond(method, undefined)

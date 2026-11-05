@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Messages beginning with an absolute file path send as text, even when the path starts with a slash-command name.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
