@@ -1,7 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
 import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
-import type { Settings } from '../contracts'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
 import { showErrorToast } from '../features/toast/errorToast'
 import { getStreamContext } from '../stream/connection'
@@ -20,12 +19,9 @@ export function useSetSidebarQuotaPins() {
     mutationFn: async (ids) => {
       const context = getStreamContext()
       const saved = await api.saveSettings({ sidebar_quota_sources: ids })
-      // The owner drops a replaced write's response; keep what the server confirmed so a later refusal reveals it without a read.
-      const { sidebar_quota_sources, sidebar_source_ids, sidebar_can_pin } = saved
-      if (context === getStreamContext()) {
-        if (sidebar_quota_sources) qc.setQueryData<Settings>(keys.settings, (settings) => settings && { ...settings, sidebar_quota_sources })
-        if (sidebar_source_ids) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin })
-      }
+      // The owner drops a replaced write's response; keep the server's projection so a later refusal reveals it without a read.
+      const { sidebar_source_ids, sidebar_can_pin } = saved
+      if (sidebar_source_ids && context === getStreamContext()) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin })
       return saved
     },
     onError: showErrorToast,
@@ -48,7 +44,7 @@ export function useSidebarQuotaPins(quotas: Quotas | undefined) {
  * freshness, and a forced refresh that also rereads the OpenRouter cost history. The server recomputes pace on
  * every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
  */
-export function useProviderQuotas({ enabled = true }: { enabled?: boolean } = {}) {
+export function useProviderQuotas({ enabled = true }: { enabled?: UseQueryOptions<Quotas, Error, Quotas, typeof keys.providerQuotas>['enabled'] } = {}) {
   const qc = useQueryClient()
   const fetchQuotas = async (refresh = false) => reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), await api.fetchProviderQuotas(refresh))
   const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000, enabled })
