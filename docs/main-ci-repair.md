@@ -9,6 +9,11 @@ thread files or reuses the Kaneo ticket and delivers the fix through the
 software-factory gates. Nothing in this path grants release, deployment, device,
 secret, scheduler or repository-administration permissions.
 
+Pull requests build the App and run its package tests but leave out the
+simulator-hosted unit tests unless they carry the `hosted-tests` label, so a
+hosted-test regression usually surfaces here first, on the `main` push that
+introduced it.
+
 ## Pieces
 
 | Piece | Where |

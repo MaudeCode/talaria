@@ -81,7 +81,7 @@ class TestIOSRunnerTest < Minitest::Test
     # macOS's Bash 3.2 has no mapfile or readarray.
     refute_match(/mapfile|readarray/, workflow)
     assert_includes(workflow, '"${selection[@]}" \\')
-    assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
+    assert_includes(workflow, %q(ci/build-for-testing "${BUILD_DESTINATION}"))
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
@@ -184,7 +184,7 @@ class TestIOSRunnerTest < Minitest::Test
     # while it builds (TAL-380). The wait runs on Linux, so it holds no macOS slot.
     assert_equal("build-started", shard["needs"])
     started = jobs.fetch("build-started")
-    assert_equal(["inputs.mode != 'contracts'", "ubuntu-latest"], started.values_at("if", "runs-on"))
+    assert_equal(["inputs.mode == 'hosted'", "ubuntu-latest"], started.values_at("if", "runs-on"))
     assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380), and the simulator
     # is prepared in the background while the build runs and downloads (scripts/prepare-ui-simulator: the keyboard
@@ -226,9 +226,9 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_package_job_runs_the_live_test_without_a_simulator
     package, probe = workflow_jobs("app-tests.yml").fetch("package-test"), workflow_jobs("ci.yml").fetch("contracts")
-    # TalariaKit's tests run with `swift test` on hosted macOS: no simulator, no app host (TAL-399). They take the
-    # build's macOS slot once it ends, whatever its result, so the build and four hosted test shards fit the five
-    # slots (TAL-1550); a contract-only run skips the build and runs them at once.
+    # TalariaKit's tests run with `swift test` on hosted macOS: no simulator, no app host (TAL-399). In hosted mode
+    # they take the build's macOS slot once it ends, whatever its result, so the build and four hosted test shards fit
+    # the five slots (TAL-1550). build and contracts modes skip app-build, so they start at once (TAL-1896).
     assert_equal("app-build", package["needs"])
     # Every caller runs it but a release's hosted-tests call, whose contracts job runs the same suite (TAL-414).
     assert_equal("${{ !cancelled() && inputs.package_tests }}", package["if"])
@@ -274,14 +274,14 @@ class TestIOSRunnerTest < Minitest::Test
     package.each { |identity, state| assert_equal(app.fetch(identity), state, identity) }
   end
 
-  def test_pr_ci_runs_the_hosted_tests_in_one_worker_without_clones
+  def test_hosted_mode_runs_the_hosted_tests_in_one_worker_without_clones
     workflow = workflow_text("app-tests.yml")
 
     # Every run uses one worker on the job's own booted simulator: clones took minutes to boot on hosted runners.
     assert_equal(1, workflow.scan("-parallel-testing-enabled NO").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
-    # Pull requests run the package tests, the App build for testing and the simulator-hosted unit tests.
+    # Hosted mode runs the package tests, the App build for testing and the simulator-hosted unit tests.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
     assert_equal(%w[mode contracts ref package_tests], app_tests[true]["workflow_call"]["inputs"].keys)
     jobs = app_tests["jobs"]
@@ -295,21 +295,25 @@ class TestIOSRunnerTest < Minitest::Test
     # "App hosted tests" is the suite's one result, the job a release reuses: every shard passed and each class ran in
     # exactly one of them.
     gate = jobs.fetch("app-test-gate")
-    assert_equal(["App hosted tests", "app-test", "inputs.mode != 'contracts'", "ubuntu-latest"],
+    assert_equal(["App hosted tests", "app-test", "inputs.mode == 'hosted'", "ubuntu-latest"],
                  gate.values_at("name", "needs", "if", "runs-on"))
     assert_equal("app-hosted-classes-*", gate["steps"].find { |step| step["uses"].to_s.start_with?("actions/download-artifact@") }["with"]["pattern"])
     assert_includes(gate["steps"].last["run"], "set -euo pipefail")
     assert_includes(gate["steps"].last["run"], 'ci/hosted-test-shard check "${RUNNER_TEMP}/hosted-classes"')
-    # A contract-only change has no App build or hosted tests, and the package job runs its contract classes in every
-    # mode.
-    assert_equal("inputs.mode != 'contracts'", shard["if"])
-    assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
+    # Only hosted mode has hosted tests, and the package job runs its contract classes in every mode.
+    ["app-build", "build-started", "app-test"].each { |name| assert_equal("inputs.mode == 'hosted'", jobs.fetch(name)["if"], name) }
     assert_nil(jobs.fetch("app-build")["needs"])
-    # Every mode with hosted tests packages and uploads its build for them; the build itself always runs to the end.
+    # build mode's own build job: the same build, nothing for shards to download, and nothing for the package tests to
+    # wait for (a job's needs cannot depend on an input). Skipped, it must not answer to the name the shards poll.
+    build_only = jobs.fetch("app-build-only")
+    assert_equal(["${{ inputs.mode == 'build' && 'App build' || 'App build only' }}", "inputs.mode == 'build'", "xcode-27", nil],
+                 build_only.values_at("name", "if", "runs-on", "needs"))
+    assert_equal(["actions/checkout@v7", "./.github/actions/setup-xcode", "Build for testing"],
+                 build_only["steps"].map { |step| step["name"] || step["uses"] })
+    # Hosted mode packages and uploads its build for the shards; the build itself always runs to the end.
     build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
-    assert_equal(["inputs.mode != 'contracts'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })
     assert_equal('ci/build-for-testing "${BUILD_DESTINATION}"', build_steps.fetch("Build for testing")["run"])
-    assert_nil(build_steps.fetch("Build for testing")["if"])
+    assert_equal(build_steps.fetch("Build for testing"), build_only["steps"].last)
     assert_includes(build_steps.fetch("Package the test build")["run"],
                     "for product in Talaria.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do")
     assert_equal("app-test-build", app_tests["env"]["BUILD_ARTIFACT"])
@@ -318,10 +322,11 @@ class TestIOSRunnerTest < Minitest::Test
     # A failing run still reports, and the step still fails.
     assert_includes(test, '| tee -a "${XCODEBUILD_LOG}" || status=$?')
     assert_match(/exit "\$\{status\}"\n\z/, test)
-    # Pull requests and main pushes run the same App jobs.
+    # Main pushes, manual runs and labelled pull requests run the hosted tests; other pull requests only build and run
+    # the package tests (TAL-1896).
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
-    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}",
+    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && 'hosted' || 'build') || 'contracts' }}",
                  app["with"]["mode"])
     # Every run keeps the hosted tests' performance budget measurements.
     assert_includes(workflow, "scripts/report-performance-metrics")

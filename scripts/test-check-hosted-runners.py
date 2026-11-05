@@ -140,6 +140,7 @@ jobs:
         # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that
         # needs it; moving a portable job onto macOS fails here. Xcode image jobs select Xcode explicitly.
         native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
+                  ("app-tests.yml", "app-build-only"): "ci/build-for-testing",
                   ("app-tests.yml", "app-test"): "xcodebuild",
                   # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
                   ("app-tests.yml", "package-test"): "swift test --package-path TalariaKit",

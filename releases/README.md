@@ -75,7 +75,8 @@ dependency:
 | Workflow | Job | Native dependency |
 |---|---|---|
 | `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the `app-test-build` artifact for the test job |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on pull requests, main pushes and at release |
+| `app-tests.yml` | `app-build-only` | `app/ci/build-for-testing` with no upload, on a pull request without the `hosted-tests` label |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on main pushes, manual runs, at release and on pull requests labelled `hosted-tests` |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test); a release's hosted-tests call leaves it to `contracts` |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
@@ -88,7 +89,7 @@ have passed on the exact release source, dry runs included (TAL-1550).
 `app-hosted-tests-lookup` (`app/ci/find-hosted-tests-run`) looks for a
 completed, successful main-push CI run of `ci.yml` on exactly that SHA whose
 `App / App hosted tests` job succeeded, and records that job's URL in the
-summary. Only then is `app-hosted-tests` (`app-tests.yml` in pull-request mode:
+summary. Only then is `app-hosted-tests` (`app-tests.yml` in hosted mode:
 the App build and four TalariaTests shards) skipped; otherwise it runs. Main CI
 leaves out the App jobs when a push does not touch the App, so a release on such
 a commit tests again. Runs on other commits never count, and a lookup that
@@ -110,7 +111,9 @@ boots its simulator while the build runs, then prepares it in the background
 preparing took 3 to 8 minutes on hosted runners, mostly the notification
 service's restarts, so a shard job takes about 6 minutes of tests plus that.
 The App package tests start once the build ends, so the build and the four
-shards fill the five macOS slots.
+shards fill the five macOS slots. A pull request without the `hosted-tests`
+label takes two slots: the build and the package tests, side by side, and no
+shards.
 
 The pinned Agent gate runs one `agent-release` job per supported Agent release
 of the selected Web source and shard of its sidecar suite: three shards each,
