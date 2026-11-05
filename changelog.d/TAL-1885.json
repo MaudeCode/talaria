@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A message a policy plugin or shell hook blocked no longer reaches the title model. A chat titles from its next ordinary message instead.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

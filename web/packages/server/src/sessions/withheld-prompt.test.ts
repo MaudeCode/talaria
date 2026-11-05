@@ -102,12 +102,16 @@ describe('a prompt a pre_llm_call hook withheld', () => {
     expect(JSON.stringify((await s.deps.sessionStore.get(sid)).context_messages.map((m) => m.content))).not.toContain(TYPED)
   })
 
-  // A deferred save settles the Agent's row; an eager save already holds the turn's checkpoint, which that row folds into.
-  it.each(['deferred', 'eager'] as const)('sends the placeholder, and only that row changed, when the next turn falls back to the display rows (TAL-1878, %s save)', async (mode) => {
+  const useSaveMode = (mode: 'deferred' | 'eager'): void => {
     const turns = s.deps.turns as unknown as { deps: { saveMode: () => 'deferred' | 'eager' } }
     const saveMode = turns.deps.saveMode
     turns.deps.saveMode = () => mode
     onTestFinished(() => { turns.deps.saveMode = saveMode })
+  }
+
+  // A deferred save settles the Agent's row; an eager save already holds the turn's checkpoint, which that row folds into.
+  it.each(['deferred', 'eager'] as const)('sends the placeholder, and only that row changed, when the next turn falls back to the display rows (TAL-1878, %s save)', async (mode) => {
+    useSaveMode(mode)
     const sid = await vetoedWithClearedContext()
 
     let history: Message[] = []
@@ -129,5 +133,50 @@ describe('a prompt a pre_llm_call hook withheld', () => {
     const fork = ((await res.json()) as { session_id: string }).session_id
     expect((await s.deps.sessionStore.get(fork)).context_messages.map((m) => m.content)).toEqual(['ordinary prompt', 'fine', PLACEHOLDER, 'Blocked by policy.', 'a CLI continuation'])
     expect((await shown(fork)).map((m) => m.content)).toEqual(['ordinary prompt', 'fine', TYPED, 'Blocked by policy.', 'a CLI continuation'])
+  })
+
+  describe('and the title model (TAL-1885)', () => {
+    const answered = (reply: string) => (params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> => completed([...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: reply }], reply)
+    const titleRequests = (): string[] => sidecar.calls.filter((c) => c.method === 'aux.complete').map((c) => JSON.stringify(c.params))
+    const regenerate = (sid: string, preferLatest = false): Promise<Response> => post('/api/session/title/regenerate', { session_id: sid, prefer_latest: preferLatest })
+    beforeAll(() => { sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Rollout plan review', usage: null })) })
+
+    it.each(['deferred', 'eager'] as const)('asks it nothing for a vetoed first turn, then titles from the next ordinary turn (%s save)', async (mode) => {
+      useSaveMode(mode)
+      const before = titleRequests().length
+      const sid = (await s.deps.sessionStore.newSession()).session_id
+      respond = veto
+      await start(sid, TYPED)
+      expect(titleRequests().slice(before)).toEqual([])
+
+      const refused = await regenerate(sid)
+      expect(refused.status).toBe(422)
+      expect(await refused.text()).toContain('There is no message to title yet.')
+      expect(titleRequests().slice(before)).toEqual([])
+
+      respond = answered('Here is the rollout.')
+      await start(sid, 'plan the rollout')
+      for (const preferLatest of [false, true]) expect((await regenerate(sid, preferLatest)).status).toBe(200)
+      const requests = titleRequests().slice(before)
+      expect(requests).toHaveLength(3)
+      for (const request of requests) {
+        expect(request).toContain('plan the rollout')
+        expect(request).toContain('Here is the rollout.')
+        expect(request).not.toContain(TYPED)
+        expect(request).not.toContain('Blocked by policy.')
+      }
+      expect((await s.deps.sessionStore.get(sid)).title).toBe('Rollout plan review')
+    })
+
+    it('leaves the vetoed reply out when an ordinary turn came first, so the earlier prompt is not paired with it', async () => {
+      const sid = await vetoedWithClearedContext()
+      const before = titleRequests().length
+      expect((await regenerate(sid, true)).status).toBe(200)
+      const [request] = titleRequests().slice(before)
+      expect(request).toContain('ordinary prompt')
+      expect(request).toContain('fine')
+      expect(request).not.toContain(TYPED)
+      expect(request).not.toContain('Blocked by policy.')
+    })
   })
 })
