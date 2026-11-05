@@ -2412,20 +2412,20 @@ private struct ScenePhasedSessionList: View {
 }
 
 @MainActor
-extension SessionListHostedTests {
-    private var fixtureRowActions: SessionListRowActions {
+private extension XCTestCase {
+    var fixtureRowActions: SessionListRowActions {
         SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
     }
 
-    private func titleMenu(in window: UIWindow) -> UIMenu? {
+    func titleMenu(in window: UIWindow) -> UIMenu? {
         HostedAccessibility.titleMenuController(in: window)?.navigationItem.titleMenuProvider?([])
     }
 
-    private func actions(in menu: UIMenu) -> [UIAction] {
+    func actions(in menu: UIMenu) -> [UIAction] {
         HostedAccessibility.menuActions(in: menu)
     }
 
-    private func openChat(_ fixture: FixtureApp, size: CGSize, chats: ChatViewModelCache? = nil) async throws -> UIWindow {
+    func openChat(_ fixture: FixtureApp, size: CGSize, chats: ChatViewModelCache? = nil) async throws -> UIWindow {
         let window = try hostWindow(fixture.sessionList(chats: chats), size: size)
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window) {
@@ -2436,6 +2436,13 @@ extension SessionListHostedTests {
         XCTAssertTrue(ready, "The open chat has no title menu")
         return window
     }
+}
+
+/// The session actions a list row and an open chat's title menu share: swipe placements, archive, delete, forks. Its
+/// own class so the shards can balance it apart from the rest of the session list (TAL-1891).
+@MainActor
+final class SessionActionsHostedTests: XCTestCase {
+    private let sessionTitle = UITestFixtureURLProtocol.sessionTitle
 
     func testSwipePlacementsFilterTheSharedMenu() async throws {
         let fixture = try FixtureApp(for: self)

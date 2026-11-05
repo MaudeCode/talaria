@@ -101,9 +101,9 @@ share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
 the slowest classes and a last shard that runs every other class, so a new
 class always runs. Its `App hosted tests` job then requires each shard's list
 of the classes it ran to show every class exactly once. The split comes from
-the class times PR CI run 41962004887 measured (1161 s of tests), which the
-script records: SessionList (281 s), Chat with RegularSplit (313 s), Transcript
-with Stream (271 s) and every other class (296 s). `hosted_test_shard_test.py` fails when
+the class times PR CI run 41972743976 measured (1306 s of tests), which the
+script records: SessionList with Transcript (364 s), Chat (303 s), Stream with
+SessionActions and RegularSplit (358 s) and every other class (282 s). `hosted_test_shard_test.py` fails when
 the recorded times leave a shard more than 90 s over the mean. Each shard job
 boots its simulator while the build runs, then prepares it in the background
 (`ci/background`) while it waits for and downloads the build. Booting and

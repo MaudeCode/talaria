@@ -283,22 +283,6 @@ jobs:
       - name: Wait for the simulator
         run: ci/background wait simulator-prepare
 
-      # The App's first launch on a simulator is the slow one: in the first hosted test it costs most of 50 s, against
-      # 3 s in the next process on the same simulator (TAL-1891). A plain launch leaves most of that saving behind.
-      - name: Launch the App once
-        env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
-        run: |
-          set -euo pipefail
-          start_seconds=${SECONDS}
-          app=Build/Products/Debug-iphonesimulator/Talaria.app
-          bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${app}/Info.plist")
-          xcrun simctl install "${SIMULATOR_ID}" "${app}"
-          xcrun simctl launch "${SIMULATOR_ID}" "${bundle_id}"
-          sleep 5
-          xcrun simctl terminate "${SIMULATOR_ID}" "${bundle_id}"
-          echo "- Launch the App once: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
-
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
       # and the memory log and the job fails rather than being cancelled, which the failure alert sees (TAL-670).

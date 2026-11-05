@@ -136,6 +136,38 @@ final class FixtureApp {
     }
 }
 
+/// A process's first chat render takes 20 to 50 s on a hosted runner, against about 3 s for the next: the Swift runtime
+/// resolves the generic conformances SwiftUI asks for by scanning every loaded image. It belongs to the run, not to
+/// whichever test comes first, so it happens before any test starts (TAL-1891). The bundle's principal class.
+@objc(HostedTestBundle)
+final class HostedTestBundle: NSObject, XCTestObservation {
+    override init() {
+        super.init()
+        XCTestObservationCenter.shared.addTestObserver(self)
+    }
+
+    func testBundleWillStart(_ testBundle: Bundle) {
+        MainActor.assumeIsolated {
+            var finished = false
+            var window: UIWindow?
+            // No test is running, so its teardown blocks never run; the same cleanup follows below.
+            let warmer = XCTestCase()
+            Task { @MainActor in
+                window = try? await warmer.hostFixtureChat()
+                finished = true
+            }
+            let deadline = Date(timeIntervalSinceNow: 120)
+            while !finished, Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05)) }
+            window?.isHidden = true
+            window?.rootViewController = nil
+            UIView.setAnimationsEnabled(true)
+            UITestFixtureHold.shared.release()
+            FixtureLaunchArguments.scenario = []
+            UITestFixtureURLProtocol.resetForHostedTest()
+        }
+    }
+}
+
 extension XCTestCase {
     /// The fixture's chat in its own window: the hosted counterpart of a UI test that launched with `scenario` and
     /// tapped the fixture session.

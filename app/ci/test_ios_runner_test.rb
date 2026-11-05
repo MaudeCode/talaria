@@ -192,8 +192,8 @@ class TestIOSRunnerTest < Minitest::Test
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
     assert_equal('ci/background start simulator-prepare scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"',
                  shard["steps"][boot + 1]["run"])
-    assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Wait for the simulator", "Launch the App once", "Test without building"],
-                 shard["steps"][boot + 1, 6].map { |step| step["name"] })
+    assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Wait for the simulator", "Test without building"],
+                 shard["steps"][boot + 1, 5].map { |step| step["name"] })
     assert_equal("ci/background wait simulator-prepare", shard["steps"][boot + 4]["run"])
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")

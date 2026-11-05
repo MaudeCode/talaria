@@ -16,15 +16,15 @@ import sys
 from pathlib import Path
 
 TARGET = "TalariaTests"
-# Each listed class's "Test Suite" seconds, and every other class's together, from PR CI run 41962004887's four shards
-# (1161 s of tests). hosted_test_shard_test.py fails when they leave a shard more than 90 s over the mean; rebalance from
+# Each listed class's "Test Suite" seconds, and every other class's together, from PR CI run 41972743976's four shards
+# (1306 s of tests). hosted_test_shard_test.py fails when they leave a shard more than 90 s over the mean; rebalance from
 # a current run's timings when a shard's job outgrows the others.
-SECONDS = {"SessionListHostedTests": 281.3, "ChatHostedTests": 236.9, "RegularSplitHostedTests": 76.2, "TranscriptHostedTests": 110.8, "StreamHostedTests": 160.0}
-OTHER_SECONDS = 296.3
+SECONDS = {"SessionListHostedTests": 275.4, "TranscriptHostedTests": 88.2, "ChatHostedTests": 302.8, "StreamHostedTests": 171.0, "SessionActionsHostedTests": 113.0, "RegularSplitHostedTests": 73.9}
+OTHER_SECONDS = 281.6
 SHARDS = (
-    ("SessionListHostedTests",),
-    ("ChatHostedTests", "RegularSplitHostedTests"),
-    ("TranscriptHostedTests", "StreamHostedTests"),
+    ("SessionListHostedTests", "TranscriptHostedTests"),
+    ("ChatHostedTests",),
+    ("StreamHostedTests", "SessionActionsHostedTests", "RegularSplitHostedTests"),
 )
 COUNT = len(SHARDS) + 1
 LISTED = [name for shard in SHARDS for name in shard]
