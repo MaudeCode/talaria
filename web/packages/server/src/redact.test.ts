@@ -885,6 +885,18 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     [String.raw`host=db; password=two\;secret; database=x`, 'host=db; password=***; database=x'],
     [String.raw`host=db; PWD="two\" secret words"; database=x`, 'host=db; PWD=***; database=x'],
   ],
+  'v0.23 multiline connection strings': [
+    ["host=db; password=$(printf 'two\nsecret words'); database=x", 'host=db; password=***'],
+    ['host=db; PWD="two\nsecret words"; database=x', 'host=db; PWD="***"; database=x'],
+    ["host=db; PWD=$(printf 'two\nsecret words'); database=x", 'host=db; PWD=***'],
+  ],
+  'v0.23 escaped Basic pairs': [
+    [String.raw`proxy_password=user:hello\ world`, 'proxy_password=***'],
+    [String.raw`MY_PROXY_BASIC=user:hello\ world`, 'MY_PROXY_BASIC=user:***'],
+    [String.raw`MY_PROXY_BASIC="user:hello\" secret"`, 'MY_PROXY_BASIC="user:***"'],
+    [String.raw`proxy_password="user:hello\" secret"`, 'proxy_password=***'],
+    [String.raw`MY_PROXY_BASIC=user:hello\;secret`, 'MY_PROXY_BASIC=user:***'],
+  ],
   'v0.23 connection strings': [
     ['Driver=ODBC;PWD={s3;cr}}et};Server=db', 'Driver=ODBC;PWD={***};Server=db'],
     ['Host=db;Password="two;words";Database=x', 'Host=db;Password="***";Database=x'],
@@ -919,7 +931,8 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['MY_PROXY_BASIC="user:twoWords42"', 'MY_PROXY_BASIC="user:***"'],
     ['IMAGE=redis:7-alpine', 'IMAGE=redis:7-alpine'],
     ['{"@context":"https://schema.org","@type":"X"}', '{"@context":"https://schema.org","@type":"X"}'],
-    ['https://TOKENVALUE@github.com', 'https://***@github.com'],
+    ['https://TOKEN@github.com', 'https://***@github.com'],
+    ['https://abcdef***@github.com', 'https://***@github.com'],
   ],
   'env names ending in _KEY, _PASS or _PW': [
     ['OPENAI_KEY=xyzzyplugh1234567890abcd', 'OPENAI_KEY=xyzzyp...abcd'],
