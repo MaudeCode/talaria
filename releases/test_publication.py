@@ -464,7 +464,12 @@ class PublicationTests(unittest.TestCase):
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/app-tests.yml")], text=True))
         self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode != 'contracts'")
-        self.assertEqual(app_tests["jobs"]["package-test"]["if"], "${{ !cancelled() && inputs.package_tests }}")
+        # The release's call leaves out the package tests the build job otherwise runs after its upload (TAL-1891).
+        self.assertEqual(app_tests["jobs"]["app-build"]["if"], "inputs.mode != 'contracts' || inputs.package_tests")
+        package_steps = [step for step in app_tests["jobs"]["app-build"]["steps"] if "swift " in step.get("run", "")]
+        self.assertTrue(package_steps)
+        for step in package_steps:
+            self.assertEqual(step["if"], "${{ !cancelled() && inputs.package_tests }}")
         check = (root / "scripts/check-release-contracts.py").read_text()
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})

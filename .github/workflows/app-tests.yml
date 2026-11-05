@@ -11,20 +11,20 @@
 #       visual references, performance budgets, App bundle resources), split by class (ci/hosted-test-shard,
 #       TAL-1550). Pull requests, main pushes and the release gate run it.
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
-#     contracts: true | false  - the package job also waits for this run's "Web contract probe" job and runs the
+#     contracts: true | false  - the package tests also wait for this run's "Web contract probe" job and run the
 #       live decoding test against its contract-fixture artifact.
 #     ref: optional commit to check out (default: the triggering commit).
-#     package_tests: false leaves out the package tests job (default true); a release runs the same suite in its
+#     package_tests: false leaves out the package tests (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"/"App package tests"; the
-# build artifact is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
+# Jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; the build artifact is
+# app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
 # once; a release reuses main CI's (ci/find-hosted-tests-run).
 # Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
-# (TAL-413), so it never holds a macOS slot its own build is still queued for. The build and the four shards fill the
-# five slots, so the package tests start once the build ends.
+# (TAL-413), so it never holds a macOS slot its own build is still queued for. The build job and the four shards fill
+# the five slots; the package tests run in the build job after its upload, so no shard waits on them (TAL-1891).
 
 name: App tests
 
@@ -59,58 +59,14 @@ env:
 jobs:
   app-build:
     name: App build
-    # Builds on its own runner while the test job boots its simulator. A contract-only
-    # change leaves the App sources alone, so its package tests are the whole check.
-    if: inputs.mode != 'contracts'
+    # Builds on its own runner while the test job boots its simulator, then runs TalariaKit's (models, networking,
+    # persistence, sync, view models) tests with `swift test`: no simulator and no app host (TAL-399). A contract-only
+    # change leaves the App sources alone, so it skips the build steps and its package tests are the whole check.
+    # The package tests run whatever the build's result; only the live contract test waits for the Web probe.
+    if: inputs.mode != 'contracts' || inputs.package_tests
     runs-on: xcode-27
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - uses: ./.github/actions/setup-xcode
-
-      - name: Build for testing
-        env:
-          # A build destination only; nothing boots on this runner.
-          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}
-        run: ci/build-for-testing "${BUILD_DESTINATION}"
-
-      - name: Package the test build
-        if: inputs.mode != 'contracts'
-        run: |
-          set -euo pipefail
-          # Only what test-without-building reads: the xctestrun and the products it names (about 180 of
-          # 232 MB; module files, objects and bundle copies stay behind). Artifacts drop file modes, so a tar
-          # keeps the bundles' executables and signatures intact.
-          cd DerivedData/Build
-          products=(Products/*.xctestrun)
-          for product in Talaria.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
-            products+=("Products/Debug-iphonesimulator/${product}")
-          done
-          tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
-
-      - name: Upload the test build
-        if: inputs.mode != 'contracts'
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.BUILD_ARTIFACT }}
-          path: ${{ runner.temp }}/app-build.tar
-          retention-days: 1
-          overwrite: true
-          if-no-files-found: error
-
-  package-test:
-    # TalariaKit (models, networking, persistence, sync, view models) tests on macOS with `swift test`: no
-    # simulator and no app host (TAL-399). It takes the build's macOS slot once the build ends, whatever its result,
-    # and finishes well before the hosted test shards; a contract-only run has no build, so it starts at once. Only the
-    # live contract test waits for the Web probe.
-    name: App package tests
-    needs: app-build
-    if: ${{ !cancelled() && inputs.package_tests }}
-    runs-on: xcode-27
-    timeout-minutes: 30
+    # The build's own limit, plus the package tests' and the probe wait's.
+    timeout-minutes: 75
     permissions:
       contents: read
       # Reads this run's job list to wait for the Web contract probe.
@@ -125,25 +81,72 @@ jobs:
 
       - uses: ./.github/actions/setup-xcode
 
+      # Only the package checkouts: a fresh checkout's mtimes make xcodebuild rebuild the rest of DerivedData anyway.
+      - name: Restore the Swift package checkouts
+        if: inputs.mode != 'contracts'
+        uses: actions/cache@v6
+        with:
+          path: app/DerivedData/SourcePackages
+          key: app-source-packages-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'app/TalariaKit/Package.resolved') }}
+
+      - name: Build for testing
+        if: inputs.mode != 'contracts'
+        timeout-minutes: 45
+        env:
+          # A build destination only; nothing boots on this runner.
+          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}
+        run: ci/build-for-testing "${BUILD_DESTINATION}"
+
+      - name: Package the test build
+        if: inputs.mode != 'contracts'
+        run: |
+          set -euo pipefail
+          # Only what test-without-building reads: the xctestrun and the products it names (module files, objects and
+          # bundle copies stay behind). Artifacts drop file modes, so a tar keeps the bundles' executables and signatures
+          # intact. xz, not gzip: the artifact's own zip already gave gzip's size, 112 MB, which took 15 to 150 s to
+          # download; xz leaves under half that (TAL-1891).
+          cd DerivedData/Build
+          products=(Products/*.xctestrun)
+          for product in Talaria.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
+            products+=("Products/Debug-iphonesimulator/${product}")
+          done
+          start_seconds=${SECONDS}
+          tar --options xz:compression-level=9,xz:threads=0 -cJf "${RUNNER_TEMP}/app-build.tar.xz" "${products[@]}"
+          echo "- Test build package: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.tar.xz" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the test build
+        if: inputs.mode != 'contracts'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ${{ runner.temp }}/app-build.tar.xz
+          # The tar is already compressed.
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
       # The committed Package.resolved pins the App's revisions; resolution never drifts from it. Coverage is measured
       # on this run, the one CI Gate counts (TAL-67).
       - name: Build the package tests
+        if: ${{ !cancelled() && inputs.package_tests }}
         run: swift build --package-path TalariaKit --build-tests --enable-code-coverage --only-use-versions-from-resolved-file
 
       - name: Wait for the Web contract probe
-        if: env.CONTRACTS_SELECTED == 'true'
+        if: ${{ !cancelled() && inputs.package_tests && env.CONTRACTS_SELECTED == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: ci/wait-for-job "Web contract probe" 1500
 
       - name: Download the probe's live response fixture
-        if: env.CONTRACTS_SELECTED == 'true'
+        if: ${{ !cancelled() && inputs.package_tests && env.CONTRACTS_SELECTED == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: contract-fixture
           path: ${{ runner.temp }}/contract-fixture
 
       - name: Test the package
+        if: ${{ !cancelled() && inputs.package_tests }}
         run: |
           set -euo pipefail
           fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
@@ -166,11 +169,11 @@ jobs:
 
       # After a failure too: the report merges whatever profiles the run wrote. The numbers gate nothing.
       - name: Report coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.package_tests }}
         run: ci/package-coverage coverage >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.package_tests }}
         uses: actions/upload-artifact@v7
         with:
           name: app-package-coverage
@@ -277,7 +280,7 @@ jobs:
       - name: Wait for the build
         run: ci/background wait build-wait
 
-      # curl, not actions/download-artifact, which fetched this 82 MB artifact at about 1 MB/s on hosted macOS.
+      # curl, not actions/download-artifact, which fetched this artifact at about 1 MB/s on hosted macOS.
       - name: Download the test build
         env:
           GH_TOKEN: ${{ github.token }}
@@ -310,10 +313,26 @@ jobs:
           [[ -z "${uploaded}" ]] || handoff="$((start_epoch - uploaded)) s"
           echo "- Build upload → download start: ${handoff}" | tee -a "${GITHUB_STEP_SUMMARY}"
           mkdir -p Build
-          tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+          tar -C Build -xf "${RUNNER_TEMP}/app-build.tar.xz"
 
       - name: Wait for the simulator
         run: ci/background wait simulator-prepare
+
+      # The App's first launch on a simulator is the slow one: in the first hosted test it costs most of 50 s, against
+      # 3 s in the next process on the same simulator (TAL-1891). A plain launch leaves most of that saving behind.
+      - name: Launch the App once
+        env:
+          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set -euo pipefail
+          start_seconds=${SECONDS}
+          app=Build/Products/Debug-iphonesimulator/Talaria.app
+          bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${app}/Info.plist")
+          xcrun simctl install "${SIMULATOR_ID}" "${app}"
+          xcrun simctl launch "${SIMULATOR_ID}" "${bundle_id}"
+          sleep 5
+          xcrun simctl terminate "${SIMULATOR_ID}" "${bundle_id}"
+          echo "- Launch the App once: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle

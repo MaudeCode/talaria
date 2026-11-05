@@ -141,8 +141,6 @@ jobs:
         # needs it; moving a portable job onto macOS fails here. Xcode image jobs select Xcode explicitly.
         native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
                   ("app-tests.yml", "app-test"): "xcodebuild",
-                  # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
-                  ("app-tests.yml", "package-test"): "swift test --package-path TalariaKit",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   # Both App contract gates share one runner (TAL-414).
                   ("release-set.yml", "contracts"): "check-previous-app.py --app-ref",
@@ -158,6 +156,8 @@ jobs:
         self.assertEqual(set(found), set(native))
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)
+        # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
+        self.assertIn("swift test --package-path TalariaKit", found[("app-tests.yml", "app-build")])
 
     def test_artifacts_expire_within_thirty_days(self):
         # Actions storage is bounded by retention, never by a paid quota.

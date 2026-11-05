@@ -57,8 +57,8 @@ contract scripts themselves. In `ci.yml`:
 - The Linux `Web contract probe` job runs
   `scripts/validate-upstream-contract --server-only --responses-output ...` and
   uploads the live responses as the run's `contract-fixture` artifact.
-- The App package tests job (`app-tests.yml`, called by `ci.yml`) waits for the
-  probe, downloads that artifact, and runs the TalariaKit tests with `swift test`
+- The `App build` job's package tests (`app-tests.yml`, called by `ci.yml`) wait for
+  the probe, download that artifact, and run the TalariaKit tests with `swift test`
   on macOS, including every native contract class (`ContractReadinessTests`,
   `SharedContractTests`, `APIClientAuthAndErrorTests`,
   `StreamReconnectContractTests`, and the API client and SSE classes) and

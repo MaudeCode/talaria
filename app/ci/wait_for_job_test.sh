@@ -62,9 +62,14 @@ if "$script" "App build" 0 >/dev/null 2>&1; then echo "Expected a missing job to
 fixtures "$(job "App build" 2 in_progress null null)" "$(job "App build" 2 in_progress null '"success"')"
 expect_eq "$(last_line "$("$script" "App build" 60 "Upload the test build")")" "App build finished Upload the test build (attempt 2)."
 expect_eq "$(cat "$work/calls")" 2
-# A failed step does not count, and a job that completed unsuccessfully still fails after its upload.
-fixtures "$(job "App build" 2 in_progress null '"failure"')"
-if "$script" "App build" 0 "Upload the test build" >/dev/null 2>&1; then echo "Expected a failed upload to time out." >&2; exit 1; fi
+# The job goes on to its package tests after a failed build, so a step that will never succeed fails the wait at once
+# (TAL-1891), and a job that completed unsuccessfully still fails after its upload.
+for conclusion in failure skipped cancelled; do
+  fixtures "$(job "App build" 2 in_progress null null)" "$(job "App build" 2 in_progress null "\"${conclusion}\"")"
+  if output=$("$script" "App build" 1 "Upload the test build" 2>&1); then echo "Expected a ${conclusion} upload to fail the wait." >&2; exit 1; fi
+  expect_eq "$(last_line "$output")" "App build: Upload the test build finished ${conclusion} (attempt 2)"
+  expect_eq "$(cat "$work/calls")" 2
+done
 fixtures "$(job "App build" 2 completed '"failure"' '"success"')"
 if "$script" "App build" 60 "Upload the test build" >/dev/null 2>&1; then echo "Expected a failed build to fail despite its upload." >&2; exit 1; fi
 

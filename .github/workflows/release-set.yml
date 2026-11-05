@@ -164,7 +164,7 @@ jobs:
   contracts:
     # macOS: both App contract gates on one runner (TAL-414), each writing its own receipt. currentContracts tests the
     # selected App against every supported Web source and, when the App ships, runs its whole TalariaKit suite
-    # (app-tests.yml's package job, which the release's hosted-tests call leaves out); previousAppContracts compiles
+    # (app-tests.yml's package tests, which the release's hosted-tests call leaves out); previousAppContracts compiles
     # the previously released App from Git and tests it against the selected Web. Both spend minutes probing Webs
     # beside their builds, so they run at once, with `swift test` (TAL-399) or one of them in the simulator; two Apps
     # from before TAL-399 would share the one simulator, so they take turns. One runner for both leaves the other macOS slots to the
