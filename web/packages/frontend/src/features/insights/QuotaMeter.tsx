@@ -21,15 +21,10 @@ const STATUS_LABEL: Record<string, () => string> = {
 
 export const quotaSourceName = (s: QuotaSource): string => s.provider_label ?? s.provider_id ?? s.source_id
 
-/** The provider, plus its account when that tells two sources of one provider apart. */
-export function quotaSourceTitle(s: QuotaSource): string {
-  const name = quotaSourceName(s)
-  return s.account_label && s.account_label !== name ? `${name} · ${s.account_label}` : name
-}
-
+/** The server's text for a source's status, else the localized status word. */
 export function quotaStatusText(s: QuotaSource): string {
   const status = s.status ?? 'unavailable'
-  return typeof s.unavailable_reason === 'string' ? s.unavailable_reason : s.message ?? STATUS_LABEL[status]?.() ?? status
+  return s.status_message ?? STATUS_LABEL[status]?.() ?? status
 }
 
 /** OpenRouter-style credits, for a source with no windows to show a percent from. */
@@ -38,14 +33,9 @@ export function quotaCreditsText(s: QuotaSource, locale: string): string | null 
   return typeof quota?.limit_remaining === 'number' ? m.provider_quota_credits_remaining({ amount: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(quota.limit_remaining) }) : null
 }
 
-/** One window's level and the server percents for the mode; the server ships both percents normalized. */
+/** One window's server level and the server percents for the mode; the server ships both percents normalized. */
 export function quotaWindowFigures(source: QuotaSource, w: QuotaWindow | undefined, mode: QuotaPercentMode) {
-  // A source the server marks stale or unavailable outranks its cached windows' levels (`reconcileProviderQuotas` keeps
-  // the windows as they were); otherwise the window's pace level, which already falls back to its remaining
-  // classification without a pace (TAL-411). The App's `ProviderQuotaPresentation.state` orders them the same way.
-  const level: QuotaLevel = source.status !== 'available'
-    ? source.urgency?.pace ?? 'unavailable'
-    : w?.urgency?.pace ?? source.urgency?.pace ?? 'healthy'
+  const level: QuotaLevel = w?.display_level ?? source.display_level ?? 'unavailable'
   const percent = w ? (mode === 'used' ? w.used_percent : w.remaining_percent) : null
   const marker = w?.pace ? (mode === 'used' ? w.pace.expected_used_percent : w.pace.expected_remaining_percent) : null
   const modeLabel = mode === 'used' ? m.provider_quota_metric_used() : m.provider_quota_metric_remaining()

@@ -13,7 +13,8 @@ describe('quota cache authority', () => {
     const result = reconcileProviderQuotas(cached, unavailable)
     expect(result.sources.map((s) => s.source_id)).toEqual(cached.sources.map((s) => s.source_id))
     expect(result.sources[0]?.status).toBe('unavailable')
-    expect(result.sources[0]?.windows).toEqual(cached.sources[0]?.windows)
+    expect(result.sources[0]?.windows).toEqual(cached.sources[0]?.windows?.map((w) => ({ ...w, display_level: 'unavailable' })))
+    expect(result.sources[0]?.display_level).toBe('unavailable')
     expect(result.sources[0]?.urgency).toEqual({ remaining: 'unavailable', pace: 'unavailable' })
     expect(reconcileProviderQuotas(undefined, unavailable).sources).toEqual([])
     // Unknown membership keeps the sidebar's pins with their rows.

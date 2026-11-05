@@ -7,11 +7,11 @@ import { getStreamContext } from '../../stream/connection'
 export function useSettingField(fields: readonly string[]) {
   const settings = useSettingsQuery(fields)
   const save = useSaveSettings()
-  const setAsync = (patch: Record<string, unknown>, onSuccess?: () => void) => {
+  const setAsync = (patch: Record<string, unknown>, onSuccess?: () => void, onError?: (e: unknown) => void) => {
     const context = getStreamContext()
     return save.mutateAsync(patch).then(
       () => { if (context === getStreamContext()) onSuccess?.() },
-      (e: unknown) => { if (context === getStreamContext()) showErrorToast(e) },
+      (e: unknown) => { if (context === getStreamContext()) { onError?.(e); showErrorToast(e) } },
     )
   }
   const set = (patch: Record<string, unknown>, onSuccess?: () => void) => { void setAsync(patch, onSuccess) }

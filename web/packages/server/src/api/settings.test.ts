@@ -1713,11 +1713,11 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     const anthropic = (quotas.sources as Json[]).find((q) => q.provider_id === 'anthropic')
     // TAL-411 classifies the quotas windows at the default thresholds; the singular route's are unclassified.
     expect(anthropic?.windows).toEqual([
-      { ...session, pace: { ...session.pace, status: 'under' }, projection_eligible: false, urgency: { remaining: 'healthy', pace: 'healthy' } },
-      { ...weekly, pace: { ...weekly.pace, status: 'over' }, projection_eligible: true, urgency: { remaining: 'healthy', pace: 'warning' } },
-      { ...monthly, projection_eligible: false, urgency: { remaining: 'healthy', pace: 'healthy' } },
+      { ...session, pace: { ...session.pace, status: 'under' }, projection_eligible: false, urgency: { remaining: 'healthy', pace: 'healthy' }, display_level: 'healthy' },
+      { ...weekly, pace: { ...weekly.pace, status: 'over' }, projection_eligible: true, urgency: { remaining: 'healthy', pace: 'warning' }, display_level: 'warning' },
+      { ...monthly, projection_eligible: false, urgency: { remaining: 'healthy', pace: 'healthy' }, display_level: 'healthy' },
     ])
-    expect(anthropic).toMatchObject({ urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, session_window_index: 0, weekly_window_index: 1, fetched_at: '2026-09-28T07:59:30Z' })
+    expect(anthropic).toMatchObject({ display_level: 'warning', urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, session_window_index: 0, weekly_window_index: 1, fetched_at: '2026-09-28T07:59:30Z' })
     expect(quotas.computed_at).toBe('2026-09-28T08:00:00Z')
 
     const quota = await json(await s.get('/api/provider/quota?provider=anthropic'))

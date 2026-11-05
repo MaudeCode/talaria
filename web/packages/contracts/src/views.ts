@@ -824,6 +824,7 @@ export const QuotaWindowSchema = z.looseObject({
   forecast: QuotaForecastSchema.nullable(),
   projection_eligible: z.boolean().optional().describe('TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset).'),
   urgency: QuotaUrgencySchema.optional(),
+  display_level: QuotaLevelSchema.optional().describe('TAL-1870, `/api/provider/quotas` only: the level this window\'s meter shows; the source status outranks the window\'s pace urgency.'),
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
@@ -833,6 +834,9 @@ export const QuotaSourceSchema = z.looseObject({
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
   headline_window_index: QuotaWindowIndex.describe('TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows.'),
+  display_name: z.string().optional().describe('TAL-1870: the provider, with its account when that tells two sources of one provider apart.'),
+  status_message: z.string().nullable().optional().describe('TAL-1870: the server text a source status shows: its unavailable reason, else its message; null leaves the status word.'),
+  display_level: QuotaLevelSchema.optional().describe('TAL-1870: the effective level of a source with no window to show; the source status outranks its urgency.'),
   session_window_index: QuotaWindowIndex.describe('The session (else 5h) window.'), weekly_window_index: QuotaWindowIndex.describe('The weekly window.'),
   urgency: QuotaUrgencySchema.optional().describe('TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it.'),
 })

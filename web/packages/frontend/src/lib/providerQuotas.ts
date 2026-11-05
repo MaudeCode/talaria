@@ -6,5 +6,5 @@ export function reconcileProviderQuotas(previous: Awaited<ReturnType<typeof fetc
   const ids = new Set(next.sources.map((s) => s.source_id))
   const availability = next.availability
   const status = availability.status === 'stale' ? 'stale' : 'unavailable'
-  return { ...next, sidebar_source_ids: previous.sidebar_source_ids, sidebar_can_pin: previous.sidebar_can_pin, sources: [...next.sources, ...previous.sources.filter((s) => !ids.has(s.source_id)).map((s): (typeof next.sources)[number] => ({ ...s, status, unavailable_reason: availability.unavailable_reason, urgency: { remaining: status, pace: status } }))] }
+  return { ...next, sidebar_source_ids: previous.sidebar_source_ids, sidebar_can_pin: previous.sidebar_can_pin, sources: [...next.sources, ...previous.sources.filter((s) => !ids.has(s.source_id)).map((s): (typeof next.sources)[number] => ({ ...s, status, unavailable_reason: availability.unavailable_reason, status_message: availability.unavailable_reason, urgency: { remaining: status, pace: status }, display_level: status, windows: s.windows?.map((w) => ({ ...w, display_level: status })) }))] }
 }

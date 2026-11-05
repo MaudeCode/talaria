@@ -14,19 +14,19 @@ const quotas = ProviderQuotasSchema.parse({
       source_id: 'qsrc_paced', provider_id: 'anthropic', provider_label: 'Claude', account_label: 'Claude', plan: 'Max', is_active_provider: true, status: 'available',
       computed_at: '2030-01-01T00:00:00Z', fetched_at: '2030-01-01T00:00:00Z', urgency: { remaining: 'healthy', pace: 'warning' },
       windows: [
-        { label: 'Session', used_percent: 25, remaining_percent: 75, reset_at: '2030-01-01T03:00:00Z', detail: null, window_seconds: 18000, urgency: { remaining: 'healthy', pace: 'healthy' },
+        { label: 'Session', used_percent: 25, remaining_percent: 75, reset_at: '2030-01-01T03:00:00Z', detail: null, window_seconds: 18000, urgency: { remaining: 'healthy', pace: 'healthy' }, display_level: 'healthy',
           pace: { expected_remaining_percent: 60, expected_used_percent: 40, pace_delta_percent: 15, burn_rate: 0.62, minutes_to_reset: 180, projected_minutes_to_empty: 540, elapsed_minutes: 120, valid_until: '2030-01-01T03:00:00Z', status: 'under' },
           forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 25, depletion_margin_minutes: 360 } },
-        { label: 'Weekly', used_percent: 70, remaining_percent: 30, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: 604800, urgency: { remaining: 'warning', pace: 'warning' },
+        { label: 'Weekly', used_percent: 70, remaining_percent: 30, reset_at: '2030-01-03T12:00:00Z', detail: null, window_seconds: 604800, urgency: { remaining: 'warning', pace: 'warning' }, display_level: 'warning',
           pace: { expected_remaining_percent: 36, expected_used_percent: 64, pace_delta_percent: -6, burn_rate: 1.1, minutes_to_reset: 3600, projected_minutes_to_empty: 3270, elapsed_minutes: 6480, valid_until: '2030-01-03T12:00:00Z', status: 'over' },
           forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 12, depletion_margin_minutes: -330 } },
       ],
     },
     { source_id: 'qsrc_plain', provider_id: 'openai-codex', provider_label: 'OpenAI Codex', status: 'available', windows: [{ label: 'Session', used_percent: 40, remaining_percent: 60, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null }] },
     { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5, usage: 7.5, limit: 20 } },
-    { source_id: 'qsrc_down', provider_id: 'nous', provider_label: 'Nous', status: 'stale', unavailable_reason: 'Provider data is temporarily unavailable.', urgency: { remaining: 'stale', pace: 'stale' },
-      windows: [{ label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null, urgency: { remaining: 'healthy', pace: 'healthy' } }] },
-    { source_id: 'qsrc_none', provider_id: 'google', provider_label: 'Google', status: 'unsupported', unavailable_reason: 'No verified server-side quota or balance endpoint is available for Google.', windows: [] },
+    { source_id: 'qsrc_down', provider_id: 'nous', provider_label: 'Nous', status: 'stale', status_message: 'Provider data is temporarily unavailable.', urgency: { remaining: 'stale', pace: 'stale' },
+      windows: [{ label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null, urgency: { remaining: 'healthy', pace: 'healthy' }, display_level: 'stale' }] },
+    { source_id: 'qsrc_none', provider_id: 'google', provider_label: 'Google', status: 'unsupported', status_message: 'No verified server-side quota or balance endpoint is available for Google.', windows: [] },
   ],
 })
 
@@ -66,7 +66,7 @@ describe('ProviderQuotaRows', () => {
     const down = document.querySelector('[data-quota-source="qsrc_down"]')!
     expect(down).toHaveAttribute('data-quota-status', 'stale')
     expect(down).toHaveTextContent('Provider data is temporarily unavailable.')
-    expect(down.querySelector('[data-quota-window="Session"]'), 'a stale source outranks its cached window level').toHaveAttribute('data-level', 'stale')
+    expect(down.querySelector('[data-quota-window="Session"]'), 'the window shows the server level, not its urgency').toHaveAttribute('data-level', 'stale')
     const unavailable = document.querySelector('[data-section="insights-quotas-unavailable"]')!
     expect(unavailable).toHaveTextContent('Google')
     expect(unavailable.querySelector('[data-quota-source="qsrc_none"]')).toHaveTextContent('No verified server-side quota')

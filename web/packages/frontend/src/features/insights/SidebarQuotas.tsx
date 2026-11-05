@@ -7,7 +7,7 @@ import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { SIDEBAR_ROW } from '../../shell/nav'
 import { closeMobileSidebar } from '../../shell/useShellState'
 import { cn } from '../../ui/cn'
-import { QuotaMeter, quotaCreditsText, quotaSourceTitle, quotaStatusText, quotaWindowFigures, type QuotaSource } from './QuotaMeter'
+import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaStatusText, quotaWindowFigures, type QuotaSource } from './QuotaMeter'
 
 /** TAL-1870: the expanded sidebar's Quotas group, the App's `AppSidebar` rows: the server's `sidebar_source_ids`. The setting only decides whether to read at all. */
 export function SidebarQuotas() {
@@ -27,7 +27,7 @@ export function SidebarQuotas() {
 function SidebarQuotaRow({ source, locale }: { source: QuotaSource; locale: string }) {
   const w = source.headline_window_index == null ? undefined : source.windows?.[source.headline_window_index]
   const { level, percent, marker, modeLabel } = quotaWindowFigures(source, w, 'used')
-  const title = quotaSourceTitle(source)
+  const title = source.display_name ?? quotaSourceName(source)
   const status = source.status ?? 'unavailable'
   const statusText = status === 'available' ? null : quotaStatusText(source)
   const figure = percent === null ? (w?.detail ?? quotaCreditsText(source, locale)) : `${formatPercent(locale, percent)} ${modeLabel}`

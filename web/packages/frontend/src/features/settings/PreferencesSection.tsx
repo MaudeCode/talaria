@@ -5,7 +5,7 @@ import { useSettingField } from './useSettingField'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
@@ -13,7 +13,8 @@ import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
-import { quotaSourceTitle } from '../insights/QuotaMeter'
+import { isDefiniteRefusal } from '../../contracts/common'
+import { quotaSourceName } from '../insights/QuotaMeter'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
   const { bool, set } = useSettingField([settingKey])
@@ -25,17 +26,21 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
   )
 }
 
-/** TAL-1870: pins the sidebar's quota sources from the server's projection. A choice shows at once and settles on the next read, which also rolls back a refused write. */
+/** TAL-1870: pins the sidebar's quota sources from the server's projection. A choice shows at once and settles on the next read; a definite refusal restores the projection it replaced unless a newer choice followed. */
 function SidebarQuotaSources() {
   const { setAsync } = useSettingField([])
   const { quotas } = useProviderQuotas()
   const qc = useQueryClient()
+  const latest = useRef(0)
   const sources = quotas.data?.sources
   const pinned = quotas.data?.sidebar_source_ids ?? []
+  const project = (sidebar_source_ids: string[] | undefined, sidebar_can_pin: boolean | undefined) => { qc.setQueryData<typeof quotas.data>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin }) }
   const pin = async (ids: string[]) => {
     await qc.cancelQueries({ queryKey: keys.providerQuotas })
-    qc.setQueryData<typeof quotas.data>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids: ids, sidebar_can_pin: ids.length < 2 })
-    await setAsync({ sidebar_quota_sources: ids })
+    const write = ++latest.current
+    const previous = qc.getQueryData<typeof quotas.data>(keys.providerQuotas)
+    project(ids, ids.length < 2)
+    await setAsync({ sidebar_quota_sources: ids }, undefined, (e) => { if (isDefiniteRefusal(e) && write === latest.current) project(previous?.sidebar_source_ids, previous?.sidebar_can_pin) })
     if (qc.isMutating({ mutationKey: keys.settings }) === 0) void qc.invalidateQueries({ queryKey: keys.providerQuotas })
   }
   return (
@@ -48,7 +53,7 @@ function SidebarQuotaSources() {
           const on = pinned.includes(s.source_id)
           return (
             <label key={s.source_id} className="flex items-center gap-1.5 text-sm">
-              <Switch checked={on} disabled={!on && quotas.data?.sidebar_can_pin === false} onCheckedChange={(checked) => { void pin(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {quotaSourceTitle(s)}
+              <Switch checked={on} disabled={!on && quotas.data?.sidebar_can_pin === false} onCheckedChange={(checked) => { void pin(checked ? [...pinned, s.source_id] : pinned.filter((id) => id !== s.source_id)) }} /> {s.display_name ?? quotaSourceName(s)}
             </label>
           )
         })}

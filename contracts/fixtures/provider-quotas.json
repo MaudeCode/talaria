@@ -53,7 +53,8 @@
           "urgency": {
             "remaining": "healthy",
             "pace": "healthy"
-          }
+          },
+          "display_level": "healthy"
         },
         {
           "label": "Weekly",
@@ -83,7 +84,8 @@
           "urgency": {
             "remaining": "healthy",
             "pace": "warning"
-          }
+          },
+          "display_level": "warning"
         },
         {
           "label": "Monthly",
@@ -98,7 +100,8 @@
           "urgency": {
             "remaining": "healthy",
             "pace": "healthy"
-          }
+          },
+          "display_level": "healthy"
         }
       ],
       "balances": [],
@@ -109,6 +112,9 @@
       "fetched_at": "2026-09-28T07:59:30Z",
       "pace_window_index": 1,
       "headline_window_index": 1,
+      "display_name": "Anthropic",
+      "status_message": "Anthropic account limits loaded.",
+      "display_level": "warning",
       "session_window_index": 0,
       "weekly_window_index": 1,
       "urgency": {
