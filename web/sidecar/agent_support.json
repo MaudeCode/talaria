@@ -2,29 +2,22 @@
   "schemaVersion": 1,
   "nativeContracts": {
     "served-local-policy-v1": [
-      "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
       "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab",
-      "b200f5bc60e31588ba2cb60e288029c4a54ba5fa"
+      "b200f5bc60e31588ba2cb60e288029c4a54ba5fa",
+      "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19"
     ],
     "captured-command-v1": [
-      "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
       "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab",
-      "b200f5bc60e31588ba2cb60e288029c4a54ba5fa"
+      "b200f5bc60e31588ba2cb60e288029c4a54ba5fa",
+      "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19"
     ],
     "message-reactions-v1": [
-      "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
       "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab",
-      "b200f5bc60e31588ba2cb60e288029c4a54ba5fa"
+      "b200f5bc60e31588ba2cb60e288029c4a54ba5fa",
+      "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19"
     ]
   },
   "releases": [
-    {
-      "releaseTag": "v0.22.5",
-      "version": "0.22.5",
-      "sourceRevision": "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
-      "image": "docker.io/nousresearch/hermes-agent@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d",
-      "validatedBy": "TAL-1511"
-    },
     {
       "releaseTag": "v0.22.6",
       "version": "0.22.6",
@@ -38,6 +31,13 @@
       "sourceRevision": "b200f5bc60e31588ba2cb60e288029c4a54ba5fa",
       "image": "docker.io/nousresearch/hermes-agent@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c",
       "validatedBy": "TAL-1843"
+    },
+    {
+      "releaseTag": "v0.23.0",
+      "version": "0.23.0",
+      "sourceRevision": "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19",
+      "image": "docker.io/nousresearch/hermes-agent@sha256:adb7890916de63245523492be8f68f9d2095fecbec4e2a6dab7960381f0fc002",
+      "validatedBy": "TAL-1916"
     }
   ]
 }
