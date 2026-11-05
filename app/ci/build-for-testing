@@ -11,7 +11,8 @@ destination=${1:?usage: ci/build-for-testing DESTINATION}
 cd "$(dirname "$0")/.."
 project=(-project Talaria.xcodeproj -scheme Talaria -derivedDataPath DerivedData -disableAutomaticPackageResolution -skipPackageUpdates)
 start_seconds=${SECONDS}
-xcodebuild -resolvePackageDependencies "${project[@]}"
+# Restored checkouts are what Package.resolved pins, and the build resolves them itself in seconds (TAL-1891).
+[[ -d DerivedData/SourcePackages/checkouts ]] || xcodebuild -resolvePackageDependencies "${project[@]}"
 resolve_seconds=$((SECONDS - start_seconds))
 log=$(mktemp)
 xcodebuild build-for-testing "${project[@]}" \
