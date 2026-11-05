@@ -1794,7 +1794,7 @@ export class ProviderCatalog {
     if (currentSource !== source) { poolUnknown = true; sources = [] }
     const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
     const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
-    return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), sources: sources.map(withQuotaDisplay) }
+    return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: sources.map(withQuotaDisplay) }
   }
 
   private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()

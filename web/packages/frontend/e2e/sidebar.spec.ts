@@ -453,6 +453,26 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     await expect(source('Z.ai')).not.toBeChecked()
     await expect(source('OpenRouter')).toBeChecked()
 
+    // A write that succeeded survives a later refusal, even with the reread failing.
+    await page.unroute('**/api/settings')
+    let settle!: () => void
+    const held = new Promise<void>((resolve) => { settle = resolve })
+    let posts = 0
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      await held
+      return ++posts === 1 ? route.fallback() : route.fulfill({ status: 400, json: { error: 'Refused' } })
+    })
+    await source('Claude').click()
+    await expect(source('Claude')).toBeChecked()
+    await source('OpenRouter').click()
+    await expect(source('OpenRouter')).not.toBeChecked()
+    const refusal = page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.status() === 400)
+    settle()
+    await refusal
+    await expect(source('OpenRouter')).toBeChecked()
+    await expect(source('Claude')).toBeChecked()
+
     // Settings has no destinations column, so the rows show on leaving it.
     await sidebar(page).getByRole('button', { name: 'Back', exact: true }).click()
     await expect(quotaRow(page, 'qsrc_credits')).toBeVisible()

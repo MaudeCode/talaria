@@ -123,6 +123,7 @@
       }
     }
   ],
+  "retained_display_level": null,
   "sidebar_source_ids": [],
   "sidebar_can_pin": true
 }

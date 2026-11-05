@@ -77698,6 +77698,24 @@
                       },
                       "description": "Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row."
                     },
+                    "retained_display_level": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "healthy",
+                            "warning",
+                            "critical",
+                            "stale",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1870: the level of a cached row this read does not carry, shown with `availability.unavailable_reason`; null when `availability.authoritative`."
+                    },
                     "sidebar_source_ids": {
                       "type": "array",
                       "items": {

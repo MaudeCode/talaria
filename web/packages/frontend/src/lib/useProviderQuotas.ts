@@ -3,6 +3,7 @@ import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
 import { showErrorToast } from '../features/toast/errorToast'
+import { getStreamContext } from '../stream/connection'
 import { reconcileProviderQuotas } from './providerQuotas'
 
 type Quotas = Awaited<ReturnType<typeof api.fetchProviderQuotas>>
@@ -10,11 +11,19 @@ const SIDEBAR_PINS = 'sidebar-quota-pins'
 
 /** TAL-1870: pin the sidebar's quota sources; the shared owner shows the choice at once and settles on the reread (`useSetDefaultModel`'s sibling). */
 export function useSetSidebarQuotaPins() {
+  const qc = useQueryClient()
   return useResourceMutation({
     resource: () => SIDEBAR_PINS,
     queryKey: [], readKeys: () => [keys.settings, keys.providerQuotas],
     effect: (ids: string[]) => ({ value: ids }),
-    mutationFn: (ids) => api.saveSettings({ sidebar_quota_sources: ids }),
+    mutationFn: async (ids) => {
+      const context = getStreamContext()
+      const saved = await api.saveSettings({ sidebar_quota_sources: ids })
+      // The owner drops a replaced write's response; keep what the server confirmed so a later refusal reveals it without a read.
+      const pins = saved.sidebar_quota_sources
+      if (pins && context === getStreamContext()) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids: pins, sidebar_can_pin: pins.length < 2 })
+      return saved
+    },
     onError: showErrorToast,
   })
 }

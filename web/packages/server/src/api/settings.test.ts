@@ -1732,6 +1732,7 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
 
     // Only the opaque source generation varies with the disposable profile's file metadata.
     expect(quotas.availability).toMatchObject({ status: 'available', authoritative: true, unavailable_reason: null })
+    expect(quotas.retained_display_level).toBeNull()
     expect((quotas.availability as Json).generation).toMatch(/^[0-9a-f]{64}$/)
     const fixture = { ...quotas, availability: { ...(quotas.availability as Json), generation: 'synthetic-generation' } }
     if (process.env.RECORD_TAL409) writeFileSync(FIXTURE, `${JSON.stringify(fixture, null, 2)}\n`)
