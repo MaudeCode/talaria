@@ -879,6 +879,12 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
   'v0.23 qualified and affixed keys': [
     ...['signing_key', 'encryption_key', 'encryptKey', 'master_key', 'hmac_key', 'symmetric_key', 'client-key-data', 'AccountKey', 'SharedAccessKey', 'dbpassword', 'rootpasswd', 'mySigningKey', 'my_api_key_value', 'secret_value', 'MY_API_KEY_B64'].map((key): [string, string] => [`{"${key}":"s3cretpw"}`, `{"${key}":"***"}`]),
   ],
+  'v0.23 connection strings preserve shell value boundaries': [
+    [String.raw`host=db; password="two\" secret words"; database=x`, 'host=db; password=***; database=x'],
+    [String.raw`host=db; password='two words'\ and\ more; database=x`, 'host=db; password=***; database=x'],
+    [String.raw`host=db; password=two\;secret; database=x`, 'host=db; password=***; database=x'],
+    [String.raw`host=db; PWD="two\" secret words"; database=x`, 'host=db; PWD=***; database=x'],
+  ],
   'v0.23 connection strings': [
     ['Driver=ODBC;PWD={s3;cr}}et};Server=db', 'Driver=ODBC;PWD={***};Server=db'],
     ['Host=db;Password="two;words";Database=x', 'Host=db;Password="***";Database=x'],
@@ -892,6 +898,7 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['https://x.test/?SharedAccessSignature=sv=1&sig=s3cretpw&foo=bar', 'https://x.test/?SharedAccessSignature=***&foo=bar'],
     ['Server=db;PWD=\"two\"\"words\";Database=x', 'Server=db;PWD=\"***\";Database=x'],
     ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
+    ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
   ],
   'v0.23 private key formats': [
     ['-----BEGIN PGP PRIVATE KEY BLOCK-----\nsynthetic\n-----END PGP PRIVATE KEY BLOCK-----', '[REDACTED PRIVATE KEY]'],

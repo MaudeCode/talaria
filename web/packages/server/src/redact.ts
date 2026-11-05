@@ -315,6 +315,7 @@ const PPK_PRIVATE_RE = new RegExp(String.raw`(?<![\w-])(Private-Lines:[ \t]*[0-9
 const BASIC_PAIR_NAME_RE = /auth|basic|cred|login|proxy|userpass|userinfo/i
 const BASIC_PAIR_RE = /(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]*=)(["']?)([A-Za-z0-9._~-]{2,}):([^\s'"/:@]+)\2(?=$|[\s;,&|)\]}"'`])/g
 const CONNSTR_KEY_RE = /(?<![^\s;"'])(?:password|pwd)[ \t]*=[ \t]*/gi
+const CONNSTR_KEY_TEST_RE = new RegExp(CONNSTR_KEY_RE.source, 'i')
 const CONNSTR_COMPANION_RE = /(?<![^\s;"'])(?:host|server|data\s+source|address|addr|network\s+address|user\s*id|uid|user(?:name)?|database|dbname|hostaddr|initial\s+catalog|port)[ \t]*=/i
 const CONNSTR_SEMICOLON_RE = /;[ \t]*(?:host|server|database|dbname|user(?:name)?|uid|pwd|password|driver|encrypt|port|sslmode|data\s+source)[ \t]*=/i
 const SAS_RE = /(?<![^;,?&'"\s])(SharedAccessSignature=)([^;\s'"),`|]+)/gi
@@ -818,6 +819,7 @@ function redactConnectionStrings(text: string): string {
   return text.split('\n').map((line) => {
     if (!CONNSTR_COMPANION_RE.test(line)) return line
     const semicolon = CONNSTR_SEMICOLON_RE.test(line)
+    const closeOf = enclosingClose(line)
     let out = ''
     let last = 0
     CONNSTR_KEY_RE.lastIndex = 0
@@ -843,8 +845,11 @@ function redactConnectionStrings(text: string): string {
       }
       end = Math.min(end, line.length)
       if (start === end) continue
+      // A semicolon line can also be shell code. Never shorten a shell word before its scanner can mask it.
+      const shellEnd = shellWordEnd(line, start, '', closeOf)
       const closed = close && line[end - 1] === close
-      const replacement = close ? `${open}***${closed ? close : ''}` : '***'
+      const replacement = shellEnd > end ? maskShellWord(line.slice(start, shellEnd)) : close ? `${open}***${closed ? close : ''}` : '***'
+      end = Math.max(end, shellEnd)
       out += line.slice(last, start) + replacement
       last = end
       CONNSTR_KEY_RE.lastIndex = end
@@ -1936,7 +1941,7 @@ function mightContainKeyword(text: string): boolean {
   if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
-  if (text.includes('=') && (ENV_SUFFIX_TEST_RE.test(text) || BASIC_PAIR_NAME_RE.test(text))) return true
+  if (text.includes('=') && (ENV_SUFFIX_TEST_RE.test(text) || BASIC_PAIR_NAME_RE.test(text) || CONNSTR_KEY_TEST_RE.test(text))) return true
   return false
 }
 
