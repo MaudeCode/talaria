@@ -15,7 +15,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
-import { ContextMenu, MENU_ROW, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { ContextMenu, MENU_CHOICE, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -400,8 +400,6 @@ function useKanbanCardActions(board: string | undefined, task: KanbanTask, readO
   }
 }
 
-const MOVE_ROW = cn(MENU_ROW, 'data-[checked]:text-accent-text')
-
 /** A board card: click opens its dialog; right-click or long-press opens the same actions as a menu (TAL-1157). */
 function KanbanCard({ board, task, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; task: KanbanTask; readOnly: boolean; stale: boolean; selected: boolean; onToggle: () => void; onOpen: () => void; onChanged: () => void }) {
   const id = String(task.id)
@@ -435,7 +433,7 @@ function KanbanCard({ board, task, readOnly, stale, selected, onToggle, onOpen, 
                 <MenuRadioGroup value={status} disabled={provisional} onValueChange={(next: string) => { if (next !== status) card.setStatus(next) }}>
                   <MenuGroupLabel>{m.kanban_move_to()}</MenuGroupLabel>
                   {[status, ...actions.move_to.filter((s) => s !== status)].map((s) => (
-                    <MenuRadioItem key={s} value={s} closeOnClick className={MOVE_ROW}>
+                    <MenuRadioItem key={s} value={s} closeOnClick className={MENU_CHOICE}>
                       <span className="flex-1">{statusLabel(s)}</span>
                       {s === status && <Check size={14} aria-hidden="true" />}
                     </MenuRadioItem>

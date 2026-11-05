@@ -5,14 +5,15 @@ import { useLocale } from '../../i18n/useLocale'
 import { formatPercent } from '../../i18n/units'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { SIDEBAR_ROW } from '../../shell/nav'
-import { closeMobileSidebar } from '../../shell/useShellState'
+import { closeMobileSidebar, useIsSidebarRail } from '../../shell/useShellState'
 import { cn } from '../../ui/cn'
 import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaStatusText, quotaWindowFigures, type QuotaSource } from './QuotaMeter'
 
-/** TAL-1870: the expanded sidebar's Quotas group, the App's `AppSidebar` rows: the server's `sidebar_source_ids`. The setting only decides whether to read at all. */
+/** TAL-1870: the expanded sidebar's Quotas group, the App's `AppSidebar` rows: the server's `sidebar_source_ids`. The setting and the rail only decide whether to read: this layer stays mounted, hidden, behind the collapsed rail. */
 export function SidebarQuotas() {
   const pinned = (useSetting('sidebar_quota_sources') ?? []).length > 0
-  const { quotas } = useProviderQuotas({ enabled: pinned })
+  const rail = useIsSidebarRail()
+  const { quotas } = useProviderQuotas({ enabled: pinned && !rail })
   const locale = useLocale()
   const sources = pinned ? (quotas.data?.sidebar_source_ids ?? []).flatMap((id) => quotas.data?.sources.find((s) => s.source_id === id) ?? []) : []
   if (sources.length === 0) return null

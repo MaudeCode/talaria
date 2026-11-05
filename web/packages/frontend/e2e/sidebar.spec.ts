@@ -11,8 +11,37 @@ const left = (page: Page, selector: string) => page.locator(selector).evaluate((
 const width = (page: Page, selector: string) => page.locator(selector).evaluate((el) => el.getBoundingClientRect().width)
 const stored = (page: Page, key: string) => page.evaluate((k) => localStorage.getItem(k), key)
 /** The destinations and footer controls in DOM order, which is also the tab order. */
-const controls = (page: Page) => page.locator('nav[aria-label="Primary navigation"]').locator('a[aria-label], button[aria-label]').evaluateAll((nodes) => nodes.filter((node) => !node.closest('#panelChat, #panelSettings')).map((node) => node.getAttribute('aria-label')))
+const controls = (page: Page) => page.locator('nav[aria-label="Primary navigation"]').locator('a[aria-label]:visible, button[aria-label]:visible').evaluateAll((nodes) => nodes.filter((node) => !node.closest('#panelChat, #panelSettings')).map((node) => node.getAttribute('aria-label')))
 const desktopOnly = (name: string) => { test.skip(name !== 'desktop', 'the tiled column is desktop chrome') }
+/** Clicks the edge tab and measures every animation frame until the motion has settled. */
+const framesOfToggle = (page: Page) => page.evaluate(async () => {
+  const aside = document.querySelector('aside.sidebar') as HTMLElement
+  const frames: { aside: number; row: number | null; content: number | null; opacity: number | null; handle: string | null }[] = []
+  document.getElementById('btnSidebarEdgeToggle')!.click()
+  const start = performance.now()
+  while (performance.now() - start < 700) {
+    await new Promise(requestAnimationFrame)
+    const content = document.querySelector('.sidebar-content')
+    const handle = aside.querySelector('.resize-handle')
+    frames.push({
+      aside: aside.getBoundingClientRect().width,
+      row: aside.querySelector('#btnNewChat')?.getBoundingClientRect().width ?? null,
+      content: content?.getBoundingClientRect().width ?? null,
+      opacity: content ? Number(getComputedStyle(content).opacity) : null,
+      handle: handle ? getComputedStyle(handle).visibility : null,
+    })
+  }
+  return frames
+})
+/** Records every layout or fade transition the column starts, from the very first paint. */
+const recordTransitions = (page: Page) => page.addInitScript(() => {
+  const runs: string[] = []
+  Object.assign(window, { sidebarTransitions: runs })
+  document.addEventListener('transitionrun', (event) => {
+    if ((event.target as Element).closest('aside.sidebar') && !event.pseudoElement && ['width', 'min-width', 'opacity', 'visibility', 'translate', 'clip-path'].includes(event.propertyName)) runs.push(event.propertyName)
+  }, true)
+})
+const transitions = (page: Page) => page.evaluate(() => (window as unknown as { sidebarTransitions: string[] }).sidebarTransitions)
 
 async function collapsedOn(page: Page, path: string) {
   await page.goto(path)
@@ -56,7 +85,7 @@ test('collapsed, the column is the labelled icon rail, and first paint draws the
   expect(await controls(page)).toEqual(['New conversation', 'Search', 'Chat', 'Spaces', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Skills', 'Memory', 'Profiles', 'Insights', 'Logs', 'Notifications', 'Settings'])
   for (const name of ['Chat', 'Spaces', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Skills', 'Memory', 'Profiles', 'Insights', 'Logs', 'Settings']) await expect(row(page, name), name).toBeInViewport({ ratio: 1 })
   for (const name of ['Search', 'Notifications']) await expect(button(page, name), name).toBeInViewport({ ratio: 1 })
-  await expect(sidebar(page).locator('[aria-current="page"]')).toHaveAttribute('aria-label', 'Skills')
+  await expect(sidebar(page).locator('[aria-current="page"]:visible')).toHaveAttribute('aria-label', 'Skills')
   await page.locator('aside.sidebar').screenshot({ path: info.outputPath('rail.png') })
 
   // A short window scrolls the destinations and keeps the footer on screen.
@@ -94,13 +123,6 @@ test('collapsed Search expands and focuses the filter; the edge tab and the shor
   await page.keyboard.press('ControlOrMeta+b')
   await expect(sidebar(page).locator('#sessionList')).toBeVisible()
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
-
-  // Settings has no chat list, so its Search goes to the chat that has one.
-  await page.goto('/settings')
-  await settle(page)
-  await button(page, 'Search').click()
-  await expect(page).not.toHaveURL(/settings/)
-  await expect(page.locator('#sessionSearch')).toBeFocused()
 })
 
 test('the chat list keeps its filter, groups and scroll across pages and is out of reach while collapsed', async ({ page }, info) => {
@@ -358,7 +380,8 @@ test('a credit source shows its amount without a meter, and the rail has no quot
     await expect(quotaRow(page, 'qsrc_credits').getByRole('meter')).toHaveCount(0)
     await page.locator('#btnSidebarEdgeToggle').click()
     await expect(row(page, 'Chat')).toBeVisible()
-    await expect(quotaGroup(page)).toHaveCount(0)
+    await expect(page.locator('.sidebar-rail [data-section="sidebar-quotas"]')).toHaveCount(0)
+    await expect(quotaGroup(page)).toBeHidden()
   })
 })
 
@@ -383,16 +406,15 @@ test('Preferences pins from the server projection, shows a choice at once and ro
   const source = (name: string) => picker.getByRole('switch', { name })
   const toggle = (name: string) => Promise.all([page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'POST'), source(name).click()])
   await expect(picker.getByRole('switch')).toHaveCount(4)
-  await expect(quotaGroup(page)).toHaveCount(0)
   try {
-    // The row shows while the write is still held, before the server has answered.
+    // The choice shows while the write is still held, before the server has answered.
     let release!: () => void
     await page.route('**/api/settings', async (route) => {
       if (route.request().method() === 'POST') await new Promise<void>((resolve) => { release = resolve })
       await route.fallback()
     })
     await source('Claude').click()
-    await expect(quotaRow(page, 'qsrc_weekly')).toBeVisible()
+    await expect(source('Claude')).toBeChecked()
     projection = { sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true }
     release()
     await expect.poll(async () => (await (await page.request.get('/api/settings')).json() as { sidebar_quota_sources: string[] }).sidebar_quota_sources).toEqual(['qsrc_weekly'])
@@ -406,7 +428,7 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     await expect(source('Claude')).toBeEnabled()
     projection = { sidebar_source_ids: ['qsrc_credits'], sidebar_can_pin: true }
     await toggle('Claude')
-    await expect(quotaRow(page, 'qsrc_weekly')).toHaveCount(0)
+    await expect(source('Claude')).not.toBeChecked()
     await expect(source('Z.ai')).toBeEnabled()
 
     // A definite refusal restores the confirmed projection without a read, even when the read also fails.
@@ -415,8 +437,11 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     await toggle('Z.ai')
     await expect(page.getByText('Refused')).toBeVisible()
     await expect(source('Z.ai')).not.toBeChecked()
-    await expect(quotaRow(page, 'qsrc_down')).toHaveCount(0)
+
+    // Settings has no destinations column, so the rows show on leaving it.
+    await sidebar(page).getByRole('button', { name: 'Back', exact: true }).click()
     await expect(quotaRow(page, 'qsrc_credits')).toBeVisible()
+    await expect(quotaRow(page, 'qsrc_down')).toHaveCount(0)
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
     await pin(page, [])
@@ -434,4 +459,199 @@ test('the phone drawer shows pinned quotas and a row closes it into Insights', a
     await expect(page).toHaveURL(/\/insights\?tab=quotas$/)
     await expect(page.locator('aside.sidebar.mobile-open')).toHaveCount(0)
   })
+})
+
+/** TAL-1868: Settings shows Back and its section list in the one column, never the destinations or a second column. */
+test('Settings swaps the column for Back and its sections, whatever the stored choice, and leaving restores it', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await collapsedOn(page, '/skills')
+  await sidebar(page).evaluate((el) => { el.dataset.shellMarker = 'kept' })
+  await row(page, 'Settings').click()
+  await expect(page).toHaveURL(/\/settings\/appearance$/)
+  await expect(sidebar(page)).toHaveAttribute('data-shell-marker', 'kept')
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
+  expect(await left(page, '#main')).toBe(300)
+  expect(await controls(page)).toEqual(['Back'])
+  await expect(page.locator('nav[aria-label="Primary navigation"]')).toHaveCount(1)
+  await expect(sidebar(page).locator('#settingsMenu [data-settings-section="system"]')).toBeVisible()
+  await expect(sidebar(page).locator('[data-panel], .sidebar-brand, .sidebar-footer, #sessionList')).toHaveCount(0)
+  await expect(page.locator('#btnSidebarEdgeToggle')).toHaveCount(0)
+  await expect(page.locator('main#main')).toHaveClass(/showing-settings/)
+  await expect(page.locator('html')).not.toHaveClass(/hub-active/)
+  await page.screenshot({ path: info.outputPath('settings-desktop.png') })
+
+  await page.keyboard.press('ControlOrMeta+b')
+  expect(await width(page, 'aside.sidebar')).toBe(300)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
+
+  // Moving between sections does not change where Back goes.
+  await page.locator('[data-settings-section="system"]').click()
+  await expect(page).toHaveURL(/\/settings\/system$/)
+  await button(page, 'Back').click()
+  await expect(page).toHaveURL(/\/skills$/)
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
+  await expect(page.locator('#btnSidebarEdgeToggle')).toHaveCount(1)
+})
+
+test('Back keeps the query of the page it returns to, and goes to the chat after a direct load of Settings', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.goto('/insights?tab=usage')
+  await settle(page)
+  await row(page, 'Settings').click()
+  await expect(page).toHaveURL(/\/settings\/appearance$/)
+  await expect(button(page, 'Back')).toBeVisible()
+  await button(page, 'Back').click()
+  await expect(page).toHaveURL(/\/insights\?tab=usage$/)
+
+  await page.goto('/settings/help')
+  await settle(page)
+  await button(page, 'Back').click()
+  await expect(page).not.toHaveURL(/settings/)
+  await expect(sidebar(page).locator('#sessionList')).toBeVisible()
+  await expect(page.locator('main#main')).not.toHaveClass(/showing-/)
+})
+
+test('at tablet width Settings tiles its section list, and an open overlay does not follow it there', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.setViewportSize({ width: 800, height: 900 })
+  await page.goto('/skills')
+  await settle(page)
+  await page.locator('#btnHamburger').click()
+  await expect(sidebar(page).locator('#sessionList')).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+,')
+  await expect(page).toHaveURL(/\/settings\/appearance$/)
+  await expect(page.locator('.sidebar-scrim')).toHaveCount(0)
+  await expect(page.locator('#btnHamburger')).toHaveCount(0)
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
+  expect(await left(page, '#main')).toBe(300)
+  await page.keyboard.press('ControlOrMeta+b')
+  await expect(page.locator('.sidebar-scrim')).toHaveCount(0)
+  expect(await width(page, 'aside.sidebar')).toBe(300)
+  await page.screenshot({ path: info.outputPath('settings-tablet.png') })
+  await button(page, 'Back').click()
+  await expect(page).toHaveURL(/\/skills$/)
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
+  await expect(page.locator('.sidebar-scrim')).toHaveCount(0)
+})
+
+test('first paint on Settings draws the expanded column whatever the stored choice', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.addInitScript(() => { localStorage.setItem('hermes-webui-sidebar-collapsed', '1') })
+  // Only the pre-paint script runs, so the frame is what the page shows before the module entry mounts.
+  await page.route(/\.js(\?|$)/, (route) => (route.request().url().includes('prepaint') ? route.continue() : route.fulfill({ contentType: 'text/javascript', body: '' })))
+  const frame = () => page.locator('#app').evaluate((el) => (el.childElementCount === 0 ? getComputedStyle(el, '::before').width : 'mounted'))
+  for (const [viewport, path, expected] of [[1440, '/settings/appearance', '300px'], [800, '/settings/appearance', '300px'], [1440, '/skills', '64px'], [800, '/skills', '64px']] as const) {
+    await page.setViewportSize({ width: viewport, height: 900 })
+    await page.goto(path)
+    expect(await frame(), `${path} at ${String(viewport)}`).toBe(expected)
+  }
+})
+
+test('the phone drawer on Settings has Back and the sections, and Back closes it on the page the user came from', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'the drawer is phone chrome')
+  await page.goto('/skills')
+  await settle(page)
+  const drawer = page.locator('aside.sidebar.mobile-open')
+  await page.locator('#btnHamburger').click()
+  await row(page, 'Settings').click()
+  await expect(page).toHaveURL(/\/settings\/appearance$/)
+  await expect(drawer).toHaveCount(0)
+  await page.locator('#btnHamburger').click()
+  await expect(drawer).toBeInViewport({ ratio: 1 })
+  expect(await width(page, 'aside.sidebar')).toBe(390)
+  expect(await controls(page)).toEqual(['Back'])
+  await expect(sidebar(page).locator('#settingsMenu [data-settings-section="system"]')).toBeVisible()
+  await expect(sidebar(page).locator('#sessionList, .sidebar-footer')).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('settings-drawer.png') })
+  await page.locator('[data-settings-section="system"]').click()
+  await expect(page).toHaveURL(/\/settings\/system$/)
+  await expect(drawer).toHaveCount(0)
+  await page.locator('#btnHamburger').click()
+  await button(page, 'Back').click()
+  await expect(page).toHaveURL(/\/skills$/)
+  await expect(drawer).toHaveCount(0)
+  await expect(page.locator('.tabbar [data-tab]')).toHaveText(['Chat', 'Tasks', 'Kanban', 'Agent', 'More'])
+})
+
+test('expanding uncovers the rows at their full width, and collapsing fades them before the width moves', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.evaluate(() => { localStorage.setItem('hermes-webui-sidebar-width', '360'); localStorage.setItem('hermes-webui-sidebar-collapsed', '1') })
+  await page.reload()
+  await settle(page)
+
+  const expanding = await framesOfToggle(page)
+  expect(expanding.some((frame) => frame.aside > 64 && frame.aside < 360), 'the width animates').toBe(true)
+  const rowWidth = expanding.at(-1)?.row
+  expect(rowWidth).toBeGreaterThan(300)
+  expect(expanding.filter((frame) => frame.row !== rowWidth)).toEqual([])
+  expect(expanding.filter((frame) => (frame.content ?? 0) < 360)).toEqual([])
+  expect(expanding.find((frame) => (frame.opacity ?? 0) > 0)?.aside, 'the width opens before the rows arrive').toBeGreaterThan(64)
+  expect(expanding.at(-1)?.opacity).toBe(1)
+  expect(expanding.filter((frame) => frame.aside < 360 && frame.handle === 'visible'), 'the resize handle takes no hover as it sweeps past a pointer on the edge tab').toEqual([])
+
+  const collapsing = await framesOfToggle(page)
+  const moved = collapsing.find((frame) => frame.aside < 360)
+  expect(moved?.opacity, 'the rows have faded when the width starts closing').toBe(0)
+  expect(collapsing.filter((frame) => frame.row !== rowWidth)).toEqual([])
+  expect(collapsing.at(-1)?.aside).toBe(64)
+})
+
+test('once the motion settles, only the layer showing takes focus', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await collapsedOn(page, '/')
+  const expanded = page.locator('#btnNewChat')
+  const rail = sidebar(page).locator('.sidebar-rail a').first()
+  const takesFocus = (control: typeof rail) => control.evaluate((el) => { (el as HTMLElement).focus(); return document.activeElement === el })
+  await expect(expanded).toBeHidden()
+  expect(await takesFocus(expanded)).toBe(false)
+  expect(await takesFocus(rail)).toBe(true)
+
+  await page.locator('#btnSidebarEdgeToggle').click()
+  await expect(rail).toBeHidden()
+  expect(await takesFocus(rail)).toBe(false)
+  expect(await takesFocus(expanded)).toBe(true)
+})
+
+test('reduced motion toggles at once with no fade', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.goto('/')
+  await settle(page)
+  const instant = (frames: Awaited<ReturnType<typeof framesOfToggle>>) => frames.filter((frame) => (frame.aside !== 300 && frame.aside !== 64) || frame.opacity !== 1)
+  const collapsing = await framesOfToggle(page)
+  expect(instant(collapsing)).toEqual([])
+  expect(collapsing.at(-1)?.aside).toBe(64)
+  const expanding = await framesOfToggle(page)
+  expect(instant(expanding)).toEqual([])
+  expect(expanding.at(-1)?.aside).toBe(300)
+})
+
+test('a stored collapse paints on load with no transition', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await recordTransitions(page)
+  await collapsedOn(page, '/')
+  expect(await width(page, 'aside.sidebar')).toBe(64)
+  expect(await transitions(page)).toEqual([])
+})
+
+test('dragging the edge resizes the column and its content with the pointer, with no transition lag', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.goto('/')
+  await settle(page)
+  const box = await page.locator('#sidebarResize').boundingBox()
+  if (!box) throw new Error('no resize handle')
+  await page.mouse.move(box.x + 3, box.y + 100)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 103, box.y + 100)
+  expect(await width(page, 'aside.sidebar')).toBe(400)
+  expect(await width(page, '.sidebar-content')).toBe(400)
+  await page.mouse.up()
+  expect(await stored(page, 'hermes-webui-sidebar-width')).toBe('400')
 })

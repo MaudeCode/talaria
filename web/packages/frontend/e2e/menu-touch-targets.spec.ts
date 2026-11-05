@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, openChatFilters, openProjectActions, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -18,10 +18,10 @@ const ROW = {
 }
 
 const coarse = (page: Page) => page.evaluate(() => matchMedia('(pointer: coarse)').matches)
-const heights = (menu: Locator) => menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => ({ label: item.textContent ?? '', height: Math.round(item.getBoundingClientRect().height * 100) / 100 })))
+const heights = (rows: Locator) => rows.evaluateAll((items) => items.map((item) => ({ label: item.textContent ?? '', height: Math.round(item.getBoundingClientRect().height * 100) / 100 })))
 
-async function expectRowHeights(page: Page, menu: Locator): Promise<void> {
-  const rows = await heights(menu)
+async function expectRowHeights(page: Page, menu: Locator, items = menu.getByRole('menuitem')): Promise<void> {
+  const rows = await heights(items)
   expect(rows.length).toBeGreaterThan(1)
   for (const row of rows) {
     if (await coarse(page)) expect(row.height, `${row.label} is a touch target`).toBeGreaterThanOrEqual(TOUCH)
@@ -59,7 +59,7 @@ async function openSessionMenu(page: Page): Promise<{ trigger: Locator; menu: Lo
   return { trigger, menu }
 }
 
-test('project context menu rows are touch-sized under a coarse pointer and compact under a mouse', async ({ page }, testInfo) => {
+test('filter and project menu rows are touch-sized under a coarse pointer and compact under a mouse', async ({ page }, testInfo) => {
   const name = `Touch ${testInfo.project.name}`
   const created = await page.request.post('/api/projects/create', { data: { name } })
   const id = ((await created.json()) as { project: { project_id: string } }).project.project_id
@@ -69,13 +69,21 @@ test('project context menu rows are touch-sized under a coarse pointer and compa
     expect(await coarse(page)).toBe(testInfo.project.name === 'mobile')
     const hamburger = page.locator('#btnHamburger')
     if (await hamburger.isVisible()) await hamburger.click()
-    await page.locator('.project-bar').getByRole('button', { name, exact: true }).click({ button: 'right' })
-    const menu = page.getByRole('menu', { name: 'Project actions' })
-    await expect(menu).toBeVisible()
+    const filters = await openChatFilters(page)
+    const row = filters.getByRole('menuitemradio', { name, exact: true })
+    // Every row, including the choices and the checkbox.
+    await expectRowHeights(page, filters, filters.locator('[role^="menuitem"]'))
+    // A heading low in the drawer still shows the last row without scrolling the menu.
+    await expect(filters.getByRole('menuitem', { name: 'Import session from JSON' })).toBeInViewport({ ratio: 1 })
+    await row.click()
+    const menu = await openProjectActions(page)
     // Rename and the destructive Delete share the ordinary action row.
     await expectRowHeights(page, menu)
+    // Escape steps back through the submenu, then closes the menu.
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('menu')).toHaveCount(0)
   } finally {
     await page.request.post('/api/projects/delete', { data: { project_id: id } })
   }
@@ -136,5 +144,5 @@ test('localized and wrapping session menu labels fit the menu and keep their row
 /** Translated labels may wrap to two lines, so they only have a floor. */
 async function expectRowHeightsAtLeast(page: Page, menu: Locator): Promise<void> {
   const floor = (await coarse(page)) ? TOUCH : COMPACT_FLOOR
-  for (const row of await heights(menu)) expect(row.height, `${row.label} keeps its row size`).toBeGreaterThanOrEqual(floor)
+  for (const row of await heights(menu.getByRole('menuitem'))) expect(row.height, `${row.label} keeps its row size`).toBeGreaterThanOrEqual(floor)
 }

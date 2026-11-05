@@ -60,17 +60,26 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
   test.skip(testInfo.project.name === 'mobile', 'The sidebar is a drawer on phone widths; Settings → Help remains the entry point.')
   const railButton = page.locator('aside.sidebar').getByRole('button', { name: 'Send feedback' })
   const notifications = page.locator('aside.sidebar').getByRole('button', { name: 'Notifications', exact: true })
+  const back = page.locator('aside.sidebar').getByRole('button', { name: 'Back', exact: true })
+  const toggle = page.getByRole('switch', { name: 'Sidebar feedback button' })
+  const openPreferences = async () => {
+    await page.locator('aside.sidebar').getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.locator('[data-settings-section="preferences"]').click()
+  }
   try {
-    await page.goto('/settings/preferences')
+    await page.goto('/skills')
     await settle(page)
     await page.locator('#btnSidebarEdgeToggle').click()
     await expect(notifications).toBeVisible()
     await expect(railButton).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-off.png') })
-    const toggle = page.getByRole('switch', { name: 'Sidebar feedback button' })
+    await openPreferences()
     await expect(toggle).not.toBeChecked()
+    const saved = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/settings'))
     await toggle.click()
+    await back.click()
     await expect(railButton).toBeVisible()
+    expect((await saved).ok()).toBe(true)
     const [feedbackBox, notificationsBox] = [(await railButton.boundingBox())!, (await notifications.boundingBox())!]
     expect(feedbackBox.y + feedbackBox.height).toBeLessThanOrEqual(notificationsBox.y + 1)
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-on.png') })
@@ -83,7 +92,9 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-dialog.png') })
     await page.keyboard.press('Escape')
 
+    await openPreferences()
     await toggle.click()
+    await back.click()
     await expect(railButton).toHaveCount(0)
   } finally {
     await page.request.post('/api/settings', { data: { show_sidebar_feedback: false } })

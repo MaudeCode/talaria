@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, openChatFilters, openProjectActions, settle, test } from './fixtures'
 
 /** A project saves chat defaults, and its New chat starts on them (TAL-1032). */
 
@@ -24,11 +24,8 @@ test('a project saves chat defaults and its new chat starts on them', async ({ p
   await settle(page)
   const hamburger = page.locator('#btnHamburger')
   if (await hamburger.isVisible()) await hamburger.click()
-  const chip = page.locator('.project-bar').getByRole('button', { name: `Bound ${suffix}`, exact: true })
-  const menuItem = async (name: string) => {
-    await chip.click({ button: 'right' })
-    await page.getByRole('menu', { name: 'Project actions' }).getByRole('menuitem', { name }).click()
-  }
+  await (await openChatFilters(page)).getByRole('menuitemradio', { name: `Bound ${suffix}`, exact: true }).click()
+  const menuItem = async (name: string) => { await (await openProjectActions(page)).getByRole('menuitem', { name }).click() }
 
   await menuItem('Chat defaults')
   const dialog = page.getByRole('dialog', { name: 'Chat defaults' })

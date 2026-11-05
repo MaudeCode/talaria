@@ -45,6 +45,22 @@ export const test = base.extend<{ errors: string[] }>({
 
 export { expect }
 
+/** Opens the Chats filter menu; on a phone the drawer must already be open. */
+export async function openChatFilters(page: Page) {
+  await page.getByRole('button', { name: /^Chat filters/ }).click()
+  const menu = page.getByRole('menu', { name: /^Chat filters/ })
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+/** Opens the selected project's actions through the filter menu (TAL-1869). */
+export async function openProjectActions(page: Page) {
+  await (await openChatFilters(page)).getByRole('menuitem', { name: 'Selected project' }).click()
+  const menu = page.getByRole('menu', { name: 'Selected project' })
+  await expect(menu).toBeVisible()
+  return menu
+}
+
 export async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle')
   // Wait for the router to render the shell (the titlebar is hidden in desktop browsers, so wait for the layout or a full-page route).

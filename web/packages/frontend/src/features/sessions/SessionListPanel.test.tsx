@@ -35,6 +35,15 @@ const delta = row('delta', 'Delta', { project_id: 'p1' })
 const other = row('other', 'Other zebra')
 const cli = row('cli', 'Cli zebra', { project_id: 'p1', is_cli_session: true, source_kind: 'cli' })
 const shown = () => [...document.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))
+const openFilters = async () => {
+  await userEvent.click(await screen.findByRole('button', { name: /^Chat filters/ }))
+  return screen.findByRole('menu', { name: /^Chat filters/ })
+}
+/** Picks one filter row; choosing it closes the menu. */
+const pick = async (name: string | RegExp) => {
+  await userEvent.click(await within(await openFilters()).findByRole('menuitemradio', { name }))
+  await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+}
 
 beforeEach(() => {
   vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli], webui_session_count: 3, cli_session_count: 1 } as never)
@@ -47,7 +56,7 @@ describe('SessionListPanel search (TAL-308)', () => {
     let answer: (value: unknown) => void = () => undefined
     vi.mocked(api.searchSessions).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
-    await userEvent.click(await screen.findByRole('button', { name: 'Proj' }))
+    await pick('Proj')
     await userEvent.type(screen.getByRole('searchbox'), 'zebra')
     await waitFor(() => { expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: 'p1', sidebar_source: 'webui', include_archived: false }, 5, expect.any(AbortSignal)) })
     // While the request is in flight, the local title filter answers.
@@ -60,7 +69,6 @@ describe('SessionListPanel search (TAL-308)', () => {
   it('shows a server match for words in another order (TAL-453)', async () => {
     vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
-    await screen.findByRole('button', { name: 'Proj' })
     await userEvent.type(screen.getByRole('searchbox'), 'zebra alpha')
     await waitFor(() => { expect(shown()).toEqual(['alpha']) })
   })
@@ -80,28 +88,27 @@ describe('nested subagent rows (TAL-1151)', () => {
     await screen.findByText('Plan the release')
     expect(shown()).toEqual(['sub-orphan', 'web-parent', 'sub-web'])
     expect(nested()).toEqual(['sub-web'])
-    expect(screen.getByRole('button', { name: 'WebUI sessions (3)' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'CLI sessions (2)' }))
+    await pick('CLI sessions (2)')
     expect(shown()).toEqual(['cli-host', 'sub-cli'])
     expect(nested()).toEqual(['sub-cli'])
-    await userEvent.click(screen.getByRole('button', { name: 'WebUI sessions (3)' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Unassigned' }))
+    await pick('WebUI sessions (3)')
+    await pick('Unassigned')
     expect(shown()).toEqual(['sub-orphan'])
-    await userEvent.click(screen.getByRole('button', { name: 'Proj' }))
+    await pick('Proj')
     expect(shown()).toEqual(['web-parent', 'sub-web'])
   })
 
-  it('shows the server\'s tab counts and takes an archived parent\'s nested rows off at once', async () => {
+  it('shows the server\'s source counts and takes an archived parent\'s nested rows off at once', async () => {
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
     vi.mocked(api.archiveSession).mockReturnValue(new Promise(() => undefined) as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Plan the release')
-    expect(screen.getByRole('button', { name: 'WebUI sessions (3)' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
     await waitFor(() => expect(api.archiveSession).toHaveBeenCalledWith('web-parent', true))
     expect(shown()).toEqual(['sub-orphan'])
-    expect(screen.getByRole('button', { name: 'WebUI sessions (1)' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'CLI sessions (2)' })).toBeInTheDocument()
+    const menu = await openFilters()
+    expect(within(menu).getByRole('menuitemradio', { name: 'WebUI sessions (1)' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitemradio', { name: 'CLI sessions (2)' })).toBeInTheDocument()
   })
 
   it('nests a search match only under a parent the server matched too', async () => {
@@ -188,16 +195,15 @@ describe('sidebar search work (TAL-1390)', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } })
     await waitFor(() => expect(shown()).toEqual(['other']))
     vi.mocked(api.searchSessions).mockReturnValue(new Promise(() => undefined))
-    await userEvent.click(screen.getByRole('button', { name: 'Proj' }))
+    await pick('Proj')
     expect(shown()).toEqual(['alpha'])
-    await userEvent.click(screen.getByRole('button', { name: /CLI/ }))
+    await pick(/CLI/)
     expect(shown()).toEqual(['cli'])
   })
 
   it('does not render unchanged visible rows while typing', async () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
-    await screen.findByText('Alpha zebra')
-    await screen.findByRole('button', { name: 'Proj' })
+    await screen.findAllByTitle('Proj')
     rowRender.mockClear()
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'a' } })
     expect(shown()).toEqual(['alpha', 'delta', 'other'])
@@ -367,8 +373,7 @@ describe('session row renders (TAL-1211)', () => {
     // The authenticated layout owns the feed; the panel only renders its shared query cache.
     renderHook(useSessionListStream, { wrapper })
     render(<SessionListPanel />, { wrapper })
-    await screen.findByText('Alpha zebra')
-    await screen.findByRole('button', { name: 'Proj' })
+    await screen.findAllByTitle('Proj')
     rowRender.mockClear()
     // A fresh wire response has fresh objects; Query's structural sharing preserves unchanged rows.
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, title: 'Alpha renamed' }, { ...delta }, { ...other }] } as never)
@@ -379,7 +384,7 @@ describe('session row renders (TAL-1211)', () => {
     rowRender.mockClear()
     vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Renamed project', color: '#50c878' }] } as never)
     await act(() => qc.refetchQueries({ queryKey: ['projects'] }))
-    await screen.findByRole('button', { name: 'Renamed project' })
+    await screen.findAllByTitle('Renamed project')
     // Rows outside the renamed project keep their subtree; the compiled rows in it may skip the unchanged menu.
     expect(rowRender.mock.calls.map(([id]) => id)).not.toContain('other')
     expect(document.querySelector('[data-sid="alpha"] .session-project-dot')).toHaveAttribute('title', 'Renamed project')
@@ -442,29 +447,80 @@ describe('optimistic session and project writes (TAL-1179)', () => {
     expect(toast).toHaveBeenCalledWith('Session is busy', 4000, 'error')
   })
 
-  it('shows a new project chip at once and adopts the server project', async () => {
+  it('shows a new project at once and adopts the server project', async () => {
     let answer!: (value: unknown) => void
-    vi.spyOn(window, 'prompt').mockReturnValueOnce('New project')
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('Fresh project')
     vi.mocked(api.createProject).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Alpha zebra')
-    await userEvent.click(screen.getByRole('button', { name: 'New project' }))
-    await waitFor(() => expect(api.createProject).toHaveBeenCalledWith('New project'))
-    expect(screen.getByText('New project', { selector: '.project-chip span' })).toBeInTheDocument()
-    expect(screen.queryByText(/Pending/)).toBeNull()
+    await userEvent.click(within(await openFilters()).getByRole('menuitem', { name: 'New project' }))
+    await waitFor(() => expect(api.createProject).toHaveBeenCalledWith('Fresh project'))
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+    const menu = await openFilters()
+    expect(within(menu).getByRole('menuitemradio', { name: 'Fresh project' })).toHaveAttribute('aria-disabled', 'true')
+    expect(within(menu).queryByText(/Pending/)).toBeNull()
     vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'new-server-id', name: 'Canonical project' }] } as never)
     answer({ project: { project_id: 'new-server-id', name: 'Canonical project' } })
-    await screen.findByRole('button', { name: 'Canonical project' })
-    expect(screen.queryByText('New project', { selector: '.project-chip span' })).toBeNull()
+    await within(menu).findByRole('menuitemradio', { name: 'Canonical project' })
+    expect(within(menu).queryByRole('menuitemradio', { name: 'Fresh project' })).toBeNull()
   })
 
-  it('removes the provisional project chip when creation is refused', async () => {
+  it('removes the provisional project when creation is refused', async () => {
     vi.spyOn(window, 'prompt').mockReturnValueOnce('Taken')
     vi.mocked(api.createProject).mockRejectedValue(new ApiError({ kind: 'http', status: 400, path: '/x', message: 'Name taken' }))
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Alpha zebra')
-    await userEvent.click(screen.getByRole('button', { name: 'New project' }))
+    await userEvent.click(within(await openFilters()).getByRole('menuitem', { name: 'New project' }))
     await waitFor(() => expect(toast).toHaveBeenCalledWith('Name taken', 4000, 'error'))
-    expect(screen.queryByText('Taken')).toBeNull()
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+    expect(within(await openFilters()).queryByRole('menuitemradio', { name: 'Taken' })).toBeNull()
+  })
+})
+
+describe('Chats filter menu (TAL-1869)', () => {
+  const panel = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+  const detail = () => document.querySelector('[data-chats-detail]')
+
+  it('replaces the tabs and chips with one trigger whose label and heading detail follow the filters', async () => {
+    panel()
+    await screen.findAllByTitle('Proj')
+    expect(document.querySelector('.project-bar, .session-source-tabs')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Chats' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chat filters' })).toBeInTheDocument()
+    expect(detail()).toBeNull()
+
+    await pick('Proj')
+    expect(screen.getByRole('button', { name: 'Chat filters, filtered' })).toBeInTheDocument()
+    expect(detail()).toHaveTextContent('Proj')
+    await pick('Unassigned')
+    expect(detail()).toHaveTextContent('Unassigned')
+    await pick('All')
+    expect(screen.getByRole('button', { name: 'Chat filters' })).toBeInTheDocument()
+    expect(detail()).toBeNull()
+
+    await pick(/CLI/)
+    expect(screen.getByRole('button', { name: 'Chat filters, filtered' })).toBeInTheDocument()
+    expect(detail()).toBeNull()
+  })
+
+  it('offers a source only with CLI sessions and Unassigned only with unprojected rows', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, delta], webui_session_count: 2, cli_session_count: 0 } as never)
+    panel()
+    await screen.findAllByTitle('Proj')
+    const menu = await openFilters()
+    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['All', 'Proj'])
+  })
+
+  it('shows archived rows from the menu and counts as a filter', async () => {
+    const hidden = row('hidden', 'Hidden', { archived: true })
+    vi.mocked(api.fetchSessions).mockImplementation((params) => Promise.resolve({ sessions: params?.include_archived ? [alpha, hidden] : [alpha] }) as never)
+    panel()
+    await screen.findByText('Alpha zebra')
+    const box = within(await openFilters()).getByRole('menuitemcheckbox', { name: 'Show archived' })
+    expect(box).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(box)
+    await screen.findByText('Hidden')
+    expect(screen.getByRole('button', { name: 'Chat filters, filtered' })).toBeInTheDocument()
+    expect(within(await openFilters()).getByRole('menuitemcheckbox', { name: 'Show archived' })).toHaveAttribute('aria-checked', 'true')
   })
 })

@@ -370,7 +370,7 @@ entry) opens a custom menu on right-click and long-press through the shared
 `ContextMenu` in `packages/frontend/src/ui/Menu.tsx`:
 
 - its items are the same list as the surface's visible trigger, defined once
-  and rendered in both (see `ProjectChip.tsx` and `SessionMenuItems`),
+  and rendered in both (see `SessionMenuItems`),
 - the visible trigger (a kebab or actions button) stays for keyboard and
   assistive-technology users,
 - a surface whose only action is its own click target needs no menu,

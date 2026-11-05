@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
-import { MENU_ROW, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { MENU_CHOICE, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { formatUsd } from '../../ui/States'
 import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
@@ -45,7 +45,6 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
   )
 }
 
-const RADIO_CLASS = cn(MENU_ROW, 'data-[checked]:text-accent-text')
 const SEARCH_LIST_KEYS = new Set(['Escape', 'ArrowDown', 'ArrowUp'])
 
 /** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
@@ -111,7 +110,7 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
 /** Search changes membership; surviving catalog rows keep their rendered label and cooldown. */
 const ModelMenuRow = memo(function ModelMenuRow({ entry, locale }: { entry: ModelEntry; locale: string }) {
   const resetsAt = entry.limit?.resets_at
-  return <MenuRadioItem value={entry.id} className={RADIO_CLASS}>
+  return <MenuRadioItem value={entry.id} className={MENU_CHOICE}>
     <ModelOptionContent entry={entry} />
     {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
   </MenuRadioItem>
@@ -124,7 +123,7 @@ export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.r
   return (
     <Menu label={m.composer_control_reasoning()} side="top" trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value ?? defaultLabel} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
       <MenuRadioGroup value={value ?? 'default'} onValueChange={(v: string) => onChange(v === 'default' ? null : v)}>
-        {options.map((o) => <MenuRadioItem key={o} value={o} className={RADIO_CLASS}>{o === 'default' ? defaultLabel : o}</MenuRadioItem>)}
+        {options.map((o) => <MenuRadioItem key={o} value={o} className={MENU_CHOICE}>{o === 'default' ? defaultLabel : o}</MenuRadioItem>)}
       </MenuRadioGroup>
     </Menu>
   )
@@ -190,7 +189,7 @@ function ExecutionModePicker({ value, onChange }: { value: ExecutionMode; onChan
   return (
     <MenuRadioGroup value={value} onValueChange={(mode: ExecutionMode) => onChange(mode)}>
       {query.data.modes.map((option) => (
-        <MenuRadioItem key={option.mode} value={option.mode} disabled={!option.available} className={cn(RADIO_CLASS, 'data-[disabled]:opacity-60')}>
+        <MenuRadioItem key={option.mode} value={option.mode} disabled={!option.available} className={cn(MENU_CHOICE, 'data-[disabled]:opacity-60')}>
           <span>{EXECUTION_MODE_LABEL[option.mode]()}</span>
           {option.reason && <span className="ms-auto text-xs text-muted">{EXECUTION_MODE_REASON[option.reason]()}</span>}
         </MenuRadioItem>
@@ -207,7 +206,7 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
   return (
     <Menu label={m.composer_control_workspace()} side="top" className="min-w-64" trigger={<Chip id={row ? undefined : "composerWorkspaceChip"} icon={<FolderOpen size={13} aria-hidden="true" />} label={label} title={m.composer_control_workspace()} row={row} size="xs" className="composer-workspace-chip" disabled={list.length === 0} />}>
       <MenuRadioGroup value={value ?? ''} onValueChange={(v: string) => onChange(v)}>
-        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={RADIO_CLASS}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-[10px] text-muted">{w.path}</span></span></MenuRadioItem>)}
+        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={MENU_CHOICE}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-[10px] text-muted">{w.path}</span></span></MenuRadioItem>)}
       </MenuRadioGroup>
       {(onNewWorktree ?? onRemoveWorktree) && <MenuSeparator />}
       {onNewWorktree && (

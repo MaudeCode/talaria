@@ -2,7 +2,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
-import { expect, settle, test } from './fixtures'
+import { expect, openChatFilters, settle, test } from './fixtures'
 import { openStateDb } from './server'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
@@ -81,7 +81,7 @@ test('external Agent session updates reach the sidebar without polling', async (
     await settle(page)
     const hamburger = page.locator('#btnHamburger')
     if (await hamburger.isVisible()) await hamburger.click()
-    await page.getByRole('button', { name: /^CLI sessions/ }).click()
+    await (await openChatFilters(page)).getByRole('menuitemradio', { name: /^CLI sessions/ }).click()
     const row = page.locator(`.session-item[data-sid="${sid}"] .session-title`)
     await expect(row).toHaveText('Before Agent update')
     await page.screenshot({ path: testInfo.outputPath('before-agent-update.png') })

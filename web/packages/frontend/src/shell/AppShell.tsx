@@ -11,7 +11,7 @@ import { m } from '../paraglide/messages.js'
 import { useEffect } from 'react'
 import { registerExtensionSkins, useExtensionManifests } from '../extensions/registry'
 import { reapplyExtensionSkin } from '../app/appearance'
-import { useIsSidebarRail } from './useShellState'
+import { rememberOutsideSettings, useIsSidebarRail } from './useShellState'
 import { cn } from '../ui/cn'
 import { UpdateNotificationProvider } from '../features/notifications/UpdateNotificationCenter'
 import { FeedbackDialog } from '../features/settings/FeedbackDialog'
@@ -24,6 +24,8 @@ import { panelForPath } from './nav'
 export function AppShell({ children }: { children: ReactNode }) {
   useShortcuts()
   const panel = useLocation({ select: (location) => panelForPath(location.pathname) })
+  const href = useLocation({ select: (location) => location.publicHref })
+  useEffect(() => { if (panel !== 'settings') rememberOutsideSettings(href) }, [panel, href])
   const extensionId = useParams({ strict: false, select: (params) => params.extensionId })
   const taskDetail = useSearch({ strict: false, select: (search) => !!search.job })
   const sidebar = panel === 'settings' ? <SectionMenu /> : <SessionListPanel />
@@ -38,7 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const subtitle = extensionId && (manifests.data?.manifests.find((manifest) => manifest.id === extensionId)?.name ?? extensionId)
   // The html attribute is the pre-paint marker (prepaint.js/boot.ts); its CSS has no transition. Once the shell
   // owns the state through .layout.sidebar-collapsed the marker goes, so collapsing animates like expanding.
-  useEffect(() => { delete document.documentElement.dataset.sidebarCollapsed }, [])
+  useEffect(() => { delete document.documentElement.dataset.sidebarCollapsed; delete document.documentElement.dataset.settingsPage }, [])
   useEffect(() => {
     document.documentElement.classList.toggle('hub-active', hub)
     return () => document.documentElement.classList.remove('hub-active')
