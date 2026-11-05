@@ -1,4 +1,4 @@
-import { IncomingMessage, request, ServerResponse } from 'node:http'
+import { createServer, IncomingMessage, request, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,9 @@ import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/
 import { FakeSidecar } from './sidecar/fake.js'
 import { RequestContext } from './http/context.js'
 import { AssetCache, SpaShell } from './spa.js'
+import { createApp } from './app.js'
+import { os } from '@orpc/server'
+import { z } from 'zod'
 
 const DIST_INDEX = resolve(WEB_ROOT, 'static/dist/index.html')
 
@@ -142,6 +145,46 @@ describe('open server (no auth)', () => {
     const res = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{not json' })
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: 'Invalid JSON body' })
+  })
+
+  it('rejects an oversized invalid toolset selection without expanding every validation issue', async () => {
+    const res = await s.get('/api/session/toolsets', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: 'synthetic-session', toolsets: Array(10_000).fill(0) }),
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string; issues: unknown[] }
+    expect(body.error).toBe('Invalid toolsets.0')
+    expect(body.issues.length).toBeGreaterThan(0)
+    expect(body.issues.length).toBeLessThan(100)
+    expect((await s.get('/health')).status).toBe(200)
+  })
+
+  it('preserves valid input transforms, defaults and catches in one validation pass', async () => {
+    const transform = vi.fn((value: string) => Promise.resolve(value.toUpperCase()))
+    const values: unknown[] = [...Array<unknown>(2000).fill(0), 'valid']
+    const schema = z.object({
+      values: z.array(z.string().catch('fallback')),
+      label: z.string().transform(transform),
+      count: z.number().default(7),
+    })
+    const app = createApp(s.deps, {
+      router: { echo: os.route({ method: 'POST', path: '/api/validation-echo' }).input(schema).handler(({ input }) => input) },
+    })
+    const server = createServer((req, res) => { void app.handler(req, res) })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    try {
+      const address = server.address() as { port: number }
+      const res = await fetch(`http://127.0.0.1:${String(address.port)}/api/validation-echo`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ values, label: 'hello' }),
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ values: [...Array<string>(2000).fill('fallback'), 'valid'], label: 'HELLO', count: 7 })
+      expect(transform).toHaveBeenCalledTimes(1)
+    } finally {
+      await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
+    }
   })
 
   it('OPTIONS preflight echoes only a same-origin Origin', async () => {
