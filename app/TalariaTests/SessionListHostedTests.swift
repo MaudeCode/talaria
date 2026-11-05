@@ -570,16 +570,7 @@ final class SessionListHostedTests: XCTestCase {
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "Insights"))
         _ = try await requireElement(in: window, label: "Open navigation")
-        func stacks() -> [UINavigationController] {
-            var pending = window.rootViewController.map { [$0] } ?? []
-            var result: [UINavigationController] = []
-            while let current = pending.popLast() {
-                if let nav = current as? UINavigationController { result.append(nav) }
-                pending += current.children
-            }
-            return result
-        }
-        XCTAssertTrue(stacks().allSatisfy { $0.viewControllers.count == 1 }, "A sidebar section must not push over the previous chat")
+        XCTAssertTrue(window.navigationStacks.allSatisfy { $0.viewControllers.count == 1 }, "A sidebar section must not push over the previous chat")
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
         _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
@@ -596,7 +587,7 @@ final class SessionListHostedTests: XCTestCase {
         let close = try XCTUnwrap(HostedAccessibility.toolbarItem("Close navigation", in: window))
         XCTAssertTrue(HostedAccessibility.activate(close))
         _ = try await requireElement(in: window, label: "Open navigation")
-        XCTAssertTrue(stacks().allSatisfy { $0.viewControllers.count == 1 })
+        XCTAssertTrue(window.navigationStacks.allSatisfy { $0.viewControllers.count == 1 })
     }
 
     func testSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModalAtBothWidths() async throws {

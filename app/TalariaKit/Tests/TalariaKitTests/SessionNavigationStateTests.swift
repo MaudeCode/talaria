@@ -640,7 +640,7 @@ final class AppSectionLayoutTests: XCTestCase {
     func testEachUtilityNamesItsRootWithoutAnImplicitPushedPage() {
         let expectations: [(SessionListUtilityDestination, AppSection)] = [
             (.memory, .memory), (.skills, .skills), (.tasks, .tasks), (.kanban, .kanban),
-            (.insights, .insights), (.providers("source"), .insights), (.archived, .archived),
+            (.insights, .insights), (.archived, .archived),
             (.scheduled, .scheduled), (.webhook, .webhook)
         ]
         for (utility, section) in expectations {

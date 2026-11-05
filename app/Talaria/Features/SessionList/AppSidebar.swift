@@ -178,7 +178,7 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
         )
 
         return destinationRow(destination: .providers(source.sourceID),
-                              isSelected: selection == .insights && selectedQuotaSourceID == source.sourceID) {
+                              isSelected: selectedQuotaSourceID == source.sourceID) {
             if options.showsIcon {
                 ProviderIconView(
                     providerID: source.providerID,

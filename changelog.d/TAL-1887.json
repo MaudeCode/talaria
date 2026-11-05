@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Going back from a quota account opened from a widget or pinned sidebar row now returns to the screen you were on instead of reopening the account.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

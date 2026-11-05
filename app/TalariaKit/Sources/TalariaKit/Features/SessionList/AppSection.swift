@@ -29,8 +29,8 @@ public enum AppSection: Hashable, Sendable {
 
     public init?(_ utility: SessionListUtilityDestination) {
         switch utility {
-        case .settings, .providerQuotaWidgetSettings: return nil
-        case .providers, .insights: self = .insights
+        case .settings, .providerQuotaWidgetSettings, .providers: return nil
+        case .insights: self = .insights
         case .tasks: self = .tasks
         case .kanban: self = .kanban
         case .skills: self = .skills

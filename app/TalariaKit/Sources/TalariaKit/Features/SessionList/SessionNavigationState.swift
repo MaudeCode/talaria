@@ -104,6 +104,7 @@ public struct SessionNavigationState: Equatable, Sendable {
         newChatSessionID = nil
         destination = .session(session)
         section = .chats
+        selectedItem = nil
         remember(session)
     }
 
@@ -114,10 +115,20 @@ public struct SessionNavigationState: Equatable, Sendable {
         newChatSessionID = nil
         destination = .newChat(route)
         section = .chats
+        selectedItem = nil
     }
 
-    /// Entering a section replaces the root and clears its inner pages.
+    /// Entering a section replaces the root and clears its inner pages. A source route instead pushes its account
+    /// above the current root, so Back returns there (TAL-1887).
     public mutating func select(_ utility: SessionListUtilityDestination) {
+        if case .providers(let sourceID) = utility {
+            rootRevision += 1
+            filesInspectorPresented = false
+            chatShowsFilesInspector = false
+            selectedSectionSession = nil
+            selectedItem = .quotaSource(id: sourceID)
+            return
+        }
         guard let root = AppSection(utility) else { return }
         rootRevision += 1
         newChatSessionID = nil

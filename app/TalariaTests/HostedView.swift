@@ -392,6 +392,19 @@ extension UIViewController {
     }
 }
 
+extension UIWindow {
+    /// Every navigation stack in the window's hierarchy, each with its pushed pages.
+    var navigationStacks: [UINavigationController] {
+        var pending = rootViewController.map { [$0] } ?? []
+        var result: [UINavigationController] = []
+        while let current = pending.popLast() {
+            if let stack = current as? UINavigationController { result.append(stack) }
+            pending += current.children
+        }
+        return result
+    }
+}
+
 /// A hosted window lays out the display it is sized for, whatever the device's posture (TAL-1547).
 @MainActor
 final class HostedWindowTests: XCTestCase {

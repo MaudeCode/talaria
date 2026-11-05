@@ -174,6 +174,15 @@ final class ProvidersViewModel {
         }
     }
 
+    /// One account's refresh; a server without stable source IDs can only refresh the whole list.
+    func refreshQuotaSource(_ sourceID: String) async {
+        if hasStableQuotaSources {
+            await refreshQuota(sourceID: sourceID)
+        } else {
+            await loadQuotas(refresh: true)
+        }
+    }
+
     func refreshQuota(sourceID: String) async {
         guard hasStableQuotaSources, !sourceID.isEmpty else { return }
         let generation = quotaLoadGeneration

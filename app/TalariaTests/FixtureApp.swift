@@ -43,6 +43,7 @@ final class FixtureApp {
     var pendingSessionID: String?
     var requestedNewChat: NewChatRequest?
     var opensQuotaWidgetSettings = false
+    var pendingQuotaSourceID: String?
     /// A screen's refresh task can still write its cache after its test ends; SwiftData traps on a context whose
     /// container is gone, so every hosted test's in-memory cache lives for the rest of the run.
     private static var retainedCaches: [ModelContainer] = []
@@ -123,6 +124,7 @@ final class FixtureApp {
             server: UITestFixtureEnvironment.serverURL,
             modelContext: cache.mainContext,
             pendingDeepLinkedSessionID: Binding(get: { self.pendingSessionID }, set: { self.pendingSessionID = $0 }),
+            pendingQuotaSourceID: Binding(get: { self.pendingQuotaSourceID }, set: { self.pendingQuotaSourceID = $0 }),
             opensProviderQuotaWidgetSettings: Binding(get: { self.opensQuotaWidgetSettings }, set: { self.opensQuotaWidgetSettings = $0 }),
             requestedNewChat: Binding(get: { self.requestedNewChat }, set: { self.requestedNewChat = $0 }),
             draftStore: environment.draftStore,

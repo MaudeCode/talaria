@@ -4,7 +4,8 @@ public enum SessionListUtilityDestination: Hashable, Identifiable, Sendable {
     /// Optional category to open when Settings appears. "Manage Servers"
     /// passes `.servers`, while a plain Settings action passes `nil` (#283).
     case settings(SettingsScrollAnchor?)
-    case providers(String?)
+    /// A widget link or pinned row: one quota account's page, pushed once above the current root.
+    case providers(String)
     case providerQuotaWidgetSettings
     case tasks
     case kanban
