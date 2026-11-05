@@ -451,11 +451,11 @@ class PublicationTests(unittest.TestCase):
         for name in ("currentContracts", "previousAppContracts"):
             self.assertIn(f"--name {name}", gate)
         # The App's hosted unit tests run on the release source whenever the App ships, dry runs included, through
-        # app-tests.yml's pull-request mode: the App build and the TalariaTests shards. The contracts job runs the
+        # app-tests.yml's hosted mode: the App build and the TalariaTests shards. The contracts job runs the
         # package tests (--package-suite).
         hosted = jobs["app-hosted-tests"]
         self.assertEqual(hosted["uses"], "./.github/workflows/app-tests.yml")
-        self.assertEqual(hosted["with"], {"mode": "pull-request", "ref": "${{ needs.prepare.outputs.source }}",
+        self.assertEqual(hosted["with"], {"mode": "hosted", "ref": "${{ needs.prepare.outputs.source }}",
                                           "package_tests": False})
         self.assertEqual(hosted["if"], "needs.prepare.outputs.app_changed == 'true' && needs.app-hosted-tests-lookup.outputs.reused == 'false'")
         # The test job posts failing tests as commit statuses while it runs (TAL-673).
@@ -463,13 +463,10 @@ class PublicationTests(unittest.TestCase):
         app_tests = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/app-tests.yml")], text=True))
-        self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode != 'contracts'")
-        # The release's call leaves out the package tests the build job otherwise runs after its upload (TAL-1891).
-        self.assertEqual(app_tests["jobs"]["app-build"]["if"], "inputs.mode != 'contracts' || inputs.package_tests")
-        package_steps = [step for step in app_tests["jobs"]["app-build"]["steps"] if "swift " in step.get("run", "")]
-        self.assertTrue(package_steps)
-        for step in package_steps:
-            self.assertEqual(step["if"], "${{ !cancelled() && inputs.package_tests }}")
+        self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode == 'hosted'")
+        # The release's hosted call leaves out the package tests hosted mode runs in the build job (TAL-1891).
+        self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["uses"], "./.github/actions/app-package-tests")
+        self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["if"], "${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}")
         check = (root / "scripts/check-release-contracts.py").read_text()
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})

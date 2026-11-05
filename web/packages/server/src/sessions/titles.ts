@@ -1,5 +1,5 @@
 /** Session title generation after the first exchange (Python `api/streaming.py` title helpers). */
-import { messageText, stripWorkspacePrefix } from './merge.js'
+import { isDict, messageText, stripWorkspacePrefix, withheldPromptText } from './merge.js'
 import { str } from '../util.js'
 
 export const GENERATED_TITLE_MAX_CHARS = 50
@@ -34,11 +34,20 @@ export function sanitizeGeneratedTitle(text: unknown): string {
   return s.slice(0, GENERATED_TITLE_MAX_CHARS)
 }
 
+/** TAL-1885: a vetoed turn gives a title nothing. Its user row holds text no model may read, and its reply belongs to no prompt the title may name. */
+function withoutWithheldTurns(messages: unknown[]): unknown[] {
+  let withheld = false
+  return messages.filter((m) => {
+    if (isDict(m) && m.role === 'user') withheld = withheldPromptText(m) !== null
+    return !withheld
+  })
+}
+
 /** `scanPastConsecutiveUsers` keeps scanning past queued opening user rows to the first complete pair (manual regenerate, #7543). */
 export function firstExchangeSnippets(messages: unknown[], opts: { scanPastConsecutiveUsers?: boolean } = {}): [string, string] {
   let user = ''
   let asst = ''
-  for (const m of messages) {
+  for (const m of withoutWithheldTurns(messages)) {
     if (!m || typeof m !== 'object') continue
     const row = m as Record<string, unknown>
     if (row.role === 'user') {
@@ -59,7 +68,7 @@ export function firstExchangeSnippets(messages: unknown[], opts: { scanPastConse
 export function latestExchangeSnippets(messages: unknown[]): [string, string] {
   let user = ''
   let asst = ''
-  for (const m of [...messages].reverse()) {
+  for (const m of withoutWithheldTurns(messages).reverse()) {
     if (!m || typeof m !== 'object') continue
     const row = m as Record<string, unknown>
     if (row.role === 'assistant' && !asst) {

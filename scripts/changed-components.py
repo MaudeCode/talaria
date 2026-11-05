@@ -128,6 +128,8 @@ def path_suites(path):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
     if path == ".github/actions/docker-plugins/action.yml":
         return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
+    if path == ".github/actions/app-package-tests/action.yml":
+        return WORKFLOWS["app-tests.yml"]  # The package tests' steps, called only from app-tests.yml.
     if path == ".github/actions/setup-xcode/action.yml":
         return {"app", "tooling"}  # Xcode selection for the App build and tests.
     if path.startswith((".github/actions/", "releases/")) or path in (

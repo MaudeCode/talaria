@@ -74,8 +74,9 @@ dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
-| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the `app-test-build` artifact for the test job, then `swift test` for TalariaKit on the same runner (every native contract class and the live Web contract test); a release's hosted-tests call leaves the package tests to `contracts` |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on pull requests, main pushes and at release |
+| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once; in hosted mode, uploaded as the `app-test-build` artifact for the test job, then `swift test` for TalariaKit on the same runner (a release's hosted-tests call leaves that to `contracts`) |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on main pushes, manual runs, at release and on pull requests labelled `hosted-tests` |
+| `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) in build and contracts modes |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
 | `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
@@ -87,7 +88,7 @@ have passed on the exact release source, dry runs included (TAL-1550).
 `app-hosted-tests-lookup` (`app/ci/find-hosted-tests-run`) looks for a
 completed, successful main-push CI run of `ci.yml` on exactly that SHA whose
 `App / App hosted tests` job succeeded, and records that job's URL in the
-summary. Only then is `app-hosted-tests` (`app-tests.yml` in pull-request mode:
+summary. Only then is `app-hosted-tests` (`app-tests.yml` in hosted mode:
 the App build and four TalariaTests shards) skipped; otherwise it runs. Main CI
 leaves out the App jobs when a push does not touch the App, so a release on such
 a commit tests again. Runs on other commits never count, and a lookup that
@@ -108,8 +109,10 @@ boots its simulator while the build runs, then prepares it in the background
 (`ci/background`) while it waits for and downloads the build. Booting and
 preparing took 3 to 8 minutes on hosted runners, mostly the notification
 service's restarts, so a shard job takes about 6 minutes of tests plus that.
-The build job runs the package tests after its upload, so the shards never wait
-on them, and the build job and the four shards fill the five macOS slots.
+In hosted mode the build job runs the package tests after its upload, so the
+shards never wait on them, and the build job and the four shards fill the five
+macOS slots. A pull request without the `hosted-tests` label takes two slots:
+the build and the package tests, side by side, and no shards.
 
 The pinned Agent gate runs one `agent-release` job per supported Agent release
 of the selected Web source and shard of its sidecar suite: three shards each,
@@ -196,7 +199,7 @@ and deletes it in an `always()` step. Provisioning profiles come from
 `apple-actions/download-provisioning-profiles`.
 
 CI's Web contract probe uploads its live responses as the run's
-`contract-fixture` artifact for the `App build` job's package tests (see
+`contract-fixture` artifact for the App package tests (see
 [contract validation](../CONTRACT_TESTS.md)); the Web end-to-end suite runs in
 six Playwright shards and the Docker smoke in one job per Compose variant
 (five). Release-plan preparation, Web/Relay fixture suites, Agent verification,

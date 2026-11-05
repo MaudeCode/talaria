@@ -50,8 +50,9 @@ models, networking (API client, SSE, contract types), persistence and sync, and
 the view models and presentation logic behind every screen (chat, sessions,
 Kanban, settings, workspace, auth). The App, the share extension and the Live
 Activity widget link it. Its tests run on macOS without a simulator; CI runs
-them on every App change, beside the App build for testing and the
-simulator-hosted `TalariaTests` (one shard; releases run it too):
+them on every App change, beside the App build for testing. The
+simulator-hosted `TalariaTests` run on `main` pushes, at release and on pull
+requests labelled `hosted-tests`:
 
 ```zsh
 swift test --package-path TalariaKit
@@ -76,7 +77,7 @@ package strings into it.
 ### Package test coverage
 
 CI measures coverage on the same `swift test` run it gates on and reports it in
-the `App build` job summary: line and function coverage of
+the job summary: line and function coverage of
 `TalariaKit/Sources` in total and per top-level directory. Package checkouts,
 generated resource accessors and the tests themselves are excluded. The
 `app-package-coverage` artifact keeps `coverage.txt`, the per-file table, and `coverage.json`, the

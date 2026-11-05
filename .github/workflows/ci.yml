@@ -1,6 +1,9 @@
 # Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
-# the TalariaKit package tests with `swift test`, build the App, its extensions and test bundle for
-# testing, and run the simulator-hosted unit tests (TalariaTests) in four simulator jobs split by class.
+# the TalariaKit package tests with `swift test` and build the App, its extensions and test bundle for
+# testing. Main pushes, manual runs and pull requests labelled hosted-tests also run the simulator-hosted
+# unit tests (TalariaTests) in four simulator jobs split by class (TAL-1896); a failure on main reaches the repair
+# handoff (docs/main-ci-repair.md). No labeled trigger: a label event would start a run that cancels the PR's running
+# one through the concurrency group, so a label added after a run started takes effect on the next push.
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
@@ -97,7 +100,7 @@ jobs:
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
-      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}
+      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && 'hosted' || 'build') || 'contracts' }}
       contracts: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
 
   tooling:
@@ -146,8 +149,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
-      # The App build job's package tests start without waiting for this job. Before `swift test` they wait for this
-      # job through the jobs API, download this artifact and run the native live decoding test against it.
+      # The App package tests start without waiting for this job. Before `swift test` they wait for it through the jobs
+      # API, download this artifact and run the native live decoding test against it.
       - name: Upload the live response fixture
         uses: actions/upload-artifact@v7
         with:

@@ -1,15 +1,17 @@
 # Interface (stable; ci.yml and release-set.yml call it):
 #   uses: ./.github/workflows/app-tests.yml   (the caller grants contents: read, actions: read and statuses: write)
 #   with:
-#     mode: pull-request | contracts
-#       Both modes run the TalariaKit package tests with `swift test` on macOS, without a simulator: about
+#     mode: hosted | build | contracts
+#       Every mode runs the TalariaKit package tests with `swift test` on macOS, without a simulator: about
 #       94% of the unit tests, including every native contract class (TAL-399).
 #       That run measures TalariaKit/Sources coverage: the job summary shows it and the app-package-coverage
 #       artifact keeps the per-file and per-line report (TAL-67).
-#       pull-request: plus the App build for testing (App, extensions and the hosted test bundle) and four simulator
+#       hosted: plus the App build for testing (App, extensions and the hosted test bundle) and four simulator
 #       jobs running the hosted unit tests (TalariaTests: UIKit views, App Intents and widget configuration types,
 #       visual references, performance budgets, App bundle resources), split by class (ci/hosted-test-shard,
-#       TAL-1550). Pull requests, main pushes and the release gate run it.
+#       TAL-1550). Main pushes, manual runs, labelled pull requests and the release gate run it.
+#       build: plus the App build for testing alone, beside the package tests: two macOS jobs. Other pull requests run
+#       it (TAL-1896).
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
 #     contracts: true | false  - the package tests also wait for this run's "Web contract probe" job and run the
 #       live decoding test against its contract-fixture artifact.
@@ -17,14 +19,15 @@
 #     package_tests: false leaves out the package tests (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; the build artifact is
-# app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
+# Hosted mode's jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; the build artifact
+# is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
 # once; a release reuses main CI's (ci/find-hosted-tests-run).
 # Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
-# (TAL-413), so it never holds a macOS slot its own build is still queued for. The build job and the four shards fill
-# the five slots; the package tests run in the build job after its upload, so no shard waits on them (TAL-1891).
+# (TAL-413), so it never holds a macOS slot its own build is still queued for. In hosted mode the build job and the four
+# shards fill the five slots: the package tests run in the build job after its upload, so no shard waits on them
+# (TAL-1891). In build and contracts modes they run in their own job (TAL-1896), beside the build if there is one.
 
 name: App tests
 
@@ -59,11 +62,10 @@ env:
 jobs:
   app-build:
     name: App build
-    # Builds on its own runner while the test job boots its simulator, then runs TalariaKit's (models, networking,
-    # persistence, sync, view models) tests with `swift test`: no simulator and no app host (TAL-399). A contract-only
-    # change leaves the App sources alone, so it skips the build steps and its package tests are the whole check.
-    # The package tests run whatever the build's result; only the live contract test waits for the Web probe.
-    if: inputs.mode != 'contracts' || inputs.package_tests
+    # Hosted mode builds on its own runner while the test jobs boot their simulators, then runs the package tests after
+    # its upload, whatever the build's result (TAL-1891). Build mode has nothing to upload, and its package tests run
+    # beside it in their own job. A contract-only change leaves the App sources alone, so it needs no build.
+    if: inputs.mode != 'contracts'
     runs-on: xcode-27
     # The build's own limit, plus the package tests' and the probe wait's.
     timeout-minutes: 75
@@ -71,9 +73,6 @@ jobs:
       contents: read
       # Reads this run's job list to wait for the Web contract probe.
       actions: read
-    env:
-      CONTRACTS_SELECTED: ${{ inputs.contracts }}
-      LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
     steps:
       - uses: actions/checkout@v7
         with:
@@ -83,14 +82,12 @@ jobs:
 
       # Only the package checkouts: a fresh checkout's mtimes make xcodebuild rebuild the rest of DerivedData anyway.
       - name: Restore the Swift package checkouts
-        if: inputs.mode != 'contracts'
         uses: actions/cache@v6
         with:
           path: app/DerivedData/SourcePackages
           key: app-source-packages-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'app/TalariaKit/Package.resolved') }}
 
       - name: Build for testing
-        if: inputs.mode != 'contracts'
         timeout-minutes: 45
         env:
           # A build destination only; nothing boots on this runner.
@@ -98,7 +95,7 @@ jobs:
         run: ci/build-for-testing "${BUILD_DESTINATION}"
 
       - name: Package the test build
-        if: inputs.mode != 'contracts'
+        if: inputs.mode == 'hosted'
         run: |
           set -euo pipefail
           # Only what test-without-building runs: the xctestrun and the App with its extensions (module files, objects
@@ -111,7 +108,7 @@ jobs:
           echo "- Test build package: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.tar.xz" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload the test build
-        if: inputs.mode != 'contracts'
+        if: inputs.mode == 'hosted'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_ARTIFACT }}
@@ -122,61 +119,33 @@ jobs:
           overwrite: true
           if-no-files-found: error
 
-      # The committed Package.resolved pins the App's revisions; resolution never drifts from it. Coverage is measured
-      # on this run, the one CI Gate counts (TAL-67).
-      - name: Build the package tests
-        if: ${{ !cancelled() && inputs.package_tests }}
-        run: swift build --package-path TalariaKit --build-tests --enable-code-coverage --only-use-versions-from-resolved-file
-
-      - name: Wait for the Web contract probe
-        if: ${{ !cancelled() && inputs.package_tests && env.CONTRACTS_SELECTED == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ci/wait-for-job "Web contract probe" 1500
-
-      - name: Download the probe's live response fixture
-        if: ${{ !cancelled() && inputs.package_tests && env.CONTRACTS_SELECTED == 'true' }}
-        uses: actions/download-artifact@v8
+      - name: Run the package tests
+        if: ${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}
+        uses: ./.github/actions/app-package-tests
         with:
-          name: contract-fixture
-          path: ${{ runner.temp }}/contract-fixture
+          contracts: ${{ inputs.contracts }}
 
-      - name: Test the package
-        if: ${{ !cancelled() && inputs.package_tests }}
-        run: |
-          set -euo pipefail
-          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
-          if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
-            [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
-            export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
-          fi
-          start_seconds=${SECONDS}
-          swift test --package-path TalariaKit --skip-build --enable-code-coverage 2>&1 |
-            tee package-tests.log
-          if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
-            # A missing fixture makes the live test skip, so require an explicit pass.
-            grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log ||
-              { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
-          fi
-          {
-            echo "### Package tests"
-            echo "- swift test: $((SECONDS - start_seconds))s, $(grep -oE 'Executed [0-9]+ tests' package-tests.log | tail -1)"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      # After a failure too: the report merges whatever profiles the run wrote. The numbers gate nothing.
-      - name: Report coverage
-        if: ${{ !cancelled() && inputs.package_tests }}
-        run: ci/package-coverage coverage >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Upload coverage
-        if: ${{ !cancelled() && inputs.package_tests }}
-        uses: actions/upload-artifact@v7
+  package-test:
+    # Build mode's and contracts mode's package tests, on their own runner from the start. Hosted mode runs them in
+    # app-build.
+    name: App package tests
+    if: inputs.mode != 'hosted' && inputs.package_tests
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Reads this run's job list to wait for the Web contract probe.
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
         with:
-          name: app-package-coverage
-          path: app/coverage/
-          retention-days: 14
-          overwrite: true
-          if-no-files-found: ignore
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: ./.github/actions/setup-xcode
+
+      - uses: ./.github/actions/app-package-tests
+        with:
+          contracts: ${{ inputs.contracts }}
 
   build-started:
     # Two suites queued together once filled all five hosted macOS slots with test jobs waiting for builds that never
@@ -185,7 +154,7 @@ jobs:
     # holds no macOS slot while the build queues, and queue time counts toward no job's timeout, so it may wait long.
     # "Re-run failed jobs" keeps this job's success, so after a failed build use "Re-run all jobs" to keep the gate.
     name: App build started
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
@@ -211,7 +180,7 @@ jobs:
     # balanced from measured class times, and the last runs every other class.
     name: App hosted tests ${{ matrix.shard }}
     needs: build-started
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     strategy:
       fail-fast: false
       matrix:
@@ -504,7 +473,7 @@ jobs:
     # reuses main CI's "App / App hosted tests" job on the exact release source rather than testing again (TAL-1550).
     name: App hosted tests
     needs: app-test
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
