@@ -9,7 +9,7 @@ set -euo pipefail
 
 destination=${1:?usage: ci/build-for-testing DESTINATION}
 cd "$(dirname "$0")/.."
-project=(-project Talaria.xcodeproj -scheme Talaria -derivedDataPath DerivedData -disableAutomaticPackageResolution)
+project=(-project Talaria.xcodeproj -scheme Talaria -derivedDataPath DerivedData -disableAutomaticPackageResolution -skipPackageUpdates)
 start_seconds=${SECONDS}
 xcodebuild -resolvePackageDependencies "${project[@]}"
 resolve_seconds=$((SECONDS - start_seconds))
