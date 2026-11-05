@@ -68,16 +68,41 @@ async function relayWithPublisher() {
 const publisherPath = (profileId: string, rest: string) =>
   `/v1/publishers/${encodeURIComponent("https://contract.example")}/profiles/${profileId}/${rest}`;
 
-it("accepts the Web publisher and App registration, then returns the shared App snapshot", async () => {
+type PublisherSnapshot = { states: { startedAt?: number }[] };
+
+function withoutStartedAt(body: string) {
+  const snapshot = JSON.parse(body) as PublisherSnapshot;
+  for (const state of snapshot.states) delete state.startedAt;
+  return JSON.stringify(snapshot);
+}
+
+// The release gate pairs the selected Relay and App with each supported Web's own publisher fixture, and an older Web
+// sends no startedAt. Relay copies the field only when it was sent, so each row's expected value follows the publisher.
+function expectedAppSnapshot(publisherBody: string) {
+  const { states } = JSON.parse(publisherBody) as PublisherSnapshot;
+  const expected = JSON.parse(fixture("relay-snapshot")) as { aggregate: { rows: { startedAt?: number }[] } };
+  for (const [index, row] of expected.aggregate.rows.entries()) {
+    const startedAt = states[index]?.startedAt;
+    if (startedAt === undefined) delete row.startedAt;
+    else row.startedAt = startedAt;
+  }
+  return expected;
+}
+
+it.each([
+  ["its fixture", (body: string) => body],
+  ["no startedAt", withoutStartedAt],
+])("accepts a Web publisher sending %s and App registration, then returns the shared App snapshot", async (_, publish) => {
   const clock = vi.spyOn(Date, "now").mockReturnValue(now);
   try {
     const { backend, signedPut } = await relayWithPublisher();
-    const response = await signedPut(publisherPath("prf_default", "snapshot"), fixture("publisher-snapshot"));
+    const body = publish(fixture("publisher-snapshot"));
+    const response = await signedPut(publisherPath("prf_default", "snapshot"), body);
     expect(response.status).toBe(200);
     const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device" };
     const snapshot = await backend.fetch("/v1/activity-snapshot?mode=all_running", { headers });
     expect(snapshot.status).toBe(200);
-    expect(await snapshot.json()).toEqual(JSON.parse(fixture("relay-snapshot")));
+    expect(await snapshot.json()).toEqual(expectedAppSnapshot(body));
     const registration = await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", {
       method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: fixture("app-registration"),
     });
