@@ -1,15 +1,17 @@
 # Interface (stable; ci.yml and release-set.yml call it):
 #   uses: ./.github/workflows/app-tests.yml   (the caller grants contents: read, actions: read and statuses: write)
 #   with:
-#     mode: pull-request | contracts
-#       Both modes run the TalariaKit package tests with `swift test` on macOS, without a simulator: about
+#     mode: hosted | build | contracts
+#       Every mode runs the TalariaKit package tests with `swift test` on macOS, without a simulator: about
 #       94% of the unit tests, including every native contract class (TAL-399).
 #       That run measures TalariaKit/Sources coverage: the job summary shows it and the app-package-coverage
 #       artifact keeps the per-file and per-line report (TAL-67).
-#       pull-request: plus the App build for testing (App, extensions and the hosted test bundle) and four simulator
+#       hosted: plus the App build for testing (App, extensions and the hosted test bundle) and four simulator
 #       jobs running the hosted unit tests (TalariaTests: UIKit views, App Intents and widget configuration types,
 #       visual references, performance budgets, App bundle resources), split by class (ci/hosted-test-shard,
-#       TAL-1550). Pull requests, main pushes and the release gate run it.
+#       TAL-1550). Main pushes, manual runs, labelled pull requests and the release gate run it.
+#       build: plus the App build for testing alone, beside the package tests: two macOS jobs. Other pull requests run
+#       it (TAL-1896).
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
 #     contracts: true | false  - the package job also waits for this run's "Web contract probe" job and runs the
 #       live decoding test against its contract-fixture artifact.
@@ -17,7 +19,7 @@
 #     package_tests: false leaves out the package tests job (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"/"App package tests"; the
+# Hosted mode's jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"/"App package tests"; the
 # build artifact is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
 # once; a release reuses main CI's (ci/find-hosted-tests-run).
 # Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
@@ -61,7 +63,7 @@ jobs:
     name: App build
     # Builds on its own runner while the test job boots its simulator. A contract-only
     # change leaves the App sources alone, so its package tests are the whole check.
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -78,7 +80,6 @@ jobs:
         run: ci/build-for-testing "${BUILD_DESTINATION}"
 
       - name: Package the test build
-        if: inputs.mode != 'contracts'
         run: |
           set -euo pipefail
           # Only what test-without-building reads: the xctestrun and the products it names (about 180 of
@@ -92,7 +93,6 @@ jobs:
           tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
 
       - name: Upload the test build
-        if: inputs.mode != 'contracts'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_ARTIFACT }}
@@ -101,11 +101,32 @@ jobs:
           overwrite: true
           if-no-files-found: error
 
+  app-build-only:
+    # build mode's App build, with nothing to upload. Its own job because a job's needs cannot depend on an input:
+    # app-build is what the package tests wait for in hosted mode, and skipped here it lets them start at once. Skipped
+    # in hosted mode, this job must not answer to the name the shards poll (ci/wait-for-job).
+    name: ${{ inputs.mode == 'build' && 'App build' || 'App build only' }}
+    if: inputs.mode == 'build'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: ./.github/actions/setup-xcode
+
+      - name: Build for testing
+        env:
+          # A build destination only; nothing boots on this runner.
+          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}
+        run: ci/build-for-testing "${BUILD_DESTINATION}"
+
   package-test:
     # TalariaKit (models, networking, persistence, sync, view models) tests on macOS with `swift test`: no
-    # simulator and no app host (TAL-399). It takes the build's macOS slot once the build ends, whatever its result,
-    # and finishes well before the hosted test shards; a contract-only run has no build, so it starts at once. Only the
-    # live contract test waits for the Web probe.
+    # simulator and no app host (TAL-399). In hosted mode it takes the build's macOS slot once the build ends, whatever
+    # its result, and finishes well before the hosted test shards; build and contracts modes skip app-build, so it starts
+    # at once. Only the live contract test waits for the Web probe.
     name: App package tests
     needs: app-build
     if: ${{ !cancelled() && inputs.package_tests }}
@@ -186,7 +207,7 @@ jobs:
     # holds no macOS slot while the build queues, and queue time counts toward no job's timeout, so it may wait long.
     # "Re-run failed jobs" keeps this job's success, so after a failed build use "Re-run all jobs" to keep the gate.
     name: App build started
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
@@ -212,7 +233,7 @@ jobs:
     # balanced from measured class times, and the last runs every other class.
     name: App hosted tests ${{ matrix.shard }}
     needs: build-started
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     strategy:
       fail-fast: false
       matrix:
@@ -489,7 +510,7 @@ jobs:
     # reuses main CI's "App / App hosted tests" job on the exact release source rather than testing again (TAL-1550).
     name: App hosted tests
     needs: app-test
-    if: inputs.mode != 'contracts'
+    if: inputs.mode == 'hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -6,8 +6,8 @@ baselines the thresholds came from, and how to compare a run against them.
 ## Where each budget lives
 
 Every budget measures an algorithm in `TalariaTests`, where the numbers are
-stable enough to assert on, and runs in the pull-request suite where a
-regression is introduced. Launch, transcript scrolling, navigation and the
+stable enough to assert on, and runs in the hosted tests on the `main` push
+that introduces a regression. Launch, transcript scrolling, navigation and the
 sidebar are checked on a device against the release phone list
 (`docs/phone-checks.md`), in Instruments when a change touches them.
 

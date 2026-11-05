@@ -143,7 +143,7 @@ jobs:
           printf '### App hosted tests\n\nMain CI has no successful hosted tests on %s; running them.\n' "$SOURCE" | tee -a "$GITHUB_STEP_SUMMARY"
         fi
   app-hosted-tests:
-    # The App's simulator-hosted unit tests (app-tests.yml in pull-request mode: the App build and the TalariaTests
+    # The App's simulator-hosted unit tests (app-tests.yml in hosted mode: the App build and the TalariaTests
     # shards) on the exact release source whenever the App ships, dry runs included, unless app-hosted-tests-lookup
     # found main CI's to reuse; build-gate requires one or the other. The contracts job runs the package tests instead
     # (TAL-414).
@@ -158,7 +158,7 @@ jobs:
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
-      mode: pull-request
+      mode: hosted
       ref: ${{ needs.prepare.outputs.source }}
       package_tests: false
   contracts:
