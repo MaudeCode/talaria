@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
+import type { Settings } from '../contracts'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
 import { showErrorToast } from '../features/toast/errorToast'
 import { getStreamContext } from '../stream/connection'
@@ -19,9 +20,12 @@ export function useSetSidebarQuotaPins() {
     mutationFn: async (ids) => {
       const context = getStreamContext()
       const saved = await api.saveSettings({ sidebar_quota_sources: ids })
-      // The owner drops a replaced write's response; keep the server's projection so a later refusal reveals it without a read.
-      const { sidebar_source_ids, sidebar_can_pin } = saved
-      if (sidebar_source_ids && context === getStreamContext()) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin })
+      // The owner drops a replaced write's response; keep what the server confirmed so a later refusal reveals it without a read.
+      const { sidebar_quota_sources, sidebar_source_ids, sidebar_can_pin } = saved
+      if (context === getStreamContext()) {
+        if (sidebar_quota_sources) qc.setQueryData<Settings>(keys.settings, (settings) => settings && { ...settings, sidebar_quota_sources })
+        if (sidebar_source_ids) qc.setQueryData<Quotas>(keys.providerQuotas, (q) => q && { ...q, sidebar_source_ids, sidebar_can_pin })
+      }
       return saved
     },
     onError: showErrorToast,

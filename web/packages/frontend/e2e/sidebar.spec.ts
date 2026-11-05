@@ -486,6 +486,35 @@ test('Preferences pins from the server projection, shows a choice at once and ro
   }
 })
 
+test('a confirmed first pin stays in the sidebar when a later choice is refused and the settings reread fails', async ({ page, errors }, info) => {
+  desktopOnly(info.project.name)
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let posts = 0
+  let readsFail = false
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, sidebar_source_ids: posts ? ['qsrc_weekly'] : [], sidebar_can_pin: true } }))
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'POST') return readsFail ? route.fulfill({ status: 500, json: { error: 'Down' } }) : route.fallback()
+    await held
+    return ++posts === 1 ? route.fulfill({ json: { sidebar_quota_sources: ['qsrc_weekly'], sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true } }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
+  })
+  await page.goto('/settings/preferences')
+  await settle(page)
+  const source = (name: string) => page.locator('#settingsSidebarQuotas').getByRole('switch', { name })
+  await source('Claude').click()
+  await expect(source('Claude')).toBeChecked()
+  await source('Z.ai').click()
+  await expect(source('Z.ai')).toBeChecked()
+  readsFail = true
+  const refusal = page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.status() === 400)
+  release()
+  await refusal
+  await sidebar(page).getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(quotaRow(page, 'qsrc_weekly')).toBeVisible()
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+  errors.splice(0, errors.length, ...errors.filter((e) => !/\/api\/settings|status of (400|500)/.test(e)))
+})
+
 test('the phone drawer shows pinned quotas and a row closes it into Insights', async ({ page }, info) => {
   test.skip(info.project.name !== 'mobile', 'the drawer is phone chrome')
   await withPins(page, ['qsrc_weekly', 'qsrc_stale'], async () => {
