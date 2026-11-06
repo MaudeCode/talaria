@@ -1376,8 +1376,9 @@ function redactSerializedUrls(text: string): string {
     const contentEnd = Math.min(i, text.length)
     const closed = i < text.length
     i = Math.min(i + 1, text.length)
-    // A quote glued to another word piece belongs to shell composition, not a serialized literal.
-    if ((start > 0 && !/[\s[({=:,]/.test(text[start - 1]!)) || (closed && i < text.length && !/[\s,;)\]}&|]/.test(text[i]!))) continue
+    // ANSI-C/gettext quoting owns its dollar prefix; other glued pieces belong to shell composition.
+    const prefix = text[start - 1] === '$' ? start - 1 : start
+    if ((prefix > 0 && !/[\s[({=:,]/.test(text[prefix - 1]!)) || (closed && i < text.length && !/[\s,;)\]}&|]/.test(text[i]!))) continue
     let value: unknown
     if (quote === '"' && closed) {
       try { value = JSON.parse(text.slice(start, i)) as unknown } catch { /* Python repr or a capped literal. */ }
