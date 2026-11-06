@@ -9,6 +9,13 @@ All endpoints below are served by the WebUI origin and sit behind the same
 authentication as every other `/api/*` route: when a WebUI password or OIDC
 is configured, clients must authenticate before opening any stream.
 
+Each connection resolves reasoning visibility when it starts and refreshes it
+at most once per `SSE_HEARTBEAT_INTERVAL_MS` (5 s), on a frame or an idle
+heartbeat. A changed or unreadable config hides reasoning while the matching
+config read is pending. This avoids checking the config file for every token.
+Tool redaction uses the current in-memory settings snapshot, so a completed
+settings write changes redaction immediately without reading the config file.
+
 ## Endpoint inventory
 
 | Endpoint | Availability | Purpose |

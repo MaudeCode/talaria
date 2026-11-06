@@ -404,6 +404,37 @@ describe('normalizeAppearance', () => {
 })
 
 describe('settings policies and revision retries', () => {
+  it('reuses normalized snapshots without resolving model defaults until requested', async () => {
+    const settings = store()
+    const defaultModel = vi.fn(() => 'first-model')
+    const defaultModelProvider = vi.fn(() => 'first-provider')
+    settings.hooks = { defaultModel, defaultModelProvider }
+    const defaults = vi.spyOn(settings, 'defaults')
+    const first = settings.peek()
+    for (let n = 0; n < 10_000; n++) expect(settings.peek().api_redact_enabled).toBe(true)
+    expect(defaultModel).not.toHaveBeenCalled()
+    expect(defaultModelProvider).not.toHaveBeenCalled()
+    expect(defaults).toHaveBeenCalledTimes(1)
+    expect(settings.peek()).toBe(first)
+    expect(settings.peekValue('api_redact_enabled')).toBe(true)
+    expect(first.default_model).toBe('first-model')
+    defaultModel.mockReturnValue('second-model')
+    expect(first.default_model).toBe('second-model')
+    expect(first.default_model_provider).toBe('first-provider')
+
+    write({ api_redact_enabled: false })
+    await settings.readRaw()
+    defaults.mockClear()
+    expect(settings.peek()).not.toBe(first)
+    expect(settings.peek().api_redact_enabled).toBe(false)
+    expect(defaults).toHaveBeenCalledTimes(1)
+    await settings.save({ api_redact_enabled: true })
+    defaults.mockClear()
+    expect(settings.peek().api_redact_enabled).toBe(true)
+    expect(settings.peekValue('api_redact_enabled')).toBe(true)
+    expect(defaults).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     { failure: 'malformed', strict: false },
     { failure: 'malformed', strict: true },

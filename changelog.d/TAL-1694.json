@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reduce server overhead while streaming chat responses to multiple tabs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

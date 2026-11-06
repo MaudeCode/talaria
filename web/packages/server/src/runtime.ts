@@ -391,8 +391,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     isolatedProfileMode,
     profilesMatch,
     assistantName,
-    redactEnabled: () => { try { return settings.peek().api_redact_enabled !== false } catch { return true } },
-    pinnedSessionsLimit: () => { const v = settings.peek().pinned_sessions_limit; return typeof v === 'number' && v >= 1 ? v : 3 },
+    redactEnabled: () => { try { return settings.peekValue('api_redact_enabled') !== false } catch { return true } },
+    pinnedSessionsLimit: () => { const v = settings.peekValue('pinned_sessions_limit'); return typeof v === 'number' && v >= 1 ? v : 3 },
     // Chat runtime (checkpoint 6) replaces these with live stream and cron state.
     runtime: {
       activeStreamIds,
@@ -591,7 +591,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     workspaces,
     now,
     log,
-    redactEnabled: () => { try { return settings.peek().api_redact_enabled !== false } catch { return true } },
+    redactEnabled: sessions.deps.redactEnabled,
     saveMode: () => ((env.HERMES_WEBUI_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
     toolsetsFor: (session) => session.enabled_toolsets,
     attachmentDir,
@@ -1048,12 +1048,12 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('runtime.sync_dependencies', { agent_dir: agentDir }, { timeoutMs: 330_000 })
     },
-    channel: () => normalizeWebChannel(settings.peek().update_channel),
-    agentChannel: () => normalizeChannel(settings.peek().agent_update_channel),
-    includeAgent: () => !pyBool(settings.peek().ignore_agent_updates),
-    summarizeAutomatically: () => settings.peek().check_for_updates !== false && settings.peek().summarize_updates_automatically !== false,
-    autoApply: () => settings.peek().check_for_updates !== false && settings.peek().auto_apply_updates === true,
-    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.peek().check_for_updates !== false,
+    channel: () => normalizeWebChannel(settings.peekValue('update_channel')),
+    agentChannel: () => normalizeChannel(settings.peekValue('agent_update_channel')),
+    includeAgent: () => !pyBool(settings.peekValue('ignore_agent_updates')),
+    summarizeAutomatically: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('summarize_updates_automatically') !== false,
+    autoApply: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('auto_apply_updates') === true,
+    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
     autoNotification: {
       begin: async () => (await updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui')).id,
       transition: async (id, phase, expectedIdentity, verifiedIdentity, detail) => { (await updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail)) },
