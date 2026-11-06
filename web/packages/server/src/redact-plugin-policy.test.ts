@@ -52,6 +52,7 @@ describe('plugin redaction policy', () => {
       const expected = 'value acme_0...cdef here'
       expect(redactText(text, true)).toBe(expected)
       expect(redactText(split, true)).toBe(expected)
+      expect(redactText('value acme_\x1b[31m0123456789abcdef here', true)).toBe(expected)
       expect(redactText('control_' + '\u200b'.repeat(8) + '12345678', true)).toBe('***')
       expect(redactText(large, true)).toBe(expected + ' ordinary output'.repeat(1500))
       const session = redactSessionData({ title: text, messages: [{ role: 'assistant', content: text }, { role: 'tool', content: text }] }, true)
@@ -69,5 +70,16 @@ describe('plugin redaction policy', () => {
       // A restarted or concurrently older snapshot cannot undo already learned rules.
       expect(redactText(text, true)).toBe(expected)
     } finally { await server.close() }
+  })
+
+  // Reuse acme_ only after the startup case has proved its first-registration cache transition.
+  it.each([
+    { name: 'ASCII BEL payloads', text: 'before a\x1b]0;x\x07c\x1b]0;me_\x070123456789abcdef after', patterns: [{ pattern: 'acme_[a-z0-9]{10,}', literal_prefix: 'acme_' }] },
+    { name: 'Unicode ST payloads', text: 'before α\x1b]0;x\x1b\\c\x1b]0;me_\x1b\\0123456789abcdef after', patterns: [{ pattern: 'αcme_[a-z0-9]{10,}', literal_prefix: 'αcme_' }] },
+    { name: 'an earlier unfinished prefix', text: 'before a\x1b]0;x\x07c\x1b]0;memid\x07tail_abcdefghijklmnop after', patterns: [{ pattern: 'acmemidtail_[a-z0-9]{10,}', literal_prefix: 'acmemidtail_' }, { pattern: 'mid[a-z0-9_]{10,}', literal_prefix: 'mid' }] },
+  ])('masks mixed OSC plugin credentials in $name', ({ text, patterns }) => {
+    applyRedactionPolicy({ fingerprint: text, patterns })
+    expect(redactText(text, true)).toBe('before ***')
+    expect(sanitizeShareMessage({ role: 'assistant', content: text }, [], [], '/nonexistent-home')?.content).toBe('before ***')
   })
 })

@@ -11,7 +11,10 @@ affected result, error, or frame. Concurrent policy reads do not consume pushes.
 
 The server applies the additive union synchronously in its shared redactor and
 invalidates its text memo on policy changes. Plugin matches are collected on
-original text and the existing control/ANSI-stripped views. Overlaps are merged
+original text and the existing control/ANSI-stripped views. Learned prefixes
+also use the shared bounded OSC payload/display scanner with their cached
+marker/stem index. An ambiguous learned prefix masks the remaining field from
+the earliest viable candidate; the scan stops after that first result. Overlaps are merged
 before masking. Disjoint built-in masks retain their display; an interfering
 match fully masks the enclosing built-in change interval, so a plugin cannot
 remove a credential name or prefix and expose its value. Display controls never

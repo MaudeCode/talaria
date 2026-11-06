@@ -290,8 +290,10 @@ const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
 /** A character a credential's prefix or body can hold (`SG.`, `glrt-a.b`, `gAAAA…=`): what a fail-closed run walks. */
 const RUN_CHAR_RE = /[A-Za-z0-9_.=-]/
+const payloadCharacter = (char: string, learned: boolean): boolean => learned ? !CONTROL_CHAR_RE.test(char) : RUN_CHAR_RE.test(char)
 /** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
 const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
+const STRING_ANYWHERE_RE = new RegExp(STRING_OPENER_RE.source.slice(1))
 const PAYLOAD_RUN_CAP = 65_536
 /**
  * The token families a split token is joined for, each with its own boundaries: `CRED_RE`'s prefixes, and `JWT_RE`, whose
@@ -444,18 +446,26 @@ const seedAfter = (prev: string | undefined): string | null => (prev === undefin
  * walk from it; a JWT's also after a `-`.
  * Candidates live only while they can grow into a prefix, which bounds them and keeps the scan linear.
  */
-function crossPayloadPrefixStarts(text: string): [start: number, end: number, marker: string][] {
+function crossPayloadPrefixStarts(text: string, learned?: { markers: ReadonlySet<string>; stems: ReadonlySet<string> }): [start: number, end: number, marker: string][] {
   const starts: [number, number, string][] = []
   if (!/[\x1b\x90\x98\x9d-\x9f]/.test(text)) return starts
+  const markers = learned?.markers ?? PAYLOAD_MARKERS
+  const stems = learned?.stems ?? PAYLOAD_MARKER_STEMS
+  const seed: typeof seedAfter = learned ? () => '' : seedAfter
   // Each candidate string, with the original index of its earliest start.
   let candidates = new Map<string, number>()
   // Grows a candidate by the run characters of `chars`, which starts at original index `at`.
   const grow = (into: Map<string, number>, candidate: string, start: number, chars: string, at: number): void => {
+    if (learned && starts.length) return
     for (let j = 0; j < chars.length; j += 1) {
-      if (!RUN_CHAR_RE.test(chars[j]!)) continue
+      if (!payloadCharacter(chars[j]!, Boolean(learned))) continue
       candidate += chars[j]!
-      if (PAYLOAD_MARKERS.has(candidate)) return void starts.push([start, at + j + 1, candidate])
-      if (!PAYLOAD_MARKER_STEMS.has(candidate)) return
+      if (markers.has(candidate)) {
+        // A shorter learned marker must not expose an earlier prefix still being assembled.
+        if (learned) for (const pending of [...candidates.values(), ...into.values()]) start = Math.min(start, pending)
+        return void starts.push([start, at + j + 1, candidate])
+      }
+      if (!stems.has(candidate)) return
     }
     const seen = into.get(candidate)
     if (seen === undefined || start < seen) into.set(candidate, start)
@@ -467,23 +477,23 @@ function crossPayloadPrefixStarts(text: string): [start: number, end: number, ma
     const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
     if (gap) {
       const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
-      const next = new Map(candidates)
-      for (const [candidate, start] of candidates) grow(next, candidate, start, gap.slice(from), k + from)
       const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
+      const next = new Map(candidates)
+      for (const [candidate, start] of candidates) grow(next, candidate, start, gap.slice(from, end), k + from)
       let tail = end
-      while (tail > from && RUN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
-      for (let j = tail; j < end; j += 1) {
-        const seed = seedAfter(j === tail ? undefined : gap[j - 1])
-        if (seed !== null) grow(next, seed, k + j, gap.slice(j, end), k + j)
+      while (tail > from && payloadCharacter(gap[tail - 1]!, Boolean(learned))) tail -= 1
+      for (let j = tail; j < end && (!learned || !starts.length); j += 1) {
+        const initial = seed(j === tail ? undefined : gap[j - 1])
+        if (initial !== null) grow(next, initial, k + j, gap.slice(j, end), k + j)
       }
       candidates = next
       prev = undefined
       k += gap.length
-    } else if (RUN_CHAR_RE.test(text[k]!)) {
+    } else if (payloadCharacter(text[k]!, Boolean(learned))) {
       const next = new Map<string, number>()
       for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!, k)
-      const seed = seedAfter(prev)
-      if (seed !== null) grow(next, seed, k, text[k]!, k)
+      const initial = seed(prev)
+      if (initial !== null) grow(next, initial, k, text[k]!, k)
       candidates = next
       prev = text[k]!
       k += 1
@@ -492,6 +502,7 @@ function crossPayloadPrefixStarts(text: string): [start: number, end: number, ma
       prev = undefined
       k += 1
     }
+    if (learned && starts.length) return starts
   }
   return starts
 }
@@ -1734,6 +1745,7 @@ function secretTokenCounts(text: string): Map<string, number> {
 
 // Rules stay additive across concurrent snapshots and sidecar restarts: an older reply cannot undo a push.
 const pluginPatterns = new Map<string, ReturnType<typeof compilePluginPattern>>()
+const pluginPayloadPrefixes = { markers: new Set<string>(), stems: new Set<string>() }
 let policyFingerprint = ''
 
 function compilePluginPattern(pattern: string, prefix: string) {
@@ -1779,6 +1791,10 @@ export function applyRedactionPolicy(policy: RedactionPolicy): void {
   for (const { pattern, literal_prefix } of policy.patterns) {
     if (pluginPatterns.has(pattern)) continue
     pluginPatterns.set(pattern, compilePluginPattern(pattern, literal_prefix))
+    if (!pluginPayloadPrefixes.markers.has(literal_prefix)) {
+      pluginPayloadPrefixes.markers.add(literal_prefix)
+      for (let n = 1; n < literal_prefix.length; n += 1) pluginPayloadPrefixes.stems.add(literal_prefix.slice(0, n))
+    }
   }
   policyFingerprint = policy.fingerprint
   cache.clear()
@@ -1807,6 +1823,11 @@ function redactPluginPatterns(text: string, builtin = text): string {
   for (const gaps of SPLIT_VIEWS) {
     const view = splitView(text, gaps)
     if (view) collect(view.stripped, view.kept)
+  }
+  if (STRING_ANYWHERE_RE.test(text)) {
+    const first = crossPayloadPrefixStarts(text, pluginPayloadPrefixes)[0]
+    // Payload choices leave the true match boundary unknown; hide the remaining field after the earliest candidate.
+    if (first) spans.push([first[0], text.length, '', true])
   }
   if (!spans.length) return builtin
   let target = text
