@@ -152,12 +152,7 @@ final class StatusChipGroupTests: XCTestCase {
             }
             HostedAccessibility.activate(queue)
             XCTAssertEqual(model.queueOpens, 1)
-            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-            })
-            attachment.name = width == 150 ? "segments-narrow" : "segments-accessibility"
-            attachment.lifetime = .keepAlways
-            add(attachment)
+            attachHostedScreenshot(window, name: width == 150 ? "segments-narrow" : "segments-accessibility")
         }
     }
 
@@ -179,12 +174,7 @@ final class StatusChipGroupTests: XCTestCase {
             }
             HostedAccessibility.activate(queue)
             XCTAssertEqual(model.queueOpens, 1)
-            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-            })
-            attachment.name = dark ? "segments-dark-rtl" : "segments-light"
-            attachment.lifetime = .keepAlways
-            add(attachment)
+            attachHostedScreenshot(window, name: dark ? "segments-dark-rtl" : "segments-light")
         }
     }
 
@@ -252,12 +242,7 @@ final class ComposerToolsetsHostedTests: APIClientTestCase {
         let window = try hostWindow(ComposerToolsetsSheet(loadCatalog: { catalog }, onSave: { _ in }))
         _ = await awaitElement(in: window) { $0.accessibilityLabel?.contains("todo") == true }
         _ = try await requireElement(in: window, label: "Session toolsets")
-        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        attachment.name = "toolsets-after"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        attachHostedScreenshot(window, name: "toolsets-after")
         let disabled = await awaitElement(in: window) { $0.accessibilityLabel?.contains("todo") == true }
         XCTAssertNotNil(disabled, "The catalog must show the operator-disabled toolset")
         XCTAssertTrue(try XCTUnwrap(disabled).accessibilityTraits.contains(.notEnabled))

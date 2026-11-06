@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Pressing Sidebar while the screen is still laying out now opens the sidebar instead of doing nothing.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

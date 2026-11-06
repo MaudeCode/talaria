@@ -128,6 +128,8 @@ Agent/MCP flow:
   from the cross-project pool, which erases each device on release. If the test host has not connected within
   `TALARIA_RUNNER_CONNECT_TIMEOUT` seconds (default 30), the runner reboots the simulator and launches once more,
   then stops the run naming the simulator; test failures never retry.
+  Prefix `TALARIA_TEST_SCREENSHOTS=1` to keep each hosted test's evidence screenshots in its result bundle; other
+  runs render only a failing test's window.
   Tests run in process under the isolated `.xctest` app and app-group identity,
   with in-memory authentication, draft, and cache state; they do not read
   simulator login state or contact an external server. See

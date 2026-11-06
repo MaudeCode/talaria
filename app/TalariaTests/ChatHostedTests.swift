@@ -1201,6 +1201,11 @@ final class ChatHostedTests: XCTestCase {
                 XCTAssertEqual(nextBefore.content.messageID, nextReaderID)
                 fixture.releaseHeldLoads()
                 try await Task.sleep(for: .milliseconds(1_500))
+                // On a busy runner the page's last layout can land after any fixed wait; a reader it moved stays moved.
+                _ = await awaitCondition {
+                    guard let hit = registry.hit(at: scroll.convert(nextPoint, from: window), in: scroll) else { return false }
+                    return abs(hit.localPoint.y - nextBefore.localPoint.y) <= 2
+                }
                 let nextAfter = try XCTUnwrap(registry.hit(at: scroll.convert(nextPoint, from: window), in: scroll))
                 XCTAssertEqual(nextAfter.content.messageID, nextReaderID)
                 XCTAssertEqual(nextAfter.localPoint.y, nextBefore.localPoint.y, accuracy: 2,

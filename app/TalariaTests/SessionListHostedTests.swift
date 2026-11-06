@@ -729,23 +729,13 @@ final class SessionListHostedTests: XCTestCase {
         let session = try XCTUnwrap(viewModel.sessions.first)
         let actions = fixtureRowActions
         let window = try hostWindow(ObservedSessionRow(viewModel: viewModel, actions: actions))
-        let before = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        before.name = "pending-pin-before"
-        before.lifetime = .keepAlways
-        add(before)
+        attachHostedScreenshot(window, name: "pending-pin-before")
         let pin = Task { await viewModel.setPinned(true, for: session) }
         await fulfillment(of: [arrived], timeout: 5)
         let pending = await awaitElement(in: window) { $0.accessibilityLabel?.contains(", Pinned") == true }
         XCTAssertNotNil(pending, "The row must display the submitted pin while the write is unresolved")
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains { $0.contains("Pending:") })
-        let after = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        after.name = "pending-pin-after"
-        after.lifetime = .keepAlways
-        add(after)
+        attachHostedScreenshot(window, name: "pending-pin-after")
         XCTAssertNotEqual(viewModel.sessions.first?.pinned, true, "The pending pin must not change canonical grouping")
         state.answerPin()
         _ = await pin.value
@@ -1471,6 +1461,27 @@ final class RegularSplitHostedTests: XCTestCase {
         XCTAssertTrue(laidOut, "The native column and composer did not finish their entry")
         XCTAssertEqual(split.showsSidebar, divisions?.isEmpty == false || (size.width >= 900 && size.width > size.height))
         return split
+    }
+
+    /// A layout update landing between a Sidebar press and the turn that moves the column keeps the press (TAL-1897).
+    func testASidebarPressSurvivesALayoutUpdateThatLandsBeforeTheColumnMoves() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.padLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        let available = await awaitCondition { HostedAccessibility.toolbarItem("Sidebar", in: window) != nil }
+        XCTAssertTrue(available, "The window has no Sidebar action")
+        settle(0.5)
+        // Sent directly, because `activate` runs the turn the press queues.
+        let press = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window))
+        UIApplication.shared.sendAction(try XCTUnwrap(press.action), to: press.target, from: press, for: nil)
+        window.frame.size.width -= 60
+        window.layoutIfNeeded()
+        let opened = await awaitCondition {
+            HostedAccessibility.splitViewController(under: window.rootViewController)?.displayMode == .oneBesideSecondary
+        }
+        XCTAssertTrue(opened, "The layout update dropped the press")
     }
 
     func testKanbanLoadingStaysInTheFoldPane() async throws {

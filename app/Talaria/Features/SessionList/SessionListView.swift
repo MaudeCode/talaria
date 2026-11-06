@@ -93,6 +93,8 @@ struct SessionListView: View {
     @State private var columnFoldWidth: CGFloat?
     @State private var columnUpdateRevision = 0
     @State private var isPreparingColumn = false
+    /// A reader's press waiting for the turn that moves the column, which a layout update landing first must keep.
+    @State private var queuedColumnChoice: Bool?
     @State private var isApplyingSidebarLayout = false
     private var regularSplitFullHeight: CGFloat { regularSplitFullSize.height }
     @AppStorage(SessionSidebarDisclosureSettings.regularPortraitVisibilityKey)
@@ -600,6 +602,7 @@ struct SessionListView: View {
             sidebarLayoutResumeTask?.cancel()
             columnUpdateRevision += 1
             isPreparingColumn = false
+            queuedColumnChoice = nil
             if scenePhase == .active { observeSidebarLayout() }
             else { isResumingSidebarLayout = appliedSidebarLayout != nil }
         }
@@ -1000,6 +1003,7 @@ struct SessionListView: View {
         // Cancel a queued landscape toggle before admitting the portrait layout in this same transaction.
         columnUpdateRevision += 1
         isPreparingColumn = false
+        queuedColumnChoice = nil
         nativeColumnVisibility = .detailOnly
     }
 
@@ -1009,6 +1013,8 @@ struct SessionListView: View {
         guard scenePhase == .active, !isResumingSidebarLayout, appliedSidebarLayout != nil else { return }
         // A native callback during preparation must not put the previous target back.
         guard !isPreparingColumn || observedVisibility == nil || storedChoice != nil else { return }
+        let storedChoice = storedChoice ?? queuedColumnChoice
+        queuedColumnChoice = storedChoice
         if let observedVisibility { nativeColumnVisibility = observedVisibility }
         withTransaction(.unanimated) {
             if storedChoice == true, widensForFilesInspector {
@@ -1054,6 +1060,7 @@ struct SessionListView: View {
                 columnFoldWidth = columnWidth
                 nativeColumnVisibility = visibility
                 isPreparingColumn = false
+                queuedColumnChoice = nil
             }
             // The column hide is what makes room for a pending Files presentation; admit it on the following turn.
             if visibility == .detailOnly, navigationState.filesInspectorPresented, !nativeFilesInspectorPresented {

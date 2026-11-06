@@ -142,15 +142,21 @@ final class DuoFoldHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Stopped", "The run's end never reached the transcript")
     }
 
-    /// TAL-850: folding hands the chat to a new view without leaving it, so a queued message stays queued and the draft
-    /// stays as typed. Leaving the chat moves it into the draft, and returning sends nothing.
-    func testAQueuedMessageStaysQueuedAcrossFoldingAndBecomesTheDraftOnLeaving() async throws {
+    /// The chat on the inner display with a message queued behind its held run.
+    private func openChatWithAQueuedMessage() async throws -> Folding {
         let folding = try await openChatOnInnerDisplay(["--ui-test-chat-controls"])
+        try await sendFromComposer("Run the deterministic fixture", in: folding.window)
+        _ = try await requireElement(in: folding.window, label: "Waiting for control input.")
+        try await sendFromComposer("/queue Queued across folding", in: folding.window)
+        _ = try await requireElement(in: folding.window, label: "1 queued")
+        return folding
+    }
+
+    /// TAL-850: folding hands the chat to a new view without leaving it, so a queued message stays queued and the draft
+    /// stays as typed.
+    func testAQueuedMessageStaysQueuedAcrossFolding() async throws {
+        let folding = try await openChatWithAQueuedMessage()
         let window = folding.window
-        try await sendFromComposer("Run the deterministic fixture", in: window)
-        _ = try await requireElement(in: window, label: "Waiting for control input.")
-        try await sendFromComposer("/queue Queued across folding", in: window)
-        _ = try await requireElement(in: window, label: "1 queued")
         settle(0.3)
         attachHostedScreenshot(window, name: "queued-before-leaving")
 
@@ -163,7 +169,11 @@ final class DuoFoldHostedTests: XCTestCase {
             XCTAssertNotNil(HostedAccessibility.element(in: window, label: "1 queued"), "\(moment) the Duo emptied the queue")
             XCTAssertEqual(composerDraftText(in: window), "", "\(moment) the Duo moved the queue into the draft")
         }
+    }
 
+    /// TAL-850: leaving the chat moves its queued message into the draft, and returning sends nothing.
+    func testAQueuedMessageBecomesTheDraftOnLeaving() async throws {
+        let window = try await openChatWithAQueuedMessage().window
         let starts = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
@@ -268,16 +278,24 @@ final class DuoFoldHostedTests: XCTestCase {
         // The latest row finishes its entry before the toggle, as `testLongBodiesOpenCollapsedAndExpandInPlace` waits.
         var previousTail: CGRect?
         var stableSamples = 0
+        var waitingOn = "the transcript's scroll controller"
         let entered = await awaitCondition {
-            guard let controller = window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController,
-                  !controller.isHoldingPosition,
-                  let tail = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityLabel == "Short reply 25." && isVisible($0) })
-            else { stableSamples = 0; return false }
+            func waitFor(_ reason: String) -> Bool {
+                waitingOn = reason
+                stableSamples = 0
+                return false
+            }
+            guard let controller = window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController
+            else { return waitFor("the transcript's scroll controller") }
+            guard !controller.isHoldingPosition else { return waitFor("the transcript's held position") }
+            guard let tail = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityLabel == "Short reply 25." && isVisible($0) })
+            else { return waitFor("a visible latest row") }
+            waitingOn = "a still latest row, last at \(tail.accessibilityFrame)"
             stableSamples = tail.accessibilityFrame == previousTail ? stableSamples + 1 : 0
             previousTail = tail.accessibilityFrame
             return stableSamples >= 5
         }
-        XCTAssertTrue(entered, "The latest row never finished its entry")
+        XCTAssertTrue(entered, "The latest row never finished its entry, waiting on \(waitingOn)")
         // The latest long body, which stays in view at the latest message on either display.
         let showMore = try XCTUnwrap(HostedAccessibility.elements(in: window)
             .filter { $0.accessibilityLabel == "Show more" && isVisible($0) }

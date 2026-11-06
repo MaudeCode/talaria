@@ -92,6 +92,7 @@ fi
 # The runner connects and reports its first suite.
 print -r -- '{"name":{"_value":"testSuiteStarted"}}' >> "$result_stream"
 [[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
+[[ ! -e .codex-tmp/xctest/test-screenshots ]] || print -r -- "${selectors[1]:-}" >> "$state/screenshots"
 if [[ -e .codex-tmp/xctest/native-history-drag ]]; then
     print -r -- "$(<.codex-tmp/xctest/native-history-drag)|${selectors[1]:-}" >> "$state/native-drag"
 fi
@@ -140,7 +141,8 @@ export IOS_SIMULATOR_POOL_DIR="$state/pool"
 wait_until_active() {
     local pid=$1 target=${2:-1}
     for _ in {1..300}; do
-        read -r active < "$state/active"
+        # Unlocked, so this can land inside a run's truncate-then-write and read nothing.
+        read -r active < "$state/active" || { sleep 0.01; continue; }
         (( active >= target )) && return
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.01
@@ -283,6 +285,13 @@ TALARIA_RECORD_VISUAL_REFERENCES=1 "$repo/scripts/test-ios" TalariaTests/Record 
 TALARIA_RECORD_VISUAL_REFERENCES=1 "$repo/scripts/test-ios" TalariaTests/RecordFailure > "$state/record-failure.log" 2>&1 || true
 [[ "$(<"$state/recorded")" == $'-only-testing:TalariaTests/Record\n-only-testing:TalariaTests/RecordFailure' ]]
 [[ ! -e "$marker" ]]
+
+# Only a run that asks for evidence screenshots keeps them, and its marker goes with it.
+: > "$state/screenshots"
+TALARIA_TEST_SCREENSHOTS=1 "$repo/scripts/test-ios" TalariaTests/Evidence > "$state/evidence.log" 2>&1
+"$repo/scripts/test-ios" TalariaTests/NoEvidence > "$state/no-evidence.log" 2>&1
+[[ "$(<"$state/screenshots")" == '-only-testing:TalariaTests/Evidence' ]]
+[[ ! -e "$repo/.codex-tmp/xctest/test-screenshots" ]]
 
 # A run cancelled while waiting for admission leaves the recording run's marker in place.
 export TALARIA_FAKE_XCODEBUILD_SECONDS=3
