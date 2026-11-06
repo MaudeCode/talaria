@@ -100785,6 +100785,36 @@
                             "items": {
                               "type": "string"
                             }
+                          },
+                          "timezone": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "catch_up": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "grace_minutes": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -100792,7 +100822,10 @@
                           "schedule_input",
                           "attention_hint",
                           "last_failure",
-                          "delivery_unconfirmed_platforms"
+                          "delivery_unconfirmed_platforms",
+                          "timezone",
+                          "catch_up",
+                          "grace_minutes"
                         ],
                         "additionalProperties": {}
                       }
@@ -100848,11 +100881,15 @@
                           "since"
                         ]
                       }
+                    },
+                    "schedule_policy_available": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "jobs",
-                    "unwritable_stores"
+                    "unwritable_stores",
+                    "schedule_policy_available"
                   ],
                   "additionalProperties": {}
                 }
@@ -101596,6 +101633,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -101603,7 +101670,10 @@
                         "schedule_input",
                         "attention_hint",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },
@@ -102248,6 +102318,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -102255,7 +102355,10 @@
                         "schedule_input",
                         "attention_hint",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },
@@ -102704,6 +102807,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -102711,7 +102844,10 @@
                         "schedule_input",
                         "attention_hint",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },
@@ -103161,6 +103297,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -103168,7 +103334,10 @@
                         "schedule_input",
                         "attention_hint",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },
@@ -103628,6 +103797,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -103635,7 +103834,10 @@
                         "schedule_input",
                         "attention_hint",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },
@@ -104085,6 +104287,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -104092,7 +104324,10 @@
                         "schedule_input",
                         "attention_hint",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },

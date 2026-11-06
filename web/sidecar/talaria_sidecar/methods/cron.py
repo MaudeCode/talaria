@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import inspect
 import logging
 import multiprocessing
 import queue
@@ -32,6 +33,7 @@ _JOB_ID_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}")
 _OUTPUT_CONTENT_LIMIT = 8000
 _OUTPUT_HEADER_CONTEXT = 200
 _PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort", "monitor_script", "monitor_url")
+_SCHEDULE_POLICY_FIELDS = ("timezone", "catch_up", "grace_minutes")
 _RUNNING: dict[str, float] = {}
 _RUNNING_LOCK = threading.Lock()
 _SNAPSHOT_LOCK = threading.Lock()
@@ -179,8 +181,14 @@ def _continuity_refs(context_from, continuity: bool) -> list:
     return refs
 
 
+def _schedule_policy_available() -> bool:
+    """Agent 0.22.6's ``create_job`` takes the per-job schedule policy; an older ``update_job`` would store the keys unread."""
+    return set(_SCHEDULE_POLICY_FIELDS) <= set(inspect.signature(_jobs().create_job).parameters)
+
+
 def _field_updates(body: dict, current_context_from=None) -> dict:
-    updates = {key: body[key] for key in _PASSTHROUGH_FIELDS if key in body}
+    fields = _PASSTHROUGH_FIELDS + _SCHEDULE_POLICY_FIELDS if _schedule_policy_available() else _PASSTHROUGH_FIELDS
+    updates = {key: body[key] for key in fields if key in body}
     if "monitor" in body:
         updates.update(_monitor_storage(body["monitor"]))
     if "continuity" in body:
@@ -705,6 +713,7 @@ def register(registry) -> None:
         if params.get("probe_store"):
             with _store(home):
                 result["store_health"] = _store_health(jobs.get_cron_output_dir().parent)
+            result["schedule_policy"] = _schedule_policy_available()
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
         with _RUNNING_LOCK:
             active = set(_RUNNING)
@@ -789,7 +798,7 @@ def register(registry) -> None:
         with _owned_store(profile_home_param(params)):
             updates = {}
             for key, value in body.items():
-                if key in ("monitor", "continuity", "repeat"):
+                if key in ("monitor", "continuity", "repeat", *_SCHEDULE_POLICY_FIELDS):
                     continue
                 if key in ("model", "provider"):
                     updates[key] = value if value else None

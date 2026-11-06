@@ -1094,6 +1094,13 @@
         ""
       ]
     },
+    "tests/test_cron_parity.py::test_schedule_policy_round_trips_clears_and_returns_the_agents_refusal": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: create_job and update_job accept, clear and refuse per-job timezone, catch_up and grace_minutes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_parity.py::test_create_pins_execution_profile_model": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: create pins execution profile model. Uses the real installed release, not a fabricated API response.",

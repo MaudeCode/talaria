@@ -114,8 +114,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     # cron
     ("cron.blueprints", {"profile_home": "{home}"}),
     ("cron.blueprint_fill", {"profile_home": "{home}", "key": "morning-brief", "values": {"time": "08:30"}}),
-    ("cron.list", {"profile_home": "{home}"}),
-    ("cron.create", {"profile_home": "{home}", "job": {"schedule": "every 1h", "prompt": "say hi", "name": "hello"}}),
+    ("cron.list", {"profile_home": "{home}", "probe_store": True}),
+    ("cron.create", {"profile_home": "{home}", "job": {"schedule": "0 9 * * *", "prompt": "say hi", "name": "hello", "timezone": "America/New_York", "catch_up": False, "grace_minutes": 30}}),
     ("cron.delivery_options", {"profile_home": "{home}"}),
     ("cron.status", {}),
     # providers / models / aux / text / process

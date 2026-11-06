@@ -471,7 +471,7 @@ export const CRON_METHODS = {
   'cron.blueprints': { params: ProfileHomeParams, result: CronBlueprintsSchema },
   'cron.blueprint_fill': { params: CronBlueprintFillInputSchema.extend({ profile_home: z.string().optional() }), result: CronBlueprintFillSchema },
   /** `probe_store` adds the store's write probe (TAL-810): null when writes land or the Agent predates the probe. */
-  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
+  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional(), schedule_policy: z.boolean().optional() }) },
   'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },
   'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
   'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },

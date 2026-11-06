@@ -14,6 +14,35 @@ const derived = (job: Dict) => {
 }
 const state = (job: Dict) => jobForApi(job).derived_state
 
+describe('per-job schedule policy (TAL-1820)', () => {
+  // As the Agent's `cronjob` tool stores it; an unset knob is an absent key.
+  const pinned: Dict = { ...recurring, schedule_display: '0 9 * * *', timezone: 'America/New_York', catch_up: false, grace_minutes: 0 }
+
+  it('names a job pinned through the Agent next to its schedule, and keeps the editor prefill bare', () => {
+    expect(jobForApi(pinned)).toMatchObject({ timezone: 'America/New_York', catch_up: false, grace_minutes: 0, schedule_display: '0 9 * * * (America/New_York)', schedule_input: '0 9 * * *' })
+    expect(jobForApi(recurring)).toMatchObject({ timezone: null, catch_up: null, grace_minutes: null, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' })
+  })
+
+  it('reports whether the Agent takes the fields, and forwards them on create and an explicit clear on update', async () => {
+    const sidecar = new FakeSidecar()
+    let schedulePolicy = true
+    const home = '/homes/default'
+    const calls: Dict[] = []
+    const stored = { ...recurring, profile: null, toast_notifications: true, monitor: '', continuity: false } as never
+    sidecar.respond('cron.list', (params) => ({ jobs: [stored], ...(params.probe_store ? { schedule_policy: schedulePolicy } : {}) }))
+    sidecar.respond('cron.create', (params) => { calls.push(params.job); return { job: stored } })
+    sidecar.respond('cron.update', (params) => { calls.push(params.updates); return { job: stored } })
+    const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
+    expect(await service.list('default', false)).toMatchObject({ schedule_policy_available: true })
+    schedulePolicy = false
+    expect(await service.list('default', false)).toMatchObject({ schedule_policy_available: false })
+    await service.create(home, { schedule: '0 9 * * *', prompt: 'hi', timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
+    expect(calls[0]).toMatchObject({ timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
+    await service.update(home, { job_id: recurring.id, timezone: null, catch_up: null, grace_minutes: null })
+    expect(calls[1]).toMatchObject({ timezone: null, catch_up: null, grace_minutes: null })
+  })
+})
+
 describe('cron derived state (TAL-296)', () => {
   it('keeps a paused recurring job with a stale error paused and resumable', () => {
     expect(derived({ ...recurring, enabled: false, state: 'paused', next_run_at: null, last_status: 'error', last_error: 'boom' })).toEqual({ derived_state: 'paused', needs_attention: false, resumable: true })
