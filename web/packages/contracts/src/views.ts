@@ -266,8 +266,11 @@ export const MessageSchema = z.looseObject({
    * part of a turn's reply; it is absent when Web's own error row already reports that turn. `session_finalize` is
    * a plugin's closing text after clear, with role `local_notice`, display-only and excluded from model history.
    * `wake_failed`: a group discussion's members could not be woken, with the Agent's error in `content`.
+   * `lead_assigned`: a group discussion's lead routed a message, named in `_lead_assignment`.
    */
-  _notice_kind: z.enum(['failed_turn', 'session_finalize', 'wake_failed']).optional(),
+  _notice_kind: z.enum(['failed_turn', 'session_finalize', 'wake_failed', 'lead_assigned']).optional(),
+  /** Who a discussion's lead gave a message to, as display names, for clients' localized wording. `assignees` is empty when the lead took it alone. */
+  _lead_assignment: z.object({ lead: z.string(), assignees: z.array(z.string()) }).optional(),
   /**
    * TAL-816: a user row of a messaging session that the Agent's gateway mirrored after a webhook route's or cron job's
    * delivery to the chat, not a message the user sent. Clients show it as a delivery notice titled by a localized label

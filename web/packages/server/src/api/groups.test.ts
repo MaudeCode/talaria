@@ -85,6 +85,77 @@ it('attributes a scheduled job\'s post and failure notice to the job, never to t
   expect(rows.slice(4).map((r) => [r.message.role, r.author, r.scheduled])).toEqual([['user', '', false], ['user', '', false]])
 })
 
+it('projects a lead room\'s settings and who its lead assigned (Agent v0.22.7)', async () => {
+  const { state, assignment, append } = await setup()
+  state.context = { purpose: 'Ship it', notes: 'Shared notes', routing: 'lead', lead_member_id: 'one' }
+  // An everyone-routed settings event carries an empty lead: it stays hidden and leaves the log readable.
+  state.events.push({ room_id: 'discussion', seq: 1, event_id: 'settings', kind: 'room.context_set', authority_epoch: 1, actor: { kind: 'system', id: 'room-control' }, payload: { purpose: '', notes: '', routing: 'everyone', lead_member_id: '' }, created_at: 1001 })
+  state.room.latest_seq = 1
+  assignment('one', ['two'])
+  assignment('one', ['one', 'two'])
+  assignment('one', ['one'], true)
+  assignment('one', ['one'])
+  assignment('one', ['foreign'])
+  append('message.member', 'Taken')
+  const view = await read()
+  expect(view.room).toMatchObject({ context: { purpose: 'Ship it', notes: 'Shared notes', routing: 'lead', lead_member_id: 'one' }, purpose_limit: 500, notes_limit_bytes: 4096 })
+  expect(view.room?.actions).toContain('context')
+  expect(view.room?.members.map((m) => m.lead)).toEqual([true, false])
+  expect(view.rows.map((r) => [r.author, r.message._notice_kind, r.message._lead_assignment])).toEqual([
+    ['', 'lead_assigned', { lead: 'Writer', assignees: ['Reviewer'] }],
+    ['', 'lead_assigned', { lead: 'Writer', assignees: ['Writer', 'Reviewer'] }],
+    ['', 'lead_assigned', { lead: 'Writer', assignees: [] }],
+    ['', 'lead_assigned', { lead: 'Writer', assignees: [] }],
+    ['Writer', undefined, undefined],
+  ])
+})
+
+it('offers no settings on a gateway without groups.context, or for a routing this contract does not know', async () => {
+  const { state } = await setup()
+  state.context = { purpose: 'Kept', notes: '', routing: 'lead', lead_member_id: 'one' }
+  state.contextOffered = false
+  const without = await read()
+  expect(without.room?.context).toBeNull()
+  expect(without.room?.actions).not.toContain('context')
+  expect(without.room?.members.map((m) => m.lead)).toEqual([false, false])
+  expect(await (await post(without.room!.identity, { action: 'context', room_id: 'discussion', event_id: 'save', purpose: '', notes: '', routing: 'everyone' })).json()).toMatchObject({ outcome: 'refused', reason: 'unsupported' })
+  state.contextOffered = true
+  state.context = { purpose: 'Kept', notes: '', routing: 'auto', lead_member_id: '' }
+  const unknown = await read()
+  expect(unknown.available).toBe(true)
+  expect(unknown.room?.context).toBeNull()
+  expect(unknown.room?.actions).toEqual(['send', 'rename', 'disband'])
+})
+
+it('reconciles a lost settings save, retries one event_id and never writes twice', async () => {
+  const { state, sidecar } = await setup()
+  const view = await read()
+  const save = (event_id: string, fields = {}) => post(view.room!.identity, { action: 'context', room_id: 'discussion', event_id, purpose: 'Ship it', notes: 'Shared', routing: 'lead', lead_member_id: 'two', ...fields })
+  const contextEvents = () => state.events.filter((e) => e.kind === 'room.context_set').length
+  const forwarded = () => sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'context').map((c) => (c.params as { operation: unknown }).operation)
+
+  state.lostContext = 'after'
+  expect(await (await save('committed')).json()).toMatchObject({ outcome: 'confirmed', event_id: 'committed' })
+  expect(contextEvents()).toBe(1)
+  expect(forwarded()).toEqual([{ action: 'context', room_id: 'discussion', event_id: 'committed', purpose: 'Ship it', notes: 'Shared', routing: 'lead', lead_member_id: 'two' }])
+
+  state.lostContext = 'before'
+  expect(await (await save('lost', { purpose: 'Second' })).json()).toMatchObject({ outcome: 'unknown' })
+  expect(contextEvents()).toBe(1)
+  state.lostContext = null
+  for (let attempt = 0; attempt < 2; attempt++) expect(await (await save('lost', { purpose: 'Second' })).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(contextEvents()).toBe(2)
+  expect((await read()).room?.context?.purpose).toBe('Second')
+
+  state.refuseContext = true
+  expect(await (await save('refused', { purpose: 'Third' })).json()).toMatchObject({ outcome: 'refused' })
+  expect((await read()).room?.context?.purpose).toBe('Second')
+  state.refuseContext = false
+  sidecar.calls.length = 0
+  for (const fields of [{ lead_member_id: 'foreign' }, { lead_member_id: undefined }, { purpose: 'x'.repeat(501) }, { notes: 'é'.repeat(2049) }]) expect((await save('invalid', fields)).status).toBe(400)
+  expect(forwarded()).toEqual([])
+})
+
 it('refuses foreign members, source attribution and stale room identities', async () => {
   const { append, state, catalogIdentity } = await setup()
   append('message.member', 'Forged', { member_id: 'one', profile: 'foreign', handle: 'one', display_name: 'Bad' })

@@ -212,13 +212,14 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
 
 /** A server-classified notice, one quiet line in its place, never a reply. */
 export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage }) {
-  const failed = row.message._notice_kind !== 'session_finalize'
+  const failed = row.message._notice_kind !== 'session_finalize' && row.message._notice_kind !== 'lead_assigned'
+  const assignment = row.message._lead_assignment
   const Icon = failed ? AlertTriangle : Info
   return (
     <div className="msg-row" data-role="notice" data-msg-idx={row.index} data-message-key={row.key}>
       <p role="note" className="flex items-center gap-2 text-[13px] text-muted">
         <Icon size={14} aria-hidden="true" className={cn("shrink-0", failed && "text-warning")} />
-        <span className="min-w-0">{messageText(row.message.content)}</span>
+        <span className="min-w-0">{assignment ? assignment.assignees.length ? m.group_lead_assigned({ lead: assignment.lead, members: assignment.assignees.join(', ') }) : m.group_lead_took({ lead: assignment.lead }) : messageText(row.message.content)}</span>
       </p>
     </div>
   )

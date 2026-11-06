@@ -8,6 +8,8 @@ export function groupFixture(sidecar: FakeSidecar) {
   const members = [{ member_id: 'one', profile: 'default', handle: 'one', display_name: 'Writer' }, { member_id: 'two', profile: 'helper', handle: 'two', display_name: 'Reviewer' }]
   const room = { room_id: 'discussion', name: 'Design review', members, authority_gateway_id: 'gateway', authority_epoch: 1, revision: 1, latest_seq: 0 }
   const state = { driver: true, available: true, lostSend: false, disbanded: false, refuseRetry: false, room, events: [] as Record<string, unknown>[],
+    contextOffered: true, refuseContext: false, lostContext: null as 'before' | 'after' | null,
+    context: { purpose: '', notes: '', routing: 'everyone', lead_member_id: '' },
     driver_status: { running: true, working: false, blocked: false, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string }[] } }
   function append(kind: string, text: string, member = members[0]!, eventId?: string) {
     const seq = state.events.length + 1
@@ -32,14 +34,21 @@ export function groupFixture(sidecar: FakeSidecar) {
     state.events.push(event); room.latest_seq = seq
     return event
   }
+  /** Agent v0.22.7 lead routing: the gateway records who the lead's routing turn picked, or a fallback to the lead alone. */
+  function assignment(leadMemberId: string, memberIds: string[], fallback = false) {
+    const seq = state.events.length + 1
+    state.events.push({ room_id: room.room_id, seq, event_id: `dassign:${seq}`, kind: 'room.assignment', authority_epoch: 1, actor: { kind: 'gateway', id: 'gateway' },
+      payload: { discussion_event_id: 'event-1', thread_id: 'thread', task_id: 'dtask:1', lead_member_id: leadMemberId, member_ids: memberIds, fallback }, created_at: 1000 + seq })
+    room.latest_seq = seq
+  }
   sidecar.respond('gateway.groups', ({ operation }: SidecarParams<'gateway.groups'>) => {
     if (!state.available) return { state: 'unavailable', reason: 'unsupported', value: null }
     let value: Record<string, unknown>
     switch (operation.action) {
-      case 'capabilities': value = { driver: state.driver, authority_gateway_id: 'gateway', methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download'].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break
+      case 'capabilities': value = { driver: state.driver, authority_gateway_id: 'gateway', methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download', ...(state.contextOffered ? ['context'] : [])].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break
       case 'list': value = { rooms: state.disbanded ? [] : [room], next_offset: null }; break
       case 'create': room.room_id = operation.room_id; room.name = operation.name; room.members = operation.members.map((m) => ({ ...m, display_name: m.display_name ?? m.profile })); value = { room }; break
-      case 'state': value = { room, driver_status: state.driver_status }; break
+      case 'state': value = { room, driver_status: state.driver_status, ...(state.contextOffered ? { context: state.context } : {}) }; break
       case 'log': {
         const events = state.events.filter((event) => Number(event.seq) > operation.since_seq).slice(0, operation.limit ?? 100)
         const cursor = Number(events.at(-1)?.seq ?? operation.since_seq)
@@ -55,6 +64,20 @@ export function groupFixture(sidecar: FakeSidecar) {
         break
       }
       case 'rename': room.name = operation.name; value = { room }; break
+      case 'context': {
+        if (state.refuseContext) return { state: 'refused', reason: 'refused', value: null }
+        if (state.lostContext === 'before') throw new SidecarError('response lost', { condition: 'sidecar_timeout' })
+        // A retry of the same event_id returns its first event, and everyone routing keeps no lead.
+        let event = state.events.find((e) => e.event_id === operation.event_id)
+        if (!event) {
+          state.context = { purpose: operation.purpose, notes: operation.notes, routing: operation.routing, lead_member_id: operation.routing === 'lead' ? operation.lead_member_id ?? '' : '' }
+          event = { room_id: room.room_id, seq: state.events.length + 1, event_id: operation.event_id, kind: 'room.context_set', authority_epoch: 1, actor: { kind: 'system', id: 'room-control' }, payload: state.context, created_at: 2000 }
+          state.events.push(event); room.latest_seq = state.events.length
+        }
+        value = { context: state.context, event }
+        if (state.lostContext === 'after') throw new SidecarError('response lost', { condition: 'sidecar_timeout' })
+        break
+      }
       case 'disband': state.disbanded = true; value = { tombstone: { room_id: room.room_id, disbanded_at: 1234 } }; break
       case 'stop': value = { cancelled: 1 }; break
       case 'approve':
@@ -71,5 +94,5 @@ export function groupFixture(sidecar: FakeSidecar) {
     }
     return { state: 'available', reason: null, value }
   })
-  return { state, members, append, stall, scheduled }
+  return { state, members, append, stall, scheduled, assignment }
 }

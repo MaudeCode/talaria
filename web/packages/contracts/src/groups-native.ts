@@ -1,5 +1,8 @@
 import { z } from 'zod'
 export const GROUP_ROOM_NAME_LIMIT = 200
+/** The Agent's room settings limits (Agent v0.22.7): `purpose` in Unicode characters, `notes` in UTF-8 bytes. */
+export const GROUP_ROOM_PURPOSE_LIMIT = 500
+export const GROUP_ROOM_NOTES_BYTES = 4096
 export const GROUP_ATTACHMENT_BYTES = 15_000_000
 export const GROUP_ATTACHMENT_LIMIT = 8
 export const GROUP_ATTACHMENT_BASE64_LIMIT = Math.ceil(GROUP_ATTACHMENT_BYTES / 3) * 4
@@ -19,9 +22,13 @@ export const NativeGroupRoomRetrySchema = z.object({ kind: z.literal('retry'), m
 /** Rows are checked one at a time by the server, so one it cannot use never hides the room. */
 const Driver = z.object({ running: z.boolean(), working: z.boolean(), blocked: z.boolean(), pending_actions: z.array(z.unknown()), member_activity: z.array(z.object({ member_id: Id, status: z.enum(['queued', 'running', 'stopping', 'indeterminate', 'deferred']) })).optional() })
 export const NativeGroupCapabilitiesSchema = z.object({ driver: z.boolean(), authority_gateway_id: z.string(), methods: z.array(z.string()), seatable_profiles: z.array(z.string()), max_log_limit: z.number().int().positive() })
-export const NativeGroupStateSchema = z.object({ room: Room, driver_status: Driver.optional() })
+/** Room settings (Agent v0.22.7). An unrecognized `routing` reads as absent: the room stays usable and the settings it cannot show cannot be overwritten. */
+export const NativeGroupContextSchema = z.object({ purpose: z.string(), notes: z.string(), routing: z.enum(['everyone', 'lead']), lead_member_id: z.string() })
+export const NativeGroupStateSchema = z.object({ room: Room, driver_status: Driver.optional(), context: NativeGroupContextSchema.optional().catch(undefined) })
 export const NativeGroupListSchema = z.object({ rooms: z.array(Room), next_offset: z.number().int().nullable() })
-export const NativeGroupEventSchema = z.object({ room_id: Id, seq: z.number().int().positive(), event_id: Id, kind: z.string(), authority_epoch: z.number().int().nullable(), actor: z.object({ kind: z.string(), id: z.string(), profile: z.string().optional(), display_name: z.string().optional() }), payload: z.object({ text: z.string().optional(), member_id: Id.optional(), discussion_event_id: Id.optional(), task_id: Id.optional(), turn_id: Id.optional(), error: z.string().optional(), reason_code: z.string().optional(), attachments: z.array(GroupAttachmentSchema).optional() }), created_at: z.number() })
+export const NativeGroupEventSchema = z.object({ room_id: Id, seq: z.number().int().positive(), event_id: Id, kind: z.string(), authority_epoch: z.number().int().nullable(), actor: z.object({ kind: z.string(), id: z.string(), profile: z.string().optional(), display_name: z.string().optional() }), payload: z.object({ text: z.string().optional(), member_id: Id.optional(), discussion_event_id: Id.optional(), task_id: Id.optional(), turn_id: Id.optional(), error: z.string().optional(), reason_code: z.string().optional(), attachments: z.array(GroupAttachmentSchema).optional(),
+  /** `room.assignment` fields. `room.context_set` shares the `lead_member_id` key with an empty value, which must never fail the log page. */
+  lead_member_id: Id.optional().catch(undefined), member_ids: z.array(Id).optional().catch(undefined), fallback: z.boolean().optional().catch(undefined) }), created_at: z.number() })
 export const NativeGroupLogSchema = z.object({ events: z.array(NativeGroupEventSchema), cursor: z.number().int().nonnegative(), latest_seq: z.number().int().nonnegative(), has_more: z.boolean(), authority: z.object({ gateway_id: z.string(), epoch: z.number().int() }) })
 export const GroupTaskFenceSchema = z.object({ member_id: Id, task_id: TaskId, execution_generation: z.number().int().positive() })
 const Task = GroupTaskFenceSchema
@@ -32,6 +39,7 @@ export const GroupOperationSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('state'), room_id: Id, include_disbanded: z.boolean().optional() }),
   z.object({ action: z.literal('log'), room_id: Id, since_seq: z.number().int().nonnegative(), limit: z.number().int().positive().max(100).optional() }),
   z.object({ action: z.literal('rename'), room_id: Id, event_id: Id, name: z.string().trim().min(1).max(GROUP_ROOM_NAME_LIMIT) }),
+  z.object({ action: z.literal('context'), room_id: Id, event_id: Id, purpose: z.string().trim().refine((value) => Array.from(value).length <= GROUP_ROOM_PURPOSE_LIMIT), notes: z.string().trim().refine((value) => new TextEncoder().encode(value).length <= GROUP_ROOM_NOTES_BYTES), routing: NativeGroupContextSchema.shape.routing, lead_member_id: Id.optional() }),
   z.object({ action: z.literal('disband'), room_id: Id, cancel_id: Id }),
   z.object({ action: z.literal('send'), room_id: Id, event_id: Id, payload: z.object({ text: z.string().max(64 * 1024), attachments: z.array(GroupAttachmentSchema).max(GROUP_ATTACHMENT_LIMIT).optional() }) }),
   z.object({ action: z.literal('stop'), room_id: Id, cancel_id: Id }),

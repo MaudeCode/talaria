@@ -13,6 +13,7 @@ _FIELDS = {
     "capabilities": set(), "list": {"offset", "limit"}, "state": {"room_id", "include_disbanded"},
     "log": {"room_id", "since_seq", "limit"}, "create": {"room_id", "name", "members"},
     "rename": {"room_id", "event_id", "name"}, "disband": {"room_id", "cancel_id"},
+    "context": {"room_id", "event_id", "purpose", "notes", "routing", "lead_member_id"},
     "send": {"room_id", "event_id", "payload"}, "stop": {"room_id", "cancel_id"},
     "retry": {"room_id", "member_id", "task_id", "execution_generation"},
     "discard": {"room_id", "member_id", "task_id", "execution_generation"},

@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
-import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
+import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_NOTES_BYTES, GROUP_ROOM_PURPOSE_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupContextSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
 import { HttpFailure } from './service.js'
 import { StreamChannel, type StreamSubscriber } from './streams.js'
@@ -12,6 +12,9 @@ export interface GroupScope { home: string; subject: string; profile: string }
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 /** The only user actors that are not the person: the Agent's server-minted scheduled posts and failure notices. `groups.send` hard-codes `desktop`, so a client cannot claim these. */
 const SCHEDULED_ACTOR = /^cron(?:-notice)?:/
+/** Existing-room writes the server offers while the room's driver runs. */
+const ROOM_ACTIONS = ['send', 'rename', 'disband', 'stop', 'context'] as const
+const CONTEXT_EVENT = 'room.context_set'
 const nativeEventId = (requestId: string) => `user:${createHash('sha256').update(requestId).digest('hex')}`
 type State = z.infer<typeof NativeGroupStateSchema>
 type NativeEvent = z.infer<typeof NativeGroupLogSchema>['events'][number]
@@ -78,17 +81,19 @@ export class Groups {
     const active = !room.disbanded_at && driver?.running === true
     const actions = new Set(caps.methods)
     const pendingActions = active ? this.pendingActions(state) : { member: [], room: null }
+    const context = actions.has('groups.context') && state.context ? state.context : null
     return { id: room.room_id, name: redactString(room.name), identity: this.identity(scope, room), revision: room.revision, disbanded: room.disbanded_at !== undefined,
       max_upload_bytes: Math.min(GROUP_ATTACHMENT_BYTES, this.deps().config.maxUploadBytes), attachment_limit: GROUP_ATTACHMENT_LIMIT,
+      context: context && { ...context, purpose: redactString(context.purpose), notes: redactString(context.notes) }, purpose_limit: GROUP_ROOM_PURPOSE_LIMIT, notes_limit_bytes: GROUP_ROOM_NOTES_BYTES,
       members: room.members.map((member) => {
         const pending = pendingActions.member.filter((a) => a.member_id === member.member_id && actions.has(`groups.${a.kind === 'approval' ? 'approve' : a.kind}`))
         const status = driver?.member_activity?.find((a) => a.member_id === member.member_id)?.status
         const terminal = events.findLast((e) => e.payload.member_id === member.member_id && ['turn.failed', 'turn.settled', 'turn.cancelled', 'turn.deferred'].includes(e.kind))
         const phase = pending.some((a) => a.kind === 'approval') ? 'approval' as const : status === 'indeterminate' || pending.some((a) => a.kind === 'discard') ? 'unknown' as const : status === 'deferred' || pending.some((a) => a.kind === 'retry') ? 'failed' as const : status ?? (driver?.working && driver.member_activity === undefined ? 'unknown' as const : terminal?.kind === 'turn.failed' ? 'failed' as const : 'idle' as const)
-        return { ...GroupMemberSchema.parse(member), display_name: redactString(member.display_name || member.profile), phase,
+        return { ...GroupMemberSchema.parse(member), display_name: redactString(member.display_name || member.profile), phase, lead: context?.routing === 'lead' && context.lead_member_id === member.member_id,
           actions: pending.map((a) => ({ ...a, approval: a.approval ? { ...a.approval, command: a.approval.command ? redactString(a.approval.command) : undefined, description: a.approval.description ? redactString(a.approval.description) : undefined } : undefined })) }
       }),
-      actions: active ? (['send', 'rename', 'disband', 'stop'] as const).filter((action) => actions.has(`groups.${action}`) && (action !== 'stop' || driver.working || driver.blocked)) : [],
+      actions: active ? ROOM_ACTIONS.filter((action) => actions.has(`groups.${action}`) && (action !== 'stop' || driver.working || driver.blocked) && (action !== 'context' || context !== null)) : [],
       retry_task: actions.has('groups.retry') ? pendingActions.room : null,
     }
   }
@@ -120,6 +125,15 @@ export class Groups {
       if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) {
         return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
           message: { role: 'assistant' as const, content: redactString(event.payload.error), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, _notice_kind: 'wake_failed' as const } }]
+      }
+      if (event.kind === 'room.assignment' && event.actor.kind === 'gateway') {
+        const name = (id: string | undefined) => { const seat = state.room.members.find((m) => m.member_id === id); return seat && redactString(seat.display_name || seat.profile) }
+        const lead = name(event.payload.lead_member_id), assignees = (event.payload.member_ids ?? []).map(name)
+        // A room's members are fixed, so a name that does not resolve is not this room's assignment.
+        if (!lead || !assignees.length || assignees.some((a) => a === undefined)) return []
+        const alone = event.payload.fallback === true || (assignees.length === 1 && event.payload.member_ids?.[0] === event.payload.lead_member_id)
+        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
+          message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, _notice_kind: 'lead_assigned' as const, _lead_assignment: { lead, assignees: alone ? [] : assignees.flatMap((a) => a ?? []) } } }]
       }
       const user = event.kind === 'message.user' && event.actor.kind === 'user'
       if (!user && (event.kind !== 'message.member' || event.actor.kind !== 'member' || !member)) return []
@@ -197,7 +211,8 @@ export class Groups {
       expectedRoom = { room_id: current.room.room_id, gateway_id: current.room.authority_gateway_id, authority_epoch: current.room.authority_epoch }
       if (!identity || identity !== this.identity(scope, current.room)) throw new HttpFailure(409, 'Discussion identity changed')
       const room = this.project(scope, current, caps)
-      if (['send', 'rename', 'disband', 'stop'].includes(operation.action) && !room.actions.includes(operation.action as 'send' | 'rename' | 'disband' | 'stop')) return { ...result, reason: 'refused' }
+      if ((ROOM_ACTIONS as readonly string[]).includes(operation.action) && !room.actions.includes(operation.action as typeof ROOM_ACTIONS[number])) return { ...result, reason: 'refused' }
+      if (operation.action === 'context' && operation.routing === 'lead' && !current.room.members.some((m) => m.member_id === operation.lead_member_id)) throw new HttpFailure(400, 'Ineligible discussion lead')
       if (['retry', 'discard', 'approve'].includes(operation.action) && 'task_id' in operation) {
         const permitted = (operation.action === 'retry' && isDeepStrictEqual(room.retry_task, { member_id: operation.member_id, task_id: operation.task_id, execution_generation: operation.execution_generation })) || room.members.flatMap((m) => m.actions).some((a) => a.kind === (operation.action === 'approve' ? 'approval' : operation.action) && a.member_id === operation.member_id && a.task_id === operation.task_id && a.execution_generation === operation.execution_generation && (operation.action !== 'approve' || a.request_id === operation.request_id))
         if (!permitted) throw new HttpFailure(409, 'Discussion task changed')
@@ -207,6 +222,7 @@ export class Groups {
     if (response.state === 'available' && !this.validReceipt(forwarded, response.value)) response = { state: 'unknown', reason: 'unknown', value: null }
     if (response.state !== 'available') {
       // Reconcile durable send/create identities; a transport loss never triggers another write.
+      if (response.state === 'unknown' && operation.action === 'context' && await this.findEvent(scope, operation.room_id, operation.event_id, CONTEXT_EVENT).catch(() => null)) return { ...result, outcome: 'confirmed', reason: null }
       if (response.state === 'unknown' && ['send', 'create', 'rename', 'disband'].includes(operation.action)) {
         if (operation.action === 'send') {
           const event = await this.findEvent(scope, operation.room_id, nativeEventId(operation.event_id)).catch(() => null)
@@ -232,6 +248,10 @@ export class Groups {
           const receipt = z.object({ accepted: z.literal(true), client_event_id: z.string(), event: NativeGroupEventSchema }).parse(value)
           return receipt.client_event_id === operation.event_id && receipt.event.room_id === operation.room_id && receipt.event.event_id === nativeEventId(operation.event_id)
         }
+        case 'context': {
+          const receipt = z.object({ context: NativeGroupContextSchema, event: NativeGroupEventSchema }).parse(value)
+          return receipt.event.room_id === operation.room_id && receipt.event.event_id === operation.event_id && receipt.event.kind === CONTEXT_EVENT
+        }
         case 'stop': return z.object({ cancelled: z.number().int().nonnegative() }).safeParse(value).success
         case 'disband': return z.object({ tombstone: z.object({ room_id: z.literal(operation.room_id), disbanded_at: z.number() }) }).safeParse(value).success
         case 'approve': return z.object({ approved: z.literal(true) }).safeParse(value).success
@@ -247,12 +267,13 @@ export class Groups {
     } catch { return false }
   }
 
-  private async findEvent(scope: GroupScope, roomId: string, eventId: string): Promise<NativeEvent | null> {
+  /** Only the gateway writes a settings event, and `groups.send` hard-codes its user actor. */
+  private async findEvent(scope: GroupScope, roomId: string, eventId: string, kind: 'message.user' | typeof CONTEXT_EVENT = 'message.user'): Promise<NativeEvent | null> {
     const { caps } = await this.supported(scope)
     if (!caps) return null
     const { room } = await this.state(scope, roomId, caps)
     const tail = Math.max(0, (room.latest_seq ?? 0) - 100)
-    const match = (events: NativeEvent[]) => events.find((e) => e.event_id === eventId && e.kind === 'message.user' && e.actor.kind === 'user') ?? null
+    const match = (events: NativeEvent[]) => events.find((e) => e.event_id === eventId && e.kind === kind && e.actor.kind === (kind === CONTEXT_EVENT ? 'system' : 'user')) ?? null
     // A bounded search may remain unknown; it never grants a resend.
     let remaining = 100
     for (const [start, end] of [[tail, room.latest_seq ?? 0], [0, tail]] as const) {

@@ -26,7 +26,8 @@
             "handle": "one",
             "display_name": "Writer",
             "phase": "idle",
-            "actions": []
+            "actions": [],
+            "lead": false
           },
           {
             "member_id": "two",
@@ -34,13 +35,17 @@
             "handle": "two",
             "display_name": "Reviewer",
             "phase": "idle",
-            "actions": []
+            "actions": [],
+            "lead": false
           }
         ],
         "actions": [],
         "max_upload_bytes": 15000000,
         "attachment_limit": 8,
-        "retry_task": null
+        "retry_task": null,
+        "context": null,
+        "purpose_limit": 500,
+        "notes_limit_bytes": 4096
       }
     ],
     "actions": [
@@ -65,7 +70,8 @@
           "handle": "one",
           "display_name": "Writer",
           "phase": "queued",
-          "actions": []
+          "actions": [],
+          "lead": true
         },
         {
           "member_id": "two",
@@ -73,18 +79,28 @@
           "handle": "two",
           "display_name": "Reviewer",
           "phase": "running",
-          "actions": []
+          "actions": [],
+          "lead": false
         }
       ],
       "actions": [
         "send",
         "rename",
         "disband",
-        "stop"
+        "stop",
+        "context"
       ],
       "max_upload_bytes": 15000000,
       "attachment_limit": 8,
-      "retry_task": null
+      "retry_task": null,
+      "context": {
+        "purpose": "Ship the design review",
+        "notes": "Decisions live in the shared doc.",
+        "routing": "lead",
+        "lead_member_id": "one"
+      },
+      "purpose_limit": 500,
+      "notes_limit_bytes": 4096
     },
     "rows": [
       {
@@ -146,6 +162,26 @@
           "attachments": []
         },
         "attachments": []
+      },
+      {
+        "key": "5:dassign-fixture",
+        "index": 5,
+        "author": "",
+        "scheduled": false,
+        "attachments": [],
+        "message": {
+          "role": "assistant",
+          "message_id": "dassign-fixture",
+          "timestamp": 1005,
+          "_turn_id": "dassign-fixture",
+          "_notice_kind": "lead_assigned",
+          "_lead_assignment": {
+            "lead": "Writer",
+            "assignees": [
+              "Reviewer"
+            ]
+          }
+        }
       }
     ],
     "cursor": 4,

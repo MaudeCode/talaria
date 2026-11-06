@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Plus, Square } from 'lucide-react'
+import { Plus, SlidersHorizontal, Square } from 'lucide-react'
 import { GROUP_ROOM_NAME_LIMIT, type GroupCatalog, type GroupOperation, type GroupRoom } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { openGroupStream } from '../../api/sse'
@@ -23,6 +23,9 @@ import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { randomUuid } from '../../lib/randomHex'
 import { m } from '../../paraglide/messages.js'
+
+type RoomContext = NonNullable<GroupRoom['context']>
+const sameContext = (left: RoomContext | null | undefined, right: RoomContext) => left?.purpose === right.purpose && left.notes === right.notes && left.routing === right.routing && left.lead_member_id === right.lead_member_id
 
 const phaseLabel: Record<GroupRoom['members'][number]['phase'], () => string> = {
   idle: () => m.group_idle(), queued: () => m.group_queued(), running: () => m.group_running(), stopping: () => m.group_stopping(),
@@ -97,6 +100,8 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   const [intent, setIntent] = useState<{ identity: string; text: string; id: string; eventId: string | null; unknown: boolean; files: PendingFile[] } | null>(null)
   const [renameDraft, setRenameDraft] = useState<{ identity: string; value: string } | null>(null)
   const [renameIntent, setRenameIntent] = useState<{ identity: string; value: string; id: string; revision: number; unknown: boolean } | null>(null)
+  const [contextDraft, setContextDraft] = useState<{ identity: string; value: RoomContext } | null>(null)
+  const [contextIntent, setContextIntent] = useState<{ identity: string; id: string; value: RoomContext; unknown: boolean } | null>(null)
   const [composerRoom, setComposerRoom] = useState<GroupRoom | null>(null)
   const [stopping, setStopping] = useState<string | null>(null)
   useEffect(() => {
@@ -108,7 +113,7 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
     })
     return () => { active = false; stream.close() }
   }, [roomId, before, qc, bootstrap.profile?.name, provisionalName])
-  const data = view.data, room = data?.room
+  const data = view.data, room = data?.room, roomContext = room?.context
   // Keep draft/file custody through a read gap; current server fields still authorize every write.
   if (room && room !== composerRoom) setComposerRoom(room)
   const retainedRoom = room ?? composerRoom
@@ -119,6 +124,10 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   const currentRename = renameIntent?.identity === room?.identity && !settledRename ? renameIntent : null
   if (settledRename) setRenameIntent(null)
   const currentDraft = renameDraft?.identity === room?.identity ? renameDraft : null
+  const settledContext = room && contextIntent?.identity === room.identity && sameContext(room.context, contextIntent.value)
+  const currentContext = contextIntent?.identity === room?.identity && !settledContext ? contextIntent : null
+  if (settledContext) setContextIntent(null)
+  const currentContextDraft = contextDraft?.identity === room?.identity ? contextDraft : null
   const refresh = () => qc.invalidateQueries({ queryKey: ['groups', bootstrap.profile?.name, roomId] })
   const write = async (operation: GroupOperation) => {
     const result = await api.writeGroup(room?.identity ?? null, operation)
@@ -167,16 +176,36 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
       showErrorToast(error)
     })
   }
+  /** Optimistic with rollback: a refusal reopens the draft; an unknown outcome keeps it shown until Retry resends this same event id. */
+  const saveContext = (identity: string, id: string, value: RoomContext) => {
+    const settle = (next: typeof contextIntent) => setContextIntent((current) => current?.id === id ? next : current)
+    setContextDraft(null)
+    setContextIntent({ identity, id, value, unknown: false })
+    void write({ action: 'context', room_id: roomId, event_id: id, purpose: value.purpose, notes: value.notes, routing: value.routing, ...(value.routing === 'lead' ? { lead_member_id: value.lead_member_id } : {}) }).then(() => settle(null), (error: unknown) => {
+      if ((error instanceof Error && error.cause === 'unknown') || !isDefiniteRefusal(error)) { settle({ identity, id, value, unknown: true }); void refresh(); return }
+      settle(null)
+      setContextDraft({ identity, value })
+      showErrorToast(error)
+    })
+  }
+  const retryContext = (pending: NonNullable<typeof currentContext>) => {
+    void api.fetchGroup(roomId).then((next) => {
+      void refresh()
+      if (next.room?.identity === pending.identity && !sameContext(next.room.context, pending.value)) saveContext(pending.identity, pending.id, pending.value)
+    }).catch(showErrorToast)
+  }
+  const isLead = (member: GroupRoom['members'][number]) => currentContext ? currentContext.value.routing === 'lead' && currentContext.value.lead_member_id === member.member_id : member.lead
   const phase = (member: GroupRoom['members'][number]) => stopping === room?.identity && member.phase !== 'idle' ? m.group_stopping() : phaseLabel[member.phase]()
   return <div ref={focus} tabIndex={-1} className={`${MAIN_VIEW} active`}>
     <PanelHead title={currentRename?.value ?? room?.name ?? provisionalName ?? m.group_discussions()} actions={<>
       <BackButton onClick={onBack} />
       {before !== undefined && <Button onClick={() => setBefore(undefined)}>{m.group_latest()}</Button>}
       {room?.actions.includes('rename') && <Button onClick={() => setRenameDraft({ identity: room.identity, value: currentRename?.value ?? room.name })}>{m.rename()}</Button>}
+      {roomContext && room?.actions.includes('context') && <PanelHeadButton label={m.group_settings()} onClick={() => setContextDraft({ identity: room.identity, value: currentContext?.value ?? roomContext })}><SlidersHorizontal size={14} aria-hidden="true" /></PanelHeadButton>}
       {room?.actions.includes('disband') && <Button onClick={() => { const rollback = onDisband(); void write({ action: 'disband', room_id: roomId, cancel_id: randomUuid() }).then(() => qc.invalidateQueries({ queryKey: ['groups'] }), (error: unknown) => { rollback(); showErrorToast(error) }) }}>{m.group_disband()}</Button>}
       {room?.actions.includes('stop') && <PanelHeadButton label={m.composer_stop()} disabled={stopping === room.identity} onClick={() => { const identity = room.identity; setStopping(identity); void write({ action: 'stop', room_id: roomId, cancel_id: randomUuid() }).catch(showErrorToast).finally(() => setStopping((current) => current === identity ? null : current)) }}><Square size={14} aria-hidden="true" /></PanelHeadButton>}
     </>} />
-    {room && <ul aria-label={m.group_members()} className="flex flex-wrap gap-x-5 gap-y-2 px-4 py-2 text-xs text-muted">{room.members.map((member) => <li key={member.member_id}>{member.display_name || member.profile} · <span role="status">{phase(member)}</span></li>)}</ul>}
+    {room && <ul aria-label={m.group_members()} className="flex flex-wrap gap-x-5 gap-y-2 px-4 py-2 text-xs text-muted">{room.members.map((member) => <li key={member.member_id}>{member.display_name || member.profile}{isLead(member) && ` · ${m.group_lead()}`} · <span role="status">{phase(member)}</span></li>)}</ul>}
     {view.isPending && <LoadingState />}
     {view.isError && <ErrorState error={view.error} onRetry={() => { void view.refetch() }} />}
     {data && !data.available && <p role="status" className="p-4 text-sm text-muted">{m.group_unavailable()}</p>}
@@ -192,13 +221,31 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
       {room?.retry_task && <GroupRecoveryAction key={`${room.identity}:${room.retry_task.task_id}:retry`} room={room} label={`${room.name} · ${m.group_failed()}`} action={{ kind: 'retry', ...room.retry_task }} focus={focus} onControl={write} onResolved={() => { void refresh() }} />}
       {currentIntent?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const id = currentIntent.id; void api.fetchGroupReceipt(roomId, id).then((receipt) => { void refresh(); if (receipt.outcome === 'confirmed') setIntent((current) => current?.id === id ? null : current) }).catch(showErrorToast) } } }]} />}
       {currentRename?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'rename-unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const pending = currentRename; void api.fetchGroup(roomId).then((next) => { if (next.room?.identity !== pending.identity) return; qc.setQueryData(key, next) }).catch(showErrorToast) } } }]} />}
+      {currentContext?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'context-unknown', tone: 'error', content: m.group_context_unknown(), action: { label: m.retry(), run: () => retryContext(currentContext) } }]} />}
     </div>
     {retainedRoom && !retainedRoom.disbanded && <Composer key={retainedRoom.identity} settings={settings.data} room={{ identity: retainedRoom.identity, maxUploadBytes: retainedRoom.max_upload_bytes, maxAttachments: retainedRoom.attachment_limit, canSend: !!data?.available && !view.isError && !!room?.actions.includes('send') && !currentIntent && before === undefined,
       onSend: send, onUpload: async (file) => { if (!data?.available || view.isError || !room) throw new Error(m.group_unavailable()); const result = await api.uploadGroupFile(roomId, room.identity, file); if (!result.attachment || result.outcome !== 'confirmed') throw new Error(m.group_write_refused()); return result.attachment } }} />}
     <Dialog open={currentDraft !== null} onOpenChange={(open) => { if (!open) setRenameDraft(null) }} title={m.rename()}><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); renameRoom() }}><TextInput value={currentDraft?.value ?? ''} aria-label={m.group_name()} onChange={(e) => setRenameDraft((current) => current ? { ...current, value: e.target.value } : current)} required maxLength={GROUP_ROOM_NAME_LIMIT} /><Button type="submit">{m.save()}</Button></form></Dialog>
+    {room && <GroupSettingsDialog room={room} value={currentContextDraft?.value ?? null} onChange={(value) => setContextDraft({ identity: room.identity, value })} onClose={() => setContextDraft(null)} onSave={(value) => saveContext(room.identity, randomUuid(), value)} />}
   </div>
 }
 
+function GroupSettingsDialog({ room, value, onChange, onClose, onSave }: { room: GroupRoom; value: RoomContext | null; onChange: (value: RoomContext) => void; onClose: () => void; onSave: (value: RoomContext) => void }) {
+  const notesOverLimit = !!value && new TextEncoder().encode(value.notes.trim()).length > room.notes_limit_bytes
+  const route = (routing: RoomContext['routing'], lead_member_id: string, label: string) => value && <label key={lead_member_id} className="flex min-h-11 items-center gap-2 text-sm"><input type="radio" name="group-routing" checked={value.routing === routing && value.lead_member_id === lead_member_id} onChange={() => onChange({ ...value, routing, lead_member_id })} />{label}</label>
+  return <Dialog open={value !== null} onOpenChange={(open) => { if (!open) onClose() }} title={m.group_settings()} className="max-h-[90dvh] overflow-y-auto">
+    {value && <form className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); if (!notesOverLimit) onSave(value) }}>
+      <label className="flex flex-col gap-1 text-sm">{m.group_purpose()}<TextInput value={value.purpose} onChange={(e) => onChange({ ...value, purpose: e.target.value })} maxLength={room.purpose_limit} /></label>
+      <label className="flex flex-col gap-1 text-sm">{m.group_notes()}<textarea value={value.notes} rows={5} aria-invalid={notesOverLimit} onChange={(e) => onChange({ ...value, notes: e.target.value })} className="min-h-9 w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-text focus:border-accent" /></label>
+      {notesOverLimit && <p role="alert" className="text-xs text-danger">{m.group_notes_too_long({ n: room.notes_limit_bytes })}</p>}
+      <fieldset><legend className="mb-2 text-sm">{m.group_routing()}</legend>
+        {route('everyone', '', m.group_routing_everyone())}
+        {room.members.map((member) => route('lead', member.member_id, m.group_routing_lead({ name: member.display_name || member.profile })))}
+      </fieldset>
+      <div className="sticky -bottom-5 -mb-5 bg-surface pb-5 pt-2"><Button type="submit" disabled={notesOverLimit}>{m.save()}</Button></div>
+    </form>}
+  </Dialog>
+}
 
 type GroupTask = NonNullable<GroupRoom['retry_task']> & { kind: GroupRoom['members'][number]['actions'][number]['kind']; request_id?: string | undefined }
 
