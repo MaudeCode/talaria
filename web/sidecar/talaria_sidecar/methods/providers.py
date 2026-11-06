@@ -230,8 +230,50 @@ def _unavailable_plugin(provider_id: str) -> bool:
     return not any(p is profile for _name, p in installed_plugin_profiles())
 
 
+def require_unambiguous_provider(requested: str | None) -> None:
+    """Refuse a name whose Agent credential pool could combine different config records."""
+    from hermes_cli import auth
+    from hermes_cli.config import is_provider_enabled, load_config
+    from hermes_cli.providers import normalize_provider
+
+    config = load_config()
+    model = config.get("model")
+    selected = str(requested or "").strip().lower() or str((model.get("provider") if isinstance(model, dict) else "") or "").strip().lower()
+    custom = selected.startswith("custom:")
+    name = selected.removeprefix("custom:")
+    canonical = normalize_provider(name)
+    builtin = canonical in getattr(auth, "BUILTIN_PROVIDER_IDS", auth.PROVIDER_REGISTRY) or canonical == "openrouter"
+    if not name or not builtin:
+        return
+
+    def normalized(value) -> str:
+        return str(value or "").strip().lower().removeprefix("custom:")
+
+    own = None
+    claimants = []
+    records = config.get("providers")
+    for key, record in (records.items() if isinstance(records, dict) else []):
+        if not isinstance(record, dict) or not is_provider_enabled(record):
+            continue
+        label = f"providers.{key}" if str(key).isidentifier() else f"providers[{key!r}]"
+        if str(key).strip().lower() == name:
+            own = label
+        elif name in (normalized(key), normalized(record.get("name"))):
+            claimants.append(label)
+    legacy = config.get("custom_providers")
+    for index, record in enumerate(legacy if isinstance(legacy, list) else []):
+        if isinstance(record, dict) and normalized(record.get("name")) == name:
+            claimants.append(f"custom_providers[{index}]")
+    if (custom and own) or (not custom and claimants):
+        records = [own or f"providers.{name}", *claimants]
+        if custom and not claimants:
+            records.append(f"providers[{selected!r}]")
+        raise RpcError(f'Provider name conflict: {" and ".join(records)} both claim "{name}". Rename or remove one.', condition="provider_name_ambiguous")
+
+
 def require_runtime_ownership(requested: str | None) -> None:
     """A process-wide Agent registry must not lend another home's plugin to this runtime."""
+    require_unambiguous_provider(requested)
     if not requested:
         return
     try:

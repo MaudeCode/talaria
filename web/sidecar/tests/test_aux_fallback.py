@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from talaria_sidecar.errors import Cancelled, RpcError
-from talaria_sidecar.methods import aux, chat
+from talaria_sidecar.methods import aux, chat, providers
 
 
 class FakeAgent:
@@ -38,6 +38,7 @@ class Ctx:
 def _install_aux_module(monkeypatch, factory):
     module = types.ModuleType("agent.auxiliary_client")
     module.get_text_auxiliary_client = factory
+    module._resolve_task_provider_model = lambda task: ("auto", None, None, None, None)
     package = types.ModuleType("agent")
     package.auxiliary_client = module
     monkeypatch.setitem(sys.modules, "agent", package)
@@ -47,6 +48,7 @@ def _install_aux_module(monkeypatch, factory):
 def _patch(monkeypatch, factory):
     FakeAgent.calls.clear()
     _install_aux_module(monkeypatch, factory)
+    monkeypatch.setattr(providers, "require_unambiguous_provider", lambda requested: None)
     monkeypatch.setattr(chat, "_agent_class", lambda: FakeAgent)
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": model or "resolved-m", "provider": provider or "resolved-p", "base_url": "https://llm.example/v1", "api_key": "sk-main", "api_mode": "chat_completions"})
 

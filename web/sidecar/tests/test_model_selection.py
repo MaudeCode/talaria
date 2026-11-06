@@ -69,3 +69,84 @@ def test_real_selection_guards_and_read_only_context(tmp_path):
     run = subprocess.run([AGENT_PYTHON, '-c', script, str(tmp_path / 'profile')], env=env, capture_output=True, text=True, timeout=60)
     assert run.returncode == 0, run.stdout + run.stderr
     assert json.loads(run.stdout.splitlines()[-1])['context_tokens'] == 200_000
+
+
+@requires_agent
+def test_real_provider_name_conflicts_refused_before_clients(tmp_path):
+    """Native config/disabled semantics and both runtime entry points, without inference or real credentials."""
+    script = textwrap.dedent('''
+        import json, sys
+        from pathlib import Path
+        from unittest.mock import patch
+        from talaria_sidecar.errors import RpcError
+        from talaria_sidecar.home import scoped_home
+        from talaria_sidecar.methods import aux, chat, providers
+        from hermes_cli.config import load_config
+        import agent.auxiliary_client as native_aux
+
+        home = Path(sys.argv[1]); home.mkdir()
+        builtin = dict(base_url='https://builtin.invalid/v1', api_key='synthetic-builtin-key')
+        proxy = dict(base_url='https://proxy.invalid/v1', api_key='synthetic-proxy-key')
+        checked = 0
+        def write(records, requested='openai', **extra):
+            (home / 'config.yaml').write_text(json.dumps(dict(model=dict(provider=requested, default='test-model'), providers=records, **extra)))
+        def refused(call, record):
+            global checked
+            try:
+                call()
+            except RpcError as exc:
+                assert exc.data['condition'] == 'provider_name_ambiguous', (exc, exc.data)
+                assert 'providers.openai' in str(exc) and record in str(exc), str(exc)
+                assert 'Rename or remove' in str(exc), str(exc)
+                assert all(secret not in str(exc) for secret in [*builtin.values(), *proxy.values()]), str(exc)
+                checked += 1
+            else:
+                raise AssertionError(('ambiguous provider reached runtime/client resolution', requested, load_config().get('providers')))
+        def runtimes(requested):
+            return [lambda: chat._resolve_runtime(requested, 'test-model'),
+                    lambda: providers.resolve_runtime(requested=requested, target_model='test-model', api_key=None, base_url=proxy['base_url'])]
+        with scoped_home(home):
+            for reverse in [False, True]:
+                for keyed in [True, False]:
+                    rows = [('openai', builtin), ('custom:openai', proxy if keyed else dict(base_url=proxy['base_url']))]
+                    records = dict(reversed(rows) if reverse else rows)
+                    for requested in ['openai', 'custom:openai', None, '']:
+                        write(records)
+                        for call in runtimes(requested):
+                            refused(call, 'custom:openai')
+                rows = [('openai', builtin), ('custom:openai', proxy)]
+                write(dict(reversed(rows) if reverse else rows), auxiliary=dict(title_generation=dict(provider='openai', model='test-model', base_url=proxy['base_url'])))
+                # Fail at the actual sidecar boundary, before either native client factory can see a key.
+                with patch.object(native_aux, 'get_text_auxiliary_client', side_effect=AssertionError('client built')), patch.object(native_aux, 'resolve_provider_client', side_effect=AssertionError('client built')):
+                    refused(lambda: aux.complete('title_generation', [dict(role='user', content='hi')], main_runtime=None, max_tokens=None, temperature=None, ctx=None), 'custom:openai')
+            for extra, record in [
+                (dict(providers=dict(openai=builtin, proxy=dict(proxy, name='OPENAI'))), 'proxy'),
+                (dict(providers=dict(openai=builtin), custom_providers=[dict(proxy, name='openai', enabled=False)]), 'custom_providers[0]'),
+                (dict(providers={'CUSTOM:OPENAI': proxy}), 'CUSTOM:OPENAI'),
+            ]:
+                write(extra.pop('providers'), **extra)
+                for call in runtimes('openai'):
+                    refused(call, record)
+            # These must still resolve their own endpoint and key through the real installed Agent.
+            for records, requested, expected in [
+                (dict(openai=builtin), 'openai', builtin),
+                ({'custom:openai': proxy}, 'custom:openai', proxy),
+                (dict(proxy=proxy), 'custom:proxy', proxy),
+                ({'x-ai': builtin, 'custom:x_ai': proxy}, 'custom:x_ai', proxy),
+                ({'x-ai': builtin, 'custom:x_ai': proxy}, 'x-ai', builtin),
+                ({'openai': builtin, 'custom:openai': dict(proxy, enabled=False)}, 'openai', builtin),
+            ]:
+                write(records, requested)
+                for runtime in [chat._resolve_runtime(requested, 'test-model'), providers.resolve_runtime(requested=requested, target_model='test-model', api_key=None, base_url=None)]:
+                    assert runtime['base_url'].rstrip('/') == expected['base_url'], runtime
+                    assert runtime['api_key'] == expected['api_key'], runtime
+            write(dict(openai=builtin, **{'custom:openai': proxy}), auxiliary=dict(title_generation=dict(provider='openai', model='test-model', **proxy)))
+            with patch.object(aux, '_aux_request', return_value=(None, False)), patch.object(aux, '_stream_completion', return_value=dict(text='own route')):
+                assert aux.complete('title_generation', [dict(role='user', content='hi')], main_runtime=None, max_tokens=None, temperature=None, ctx=None)['text'] == 'own route'
+            print(json.dumps(dict(refusals=checked)))
+    ''')
+    env = isolated_env(tmp_path / 'launch')
+    env['PYTHONPATH'] = f'{SIDECAR_ROOT}:{AGENT_DIR}'
+    run = subprocess.run([AGENT_PYTHON, '-c', script, str(tmp_path / 'profile')], env=env, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert json.loads(run.stdout.splitlines()[-1])['refusals'] == 40

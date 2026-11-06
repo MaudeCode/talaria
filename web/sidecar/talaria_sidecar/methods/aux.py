@@ -120,16 +120,22 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
     if model is not None:
         return _model_completion(task, messages, model=model, provider=provider, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
     try:
-        from agent.auxiliary_client import get_text_auxiliary_client
+        from agent.auxiliary_client import _resolve_task_provider_model, get_text_auxiliary_client
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"auxiliary client unavailable: {exc}", condition="aux_unavailable") from exc
+    from .providers import require_unambiguous_provider
+
+    selected = _resolve_task_provider_model(task)
+    selected_provider, selected_model, base_url, api_key, api_mode = selected
+    if not (base_url and api_key):
+        require_unambiguous_provider(selected_provider if selected_provider != "auto" else (main_runtime or {}).get("provider"))
     main_runtime = resolve_main_runtime(main_runtime)
     selected_provider = None
     if protected:
         # Snapshot the selected provider with its client; get_text_auxiliary_client's tuple omits the provider.
-        from agent.auxiliary_client import _resolve_task_provider_model, resolve_provider_client
+        from agent.auxiliary_client import resolve_provider_client
 
-        selected_provider, selected_model, base_url, api_key, api_mode = _resolve_task_provider_model(task)
+        selected_provider, selected_model, base_url, api_key, api_mode = selected
         client, model = resolve_provider_client(selected_provider, model=selected_model, explicit_base_url=base_url, explicit_api_key=api_key, api_mode=api_mode, main_runtime=main_runtime)
     else:
         try:

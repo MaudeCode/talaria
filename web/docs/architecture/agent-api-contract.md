@@ -24,6 +24,12 @@ provider fallback ladder. A main-model fallback retains the message metadata
 and checks that model's policy again; unverified routes are refused. Existing
 local title and handoff fallbacks remain available.
 
+Provider names shared by a built-in route and another configured record are refused with
+`provider_name_ambiguous` before runtime or auxiliary client resolution. The sidecar checks
+the Agent's merged profile config, preserves disabled-record semantics, and names the
+conflicting records without exposing URLs or keys. Auxiliary tasks with their own key and
+URL remain independent; refused title requests use the server's local title fallback.
+
 ## Custom provider identity
 
 The server reads legacy `custom_providers` entries first, then native

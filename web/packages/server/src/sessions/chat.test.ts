@@ -1842,6 +1842,27 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('preserves a provider conflict through the failed turn and uses a local title for a refused auxiliary route', async () => {
+    const message = 'Provider name conflict: providers.openai and providers[\'custom:openai\'] both claim "openai". Rename or remove one.'
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', () => { throw new SidecarError(message, { condition: 'provider_name_ambiguous' }) })
+    sidecar.respond('aux.complete', () => { throw new SidecarError(message, { condition: 'provider_name_ambiguous' }) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean up' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    expect(frames.find((f) => f.event === 'apperror')?.data).toMatchObject({
+      type: 'provider_name_ambiguous', message, terminal_state: 'error',
+    })
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect((detail.messages as Json[]).find((m) => m._error)?.content).toContain(`**Request refused:** ${message}`)
+    expect(detail.active_stream_id).toBeNull()
+    // The title lifecycle owns fallback; the sidecar refusal must not become a generated title.
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'clean up' }, { role: 'assistant', content: 'Cleaned the workspace' }]
+    await s.deps.sessionStore.save(session)
+    const title = await s.deps.turns.generateTitle(session)
+    expect(title).toMatchObject({ title: 'clean', status: 'local_summary:llm_error_aux' })
+  })
+
   it('turns sidecar failures into apperror frames and a persisted error bubble', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', () => { throw new SidecarError('No credentials found for provider openai', { condition: 'credential_missing' }) })
