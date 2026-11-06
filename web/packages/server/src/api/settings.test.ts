@@ -1065,9 +1065,13 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       // An Agent that cannot list its slots gets the static built-ins, and nothing else is assignable.
       sidecar.respond('aux.tasks', () => { throw new SidecarError('no slot list', { condition: 'sidecar_error' }) })
       const fallback = await read()
-      expect(fallback).toHaveLength(11)
       expect(fallback.find((t) => t.task === 'vision')).toMatchObject({ inherit_from: null, reasoning_effort: null })
-      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'side_task', provider: 'anthropic', model: 'claude-sonnet-4-6' })).status).toBe(400)
+      const before = JSON.stringify(configs.get(s.state))
+      for (const key of ['side_task', 'web_extract', 'skills_hub']) {
+        expect(fallback.find((t) => t.task === key)).toBeUndefined()
+        expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: key, provider: 'anthropic', model: 'claude-sonnet-4-6' })).status).toBe(400)
+      }
+      expect(JSON.stringify(configs.get(s.state))).toBe(before)
       // Without the Agent's word on which keys it owns, Reset All leaves every unlisted block alone.
       reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned } })
       expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
@@ -1078,6 +1082,34 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       s.deps.profiles.invalidate()
       configs.delete(profileHome)
       if (saved) reset(saved)
+    }
+  })
+
+  it.each(['current', 'unavailable', 'legacy'] as const)('Reset All removes retired auxiliary blocks and restores only listed legacy slots (%s)', async (listing) => {
+    const saved = configs.get(s.state)
+    const { tasks, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
+    const retired = ['session_search', 'web_extract', 'skills_hub']
+    const listed = tasks.filter((t) => !retired.includes(t.key) || (listing === 'legacy' && t.key === 'skills_hub'))
+    const pinned = { provider: 'anthropic', model: 'claude-opus-4-7', base_url: 'https://retired.test/v1', reasoning_effort: 'high' }
+    configs.set(s.state, { ...saved, auxiliary: { vision: pinned, ...Object.fromEntries(retired.map((key) => [key, pinned])) } })
+    s.deps.agentConfig.invalidate()
+    sidecar.respond('aux.tasks', () => {
+      if (listing === 'unavailable') throw new SidecarError('no slot list', { condition: 'sidecar_error' })
+      return { tasks: listed, reserved }
+    })
+    try {
+      const res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
+      expect(res.status).toBe(200)
+      const auxiliary = configs.get(s.state)?.auxiliary as Json
+      expect(auxiliary.vision).toEqual({ provider: 'auto', model: '' })
+      for (const key of retired) {
+        if (listing === 'legacy' && key === 'skills_hub') expect(auxiliary[key]).toEqual({ provider: 'auto', model: '' })
+        else expect(auxiliary).not.toHaveProperty(key)
+      }
+    } finally {
+      sidecar.respond('aux.tasks', undefined)
+      if (saved) configs.set(s.state, saved)
+      s.deps.agentConfig.invalidate()
     }
   })
 
