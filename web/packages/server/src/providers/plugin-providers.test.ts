@@ -7,7 +7,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { writeEnvFile } from '../test/env-file.js'
 
 type Json = Record<string, unknown>
-interface Row { id: string; display_name?: string; has_key?: boolean; is_plugin_provider?: boolean; configurable?: boolean; is_oauth?: boolean; key_source?: string; removable?: boolean; auth_error?: string | null; models?: { id: string }[]; models_total?: number }
+interface Row { id: string; display_name?: string; has_key?: boolean; is_active?: boolean; is_custom?: boolean; install_hint?: string | null; is_plugin_provider?: boolean; configurable?: boolean; is_oauth?: boolean; key_source?: string; removable?: boolean; auth_error?: string | null; models?: { id: string }[]; models_total?: number }
 interface Group { provider: string; provider_id: string; models: { id: string }[] }
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
@@ -131,5 +131,58 @@ describe('installed model-provider plugins in the provider catalog', () => {
       sidecar.respond('plugins.providers', (p) => ({ providers: plugins(p.profile_home) }))
       s.deps.catalog.invalidate()
     }
+  })
+})
+
+/** TAL-1812: Agent v0.22.6 moved GitHub Copilot into a catalog plugin; it reaches the catalog only as the sidecar's plugin rows. */
+describe('a provider that left the Agent core', () => {
+  let s: TestServer
+  let config: Json
+  let rows: { name: string; display_name: string; auth_type: string; setup: 'ready' | 'missing_cli' | 'not_installed'; install_hint?: string }[]
+  const providers = async (): Promise<{ active_provider: string; providers: Row[] }> => {
+    writeFileSync(join(s.state, 'config.yaml'), `# ${JSON.stringify(config)}\n`)
+    s.deps.catalog.invalidate()
+    return (await json(await s.get('/api/providers'))) as { active_provider: string; providers: Row[] }
+  }
+
+  beforeAll(async () => {
+    const sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    sidecar.respond('plugins.providers', () => ({ providers: rows }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'copilot' ? ['gpt-5.5'] : [] }))
+  })
+  afterAll(() => s.close())
+
+  it('has no built-in card, and shows the plugin\'s own rows once it is installed', async () => {
+    config = { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } }
+    rows = []
+    const builtIn = (await providers()).providers.map((p) => p.id)
+    expect(builtIn).not.toContain('copilot')
+    expect(builtIn).not.toContain('copilot-acp')
+
+    rows = [{ name: 'copilot', display_name: 'GitHub Copilot', auth_type: 'copilot', setup: 'ready' }, { name: 'copilot-acp', display_name: 'GitHub Copilot ACP', auth_type: 'external_process', setup: 'missing_cli' }]
+    const installed = (await providers()).providers
+    expect(installed.find((p) => p.id === 'copilot')).toMatchObject({ display_name: 'GitHub Copilot', is_plugin_provider: true, is_oauth: false, has_key: true, key_source: 'plugin', models: [{ id: 'gpt-5.5' }], models_total: 1 })
+    expect(installed.find((p) => p.id === 'copilot-acp')).toMatchObject({ display_name: 'GitHub Copilot ACP', is_plugin_provider: true, has_key: false, models: [] })
+  })
+
+  it('offers the catalog plugin on the card of a provider the profile still names', async () => {
+    config = { model: { default: 'gpt-5.5', provider: 'copilot' } }
+    rows = [{ name: 'copilot', display_name: 'GitHub Copilot', auth_type: '', setup: 'not_installed', install_hint: 'github-copilot' }]
+    const answer = await providers()
+    expect(answer.active_provider).toBe('copilot')
+    expect(answer.providers.filter((p) => p.id === 'copilot')).toMatchObject([{ display_name: 'GitHub Copilot', install_hint: 'github-copilot', is_active: true, is_plugin_provider: true, has_key: false, models: [], auth_error: expect.any(String) as string }])
+  })
+
+  it('leaves a custom provider named github as itself', async () => {
+    rows = []
+    config = { model: { default: 'm', provider: 'github' }, providers: { github: { api: 'https://git.invalid/v1', api_key: 'sk-test', default_model: 'm' } } }
+    const answer = await providers()
+    expect(answer.providers.map((p) => p.id)).not.toContain('copilot')
+    expect(answer.active_provider).toBe('custom:github')
+    expect(answer.providers.find((p) => p.id === 'custom:github')).toMatchObject({ is_custom: true, is_active: true, base_url: 'https://git.invalid/v1' })
   })
 })

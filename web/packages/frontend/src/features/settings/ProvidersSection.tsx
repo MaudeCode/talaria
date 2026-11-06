@@ -20,6 +20,7 @@ import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
 import { QuotaThresholdsForm } from './QuotaThresholds'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
+import { usePluginInstall } from './usePluginInstall'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
@@ -44,6 +45,7 @@ export function ProvidersSection() {
     onSuccess: (_r, v) => { showToast(m.providers_self_hosted_saved({ provider: v.name })); setEditing(null); invalidate(); void qc.invalidateQueries({ queryKey: keys.settings }) },
     onError: toastError,
   })
+  const install = usePluginInstall()
   const refreshModels = useMutation({ mutationFn: (id: string) => api.refreshModels(id), onSuccess: () => { showToast(m.providers_models_refreshed()); invalidate() }, onError: toastError })
   if (providers.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
@@ -79,6 +81,7 @@ export function ProvidersSection() {
                   <IconButton label={m.providers_refresh_models()} disabled={refreshModels.isPending} onClick={() => refreshModels.mutate(p.id)}>
                     <RefreshCw size={14} aria-hidden="true" className={cn(refreshModels.isPending && refreshModels.variables === p.id && 'animate-spin')} />
                   </IconButton>
+                  {p.install_hint && <Button aria-busy={install.isInstalling(p.install_hint)} disabled={install.isInstalling(p.install_hint)} onClick={() => { if (p.install_hint) install.request(p.install_hint) }}>{m.providers_install_plugin()}</Button>}
                   {p.is_self_hosted ? (
                     <Button onClick={() => setEditing(isEditing ? null : p.id)}>{m.providers_self_hosted_setup()}</Button>
                   ) : p.configurable !== false && !p.is_oauth && (
@@ -89,6 +92,7 @@ export function ProvidersSection() {
                   )}
                 </div>
               </div>
+              {p.install_hint && install.blocked(p.install_hint)}
               {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
               {isEditing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name: p.display_name ?? p.id, ...body })} />}
               {isEditing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${p.display_name ?? p.id} API key`} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} />}
@@ -110,6 +114,7 @@ export function ProvidersSection() {
           )
         })}
       </ul>
+      {install.consent}
     </div>
   )
 }

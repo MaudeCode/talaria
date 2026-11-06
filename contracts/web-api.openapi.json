@@ -76524,6 +76524,9 @@
                           },
                           "removable": {
                             "type": "boolean"
+                          },
+                          "install_hint": {
+                            "type": "string"
                           }
                         },
                         "required": [

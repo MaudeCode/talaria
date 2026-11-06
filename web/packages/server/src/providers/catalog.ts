@@ -211,6 +211,7 @@ const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, str
   missing_cli: "This provider's CLI was not found on the server. Install it and sign in, then refresh.",
   needs_setup: "This provider is not set up yet. Finish its setup in Hermes, then refresh.",
   not_loaded: 'This provider is installed but could not be loaded. Check it with hermes plugins doctor, then restart Talaria Web.',
+  not_installed: 'This provider is now a plugin. Install it, then sign in.',
   unavailable: "This provider's setup status is unavailable.",
 }
 const PLUGIN_NO_MODELS = 'This provider listed no models.'
@@ -996,6 +997,7 @@ export class ProviderCatalog {
         configurable: false, is_oauth: false, is_plugin_provider: true, is_self_hosted: false, is_custom: false, key_source: ready ? 'plugin' : 'none', removable: false,
         base_url: null, auth_error: plugin.setup === 'ready' ? (live.length ? null : PLUGIN_NO_MODELS) : PLUGIN_SETUP_ERRORS[plugin.setup], env_var: null,
         models: live.map((id) => ({ id, label: labelForModel(id, []) })), models_total: live.length,
+        ...(plugin.install_hint ? { install_hint: plugin.install_hint } : {}),
       })
     }
     for (const cp of customProviderEntries(config, pluginIds)) {

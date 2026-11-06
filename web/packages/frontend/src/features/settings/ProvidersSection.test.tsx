@@ -16,7 +16,7 @@ const quotaResponse = vi.hoisted((): { current: unknown } => ({ current: null })
 const providersResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
 vi.mock('../../api/endpoints', () => ({
   fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve(costHistory)), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
-  saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(),
+  saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(), installPlugin: vi.fn(),
   fetchProviders: vi.fn(() => Promise.resolve(providersResponse.current ?? { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] })),
   fetchProviderQuotas: vi.fn(() => Promise.resolve(quotaResponse.current ?? { version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources: [] })),
 }))
@@ -41,6 +41,26 @@ describe('ProvidersSection', () => {
   })
 
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
+
+  it('installs the plugin a card offers through the reviewed catalog flow and rereads the row (TAL-1812)', async () => {
+    providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, install_hint: 'github-copilot', auth_error: 'This provider is now a plugin. Install it, then sign in.' }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
+    vi.mocked(api.installPlugin).mockImplementation((_name, token) => {
+      if (!token) return Promise.resolve({ name: 'github-copilot', status: 'needs_consent', findings: 'github-copilot · community', consent_token: 'preview' })
+      providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, auth_error: 'This provider is not set up yet.' }] }
+      return Promise.resolve({ name: 'github-copilot', key: 'github-copilot', status: 'installed', enabled: false })
+    })
+    renderSection()
+    const card = (await screen.findByText('GitHub Copilot')).closest<HTMLElement>('[data-provider="copilot"]')!
+    await userEvent.click(within(card).getByRole('button', { name: 'Install plugin' }))
+    expect(api.installPlugin).toHaveBeenCalledWith('github-copilot', undefined)
+    // The Agent's review shows before anything installs.
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('github-copilot · community')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Install disabled' }))
+    await waitFor(() => expect(api.installPlugin).toHaveBeenLastCalledWith('github-copilot', 'preview'))
+    expect(await screen.findByText('This provider is not set up yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Install plugin' })).toBeNull()
+  })
 
   it('sets up a self-hosted provider from its row and rereads the providers it activated (TAL-570)', async () => {
     providersResponse.current = { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'ollama', display_name: 'Ollama', has_key: false, is_self_hosted: true, base_url: null, models: [], models_total: 0 }] }

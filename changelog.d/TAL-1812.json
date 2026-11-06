@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "GitHub Copilot now appears as the plugin provider it became in Agent 0.22.6, and a profile still using it can install the plugin from its provider card.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

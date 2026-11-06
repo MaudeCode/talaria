@@ -118,17 +118,21 @@ refresh or reopening the page. Older Agents retain generic sign-in success.
 The wizard continues after approval for other providers. The Agent saves the credential
 to the profile's own `auth.json`; WebUI keeps no copy. The sign-in routes use the
 same local-network gate as the rest of onboarding (or
-`HERMES_WEBUI_ONBOARDING_OPEN=1`). GitHub Copilot, Qwen, and Anthropic Claude
-Code still sign in from a terminal with `hermes auth`, then refresh WebUI.
+`HERMES_WEBUI_ONBOARDING_OPEN=1`). Qwen and Anthropic Claude Code still sign in
+from a terminal with `hermes auth`, then refresh WebUI.
 
 ### Provider plugins
 
 Model-provider plugins installed in a profile (`hermes plugins install`, or a
 directory under `$HERMES_HOME/plugins/model-providers/`) appear in Settings ->
 Providers and in the model picker under their own name, for example a Claude
-subscription provider. Install, enable, and sign in to a plugin with Hermes;
-WebUI never installs a plugin, logs in, or reads its credentials, and never
-substitutes an API key provider for it.
+subscription provider. Sign in to a plugin with Hermes; WebUI never logs in or
+reads its credentials, and never substitutes an API key provider for it.
+
+GitHub Copilot is one of these since Agent v0.22.6: it has no built-in card. A
+profile that still selects `copilot` shows a card with **Install plugin**, which
+runs the reviewed catalog install for `github-copilot` (operator sessions only).
+Then sign in with `hermes auth add copilot` and refresh WebUI.
 
 - A plugin listed in `plugins.disabled` does not appear.
 - A plugin that is not ready shows why on its provider card and offers no

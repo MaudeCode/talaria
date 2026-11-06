@@ -4195,9 +4195,9 @@ describe('stale session models after an Agent sign-in change (TAL-542)', () => {
       let signedIn = false
       const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } }
       sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
-      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: signedIn && p.provider === 'copilot', provider: p.provider ?? '' } }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: signedIn && p.provider === 'xai-oauth', provider: p.provider ?? '' } }))
       sidecar.respond('plugins.providers', () => ({ providers: [] }))
-      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'copilot' ? ['cp-model'] : [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'xai-oauth' ? ['cp-model'] : [] }))
       sidecar.respond('chat.start', (_params, emit) => { emit({ event: 'token', data: { text: 'ok' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
       writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
       const startWith = async (model: string, provider: string | null): Promise<Json> => {
@@ -4211,12 +4211,12 @@ describe('stale session models after an Agent sign-in change (TAL-542)', () => {
         return started
       }
       await startWith('claude-sonnet-4', 'anthropic')
-      // Signed in to Copilot outside Web: no config.yaml or .env change, only the Agent's auth state.
+      // Signed in to xAI outside Web: no config.yaml or .env change, only the Agent's auth state.
       signedIn = true
       clock += 31
       expect((await startWith('cp-model', 'ollama')).effective_model).toBeUndefined()
       await s.deps.catalog.warmSessionModelRepair(s.state)
-      expect(await startWith('cp-model', 'ollama')).toMatchObject({ effective_model: 'cp-model', effective_model_provider: 'copilot' })
+      expect(await startWith('cp-model', 'ollama')).toMatchObject({ effective_model: 'cp-model', effective_model_provider: 'xai-oauth' })
     } finally {
       await s.close()
     }

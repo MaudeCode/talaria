@@ -607,7 +607,7 @@ describe('model_catalog.excluded_providers (TAL-911)', () => {
   })
 
   it('matches an excluded alias against the provider it names', async () => {
-    const { groups } = await pickerFor({ excluded_providers: ['Claude', 'github-copilot'] })
+    const { groups } = await pickerFor({ excluded_providers: ['Claude'] })
     expect(groups).not.toContain('anthropic')
     expect(groups).toEqual(expect.arrayContaining(['gemini', 'openrouter']))
   })
@@ -634,28 +634,28 @@ describe('live model ids after an Agent account switch (TAL-542)', () => {
       const sidecar = new FakeSidecar()
       const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } }
       sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
-      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: p.provider === 'copilot', provider: p.provider ?? '' } }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: p.provider === 'xai-oauth', provider: p.provider ?? '' } }))
       sidecar.respond('plugins.providers', () => ({ providers: [] }))
-      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'copilot' ? ids : [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'xai-oauth' ? ids : [] }))
       writeFileSync(join(home, 'config.yaml'), '# cfg\n')
       writeFileSync(join(home, 'auth.json'), '{"account":"a"}\n')
       const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
       await catalog.warmSessionModelRepair(home)
-      expect(catalog.sessionModelRepair(home, 'cp-a', 'ollama')).toEqual(['cp-a', 'copilot'])
-      // `hermes` switches the Copilot account: only auth.json changes, and the new account lists other models.
+      expect(catalog.sessionModelRepair(home, 'cp-a', 'ollama')).toEqual(['cp-a', 'xai-oauth'])
+      // `hermes` switches the xAI account: only auth.json changes, and the new account lists other models.
       ids = ['cp-b']
       writeFileSync(join(home, 'auth.json'), '{"account":"bb"}\n')
       clock += 1
       await catalog.warmSessionModelRepair(home)
       expect(catalog.sessionModelRepair(home, 'cp-a', 'ollama')).toBeNull()
-      expect(catalog.sessionModelRepair(home, 'cp-b', 'ollama')).toEqual(['cp-b', 'copilot'])
+      expect(catalog.sessionModelRepair(home, 'cp-b', 'ollama')).toEqual(['cp-b', 'xai-oauth'])
       // A sign-in change while the catalog is being built makes that build stale; the warm-up rebuilds it.
       let edits = 0
       sidecar.respond('plugins.providers', () => { if (edits++ === 0) { ids = ['cp-c']; writeFileSync(join(home, 'auth.json'), '{"account":"ccc"}\n') } return { providers: [] } })
       clock += 1
       writeFileSync(join(home, '.env'), 'TRIGGER_REBUILD=1\n')
       await catalog.warmSessionModelRepair(home)
-      expect(catalog.sessionModelRepair(home, 'cp-c', 'ollama')).toEqual(['cp-c', 'copilot'])
+      expect(catalog.sessionModelRepair(home, 'cp-c', 'ollama')).toEqual(['cp-c', 'xai-oauth'])
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
