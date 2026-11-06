@@ -19,18 +19,16 @@ export const VALID_REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhi
 /** Fallback auxiliary slots for an Agent that cannot list its own (`aux.tasks`, TAL-800). */
 export const AUXILIARY_TASK_CATALOG: { key: string; label: string; description: string }[] = [
   { key: 'vision', label: 'Vision', description: 'image/screenshot analysis' },
-  { key: 'web_extract', label: 'Web extract', description: 'web page summarization' },
   { key: 'compression', label: 'Compression', description: 'context summarization' },
   { key: 'approval', label: 'Approval', description: 'smart command approval' },
   { key: 'mcp', label: 'MCP', description: 'MCP tool reasoning' },
   { key: 'title_generation', label: 'Title generation', description: 'session titles' },
-  { key: 'skills_hub', label: 'Skills hub', description: 'skills search/install' },
   { key: 'curator', label: 'Curator', description: 'skill-usage review pass' },
   { key: 'kanban_decomposer', label: 'Kanban decomposer', description: 'task decomposition' },
   { key: 'profile_describer', label: 'Profile describer', description: 'profile summaries' },
   { key: 'triage_specifier', label: 'Triage specifier', description: 'issue/task triage specs' },
 ]
-export const RETIRED_AUX_TASK_SLOTS = ['session_search']
+export const RETIRED_AUX_TASK_SLOTS = ['session_search', 'web_extract', 'skills_hub']
 
 export interface ProviderSetup {
   label: string; env_var: string; env_var_aliases?: string[]; default_model: string; default_base_url?: string; requires_base_url: boolean

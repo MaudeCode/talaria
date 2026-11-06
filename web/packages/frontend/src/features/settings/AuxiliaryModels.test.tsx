@@ -5,7 +5,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const TASKS = ['vision', 'web_extract', 'compression', 'approval', 'mcp', 'title_generation', 'skills_hub', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier', 'delegation']
+const TASKS = ['vision', 'compression', 'approval', 'mcp', 'title_generation', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier', 'delegation']
 const label = (task: string): string => (task === 'title_generation' ? 'Title generation' : task === 'mcp' ? 'MCP' : task.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()))
 const EFFORTS = ['low', 'medium', 'high', 'none']
 const inherited = (task: string) => ({ saved: null as string | null, effective: '', inherited: true, default_source: task === 'delegation' ? 'parent' as const : 'provider' as const, options: EFFORTS, unavailable: null as 'slot' | 'model' | 'agent' | null })
@@ -90,9 +90,9 @@ describe('Auxiliary models settings', () => {
     expect(rows[0]).toHaveTextContent('Vision')
     expect(rows[0]).toHaveTextContent('OpenRouter · legacy/gone-model')
     expect(rows[0]).toHaveTextContent('Not in catalog')
-    expect(rows[5]).toHaveTextContent('Title generation')
-    expect(rows[5]).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6')
-    expect(rows[5]).not.toHaveTextContent('Not in catalog')
+    const title = list.getByRole('button', { name: /Title generation/ })
+    expect(title).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6')
+    expect(title).not.toHaveTextContent('Not in catalog')
   })
 
   it('searches the catalog, shows the pick in the list at once, and adopts the server state', async () => {

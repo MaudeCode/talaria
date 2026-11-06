@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Auxiliary model settings hide retired tasks when the Agent cannot list its slots, and Reset All removes their saved overrides.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
