@@ -38,6 +38,7 @@ class PauseLedger {
   cursor = 0
   private stop = 0
   private readonly sources = new Map<string, { seq: number; excerpt: string }>()
+  private readonly threads = new Map<string | null, number>()
   private readonly discussions = new Map<string, { continues: number; bounded: NativeEvent | null }>()
 
   /** Takes only the next contiguous events, so overlapping pages and concurrent readers fold each event once. */
@@ -50,7 +51,7 @@ class PauseLedger {
       if (event.kind === 'message.user') {
         const text = redactString(event.payload.text ?? '')
         this.sources.set(event.event_id, { seq: event.seq, excerpt: text.length > PAUSE_EXCERPT_CHARS ? `${text.slice(0, PAUSE_EXCERPT_CHARS)}…` : text })
-        for (const discussion of this.discussions.values()) if ((discussion.bounded?.payload.thread_id ?? null) === (event.payload.thread_id ?? null)) discussion.bounded = null
+        this.threads.set(event.payload.thread_id ?? null, event.seq)
       }
       if (!id || (event.kind !== 'room.continued' && event.kind !== 'room.activity')) continue
       const discussion = this.discussions.get(id) ?? { continues: 0, bounded: null }
@@ -62,9 +63,17 @@ class PauseLedger {
 
   continues(id: string) { return this.discussions.get(id)?.continues ?? 0 }
 
-  /** A Stop after a discussion's own message fences it for good, even one before a cap computed from an older snapshot. */
+  /**
+   * A Stop or a newer message in its thread after a discussion's own message fences it for good, even one before a cap
+   * computed from an older snapshot. Stricter than `paused_discussion` for a late cap: the Agent's `_pending_discussion`
+   * only runs a thread's newest message, so Continue could not resume this one.
+   */
   paused() {
-    return [...this.discussions].flatMap(([id, { continues, bounded }]) => bounded && this.stop <= (this.sources.get(id)?.seq ?? bounded.seq) ? [{ id, continues, event: bounded, excerpt: this.sources.get(id)?.excerpt || null }] : [])
+    return [...this.discussions].flatMap(([id, { continues, bounded }]) => {
+      if (!bounded) return []
+      const source = this.sources.get(id), own = source?.seq ?? bounded.seq
+      return this.stop <= own && (this.threads.get(bounded.payload.thread_id ?? null) ?? 0) <= own ? [{ id, continues, event: bounded, excerpt: source?.excerpt || null }] : []
+    })
   }
 }
 

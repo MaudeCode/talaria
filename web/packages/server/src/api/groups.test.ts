@@ -237,6 +237,12 @@ it('projects a capped discussion as a notice and a paused entry until Continue, 
   discussion('Follow up', 'thread-1')
   expect((await read()).paused).toEqual([])
 
+  // A newer message already superseded this discussion, so its late cap is no pause: the Agent is working on the newer one.
+  const superseded = discussion('Superseded', 'thread-2')
+  discussion('Newer', 'thread-2')
+  activity(superseded, 'thread-2')
+  expect((await read()).paused).toEqual([])
+
   const fenced = discussion('Fenced', 'thread-3')
   gateway('room.stop_requested', { cancel_id: 'stop' })
   // A cap noted from a snapshot older than the Stop stays fenced; a discussion after the Stop is unaffected.
