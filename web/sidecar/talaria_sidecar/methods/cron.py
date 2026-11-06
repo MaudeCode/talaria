@@ -470,6 +470,7 @@ def _stop(process) -> None:
 def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, execution=None, stop=None):
     from .cron_execution import SETTLEMENT_SECONDS, Unverified
 
+    stop = execution.stop_reason if execution is not None else stop
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
     cancel_event = ctx_mp.Event() if execution is not None or stop is not None else None

@@ -320,7 +320,7 @@ def run(job, home, execution_home, ctx, owner, *, recovery_only=False):
             if execution.record.get("result") is not None:
                 result = execution.record["result"]
             else:
-                result = cron._run_in_child(execution.job, execution.execution_home, ctx, heartbeat, execution, execution.stop_reason)
+                result = cron._run_in_child(execution.job, execution.execution_home, ctx, heartbeat, execution)
             return execution.finish(result)
         except Exception as exc:
             if execution.settled:

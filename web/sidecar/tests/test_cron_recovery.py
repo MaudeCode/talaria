@@ -128,6 +128,9 @@ class Execution:
     def cancel(self, reason):
         self.record["cancel_reason"] = self.record["cancel_reason"] or reason
 
+    def stop_reason(self):
+        return None
+
 
 @pytest.mark.parametrize("trigger", ["cancelled", "timeout", "claim_lost"])
 def test_all_stop_exits_wait_for_cooperative_terminal_result(monkeypatch, tmp_path, trigger):

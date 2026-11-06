@@ -103425,7 +103425,10 @@
                         "stopping",
                         "last_outcome",
                         "last_failure",
-                        "delivery_unconfirmed_platforms"
+                        "delivery_unconfirmed_platforms",
+                        "timezone",
+                        "catch_up",
+                        "grace_minutes"
                       ],
                       "additionalProperties": {}
                     },
@@ -103891,6 +103894,36 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "timezone": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "catch_up": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "grace_minutes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
