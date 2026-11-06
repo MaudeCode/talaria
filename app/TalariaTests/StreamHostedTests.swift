@@ -11,6 +11,7 @@ final class StreamHostedTests: XCTestCase {
     func testIdleNativeNoticesRefreshThroughTheViewedSessionStream() async throws {
         let window = try await hostFixtureChat([UITestFixtureURLProtocol.nativeNoticesArgument])
         _ = try await requireElement(in: window, label: "Project plugins were skipped")
+        settle(0.5)
         attachHostedScreenshot(window, name: "native-notices-before")
         let attached = await awaitCondition { !UITestFixtureURLProtocol.nativeNoticeStreams.withLock { $0.isEmpty } }
         XCTAssertTrue(attached)
@@ -26,6 +27,7 @@ final class StreamHostedTests: XCTestCase {
         let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == "Plugin finished" }
         XCTAssertTrue(cleared)
         _ = try await requireElement(in: window, label: "Project plugins were skipped")
+        settle(0.5)
         attachHostedScreenshot(window, name: "native-notices-cleared")
         window.isHidden = true
         window.rootViewController = nil
@@ -38,6 +40,7 @@ final class StreamHostedTests: XCTestCase {
             let window = try await hostFixtureChat(["--ui-test-chat-controls"], size: size)
             _ = try await startControlsRun(in: window)
             _ = try await requireElement(in: window, label: "Hermes is working on the response")
+            settle(0.5)
             attachHostedScreenshot(window, name: "legacy-working-\(name)")
             HostedAccessibility.activate(try await requireElement(in: window, label: "Stop response"))
             _ = try await requireElement(in: window, label: "Stopped")
@@ -58,14 +61,17 @@ final class StreamHostedTests: XCTestCase {
         try await sendFromComposer("Read the local model prompt", in: window)
         let reading = try await requireElement(in: window) { $0.accessibilityLabel == "Hermes is reading the prompt, 42%" }
         XCTAssertTrue(window.bounds.contains(window.convert(reading.accessibilityFrame, from: nil)), "Progress is clipped")
+        settle(0.5)
         attachHostedScreenshot(window, name: "prompt-reading-42-\(name)")
         try await sendFromComposer("Keep the fixture concise", in: window)
         _ = try await requireElement(in: window, label: "Hermes is reading the prompt")
+        settle(0.5)
         attachHostedScreenshot(window, name: "prompt-reading-unknown-\(name)")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Stop response"))
         let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel?.contains("is reading the prompt") == true }
         XCTAssertTrue(cleared, "Stop left prompt-reading progress visible")
         _ = try await requireElement(in: window, label: "Stopped")
+        settle(0.5)
         attachHostedScreenshot(window, name: "prompt-reading-stopped-\(name)")
     }
 
@@ -242,6 +248,7 @@ final class StreamHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "skill-secret-sheet-empty")
         field.becomeFirstResponder()
         field.insertText("synthetic-skill-secret")
+        settle()
         attachHostedScreenshot(window, name: "skill-secret-sheet-masked")
         let save = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "vault-prompt-submit" && self.isEnabled($0) }
         HostedAccessibility.activate(try XCTUnwrap(save, "Save never enabled"))

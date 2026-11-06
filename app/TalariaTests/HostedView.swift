@@ -193,12 +193,15 @@ extension XCTestCase {
         try await transition()
     }
 
-    /// Evidence of what a passing test laid out, for `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`. Any other run skips
-    /// it: rendering every window took over a tenth of a run, before the wait that lets each picture finish (TAL-1897).
+    /// Evidence of what a passing test laid out, for `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`. Any other run draws
+    /// into one pixel: rendering every window took over a tenth of a run, while what a test's next step can rely on is
+    /// only the commit a drawing forces (`testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`) (TAL-1897).
     @MainActor
     func attachHostedScreenshot(_ window: UIWindow, name: String) {
-        guard keepsHostedScreenshots else { return }
-        settle(0.5)
+        guard keepsHostedScreenshots else {
+            _ = windowImage(window, size: CGSize(width: 1, height: 1))
+            return
+        }
         attachWindowImage(window, name: name, lifetime: .keepAlways)
     }
 
@@ -211,12 +214,17 @@ extension XCTestCase {
 
     @MainActor
     private func attachWindowImage(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime) {
-        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
+        let attachment = XCTAttachment(image: windowImage(window, size: window.bounds.size))
         attachment.name = name
         attachment.lifetime = lifetime
         add(attachment)
+    }
+
+    @MainActor
+    private func windowImage(_ window: UIWindow, size: CGSize) -> UIImage {
+        UIGraphicsImageRenderer(size: size).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
     }
 
     /// Hosts `view` in a window of its own with animations off and returns the window, for tests that assert what a

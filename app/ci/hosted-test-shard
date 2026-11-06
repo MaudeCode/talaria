@@ -16,12 +16,12 @@ import sys
 from pathlib import Path
 
 TARGET = "TalariaTests"
-# Each listed class's "Test Suite" seconds, and every other class's together, from PR CI run 41980667369's four shards
-# (1289 s of tests). hosted_test_shard_test.py fails when they leave a shard more than 90 s over the mean; rebalance from
-# a current run's timings when a shard's job outgrows the others.
-SECONDS = {"SessionListHostedTests": 184.5, "TranscriptHostedTests": 82.3, "ChatHostedTests": 263.2,
-           "InsightsHostedTests": 37.0, "StreamHostedTests": 104.9, "SessionActionsHostedTests": 118.0, "RegularSplitHostedTests": 95.4}
-OTHER_SECONDS = 404.4
+# Each listed class's test time, and every other class's together, from PR CI run 42130994534's four shards (894 s of
+# tests). hosted_test_shard_test.py fails when they leave a shard more than 90 s over the mean; rebalance from a current
+# run's timings when a shard's job outgrows the others.
+SECONDS = {"SessionListHostedTests": 184.8, "TranscriptHostedTests": 69.3, "ChatHostedTests": 208.8,
+           "InsightsHostedTests": 28.8, "StreamHostedTests": 65.6, "SessionActionsHostedTests": 73.9, "RegularSplitHostedTests": 56.7}
+OTHER_SECONDS = 205.7
 SHARDS = (
     ("SessionListHostedTests", "TranscriptHostedTests"),
     ("ChatHostedTests", "InsightsHostedTests"),

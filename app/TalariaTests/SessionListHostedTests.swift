@@ -27,6 +27,7 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         let titles = ["Background tasks", "Queued messages"]
         let ready = await awaitCondition { titles.allSatisfy { HostedAccessibility.toolbarItem($0, in: window) != nil } }
         XCTAssertTrue(ready)
+        settle(0.3)
         attachHostedScreenshot(window, name: "narrow-horizontal-work-priorities")
         for title in titles {
             let item = try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window))
@@ -124,11 +125,13 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         let stepped = await awaitNoElement(in: window) {
             $0.accessibilityLabel == "Background tasks · 1" || $0.accessibilityLabel == "2 queued"
         }
+        settle(0.3)
         attachHostedScreenshot(window, name: "duo-work-items-without-chips")
         XCTAssertTrue(stepped, "The bar already shows background tasks and queued messages")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Message"))
         _ = try await requireElement(in: window, label: "Background tasks · 1")
         _ = try await requireElement(in: window, label: "2 queued")
+        settle(0.3)
         attachHostedScreenshot(window, name: "duo-work-chips-while-typing")
         _ = await model.cancelActiveStream()
     }
@@ -1074,6 +1077,7 @@ final class SessionListHostedTests: XCTestCase {
         let header = await awaitElement(in: window) { ($0.accessibilityLabel ?? "").contains("Safe Mode") }
         XCTAssertNotNil(header, "The header shows the mode the server froze")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "This session is read-only."), "The attached owner takes input")
+        settle(0.3)
         attachHostedScreenshot(window, name: "safe-mode-new-chat-phone")
     }
 
@@ -1244,6 +1248,7 @@ final class SessionListHostedTests: XCTestCase {
         let starting = await awaitElement(in: window) { ($0.accessibilityLabel ?? "").hasSuffix("is starting a response") }
         XCTAssertNotNil(starting, "The run status chip shows the start")
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Select model"))
+        settle(0.5)
         attachHostedScreenshot(window, name: "session-starting-phone")
         try await typeIntoComposer("Newer draft", in: window)
         let heldDraft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
@@ -1253,6 +1258,7 @@ final class SessionListHostedTests: XCTestCase {
         let notice = await awaitElement(in: window, label: "Synthetic refusal")
         XCTAssertEqual(notice?.accessibilityValue, "Error", "The refusal shows as an error notice above the composer")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"), "Send retries; the composer has no Retry strip")
+        settle(0.5)
         attachHostedScreenshot(window, name: "session-start-failed-phone")
         let restored = await awaitCondition { self.composerDraftText(in: window) == "Newer draft\n\n\(submittedDraft)" }
         XCTAssertTrue(restored)

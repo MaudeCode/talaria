@@ -157,6 +157,7 @@ final class DuoFoldHostedTests: XCTestCase {
     func testAQueuedMessageStaysQueuedAcrossFolding() async throws {
         let folding = try await openChatWithAQueuedMessage()
         let window = folding.window
+        settle(0.3)
         attachHostedScreenshot(window, name: "queued-before-leaving")
 
         for closed in [true, false] {
@@ -184,6 +185,7 @@ final class DuoFoldHostedTests: XCTestCase {
         })
         let restored = await awaitCondition { self.composerDraftText(in: window) == "Queued across folding" }
         XCTAssertTrue(restored, "Returning showed \(composerDraftText(in: window) ?? "no composer"), not the queued message")
+        settle(0.3)
         attachHostedScreenshot(window, name: "queued-message-restored-as-draft")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "1 queued"))
         try await Task.sleep(for: .seconds(1))
@@ -276,16 +278,24 @@ final class DuoFoldHostedTests: XCTestCase {
         // The latest row finishes its entry before the toggle, as `testLongBodiesOpenCollapsedAndExpandInPlace` waits.
         var previousTail: CGRect?
         var stableSamples = 0
+        var waitingOn = "the transcript's scroll controller"
         let entered = await awaitCondition {
-            guard let controller = window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController,
-                  !controller.isHoldingPosition,
-                  let tail = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityLabel == "Short reply 25." && isVisible($0) })
-            else { stableSamples = 0; return false }
+            func waitFor(_ reason: String) -> Bool {
+                waitingOn = reason
+                stableSamples = 0
+                return false
+            }
+            guard let controller = window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController
+            else { return waitFor("the transcript's scroll controller") }
+            guard !controller.isHoldingPosition else { return waitFor("the transcript's held position") }
+            guard let tail = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityLabel == "Short reply 25." && isVisible($0) })
+            else { return waitFor("a visible latest row") }
+            waitingOn = "a still latest row, last at \(tail.accessibilityFrame)"
             stableSamples = tail.accessibilityFrame == previousTail ? stableSamples + 1 : 0
             previousTail = tail.accessibilityFrame
             return stableSamples >= 5
         }
-        XCTAssertTrue(entered, "The latest row never finished its entry")
+        XCTAssertTrue(entered, "The latest row never finished its entry, waiting on \(waitingOn)")
         // The latest long body, which stays in view at the latest message on either display.
         let showMore = try XCTUnwrap(HostedAccessibility.elements(in: window)
             .filter { $0.accessibilityLabel == "Show more" && isVisible($0) }
