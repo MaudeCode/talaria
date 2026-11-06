@@ -11,6 +11,7 @@ import { cn } from '../../ui/cn'
 import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { Dialog } from '../../ui/Dialog'
+import { Button } from '../../ui/Button'
 import { useProjectsQuery } from '../../app/queries'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { ContextMenu } from '../../ui/Menu'
@@ -186,6 +187,7 @@ export function SessionListPanel() {
   const [filter, setFilter] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const searchInput = useRef<HTMLInputElement>(null)
+  const closeSearch = () => { setFilter(''); setSearchOpen(false) }
   // The sidebar's Search row asks from outside this panel; the open filter commits before the effect focuses it.
   const { sessionSearchRequested } = useShellState()
   if (sessionSearchRequested && !searchOpen) setSearchOpen(true)
@@ -372,13 +374,14 @@ export function SessionListPanel() {
       <div className="session-search sidebar-search">
         <div className="session-search-field">
           <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-          <input ref={searchInput} id="sessionSearch" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" onKeyDown={(e) => { if (e.key === 'Escape') { setFilter(''); setSearchOpen(false) } }} />
+          <input ref={searchInput} id="sessionSearch" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" onKeyDown={(e) => { if (e.key === 'Escape') closeSearch() }} />
           {filter && (
-            <button type="button" className="sidebar-search-clear" aria-label={m.clear_conversation_filter()} onClick={() => setFilter('')}>
+            <button type="button" className="sidebar-search-clear" aria-label={m.clear_conversation_filter()} onClick={() => { setFilter(''); searchInput.current?.focus() }}>
               <X size={14} aria-hidden="true" />
             </button>
           )}
         </div>
+        <Button variant="ghost" className="min-h-11 shrink-0 px-2" onClick={closeSearch}>{m.close()}</Button>
       </div>
       <div className="session-list" id="sessionList" role="list">
         <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>

@@ -25,6 +25,7 @@ vi.mock('@tanstack/react-router', () => ({
 import * as api from '../../api/endpoints'
 import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionListPanel'
 import { useSessionListStream } from './useSessionListStream'
+import { requestSessionSearch } from '../../shell/useShellState'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
@@ -46,12 +47,58 @@ const pick = async (name: string | RegExp) => {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli], webui_session_count: 3, cli_session_count: 1 } as never)
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj' }] } as never)
   vi.mocked(api.searchSessions).mockReset()
 })
 
 describe('SessionListPanel search (TAL-308)', () => {
+  it.each(['close control', 'Escape'])('dismisses an empty or populated search with %s and can reopen it', async (dismiss) => {
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [alpha], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    const input = screen.getByRole('searchbox')
+    const panel = input.closest('#panelChat')!
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
+    for (const term of ['', 'zebra']) {
+      act(() => requestSessionSearch())
+      expect(input).toHaveFocus()
+      expect(panel).toHaveClass('search-open')
+      expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+      if (term) {
+        await userEvent.type(input, term)
+        await waitFor(() => expect(shown()).toEqual(['alpha']))
+      }
+      if (dismiss === 'Escape') await userEvent.keyboard('{Escape}')
+      else {
+        await userEvent.tab()
+        expect(input).not.toHaveFocus()
+        await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+      }
+      expect(panel).not.toHaveClass('search-open')
+      expect(input).toHaveValue('')
+      await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
+      expect(screen.getByRole('heading', { name: 'Chats' })).toBeInTheDocument()
+      await openFilters()
+      await userEvent.keyboard('{Escape}')
+    }
+    act(() => requestSessionSearch())
+    expect(input).toHaveFocus()
+    expect(panel).toHaveClass('search-open')
+  })
+
+  it('clears the filter without closing search and keeps the input focused', async () => {
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    act(() => requestSessionSearch())
+    const input = screen.getByRole('searchbox')
+    await userEvent.type(input, 'z')
+    await userEvent.click(screen.getByRole('button', { name: 'Clear conversation filter' }))
+    expect(input).toHaveValue('')
+    expect(input).toHaveFocus()
+    expect(input.closest('#panelChat')).toHaveClass('search-open')
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
+  })
+
   it('sends the selected project and source, then shows exactly the server result in its order', async () => {
     let answer: (value: unknown) => void = () => undefined
     vi.mocked(api.searchSessions).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
