@@ -180,6 +180,8 @@ def _checkout_move(token,*args,**kwargs):
         path.parent.mkdir(exist_ok=True)
         path.write_text(content)
     (root / 'hermes_cli/__init__.py').write_text('')
+    # As in the real Agent: the sidecar's startup import writes bytecode here while a test may be committing.
+    (root / '.gitignore').write_text('__pycache__/\n')
     (root / 'gateway').mkdir()
     (root / 'gateway/__init__.py').write_text('')
     (root / 'gateway/status.py').write_text('def get_process_start_time(pid): return 1\n')
@@ -543,12 +545,16 @@ def test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment(owned
     git('reset', '--hard', base)
     begun = rpc(sidecar, root, 'begin', revision=broken, homes=[str(home)])
     assert begun['ok'], begun
-    assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', broken], timeout_ms=10000)['ok']
-    assert rpc(sidecar, root, 'sync', token=begun['token'])['ok'] is False
-    assert rpc(sidecar, root, 'finish', token=begun['token'])['ok'] is False
+    merged = rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', broken], timeout_ms=10000)
+    assert merged['ok'], merged
+    synced = rpc(sidecar, root, 'sync', token=begun['token'])
+    assert synced['ok'] is False, synced
+    unfinished = rpc(sidecar, root, 'finish', token=begun['token'])
+    assert unfinished['ok'] is False, unfinished
     retried = rpc(sidecar, root, 'begin', revision=legacy, homes=[str(home)])
     assert retried['ok'], retried
-    assert rpc(sidecar, root, 'git', token=retried['token'], args=['reset', '--hard', legacy], timeout_ms=10000)['ok']
+    reset = rpc(sidecar, root, 'git', token=retried['token'], args=['reset', '--hard', legacy], timeout_ms=10000)
+    assert reset['ok'], reset
     finished = rpc(sidecar, root, 'finish', token=retried['token'])
     assert finished['ok'], finished
     wait_for(lambda: (home / 'resumed').exists())
