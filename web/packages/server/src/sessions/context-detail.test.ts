@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ContextDetailSchema, unavailableContextDetail } from '@maudecode/talaria-web-contracts'
 import { bootTestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -53,8 +53,11 @@ describe('context detail read boundary', () => {
         expect(params).toMatchObject({ session_id: session.session_id, profile_home: s.state, model: 'fixture-model', workspace: session.workspace })
         return detail
       })
-      const row = await s.deps.sessions.wireRow(session)
-      const res = await s.get(`/api/session/context-detail?session_id=${session.session_id}&context_detail_key=${String(row.context_detail_key)}`)
+      session.messages.push({ role: 'user', content: 'Earlier question.' }, { role: 'assistant', content: 'Earlier answer.' })
+      await s.deps.sessionStore.save(session)
+      // A reloaded chat holds only what the session read returned, in the window the transcript asks for.
+      const reloaded = await (await s.get(`/api/session?session_id=${session.session_id}&msg_limit=1`)).json() as { session: { context_detail_key?: string } }
+      const res = await s.get(`/api/session/context-detail?session_id=${session.session_id}&context_detail_key=${String(reloaded.session.context_detail_key)}`)
       expect(res.status).toBe(200)
       expect(ContextDetailSchema.parse(await res.json())).toEqual(detail)
       expect((await s.get(`/api/session/context-detail?session_id=${session.session_id}`)).status).toBe(400)
@@ -62,6 +65,27 @@ describe('context detail read boundary', () => {
       expect(missing.status).toBe(404)
       expect(sidecar.calls.filter((c) => c.method === 'chat.context_detail')).toHaveLength(1)
       expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toHaveLength(0)
+    } finally { await s.close() }
+  })
+
+  it('coalesces parallel reads of one context into a single sidecar call', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const session = await s.deps.sessions.create({ model: 'fixture-model' })
+      const pending: ((value: typeof detail) => void)[] = []
+      sidecar.respond('chat.context_detail', () => new Promise((resolve) => { pending.push(resolve) }))
+      const key = String((await s.deps.sessions.wireRow(session)).context_detail_key)
+      const reads = [s.deps.sessions.contextDetail(session.session_id, key), s.deps.sessions.contextDetail(session.session_id, key)]
+      await vi.waitFor(() => { expect(pending.length).toBeGreaterThan(0) })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      for (const finish of pending) finish(detail)
+      await expect(Promise.all(reads)).resolves.toEqual([detail, detail])
+      expect(sidecar.calls.filter((c) => c.method === 'chat.context_detail')).toHaveLength(1)
+      // A settled read leaves nothing behind: the next one asks again.
+      sidecar.respond('chat.context_detail', () => detail)
+      await s.deps.sessions.contextDetail(session.session_id, key)
+      expect(sidecar.calls.filter((c) => c.method === 'chat.context_detail')).toHaveLength(2)
     } finally { await s.close() }
   })
 

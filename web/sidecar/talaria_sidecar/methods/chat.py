@@ -1690,6 +1690,49 @@ def _execution_session_id(db, session_id: str) -> str:
     return session_id
 
 
+# A stored read walks the whole transcript on a shared RPC call slot, so waiting for a permit would hold one too: a read
+# past the limit is refused. ponytail: a fixed cap across profiles, per-profile permits if one profile starves the rest.
+_STORED_CONTEXT_READS = threading.BoundedSemaphore(4)
+
+
+def _stored_context_detail(home: Path, session_id: str) -> dict:
+    """TAL-1823: a chat with no resident Agent (idle eviction, restart) measures its row's frozen prompt and tools[] pin,
+    as the Agent's own agentless read does. Builds no Agent and opens the store read-only, since a writer would migrate it.
+    ``not_built`` means nothing is stored yet or this Agent lacks the helpers. Categories only: occupancy stays unknown."""
+    from ..context_detail import project, unavailable
+
+    path = home / "state.db"
+    if not path.is_file():
+        return unavailable("not_built")
+    try:
+        from agent.context_breakdown import stored_context_breakdown
+        from tools.mcp_tool_agent import pinned_tool_defs
+    except ImportError:
+        return unavailable("not_built")
+    try:
+        from hermes_state import SessionDB
+
+        with scoped_home(home):
+            db = SessionDB(path, read_only=True)
+            try:
+                tip = _execution_session_id(db, session_id)
+                row = db.get_session(tip) or {}
+                prompt = row.get("system_prompt")
+                if not prompt:
+                    return unavailable("not_built")
+                history = [m for m in db.get_messages_as_conversation(tip, repair_alternation=True) if m.get("role") != "session_meta"]
+            finally:
+                db.close()
+            try:
+                pin = json.loads(row.get("tool_names") or "null")
+            except (TypeError, ValueError):
+                pin = None  # a pin hash whose row was swept resolves to itself
+            payload = stored_context_breakdown(prompt, pinned_tool_defs(pin), history)
+        return project(payload)
+    except Exception:  # noqa: BLE001 - never expose Agent diagnostics, prompt contents or paths
+        return unavailable()
+
+
 def _agent_class():
     try:
         from run_agent import AIAgent
@@ -2819,8 +2862,16 @@ def register(registry) -> None:
         sid = str(params.get("session_id") or "")
         with _AGENT_CACHE_LOCK:
             cached = _AGENT_CACHE.get(sid)
-            if cached is None:
-                return unavailable("not_built")
+        if cached is None:
+            if not _STORED_CONTEXT_READS.acquire(blocking=False):
+                return unavailable()
+            try:
+                return _stored_context_detail(home, sid)
+            finally:
+                _STORED_CONTEXT_READS.release()
+        with _AGENT_CACHE_LOCK:
+            if _AGENT_CACHE.get(sid) is not cached:
+                return unavailable("changed")
             agent = cached[0]
             if (Path(cached[2]).resolve() != home or getattr(agent, "model", None) != params.get("model")
                     or getattr(agent, "provider", None) != params.get("model_provider")):

@@ -271,6 +271,7 @@ export class SessionService {
   /** TAL-1284: the one idle compaction this server runs at a time. */
   private idleCompactionJob: CompressionJob | null = null
   /** TAL-1284: each listed session's index row generation the idle sweep last tried. */
+  private readonly contextDetailReads = new Map<string, Promise<ContextDetail>>()
   private readonly idleCompactionTried = new Map<string, string>()
   private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
   private worktreesUnconfirmed = 0
@@ -1286,7 +1287,11 @@ export class SessionService {
       threshold_tokens: Number(s.threshold_tokens ?? 0) || 0,
       last_prompt_tokens: Number(s.last_prompt_tokens ?? 0) || 0,
     }
-    if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
+    if (loadMessages) {
+      raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
+      // Only a full load holds what the key measures (TAL-1823); a metadata read has no transcript to compare.
+      raw.context_detail_key = this.contextDetailKey(s)
+    }
     // TAL-1121: the running turn's live list outranks the settled one, so a read during the turn never shows an older plan.
     const unsettled = (s.active_stream_id ? this.deps.runtime.liveTodoState?.(s.active_stream_id) : null) ?? s.extra[UNSETTLED_TODO_KEY]
     if (limited) attachTodoSnapshot(raw, limited.todo, unsettled)
@@ -1760,7 +1765,15 @@ export class SessionService {
     const before = marks()
     if (before !== expectedKey) return unavailableContextDetail('changed')
     try {
-      const detail = await sidecar.call('chat.context_detail', { session_id: sid, profile_home: this.deps.profileHome(profile), model: session.model, model_provider: session.model_provider, workspace: session.workspace })
+      // One sidecar read per profile and context, however many callers ask at once. A forged key was refused above.
+      const flight = JSON.stringify([profile, before])
+      let read = this.contextDetailReads.get(flight)
+      if (!read) {
+        read = sidecar.call('chat.context_detail', { session_id: sid, profile_home: this.deps.profileHome(profile), model: session.model, model_provider: session.model_provider, workspace: session.workspace })
+          .finally(() => this.contextDetailReads.delete(flight))
+        this.contextDetailReads.set(flight, read)
+      }
+      const detail = await read
       return this.deps.activeProfile() === profile && before === marks(await this.get404(sid)) ? detail : unavailableContextDetail('changed')
     } catch { return unavailableContextDetail() }
   }
