@@ -2,6 +2,7 @@ import { PlanGaugeSchema } from './plan-usage.js'
 import { ContextDetailSchema } from './context-detail.js'
 import { z } from 'zod'
 import { CheckpointReadSchema } from './checkpoint.js'
+import { ConnectorOperationSnapshotSchema, ConnectorOperationViewSchema } from './connector-operation.js'
 
 const ObjectSchema = z.record(z.string(), z.unknown())
 export const CapturedCommandSchema = z.string().min(1).max(8192).regex(/\S/, 'Command must not be blank')
@@ -39,6 +40,7 @@ export const GatewaySnapshotSchema = z.object({
   todo_state: z.object({ todos: z.array(ObjectSchema), revision: z.number().int().nonnegative().optional() }).nullable().optional()
     .describe('Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.'),
   pending: z.array(GatewayAdmissionSchema), prompts: z.array(ObjectSchema), info: ObjectSchema,
+  pending_connection: ConnectorOperationSnapshotSchema.nullable().optional().describe("The owner's open connection operation. Null when none; omitted by older owners."),
 })
 /** Owner mutation receipts are distinct from prompt admissions. Applied mutations have no status. */
 export const GatewayMutationReceiptSchema = z.looseObject({
@@ -63,6 +65,8 @@ export const GatewaySessionResultSchema = z.object({
   export: OwnerExportSchema.optional(),
   checkpoint_diff: CheckpointReadSchema.optional(),
   shell: CapturedCommandResultSchema.optional(),
+  connection: ConnectorOperationSnapshotSchema.optional().describe('`connection_status`, `connection_retry`: the operation as the owner holds it.'),
+  connection_settled: z.boolean().optional().describe('`connection_respond`: the answer settled the operation, which the owner then closed.'),
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
@@ -73,9 +77,15 @@ export const GatewayClarifyBatchSchema = z.object({
   questions: z.array(z.object({ qid: z.string().min(1), question: z.string(), choices: z.array(z.string()).optional(), multi_select: z.boolean().optional() })).min(1),
 })
 export type GatewayClarifyBatch = z.infer<typeof GatewayClarifyBatchSchema>
+/** One row's move or Continue, never both. `env` travels only here: no snapshot, event, log or notice carries its values. */
+export const ConnectionAnswerSchema = z.union([
+  z.strictObject({ targets: z.tuple([z.strictObject({ name: z.string().min(1), status: z.enum(['approved', 'skipped']), env: z.record(z.string(), z.string()).optional() })]) }),
+  z.strictObject({ settled_by: z.literal('continue') }),
+])
+export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
@@ -89,6 +99,9 @@ export const GatewaySessionParamsSchema = z.object({
   expected_revision: z.number().int().nonnegative().optional(),
   operation: z.enum(['rename', 'archive', 'sidebar', 'branch', 'delete', 'rewind', 'reset', 'model', 'workspace', 'compress']).optional(),
   payload: ObjectSchema.optional(),
+  op_id: z.string().min(1).optional().describe('`connection_*`: the operation; bound by the owner to this session, and by `authority_epoch` to this owner.'),
+  connection_answer: ConnectionAnswerSchema.optional(),
+  connector: z.string().min(1).optional().describe('`connection_retry`: the target to run again.'),
 })
 /**
  * TAL-1040: how a fresh chat's Agent runs, frozen at creation. `ignore_config` runs explicit settings without the profile's
@@ -137,6 +150,7 @@ export const OwnerAttachmentSchema = z.object({
   model_change: ModelChangeSchema.optional(),
   active_admission: GatewayAdmissionSchema.nullable().optional(),
   admissions: z.array(GatewayAdmissionSchema.extend({ actions: z.array(z.enum(['cancel', 'steer', 'edit', 'retry', 'discard'])) })),
+  connection: ConnectorOperationViewSchema.nullable().optional().describe("TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."),
 })
 export type OwnerAttachment = z.infer<typeof OwnerAttachmentSchema>
 export type GatewaySnapshot = z.infer<typeof GatewaySnapshotSchema>

@@ -393,6 +393,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } })
   }
 
+  // A canonical owner's open operation restores from the session view; its stream's frames take over once attached.
+  const connectCard = live?.connectCard ?? session?.owner_attachment?.connection ?? null
   const canQuote = !clarify && !!session && (!session.read_only || session.owner_attachment?.can_submit === true)
   const actions = ({
     ...(sessionId && canQuote ? { onQuoteSelection: (text: string) => returnToComposer(sessionId, text, 'quote') } : {}),
@@ -546,7 +548,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {sessionId && live?.approval && <ApprovalCard key={live.approval.approval_id} sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
-          {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
+          {connectCard && <ConnectCard key={connectCard.op_id} initial={connectCard} />}
           {terminalOpen && sessionId && <Suspense fallback={
             <TerminalPanelFrame workspace={workspace} status="loading" onClose={() => setTerminalOpen(false)}>
               <div className="composer-terminal-surface px-2 py-1" style={{ height: 260 }} />

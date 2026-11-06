@@ -458,6 +458,76 @@ async def probe_batch(home, peer, desc):
         viewer.close()
 
 
+async def probe_connections(home, peer, desc):
+    """A real card: the snapshot restores it, updates reach a watch, and every verb reaches this exact owner."""
+    sidecar = SidecarProcess(home)
+    viewer = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="connection-create", source="cli", toolsets=["connections"])
+            sid = created["result"]["session_id"]
+            params = {"profile_home": str(home), "session_id": sid}
+            watch_id = viewer.request("gateway.session", {**params, "action": "watch"})
+            frame = await asyncio.to_thread(viewer.next_message, 20)
+            assert frame["params"]["event"] == "snapshot" and frame["params"]["data"]["snapshot"]["pending_connection"] is None, frame
+            assert "result" in await rpc(native, "prompt.submit", session_id=sid, submission_id="native-connection", text="Install linear")
+
+            async def event(kind):
+                async with asyncio.timeout(30):
+                    while True:
+                        frame = await asyncio.to_thread(viewer.next_message, 20)
+                        assert frame.get("id") != watch_id, f"the watch ended before Web received {kind}: {frame}"
+                        if frame.get("method") == "stream" and frame["params"]["event"] == "event" and frame["params"]["data"].get("type") == kind:
+                            return frame["params"]["data"]
+
+            opened = await event("connection.request")
+            operation = opened["payload"]
+            op_id = operation["op_id"]
+            assert [(t["name"], t["kind"]) for t in operation["targets"]] == [("linear", "mcp")] and operation["tool_call_id"] == "owned-connection", operation
+            assert set(operation["targets"][0]) == {"name", "kind", "state", "detail", "connect_url", "required_env"}, operation
+
+            def call(action, **extra):
+                return sidecar.result("gateway.session", {**params, "action": action, **extra})
+            restored = await asyncio.to_thread(call, "snapshot")
+            assert restored["snapshot"]["pending_connection"]["op_id"] == op_id, restored
+            epoch = restored["snapshot"]["authority_epoch"]
+            fence = {"op_id": op_id, "authority_epoch": epoch}
+            read = await asyncio.to_thread(call, "connection_status", **fence)
+            assert read["state"] == "attached" and read["connection"]["op_id"] == op_id and read["connection"]["settled"] is False, read
+            woke = await asyncio.to_thread(call, "connection_wake", **fence)
+            assert woke["state"] == "attached", woke
+            # A foreign operation and a replaced owner are refused; neither moves the card.
+            foreign = await asyncio.to_thread(call, "connection_status", op_id="no-such-op", authority_epoch=epoch)
+            assert (foreign["state"], foreign["reason"]) == ("refused", "UNKNOWN_OPERATION"), foreign
+            stale = await asyncio.to_thread(call, "connection_respond", op_id=op_id, authority_epoch=epoch + 1, connection_answer={"settled_by": "continue"})
+            assert (stale["state"], stale["reason"]) == ("refused", "owner_changed"), stale
+            assert (await asyncio.to_thread(call, "snapshot"))["snapshot"]["pending_connection"]["op_id"] == op_id
+            # Try again reaches the owner's own retry, and only for the operation the card shows.
+            elsewhere = await asyncio.to_thread(call, "connection_retry", op_id="no-such-op", authority_epoch=epoch, connector="linear")
+            assert (elsewhere["state"], elsewhere["reason"]) == ("refused", "UNKNOWN_OPERATION"), elsewhere
+            retried = await asyncio.to_thread(call, "connection_retry", **fence, connector="linear")
+            assert retried["state"] == "refused" and retried["reason"] in {"LINK_STILL_VALID", "CONNECTORS_UNAVAILABLE"}, retried
+            # A credential reaches the owner only inside this one verb.
+            answered = await asyncio.to_thread(call, "connection_respond", **fence, connection_answer={"targets": [{"name": "linear", "status": "skipped"}]})
+            assert answered["state"] == "attached" and answered["connection_settled"] is True, answered
+            settled = await event("connection.update")
+            while settled["payload"].get("settled") is not True:
+                settled = await event("connection.update")
+            assert settled["payload"]["op_id"] == op_id and settled["payload"]["targets"][0]["state"] == "skipped", settled
+            gone = await asyncio.to_thread(call, "connection_status", **fence)
+            assert (gone["state"], gone["reason"]) == ("refused", "UNKNOWN_OPERATION"), gone
+            assert (await asyncio.to_thread(call, "snapshot"))["snapshot"]["pending_connection"] is None
+            async with asyncio.timeout(30):
+                while (await asyncio.to_thread(call, "snapshot"))["snapshot"]["running"]:
+                    await asyncio.sleep(POLL_SECONDS)
+            # Reading it all started no second turn: the model saw the card's result once.
+            turns = [messages for messages in peer.requests if messages]
+            assert len(turns) == 2 and any(m["role"] == "tool" for m in turns[-1]), turns
+    finally:
+        viewer.close()
+        sidecar.close()
+
+
 async def probe_batch_unavailable(home, peer, desc):
     """Agents without ``clarify.lock`` keep the explicit refusal and never release the parked batch."""
     sidecar = SidecarProcess(home)
@@ -996,11 +1066,34 @@ class ProfileModel(Model):
         super().do_POST()
 
 
+class ConnectionModel(BatchPeer):
+    """Opens one real MCP connection card, then answers once the card settles it."""
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        messages = body.get("messages", [])
+        self.server.requests.append(messages)
+        asking = bool(messages) and not any(m["role"] == "tool" for m in messages)
+        message = {"role": "assistant", "content": "CONNECTION_FINISHED"}
+        if asking:
+            message = {"role": "assistant", "content": None, "tool_calls": [{"index": 0, "id": "owned-connection", "type": "function",
+                "function": {"name": "manage_connections", "arguments": json.dumps({"action": "install", "connectors": [{"name": "linear", "mcp": True}]})}}]}
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for delta, finish in [(message, None), ({}, "tool_calls" if asking else "stop")]:
+            frame = {"id": "connection", "object": "chat.completion.chunk", "created": 1, "model": "connection",
+                     "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+            self.wfile.write(("data: " + json.dumps(frame) + "\n\n").encode())
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
+
+
 def arm(peer, home, mode):
     """Give one mode its handler and clean provider state on the provider URL every owner config names."""
     print("MODE " + mode, flush=True)
     peer.RequestHandlerClass = {"detail": DetailModel, "approval": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer,
-                                "clarify": ClarifyPeer, "profiles": ProfileModel}.get(mode, Model)
+                                "clarify": ClarifyPeer, "profiles": ProfileModel, "connections": ConnectionModel}.get(mode, Model)
     peer.requests = []
     peer.blocked, peer.release = threading.Event(), threading.Event()
     if mode in {"approval", "restart"}:
@@ -1028,6 +1121,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_control(home, peer, desc, mode)
     if mode == "batch":
         return probe_batch(home, peer, desc)
+    if mode == "connections":
+        return probe_connections(home, peer, desc)
     return probe(home, peer, desc, require_gap=mode == "replay")
 
 

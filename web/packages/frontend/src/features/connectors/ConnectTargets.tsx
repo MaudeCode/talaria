@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import { ExternalLink } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -9,9 +9,10 @@ import { isApiError } from '../../contracts'
 import { Button, buttonClass } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 type Target = ConnectorOperationView['targets'][number]
-type Move = Target['actions'][number] | 'continue'
+interface Move { action: Target['actions'][number] | 'continue'; target?: string; env?: Record<string, string> }
 
 const STATE: Record<Target['state'], () => string> = {
   pending: m.connectors_state_pending,
@@ -27,6 +28,9 @@ export const targetState = (state: Target['state']): string => STATE[state]()
 /** The server no longer holds the operation (the sidecar restarted, or it aged out): nothing is left to wait on. */
 const isGone = (error: unknown): boolean => isApiError(error) && error.code === 'operation_not_found'
 
+const operationResource = (opId: string) => `connector-operation:${opId}`
+const targetResource = (opId: string, target: string) => `${operationResource(opId)}:${target}`
+
 /**
  * One connection operation, read from the server until it settles. `initial` is the view the connect or the chat frame
  * carried; every later read replaces it. A failed read (a network blip, a busy server) keeps the last view and polls on;
@@ -34,26 +38,54 @@ const isGone = (error: unknown): boolean => isApiError(error) && error.code === 
  */
 export function useConnectorOperation(initial: ConnectorOperationView) {
   const qc = useQueryClient()
+  const key = keys.connectors.operation(initial.op_id)
   const query = useQuery({
-    queryKey: keys.connectors.operation(initial.op_id),
-    queryFn: () => api.fetchConnectorOperation(initial.op_id),
+    queryKey: key,
+    queryFn: () => api.fetchConnectorOperation(initial.op_id, initial.owner),
     initialData: initial,
     retry: false,
     refetchInterval: (q) => (q.state.data?.settled || isGone(q.state.error) ? false : 2000),
   })
-  const move = useMutation({
-    mutationFn: (move: { action: Move; target?: string; env?: Record<string, string> }) => api.respondConnectorOperation({ op_id: initial.op_id, ...move }),
-    onSuccess: (view) => qc.setQueryData(keys.connectors.operation(initial.op_id), view),
-    onError: (error) => showToast(error instanceof Error ? error.message : m.connectors_failed(), 5000, 'error'),
+  const answer = (move: Move) => api.respondConnectorOperation({ op_id: initial.op_id, ...initial.owner, ...move })
+  const failed = (error: unknown) => showToast(error instanceof Error ? error.message : m.connectors_failed(), 5000, 'error')
+  const accepted = (view: ConnectorOperationView) => qc.setQueryData(key, view)
+  // Skip and Continue are the user's own choice: shown at once, rolled back on a refusal, decided by a read when the answer is lost.
+  const choose = useResourceMutation({
+    resource: ({ target }: Move) => target ? targetResource(initial.op_id, target) : operationResource(initial.op_id),
+    effect: ({ target }: Move) => target ? { fields: { state: 'skipped', connect_url: null, actions: [], env_fields: [] } } : { remove: true },
+    queryKey: key, mutationFn: answer, onSuccess: accepted, onError: failed,
   })
-  return { view: query.data, lost: isGone(query.error), move }
+  // Approve and Try again run an authorization or install only the server can finish.
+  const run = useMutation({ mutationKey: key, mutationFn: answer, onSuccess: accepted,
+    onError: (error) => { failed(error); void qc.invalidateQueries({ queryKey: key }) } })
+  const running = useMutationState({ filters: { mutationKey: key, status: 'pending' }, select: (mutation) => (mutation.state.variables as Move).target })
+  const move = (next: Move) => { if (next.action === 'skip' || next.action === 'continue') choose.mutate(next); else run.mutate(next) }
+  const effects = useResourceEffects()
+  // A canonical owner's later frames replace the view as they arrive, in the server's order.
+  const shown = useRef(initial)
+  useEffect(() => {
+    if (shown.current === initial || !initial.owner) return
+    shown.current = initial
+    qc.setQueryData(key, initial)
+  }, [initial]) // eslint-disable-line react-hooks/exhaustive-deps -- each frame once
+  // Back from the authorization link: the owner looks now, not at its next tick. The next read shows what it found.
+  const canWake = query.data.can_wake === true
+  useEffect(() => {
+    if (!canWake) return
+    const wake = () => { void api.respondConnectorOperation({ op_id: initial.op_id, ...initial.owner, action: 'wake' }).then((view) => qc.setQueryData(key, view), () => undefined) }
+    window.addEventListener('focus', wake)
+    return () => window.removeEventListener('focus', wake)
+  }, [canWake]) // eslint-disable-line react-hooks/exhaustive-deps -- one operation per mount
+  const view: ConnectorOperationView = { ...query.data, settled: query.data.settled || effects[operationResource(initial.op_id)]?.remove === true,
+    targets: withEffects(query.data.targets, (target) => targetResource(initial.op_id, target.name), effects) }
+  return { view, lost: isGone(query.error), move, running }
 }
 
 /** The operation's targets: state, the authorization link while one waits, and the moves the server offers. */
-export function ConnectTargets({ view, move }: Pick<ReturnType<typeof useConnectorOperation>, 'view' | 'move'>) {
+export function ConnectTargets({ view, move, running }: Pick<ReturnType<typeof useConnectorOperation>, 'view' | 'move' | 'running'>) {
   return (
     <ul className="flex flex-col divide-y divide-border-subtle">
-      {view.targets.map((target) => <TargetRow key={target.name} target={target} busy={move.isPending} onMove={(action, env) => move.mutate({ action, target: target.name, ...(env ? { env } : {}) })} />)}
+      {view.targets.map((target) => <TargetRow key={target.name} target={target} busy={running.includes(target.name)} onMove={(action, env) => move({ action, target: target.name, ...(env ? { env } : {}) })} />)}
     </ul>
   )
 }
@@ -76,7 +108,7 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
         )}
         {target.actions.includes('approve') && <Button variant="primary" disabled={busy || missing} onClick={() => onMove('approve', env)}>{m.connectors_approve()}</Button>}
         {target.actions.includes('retry') && <Button disabled={busy || missing} onClick={() => onMove('retry', env)}>{m.connectors_retry()}</Button>}
-        {target.actions.includes('skip') && <Button variant="ghost" disabled={busy} onClick={() => onMove('skip')}>{m.connectors_skip()}</Button>}
+        {target.actions.includes('skip') && <Button variant="ghost" onClick={() => onMove('skip')}>{m.connectors_skip()}</Button>}
         </div>
       </div>
       {target.detail && <div className="text-xs text-muted">{target.detail}</div>}
@@ -90,11 +122,11 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
 
 /** The page's own connect: the authorization link and Skip until the server reports the account connected. */
 export function PageConnect({ initial, name, onDone }: { initial: ConnectorOperationView; name: string; onDone: () => void }) {
-  const { view, lost, move } = useConnectorOperation(initial)
+  const { view, lost, move, running } = useConnectorOperation(initial)
   useEffect(() => {
     if (!view.outcome && !lost) return
     if (view.outcome) showToast(view.outcome === 'connected' ? m.connectors_connected_toast({ name }) : m.connectors_not_connected_toast({ name }), 3000, view.outcome === 'connected' ? 'info' : 'error')
     onDone()
   }, [view.outcome, lost]) // eslint-disable-line react-hooks/exhaustive-deps -- once, when it settles
-  return <div className="pl-9"><ConnectTargets view={view} move={move} /></div>
+  return <div className="pl-9"><ConnectTargets view={view} move={move} running={running} /></div>
 }

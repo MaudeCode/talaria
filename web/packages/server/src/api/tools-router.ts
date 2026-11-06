@@ -16,7 +16,7 @@ import { ConfigUnavailable, type Config, type Dict } from '../config/agent-confi
 import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, requestPromptRefresh, writeMemory, previewMemoryCompaction, applyMemoryCompaction, type MemoryWriteDeps } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
-import { catalogNames, connectorOperation, connectorsPage, connectorTools, rememberCatalogNames } from '../tools/connectors.js'
+import { catalogNames, connectorOperation, connectorsPage, connectorTools, offeredMove, rememberCatalogNames } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
@@ -159,6 +159,15 @@ async function connectorNames(ctx: RequestContext): Promise<Record<string, strin
 
 /** An operation as the contract shows it, with the apps' catalog names. */
 const operationView = async (ctx: RequestContext, snapshot: SidecarResult<'connectors.operation'>) => connectorOperation(snapshot, await connectorNames(ctx))
+
+/** TAL-1317: the canonical owner a view's `owner` names, or null for a direct operation. */
+function connectionOwner(ctx: RequestContext, { session_id, authority_epoch }: { session_id?: string | undefined; authority_epoch?: number | undefined }) {
+  if (session_id === undefined && authority_epoch === undefined) return null
+  if (session_id === undefined || authority_epoch === undefined) throw new HttpError(400, 'session_id and authority_epoch name one owner together')
+  const gateway = ctx.deps.sessions.owner
+  if (!gateway) throw new HttpError(503, 'Native owner connection unavailable')
+  return { gateway, session_id, authority_epoch }
+}
 
 /** Read failures never create an identity. Auth refusals become a page sign-in state; unreadable rules fail closed. */
 const connectorRead = <M extends 'connectors.catalog' | 'connectors.accounts' | 'connectors.policy.get'>(ctx: RequestContext, method: M): Promise<{ value: SidecarResult<M> | null; error: string | null; signInRequired: boolean }> =>
@@ -764,14 +773,17 @@ export const toolsRouter = os.router({
       await connectorCall(ctx, 'connectors.remove', { connection_id: input.connection_id })
       return { ok: true as const }
     })),
-    operation: os.connectors.operation.handler(({ input, context: { ctx } }) => run(async () => operationView(ctx, await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id })))),
+    operation: os.connectors.operation.handler(({ input, context: { ctx } }) => run(async () => {
+      const owner = connectionOwner(ctx, input)
+      return owner ? owner.gateway.connection(owner.session_id, owner.authority_epoch, input.op_id) : operationView(ctx, await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id }))
+    })),
     respond: os.connectors.respond.handler(({ input, context: { ctx } }) => run(async () => {
+      const owner = connectionOwner(ctx, input)
+      if (owner) return owner.gateway.connectionMove(owner.session_id, owner.authority_epoch, input.op_id, input)
       // Only a move the operation offers now reaches the Agent: the view decides, the sidecar applies.
-      const view = connectorOperation(await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id }))
-      const { action } = input
-      const offered = action === 'continue' ? view.can_continue : view.targets.some((t) => t.name === input.target && t.actions.includes(action))
-      if (!offered) throw new HttpError(409, 'That move is not open on this connection.', { code: 'operation_refused' })
-      return operationView(ctx, await connectorCall(ctx, 'connectors.respond', { op_id: input.op_id, action, ...(input.target ? { target: input.target } : {}), ...(input.env ? { env: input.env } : {}) }))
+      const move = offeredMove(connectorOperation(await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id })), input)
+      if (!move || move.action === 'wake') throw new HttpError(409, 'That move is not open on this connection.', { code: 'operation_refused' })
+      return operationView(ctx, await connectorCall(ctx, 'connectors.respond', { op_id: input.op_id, action: move.action, ...(move.target ? { target: move.target } : {}), ...(move.env ? { env: move.env } : {}) }))
     })),
   },
   plugins: os.plugins.handler(({ context: { ctx } }) => run(async () => {

@@ -6181,6 +6181,11 @@
       "op_id": {
         "type": "string"
       },
+      "seq": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
       "settled": {
         "type": "boolean"
       },
@@ -6284,6 +6289,11 @@
       "op_id": {
         "type": "string"
       },
+      "seq": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
       "settled": {
         "type": "boolean"
       },
@@ -6386,6 +6396,11 @@
     "properties": {
       "op_id": {
         "type": "string"
+      },
+      "seq": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
       },
       "settled": {
         "type": "boolean"
@@ -9973,6 +9988,121 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "pending_connection": {
+                "description": "The owner's open connection operation. Null when none; omitted by older owners.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "op_id": {
+                        "type": "string"
+                      },
+                      "seq": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "settled": {
+                        "type": "boolean"
+                      },
+                      "owner": {
+                        "type": "string",
+                        "enum": [
+                          "account",
+                          "session"
+                        ]
+                      },
+                      "tool_call_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "targets": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "initiated",
+                                "connected",
+                                "skipped",
+                                "failed",
+                                "expired",
+                                "not_connected"
+                              ]
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "connect_url": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "required_env": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "secret": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "prompt",
+                                  "required",
+                                  "secret"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "kind",
+                            "state",
+                            "detail",
+                            "required_env"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "op_id",
+                      "settled",
+                      "owner",
+                      "tool_call_id",
+                      "targets"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -10512,6 +10642,118 @@
           "code"
         ],
         "additionalProperties": false
+      },
+      "connection": {
+        "description": "`connection_status`, `connection_retry`: the operation as the owner holds it.",
+        "type": "object",
+        "properties": {
+          "op_id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "settled": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "account",
+              "session"
+            ]
+          },
+          "tool_call_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "initiated",
+                    "connected",
+                    "skipped",
+                    "failed",
+                    "expired",
+                    "not_connected"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "connect_url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "required_env": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "prompt": {
+                        "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "secret": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "prompt",
+                      "required",
+                      "secret"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "kind",
+                "state",
+                "detail",
+                "required_env"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "op_id",
+          "settled",
+          "owner",
+          "tool_call_id",
+          "targets"
+        ],
+        "additionalProperties": false
+      },
+      "connection_settled": {
+        "description": "`connection_respond`: the answer settled the operation, which the owner then closed.",
+        "type": "boolean"
       },
       "restarting": {
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
@@ -10794,6 +11036,121 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "pending_connection": {
+                "description": "The owner's open connection operation. Null when none; omitted by older owners.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "op_id": {
+                        "type": "string"
+                      },
+                      "seq": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "settled": {
+                        "type": "boolean"
+                      },
+                      "owner": {
+                        "type": "string",
+                        "enum": [
+                          "account",
+                          "session"
+                        ]
+                      },
+                      "tool_call_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "targets": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "initiated",
+                                "connected",
+                                "skipped",
+                                "failed",
+                                "expired",
+                                "not_connected"
+                              ]
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "connect_url": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "required_env": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean"
+                                  },
+                                  "secret": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "prompt",
+                                  "required",
+                                  "secret"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "kind",
+                            "state",
+                            "detail",
+                            "required_env"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "op_id",
+                      "settled",
+                      "owner",
+                      "tool_call_id",
+                      "targets"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -11333,6 +11690,118 @@
           "code"
         ],
         "additionalProperties": false
+      },
+      "connection": {
+        "description": "`connection_status`, `connection_retry`: the operation as the owner holds it.",
+        "type": "object",
+        "properties": {
+          "op_id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "settled": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "account",
+              "session"
+            ]
+          },
+          "tool_call_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "initiated",
+                    "connected",
+                    "skipped",
+                    "failed",
+                    "expired",
+                    "not_connected"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "connect_url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "required_env": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "prompt": {
+                        "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "secret": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "prompt",
+                      "required",
+                      "secret"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "kind",
+                "state",
+                "detail",
+                "required_env"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "op_id",
+          "settled",
+          "owner",
+          "tool_call_id",
+          "targets"
+        ],
+        "additionalProperties": false
+      },
+      "connection_settled": {
+        "description": "`connection_respond`: the answer settled the operation, which the owner then closed.",
+        "type": "boolean"
       },
       "restarting": {
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",

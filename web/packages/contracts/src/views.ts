@@ -1263,24 +1263,9 @@ export const ConnectorToolsViewSchema = z.object({
   connector: z.string(), policy_revision: z.string().nullable(),
   tools: z.array(z.object({ slug: z.string(), name: z.string(), description: z.string(), facet: z.enum(['read', 'write', 'destructive', 'unclassified']), deprecated: z.boolean(), enabled: z.boolean(), locked: z.boolean(), editable: z.boolean() })),
 })
-/**
- * TAL-818: a connection operation, from the Connectors page's Connect or a chat's `manage_connections` card. Each target's
- * `connect_url` is the authorization link while it waits on one; `actions` are the moves the user may make on it now, and
- * `env_fields` the credentials an `approve` sends, each with its `label`. `can_continue`: the card may end the wait for the
- * rest (chat only). `outcome` is null while the operation is open, then `connected` when every target connected.
- */
-export const ConnectorOperationViewSchema = z.object({
-  op_id: z.string(), settled: z.boolean(), outcome: z.enum(['connected', 'not_connected']).nullable(), can_continue: z.boolean(), tool_call_id: z.string().nullable(),
-  targets: z.array(z.object({
-    name: z.string(), title: z.string(), kind: z.string(), state: z.enum(['pending', 'initiated', 'connected', 'skipped', 'failed', 'expired', 'not_connected']),
-    detail: z.string(), connect_url: z.string().nullable(), actions: z.array(z.enum(['skip', 'retry', 'approve'])),
-    env_fields: z.array(z.object({ name: z.string(), label: z.string(), required: z.boolean(), secret: z.boolean() })),
-  })),
-})
 export type ConnectorsPage = z.infer<typeof ConnectorsPageSchema>
 export type ConnectorView = z.infer<typeof ConnectorViewSchema>
 export type ConnectorToolsView = z.infer<typeof ConnectorToolsViewSchema>
-export type ConnectorOperationView = z.infer<typeof ConnectorOperationViewSchema>
 export const McpToolsSchema = z.looseObject({ tools: z.array(z.looseObject({ name: z.string().optional(), server: z.string().optional(), description: z.string().optional() })), total: z.number().int().optional(), source: z.string().optional(), inventory_scope: z.string().optional(), unavailable_servers: z.array(z.string()).optional() })
 export const NotesSourcesSchema = z.looseObject({ enabled: z.boolean().optional(), sources: z.array(Json).optional(), source: z.string().optional(), inventory_scope: z.string().optional(), recent_ai_notes: z.array(Json).optional(), attach_supported: z.boolean().optional(), automatic_recall_unchanged: z.boolean().optional() })
 /** Joplin search hit: bounded, redacted display text and a snippet around the query; `updated_time` is Joplin's raw value. */

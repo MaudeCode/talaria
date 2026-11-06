@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { updateDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
 import type { SidecarLike } from '../sidecar/client.js'
+import { redactString } from '../redact.js'
 
 const OfferRecord = z.object({ guest_id: z.string(), offer_id: z.string(), visible: z.boolean() })
 
@@ -155,6 +156,17 @@ export function connectorTools(listing: Tools, policy: Policy | null): Connector
 
 const SKIPPABLE = new Set(['pending', 'initiated', 'failed', 'expired'])
 
+/** Only a valid https link without embedded credentials reaches a client; anything else is withheld rather than rendered as a link. */
+function authorizationLink(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' && !url.username && !url.password ? raw : null
+  } catch {
+    return null
+  }
+}
+
 /** `google_calendar` → `Google Calendar`: the title of a target the catalog does not name (an MCP server, or before a catalog read). */
 export const connectorTitle = (slug: string): string => slug.split(/[_\s-]+/).filter(Boolean).map((word) => word[0]!.toUpperCase() + word.slice(1)).join(' ') || slug
 
@@ -177,12 +189,40 @@ export function connectorOperation(snapshot: Snapshot, names: Record<string, str
       if (open && SKIPPABLE.has(target.state)) actions.push('skip')
       return {
         name: target.name, title: names[target.name] ?? connectorTitle(target.name), kind: target.kind, state: target.state, detail: target.detail,
-        // Only an https authorization link reaches a client; anything else is dropped rather than rendered as a link.
-        connect_url: open && target.state === 'initiated' && /^https:\/\//i.test(target.connect_url ?? '') ? target.connect_url! : null,
+        connect_url: open && target.state === 'initiated' ? authorizationLink(target.connect_url) : null,
         actions,
         // An approval (or a failed install's retry) sends the credentials the install still needs.
         env_fields: open && local && (target.state === 'pending' || target.state === 'failed') ? target.required_env.map((field) => ({ name: field.name, label: field.prompt.trim() || field.name, required: field.required, secret: field.secret })) : [],
       }
     }),
   }
+}
+
+/** TAL-1317: a canonical owner's operation, bound to that owner. The owner's detail text is redacted whatever the API redaction setting says. */
+export function ownerConnection(snapshot: Snapshot, owner: NonNullable<ConnectorOperationView['owner']>, names?: Record<string, string>): ConnectorOperationView {
+  const view = connectorOperation(snapshot, names)
+  return { ...view, owner, can_wake: !view.settled && view.targets.some((target) => target.state === 'initiated'),
+    targets: view.targets.map((target) => ({ ...target, detail: redactString(target.detail, true) })) }
+}
+
+/** The owner closed the operation with no final snapshot to read: the last view, frozen. */
+export function settledConnection(view: ConnectorOperationView): ConnectorOperationView {
+  return { ...view, settled: true, can_continue: false, can_wake: false,
+    outcome: view.targets.every((target) => target.state === 'connected') ? 'connected' : 'not_connected',
+    targets: view.targets.map((target) => ({ ...target, connect_url: null, actions: [], env_fields: [] })) }
+}
+
+export interface ConnectorMove { action: ConnectorOperationView['targets'][number]['actions'][number] | 'continue' | 'wake'; target?: string | undefined; env?: Record<string, string> | undefined }
+
+/**
+ * The one gate every connection move passes: a move the operation offers now, with only the credentials its target asked
+ * for. Continue ends the wait for the rest, so it never carries a row's move. Null when the operation does not offer it.
+ */
+export function offeredMove(view: ConnectorOperationView, { action, target, env }: ConnectorMove): ConnectorMove | null {
+  if (action === 'wake') return view.can_wake ? { action } : null
+  if (action === 'continue') return view.can_continue && target === undefined && env === undefined ? { action } : null
+  const row = view.targets.find((candidate) => candidate.name === target && candidate.actions.includes(action))
+  if (!row) return null
+  const asked = Object.entries(env ?? {}).filter(([name]) => row.env_fields.some((field) => field.name === name))
+  return { action, target: row.name, ...(asked.length ? { env: Object.fromEntries(asked) } : {}) }
 }

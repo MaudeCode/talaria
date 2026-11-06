@@ -10,7 +10,7 @@ import { m } from '../paraglide/messages.js'
 import { orpc, timeout } from './orpc'
 import type { GroupOperation } from '@maudecode/talaria-web-contracts'
 
-import type { OwnerActionRequest, AgentImportSource } from '@maudecode/talaria-web-contracts'
+import type { ConnectorOperationView, OwnerActionRequest, AgentImportSource } from '@maudecode/talaria-web-contracts'
 import type { OutboundDraftAction, OutboundDraftRef, WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
@@ -363,8 +363,9 @@ export const setConnectorRule = (connector: string, revision: string, change: { 
 /** A connect waits for the app's authorization link (up to 31 s on the server). */
 export const connectConnector = (connector: string, nous_account_id?: string) => orpc().connectors.connect({ connector, ...(nous_account_id ? { nous_account_id } : {}) }, { signal: timeout(60_000) })
 export const removeConnectorAccount = (connection_id: string) => orpc().connectors.removeAccount({ connection_id })
-export const fetchConnectorOperation = (op_id: string) => orpc().connectors.operation({ op_id })
-export const respondConnectorOperation = (move: { op_id: string; action: 'skip' | 'retry' | 'approve' | 'continue'; target?: string; env?: Record<string, string> }) =>
+/** TAL-1317: `owner` is the view's own field; with it, the server reads and answers that canonical owner's operation. */
+export const fetchConnectorOperation = (op_id: string, owner?: ConnectorOperationView['owner']) => orpc().connectors.operation({ op_id, ...owner })
+export const respondConnectorOperation = (move: { op_id: string; action: 'skip' | 'retry' | 'approve' | 'continue' | 'wake'; target?: string; env?: Record<string, string>; session_id?: string; authority_epoch?: number }) =>
   orpc().connectors.respond(move, { signal: timeout(60_000) })
 export const shutdownServer = () => orpc().ops.shutdown({})
 

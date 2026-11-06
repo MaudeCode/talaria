@@ -250,17 +250,16 @@ def _operation(home: Path, op_id: str):
     return operation
 
 
-def operation_view(operation) -> dict:
-    """The operation as the sidecar reports it: every target's state, the vendor's text, the authorization link while
-    the target waits on it (the Agent keeps a used link on a connected target), and the credentials an MCP install
-    still asks for."""
-    snapshot = operation.snapshot()
+def snapshot_view(snapshot: dict, *, owner: str, tool_call_id: str | None) -> dict:
+    """The operation as the sidecar reports it, whichever owner holds it: every target's state, the vendor's text, the
+    authorization link while the target waits on it (the Agent keeps a used link on a connected target), and the
+    credentials an MCP install still asks for. An allowlist: nothing else in the Agent's snapshot leaves here."""
     return {
         "op_id": snapshot["op_id"],
-        "settled": snapshot.get("settled_at") is not None,
-        # The Connectors page's own operations are account-owned; a chat's carry the tool call that opened the card.
-        "owner": "account" if operation.session_key.startswith("account:") else "session",
-        "tool_call_id": operation.tool_call_id,
+        **({"seq": snapshot["seq"]} if isinstance(snapshot.get("seq"), int) else {}),
+        "settled": snapshot.get("settled_at") is not None or snapshot.get("settled") is True,
+        "owner": owner,
+        "tool_call_id": tool_call_id,
         "targets": [{
             "name": target["name"], "kind": target["kind"], "state": target["state"], "detail": target.get("detail") or "",
             "connect_url": target.get("connect_url") if target["state"] == "initiated" else None,
@@ -270,6 +269,12 @@ def operation_view(operation) -> dict:
             } for field in target.get("required_env") or [] if isinstance(field, dict) and field.get("name")],
         } for target in snapshot["targets"]],
     }
+
+
+def operation_view(operation) -> dict:
+    # The Connectors page's own operations are account-owned; a chat's carry the tool call that opened the card.
+    return snapshot_view(operation.snapshot(), owner="account" if operation.session_key.startswith("account:") else "session",
+                         tool_call_id=operation.tool_call_id)
 
 
 def _reconnect(home: Path, connector: str, account_id: str) -> dict:
