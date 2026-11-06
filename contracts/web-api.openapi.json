@@ -77031,6 +77031,10 @@
                         }
                       },
                       "additionalProperties": {}
+                    },
+                    "outcome_unknown": {
+                      "type": "boolean",
+                      "description": "The steer lost its acknowledgment and may have landed; `accepted` is false only because it is unconfirmed."
                     }
                   },
                   "required": [
@@ -77388,6 +77392,10 @@
                             "can_enable_yolo": {
                               "type": "boolean"
                             },
+                            "can_deny_with_instruction": {
+                              "type": "boolean",
+                              "description": "This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no."
+                            },
                             "approval_id": {
                               "type": "string"
                             },
@@ -77478,6 +77486,10 @@
                   "approval_id": {
                     "type": "string"
                   },
+                  "instruction": {
+                    "type": "string",
+                    "description": "With `deny` and `approval_id`, where `can_deny_with_instruction` is true: reaches the running turn before the deny."
+                  },
                   "yolo": {
                     "type": "boolean"
                   },
@@ -77518,6 +77530,15 @@
                     },
                     "pending_count": {
                       "type": "number"
+                    },
+                    "instruction_outcome": {
+                      "enum": [
+                        "steered",
+                        "queued",
+                        "unconfirmed"
+                      ],
+                      "type": "string",
+                      "description": "Where a deny's instruction went: into the running turn, queued next in this session, or unknown because the steer lost its acknowledgment (it may have landed, so it is not sent again)."
                     }
                   },
                   "required": [

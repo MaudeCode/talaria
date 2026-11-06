@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ApprovalPending } from '../../contracts'
@@ -9,6 +9,7 @@ import { keys } from '../../api/queryKeys'
 import { usePromptAnswer } from './usePromptAnswer'
 import { cn } from '../../ui/cn'
 import { isImeEnter } from '../../lib/isImeEnter'
+import { showToast } from '../toast/toast'
 
 // Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
 const interactiveTarget = [
@@ -30,11 +31,22 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
   const headingId = useId(), descriptionId = useId()
   const [collapsed, setCollapsed] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  // The server says whether this deny can carry an instruction (TAL-1912); the text stays through a refusal or Esc.
+  const canTell = pending.can_deny_with_instruction === true
+  const [tellOpen, setTellOpen] = useState(false)
+  const [instruction, setInstruction] = useState('')
+  const telling = canTell && tellOpen
+  const refocusTell = useRef(false)
   // The card leaves as soon as the user answers; a refused answer brings it back with the error.
   const resource = `approval:${sessionId}:${pending.approval_id ?? ''}`
   const { answer, answered: isAnswered } = usePromptAnswer({
     resource: () => resource, queryKey: keys.approval(sessionId),
-    send: ({ choice, yolo }: { choice: 'once' | 'session' | 'always' | 'deny'; yolo: boolean }) => transport ? transport.send(choice) : api.respondApproval({ session_id: sessionId, choice, ...(pending.approval_id ? { approval_id: pending.approval_id } : {}), ...(pending.run_id ? { run_id: pending.run_id } : {}), ...(pending.mirror_token ? { mirror_token: pending.mirror_token } : {}), ...(yolo ? { yolo: true } : {}) }),
+    send: async ({ choice, yolo, instruction: told }: { choice: 'once' | 'session' | 'always' | 'deny'; yolo: boolean; instruction?: string }) => {
+      if (transport) return transport.send(choice)
+      const result = await api.respondApproval({ session_id: sessionId, choice, ...(pending.approval_id ? { approval_id: pending.approval_id } : {}), ...(told ? { instruction: told } : {}), ...(pending.run_id ? { run_id: pending.run_id } : {}), ...(pending.mirror_token ? { mirror_token: pending.mirror_token } : {}), ...(yolo ? { yolo: true } : {}) })
+      if (result.instruction_outcome === 'unconfirmed') showToast(m.approval_tell_unconfirmed(), 4000, 'error')
+      return result
+    },
     waiting: transport?.waiting ?? (async () => { const { pending: head } = await api.fetchApprovalPending(sessionId); return !!head && (head.approval_id ?? '') === (pending.approval_id ?? '') }),
     onAnswered: onResolved,
   })
@@ -42,10 +54,13 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
   // The server publishes the choices the approval accepts; absent (an older server) accepts all four (TAL-1414).
   const offers = (choice: 'once' | 'session' | 'always' | 'deny') => pending.allowed_choices?.includes(choice) ?? true
   const respond = (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => { if (!answered && offers(choice)) answer({ choice, yolo }) }
+  const tell = () => { const text = instruction.trim(); if (text && !answered) answer({ choice: 'deny', yolo: false, instruction: text }) }
+  const closeTell = () => { refocusTell.current = true; setTellOpen(false) }
   const answerOnce = useEffectEvent(() => { respond('once') })
   const offersOnce = offers('once')
   useEffect(() => {
-    if (dismissed || answered || !offersOnce) return
+    // While the user types an instruction the command stays held: a stray Enter must not allow it.
+    if (dismissed || answered || !offersOnce || telling) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || isImeEnter(e) || e.repeat) return
       if (e.composedPath().some((target) => target instanceof Element && target.closest(interactiveTarget))) return
@@ -54,7 +69,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [sessionId, pending.approval_id, dismissed, answered, offersOnce])
+  }, [sessionId, pending.approval_id, dismissed, answered, offersOnce, telling])
   if (dismissed || answered) return null
   const command = pending.command ?? pending.action ?? ''
   return (
@@ -71,9 +86,25 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
         <div className={cn(collapsed && 'hidden')}>
           {(pending.description ?? pending.question ?? pending.reason) && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description ?? pending.question ?? pending.reason}</div>}
           {command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
-          {pending.allowed_choices?.length === 0 ? <div className="approval-unavailable mt-3 text-[13px] text-muted">{m.approval_unavailable()}</div> : <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
+          {telling ? <form className="approval-tell mt-3 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); tell() }}>
+            <textarea
+              autoFocus rows={2} aria-label={m.approval_tell_placeholder()} placeholder={m.approval_tell_placeholder()} value={instruction}
+              onChange={(e) => { setInstruction(e.target.value) }}
+              onKeyDown={(e) => {
+                if (isImeEnter(e)) return
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); tell() }
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTell() }
+              }}
+              className="w-full resize-y rounded-md border border-border bg-input p-2 text-sm text-text"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="submit" disabled={!instruction.trim()} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_tell_send()}</button>
+              <button type="button" onClick={closeTell} className="approval-btn more inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.back()} <kbd className="rounded border border-current/30 px-1 text-[10px]">Esc</kbd></button>
+            </div>
+          </form> : pending.allowed_choices?.length === 0 ? <div className="approval-unavailable mt-3 text-[13px] text-muted">{m.approval_unavailable()}</div> : <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
             {offersOnce && <button type="button" onClick={() => { respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <kbd className="rounded border border-current/30 px-1 text-[10px]">↵</kbd></button>}
             {offers('deny') && <button type="button" onClick={() => { respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>}
+            {canTell && <button type="button" ref={(el) => { if (el && refocusTell.current) { refocusTell.current = false; el.focus() } }} onClick={() => { setTellOpen(true) }} className="approval-btn tell inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_tell_instead()}</button>}
             {(pending.can_enable_yolo !== false || offers('session') || offers('always')) && <Menu label={m.approval_more()} side="top" trigger={<button type="button" className="approval-btn more inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.approval_more()}</button>}>
               {offers('session') && <MenuItem onClick={() => { respond('session') }}>{m.approval_btn_session()}</MenuItem>}
               {offers('always') && <MenuItem onClick={() => { respond('always') }}>{m.approval_btn_always()}</MenuItem>}

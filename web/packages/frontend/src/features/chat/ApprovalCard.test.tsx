@@ -126,6 +126,73 @@ describe('ApprovalCard', () => {
 })
 
 
+describe('ApprovalCard deny with an instruction (TAL-1912)', () => {
+  const tellRow = { name: 'No, and tell Hermes instead' }
+  const pending = { approval_id: 'told', command: 'rm -rf build', can_deny_with_instruction: true }
+  const openBox = async () => {
+    await userEvent.click(screen.getByRole('button', tellRow))
+    return screen.getByRole('textbox', { name: 'What should Hermes do instead?' })
+  }
+  beforeEach(() => { vi.mocked(api.respondApproval).mockClear() })
+
+  it.each([
+    ['the server says so', { can_deny_with_instruction: true }, true],
+    ['the server refuses it', { can_deny_with_instruction: false }, false],
+    ['an older server omits it', {}, false],
+    ['a Group Chat approval', { allowed_choices: ['once', 'deny'] as ('once' | 'deny')[], can_enable_yolo: false, can_deny_with_instruction: false }, false],
+  ])('shows the row only when %s', (_, fields, shown) => {
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'row', command: 'ls', ...fields }} onResolved={() => undefined} />)
+    expect(screen.queryAllByRole('button', tellRow)).toHaveLength(shown ? 1 : 0)
+  })
+
+  it('keeps the command held while typing, and Esc returns to the choices with the text kept', async () => {
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
+    const box = await openBox()
+    expect(box).toHaveFocus()
+    expect(screen.getByText('rm -rf build')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /allow once/i })).toBeNull()
+    await userEvent.type(box, 'use the staging copy')
+    await act(async () => { fireEvent.keyDown(document.body, { key: 'Enter' }); await Promise.resolve() })
+    expect(api.respondApproval).not.toHaveBeenCalled()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.getByRole('button', tellRow)).toHaveFocus()
+    expect(api.respondApproval).not.toHaveBeenCalled()
+    expect(await openBox()).toHaveValue('use the staging copy')
+  })
+
+  it('sends nothing for a blank instruction', async () => {
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
+    await userEvent.type(await openBox(), '   {Enter}')
+    expect(screen.getByRole('button', { name: 'Deny and send' })).toBeDisabled()
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
+  it('leaves on submit and comes back with the text when the server refuses, sending nothing twice', async () => {
+    const response = deferred<never>()
+    vi.mocked(api.respondApproval).mockReturnValueOnce(response.promise)
+    vi.mocked(api.fetchApprovalPending).mockResolvedValue({ pending: pending, pending_count: 1 })
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
+    await userEvent.type(await openBox(), '  use the staging copy {Enter}')
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(api.respondApproval).toHaveBeenCalledTimes(1)
+    expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', choice: 'deny', approval_id: 'told', instruction: 'use the staging copy' }))
+    await act(async () => { response.reject(new ApiError({ kind: 'http', status: 409, path: '/api/approval/respond', message: 'This approval is already being denied' })); await Promise.resolve() })
+    expect(await screen.findByRole('textbox', { name: 'What should Hermes do instead?' })).toHaveValue('  use the staging copy ')
+    expect(api.fetchApprovalPending).toHaveBeenCalledWith('s1')
+    expect(api.respondApproval).toHaveBeenCalledTimes(1)
+  })
+
+  it('says so when the server cannot confirm the instruction arrived', async () => {
+    vi.mocked(api.respondApproval).mockResolvedValueOnce({ ok: true, choice: 'deny', instruction_outcome: 'unconfirmed' })
+    const onResolved = vi.fn()
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={onResolved} />)
+    await userEvent.type(await openBox(), 'use staging{Enter}')
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(1))
+    expect(showToast).toHaveBeenLastCalledWith('Denied. Hermes may not have received your instruction.', 4000, 'error')
+  })
+})
+
 describe('ApprovalCard keyboard ownership', () => {
   beforeEach(() => { vi.clearAllMocks() })
   const card = (sessionId = 'keyboard', approvalId = 'keyboard-approval') => <ApprovalCard sessionId={sessionId} pending={{ approval_id: approvalId, command: 'echo fixture' }} onResolved={() => undefined} />

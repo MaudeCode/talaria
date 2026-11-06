@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Approval cards in Talaria Web offer \"No, and tell Hermes instead\": type what to do, and the instruction reaches the running turn with the refusal, including in chats owned by the Hermes gateway.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -17,7 +17,7 @@ from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 from .connectors import snapshot_view
 
-_ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
+_ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry"}
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
@@ -387,6 +387,9 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 method = "prompt.cancel" if action == "cancel" else "prompt.resolve_unknown"
                 receipt = await client.rpc(method, **common, admission_id=params["admission_id"],
                     **({"execution_generation": params["execution_generation"]} if action == "discard" else {}))
+            elif action == "steer":
+                # Only the running turn this generation names may take it; the owner answers with its verdict.
+                receipt = await client.rpc("session.steer", **common, execution_generation=params["execution_generation"], text=params["text"])
             elif action in {"steer_queued", "replace_queued"}:
                 receipt = await client.rpc("prompt." + action, **common, admission_id=params["admission_id"],
                     **({"submission_id": params["submission_id"], "text": params["text"]} if action == "replace_queued" else {}))
@@ -546,7 +549,7 @@ def session(ctx, params: dict) -> dict:
         _validate_connection(action, params)
     required = {
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
-        "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),
+        "steer": ("execution_generation", "text"), "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),
         "interrupt": ("execution_generation",), "approval": ("execution_generation", "prompt_id", "choice"),
         "clarify": ("execution_generation", "prompt_id", "text"), "clarify_lock": ("request_id", "question_id", "answer"), "discard": ("execution_generation", "admission_id"),
         "mutate": ("request_id", "expected_revision", "execution_generation", "operation", "payload"),

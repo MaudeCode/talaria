@@ -215,6 +215,8 @@ export class PendingPrompts {
       // Skipping approvals answers "once"; an approval whose owner did not offer it cannot be skipped.
       if (!allowed.includes('once')) entry.can_enable_yolo = false
     }
+    // TAL-1912: the instruction goes out with a deny, so an approval without one cannot carry it.
+    if (!approvalAllows(entry, 'deny')) entry.can_deny_with_instruction = false
     const q = this.queue(this.approvals, sid)
     if (q.entries.some((e) => e.approval_id === entry.approval_id)) return entry
     q.entries.push(entry)

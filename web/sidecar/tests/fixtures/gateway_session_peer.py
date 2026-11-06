@@ -37,6 +37,8 @@ def unsupported(mode):
         return "this supported Agent does not expose native reasoning picks"
     if mode == "voice-stop" and "voice_stopped" not in source("gateway/session_controls.py"):
         return "this supported Agent does not consume typed voice stops"
+    if mode == "approval-tell" and "'session.steer'" not in source("gateway/session_busy_controls.py"):
+        return "this supported Agent does not steer a native session's running turn"
     # Only releases publishing these verbs can establish their execution semantics.
     if mode == "queued-controls" and not any("prompt.steer_queued" in p.read_text() for p in (agent / "gateway").rglob("*.py")):
         return "this supported Agent does not expose queued controls"
@@ -438,11 +440,11 @@ try {
         print(json.dumps({'voice_stopped': True, 'admissions': 0, 'http_status': response['status']}))
 
 
-async def probe_control(home, peer, desc, kind):
+async def probe_control(home, peer, desc, kind, instruction=None):
     sidecar = SidecarProcess(home)
     try:
         async with websocket(home, desc) as native:
-            created = await rpc(native, "session.create", request_id=kind + "-create", source="cli",
+            created = await rpc(native, "session.create", request_id=kind + ("-told" if instruction else "") + "-create", source="cli",
                                 toolsets=["terminal" if kind == "approval" else "clarify"])
             sid = created["result"]["session_id"]
             submitted = await rpc(native, "prompt.submit", session_id=sid, submission_id="control-input", text="Run fixture control")
@@ -460,6 +462,12 @@ async def probe_control(home, peer, desc, kind):
         attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
         assert attached["state"] == "attached" and attached["snapshot"]["prompts"][0]["prompt_id"] == prompt["prompt_id"], attached
         response = {"choice": "once"} if kind == "approval" else {"text": "green"}
+        if instruction:
+            # TAL-1912: steer the turn parked on this approval, then deny it. The verdict comes back as the receipt.
+            told = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "steer",
+                "execution_generation": prompt["execution_generation"], "text": instruction})
+            assert told["state"] == "attached" and told["receipt"]["status"] == "queued", told
+            response = {"choice": "deny"}
         answered = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": kind,
             "prompt_id": prompt["prompt_id"], "execution_generation": prompt["execution_generation"], **response})
         assert answered["state"] == "attached", answered
@@ -470,7 +478,10 @@ async def probe_control(home, peer, desc, kind):
             assert time.monotonic() < deadline, final
             await asyncio.sleep(POLL_SECONDS)
         assert kind.upper() + "_FINISHED" in json.dumps(final["snapshot"]["messages"]), final
-        if kind == "approval":
+        if instruction:
+            assert (home / "owned-told" / "owned.txt").exists(), "a denied command must not run"
+            assert instruction in json.dumps(peer.requests[-1]), peer.requests[-1]
+        elif kind == "approval":
             assert not (home / "owned-removal").exists()
         else:
             assert any("green" in json.dumps(m) for messages in peer.requests for m in messages if m["role"] == "tool")
@@ -1177,13 +1188,13 @@ class ConnectionModel(BatchPeer):
 def arm(peer, home, mode):
     """Give one mode its handler and clean provider state on the provider URL every owner config names."""
     print("MODE " + mode, flush=True)
-    peer.RequestHandlerClass = {"detail": DetailModel, "approval": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer,
+    peer.RequestHandlerClass = {"detail": DetailModel, "approval": ApprovalPeer, "approval-tell": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer,
                                 "clarify": ClarifyPeer, "profiles": ProfileModel, "connections": ConnectionModel}.get(mode, Model)
     peer.requests = []
     peer.blocked, peer.release = threading.Event(), threading.Event()
-    if mode in {"approval", "restart"}:
+    if mode in {"approval", "approval-tell", "restart"}:
         import shlex
-        target = home / "owned-removal"
+        target = home / ("owned-told" if mode == "approval-tell" else "owned-removal")
         target.mkdir()
         (target / "owned.txt").write_text("disposable")
         peer.command = "rm -r -- " + shlex.quote(str(target))
@@ -1206,6 +1217,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_profiles(home, peer, desc, proc, env)
     if mode in {"approval", "clarify"}:
         return probe_control(home, peer, desc, mode)
+    if mode == "approval-tell":
+        return probe_control(home, peer, desc, "approval", instruction="TOLD_THE_PARKED_TURN")
     if mode == "batch":
         return probe_batch(home, peer, desc)
     if mode == "connections":

@@ -46,6 +46,8 @@ export const GatewaySnapshotSchema = z.object({
 export const GatewayMutationReceiptSchema = z.looseObject({
   operation: z.string(), status: z.string().optional(),
 })
+/** TAL-1912: the owner's verdict on `session.steer`. A rejected steer never reached a turn that took it. */
+export const GatewayCorrectionReceiptSchema = z.looseObject({ status: z.enum(['queued', 'redirected', 'rejected']), text: z.string() })
 /** The server's model decision, shared by mutation responses and owner-session views. */
 export const ModelChangeSchema = z.object({
   state: z.enum(['applied', 'deferred', 'confirmation_required', 'refused']),
@@ -59,6 +61,7 @@ export const GatewaySessionResultSchema = z.object({
   replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: z.union([
     GatewayAdmissionSchema.extend({ voice_stopped: z.never().optional() }),
     GatewayMutationReceiptSchema.extend({ voice_stopped: z.never().optional() }),
+    GatewayCorrectionReceiptSchema.extend({ voice_stopped: z.never().optional() }),
     z.strictObject({ voice_stopped: z.literal(true) }),
   ]).nullable(),
   model_change: ModelChangeSchema.optional(),
@@ -86,7 +89,7 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),

@@ -1,7 +1,7 @@
 import { validReasoningEffort } from '../config/agent-config.js'
 import { applyPlanGauge } from './session.js'
 import { reasoningProjection } from './reasoning-display.js'
-import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail, type ApprovalInstructionOutcome } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { QueueAdmissionFence } from './admission.js'
@@ -650,6 +650,10 @@ export class GatewaySessions {
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
   async submit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Row | null> {
+    return (await this.admit(sid, body, timing, fence))?.row ?? null
+  }
+
+  private async admit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<{ row: Row; receipt: GatewaySessionResult['receipt'] } | null> {
     const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
@@ -670,8 +674,8 @@ export class GatewaySessions {
     closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
     if (result.state === 'attached' && result.snapshot && result.receipt?.voice_stopped === true) {
       const watch = this.watches.get(target.key)
-      return { ok: true, status: 'suppressed', reason: 'voice_stopped', session_id: sid,
-        owner_attachment: this.attachment(result), session: await this.view(base, result, watch?.stream ?? null, target) }
+      return { receipt: result.receipt, row: { ok: true, status: 'suppressed', reason: 'voice_stopped', session_id: sid,
+        owner_attachment: this.attachment(result), session: await this.view(base, result, watch?.stream ?? null, target) } }
     }
     if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
@@ -680,7 +684,7 @@ export class GatewaySessions {
     const watch = snapshot && (refused || snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))
       ? this.watches.get(target.key) ?? this.watch(target, base, snapshot, refused ? str(result.receipt.admission_id) : undefined) : null
     this.deps.events.publish('owner_admission', { profile: target.profile, sessionId: sid })
-    return { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) }
+    return { receipt: result.receipt, row: { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) } }
   }
 
   /** Whether this chat runs on a canonical owner: the classification no client derives. */
@@ -785,10 +789,10 @@ export class GatewaySessions {
     return redactString(text, this.deps.redactEnabled())
   }
 
-  private prompts(snapshot: GatewaySnapshot | null, sid: string, batch: Batch | null): PendingPrompts {
+  private prompts(snapshot: GatewaySnapshot | null, sid: string, batch: Batch | null, restarting = false): PendingPrompts {
     const pending = new PendingPrompts(new SessionEventBus(), this.deps.now)
     for (const prompt of snapshot?.prompts ?? []) {
-      const data = { ...prompt, session_id: sid, request_id: prompt.prompt_id, timeout_seconds: 0, allowed_choices: prompt.choices, can_enable_yolo: false }
+      const data = { ...prompt, session_id: sid, request_id: prompt.prompt_id, timeout_seconds: 0, allowed_choices: prompt.choices, can_enable_yolo: false, can_deny_with_instruction: !restarting }
       if (prompt.kind === 'approval') pending.submitApproval(sid, { ...data, approval_id: prompt.prompt_id })
       else if (prompt.kind === 'clarify') pending.submitClarify(sid, { ...data, clarify_id: prompt.prompt_id })
     }
@@ -818,7 +822,7 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(404, 'Session not found')
     const result = await this.call(target, { action: 'snapshot' })
-    const pending = this.prompts(result.snapshot, sid, this.batch(target))
+    const pending = this.prompts(result.snapshot, sid, this.batch(target), result.restarting === true)
     const envelope = kind === 'approval' ? pending.approvalPending(sid) : pending.clarifyPending(sid)
     return { pending: envelope.pending ? redactNestedMessageContainers(envelope.pending, this.deps.redactEnabled()) as Row : null, pending_count: envelope.pending_count }
   }
@@ -852,6 +856,33 @@ export class GatewaySessions {
     if (kind === 'approval') pending.resolveApproval(sid, id)
     else pending.resolveClarify(sid, id)
     return true
+  }
+
+  /**
+   * TAL-1912: the instruction of a deny, to this prompt's running turn. A refused steer queues in this session under an
+   * id stable for the prompt; a lost acknowledgment may have landed, so it is never sent anywhere else. Throws when
+   * nothing took the text, which leaves the prompt held for another answer.
+   */
+  async tell(sid: string, promptId: string, text: string): Promise<ApprovalInstructionOutcome> {
+    const target = await this.target(sid)
+    if (!target) throw new HttpFailure(404, 'Session not found')
+    const current = await this.call(target, { action: 'snapshot' })
+    const entry = this.prompts(current.snapshot, sid, this.batch(target), current.restarting === true).peekApproval(sid, promptId).entry
+    if (entry?.can_deny_with_instruction !== true) throw new HttpFailure(409, 'This approval does not take an instruction')
+    const steer = await this.call(target, { action: 'steer', execution_generation: Number(entry.execution_generation), text })
+    if (steer.state === 'unavailable') return 'unconfirmed'
+    // A voice-stop phrase reaches no agent, and the owner has already done what it asks.
+    if (steer.state === 'attached' && (steer.receipt?.voice_stopped === true || steer.receipt?.status === 'queued' || steer.receipt?.status === 'redirected')) return 'steered'
+    let receipt: GatewaySessionResult['receipt'] | undefined
+    try {
+      receipt = (await this.admit(sid, { message: text, submission_id: `approval-instruction-${createHash('sha256').update(promptId).digest('hex').slice(0, 64)}` }))?.receipt
+    } catch (error) {
+      if (error instanceof HttpFailure && error.extra.outcome_unknown === true) return 'unconfirmed'
+      throw error
+    }
+    // The owner can settle an admission refused at once; a queued input cannot have run while its turn waits on this prompt.
+    if (receipt && 'admission_id' in receipt && receipt.status === 'terminal' && receipt.outcome === 'failed') throw new HttpFailure(409, 'The owning Agent refused this instruction')
+    return 'queued'
   }
 
   async cancel(stream: string): Promise<boolean | null> {
@@ -979,7 +1010,7 @@ export class GatewaySessions {
       }
       const prompts = async (snap: GatewaySnapshot) => {
         watch.snapshot = snap
-        pending = this.prompts(snap, target.sid, watch.batch)
+        pending = this.prompts(snap, target.sid, watch.batch, watch.restarting)
         const approval = pending.approvalPending(target.sid)
         if (approval.pending) await put('approval', { ...approval.pending, pending_count: approval.pending_count })
         const clarify = pending.clarifyHeadFrame(target.sid)
