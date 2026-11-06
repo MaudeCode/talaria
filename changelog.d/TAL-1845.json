@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings > MCP now shows when a server failed or needs sign-in, as the Agent reports it, and viewing the page no longer opens a second connection to a server the Agent already holds.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -160,6 +160,7 @@
 	"mcp_status_active": "Active",
 	"mcp_status_configured": "Configured",
 	"mcp_status_disabled": "Disabled",
+	"mcp_status_failed": "Failed",
 	"mcp_status_invalid_config": "Invalid config",
 	"mcp_status_unknown": "Unknown",
 	"mcp_health_unhealthy": "Unreachable",

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { McpServerSchema } from '@maudecode/talaria-web-contracts'
+import { McpServerSchema, McpServersSchema } from '@maudecode/talaria-web-contracts'
 import { JoplinError, joplinSearch, McpService, serverSummary } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { McpHealthProber } from './mcp-health.js'
@@ -260,6 +260,44 @@ describe('MCP health probe credentials (TAL-1565)', () => {
     const result = await rows('/profiles/a')
     expect(result.kanvil).toMatchObject({ health: 'unhealthy', health_detail: 'initialize rejected: Rejected key [REDACTED]' })
     expect(JSON.stringify(result)).not.toContain('synthetic-secret-d')
+  })
+})
+
+describe('MCP runtime state outranks the health probe (TAL-1845)', () => {
+  it('asks the probe only about servers the Agent knows nothing about, and shows what the Agent knows about the rest', async () => {
+    const remote = (name: string) => ({ url: `https://${name}.invalid/mcp` })
+    const mcp_servers = { live: remote('live'), parked: remote('parked'), down: remote('down'), crashed: { command: 'crashed-mcp' }, untried: remote('untried'), older: remote('older') }
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => ({ servers: [
+      { name: 'live', status: 'connected', connected: true, tools: 2, needs_auth: false },
+      { name: 'parked', status: 'failed', connected: false, tools: 0, needs_auth: true },
+      { name: 'down', status: 'failed', connected: false, tools: 0, needs_auth: false, error: 'connect refused, Authorization: Bearer synthetic-secret-e' },
+      { name: 'crashed', status: 'failed', connected: false, tools: 0, needs_auth: false },
+      { name: 'untried', status: 'configured', connected: false, tools: 0, needs_auth: false },
+      // Agent v0.22.6 has no needs_auth.
+      { name: 'older', status: 'configured', connected: false, tools: 0 },
+    ] }))
+    sidecar.respond('mcp.probe_targets', () => ({ targets: [] }))
+    sidecar.respond('mcp.cost_policies', () => ({ supported: false, policies: [] }))
+    const probed: string[][] = []
+    const health = { refreshAndRead: (_profile: string, servers: Dict) => {
+      probed.push(Object.keys(servers))
+      return Object.fromEntries(Object.keys(servers).map((name) => [name, { health: 'needs_auth', detail: 'HTTP 401', checked_at: 1000, pending: false }]))
+    } } as unknown as McpHealthProber
+    const service = new McpService({ sidecar: () => sidecar, config: { read: () => Promise.resolve({ mcp_servers }) } as unknown as AgentConfig, health })
+    const result = await service.servers('/profiles/a')
+    const rows = Object.fromEntries((McpServersSchema.parse(result).servers).map((row) => [row.name, row]))
+
+    expect(probed).toEqual([['untried', 'older']])
+    const notProbed = { health_checked_at: null, health_pending: false }
+    expect(rows.live).toMatchObject({ status: 'active', active: true, health: 'healthy', health_detail: '', ...notProbed })
+    expect(rows.parked).toMatchObject({ status: 'failed', active: false, health: 'needs_auth', health_detail: '', ...notProbed })
+    expect(rows.down).toMatchObject({ status: 'failed', active: false, health: 'unhealthy', health_detail: 'connect refused, [REDACTED CREDENTIAL]', ...notProbed })
+    expect(rows.crashed).toMatchObject({ status: 'failed', health: 'unhealthy', health_detail: '', ...notProbed })
+    expect(rows.untried).toMatchObject({ status: 'configured', health: 'needs_auth', health_detail: 'HTTP 401', health_checked_at: 1000 })
+    expect(rows.older).toMatchObject({ status: 'configured', health: 'needs_auth', health_detail: 'HTTP 401', health_checked_at: 1000 })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret-e')
+    expect(result.health_pending).toBe(false)
   })
 })
 
