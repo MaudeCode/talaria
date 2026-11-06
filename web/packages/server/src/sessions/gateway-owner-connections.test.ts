@@ -136,7 +136,7 @@ describe('canonical owner connection operations (TAL-1317)', () => {
     const settled = await (await move({ action: 'continue' })).json() as ConnectorOperationView
     expect(answers).toEqual([{ settled_by: 'continue' }])
     expect(settled).toMatchObject({ op_id: 'op-native', settled: true, outcome: 'not_connected', can_continue: false, can_wake: false })
-    expect(settled.targets.every((target) => target.actions.length === 0 && target.connect_url === null && target.env_fields.length === 0)).toBe(true)
+    expect(settled.targets.every((target) => target.actions.length === 0 && target.connect_url === null && target.launch === null && target.env_fields.length === 0)).toBe(true)
     // A move the operation does not offer now, and Continue mixed with a row, never reach the owner.
     answers.length = 0
     for (const body of [{ action: 'skip', target: 'slack' }, { action: 'retry', target: 'gmail' }, { action: 'approve', target: 'notion' }, { action: 'skip', target: 'absent' }, { action: 'continue', target: 'gmail' }, { action: 'continue', env: { LINEAR_API_KEY: 'x' } }]) {

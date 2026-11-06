@@ -800,7 +800,8 @@ RAW_CONNECTION = {
         {"name": "gmail", "kind": "connector", "action": "connect", "state": "initiated", "resolved": False, "connect_url": "https://vendor.example.test/a",
          "connection_id": "private-connection", "attempt": "private-attempt", "alias": "private-alias", "launch": {"kind": "stdio", "target": "private-launch"}},
         {"name": "linear", "kind": "mcp", "action": "install", "state": "pending", "resolved": False, "detail": "needs a key",
-         "required_env": [{"name": "LINEAR_API_KEY", "required": True, "secret": True, "default": "private-default", "prompt": "API key"}]},
+         "required_env": [{"name": "LINEAR_API_KEY", "required": True, "secret": True, "default": "private-default", "prompt": "API key"}],
+         "launch": {"kind": "stdio", "target": "npx -y mcp-linear 'two  spaces'", "env": ["LINEAR_API_KEY"], "cwd": "/work", "private": "private-launch-field"}},
     ],
 }
 PUBLIC_CONNECTION = {
@@ -808,9 +809,19 @@ PUBLIC_CONNECTION = {
     "targets": [
         {"name": "gmail", "kind": "connector", "state": "initiated", "detail": "", "connect_url": "https://vendor.example.test/a", "required_env": []},
         {"name": "linear", "kind": "mcp", "state": "pending", "detail": "needs a key", "connect_url": None,
-         "required_env": [{"name": "LINEAR_API_KEY", "prompt": "API key", "required": True, "secret": True}]},
+         "required_env": [{"name": "LINEAR_API_KEY", "prompt": "API key", "required": True, "secret": True}],
+         "launch": {"kind": "stdio", "target": "npx -y mcp-linear 'two  spaces'", "env": ["LINEAR_API_KEY"], "cwd": "/work"}},
     ],
 }
+
+
+@pytest.mark.parametrize("launch", [
+    None, "npx -y mcp-linear", {"target": "npx"}, {"kind": "stdio"}, {"kind": "stdio", "target": ""}, {"kind": "stdio", "target": 7}, {"kind": "future", "target": "npx"},
+])
+def test_a_target_without_a_usable_launch_line_keeps_the_older_row(launch):
+    from talaria_sidecar.methods.connectors import snapshot_view
+    raw = {"op_id": "op", "targets": [{"name": "linear", "kind": "mcp", "state": "pending", "launch": launch}]}
+    assert set(snapshot_view(raw, owner="session", tool_call_id=None)["targets"][0]) == {"name", "kind", "state", "detail", "connect_url", "required_env"}
 
 
 def test_snapshot_and_live_events_project_the_open_connection_through_the_direct_allowlist(native_owner_stub):

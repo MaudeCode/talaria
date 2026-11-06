@@ -6,6 +6,8 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { redactString } from '../redact.js'
+import { connectorOperation } from '../tools/connectors.js'
 import { str } from '../util.js'
 
 useJsonStorage()
@@ -20,6 +22,24 @@ const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../..
 const pageConnect = (state: Snapshot['targets'][number]['state'], settled = false): Snapshot => ({
   op_id: 'op-page', settled, owner: 'account', tool_call_id: null,
   targets: [{ name: 'gmail', kind: 'connector', state, detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', required_env: [] }],
+})
+/** The card fixture's consent line: the redactor would mask its key-shaped argument, which the user approves as written. */
+const launchLine = (shared.connect_card.targets as { launch: NonNullable<Snapshot['targets'][number]['launch']> | null }[])[1]!.launch!
+
+describe('TAL-1907: an MCP target\'s launch line', () => {
+  const row = (state: Snapshot['targets'][number]['state'], settled = false, launch: typeof launchLine | null = launchLine) =>
+    connectorOperation({ op_id: 'op', settled, owner: 'session', tool_call_id: null, targets: [{ name: 'linear', kind: 'mcp', state, detail: '', connect_url: null, required_env: [], ...(launch ? { launch } : {}) }] }).targets[0]!
+
+  it('ships the Agent\'s line unredacted until the target resolves', () => {
+    expect(redactString(launchLine.target, true)).not.toBe(launchLine.target)
+    for (const state of ['pending', 'initiated', 'failed', 'expired'] as const) expect(row(state).launch).toEqual(launchLine)
+    for (const state of ['connected', 'skipped', 'not_connected'] as const) expect(row(state).launch).toBeNull()
+    expect(row('pending', true).launch).toBeNull()
+  })
+
+  it('leaves an older Agent\'s pending target with no line and the same moves', () => {
+    expect(row('pending', false, null)).toEqual({ ...row('pending'), launch: null })
+  })
 })
 
 describe('TAL-818: the Connectors page and connect card', () => {
@@ -165,7 +185,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
     sidecar.respond('connectors.connect', () => pageConnect('initiated'))
     const started = await json(await post(s, '/api/connectors/gmail/connect', {}))
     expect(started).toEqual({ op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
-      { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
+      { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', launch: null, actions: ['skip'], env_fields: [] },
     ] })
     sidecar.respond('connectors.operation', () => pageConnect('initiated'))
     // Continue belongs to a chat card; the page's operation refuses it before it reaches the Agent.
@@ -183,7 +203,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
     const sid = str(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const card: Snapshot = { op_id: 'op-chat', settled: false, owner: 'session', tool_call_id: 'call-1', targets: [
       { name: 'gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-2', required_env: [] },
-      { name: 'linear', kind: 'mcp', state: 'pending', detail: '', connect_url: null, required_env: [{ name: 'LINEAR_API_KEY', prompt: 'API key', required: true, secret: true }] },
+      { name: 'linear', kind: 'mcp', state: 'pending', detail: '', connect_url: null, required_env: [{ name: 'LINEAR_API_KEY', prompt: 'API key', required: true, secret: true }], launch: launchLine },
     ] }
     let release: () => void = () => undefined
     sidecar.respond('connectors.operation', () => card)
@@ -202,6 +222,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
     expect(shown).toEqual(shared.connect_card)
     expect(shown).toMatchObject({ op_id: 'op-chat', can_continue: true, tool_call_id: 'call-1' })
     expect((shown.targets as Json[]).map((t) => [t.name, t.title, t.actions, (t.env_fields as Json[]).length])).toEqual([['gmail', 'Gmail', ['skip'], 0], ['linear', 'Linear', ['approve', 'skip'], 1]])
+    expect(await json(await s.get('/api/connectors/operations/op-chat'))).toEqual(shared.connect_card)
 
     const continued = await json(await post(s, '/api/connectors/operations/op-chat', { action: 'continue' }))
     expect(continued.settled).toBe(true)

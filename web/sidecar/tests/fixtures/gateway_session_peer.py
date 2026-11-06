@@ -567,7 +567,9 @@ async def probe_connections(home, peer, desc):
             operation = opened["payload"]
             op_id = operation["op_id"]
             assert [(t["name"], t["kind"]) for t in operation["targets"]] == [("linear", "mcp")] and operation["tool_call_id"] == "owned-connection", operation
-            assert set(operation["targets"][0]) == {"name", "kind", "state", "detail", "connect_url", "required_env"}, operation
+            assert set(operation["targets"][0]) - {"launch"} == {"name", "kind", "state", "detail", "connect_url", "required_env"}, operation
+            # An Agent older than v0.23.0 sends no consent line.
+            assert operation["targets"][0].get("launch") in (None, {"kind": "remote", "target": "https://mcp.linear.app/mcp", "env": [], "cwd": None}), operation
 
             def call(action, **extra):
                 return sidecar.result("gateway.session", {**params, "action": action, **extra})

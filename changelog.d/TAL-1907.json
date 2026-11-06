@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Before you approve an MCP server in Talaria Web, its row now shows the exact command it will run or the host it will contact, plus its working directory and the env var names it adds.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
