@@ -88922,6 +88922,13 @@
                             "type": "boolean"
                           },
                           "status": {
+                            "enum": [
+                              "active",
+                              "configured",
+                              "disabled",
+                              "failed",
+                              "invalid_config"
+                            ],
                             "type": "string"
                           },
                           "tools": {
@@ -89633,6 +89640,13 @@
                           "type": "boolean"
                         },
                         "status": {
+                          "enum": [
+                            "active",
+                            "configured",
+                            "disabled",
+                            "failed",
+                            "invalid_config"
+                          ],
                           "type": "string"
                         },
                         "tools": {

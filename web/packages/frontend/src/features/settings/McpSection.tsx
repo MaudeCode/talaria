@@ -20,6 +20,7 @@ const STATUS: Record<string, { label: () => string; tone: string }> = {
   active: { label: m.mcp_status_active, tone: 'border-success/50 text-success' },
   configured: { label: m.mcp_status_configured, tone: 'border-border text-muted' },
   disabled: { label: m.mcp_status_disabled, tone: 'border-border text-muted' },
+  failed: { label: m.mcp_status_failed, tone: 'border-error/50 text-error' },
   invalid_config: { label: m.mcp_status_invalid_config, tone: 'border-error/50 text-error' },
 }
 const HEALTH: Record<string, { label: () => string; tone: string }> = {

@@ -72,6 +72,17 @@ export function eventsView(cfg: unknown, summary: Dict, runtime: Dict | null, da
     counts, show_state: enabled, show_panel: can_edit || enabled }
 }
 
+/**
+ * TAL-1845: the Agent's own word on a server, which outranks a probe: a probe races its connects, evicts a single-session
+ * host's live session and carries no OAuth token. Null when it has none (never tried, or an Agent without these fields).
+ */
+function runtimeHealth(rt: Dict): Dict | null {
+  const known = (health: string, detail: unknown) => ({ health, health_detail: safeText(detail, 300), health_checked_at: null, health_pending: false })
+  if (rt.connected) return known('healthy', '')
+  if (rt.needs_auth === true) return known('needs_auth', rt.error)
+  return rt.status === 'failed' ? known('unhealthy', rt.error) : null
+}
+
 /** Python `_server_summary`. */
 export function serverSummary(name: string, cfg: unknown, runtime: Dict | null): Dict {
   const rt = runtime ?? {}
@@ -100,10 +111,10 @@ export function serverSummary(name: string, cfg: unknown, runtime: Dict | null):
   out.enabled = enabled
   out.can_toggle = out.transport !== 'invalid'
   out.active = connected
-  out.status = out.transport === 'invalid' ? 'invalid_config' : !enabled ? 'disabled' : connected ? 'active' : 'configured'
+  out.status = out.transport === 'invalid' ? 'invalid_config' : !enabled ? 'disabled' : connected ? 'active' : rt.status === 'failed' ? 'failed' : 'configured'
   out.tool_count = runtime ? (typeof rt.tools === 'number' ? rt.tools : Array.isArray(rt.tools) ? rt.tools.length : null) : null
   if (!enabled || out.transport === 'invalid') Object.assign(out, { health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false })
-  else Object.assign(out, { health: str(rt.health) || 'unknown', health_detail: str(rt.health_detail), health_checked_at: rt.health_checked_at ?? null, health_pending: Boolean(rt.health_pending) })
+  else Object.assign(out, runtimeHealth(rt) ?? { health: str(rt.health) || 'unknown', health_detail: str(rt.health_detail), health_checked_at: rt.health_checked_at ?? null, health_pending: Boolean(rt.health_pending) })
   return out
 }
 
@@ -158,8 +169,8 @@ export class McpService {
         for (const entry of (await sidecar.call('mcp.status', { profile_home: profileHome })).servers) byName.set(entry.name, entry)
       } catch { /* runtime unavailable → configured only */ }
     }
-    const enabledServers = Object.fromEntries(Object.entries(servers).filter(([, cfg]) => isDict(cfg) && parseEnabled(cfg.enabled)))
-    const verdicts = this.deps.health?.refreshAndRead(profileHome, await this.probeConfigs(profileHome, enabledServers)) ?? {}
+    const unknownServers = Object.fromEntries(Object.entries(servers).filter(([name, cfg]) => isDict(cfg) && parseEnabled(cfg.enabled) && !runtimeHealth(byName.get(name) ?? {})))
+    const verdicts = this.deps.health?.refreshAndRead(profileHome, await this.probeConfigs(profileHome, unknownServers)) ?? {}
     for (const [name, cfg] of Object.entries(servers)) {
       const entry = { ...(byName.get(name) ?? { name }) }
       const enabled = isDict(cfg) ? parseEnabled(cfg.enabled) : false

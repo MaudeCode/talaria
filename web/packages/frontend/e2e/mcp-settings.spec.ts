@@ -13,12 +13,13 @@ const TOOLS = [
 for (const width of [1280, 390]) {
   test(`MCP servers toggle through PATCH and tool search filters at ${String(width)}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1400 })
-    const config: Record<string, Record<string, unknown>> = { github: { command: 'gh-mcp', args: ['serve'] }, notes: { url: 'https://notes.example/mcp', enabled: false }, broken: { timeout: 5 } }
+    const config: Record<string, Record<string, unknown>> = { github: { command: 'gh-mcp', args: ['serve'] }, notes: { url: 'https://notes.example/mcp', enabled: false }, broken: { timeout: 5 }, live: { command: 'live-mcp' }, crashed: { command: 'crashed-mcp' } }
+    const runtime: Record<string, Record<string, unknown>> = { github: { status: 'failed', connected: false, tools: 0, needs_auth: true }, live: { status: 'connected', connected: true, tools: 2, needs_auth: false }, crashed: { status: 'failed', connected: false, tools: 0, needs_auth: false, error: 'Connection closed' } }
     const patches: unknown[] = []
     const queries: string[] = []
     await page.route('**/api/mcp/servers', (route) => route.fulfill({ json: {
       toggle_supported: true, reload_required: true, health_pending: false,
-      servers: Object.entries(config).map(([name, cfg]) => serverSummary(name, cfg, name === 'github' ? { connected: true, tools: 2, health: 'needs_auth', health_detail: 'HTTP 401' } : null)),
+      servers: Object.entries(config).map(([name, cfg]) => serverSummary(name, cfg, runtime[name] ?? null)),
     } }))
     await page.route('**/api/mcp/servers/*', async (route) => {
       const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() ?? '')
@@ -36,8 +37,14 @@ for (const width of [1280, 390]) {
     await settle(page)
     const github = page.locator('[data-mcp-server="github"]')
     const notes = page.locator('[data-mcp-server="notes"]')
-    await expect(github).toContainText('Active')
+    await expect(github).toContainText('Failed')
     await expect(github).toContainText('Needs sign-in')
+    const live = page.locator('[data-mcp-server="live"]')
+    await expect(live).toContainText('Active')
+    await expect(live).not.toContainText('Needs sign-in')
+    const crashed = page.locator('[data-mcp-server="crashed"]')
+    await expect(crashed).toContainText('Failed')
+    await expect(crashed).toContainText('Unreachable')
     await expect(notes).toContainText('Disabled')
     const broken = page.locator('[data-mcp-server="broken"]')
     await expect(broken).toContainText('Invalid config')
