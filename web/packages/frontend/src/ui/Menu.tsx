@@ -121,7 +121,7 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
     <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={focus.onOpenChange}>
       <BaseMenu.Trigger render={trigger} onPointerDown={focus.onTriggerPointerDown} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner side={side} align={align} sideOffset={6} {...(collisionAvoidance ? { collisionAvoidance } : {})} className={POSITIONER}>
+        <BaseMenu.Positioner side={side} align={align} sideOffset={6} sticky {...(collisionAvoidance ? { collisionAvoidance } : {})} className={POSITIONER}>
           <BaseMenu.Popup ref={header ? focus.ref : revealRows} aria-label={label} onFocus={focus.onFocus} onKeyDown={focus.onKeyDown} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
             {header ? <>{header}<div ref={revealRows} className="min-h-0 overflow-y-auto">{children}</div></> : children}
           </BaseMenu.Popup>

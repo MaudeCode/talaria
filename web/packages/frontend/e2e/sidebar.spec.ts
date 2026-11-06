@@ -125,8 +125,7 @@ test('collapsed Search expands and focuses the filter; the edge tab and the shor
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
 })
 
-test('the chat list keeps its filter, groups and scroll across pages and is out of reach while collapsed', async ({ page }, info) => {
-  desktopOnly(info.project.name)
+async function seedSidebarSessions(page: Page) {
   const now = Math.floor(Date.now() / 1000)
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     session_id: `rail-${String(i)}`, title: `Row ${String(i)}`, is_streaming: false, attention: null, last_message_at: now - i * 60, updated_at: now - i * 60, sort_ts: now - (i < 30 ? i : 86_400 + i) * 60, pinned: false, archived: false, project_id: null,
@@ -136,22 +135,29 @@ test('the chat list keeps its filter, groups and scroll across pages and is out 
     const response = await route.fetch()
     await route.fulfill({ response, json: { ...(await response.json() as object), sessions } })
   })
+}
+
+test('the chat list keeps its filter, groups and scroll across pages and is out of reach while collapsed', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await seedSidebarSessions(page)
   await page.goto('/')
   await settle(page)
   const list = page.locator('#sessionList')
+  const scroll = sidebar(page).locator('.sidebar-scroll')
   const header = page.locator('.session-date-header').last()
   await button(page, 'Search').click()
   await page.locator('#sessionSearch').fill('R')
   await header.click()
   await expect(header).toHaveAttribute('aria-expanded', 'false')
-  await list.evaluate((el) => { el.scrollTop = 200 })
+  // Leave Skills in view so activating it does not first scroll the shared column.
+  await scroll.evaluate((el) => { el.scrollTop = 120 })
 
   await row(page, 'Skills').click()
   await expect(page).toHaveURL(/\/skills$/)
   await page.goBack()
   await expect(page.locator('#sessionSearch')).toHaveValue('R')
   await expect(header).toHaveAttribute('aria-expanded', 'false')
-  expect(await list.evaluate((el) => el.scrollTop)).toBe(200)
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(120)
 
   await page.locator('#btnSidebarEdgeToggle').click()
   await expect(list).toBeHidden()
@@ -162,9 +168,56 @@ test('the chat list keeps its filter, groups and scroll across pages and is out 
   await expect(page.locator('.session-item').first()).not.toBeFocused()
   await page.locator('#btnSidebarEdgeToggle').click()
   await expect(list).toBeVisible()
-  expect(await list.evaluate((el) => el.scrollTop)).toBe(200)
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(120)
   await expect(page.locator('#sessionSearch')).toHaveValue('R')
 })
+
+for (const viewport of [
+  { width: 390, height: 844 }, { width: 390, height: 480 },
+  { width: 382, height: 580 }, { width: 594, height: 368 },
+  { width: 385, height: 571 }, { width: 669, height: 867 },
+  { width: 951, height: 585 }, { width: 1280, height: 480 },
+]) {
+  test(`destinations scroll away so chats fill the column at ${String(viewport.width)}x${String(viewport.height)}`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'mobile', 'one responsive scroll matrix on the mobile project')
+    await page.setViewportSize(viewport)
+    await seedSidebarSessions(page)
+    await page.goto('/skills')
+    await settle(page)
+    if (viewport.width <= 900) await page.locator('#btnHamburger').click()
+    const list = page.locator('#sessionList')
+    const destinations = sidebar(page).locator('.sidebar-content .sidebar-rows')
+    const visibleHeight = () => list.evaluate((el) => {
+      const list = el.getBoundingClientRect()
+      const content = el.closest('.sidebar-content')!
+      const brand = content.querySelector('.sidebar-brand')!.getBoundingClientRect()
+      const footer = content.querySelector('.sidebar-footer')!.getBoundingClientRect()
+      return Math.max(0, Math.min(list.bottom, footer.top) - Math.max(list.top, brand.bottom))
+    })
+    for (const more of [false, true]) {
+      if (more) await button(page, 'More').click()
+      await page.screenshot({ path: info.outputPath(`destinations-${more ? 'more' : 'primary'}.png`) })
+      if (more) {
+        for (const name of ['Spaces', 'Discussions', 'Todos', 'Profiles', 'Logs']) {
+          await row(page, name).scrollIntoViewIfNeeded()
+          await expect(row(page, name)).toBeInViewport({ ratio: 1 })
+        }
+      }
+      await list.locator('.session-item').first().scrollIntoViewIfNeeded()
+      await list.locator('.session-item').first().hover()
+      await page.mouse.wheel(0, 1000)
+      await expect(destinations, 'destinations leave the viewport when scrolling chats').not.toBeInViewport()
+      await expect.poll(visibleHeight, { message: 'chats use most of the column after destinations scroll away' }).toBeGreaterThan(viewport.height * 0.6)
+      expect(await visibleHeight()).toBeGreaterThanOrEqual(160)
+      await expect(row(page, 'Settings')).toBeInViewport({ ratio: 1 })
+      await expect(button(page, 'Notifications')).toBeInViewport({ ratio: 1 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.screenshot({ path: info.outputPath(`chats-${more ? 'more' : 'primary'}.png`) })
+      await page.mouse.wheel(0, -5000)
+      await expect(button(page, 'New chat')).toBeInViewport({ ratio: 1 })
+    }
+  })
+}
 
 test('More holds the rest and opens itself on a page inside it', async ({ page }, info) => {
   desktopOnly(info.project.name)
@@ -400,6 +453,12 @@ test('Preferences pins from the server projection, shows a choice at once and ro
   desktopOnly(info.project.name)
   let projection = { sidebar_source_ids: [] as string[], sidebar_can_pin: true }
   await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, ...projection } }))
+  // Synthetic quota IDs need the same projection on successful saves and reads.
+  await page.route(/\/api\/settings$/, async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...await response.json(), ...projection } })
+  })
   await page.goto('/settings/preferences')
   await settle(page)
   const picker = page.locator('#settingsSidebarQuotas')
