@@ -13,6 +13,7 @@ struct PendingPromptExpiredError: LocalizedError, Equatable {
     enum Prompt: Equatable {
         case approval
         case clarification
+        case connection
     }
 
     let prompt: Prompt
@@ -23,6 +24,8 @@ struct PendingPromptExpiredError: LocalizedError, Equatable {
             String(localized: "That approval request already expired, so the agent has moved on.")
         case .clarification:
             String(localized: "That clarification prompt already expired, so the agent has moved on.")
+        case .connection:
+            String(localized: "That connection request already expired, so the agent has moved on.")
         }
     }
 }
@@ -121,11 +124,18 @@ final class ChatPendingActionCoordinator {
         didSet { if oldValue?.id != vaultPrompt?.id { clarificationErrorMessage = nil } }
     }
 
+    fileprivate(set) var connection: ConnectionOperationState?
+    /// Moves on every server statement of the operation, so an older read cannot overwrite a newer one.
+    @ObservationIgnored fileprivate(set) var connectionChangeCount = 0
+    @ObservationIgnored fileprivate var connectionPollingTask: Task<Void, Never>?
+    /// An operation the user closed: a replayed frame of it stays closed.
+    @ObservationIgnored fileprivate var dismissedConnectionOpID: String?
+
     weak var delegate: ChatPendingActionCoordinatorDelegate?
     var approvalHeadDidBecomeVisible: (ApprovalPromptState) -> Void = { _ in }
 
-    private let client: APIClient
-    private let pollingIntervals: ChatPollingIntervals
+    fileprivate let client: APIClient
+    fileprivate let pollingIntervals: ChatPollingIntervals
 
     private var approvalPendingBySession: [String: ApprovalPromptState] = [:]
     @ObservationIgnored private var approvalMonitor: PendingPromptMonitor
@@ -137,7 +147,7 @@ final class ChatPendingActionCoordinator {
     private var clarificationUsesPollingFallback = false
 
     var hasPendingPrompt: Bool {
-        approvalPrompt != nil || clarificationPrompt != nil || vaultPrompt != nil
+        approvalPrompt != nil || clarificationPrompt != nil || vaultPrompt != nil || connection?.confirmed.settled == false
     }
 
     init(
@@ -155,6 +165,7 @@ final class ChatPendingActionCoordinator {
     deinit {
         approvalMonitor.pollingTask?.cancel()
         clarificationMonitor.pollingTask?.cancel()
+        connectionPollingTask?.cancel()
     }
 
     func refreshApprovalBypassState() async {
@@ -273,11 +284,13 @@ final class ChatPendingActionCoordinator {
     }
 
     func startMonitoring() {
+        connectionRunDidStart()
         startApprovalMonitoring()
         startClarificationMonitoring()
     }
 
     func stopMonitoring(clearPrompt: Bool) {
+        if clearPrompt { connectionRunDidEnd() }
         stopApprovalMonitoring(clearPrompt: clearPrompt)
         stopClarificationMonitoring(clearPrompt: clearPrompt)
     }
@@ -497,7 +510,7 @@ final class ChatPendingActionCoordinator {
             applyApprovalUpdate(update, sessionID: sessionID)
         case .transportError, .error:
             startApprovalFallbackPolling(sessionID: sessionID)
-        case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .done, .clarificationPending,
+        case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .done, .clarificationPending, .connectionOperation,
              .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
@@ -591,7 +604,7 @@ final class ChatPendingActionCoordinator {
             }
         case .transportError, .error:
             startClarificationFallbackPolling(sessionID: sessionID)
-        case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .done,
+        case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .done, .connectionOperation,
              .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
@@ -642,6 +655,233 @@ final class ChatPendingActionCoordinator {
         }
         clarificationPrompt = prompt?.pending.vault == nil ? prompt : nil
         vaultPrompt = prompt?.pending.vault == nil ? nil : prompt
+    }
+}
+
+// MARK: - Connection operation (TAL-1321)
+
+/// The server states the operation and the user answers it. Every read is fenced by `connectionChangeCount`, every
+/// answer by the operation it named, and only a read decides a lost answer: it is never sent again.
+extension ChatPendingActionCoordinator {
+    /// What the chat shows: the server's view with this user's own answers on top. Nil once Continue took the card away.
+    var connectionOperation: ConnectorOperationView? {
+        guard let connection, connection.sessionID == delegate?.pendingActionSessionID, !connection.isContinuing else { return nil }
+        return connection.displayed
+    }
+
+    var connectionRunningTargets: Set<String> { visibleConnection?.runningTargets ?? [] }
+    var connectionErrorMessage: String? { visibleConnection?.errorMessage }
+
+    private var visibleConnection: ConnectionOperationState? {
+        connection?.sessionID == delegate?.pendingActionSessionID ? connection : nil
+    }
+
+    /// A `connect_card` frame: the server's latest statement, in its order.
+    func applyConnectionOperation(_ view: ConnectorOperationView, sessionID: String) {
+        connectionChangeCount &+= 1
+        showConnection(view, sessionID: sessionID)
+    }
+
+    /// A session detail's statement. An owner that holds no operation closes an open card; the result of one it settled
+    /// stays to read. `changesAtFetch` drops a load that started before a newer statement arrived.
+    func applyOwnerConnection(_ attachment: OwnerAttachment?, sessionID: String, changesAtFetch: Int?) {
+        guard let attachment, attachment.statesConnection, changesAtFetch.map({ $0 == connectionChangeCount }) ?? true else { return }
+        connectionChangeCount &+= 1
+        if let view = attachment.connection {
+            showConnection(view, sessionID: sessionID)
+        } else if let connection, connection.sessionID == sessionID, !connection.confirmed.settled {
+            closeConnection()
+        }
+    }
+
+    func respondToConnectionOperation(_ move: ConnectorOperationMove, env: [String: String]?, opID: String) async {
+        guard var state = visibleConnection, state.confirmed.opId == opID, state.offers(move) else { return }
+        let owner = state.confirmed.owner
+        state.inFlight.insert(move)
+        state.errorMessage = nil
+        connection = state
+        delegate?.pendingActionCoordinatorWillSubmitAction()
+        // A read already out left before this answer, so it cannot say whether the answer landed.
+        connectionChangeCount &+= 1
+        let changes = connectionChangeCount
+        do {
+            let view = try await client.respondConnectorOperation(opID: opID, owner: owner, move: move, env: env)
+            guard var current = currentConnection(state) else { return }
+            current.inFlight.remove(move)
+            // A newer statement arrived on the way back, so this view may be the older one: a read decides.
+            guard changes == connectionChangeCount else {
+                if !current.confirmed.settled { current.unknown.insert(move) }
+                connection = current
+                await readConnectionOperation()
+                return
+            }
+            connection = current
+            connectionChangeCount &+= 1
+            showConnection(view, sessionID: current.sessionID, closesSettled: move == .continueWithoutTheRest)
+        } catch {
+            await settleRefusedOrLostAnswer(move, error: error, of: state)
+        }
+    }
+
+    private func settleRefusedOrLostAnswer(_ move: ConnectorOperationMove, error: Error, of state: ConnectionOperationState) async {
+        guard var current = currentConnection(state) else { return }
+        current.inFlight.remove(move)
+        // Only a read from after this failure may decide what landed.
+        connectionChangeCount &+= 1
+        // A 404 is the server saying this operation is gone, which a refusal of one move does not say.
+        if case .http(404, _)? = error as? APIError {
+            connection = current
+            closeConnection()
+            delegate?.pendingActionCoordinatorDidFailAction(PendingPromptExpiredError(prompt: .connection))
+            return
+        }
+        if !APIError.isDefinitiveWriteFailure(error) { current.unknown.insert(move) }
+        // The server words why this connection refused the move.
+        current.errorMessage = (error as? APIError)?.serverMessage ?? error.localizedDescription
+        connection = current
+        delegate?.pendingActionCoordinatorDidFailAction(error)
+        await readConnectionOperation()
+    }
+
+    /// Back from an authorization link: the owner looks now, not at its next tick. The poll covers a failure.
+    func wakeConnectionOperation() async {
+        guard let state = visibleConnection, state.confirmed.canWake, !state.confirmed.settled else { return }
+        let changes = connectionChangeCount
+        do {
+            let view = try await client.respondConnectorOperation(opID: state.confirmed.opId, owner: state.confirmed.owner, move: nil)
+            guard changes == connectionChangeCount, currentConnection(state) != nil else { return }
+            applyConnectionRead(view)
+        } catch {
+            chatPendingActionCoordinatorLogger.debug(
+                "Connection wake failed category=\(APIError.privacySafeLogCategory(for: error), privacy: .public)"
+            )
+        }
+    }
+
+    /// Closes a settled operation's result. A later frame of it stays closed.
+    func dismissConnectionOperation(opID: String) {
+        guard let state = visibleConnection, state.confirmed.opId == opID, state.confirmed.settled else { return }
+        dismissedConnectionOpID = opID
+        closeConnection()
+    }
+
+    /// Leaving the chat or its profile: nothing of the operation stays behind.
+    func resetConnectionOperation() {
+        connectionChangeCount &+= 1
+        dismissedConnectionOpID = nil
+        closeConnection()
+    }
+
+    /// A direct card ends with its turn, since nothing waits on it after that. A canonical owner keeps its own operation.
+    func connectionRunDidEnd() {
+        if connection?.confirmed.settled == false, connection?.confirmed.owner == nil { closeConnection() }
+    }
+
+    /// A new run starts clean of an earlier operation's result.
+    func connectionRunDidStart() {
+        if connection?.confirmed.settled == true { closeConnection() }
+    }
+
+    private func showConnection(_ view: ConnectorOperationView, sessionID: String, closesSettled: Bool = false) {
+        guard dismissedConnectionOpID != view.opId else { return }
+        if closesSettled, view.settled {
+            dismissedConnectionOpID = view.opId
+            closeConnection()
+            return
+        }
+        if var current = connection, current.sessionID == sessionID, current.confirmed.opId == view.opId {
+            // The user already moved on, and Continue's own answer closes the card.
+            if view.settled, current.isContinuing {
+                dismissedConnectionOpID = view.opId
+                closeConnection()
+                return
+            }
+            current.confirmed = view
+            if view.settled {
+                current.inFlight = []
+                current.unknown = []
+                current.errorMessage = nil
+            }
+            connection = current
+        } else {
+            connection = ConnectionOperationState(sessionID: sessionID, confirmed: view)
+            stopConnectionPolling()
+        }
+        if view.settled { stopConnectionPolling() } else { startConnectionPolling() }
+    }
+
+    private func closeConnection() {
+        connection = nil
+        stopConnectionPolling()
+    }
+
+    /// The live state when `state`'s operation is still the one in this chat, which fences a late answer.
+    private func currentConnection(_ state: ConnectionOperationState) -> ConnectionOperationState? {
+        guard let connection, connection.confirmed.opId == state.confirmed.opId, connection.sessionID == state.sessionID,
+              connection.sessionID == delegate?.pendingActionSessionID else { return nil }
+        return connection
+    }
+
+    private func readConnectionOperation() async {
+        guard let state = connection, state.sessionID == delegate?.pendingActionSessionID, !state.confirmed.settled else { return }
+        let changes = connectionChangeCount
+        do {
+            let view = try await client.connectorOperation(opID: state.confirmed.opId, owner: state.confirmed.owner)
+            guard changes == connectionChangeCount, currentConnection(state) != nil else { return }
+            applyConnectionRead(view)
+        } catch {
+            guard changes == connectionChangeCount, let current = currentConnection(state) else { return }
+            switch error as? APIError {
+            case .http(404, _)?:
+                // The owner closes an operation when it settles, so nothing here says it failed.
+                if current.isContinuing { dismissedConnectionOpID = current.confirmed.opId }
+                closeConnection()
+            case .http(403, _)?:
+                closeConnection()
+                delegate?.pendingActionCoordinatorDidFailAction(error)
+            default:
+                // A failed read keeps the last view, and the next one tries again.
+                chatPendingActionCoordinatorLogger.debug(
+                    "Connection read failed category=\(APIError.privacySafeLogCategory(for: error), privacy: .public)"
+                )
+            }
+        }
+    }
+
+    /// A read decides every lost answer: one the server still offers did not land, so its error stays.
+    private func applyConnectionRead(_ view: ConnectorOperationView) {
+        guard var current = connection else { return }
+        connectionChangeCount &+= 1
+        let wasUnknown = current.unknown
+        current.unknown = []
+        current.confirmed = view
+        if !wasUnknown.isEmpty, !wasUnknown.contains(where: current.confirmedOffers) { current.errorMessage = nil }
+        connection = current
+        showConnection(view, sessionID: current.sessionID, closesSettled: wasUnknown.contains(.continueWithoutTheRest))
+    }
+
+    private func startConnectionPolling() {
+        guard connectionPollingTask == nil else { return }
+        let sleep = pollingIntervals.sleep
+        let interval = pollingIntervals.connectionNanoseconds
+        connectionPollingTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await sleep(interval)
+                guard !Task.isCancelled else { break }
+                // Scoped so the sleep above does not retain the coordinator.
+                do {
+                    guard let self else { break }
+                    if self.delegate?.pendingActionIsStreamConnectionSuspended != true {
+                        await self.readConnectionOperation()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopConnectionPolling() {
+        connectionPollingTask?.cancel()
+        connectionPollingTask = nil
     }
 }
 

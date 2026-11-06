@@ -73,20 +73,14 @@ struct VaultPromptSheet: View {
     @ViewBuilder
     private func input(_ field: VaultPrompt.Field) -> some View {
         let text = Binding(get: { values[field.key] ?? "" }, set: { values[field.key] = $0 })
-        Group {
-            // The answers are for another site or a password manager: AutoFill offers nothing iOS keeps for Talaria
-            // itself, only a code read from the message the site sent. Codes can have letters.
-            if field.secure {
-                SecureField(label(field.key), text: text)
-                    .textContentType(nil)
-            } else {
-                TextField(label(field.key), text: text)
-                    .textContentType(field.key == .code ? .oneTimeCode : nil)
-                    .keyboardType(field.key == .code ? .asciiCapable : .emailAddress)
-            }
-        }
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
+        // AutoFill offers only a code read from the message the site sent. Codes can have letters.
+        PromptCredentialField(
+            label: label(field.key),
+            text: text,
+            isSecure: field.secure,
+            contentType: field.key == .code ? .oneTimeCode : nil,
+            keyboardType: field.key == .code ? .asciiCapable : .emailAddress
+        )
         .focused($focused, equals: field.key)
         .disabled(isResponding)
         .accessibilityIdentifier("vault-prompt-\(field.key.rawValue)")
@@ -130,5 +124,30 @@ struct VaultPromptSheet: View {
         case .code: String(localized: "Code")
         case .secret: vault.skill.map(\.envVar).flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Secret")
         }
+    }
+}
+
+/// A value the Agent asks for on another service's behalf: masked when the server says so, never re-cased, and never
+/// offered what AutoFill keeps for Talaria itself. Shared by every prompt that takes a credential.
+struct PromptCredentialField: View {
+    let label: String
+    @Binding var text: String
+    let isSecure: Bool
+    var contentType: UITextContentType? = nil
+    var keyboardType: UIKeyboardType = .default
+
+    var body: some View {
+        Group {
+            if isSecure {
+                SecureField(label, text: $text)
+                    .textContentType(nil)
+            } else {
+                TextField(label, text: $text)
+                    .textContentType(contentType)
+                    .keyboardType(keyboardType)
+            }
+        }
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
     }
 }

@@ -279,9 +279,12 @@ public final class ChatViewModel {
     @ObservationIgnored private var reasoningDisplayReadFloor = 0
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
-    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
+    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, connectionChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
         if let session {
             ownerAttachment = session.ownerAttachment
+            if let sessionID {
+                pendingActionCoordinator.applyOwnerConnection(session.ownerAttachment, sessionID: sessionID, changesAtFetch: connectionChangesAtFetch)
+            }
             presentOwnerModelConfirmation()
             executionMode = session.executionMode
         }
@@ -473,6 +476,26 @@ public final class ChatViewModel {
         await pendingActionCoordinator.respondToVaultPrompt(values, promptID: promptID)
     }
     public var clarificationErrorMessage: String? { pendingActionCoordinator.clarificationErrorMessage }
+
+    /// TAL-1321: the chat's connection operation as the server states it, with this user's own answers shown on top.
+    public var connectionOperation: ConnectorOperationView? { pendingActionCoordinator.connectionOperation }
+    public var connectionRunningTargets: Set<String> { pendingActionCoordinator.connectionRunningTargets }
+    public var connectionErrorMessage: String? { pendingActionCoordinator.connectionErrorMessage }
+
+    /// One answer to the operation `opID` names; `env` goes to the server and is kept nowhere.
+    public func respondToConnectionOperation(_ move: ConnectorOperationMove, env: [String: String]? = nil, opID: String) async {
+        await pendingActionCoordinator.respondToConnectionOperation(move, env: env, opID: opID)
+    }
+
+    /// Back from an authorization link: the owner looks now, when the server offers that.
+    public func wakeConnectionOperation() async {
+        await pendingActionCoordinator.wakeConnectionOperation()
+    }
+
+    /// Closes a settled operation's result.
+    public func dismissConnectionOperation(opID: String) {
+        pendingActionCoordinator.dismissConnectionOperation(opID: opID)
+    }
     public private(set) var currentGoal: SubmittedGoal?
     public private(set) var isSubmittingGoal = false
     private(set) var goalErrorMessage: String?
@@ -1452,6 +1475,8 @@ public final class ChatViewModel {
             profileOptions = response.profiles ?? profileOptions
             selectedProfileName = response.active ?? profileName
             currentProfile = selectedProfileName
+            // An operation belongs to the profile that opened it.
+            pendingActionCoordinator.resetConnectionOperation()
             isProfileSelectionFromCache = false
 
             if let defaultWorkspace = response.defaultWorkspace, !defaultWorkspace.isEmpty {
@@ -1736,6 +1761,7 @@ public final class ChatViewModel {
         let renderedCacheFirst = !cacheFirstPlaceholder.isEmpty
         let steerChangesAtFetch = steerChangeCount
         let noticesChangesAtFetch = noticesChangeCount
+        let connectionChangesAtFetch = pendingActionCoordinator.connectionChangeCount
 
         do {
             let response = try await client.session(
@@ -1802,7 +1828,7 @@ public final class ChatViewModel {
                     else { continue }
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
-                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
+                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
                 serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
                 loadedClearGeneration = session?.clearGeneration
                 let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
@@ -1837,7 +1863,7 @@ public final class ChatViewModel {
             streamCoordinator.applySessionActivityPhase(session?.activityPhase)
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
-            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
+            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             loadedClearGeneration = session?.clearGeneration
             applyBranchedFrom(from: session, modelContext: modelContext)
@@ -5536,6 +5562,7 @@ public final class ChatViewModel {
         serverCommands.removeAll()
         stopBackgroundPolling(clearTrackedPrompts: true)
         pendingActionCoordinator.stopMonitoring(clearPrompt: true)
+        pendingActionCoordinator.resetConnectionOperation()
     }
 
     private func suspendActiveStreamConnection() {
@@ -5831,7 +5858,7 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices, .connectionOperation,
              .runStatus, .compressing, .compressed:
             break
         }
@@ -7114,6 +7141,11 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     public func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse) {
         guard let sessionID else { return }
         applyClarificationUpdate(update, sessionID: sessionID)
+    }
+
+    public func streamCoordinatorApplyConnectionOperation(_ view: ConnectorOperationView) {
+        guard let sessionID else { return }
+        pendingActionCoordinator.applyConnectionOperation(view, sessionID: sessionID)
     }
 
     @discardableResult

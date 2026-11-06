@@ -79,6 +79,25 @@ extension APIClient {
         try await send(endpoint: .chatStreamStatus(streamID: streamID), method: "GET")
     }
 
+    /// TAL-1321: a read of the operation, never a move: it starts nothing on the Agent or an account.
+    public func connectorOperation(opID: String, owner: ConnectorOperationView.Owner?) async throws -> ConnectorOperationView {
+        try await send(endpoint: .connectorOperation(opID: opID, owner: owner), method: "GET")
+    }
+
+    /// TAL-1321: one answer to the exact operation the view named, or `wake` (no move) to have its owner look again.
+    public func respondConnectorOperation(
+        opID: String,
+        owner: ConnectorOperationView.Owner?,
+        move: ConnectorOperationMove?,
+        env: [String: String]? = nil
+    ) async throws -> ConnectorOperationView {
+        try await send(
+            endpoint: .connectorOperation(opID: opID, owner: nil),
+            method: "POST",
+            body: ConnectorOperationRequest(action: move?.action ?? "wake", target: move?.target, env: env, sessionId: owner?.sessionId, authorityEpoch: owner?.authorityEpoch)
+        )
+    }
+
     public func approvalPending(sessionID: String) async throws -> ApprovalPendingResponse {
         try await send(endpoint: .approvalPending(sessionID: sessionID), method: "GET")
     }
@@ -222,6 +241,18 @@ private struct ChatStartRequest: Encodable {
     let retryToken: String?
     /// The App renders the masked `skill_secret` prompt, so a skill's missing secret is asked for there (TAL-1046).
     let skillSecret = true
+    /// The App renders and answers `connect_card` (TAL-1321), so a `manage_connections` call waits on the card here;
+    /// a server that does not know this field keeps answering with the Agent's plain links.
+    let connectCard = true
+}
+
+private struct ConnectorOperationRequest: Encodable {
+    let action: String
+    var target: String?
+    /// Credentials the row asked for, keyed by the server's field names, sent as typed and kept nowhere.
+    var env: [String: String]?
+    var sessionId: String?
+    var authorityEpoch: Int?
 }
 
 private struct OwnerActionRequest: Encodable {

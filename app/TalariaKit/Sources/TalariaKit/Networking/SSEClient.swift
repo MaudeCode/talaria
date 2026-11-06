@@ -130,6 +130,8 @@ public enum SSEEvent: Equatable, Sendable {
     case done(DoneStreamEvent)
     case approvalPending(ApprovalPendingResponse)
     case clarificationPending(ClarificationPendingResponse)
+    /// TAL-1321: the chat's connection operation changed; the view replaces the one shown.
+    case connectionOperation(ConnectorOperationView)
     case steerConsumed(SteeringStreamEvent)
     /// TAL-426: a pending steer the server added or changed, from any device.
     case steerPending(PendingSteer)
@@ -467,6 +469,9 @@ struct SSEEventDecoder {
         case "clarify":
             logInvalidJSONIfNeeded(eventType: eventType, payloadName: "clarification stream payload", data: eventData)
             return .clarificationPending(ClarificationPendingResponse.streamPayload(from: eventData, decoder: decoder))
+        case "connect_card":
+            guard let payload = decodePayload(ConnectorOperationView.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .connectionOperation(payload)
         case "steer_consumed":
             let payload = decodePayload(
                 SteeringStreamEvent.self,

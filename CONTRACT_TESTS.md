@@ -154,6 +154,13 @@ without scanning the cached prefix. `CacheStoreTests` retains the explicit
 outcomes for offline display;
 `TranscriptHostedTests` exercises the existing synthetic background-update UI.
 
+Connection operations use `contracts/fixtures/connectors.json` across the contract
+schema, server `connectors.test.ts` and `gateway-owner-connections.test.ts`, Web
+`ConnectorsSection.test.tsx`, and the App. TalariaKit
+`ChatViewModelSendTests+ConnectionOperation` covers restore, replacement, exact move
+identity, rollback and read-only reconciliation of a lost answer;
+`ConnectionOperationHostedTests` renders the panel from the same example.
+
 Catalog recovery authority uses `contracts/fixtures/catalog-recovery.json` in the
 contract schema, native model and Web cache tests. Server
 `providers/catalog-recovery.test.ts` drives real HTTP responses through synthetic

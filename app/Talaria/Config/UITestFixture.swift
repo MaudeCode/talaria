@@ -129,7 +129,7 @@ struct UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
         var initialDrafts: [ChatDraftKey: ChatDraft] = [:]
         let fixtureSessionDraft = ChatDraftKey.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)
-        if chatScenario == .clarification || chatScenario == .batchClarification || chatScenario == .skillSecret {
+        if chatScenario == .clarification || chatScenario == .batchClarification || chatScenario == .skillSecret || chatScenario == .connection {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[fixtureSessionDraft] = ChatDraft(text: "Ordinary fixture draft")
         }
@@ -300,6 +300,8 @@ private enum UITestChatScenario: String, CaseIterable {
     case pendingSteers = "--ui-test-chat-pending-steers"
     /// TAL-1046: a running turn whose skill asks for its missing secret through the masked vault prompt.
     case skillSecret = "--ui-test-chat-skill-secret"
+    /// TAL-1321: a running turn that waits on a connection operation, answered through the operation's own route.
+    case connection = "--ui-test-chat-connection"
     /// TAL-1458: a run that writes one companion fixture file per step the test releases.
     case companion = "--ui-test-chat-companion"
 
@@ -920,6 +922,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["ok": !answers.isEmpty])
         case "/api/clarify/pending":
             return json(["pending_count": 0])
+        case _ where url.path.hasPrefix(connectionOperationPathPrefix):
+            return connectionOperationResponse(request)
         case "/api/update-notifications":
             return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
         case "/api/toolsets":
@@ -1734,6 +1738,19 @@ final class UITestFixtureURLProtocol: URLProtocol {
             }
             send(events: [
                 ("token", ["text": "Agent received: \(answer)"]),
+                ("done", [:]), ("stream_end", [:])
+            ])
+            finish()
+        case .connection:
+            send(events: [("connect_card", Self.connectionOperationFixture())])
+            while !isStopped, !Self.connectionOperationIsSettled {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            guard !isStopped else { return }
+            Self.chatState.settle()
+            send(events: [
+                ("connect_card", Self.connectionOperationFixture()),
+                ("token", ["text": "Agent continued"]),
                 ("done", [:]), ("stream_end", [:])
             ])
             finish()

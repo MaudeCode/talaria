@@ -80,6 +80,7 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorApplySessionSnapshot(_ session: SessionDetail, replayGap: Bool)
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse)
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse)
+    func streamCoordinatorApplyConnectionOperation(_ view: ConnectorOperationView)
     @discardableResult
     func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool
     func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer)
@@ -817,6 +818,10 @@ public final class ChatStreamCoordinator {
         case .clarificationPending(let update):
             liveActivityManager?.update(update.pending == nil ? .promptSettled : .waitingForClarification)
             delegate?.streamCoordinatorApplyClarificationUpdate(update)
+            markProgress()
+        case .connectionOperation(let view):
+            liveActivityManager?.update(view.settled ? .promptSettled : .waitingForClarification)
+            delegate?.streamCoordinatorApplyConnectionOperation(view)
             markProgress()
         case .steerConsumed(let event):
             if delegate?.streamCoordinatorConsumeSteeringHint(event) == true {
