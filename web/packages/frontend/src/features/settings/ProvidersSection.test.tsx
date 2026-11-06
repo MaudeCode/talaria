@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProviderQuotasSchema } from '../../contracts'
@@ -60,6 +60,20 @@ describe('ProvidersSection', () => {
     await waitFor(() => expect(api.installPlugin).toHaveBeenLastCalledWith('github-copilot', 'preview'))
     expect(await screen.findByText('This provider is not set up yet.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Install plugin' })).toBeNull()
+  })
+
+  it('opens the same actions as the visible controls on right-click (TAL-1812)', async () => {
+    providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, configurable: false, install_hint: 'github-copilot' }] }
+    vi.mocked(api.installPlugin).mockClear().mockResolvedValue({ name: 'github-copilot', status: 'blocked', findings: 'Scan refused this plugin' })
+    renderSection()
+    const name = await screen.findByText('GitHub Copilot')
+    const card = name.closest<HTMLElement>('[data-provider="copilot"]')!
+    fireEvent.contextMenu(name, { clientX: 10, clientY: 10 })
+    const menu = await screen.findByRole('menu', { name: 'Provider actions' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(within(card).getAllByRole('button', { hidden: true }).map((button) => button.getAttribute('aria-label') ?? button.textContent))
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Install plugin' }))
+    expect(api.installPlugin).toHaveBeenCalledWith('github-copilot', undefined)
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Scan refused this plugin')
   })
 
   it('sets up a self-hosted provider from its row and rereads the providers it activated (TAL-570)', async () => {

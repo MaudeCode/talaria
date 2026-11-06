@@ -10,6 +10,7 @@ import { useDefaultModelChoice, useSetDefaultModel } from '../../app/queries'
 import { post } from '../../api/client'
 import { OkSchema } from '../../contracts'
 import { Button, IconButton } from '../../ui/Button'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -23,6 +24,8 @@ import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { usePluginInstall } from './usePluginInstall'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
+
+interface ProviderAction { label: string; run: () => void; busy?: boolean; danger?: boolean }
 
 export function ProvidersSection() {
   const qc = useQueryClient()
@@ -66,8 +69,17 @@ export function ProvidersSection() {
           const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []
           const quota = sources[0]
           const isEditing = editing === p.id
+          const hint = p.install_hint
+          // One list for the visible controls and the right-click and long-press menu.
+          const refresh: ProviderAction = { label: m.providers_refresh_models(), run: () => refreshModels.mutate(p.id), busy: refreshModels.isPending }
+          const actions: ProviderAction[] = [
+            ...(hint ? [{ label: m.providers_install_plugin(), run: () => install.request(hint), busy: install.isInstalling(hint) }] : []),
+            ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => setEditing(isEditing ? null : p.id) }]
+              : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => setEditing(isEditing ? null : p.id) }] : []),
+            ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => saveKey.mutate({ id: p.id, key: null }), danger: true }] : []),
+          ]
           return (
-            <li key={p.id} className={cn('rounded-lg border border-border bg-surface p-3', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
+            <ContextMenu key={p.id} label={m.providers_row_menu()} trigger={<li className={cn('rounded-lg border border-border bg-surface p-3', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="text-sm font-medium text-text">{p.display_name ?? p.id}</div>
@@ -78,21 +90,13 @@ export function ProvidersSection() {
                   {p.auth_error && <div className="text-[11px] text-error">{p.auth_error}</div>}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <IconButton label={m.providers_refresh_models()} disabled={refreshModels.isPending} onClick={() => refreshModels.mutate(p.id)}>
+                  <IconButton label={refresh.label} disabled={refresh.busy} onClick={refresh.run}>
                     <RefreshCw size={14} aria-hidden="true" className={cn(refreshModels.isPending && refreshModels.variables === p.id && 'animate-spin')} />
                   </IconButton>
-                  {p.install_hint && <Button aria-busy={install.isInstalling(p.install_hint)} disabled={install.isInstalling(p.install_hint)} onClick={() => { if (p.install_hint) install.request(p.install_hint) }}>{m.providers_install_plugin()}</Button>}
-                  {p.is_self_hosted ? (
-                    <Button onClick={() => setEditing(isEditing ? null : p.id)}>{m.providers_self_hosted_setup()}</Button>
-                  ) : p.configurable !== false && !p.is_oauth && (
-                    <Button onClick={() => setEditing(isEditing ? null : p.id)}>{m.providers_key_set()}</Button>
-                  )}
-                  {p.removable === true && (
-                    <Button variant="ghost" className="text-error" onClick={() => saveKey.mutate({ id: p.id, key: null })}>{m.providers_key_remove()}</Button>
-                  )}
+                  {actions.map(({ label, run, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost' as const, className: 'text-error' } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{label}</Button>)}
                 </div>
               </div>
-              {p.install_hint && install.blocked(p.install_hint)}
+              {hint && install.blocked(hint)}
               {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
               {isEditing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name: p.display_name ?? p.id, ...body })} />}
               {isEditing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${p.display_name ?? p.id} API key`} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} />}
@@ -110,7 +114,9 @@ export function ProvidersSection() {
                   </ul>
                 </details>
               )}
-            </li>
+            </li>}>
+              {[refresh, ...actions].map(({ label, run, busy, danger }) => <MenuItem key={label} disabled={busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)}
+            </ContextMenu>
           )
         })}
       </ul>

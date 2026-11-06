@@ -2395,6 +2395,7 @@
 	"settings_option_hide_all_activity": "Final answer only",
 	"providers_key_set": "Set key",
 	"providers_install_plugin": "Install plugin",
+	"providers_row_menu": "Provider actions",
 	"providers_key_remove": "Remove key",
 	"providers_key_saved": "Provider key saved",
 	"providers_configured": "Configured",
