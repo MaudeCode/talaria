@@ -1,8 +1,10 @@
 """Native room compatibility through the actual sidecar RPC boundary."""
+from contextlib import asynccontextmanager
 from pathlib import Path
 import subprocess
 import sys
 import asyncio
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -75,3 +77,28 @@ def test_canceled_room_read_detaches_native_rpc():
             await task
         assert detached.is_set()
     asyncio.run(probe())
+
+
+def test_continue_forwards_only_its_declared_fields(monkeypatch, tmp_path):
+    from talaria_sidecar.errors import InvalidParams
+    from talaria_sidecar.methods import groups as module
+    operation = {"action": "continue", "room_id": "room", "discussion_event_id": "discussion"}
+    with pytest.raises(InvalidParams):
+        module.groups(SimpleNamespace(), {"profile_home": str(tmp_path), "subject": "owner",
+                                          "operation": {**operation, "thread_id": "smuggled"}})
+
+    calls = []
+    class Client:
+        websocket = SimpleNamespace(protocol=SimpleNamespace(max_size=0))
+        async def rpc(self, method, **params):
+            calls.append((method, params))
+            return {"driver": True, "methods": ["groups.continue"]} if method == "groups.capabilities" else {"continued": True}
+    @asynccontextmanager
+    async def connect(*_args, **_kwargs):
+        yield Client(), None
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
+    monkeypatch.setattr(module, "_connect", connect)
+    monkeypatch.setattr(module, "_owner_refusal", lambda *_: None)
+    result = asyncio.run(module._run(tmp_path, "owner", operation, SimpleNamespace(state="ready", endpoint="ws://owner")))
+    assert result == {"state": "available", "reason": None, "value": {"continued": True}}
+    assert calls[-1] == ("groups.continue", {"room_id": "room", "discussion_event_id": "discussion", "_timeout": 25})

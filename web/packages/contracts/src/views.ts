@@ -267,8 +267,10 @@ export const MessageSchema = z.looseObject({
    * a plugin's closing text after clear, with role `local_notice`, display-only and excluded from model history.
    * `wake_failed`: a group discussion's members could not be woken, with the Agent's error in `content`.
    * `lead_assigned`: a group discussion's lead routed a message, named in `_lead_assignment`.
+   * `paused_max_rounds`, `paused_max_messages`: a group discussion waits at that cap; clients show a localized line per
+   * kind, with no `content`. The row exists only while the discussion stays paused.
    */
-  _notice_kind: z.enum(['failed_turn', 'session_finalize', 'wake_failed', 'lead_assigned']).optional(),
+  _notice_kind: z.enum(['failed_turn', 'session_finalize', 'wake_failed', 'lead_assigned', 'paused_max_rounds', 'paused_max_messages']).optional(),
   /** Who a discussion's lead gave a message to, as display names, for clients' localized wording. `assignees` is empty when the lead took it alone. */
   _lead_assignment: z.object({ lead: z.string(), assignees: z.array(z.string()) }).optional(),
   /**

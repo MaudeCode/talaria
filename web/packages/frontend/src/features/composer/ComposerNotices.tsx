@@ -17,7 +17,7 @@ export interface ComposerNotice {
   detail?: { title: string; content: ReactNode } | undefined
   /** Read out as it changes, so progress behind a closed detail still reaches screen readers. */
   announcement?: string | undefined
-  action?: { label: string; run: () => void } | undefined
+  action?: { label: string; run: () => void; disabled?: boolean | undefined } | undefined
   onDismiss?: (() => void) | undefined
 }
 
@@ -110,7 +110,7 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
                 {n.detail
                   ? <button type="button" className="composer-notice-content composer-notice-open" aria-haspopup="dialog" aria-expanded={openId === n.id} onClick={(e) => { trigger.current = e.currentTarget; setOpenId(n.id) }}>{n.content}</button>
                   : <div className="composer-notice-content">{n.content}</div>}
-                {n.action && <button type="button" className="composer-notice-action" onClick={n.action.run}>{n.action.label}</button>}
+                {n.action && <button type="button" className="composer-notice-action" disabled={n.action.disabled} onClick={n.action.run}>{n.action.label}</button>}
                 {n.onDismiss && <button type="button" className="composer-notice-action" onClick={n.onDismiss}>{m.notice_dismiss()}</button>}
                 {n.announcement !== undefined && <span className="sr-only" role="status">{n.announcement}</span>}
               </div>

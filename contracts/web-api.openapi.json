@@ -7880,7 +7880,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -12930,7 +12932,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -16758,7 +16762,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -23530,7 +23536,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -29673,7 +29681,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -36448,7 +36458,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -40225,7 +40237,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -44064,7 +44078,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -47901,7 +47917,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -62406,7 +62424,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -66235,7 +66255,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -70743,7 +70765,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -75081,7 +75105,9 @@
                                       "failed_turn",
                                       "session_finalize",
                                       "wake_failed",
-                                      "lead_assigned"
+                                      "lead_assigned",
+                                      "paused_max_rounds",
+                                      "paused_max_messages"
                                     ],
                                     "type": "string"
                                   },
@@ -119644,7 +119670,9 @@
                                   "failed_turn",
                                   "session_finalize",
                                   "wake_failed",
-                                  "lead_assigned"
+                                  "lead_assigned",
+                                  "paused_max_rounds",
+                                  "paused_max_messages"
                                 ],
                                 "type": "string"
                               },
@@ -119773,6 +119801,60 @@
                         ]
                       }
                     },
+                    "paused": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "discussion_event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "cap": {
+                            "enum": [
+                              "max_rounds",
+                              "max_messages"
+                            ],
+                            "type": "string"
+                          },
+                          "continues_left": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "continue_state": {
+                            "enum": [
+                              "offered",
+                              "stop_pending",
+                              "none"
+                            ],
+                            "type": "string"
+                          },
+                          "excerpt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "discussion_event_id",
+                          "event_id",
+                          "cap",
+                          "continues_left",
+                          "continue_state",
+                          "excerpt"
+                        ]
+                      }
+                    },
                     "cursor": {
                       "type": "integer",
                       "minimum": 0,
@@ -119800,6 +119882,7 @@
                     "reason",
                     "room",
                     "rows",
+                    "paused",
                     "cursor",
                     "has_more",
                     "next_before_seq"
@@ -120300,6 +120383,27 @@
                           "action",
                           "room_id",
                           "cancel_id"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "continue"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "discussion_event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "discussion_event_id"
                         ]
                       },
                       {
