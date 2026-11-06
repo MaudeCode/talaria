@@ -671,6 +671,7 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
         cron_execution.clear_operator_cancel(execution_home, attempt)
         outcome.update(status="cancelled", success=False, error=stopped.reason)
     except RpcError:
+        outcome["error"] = "cancelled"
         with _store(store_home):
             try:
                 _mark_run(jobs, job_id, False, "cancelled", claim_owner)
@@ -689,7 +690,7 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
         with _RUNNING_LOCK:
             _RUNNING.pop(job_id, None)
         if attempt:
-            cron_execution.close_attempt(execution_home, attempt, bool(outcome.get("success")), outcome.get("error") or "cancelled")
+            cron_execution.close_attempt(execution_home, attempt, bool(outcome.get("success")), outcome.get("error"))
     return outcome
 
 
