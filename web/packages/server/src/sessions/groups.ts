@@ -141,6 +141,7 @@ export class Groups {
     const now = this.deps().nowSeconds()
     return { id: room.room_id, name: redactString(room.name), identity: this.identity(scope, room), revision: room.revision, disbanded: room.disbanded_at !== undefined,
       max_upload_bytes: Math.min(GROUP_ATTACHMENT_BYTES, this.deps().config.maxUploadBytes), attachment_limit: GROUP_ATTACHMENT_LIMIT,
+      routing_modes: (driver?.routing_modes ?? ['everyone', 'lead']).flatMap((mode) => { const parsed = NativeGroupContextSchema.shape.routing.safeParse(mode); return parsed.success ? [parsed.data] : [] }),
       context: context && { ...context, purpose: redactString(context.purpose), notes: redactString(context.notes) }, purpose_limit: GROUP_ROOM_PURPOSE_LIMIT, notes_limit_bytes: GROUP_ROOM_NOTES_BYTES,
       round: rounds.length && driver?.max_rounds != null ? { current: Math.max(...rounds) + 1, max: driver.max_rounds } : null,
       members: room.members.map((member) => {
@@ -219,9 +220,13 @@ export class Groups {
       const notice = (fields: Partial<GroupView['rows'][number]['message']>): GroupView['rows'] => [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
         message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, ...fields } }]
       if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) return notice({ content: redactString(event.payload.error), _notice_kind: 'wake_failed' })
-      if (event.kind === 'room.assignment' && event.actor.kind === 'gateway') {
+      if (['room.assignment', 'room.routed'].includes(event.kind) && event.actor.kind === 'gateway') {
         const name = (id: string | undefined) => { const seat = state.room.members.find((m) => m.member_id === id); return seat && redactString(seat.display_name || seat.profile) }
         const lead = name(event.payload.lead_member_id), assignees = (event.payload.member_ids ?? []).map(name)
+        if (event.kind === 'room.routed') {
+          if (event.payload.everyone !== false || event.payload.fallback !== false || !assignees.length || assignees.some((a) => a === undefined)) return []
+          return notice({ _notice_kind: 'auto_routed', _lead_assignment: { lead: null, assignees: assignees.flatMap((a) => a ?? []) } })
+        }
         // A room's members are fixed, so a name that does not resolve is not this room's assignment.
         if (!lead || !assignees.length || assignees.some((a) => a === undefined)) return []
         const alone = event.payload.fallback === true || (assignees.length === 1 && event.payload.member_ids?.[0] === event.payload.lead_member_id)
@@ -308,6 +313,7 @@ export class Groups {
       if (!identity || identity !== this.identity(scope, current.room)) throw new HttpFailure(409, 'Discussion identity changed')
       const room = this.project(scope, current, caps)
       if ((ROOM_ACTIONS as readonly string[]).includes(operation.action) && !room.actions.includes(operation.action as typeof ROOM_ACTIONS[number])) return { ...result, reason: 'refused' }
+      if (operation.action === 'context' && !room.routing_modes.includes(operation.routing) && operation.routing !== current.context?.routing) return { ...result, reason: 'unsupported' }
       if (operation.action === 'context' && operation.routing === 'lead' && !current.room.members.some((m) => m.member_id === operation.lead_member_id)) throw new HttpFailure(400, 'Ineligible discussion lead')
       // The Agent requires both texts on every save and clients only ever see them masked, so text still equal to its mask is unchanged.
       if (operation.action === 'context' && current.context) {

@@ -217,14 +217,14 @@ export const pausedNotice = { paused_max_rounds: () => m.group_paused_rounds(), 
 export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage }) {
   const kind = row.message._notice_kind
   const paused = kind === 'paused_max_rounds' || kind === 'paused_max_messages' ? pausedNotice[kind]() : null
-  const failed = kind !== 'session_finalize' && kind !== 'lead_assigned' && paused === null
+  const failed = kind !== 'session_finalize' && kind !== 'lead_assigned' && kind !== 'auto_routed' && paused === null
   const assignment = row.message._lead_assignment
   const Icon = failed ? AlertTriangle : Info
   return (
     <div className="msg-row" data-role="notice" data-msg-idx={row.index} data-message-key={row.key}>
       <p role="note" className="flex items-center gap-2 text-[13px] text-muted">
         <Icon size={14} aria-hidden="true" className={cn("shrink-0", failed && "text-warning")} />
-        <span className="min-w-0">{paused ?? (assignment ? assignment.assignees.length ? m.group_lead_assigned({ lead: assignment.lead, members: assignment.assignees.join(', ') }) : m.group_lead_took({ lead: assignment.lead }) : messageText(row.message.content))}</span>
+        <span className="min-w-0">{paused ?? (assignment ? assignment.lead === null ? m.group_auto_routed({ members: assignment.assignees.join(', ') }) : assignment.assignees.length ? m.group_lead_assigned({ lead: assignment.lead, members: assignment.assignees.join(', ') }) : m.group_lead_took({ lead: assignment.lead }) : messageText(row.message.content))}</span>
       </p>
     </div>
   )

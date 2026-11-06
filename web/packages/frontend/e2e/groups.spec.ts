@@ -6,7 +6,7 @@ import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { groupFixture } from '../../server/dist/test/group-fixture.js'
 import { SpaShell } from '../../server/dist/spa.js'
 
-test.use({ serviceWorkers: 'block' })
+test.use({ serviceWorkers: 'block', video: process.env.TALARIA_GROUP_ROUTING_EVIDENCE ? 'on' : 'off' })
 
 test('live discussion activity shows tools, elapsed time, stalled members and the owning round', async ({ page }, info) => {
   const { fixture, server } = await discussionServer()
@@ -302,6 +302,90 @@ test('saves a room\'s settings before the Agent answers and shows who its lead a
     await expect(page.getByRole('button', { name: 'Discussion settings', exact: true })).toHaveCount(0)
     await expect(strip).not.toContainText('Lead')
   } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test.describe('automatic routing', () => {
+  test('renders advertised choices and picks, saving optimistically and rolling back a refusal', async ({ page }, info) => {
+    const { sidecar, fixture, server } = await discussionServer()
+    const native = sidecar.responderFor('gateway.groups')!
+    let hold: PromiseWithResolvers<undefined> | null = null
+    sidecar.respond('gateway.groups', async (params, emit, options) => {
+      if (params.operation.action === 'context' && hold) await hold.promise
+      return native(params, emit, options)
+    })
+    const evidence = process.env.TALARIA_GROUP_ROUTING_EVIDENCE
+    const shot = async (name: string) => { if (evidence) { mkdirSync(evidence, { recursive: true }); await page.screenshot({ path: `${evidence}/${name}-${info.project.name}.png` }) } }
+    const settings = page.getByRole('button', { name: 'Discussion settings', exact: true })
+    const dialog = page.getByRole('dialog', { name: 'Discussion settings' })
+    const automatic = dialog.getByRole('radio', { name: 'Automatic', exact: true })
+    try {
+      fixture.append('message.user', 'Review this proposal')
+      await page.goto(`${server.base}/groups?room=discussion`)
+      await settings.click()
+      await expect(automatic).toHaveCount(0)
+      await shot('before-settings')
+      await page.keyboard.press('Escape')
+      fixture.state.driver_status.routing_modes = ['everyone', 'lead', 'auto']
+      fixture.gateway('room.routed', { member_ids: ['two'], everyone: false, fallback: false })
+      fixture.gateway('room.routed', { member_ids: [], everyone: true, fallback: true })
+      await page.reload()
+      const notices = page.locator('.msg-row[data-role=notice]')
+      await expect(notices).toHaveText(['Picked Reviewer'])
+      await expect(notices.locator('.text-warning')).toHaveCount(0)
+      await shot('picked')
+      const save = hold = Promise.withResolvers<undefined>()
+      await settings.click()
+      await automatic.check()
+      await shot('automatic-settings')
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      // Read the optimistic choice while the native response is still held.
+      await settings.click()
+      await expect(automatic).toBeChecked()
+      await shot('optimistic')
+      await page.keyboard.press('Escape')
+      save.resolve(undefined); hold = null
+      await expect.poll(() => fixture.state.context.routing).toBe('auto')
+      await page.reload()
+      await settings.click()
+      await expect(automatic).toBeChecked()
+      fixture.state.refuseContext = true
+      await dialog.getByRole('radio', { name: 'Everyone', exact: true }).check()
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(page.getByText('The Agent refused this discussion action.', { exact: true })).toBeVisible()
+      await expect(dialog.getByRole('radio', { name: 'Everyone', exact: true })).toBeChecked()
+      await shot('refused-draft')
+      await page.keyboard.press('Escape')
+      await settings.click()
+      await expect(automatic).toBeChecked()
+      await shot('rollback')
+      await page.keyboard.press('Escape')
+      if (info.project.name === 'desktop') {
+        await expect(page.getByText('The Agent refused this discussion action.', { exact: true })).toHaveCount(0)
+        for (const [name, width, height] of [['outer-portrait', 382, 580], ['outer-landscape', 594, 368], ['inner-split', 385, 571], ['inner-portrait', 669, 867], ['inner-landscape', 951, 585]] as const) {
+          await page.setViewportSize({ width, height })
+          await page.mouse.move(0, 0)
+          await page.keyboard.press('Tab')
+          await expect(page.getByRole('tooltip')).toHaveCount(0)
+          await expect(notices).toBeInViewport()
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+          await shot(`room-${name}`)
+          await settings.click()
+          await automatic.scrollIntoViewIfNeeded()
+          await expect(automatic).toBeInViewport()
+          await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeInViewport()
+          await shot(`settings-${name}`)
+          await page.keyboard.press('Escape')
+        }
+      }
+      fixture.state.driver_status.routing_modes = undefined
+      await page.reload()
+      await settings.click()
+      await expect(automatic).toBeChecked()
+      await expect(automatic).toBeDisabled()
+      await shot('desktop-auto-without-modes')
+    } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+  })
 })
 
 test('rolls a refused settings save back to its draft and retries a lost one with its event id', async ({ page }, info) => {

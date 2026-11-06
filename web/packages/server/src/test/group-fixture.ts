@@ -12,7 +12,7 @@ export function groupFixture(sidecar: FakeSidecar) {
     context: { purpose: '', notes: '', routing: 'everyone', lead_member_id: '' },
     /** Agent v0.23.0 `groups.continue`; `lostContinue` loses the response after (`applied`) or before (`dropped`) the grant lands. */
     continueMethod: true, refuseContinue: false, lostContinue: null as 'applied' | 'dropped' | null,
-    driver_status: { running: true, working: false, blocked: false, max_rounds: undefined as number | null | undefined, max_continues: 5 as number | undefined, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string; tool?: string | null; started_at?: number | null; progress_at?: number | null; thread_id?: string | null; round_index?: number | null }[] } }
+    driver_status: { routing_modes: undefined as string[] | undefined, running: true, working: false, blocked: false, max_rounds: undefined as number | null | undefined, max_continues: 5 as number | undefined, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string; tool?: string | null; started_at?: number | null; progress_at?: number | null; thread_id?: string | null; round_index?: number | null }[] } }
   function append(kind: string, text: string, member = members[0]!, eventId?: string) {
     const seq = state.events.length + 1
     const event = { room_id: room.room_id, seq, event_id: eventId ?? `event-${seq}`, kind, authority_epoch: 1,

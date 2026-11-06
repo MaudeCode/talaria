@@ -247,15 +247,15 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
 
 function GroupSettingsDialog({ room, value, onChange, onClose, onSave }: { room: GroupRoom; value: RoomContext | null; onChange: (value: RoomContext) => void; onClose: () => void; onSave: (value: RoomContext) => void }) {
   const notesOverLimit = !!value && new TextEncoder().encode(value.notes.trim()).length > room.notes_limit_bytes
-  const route = (routing: RoomContext['routing'], lead_member_id: string, label: string) => value && <label key={lead_member_id} className="flex min-h-11 items-center gap-2 text-sm"><input type="radio" name="group-routing" checked={value.routing === routing && value.lead_member_id === lead_member_id} onChange={() => onChange({ ...value, routing, lead_member_id })} />{label}</label>
+  const route = (routing: RoomContext['routing'], lead_member_id: string, label: string, disabled = false) => value && <label key={`${routing}:${lead_member_id}`} className="flex min-h-11 items-center gap-2 text-sm"><input type="radio" name="group-routing" disabled={disabled} checked={value.routing === routing && value.lead_member_id === lead_member_id} onChange={() => onChange({ ...value, routing, lead_member_id })} />{label}</label>
   return <Dialog open={value !== null} onOpenChange={(open) => { if (!open) onClose() }} title={m.group_settings()} className="max-h-[90dvh] overflow-y-auto">
     {value && <form className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); if (!notesOverLimit) onSave(value) }}>
       <label className="flex flex-col gap-1 text-sm">{m.group_purpose()}<TextInput value={value.purpose} onChange={(e) => onChange({ ...value, purpose: e.target.value })} maxLength={room.purpose_limit} /></label>
       <label className="flex flex-col gap-1 text-sm">{m.group_notes()}<textarea value={value.notes} rows={5} aria-invalid={notesOverLimit} onChange={(e) => onChange({ ...value, notes: e.target.value })} className="min-h-9 w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-text focus:border-accent" /></label>
       {notesOverLimit && <p role="alert" className="text-xs text-danger">{m.group_notes_too_long({ n: room.notes_limit_bytes })}</p>}
       <fieldset><legend className="mb-2 text-sm">{m.group_routing()}</legend>
-        {route('everyone', '', m.group_routing_everyone())}
-        {room.members.map((member) => route('lead', member.member_id, m.group_routing_lead({ name: member.display_name || member.profile })))}
+        {room.routing_modes.map((mode) => mode === 'lead' ? room.members.map((member) => route(mode, member.member_id, m.group_routing_lead({ name: member.display_name || member.profile }))) : route(mode, '', mode === 'auto' ? m.group_routing_auto() : m.group_routing_everyone()))}
+        {value.routing === 'auto' && !room.routing_modes.includes('auto') && route('auto', '', m.group_routing_auto(), true)}
       </fieldset>
       <div className="sticky -bottom-5 -mb-5 bg-surface pb-5 pt-2"><Button type="submit" disabled={notesOverLimit}>{m.save()}</Button></div>
     </form>}

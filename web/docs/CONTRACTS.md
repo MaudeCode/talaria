@@ -400,7 +400,7 @@ The optimistic row uses that server-issued identity to converge on a streamed
 persisted row, including while the POST response is delayed. Definite refusals
 restore the draft and files immediately, without reconciliation reads.
 
-A room's `context` is its purpose, shared notes and routing (`everyone` or `lead`).
+A room's `context` is its purpose, shared notes and routing (`everyone`, `lead` or `auto`).
 It is null on a gateway without `groups.context` and for a routing this contract
 does not know, so those rooms stay usable and offer no settings to overwrite. The
 `context` action saves one `room.context_set` event per `event_id`. A lost response
@@ -408,7 +408,14 @@ reads the log for that event; a retry reuses the id, and the Agent returns the f
 event rather than writing again. A submitted purpose or note still equal to the
 masked text the server shows keeps its stored value. A `room.assignment` becomes a `lead_assigned` notice
 row whose `_lead_assignment` names the lead and assignees by display name, with no
-assignees when the lead took the message alone. `room.context_set` stays hidden.
+assignees when the lead took the message alone. `room.routed` becomes an
+`auto_routed` notice using the same payload with a null lead and resolved assignees;
+everyone and fallback decisions stay hidden. The server's `routing_modes` comes
+from `driver_status.routing_modes`, retaining known choices in driver order. When
+absent it offers everyone and lead. An existing auto context stays readable even
+without that advertisement; clients show it selected but disabled until supported.
+Saves may preserve that current mode, but cannot select an unadvertised new mode.
+`room.context_set` stays hidden.
 
 A native `message.user` whose user actor id starts with `cron:` or `cron-notice:`
 is a scheduled job's post or failure notice, not the user's message. The server

@@ -7,8 +7,10 @@ const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../.
 it('pins the shared discussion projection for independently delivered clients', () => {
   expect(GroupCatalogSchema.parse(fixture.catalog).profiles.map((p) => p.profile)).toEqual(['default', 'helper'])
   const view = GroupViewSchema.parse(fixture.view)
-  expect(view.rows.map((r) => [r.author, r.scheduled])).toEqual([['', false], ['Writer', false], ['Reviewer', false], ['Nightly', true], ['', false], ['', false]])
-  expect(view.rows.at(-2)?.message).toMatchObject({ _notice_kind: 'lead_assigned', _lead_assignment: { lead: 'Writer', assignees: ['Reviewer'] } })
+  expect(view.rows.map((r) => [r.author, r.scheduled])).toEqual([['', false], ['Writer', false], ['Reviewer', false], ['Nightly', true], ['', false], ['', false], ['', false]])
+  expect(view.rows.at(-3)?.message).toMatchObject({ _notice_kind: 'lead_assigned', _lead_assignment: { lead: 'Writer', assignees: ['Reviewer'] } })
+  expect(view.room?.routing_modes).toEqual(['everyone', 'lead', 'auto'])
+  expect(view.rows.at(-2)?.message).toMatchObject({ _notice_kind: 'auto_routed', _lead_assignment: { lead: null, assignees: ['Reviewer'] } })
   expect(view.room?.context).toMatchObject({ routing: 'lead', lead_member_id: 'one' })
   expect(view.room?.members.map((m) => m.lead)).toEqual([true, false])
   expect(view.rows.at(-1)?.message._notice_kind).toBe('paused_max_rounds')
