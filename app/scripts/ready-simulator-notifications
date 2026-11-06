@@ -9,29 +9,63 @@
 # Usage: scripts/ready-simulator-notifications <simulator-udid>
 
 set -euo pipefail
+zmodload zsh/datetime
 (( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-notifications <simulator-udid>"; exit 64; }
 simulator_id=$1
+readonly client_budget=5
+print -u2 "Notification bootstrap start (elapsed ${SECONDS}s)."
 xcrun simctl bootstatus "$simulator_id" -b >/dev/null
+print -u2 "Notification bootstrap finished (elapsed ${SECONDS}s)."
 
-payload=$(mktemp -t talaria-notification-probe)
-probe_pid=""
-trap '[[ -z "$probe_pid" ]] || kill "$probe_pid" 2>/dev/null || true; rm -f "$payload"' EXIT
+payload=$(mktemp "${TMPDIR:-/tmp}/talaria-notification-probe.XXXXXX")
+command_pid=""
+cleanup() {
+    local exit_status=$?
+    set +e
+    if [[ -n "$command_pid" ]]; then
+        kill -KILL "$command_pid" 2>/dev/null
+        wait "$command_pid" 2>/dev/null
+    fi
+    rm -f "$payload"
+    return "$exit_status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 print -r -- '{"aps":{"alert":"probe"}}' > "$payload"
 
-# True once the probe returns within 5 seconds; an answering service takes well under one.
-notification_service_answers() {
-    xcrun simctl push "$simulator_id" dev.kil.talaria.notification-probe "$payload" >/dev/null 2>&1 &
-    probe_pid=$!
-    for _ in {1..10}; do
-        if ! kill -0 "$probe_pid" 2>/dev/null; then
-            probe_pid=""
-            return 0
-        fi
-        sleep 0.5
+# A hung simctl restart must not prevent the next probe; both clients own the same bounded lifecycle.
+client_finishes_within_budget() {
+    local label=$1 started=$SECONDS deadline=$(( EPOCHREALTIME + client_budget )) command_status=0
+    shift
+    print -u2 "$label start (elapsed ${SECONDS}s)."
+    "$@" >/dev/null 2>&1 &
+    command_pid=$!
+    while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline - 0.1 )); do
+        sleep 0.1
     done
-    kill "$probe_pid" 2>/dev/null || true
-    probe_pid=""
-    return 1
+    if kill -0 "$command_pid" 2>/dev/null; then
+        kill "$command_pid" 2>/dev/null || true
+        while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline )); do
+            sleep 0.01
+        done
+        kill -KILL "$command_pid" 2>/dev/null || true
+        wait "$command_pid" 2>/dev/null || true
+        command_pid=""
+        print -u2 "$label timed out after $(( SECONDS - started ))s."
+        return 1
+    fi
+    wait "$command_pid" 2>/dev/null || command_status=$?
+    command_pid=""
+    print -u2 "$label finished after $(( SECONDS - started ))s (status $command_status)."
+    return 0
+}
+
+# Any fast response, including unauthorized for this uninstalled bundle, proves the service answered.
+notification_service_answers() {
+    client_finishes_within_budget "Notification probe" \
+        xcrun simctl push "$simulator_id" dev.kil.talaria.notification-probe "$payload"
 }
 
 # A relaunched dasd can hang the same way, but each kill fails the call SpringBoard is waiting on,
@@ -39,7 +73,9 @@ notification_service_answers() {
 for attempt in {1..30}; do
     notification_service_answers && exit 0
     print -u2 "The simulator's notification service did not answer; restarting its dasd (attempt $attempt)."
-    xcrun simctl spawn "$simulator_id" launchctl kill SIGKILL user/foreground/com.apple.dasd 2>/dev/null || true
+    client_finishes_within_budget "Dasd restart client" \
+        xcrun simctl spawn "$simulator_id" launchctl kill SIGKILL user/foreground/com.apple.dasd ||
+        print -u2 "The simulator's restart client did not finish within ${client_budget}s; probing again."
 done
 notification_service_answers && exit 0
 print -u2 "The notification service of simulator $simulator_id never answered."
