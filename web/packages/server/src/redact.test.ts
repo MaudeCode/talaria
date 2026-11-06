@@ -1,7 +1,7 @@
 import { crc32 } from 'node:zlib'
 import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it } from 'vitest'
-import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { applyRedactionPolicy, mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { toolEditDiff } from './sessions/tool-display.js'
@@ -9,6 +9,17 @@ import { bootTestServer } from './test/harness.js'
 import { FakeSidecar } from './sidecar/fake.js'
 
 describe('plugin redaction policy', () => {
+  it.each([
+    { pattern: String.raw`anchored_[a-z0-9]{10,}\Z`, prefix: 'anchored_', text: 'anchored_0123456789abcdef', expected: 'anchor...cdef' },
+    { pattern: String.raw`unicodeword_\w{10,}`, prefix: 'unicodeword_', text: 'unicodeword_' + 'α'.repeat(16), expected: 'unicod...αααα' },
+    { pattern: String.raw`unicodedigit_\d{10,}`, prefix: 'unicodedigit_', text: 'unicodedigit_' + '١'.repeat(16), expected: 'unicod...١١١١' },
+    { pattern: 'wildcard_.{10,}', prefix: 'wildcard_', text: 'wildcard_' + 'a'.repeat(8) + '\u2028' + 'b'.repeat(8), expected: 'wildca...bbbb' },
+  ])('preserves Python credential coverage for $pattern', ({ pattern, prefix, text, expected }) => {
+    applyRedactionPolicy({ fingerprint: pattern, patterns: [{ pattern, literal_prefix: prefix }] })
+    expect(redactText(text, true)).toBe(expected)
+    expect(sanitizeShareMessage({ role: 'assistant', content: text }, [], [], '/nonexistent-home')?.content).toBe(expected)
+  })
+
   it('refreshes cached titles, messages, tool results, live tool frames and public shares at startup', async () => {
     const secret = 'acme_0123456789abcdef'
     const text = `value ${secret} here`

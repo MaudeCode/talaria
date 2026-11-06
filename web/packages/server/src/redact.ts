@@ -1733,17 +1733,37 @@ function secretTokenCounts(text: string): Map<string, number> {
 const pluginPatterns = new Map<string, { prefix: string; regex: RegExp }>()
 let policyFingerprint = ''
 
+function compilePluginPattern(pattern: string, prefix: string): RegExp {
+  try {
+    let source = ''
+    let characterClass = false
+    for (let i = 0; i < pattern.length; i += 1) {
+      const char = pattern[i]!
+      if (char === '\\') {
+        const escaped = pattern[++i]
+        // Python's Unicode classes, boundaries, anchors and numeric escapes have different JS semantics.
+        if (!escaped || !String.raw`nrtfvx\.^$*+?{}[]()|-`.includes(escaped)) throw new SyntaxError('Unsupported Python regex escape')
+        source += `\\${escaped}`
+      } else {
+        if (char === '[') characterClass = true
+        else if (char === ']') characterClass = false
+        // Python's dot excludes LF only; JS also excludes CR and the Unicode line/paragraph separators.
+        source += char === '.' && !characterClass ? '[^\\n]' : char
+      }
+    }
+    // Unicode mode refuses identity escapes that otherwise silently turn Python anchors into literal letters.
+    return new RegExp(source, 'gu')
+  } catch {
+    const literal = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`${literal}\\S*`, 'gu')
+  }
+}
+
 export function applyRedactionPolicy(policy: RedactionPolicy): void {
   if (policy.fingerprint === policyFingerprint) return
   for (const { pattern, literal_prefix } of policy.patterns) {
     if (pluginPatterns.has(pattern)) continue
-    let regex: RegExp
-    try { regex = new RegExp(pattern, 'g') } catch {
-      // Python-only syntax still protects every non-whitespace run starting with the admitted literal prefix.
-      const prefix = literal_prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      regex = new RegExp(`${prefix}\\S*`, 'g')
-    }
-    pluginPatterns.set(pattern, { prefix: literal_prefix, regex })
+    pluginPatterns.set(pattern, { prefix: literal_prefix, regex: compilePluginPattern(pattern, literal_prefix) })
   }
   policyFingerprint = policy.fingerprint
   cache.clear()

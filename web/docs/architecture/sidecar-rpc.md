@@ -12,8 +12,10 @@ affected result, error, or frame. Concurrent policy reads do not consume pushes.
 The server applies the additive union synchronously in its shared redactor and
 invalidates its text memo on policy changes. Retaining learned rules across
 reconnects also prevents an older concurrent snapshot from weakening a push.
-Python-only expressions that JavaScript rejects mask the non-whitespace run
-starting at their literal prefix. No per-string RPC or Agent change is needed.
+Patterns compile only with portable Python/JavaScript escapes in Unicode mode;
+Python dot matching is translated to exclude LF only. Python-only syntax and
+semantics (including Unicode shorthand classes and absolute anchors) mask the
+non-whitespace run starting at their literal prefix. No per-string RPC or Agent change is needed.
 
 RPC v67 lets the sidecar call the server (TAL-1164). It writes a request in the
 `server.*` namespace on stdout with a string id `s:<n>`, and the server answers on
