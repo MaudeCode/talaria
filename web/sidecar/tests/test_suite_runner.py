@@ -230,6 +230,22 @@ def test_shards_split_cases_so_each_runs_exactly_once(project):
     assert sorted(ran) == sorted(suites[0]) and len(ran) == 8
 
 
+def test_recorded_durations_change_the_shard_split(project):
+    # Collection order alone puts both slow cases in one shard, which then sets the release's job time (TAL-1938).
+    (project / 'tests/test_cases.py').write_text(
+        "def test_slow_1(): pass\ndef test_quick_1(): pass\ndef test_slow_2(): pass\ndef test_quick_2(): pass\n")
+    def first_shard():
+        report = project / 'shard.xml'
+        result = run(project, 2, '--shard=1/2', f'--junitxml={report}')
+        assert result.returncode == 0, result.stdout + result.stderr
+        return sorted(case.get('name') for case in ET.parse(report).iter('testcase'))
+    assert first_shard() == ['test_slow_1', 'test_slow_2']
+    (project / 'tests/case_durations.json').write_text(json.dumps({
+        'tests/test_cases.py::test_slow_1': 5.0, 'tests/test_cases.py::test_slow_2': 5.0,
+        'tests/test_cases.py::test_quick_1': 0.1, 'tests/test_cases.py::test_quick_2': 0.1}))
+    assert first_shard() == ['test_quick_1', 'test_slow_1']
+
+
 @pytest.mark.parametrize("arguments,message", [(('--shard=0/3',), 'shard must be N/M'), (('--shard=4/3',), 'shard must be N/M'),
                                                (('--shard=1/3', '-k', 'one'), 'takes no other selection'),
                                                (('--shard=3/3',), 'selected no cases')],

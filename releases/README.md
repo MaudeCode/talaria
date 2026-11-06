@@ -124,8 +124,9 @@ which cannot shard, so each release then runs whole in one job and `agent`
 requires its one passing receipt. Each job provisions its release,
 runs the Agent probe, verifies the release image beside the tests, and runs
 its shard's cases with the runner's whole worker budget (`--release --shard`).
-The suite runner deals each layer's cases round-robin in collection order, so
-a slow module's cases spread over the shards. Each job writes its gate receipt
+The suite runner deals each layer's cases by their recorded duration
+(`web/sidecar/tests/case_durations.json`), so a release's shards take about the
+same time. Each job writes its gate receipt
 through `cli.py gate` and its compatibility receipt, with the cases it ran and
 the digest of the suite they were dealt from, and uploads both. `agent`
 gathers this run's receipts (`artifacts.py gather`; a rerun keeps the shards

@@ -97,12 +97,15 @@ sidecar/scripts/test.sh --layer=fast tests/test_agent_services.py -k worker
 sidecar/scripts/test.sh --layer=process tests/test_suite_runner.py
 ```
 
-The runner balances workers by `sidecar/tests/case_durations.json`, the recorded
-seconds per case for each test function; an unrecorded case weighs its layer's
-median. Every layer's groups share one pool of at most `TALARIA_SIDECAR_WORKERS`
-processes, longest estimate first, and each worker runs exactly its listed cases.
-Refresh the record from a full active-pin run's merged report, such as the CI
-`agent-compatibility-<release>` artifact's `<release>.junit.xml`:
+The runner balances `--shard` sets and workers by
+`sidecar/tests/case_durations.json`, the recorded seconds per case for each test
+function; an unrecorded case weighs its layer's median. Every layer's groups share
+one pool of at most `TALARIA_SIDECAR_WORKERS` processes, longest estimate first,
+and each worker runs exactly its listed cases.
+Refresh the record from a full active-pin run's merged report: the `testsuite`
+elements of every CI `agent-compatibility-<release>-shard-<n>` artifact's
+`<release>.shard-<n>.junit.xml` under one `testsuites` root. Pick a run whose shard
+jobs took about the same time to build: a faster runner records its cases as cheaper.
 
 ```bash
 python3 sidecar/scripts/suite_runner.py --record-durations path/to/merged.junit.xml

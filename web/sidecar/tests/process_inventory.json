@@ -2476,6 +2476,13 @@
         "[abc]"
       ]
     },
+    "tests/test_suite_runner.py::test_recorded_durations_change_the_shard_split": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_suite_runner.py::test_shards_split_cases_so_each_runs_exactly_once": {
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
