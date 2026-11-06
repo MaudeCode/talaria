@@ -328,7 +328,7 @@ function LoadedContextDetail({ sessionId, identity }: { sessionId: string; ident
   const sources = { provider_usage: m.context_source_provider, local_estimate: m.context_source_local, provider_usage_plus_estimate: m.context_source_mixed }
   const statuses = { loaded: m.context_file_loaded, truncated: m.context_file_truncated, flagged: m.context_file_flagged, shadowed: m.context_file_shadowed, blocked: m.context_file_blocked, empty: m.context_file_empty, unreadable: m.context_file_unreadable, suppressed: m.context_file_suppressed, unknown: m.context_unknown }
   return <div className="mt-2 flex min-w-0 flex-col gap-2 border-t border-border pt-2" data-context-detail>
-    <span className="text-muted">{detail.source ? sources[detail.source]() : m.context_unknown()}</span>
+    {detail.source && <span className="text-muted">{sources[detail.source]()}</span>}
     {detail.used_tokens != null && detail.window_tokens != null && <span className="tabular-nums">{m.context_detail_occupancy({ used: detail.used_tokens.toLocaleString(), total: detail.window_tokens.toLocaleString() })}</span>}
     <span className="font-medium">{m.context_category_estimates()}</span>
     <dl className="flex flex-col gap-1">

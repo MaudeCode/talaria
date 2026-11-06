@@ -40,6 +40,13 @@ describe('context details in the existing inspector', () => {
     expect(await screen.findByText('AGENTS.md')).toBeVisible()
   })
 
+  it('shows categories without a provenance line when the read has no occupancy source', async () => {
+    vi.mocked(fetchContextDetail).mockResolvedValue({ ...detail, source: null, estimated: null, used_tokens: null, window_tokens: null, files: [], last_turn_output_tokens: null })
+    render(<ContextRow {...props} detailKey="stored-read" />, { wrapper: wrapper() })
+    expect(await screen.findByText('Estimated tokens by category')).toBeVisible()
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+  })
+
   it('drops delayed details on context identity changes and never reuses a prior result', async () => {
     let resolve!: (value: ContextDetail) => void
     vi.mocked(fetchContextDetail).mockReturnValueOnce(new Promise((done) => { resolve = done })).mockResolvedValue(unavailableContextDetail('not_built'))
