@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { expect, test } from './fixtures'
 import { bootTestServer } from '../../server/dist/test/harness.js'
+import type { Page } from '@playwright/test'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { groupFixture } from '../../server/dist/test/group-fixture.js'
 import { SpaShell } from '../../server/dist/spa.js'
@@ -193,6 +194,112 @@ test('shows a stalled room\'s wake failure and retries it optimistically, restor
     await expect.poll(() => fixture.state.driver_status.pending_actions).toEqual([])
     await expect(retry).toHaveCount(0)
   } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+const settingsWrites = (sidecar: FakeSidecar) => sidecar.calls.flatMap((c) => { const operation = (c.params as { operation?: { action: string; event_id?: string } }).operation; return c.method === 'gateway.groups' && operation?.action === 'context' ? [operation.event_id] : [] })
+const fillSettings = async (page: Page, purpose: string, routing: string) => {
+  await page.getByRole('button', { name: 'Discussion settings', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Discussion settings' })
+  await dialog.getByRole('textbox', { name: 'Purpose', exact: true }).fill(purpose)
+  await dialog.getByRole('radio', { name: routing, exact: true }).check()
+  return dialog
+}
+
+test('saves a room\'s settings before the Agent answers and shows who its lead assigned', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')!
+  let hold: PromiseWithResolvers<undefined> | null = null
+  sidecar.respond('gateway.groups', async (params, emit, options) => {
+    if (params.operation.action === 'context' && hold) await hold.promise
+    return native(params, emit, options)
+  })
+  const shot = async (name: string) => { if (process.env.TALARIA_GROUP_EVIDENCE) { mkdirSync(process.env.TALARIA_GROUP_EVIDENCE, { recursive: true }); await page.screenshot({ path: `${process.env.TALARIA_GROUP_EVIDENCE}/${name}-${info.project.name}.png` }) } }
+  try {
+    fixture.append('message.user', 'Who should take this?')
+    fixture.state.context = { purpose: '', notes: '', routing: 'lead', lead_member_id: 'one' }
+    fixture.assignment('one', ['two'])
+    fixture.assignment('one', ['one'], true)
+    await page.goto(`${server.base}/groups?room=discussion`)
+    const notices = page.locator('.msg-row[data-role=notice]')
+    await expect(notices).toHaveText(['Writer gave this to Reviewer', 'Writer took this'])
+    await expect(notices.locator('.text-warning')).toHaveCount(0)
+    const strip = page.getByRole('list', { name: 'Members' })
+    await expect(strip.getByRole('listitem').first()).toContainText('Writer · Lead')
+    await shot('lead-assigned')
+
+    const save = hold = Promise.withResolvers<undefined>()
+    const dialog = await fillSettings(page, 'Ship the design review', 'Reviewer assigns each message')
+    await dialog.getByRole('textbox', { name: 'Shared notes', exact: true }).fill('é'.repeat(2049))
+    await expect(dialog.getByRole('alert')).toHaveText('Shared notes must fit in 4096 bytes.')
+    await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+    await dialog.getByRole('textbox', { name: 'Shared notes', exact: true }).fill('Decisions live in the shared doc.')
+    await expect(dialog.getByRole('alert')).toHaveCount(0)
+    await shot('settings')
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(strip.getByRole('listitem').last()).toContainText('Reviewer · Lead')
+    await expect(strip.getByRole('listitem').first()).not.toContainText('Lead')
+    save.resolve(undefined); hold = null
+    await expect.poll(() => fixture.state.context).toEqual({ purpose: 'Ship the design review', notes: 'Decisions live in the shared doc.', routing: 'lead', lead_member_id: 'two' })
+    await page.reload()
+    await expect(strip.getByRole('listitem').last()).toContainText('Reviewer · Lead')
+    await page.getByRole('button', { name: 'Discussion settings', exact: true }).click()
+    await expect(dialog.getByRole('textbox', { name: 'Purpose', exact: true })).toHaveValue('Ship the design review')
+    await expect(dialog.getByRole('radio', { name: 'Reviewer assigns each message', exact: true })).toBeChecked()
+    await page.keyboard.press('Escape')
+
+    fixture.state.contextOffered = false
+    await page.reload()
+    await expect(page.getByText('Who should take this?', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Discussion settings', exact: true })).toHaveCount(0)
+    await expect(strip).not.toContainText('Lead')
+  } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test('rolls a refused settings save back to its draft and retries a lost one with its event id', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    // The open dialog hides the page from role queries, and the rollback is asserted behind it.
+    const strip = page.locator('[aria-label="Members"]')
+    await expect(strip).toContainText('Writer')
+    await expect(strip).not.toContainText('Lead')
+
+    fixture.state.refuseContext = true
+    const dialog = await fillSettings(page, 'Refused purpose', 'Writer assigns each message')
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByText('The Agent refused this discussion action.', { exact: true })).toBeVisible()
+    await expect(dialog.getByRole('textbox', { name: 'Purpose', exact: true })).toHaveValue('Refused purpose')
+    await expect(dialog.getByRole('radio', { name: 'Writer assigns each message', exact: true })).toBeChecked()
+    await expect(strip).not.toContainText('Lead')
+    expect(fixture.state.context.purpose).toBe('')
+    fixture.state.refuseContext = false
+
+    fixture.state.lostContext = 'before'
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    const unknown = page.locator('[data-notice=context-unknown]')
+    await expect(unknown).toContainText('This save could not be confirmed.')
+    await expect(dialog).toHaveCount(0)
+    await expect(strip).toContainText('Writer · Lead')
+    if (process.env.TALARIA_GROUP_EVIDENCE) { mkdirSync(process.env.TALARIA_GROUP_EVIDENCE, { recursive: true }); await page.screenshot({ path: `${process.env.TALARIA_GROUP_EVIDENCE}/unknown-${info.project.name}.png` }) }
+    fixture.state.lostContext = null
+    await unknown.getByRole('button', { name: 'Retry', exact: true }).click()
+    await expect(unknown).toHaveCount(0)
+    await expect.poll(() => fixture.state.context.purpose).toBe('Refused purpose')
+    expect(fixture.state.events.filter((e) => e.kind === 'room.context_set')).toHaveLength(1)
+    const [refused, lost, retried] = settingsWrites(sidecar)
+    expect(settingsWrites(sidecar)).toHaveLength(3)
+    expect(retried).toBe(lost)
+    expect(refused).not.toBe(lost)
+
+    fixture.state.lostContext = 'before'
+    await (await fillSettings(page, 'Lost then committed', 'Everyone')).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(unknown).toBeVisible()
+    await expect(strip).not.toContainText('Lead')
+    fixture.state.lostContext = null
+    fixture.state.context = { purpose: 'Lost then committed', notes: '', routing: 'everyone', lead_member_id: '' }
+    await expect(unknown).toHaveCount(0)
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 
 for (const refusal of ['receipt', 'http'] as const) test(`restores a ${refusal}-refused send when reconciliation reads fail`, async ({ page, errors }) => {

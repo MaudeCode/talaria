@@ -7387,9 +7387,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -12172,9 +12191,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -15858,9 +15896,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -22119,9 +22176,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -27868,9 +27944,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -34255,9 +34350,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -37890,9 +38004,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -41587,9 +41720,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -45282,9 +45434,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -59397,9 +59568,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -63080,9 +63270,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -67323,9 +67532,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -71396,9 +71624,28 @@
                                     "enum": [
                                       "failed_turn",
                                       "session_finalize",
-                                      "wake_failed"
+                                      "wake_failed",
+                                      "lead_assigned"
                                     ],
                                     "type": "string"
+                                  },
+                                  "_lead_assignment": {
+                                    "type": "object",
+                                    "properties": {
+                                      "lead": {
+                                        "type": "string"
+                                      },
+                                      "assignees": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "lead",
+                                      "assignees"
+                                    ]
                                   },
                                   "_delivery": {
                                     "type": "object",
@@ -113635,6 +113882,9 @@
                                       "execution_generation"
                                     ]
                                   }
+                                },
+                                "lead": {
+                                  "type": "boolean"
                                 }
                               },
                               "required": [
@@ -113642,7 +113892,8 @@
                                 "profile",
                                 "handle",
                                 "phase",
-                                "actions"
+                                "actions",
+                                "lead"
                               ]
                             }
                           },
@@ -113653,10 +113904,57 @@
                                 "send",
                                 "rename",
                                 "disband",
-                                "stop"
+                                "stop",
+                                "context"
                               ],
                               "type": "string"
                             }
+                          },
+                          "context": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "purpose": {
+                                    "type": "string"
+                                  },
+                                  "notes": {
+                                    "type": "string"
+                                  },
+                                  "routing": {
+                                    "enum": [
+                                      "everyone",
+                                      "lead"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "lead_member_id": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "purpose",
+                                  "notes",
+                                  "routing",
+                                  "lead_member_id"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "purpose_limit": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "notes_limit_bytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
                           },
                           "retry_task": {
                             "anyOf": [
@@ -113700,6 +113998,9 @@
                           "attachment_limit",
                           "members",
                           "actions",
+                          "context",
+                          "purpose_limit",
+                          "notes_limit_bytes",
                           "retry_task"
                         ]
                       }
@@ -113928,6 +114229,9 @@
                                         "execution_generation"
                                       ]
                                     }
+                                  },
+                                  "lead": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [
@@ -113935,7 +114239,8 @@
                                   "profile",
                                   "handle",
                                   "phase",
-                                  "actions"
+                                  "actions",
+                                  "lead"
                                 ]
                               }
                             },
@@ -113946,10 +114251,57 @@
                                   "send",
                                   "rename",
                                   "disband",
-                                  "stop"
+                                  "stop",
+                                  "context"
                                 ],
                                 "type": "string"
                               }
+                            },
+                            "context": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "purpose": {
+                                      "type": "string"
+                                    },
+                                    "notes": {
+                                      "type": "string"
+                                    },
+                                    "routing": {
+                                      "enum": [
+                                        "everyone",
+                                        "lead"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "lead_member_id": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "purpose",
+                                    "notes",
+                                    "routing",
+                                    "lead_member_id"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "purpose_limit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "notes_limit_bytes": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
                             },
                             "retry_task": {
                               "anyOf": [
@@ -113993,6 +114345,9 @@
                             "attachment_limit",
                             "members",
                             "actions",
+                            "context",
+                            "purpose_limit",
+                            "notes_limit_bytes",
                             "retry_task"
                           ]
                         },
@@ -115464,9 +115819,28 @@
                                 "enum": [
                                   "failed_turn",
                                   "session_finalize",
-                                  "wake_failed"
+                                  "wake_failed",
+                                  "lead_assigned"
                                 ],
                                 "type": "string"
+                              },
+                              "_lead_assignment": {
+                                "type": "object",
+                                "properties": {
+                                  "lead": {
+                                    "type": "string"
+                                  },
+                                  "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "lead",
+                                  "assignees"
+                                ]
                               },
                               "_delivery": {
                                 "type": "object",
@@ -115940,6 +116314,47 @@
                           "room_id",
                           "event_id",
                           "name"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "context"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "purpose": {
+                            "type": "string"
+                          },
+                          "notes": {
+                            "type": "string"
+                          },
+                          "routing": {
+                            "enum": [
+                              "everyone",
+                              "lead"
+                            ],
+                            "type": "string"
+                          },
+                          "lead_member_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "event_id",
+                          "purpose",
+                          "notes",
+                          "routing"
                         ]
                       },
                       {

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Give a Group Chat a purpose and shared notes from Talaria Web, choose whether everyone answers or a lead assigns each message, and see who the lead picked in the transcript.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

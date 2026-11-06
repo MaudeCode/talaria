@@ -169,6 +169,33 @@ def probe(home, peer):
             assert time.monotonic() < deadline, log
             time.sleep(.1)
         call("disband", room_id="partial-room", cancel_id="partial-disband")
+
+        if "groups.context" in caps["methods"]:
+            peer.mode = "plain"
+            call("create", room_id="lead-room", name="Lead", members=members)
+            settings = dict(room_id="lead-room", event_id="lead-save", purpose="  Ship   it ", notes=" Shared ",
+                            routing="lead", lead_member_id="helper")
+            saved = call("context", **settings)
+            assert saved["context"] == {"purpose": "Ship it", "notes": "Shared", "routing": "lead", "lead_member_id": "helper"}, saved
+            assert saved["event"]["kind"] == "room.context_set" and saved["event"]["event_id"] == "lead-save", saved
+            assert call("context", **settings)["event"]["seq"] == saved["event"]["seq"]
+            assert call("state", room_id="lead-room")["context"] == saved["context"]
+            cleared = call("context", room_id="lead-room", event_id="lead-clear", purpose="", notes="", routing="everyone")
+            assert cleared["event"]["payload"]["lead_member_id"] == "", cleared
+            call("context", **{**settings, "event_id": "lead-again"})
+            call("send", room_id="lead-room", event_id="lead-send", payload={"text": "GROUP_LEAD"})
+            deadline = time.monotonic() + 40
+            while True:
+                log = call("log", room_id="lead-room", since_seq=0, limit=100)
+                assigned = [e for e in log["events"] if e["kind"] == "room.assignment"]
+                # The fixture model answers without an assignment, so the gateway falls back to the lead alone.
+                if assigned and any(e["kind"] == "message.member" for e in log["events"]):
+                    break
+                assert time.monotonic() < deadline, log
+                time.sleep(.1)
+            assert assigned[0]["actor"]["kind"] == "gateway", assigned
+            assert assigned[0]["payload"]["lead_member_id"] == "helper" and assigned[0]["payload"]["member_ids"] == ["helper"] and assigned[0]["payload"]["fallback"] is True, assigned
+            call("disband", room_id="lead-room", cancel_id="lead-disband")
     finally:
         sidecar.close()
 

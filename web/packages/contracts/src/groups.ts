@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import { MessageSchema } from './views.js'
-import { GroupIdSchema, GroupMemberSchema, GroupTaskActionSchema, GroupTaskFenceSchema, GroupAttachmentSchema } from './groups-native.js'
+import { GroupIdSchema, GroupMemberSchema, GroupTaskActionSchema, GroupTaskFenceSchema, GroupAttachmentSchema, NativeGroupContextSchema } from './groups-native.js'
 export * from './groups-native.js'
 const Id = GroupIdSchema
 
-export const GroupRoomSchema = z.object({ id: Id, name: z.string(), identity: z.string(), revision: z.number().int(), disbanded: z.boolean(), max_upload_bytes: z.number().int().positive(), attachment_limit: z.number().int().positive(), members: z.array(GroupMemberSchema.extend({ phase: z.enum(['idle', 'queued', 'running', 'stopping', 'unknown', 'failed', 'approval']), actions: z.array(GroupTaskActionSchema) })), actions: z.array(z.enum(['send', 'rename', 'disband', 'stop'])),
+export const GroupRoomSchema = z.object({ id: Id, name: z.string(), identity: z.string(), revision: z.number().int(), disbanded: z.boolean(), max_upload_bytes: z.number().int().positive(), attachment_limit: z.number().int().positive(), members: z.array(GroupMemberSchema.extend({ phase: z.enum(['idle', 'queued', 'running', 'stopping', 'unknown', 'failed', 'approval']), actions: z.array(GroupTaskActionSchema),
+    /** The member routing this room's messages; true for exactly one member of a lead room. */
+    lead: z.boolean() })), actions: z.array(z.enum(['send', 'rename', 'disband', 'stop', 'context'])),
+  /** The room's purpose, shared notes and routing; null when the gateway offers none, on catalog rows, and for a routing this contract does not know. */
+  context: NativeGroupContextSchema.nullable(), purpose_limit: z.number().int().positive(), notes_limit_bytes: z.number().int().positive(),
   /** The room's own Retry after the Agent stopped waking its members; null when none is offered. Send it back unchanged as a `retry` operation. */
   retry_task: GroupTaskFenceSchema.nullable() })
 export const GroupRowSchema = z.object({ key: z.string(), index: z.number().int(), author: z.string(),
