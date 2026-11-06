@@ -77,6 +77,8 @@ SCRIPTS = {
     "main-ci-failure.py": {"tooling"},
     "test-main-ci-failure.py": {"tooling"},
     "test-ci-concurrency.py": {"tooling"},
+    "install-git-hooks": {"tooling"},
+    "test-pre-push-hook.py": {"tooling"},
 }
 
 
@@ -132,7 +134,7 @@ def path_suites(path):
         return WORKFLOWS["app-tests.yml"]  # The package tests' steps, called only from app-tests.yml.
     if path == ".github/actions/setup-xcode/action.yml":
         return {"app", "tooling"}  # Xcode selection for the App build and tests.
-    if path.startswith((".github/actions/", "releases/")) or path in (
+    if path.startswith((".github/actions/", ".githooks/", "releases/")) or path in (
             ".github/actionlint.yaml", ".github/dependabot.yml", ".github/CODEOWNERS",
             ".agy/config.json", ".codex/environments/environment.toml", ".xcodebuildmcp/config.yaml", ".gitleaksignore"):
         return {"tooling"}

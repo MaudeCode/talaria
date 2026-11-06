@@ -28,6 +28,7 @@ case "$component" in
   docker) exec python3 scripts/check-docker.py "$@" ;;
   tooling)
     python3 scripts/changed-components.py --self-test
+    python3 scripts/test-pre-push-hook.py
     python3 scripts/test-critical-markdown-check.py
     python3 scripts/test-check-committed-images.py
     python3 scripts/check-committed-images.py

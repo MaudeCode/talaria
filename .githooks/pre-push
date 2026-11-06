@@ -1,0 +1,70 @@
+#!/bin/sh
+# Lint and typecheck what a push changes before it costs a CI round trip (TAL-1779). scripts/install-git-hooks enables it.
+# ponytail: the checks read the working tree, so uncommitted edits count; CI on the pushed head still catches that gap.
+
+exec >&2 # Keep `git push --porcelain` output parseable.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+head=$(git rev-parse HEAD) || exit 1
+
+# Git sends one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref.
+pushes_branch=
+while read -r _ local_sha remote_ref _; do
+  case $remote_ref in refs/heads/*) ;; *) continue ;; esac # Tags add no diff to check.
+  case $local_sha in *[!0]*) ;; *) continue ;; esac # All zeros deletes the branch.
+  if [ "$local_sha" != "$head" ]; then
+    echo "pre-push: $remote_ref is not this checkout's HEAD, so its code cannot be checked here. Switch to it and push again."
+    exit 1
+  fi
+  pushes_branch=1
+done
+[ -n "$pushes_branch" ] || exit 0
+
+# The self-test creates its own repositories, which Git's hook environment would redirect to this one.
+# shellcheck disable=SC2046 # One variable name per word.
+unset $(git rev-parse --local-env-vars)
+
+output=$(mktemp) || exit 1
+trap 'rm -f "$output"' EXIT
+
+run_check() {
+  directory=$1
+  shift
+  started=$(date +%s)
+  if (cd "$directory" && "$@") >"$output" 2>&1; then
+    echo "pre-push: $* ok ($(($(date +%s) - started))s)"
+    return
+  fi
+  cat "$output"
+  echo "pre-push: $* failed after $(($(date +%s) - started))s in $directory. Fix it and push again; never use --no-verify."
+  echo "pre-push: a fresh worktree installs dependencies first: see Pre-push hook in AGENTS.md."
+  exit 1
+}
+
+# Anything other than an explicit false runs the check, so a router failure falls back to every check.
+selection=$(python3 scripts/changed-components.py --base=origin/main --head=HEAD --merge-base)
+selected() {
+  ! printf '%s\n' "$selection" | grep -qx "$1=false"
+}
+
+if selected web_server || selected web_frontend; then
+  # Server and frontend resolve the contracts package from its build output.
+  run_check web npm run build -w packages/contracts
+fi
+if selected web_server; then
+  for package in contracts server; do
+    run_check web npm run lint -w "packages/$package"
+    run_check web npm run typecheck -w "packages/$package"
+  done
+fi
+if selected web_frontend; then
+  # The frontend's e2e specs import the server's build output.
+  run_check web npm run build -w packages/server
+  run_check web npm run lint -w packages/frontend
+  run_check web npm run typecheck -w packages/frontend
+fi
+if selected relay; then
+  run_check relay pnpm typecheck
+fi
+if selected tooling; then
+  run_check . python3 scripts/changed-components.py --self-test
+fi

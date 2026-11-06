@@ -66,6 +66,12 @@ credentials isolated. Do not change live services.
 Tests must own synthetic disposable state and never depend on live accounts.
 Do not add third-party dependencies without approval.
 
+Pre-push hook: run `scripts/install-git-hooks` once per clone; linked worktrees
+share it. `.githooks/pre-push` then lints and typechecks the components a push
+changes, and a failure rejects the push. Never bypass it with `--no-verify`; fix
+what it reports. It uses each worktree's installed dependencies: `npm ci` in
+`web/`; `pnpm install --frozen-lockfile` and `npm ci --prefix bridge` in `relay/`.
+
 For validation, route the actual diff with `scripts/changed-components.py`
 (`--merge-base` for a PR, before/after commits for a push). Scope labels do not
 select tests. Changelog-only changes require release-note validation; docs and
