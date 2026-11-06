@@ -174,19 +174,20 @@ async function groupDiscussionFields(ctx: RequestContext, baseline: unknown): Pr
 }
 
 /**
- * Writes both limits, so a save next to a malformed value is the one that loads. A still-unapplied baseline stands, since
- * its gateway has read no save since. Inside the config lock, so overlapping saves agree on it; a refused write leaves a
- * baseline equal to the config, which requires nothing.
+ * Writes both limits, so a save next to a malformed value is the one that loads. A still-unapplied baseline keeps its
+ * limits, since its gateway has read no save since. `saved_at` follows the write, so a gateway starting during it, which
+ * read the old file, never counts as restarted. All of it under the config lock, so overlapping saves agree.
  */
 async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<DiscussionLimits>): Promise<void> {
   const gateways = await rootGateways(ctx)
+  let loaded: DiscussionLimits
   await ctx.deps.agentConfig.update(ctx.deps.profileHome(ROOT_PROFILE), async (config) => {
     const before = discussionLimits(config)
     const prior = (await ctx.deps.settings.readRaw()).group_discussion_restart_baseline
-    if (!isRestartBaseline(prior) || restartedSince(prior, gateways)) await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: before, saved_at: Date.now() } })
+    loaded = isRestartBaseline(prior) && !restartedSince(prior, gateways) ? prior.limits : before
     const rooms = dict(config.hosted_rooms)
     config.hosted_rooms = { ...rooms, discussion: { ...dict(rooms.discussion), ...before, ...patch } }
-  }, { profileFile: true })
+  }, { profileFile: true, afterWrite: async () => { await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: loaded, saved_at: Date.now() } }) } })
 }
 
 /** TAL-1870: a quota read with the sidebar's pins projected over its rows. */

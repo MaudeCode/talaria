@@ -317,6 +317,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       })
     })
 
+    it('stays required for a gateway that started while the save was still writing, since it read the old file', async () => {
+      vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([{ dir: s.state, pid: 10, start_time: 10 }])
+      const write = sidecar.responderFor('config.set')!
+      sidecar.respond('config.set', async (...call) => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        writeFileSync(join(s.state, 'gateway.pid'), '{}')
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return write(...call)
+      })
+      await withRootConfig({}, async () => {
+        try {
+          await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+        } finally {
+          sidecar.respond('config.set', write)
+          rmSync(join(s.state, 'gateway.pid'), { force: true })
+        }
+      })
+    })
+
     it('never takes a client\'s restart baseline, and never shows it', async () => {
       await withRootConfig({}, async () => {
         const forged = { limits: { max_rounds: 99, max_messages: 99 }, saved_at: 1 }

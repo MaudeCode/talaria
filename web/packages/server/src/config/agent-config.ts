@@ -96,8 +96,8 @@ export class AgentConfig {
     return null
   }
 
-  /** Read-modify-write under a per-file lock (homes sharing an `HERMES_CONFIG_PATH` override serialise); `mutate` returns false to skip the write. */
-  async update(profileHome: string, mutate: (config: Config) => unknown, opts: ConfigFileOptions = {}): Promise<Config> {
+  /** Read-modify-write under a per-file lock (homes sharing an `HERMES_CONFIG_PATH` override serialise); `mutate` returns false to skip the write. `afterWrite` runs once the file holds the write, still under the lock. */
+  async update(profileHome: string, mutate: (config: Config) => unknown, opts: ConfigFileOptions & { afterWrite?: () => Promise<void> } = {}): Promise<Config> {
     const file = this.path(profileHome, opts)
     const prev = this.locks.get(file) ?? Promise.resolve()
     const run = prev.catch(() => undefined).then(async () => {
@@ -107,6 +107,7 @@ export class AgentConfig {
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
       await sidecar.call('config.set', { profile_home: profileHome, config_path: file, config })
       this.cache.delete(file)
+      await opts.afterWrite?.()
       return config
     })
     this.locks.set(file, run)
