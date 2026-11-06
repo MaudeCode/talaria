@@ -1,4 +1,8 @@
-"""Two real viewers and an ordinary disposable daemon on a held loopback provider."""
+"""Two real viewers and an ordinary disposable daemon on a held loopback provider.
+
+Usage: gateway_session_peer.py MODE [MODE...]. Several modes run in order on one owner, each on its own sessions; a
+mode in OWN_OWNER needs owner state of its own and runs alone.
+"""
 import asyncio
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -9,11 +13,57 @@ import sys
 import threading
 import time
 
+STARTED = time.monotonic()
 agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
+from peer_phases import POLL_SECONDS, Phases, report_modes
+
+OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart"}
+
+
+def unsupported(mode):
+    """Why this Agent release cannot run a mode, or None. Read from its source: nothing here imports the release yet."""
+    def source(path):
+        return (agent / path).read_text() if (agent / path).exists() else ""
+    if not (agent / "hermes_cli/gateway_client.py").exists():
+        return "this supported Agent does not expose native sessions"
+    if mode == "detail" and "def _publish_subagent" not in source("gateway/local_viewer_events.py"):
+        return "this supported Agent does not forward native subagent lifecycle events"
+    if mode == "restart" and "def attachable(" not in source("hermes_cli/gateway_runtime.py"):
+        return "this supported Agent refuses every client during a restart's after-turn wait"
+    if mode == "model" and not (agent / "gateway/session_deferred_pick.py").exists():
+        return "this supported Agent does not expose deferred native model picks"
+    if mode == "voice-stop" and "voice_stopped" not in source("gateway/session_controls.py"):
+        return "this supported Agent does not consume typed voice stops"
+    # Only releases publishing these verbs can establish their execution semantics.
+    if mode == "queued-controls" and not any("prompt.steer_queued" in p.read_text() for p in (agent / "gateway").rglob("*.py")):
+        return "this supported Agent does not expose queued controls"
+    return None
+
+
+REQUESTED = sys.argv[1:] or ["shared"]
+SKIPPED = {mode: reason for mode in REQUESTED if (reason := unsupported(mode))}
+MODES = [mode for mode in REQUESTED if mode not in SKIPPED]
+if not MODES:  # A release without native sessions has none of the fixtures imported below.
+    report_modes([], SKIPPED)
+    sys.exit(0)
 from agent.context_compressor import SUMMARY_PREFIX
-from local_recovery_probe import Model, child_env, daemon, rpc, websocket
+from local_recovery_probe import Model, child_env, daemon as owner_daemon, rpc, websocket as owner_websocket
+from authority_clarify_peer import ModelPeer as ClarifyPeer
+from authority_controls_peer import ModelPeer as ApprovalPeer
 from conftest import SidecarProcess
+
+PHASES = Phases(STARTED)
+
+
+def daemon(*args, **kwargs):
+    return PHASES.daemon(owner_daemon, *args, **kwargs)
+
+
+def websocket(home, desc):
+    # A native socket nobody reads during a turn passes the default 16-frame limit and pauses its reader; its close
+    # handshake then waits out the 10 s close timeout. The fixture owns this client, so it never pauses (TAL-1780).
+    return owner_websocket(home, desc, max_queue=None)
 
 
 async def probe(home, peer, desc, *, require_gap=False):
@@ -81,7 +131,7 @@ async def probe(home, peer, desc, *, require_gap=False):
                 if final["snapshot"] and not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             native_final = await rpc(native, "session.resume", session_id=sid)
             resumed_again = await rpc(native, "session.resume", session_id=sid)
             assert resumed_again["result"]["subscription_id"] == native_final["result"]["subscription_id"], resumed_again
@@ -102,7 +152,7 @@ async def probe(home, peer, desc, *, require_gap=False):
                 if final["snapshot"] and not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             reactions = final["snapshot"].get("reactions_supported") is True and not require_gap
             if reactions:
                 reaction_row = final["snapshot"]["messages"][-1]["row_id"]
@@ -203,7 +253,7 @@ async def probe_queued_controls(home, peer, desc):
                 if final["snapshot"] and not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             contexts = [body["messages"] for body in peer.requests]
             # Steering reaches the original execution before the edited queued turn starts.
             corrected = next(i for i, rows in enumerate(contexts) if "QUEUE_CORRECTION" in json.dumps(rows))
@@ -309,7 +359,7 @@ async def probe_control(home, peer, desc, kind):
     sidecar = SidecarProcess(home)
     try:
         async with websocket(home, desc) as native:
-            created = await rpc(native, "session.create", request_id="control-create", source="cli",
+            created = await rpc(native, "session.create", request_id=kind + "-create", source="cli",
                                 toolsets=["terminal" if kind == "approval" else "clarify"])
             sid = created["result"]["session_id"]
             submitted = await rpc(native, "prompt.submit", session_id=sid, submission_id="control-input", text="Run fixture control")
@@ -320,7 +370,7 @@ async def probe_control(home, peer, desc, kind):
                 if pending["result"]["prompts"]:
                     break
                 assert time.monotonic() < deadline, pending
-                await asyncio.sleep(.03)
+                await asyncio.sleep(POLL_SECONDS)
             prompt = pending["result"]["prompts"][0]
             await native.close()
         params = {"profile_home": str(home), "session_id": sid}
@@ -335,7 +385,7 @@ async def probe_control(home, peer, desc, kind):
             if not final["snapshot"]["pending"]:
                 break
             assert time.monotonic() < deadline, final
-            await asyncio.sleep(.03)
+            await asyncio.sleep(POLL_SECONDS)
         assert kind.upper() + "_FINISHED" in json.dumps(final["snapshot"]["messages"]), final
         if kind == "approval":
             assert not (home / "owned-removal").exists()
@@ -398,7 +448,7 @@ async def probe_batch(home, peer, desc):
                 if not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             tool = json.dumps([m for messages in peer.requests for m in messages if m["role"] == "tool"])
             assert "green" in tool and "large" in tool, tool
             assert "CLARIFY_FINISHED" in json.dumps(final["snapshot"]["messages"]), final
@@ -444,7 +494,7 @@ async def probe_batch_unavailable(home, peer, desc):
                 if not done["result"]["pending"]:
                     break
                 assert time.monotonic() < deadline, done
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
     finally:
         sidecar.close()
 
@@ -466,7 +516,7 @@ async def probe_restart(home, peer, desc, proc):
                 if pending["result"]["prompts"]:
                     break
                 assert time.monotonic() < deadline, pending
-                await asyncio.sleep(.03)
+                await asyncio.sleep(POLL_SECONDS)
             prompt = pending["result"]["prompts"][0]
         params = {"profile_home": str(home), "session_id": sid}
         # Web's watch was opened before the wait, as the server's is while the turn runs.
@@ -554,9 +604,9 @@ async def probe_profiles(home, peer, desc, proc, env):
             if not result["snapshot"]["pending"]:
                 return result["snapshot"]
             assert time.monotonic() < deadline, result
-            await asyncio.sleep(.03)
+            await asyncio.sleep(POLL_SECONDS)
     try:
-        async with websocket(home, desc) as root_view, connect(url, subprotocols=protocols) as alpha_view:
+        async with websocket(home, desc) as root_view, connect(url, subprotocols=protocols, max_queue=None) as alpha_view:
             created = await rpc(root_view, "session.create", request_id="same-request", source="cli", model="root-model", toolsets=["terminal"])
             root_id = created["result"]["session_id"]
             # Run the primary LOCAL adapter first and keep its turn in flight.
@@ -654,7 +704,7 @@ async def probe_dedicated(home, peer, desc, alpha, alpha_desc):
                     if not result["snapshot"]["pending"]:
                         break
                     assert time.monotonic() < deadline, result
-                    await asyncio.sleep(.03)
+                    await asyncio.sleep(POLL_SECONDS)
                 assert result["snapshot"]["info"]["model"] == name + "-model", result
                 assert "RECOVERY_ACK_" + name.upper() + "_HOME" in json.dumps(result["snapshot"]["messages"])
             count = len(peer.requests)
@@ -762,7 +812,7 @@ def probe_recovery(home, peer, env):
                 if safe["state"] == "attached" and not safe["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, safe
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             assert "RECOVERY_ACK_RECOVER_QUEUED" in json.dumps(safe["snapshot"]["messages"]), safe
             unknown = await asyncio.to_thread(call, "unknown")
             assert unknown["state"] == "attached", unknown
@@ -781,7 +831,7 @@ def probe_recovery(home, peer, env):
                 if not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             assert "RECOVERY_ACK_AFTER_UNKNOWN" in json.dumps(final["snapshot"]["messages"]), final
         finally:
             sidecar.close()
@@ -897,7 +947,7 @@ async def probe_detail(home, peer, desc):
                 if context.get('reason') != 'changed':
                     break
                 assert time.monotonic() < deadline, inspected
-                await asyncio.sleep(.03)
+                await asyncio.sleep(POLL_SECONDS)
             assert context['available'] is True and context['categories'], inspected
             assert context['source'] in {'provider_usage', 'provider_usage_plus_estimate', 'local_estimate'}, context
             assert all(set(row) == {'label', 'characters', 'tokens', 'status', 'loaded'} for row in context['files']), context
@@ -940,41 +990,84 @@ class BatchPeer(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-def main():
-    home = Path(os.environ["HERMES_HOME"])
-    home.mkdir(mode=0o700, exist_ok=True)
-    mode = sys.argv[1] if len(sys.argv) > 1 else "shared"
-    from authority_clarify_peer import ModelPeer as ClarifyPeer
-    from authority_controls_peer import ModelPeer as ApprovalPeer
-    handler = {"detail": DetailModel, "approval": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer, "clarify": ClarifyPeer}.get(mode, Model)
-    if mode == "profiles":
-        class ProfileModel(Model):
-            def do_POST(self):
-                self.server.authorization.append(self.headers.get("Authorization"))
-                super().do_POST()
-        handler = ProfileModel
-    peer = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    peer.authorization = []
-    secondary = None
+class ProfileModel(Model):
+    def do_POST(self):
+        self.server.authorization.append(self.headers.get("Authorization"))
+        super().do_POST()
+
+
+def arm(peer, home, mode):
+    """Give one mode its handler and clean provider state on the provider URL every owner config names."""
+    print("MODE " + mode, flush=True)
+    peer.RequestHandlerClass = {"detail": DetailModel, "approval": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer,
+                                "clarify": ClarifyPeer, "profiles": ProfileModel}.get(mode, Model)
+    peer.requests = []
+    peer.blocked, peer.release = threading.Event(), threading.Event()
     if mode in {"approval", "restart"}:
         import shlex
         target = home / "owned-removal"
         target.mkdir()
         (target / "owned.txt").write_text("disposable")
         peer.command = "rm -r -- " + shlex.quote(str(target))
-    peer.requests = []
+
+
+def run_on_owner(mode, home, peer, desc, proc, env):
+    if mode == "queued-controls":
+        return probe_queued_controls(home, peer, desc)
+    if mode == "detail":
+        return probe_detail(home, peer, desc)
+    if mode == "restart":
+        return probe_restart(home, peer, desc, proc)
+    if mode == "model":
+        return probe_model(home, peer, desc)
+    if mode == "voice-stop":
+        return probe_voice_stop(home, peer, desc)
+    if mode == "profiles":
+        return probe_profiles(home, peer, desc, proc, env)
+    if mode in {"approval", "clarify"}:
+        return probe_control(home, peer, desc, mode)
+    if mode == "batch":
+        return probe_batch(home, peer, desc)
+    return probe(home, peer, desc, require_gap=mode == "replay")
+
+
+def run_alone(mode, home, peer, env, alpha):
+    arm(peer, home, mode)
+    with PHASES.probe(mode):
+        if mode == "dedicated":
+            alpha_env = dict(env, HERMES_HOME=str(alpha), OPENAI_API_KEY="alpha-only")
+            with daemon(agent, home, env, barrier=False) as (_, desc), daemon(agent, alpha, alpha_env, barrier=False) as (_, alpha_desc):
+                asyncio.run(probe_dedicated(home, peer, desc, alpha, alpha_desc))
+        elif mode == "secure":
+            asyncio.run(probe_secure(home))
+        elif mode == "recovery":
+            probe_recovery(home, peer, env)
+        else:
+            with daemon(agent, home, env, barrier=mode == "replay", fixture=str(Path(__file__).with_name("gateway_replay_daemon.py"))) as (proc, desc):
+                asyncio.run(run_on_owner(mode, home, peer, desc, proc, env))
+
+
+def main():
+    home = Path(os.environ["HERMES_HOME"])
+    home.mkdir(mode=0o700, exist_ok=True)
+    alone = MODES[0] if OWN_OWNER & set(REQUESTED) else None
+    assert not alone or REQUESTED == [alone], f"each of these modes needs its own owner: {REQUESTED}"
+    # The server builds each request's handler from RequestHandlerClass, so arm() can swap it between modes.
+    peer = ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    peer.authorization, peer.requests = [], []
     peer.blocked, peer.release = threading.Event(), threading.Event()
+    secondary = alpha = None
     threading.Thread(target=peer.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{peer.server_port}/v1"
-    (home / "config.yaml").write_text(json.dumps({"gateway": {"multiplex_profiles": mode == "profiles"},
+    (home / "config.yaml").write_text(json.dumps({"gateway": {"multiplex_profiles": alone == "profiles"},
         "model": {"provider": "custom", "default": "owner-fixture", "base_url": url},
         "compression": {"in_place": False, "protect_first_n": 0, "protect_last_n": 0, "min_tail_user_messages": 1},
         "auxiliary": {"title_generation": {"enabled": False}}, "approvals": {"mode": "manual", "timeout": 45}, "platform_toolsets": {"cli": []}}))
-    if mode in {"profiles", "dedicated"}:
+    if alone in {"profiles", "dedicated"}:
         alpha = home / "profiles/alpha"
         alpha.mkdir(parents=True)
         alpha_config = json.loads((home / "config.yaml").read_text())
-        if mode == "profiles":
+        if alone == "profiles":
             secondary = ThreadingHTTPServer(("127.0.0.1", 0), ProfileModel)
             secondary.authorization, secondary.requests = [], []
             secondary.blocked, secondary.release = threading.Event(), threading.Event()
@@ -982,7 +1075,7 @@ def main():
             threading.Thread(target=secondary.serve_forever, daemon=True).start()
             peer.secondary = secondary
             alpha_config["model"]["base_url"] = f"http://127.0.0.1:{secondary.server_port}/v1"
-        alpha_config["gateway"] = {"multiplex_profiles": False, "standalone": mode == "dedicated"}
+        alpha_config["gateway"] = {"multiplex_profiles": False, "standalone": alone == "dedicated"}
         (alpha / "config.yaml").write_text(json.dumps(alpha_config))
         alpha_url = alpha_config["model"]["base_url"]
         (alpha / ".env").write_text(f"OPENAI_API_KEY=alpha-only\nOPENAI_BASE_URL={alpha_url}\n")
@@ -990,42 +1083,30 @@ def main():
     env.update(HOME=os.environ["HOME"], HERMES_HOME=str(home), PYTHONPATH=str(agent),
                OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=url, HERMES_STATE_DB_GUARD_BYPASS="1", HERMES_DISABLE_LAZY_INSTALLS="1")
     env.update(PYTEST_CURRENT_TEST="talaria native owner fixture", TIRITH_ENABLED="0", AWS_EC2_METADATA_DISABLED="true")
+    ran, mode = [], None
     try:
-        if mode == "dedicated":
-            alpha_env = dict(env, HERMES_HOME=str(alpha), OPENAI_API_KEY="alpha-only")
-            with daemon(agent, home, env, barrier=False) as (_, desc), daemon(agent, alpha, alpha_env, barrier=False) as (_, alpha_desc):
-                asyncio.run(probe_dedicated(home, peer, desc, alpha, alpha_desc))
-            return
-        if mode == "secure":
-            asyncio.run(probe_secure(home))
-            return
-        if mode == "recovery":
-            probe_recovery(home, peer, env)
-            return
-        with daemon(agent, home, env, barrier=mode == "replay", fixture=str(Path(__file__).with_name("gateway_replay_daemon.py"))) as (proc, desc):
-            if mode == "queued-controls":
-                asyncio.run(probe_queued_controls(home, peer, desc))
-            elif mode == "detail":
-                asyncio.run(probe_detail(home, peer, desc))
-            elif mode == "restart":
-                asyncio.run(probe_restart(home, peer, desc, proc))
-            elif mode == "model":
-                asyncio.run(probe_model(home, peer, desc))
-            elif mode == "voice-stop":
-                asyncio.run(probe_voice_stop(home, peer, desc))
-            elif mode == "profiles":
-                asyncio.run(probe_profiles(home, peer, desc, proc, env))
-            elif mode in {"approval", "clarify"}:
-                asyncio.run(probe_control(home, peer, desc, mode))
-            else:
-                asyncio.run(probe_batch(home, peer, desc) if mode == "batch" else probe(home, peer, desc, require_gap=mode == "replay"))
+        if alone:
+            mode = alone
+            run_alone(mode, home, peer, env, alpha)
+            ran.append(mode)
+        else:
+            with daemon(agent, home, env, barrier=False) as (proc, desc):
+                for mode in MODES:
+                    arm(peer, home, mode)
+                    with PHASES.probe(mode):
+                        asyncio.run(run_on_owner(mode, home, peer, desc, proc, env))
+                    peer.release.set()
+                    ran.append(mode)
+        mode = None
     finally:
+        report_modes(ran, SKIPPED, mode)
         peer.release.set()
         peer.shutdown()
         peer.server_close()
         if secondary is not None:
             secondary.shutdown()
             secondary.server_close()
+        PHASES.report()
 
 
 if __name__ == "__main__":

@@ -27,32 +27,37 @@ def test_stopped_owner_is_an_explicit_refusal_without_starting(tmp_path):
     assert not (home / "gateway.pid").exists()
 
 
-@requires_agent
-@pytest.mark.parametrize("mode", ["shared", "batch", "approval", "clarify", "recovery", "secure", "profiles", "dedicated", "replay", "detail", "restart"])
-def test_real_native_owner_shared_admission_and_detach(tmp_path, mode):
-    if not (AGENT_DIR / "hermes_cli/gateway_client.py").exists():
-        pytest.skip("this supported Agent does not expose native sessions")
-    if mode == "detail" and "def _publish_subagent" not in (AGENT_DIR / "gateway/local_viewer_events.py").read_text():
-        pytest.skip("this supported Agent does not forward native subagent lifecycle events")
-    if mode == "restart" and "def attachable(" not in (AGENT_DIR / "hermes_cli/gateway_runtime.py").read_text():
-        pytest.skip("this supported Agent refuses every client during a restart's after-turn wait")
-    home = tmp_path / "hermes"
-    env = isolated_env(home, HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
-                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), mode],
-                            env=env, capture_output=True, text=True, timeout=200, check=False)
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-@requires_agent
-def test_real_native_owner_model_outcomes(tmp_path):
-    if not (AGENT_DIR / "gateway/session_deferred_pick.py").exists():
-        pytest.skip("this supported Agent does not expose deferred native model picks")
+def run_owner_peer(request, tmp_path, script, modes, timeout=200):
+    """One peer run on a real disposable owner. Its report must account for every requested mode: a mode this release
+    does not support is reported as skipped, and one the peer dropped fails here. The JUnit report keeps what each run
+    did and where its time went, so a passing CI run shows them too."""
     env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "model"],
-                            env=env, capture_output=True, text=True, timeout=90, check=False)
-    assert result.returncode == 0, result.stdout + result.stderr
+    try:
+        result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures" / script), *modes],
+                                env=env, capture_output=True, text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as expired:
+        pytest.fail(f"peer outlived {timeout} s; the last MODE line names the one it was running:\n{expired.stdout}\n{expired.stderr}")
+    report = next((json.loads(line.removeprefix("MODES ")) for line in result.stdout.splitlines() if line.startswith("MODES ")), {})
+    request.node.user_properties.extend(("peer_" + line.split(" ", 1)[0].lower(), line.split(" ", 1)[1])
+                                        for line in (result.stdout + result.stderr).splitlines() if line.startswith(("MODES ", "PHASES ")))
+    assert result.returncode == 0, f"failed mode: {report.get('failed')}\n{result.stdout}{result.stderr}"
+    assert sorted(report["ran"] + list(report["skipped"])) == sorted(modes), report
+    if not report["ran"]:
+        pytest.skip("; ".join(sorted(set(report["skipped"].values()))))
+
+
+@requires_agent
+def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
+    # Compatible modes share one owner, so they repeat neither its boot nor its first-turn warmup (TAL-1780).
+    run_owner_peer(request, tmp_path, "gateway_session_peer.py",
+                   ["shared", "batch", "approval", "clarify", "detail", "queued-controls", "model", "voice-stop"], timeout=400)
+
+
+@requires_agent
+@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart"])
+def test_real_native_owner_on_its_own_daemon(request, tmp_path, mode):
+    run_owner_peer(request, tmp_path, "gateway_session_peer.py", [mode])
 
 
 @requires_agent
@@ -77,15 +82,8 @@ def test_diagnostic_creation_refuses_without_starting(tmp_path):
 
 
 @requires_agent
-def test_real_owner_diagnostic_execution_modes(tmp_path):
-    if not (AGENT_DIR / "hermes_cli/gateway_client.py").exists():
-        pytest.skip("this supported Agent does not expose native sessions")
-    home = tmp_path / "hermes"
-    env = isolated_env(home, HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
-                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_execution_peer.py")],
-                            env=env, capture_output=True, text=True, timeout=600, check=False)
-    assert result.returncode == 0, result.stdout + result.stderr
+def test_real_owner_diagnostic_execution_modes(request, tmp_path):
+    run_owner_peer(request, tmp_path, "gateway_execution_peer.py", ["normal", "ignore_config", "safe"], timeout=600)
 
 
 @pytest.mark.parametrize("action,method,extra", [
@@ -98,32 +96,6 @@ def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, native_owner_s
     assert (method, {"session_id": "native", "admission_id": "queued", **extra}) in native_owner_stub.calls
     assert result["receipt"] == {"admission_id": "queued"}
     assert native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "admission_id": "queued", **extra})["receipt"] == result["receipt"]
-
-
-@requires_agent
-def test_real_owner_voice_stop_succeeds_without_admission(tmp_path):
-    controls = AGENT_DIR / "gateway/session_controls.py"
-    if not controls.exists() or "voice_stopped" not in controls.read_text():
-        pytest.skip("this supported Agent does not consume typed voice stops")
-    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
-                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "voice-stop"],
-                            env=env, capture_output=True, text=True, timeout=90, check=False)
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-@requires_agent
-def test_real_owner_queued_controls(tmp_path):
-    protocol = AGENT_DIR / "hermes_cli/gateway_client.py"
-    # Only releases publishing these verbs can establish their execution semantics.
-    if not protocol.exists() or not any("prompt.steer_queued" in p.read_text() for p in (AGENT_DIR / "gateway").rglob("*.py")):
-        pytest.skip("this supported Agent does not expose queued controls")
-    home = tmp_path / "hermes"
-    env = isolated_env(home, HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
-                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "queued-controls"],
-                            env=env, capture_output=True, text=True, timeout=200, check=False)
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("shown,failure", [(True, None), (False, None), (True, "refused"), (True, "timeout")])

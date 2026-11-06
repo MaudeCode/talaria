@@ -1305,18 +1305,20 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. [shared] also proves message.react persistence, toggle/removal, foreign-row refusal, another native viewer readback, compression-tip lineage and reset retirement against the actual owner and SessionDB; fakes cannot prove these owner storage semantics. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. The detail case proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
+      "reason": "Supported-Agent API compatibility on one disposable owner, one peer run of eight modes (the peer's report names each mode it ran or skipped): native admission, detach and display negotiation. [shared] also proves message.react persistence, toggle/removal, foreign-row refusal, another native viewer readback, compression-tip lineage and reset retirement against the actual owner and SessionDB; fakes cannot prove these owner storage semantics. [batch], [approval] and [clarify] prove parked prompts answered through Web on the actual owner. The detail mode proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [queued-controls] proves an actual native owner consumes steering in the running turn and replaces queued text before execution; boundary fakes cannot establish owner execution behavior. [model] proves the real native owner preserves a running-turn model mutation receipt and publishes its unstamped idle session.updated outcome; only the installed release proves this owner protocol. [voice-stop] proves a real native owner consumes a typed stop with no admission after another viewer enables voice, and the real Web HTTP boundary accepts its exact receipt, with no audio hardware or provider request.",
       "cases": [
-        "[shared]",
-        "[batch]",
-        "[approval]",
-        "[clarify]",
+        ""
+      ]
+    },
+    "tests/test_gateway_sessions.py::test_real_native_owner_on_its_own_daemon": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility for modes needing owner state of their own, one disposable owner per case. [recovery] kills and replaces the owner to prove queued and unknown admissions recover. [secure] proves secure prompts and refusals against synthetic loopback owners. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. [dedicated] proves standalone profile owners refuse each other's sessions. [replay] proves the barrier daemon's replay gap reaches a watching viewer. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
+      "cases": [
         "[recovery]",
         "[secure]",
         "[profiles]",
         "[dedicated]",
         "[replay]",
-        "[detail]",
         "[restart]"
       ]
     },
@@ -1329,7 +1331,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_owner_diagnostic_execution_modes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: real owner diagnostic execution modes. Uses the real installed release, not a fabricated API response.",
+      "reason": "Supported-Agent API compatibility: the normal, ignore_config and safe execution modes on one real disposable owner, restarted once, with the peer reporting all three. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
       ]
@@ -2786,20 +2788,6 @@
         ""
       ]
     },
-    "tests/test_gateway_sessions.py::test_real_owner_queued_controls": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent queued-control execution semantics: an actual native owner consumes steering in the running turn and replaces queued text before execution. Boundary fakes cannot establish owner execution behavior.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_gateway_sessions.py::test_real_native_owner_model_outcomes": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the real native owner must preserve a running-turn model mutation receipt and publish its unstamped idle session.updated outcome. Fakes cover Talaria mapping; only the installed release proves this owner protocol.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_prune_advice.py::test_a_low_disk_asks_the_agents_question_until_web_answers_it": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: the Agent's own low-disk auto-prune advisor and /autoprune executor answer through the real sidecar in a disposable home with a patched disk report, not a fabricated API response.",
@@ -2881,13 +2869,6 @@
     "tests/test_command_approval_persistence.py::test_always_preserves_revocation_and_profile_scoped_grants": {
       "layer": "compatibility",
       "reason": "Actual retained-Agent allowlist reconciliation, baseline refresh and profile-scoped approval APIs; config IO is fake, but these private native contracts cannot be proven by a stand-in.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_gateway_sessions.py::test_real_owner_voice_stop_succeeds_without_admission": {
-      "layer": "compatibility",
-      "reason": "A real native owner consumes a typed stop with no admission after another viewer enables voice; the real Web HTTP boundary must accept its exact receipt. No audio hardware or provider request.",
       "cases": [
         ""
       ]

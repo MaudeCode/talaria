@@ -1,0 +1,3 @@
+{
+  "skip": "Test-only change: the sidecar's real-owner fixtures share one disposable daemon and drop waits that tested nothing; no shipped behavior changes."
+}
