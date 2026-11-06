@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import pathlib
 import textwrap
+import time
 
 import pytest
 
@@ -33,6 +34,57 @@ def _plugin(root: pathlib.Path, directory: str, manifest_name: str, *, name: str
     path.mkdir(parents=True)
     (path / "plugin.yaml").write_text(f"name: {manifest_name}\nkind: model-provider\nversion: 0.0.1\n")
     (path / "__init__.py").write_text(PROFILE.format(var=name.replace("-", "_"), name=name, display=display, command=command, models=models))
+
+
+@requires_agent
+@pytest.mark.parametrize("isolation", ["in_process", "host"])
+def test_provider_device_login_hooks_save_only_in_the_starting_profile(tmp_path: pathlib.Path, isolation: str) -> None:
+    home = tmp_path / "home" / ".hermes"
+    root = home / "profiles" / "other" / "plugins" / "device-test"
+    root.mkdir(parents=True)
+    other = root.parent.parent
+    for path in (home, other):
+        (path / "config.yaml").write_text(f"plugins:\n  isolation: {isolation}\n")
+    (root / "plugin.yaml").write_text("name: device-test\nkind: model-provider\nversion: 0.0.1\n")
+    (root / "__init__.py").write_text(textwrap.dedent('''
+        import json
+        from pathlib import Path
+        from hermes_constants import get_hermes_home
+        from providers import register_provider
+        from providers.base import ProviderProfile
+        def begin():
+            return dict(user_code="TEST-1827", verification_url="https://device.example.test/login", expires_in=90, interval=1, state="test-state")
+        def poll(state):
+            home = Path(get_hermes_home())
+            (home / "polled").write_text(state)
+            return dict(status="approved", credential={"token": "test-only"})
+        def save(credential):
+            Path(get_hermes_home(), "saved.json").write_text(json.dumps(credential))
+        profile = ProviderProfile(name="device-test", display_name="Device Test", auth_type="oauth_device_code", start_device_login=begin, poll_device_login=poll, save_device_login=save)
+        plain = ProviderProfile(name="no-hooks", display_name="No Hooks", auth_type="api_key")
+        register_provider(profile)
+        register_provider(plain)
+    '''))
+    sidecar = SidecarProcess(home)
+    try:
+        rows = {row["name"]: row for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]}
+        assert rows["device-test"].get("device_login") is True
+        assert "device_login" not in rows["no-hooks"]
+        flow = sidecar.result("oauth.start", {"profile_home": str(other), "provider": "device-test"})
+        assert (flow["user_code"], flow["verification_url"], flow["interval"]) == ("TEST-1827", "https://device.example.test/login", 1)
+        deadline = time.monotonic() + 10
+        while sidecar.result("oauth.poll", {"profile_home": str(other), "flow_id": flow["flow_id"]})["status"] == "pending":
+            assert time.monotonic() < deadline, "device login never ended"
+            time.sleep(0.05)
+        assert sidecar.result("oauth.poll", {"profile_home": str(other), "flow_id": flow["flow_id"]})["status"] == "approved"
+        assert json.loads((other / "saved.json").read_text()) == {"token": "test-only"}
+        assert not (home / "saved.json").exists()
+        assert (other / "polled").read_text() == "test-state"
+        assert not (home / "polled").exists()
+        refused, _ = sidecar.call("oauth.start", {"profile_home": str(home), "provider": "device-test"})
+        assert "error" in refused
+    finally:
+        sidecar.close()
 
 
 def _seed(home: pathlib.Path, cli: pathlib.Path, isolation: str) -> None:

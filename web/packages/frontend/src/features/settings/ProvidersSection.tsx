@@ -64,7 +64,7 @@ export function ProvidersSection() {
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
       <QuotaThresholdsForm />
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col">
         {providers.data.providers.map((p) => {
           const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []
           const quota = sources[0]
@@ -79,7 +79,7 @@ export function ProvidersSection() {
             ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => saveKey.mutate({ id: p.id, key: null }), danger: true }] : []),
           ]
           return (
-            <ContextMenu key={p.id} label={m.providers_row_menu()} trigger={<li className={cn('rounded-lg border border-border bg-surface p-3', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
+            <ContextMenu key={p.id} label={m.providers_row_menu()} trigger={<li className={cn('border-t border-border py-4 first:border-t-0', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="text-sm font-medium text-text">{p.display_name ?? p.id}</div>
@@ -98,6 +98,7 @@ export function ProvidersSection() {
               </div>
               {hint && install.blocked(hint)}
               {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
+              {p.device_login && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} idPrefix={`providerOauth-${p.id}`} onApproved={invalidate} />}
               {isEditing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name: p.display_name ?? p.id, ...body })} />}
               {isEditing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${p.display_name ?? p.id} API key`} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} />}
               {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}

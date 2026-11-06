@@ -1,4 +1,4 @@
-"""``oauth.*``: the Agent's device-code sign-ins for Nous Portal, OpenAI Codex, xAI and MiniMax (TAL-398), and the
+"""``oauth.*``: the Agent's built-in and provider-plugin device-code sign-ins, and the
 browser sign-in of a plugin-declared OAuth client (``plugin:<key>:<id>``, TAL-1276, in ``plugin_oauth``).
 
 ``oauth.start`` asks the provider for a code and answers what the user has to see; a daemon thread then waits for the
@@ -26,7 +26,7 @@ from typing import Any, Callable
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
-from . import plugin_oauth, nous_account
+from . import plugin_oauth, nous_account, providers as provider_methods
 
 log = logging.getLogger("talaria_sidecar.oauth")
 
@@ -409,6 +409,50 @@ PROVIDERS: dict[str, Provider] = {
     "minimax-oauth": (_minimax_begin, _minimax_wait, _minimax_save),
 }
 
+
+def _provider_steps(provider: str) -> Provider | None:
+    """Resolve only this home's enabled provider plugins, using the same ownership as their catalog rows."""
+    profile = next((p for _name, p in provider_methods.installed_plugin_profiles()
+                    if p is not None and str(p.name).strip().lower() == provider and provider_methods.supports_device_login(p)), None)
+    if profile is None:
+        return None
+
+    def begin() -> tuple[dict, dict]:
+        login = dict(profile.start_device_login() or {})
+        display = {"user_code": str(login["user_code"]), "verification_url": str(login["verification_url"]),
+                   "expires_in": int(login["expires_in"]), "interval": max(1, int(login["interval"]))}
+        return display, {"device_state": login.get("state")}
+
+    def wait(flow: Flow, state: dict) -> Any:
+        device_state, interval = state["device_state"], flow.interval
+        while time.time() < flow.expires_at:
+            if flow.cancelled.wait(min(interval, max(0, flow.expires_at - time.time()))):
+                raise _Stop()
+            if time.time() >= flow.expires_at:
+                break
+            with scoped_home(flow.home):
+                result = dict(profile.poll_device_login(device_state) or {})
+            if time.time() >= flow.expires_at:
+                break
+            device_state = result.get("state", device_state)
+            status = result.get("status")
+            if status == "approved":
+                return result.get("credential")
+            if status == "expired":
+                break
+            if status != "pending":
+                if status == "denied":
+                    flow.oauth_error = "access_denied"
+                raise RpcError(str(result.get("message") or (_DENIED if status == "denied" else "Sign-in failed.")))
+            interval = max(1, int(result.get("interval") or interval))
+        raise TimeoutError(_EXPIRED)
+
+    def save(flow: Flow, state: dict, credential: Any) -> None:
+        profile.save_device_login(credential)
+
+    return begin, wait, save
+
+
 _FLOWS: dict[str, Flow] = {}
 _FLOWS_LOCK = threading.Lock()
 # The newest start per (home, provider): only it may publish a flow, whatever order the provider requests finish in.
@@ -487,6 +531,9 @@ def _pending(home: Path, provider: str) -> list[Flow]:
 
 def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = None) -> dict:
     steps = (providers or PROVIDERS).get(provider) or plugin_oauth.steps(provider)
+    if steps is None:
+        with scoped_home(home):
+            steps = _provider_steps(provider)
     if steps is None:
         raise InvalidParams(f"{provider} has no device-code sign-in")
     begin, wait, save = steps

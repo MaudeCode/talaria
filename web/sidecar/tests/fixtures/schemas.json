@@ -1417,6 +1417,10 @@
             "install_hint": {
               "type": "string",
               "pattern": "^[a-z0-9_-]{1,64}$"
+            },
+            "device_login": {
+              "description": "The installed provider implements all three Agent device-login hooks.",
+              "type": "boolean"
             }
           },
           "required": [

@@ -998,6 +998,7 @@ export class ProviderCatalog {
         base_url: null, auth_error: plugin.setup === 'ready' ? (live.length ? null : PLUGIN_NO_MODELS) : PLUGIN_SETUP_ERRORS[plugin.setup], env_var: null,
         models: live.map((id) => ({ id, label: labelForModel(id, []) })), models_total: live.length,
         ...(plugin.install_hint ? { install_hint: plugin.install_hint } : {}),
+        ...(plugin.device_login ? { device_login: true } : {}),
       })
     }
     for (const cp of customProviderEntries(config, pluginIds)) {

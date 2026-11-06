@@ -126,13 +126,18 @@ from a terminal with `hermes auth`, then refresh WebUI.
 Model-provider plugins installed in a profile (`hermes plugins install`, or a
 directory under `$HERMES_HOME/plugins/model-providers/`) appear in Settings ->
 Providers and in the model picker under their own name, for example a Claude
-subscription provider. Sign in to a plugin with Hermes; WebUI never logs in or
-reads its credentials, and never substitutes an API key provider for it.
+subscription provider. Plugins implementing the Agent's three device-login hooks
+offer **Sign in** on their Settings row. WebUI shows the code and approval link;
+the sidecar polls and saves through the plugin under the profile that started it.
+Cancelling or leaving a pending sign-in stops it without saving. Credentials and
+private device state never reach the browser. Other plugins still sign in with
+Hermes. WebUI never substitutes an API key provider for a plugin.
 
 GitHub Copilot is one of these since Agent v0.22.6: it has no built-in card. A
 profile that still selects `copilot` shows a card with **Install plugin**, which
 runs the reviewed catalog install for `github-copilot` (operator sessions only).
-Then sign in with `hermes auth add copilot` and refresh WebUI.
+Once the plugin is enabled, sign in from its provider row, or use
+`hermes auth add copilot` and refresh WebUI.
 
 - A plugin listed in `plugins.disabled` does not appear.
 - A plugin that is not ready shows why on its provider card and offers no

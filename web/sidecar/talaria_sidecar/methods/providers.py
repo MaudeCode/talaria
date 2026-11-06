@@ -317,6 +317,10 @@ def _setup_state(profile: Any) -> str:
     return "ready" if status.get("logged_in") or status.get("configured") else "needs_setup"
 
 
+def supports_device_login(profile: Any) -> bool:
+    return all(callable(getattr(profile, hook, None)) for hook in ("start_device_login", "poll_device_login", "save_device_login"))
+
+
 def plugin_providers() -> list[dict]:
     """Sanitized rows for this profile's enabled model-provider plugins: identity and setup state, no paths or secrets."""
     rows = []
@@ -326,6 +330,8 @@ def plugin_providers() -> list[dict]:
             continue
         name = str(profile.name).strip().lower()
         rows.append({"name": name, "display_name": str(profile.display_name or name).strip(), "auth_type": str(profile.auth_type), "setup": _setup_state(profile)})
+        if supports_device_login(profile):
+            rows[-1]["device_login"] = True
     return rows + _left_core_rows()
 
 
