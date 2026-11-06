@@ -1,0 +1,3 @@
+{
+  "skip": "Test-only change: the redaction cost test no longer fails on a busy CI runner; no shipped behavior changes."
+}

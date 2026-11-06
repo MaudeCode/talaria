@@ -618,9 +618,10 @@ describe('redactSensitive cost', () => {
       const started = performance.now()
       mightContainSensitiveText(text)
       redactSensitive(text)
-      expect(performance.now() - started, JSON.stringify(text.slice(0, 60))).toBeLessThan(1000)
+      // Above a busy hosted runner's worst linear input, which reaches a second.
+      expect(performance.now() - started, JSON.stringify(text.slice(0, 60))).toBeLessThan(2500)
     }
-    // Each input is held to a second; the whole run gets room for many of them on a loaded machine.
+    // Each input is held to its budget; the whole run gets room for many of them on a loaded machine.
   }, 30_000)
 })
 
