@@ -502,6 +502,11 @@ async def probe_connections(home, peer, desc):
             stale = await asyncio.to_thread(call, "connection_respond", op_id=op_id, authority_epoch=epoch + 1, connection_answer={"settled_by": "continue"})
             assert (stale["state"], stale["reason"]) == ("refused", "owner_changed"), stale
             assert (await asyncio.to_thread(call, "snapshot"))["snapshot"]["pending_connection"]["op_id"] == op_id
+            # Try again reaches the owner's own retry, and only for the operation the card shows.
+            elsewhere = await asyncio.to_thread(call, "connection_retry", op_id="no-such-op", authority_epoch=epoch, connector="linear")
+            assert (elsewhere["state"], elsewhere["reason"]) == ("refused", "UNKNOWN_OPERATION"), elsewhere
+            retried = await asyncio.to_thread(call, "connection_retry", **fence, connector="linear")
+            assert retried["state"] == "refused" and retried["reason"] in {"LINK_STILL_VALID", "CONNECTORS_UNAVAILABLE"}, retried
             # A credential reaches the owner only inside this one verb.
             answered = await asyncio.to_thread(call, "connection_respond", **fence, connection_answer={"targets": [{"name": "linear", "status": "skipped"}]})
             assert answered["state"] == "attached" and answered["connection_settled"] is True, answered

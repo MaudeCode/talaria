@@ -253,8 +253,12 @@ async def _connection_action(client, params: dict, described: dict) -> dict:
     action = params["action"]
     result = {"state": "attached", "reason": None, "snapshot": None, "receipt": None}
     if action == "connection_retry":
-        # The operation's own write path: the owner re-mints the named target on its open operation.
+        # The owner's retry takes no operation id and acts on whichever operation is open now. Read the requested one on
+        # this connection first, and refuse an answer for another: a replacement in that one round trip is the only gap left.
+        await client.rpc("connectors.operation.status", owner=owner, op_id=params["op_id"])
         value = await client.rpc("connectors.connect", owner=owner, connectors=[params["connector"]], reconnect=True)
+        if value.get("op_id") != params["op_id"]:
+            return _refused("refused", "UNKNOWN_OPERATION")
     elif action == "connection_respond":
         answered = await client.rpc("connection.respond", owner=owner, op_id=params["op_id"], result=params["connection_answer"])
         return {**result, "connection_settled": answered.get("settled") is True}

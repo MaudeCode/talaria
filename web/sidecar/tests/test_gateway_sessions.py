@@ -844,7 +844,6 @@ def test_an_owner_without_the_field_keeps_it_absent_and_null_clears_it(native_ow
     ("connection_respond", "connection.respond", {"connection_answer": {"settled_by": "continue"}}, {"op_id": "op-native", "result": {"settled_by": "continue"}}),
     ("connection_respond", "connection.respond", {"connection_answer": {"targets": [{"name": "linear", "status": "approved", "env": {"LINEAR_API_KEY": "synthetic"}}]}},
      {"op_id": "op-native", "result": {"targets": [{"name": "linear", "status": "approved", "env": {"LINEAR_API_KEY": "synthetic"}}]}}),
-    ("connection_retry", "connectors.connect", {"connector": "gmail"}, {"connectors": ["gmail"], "reconnect": True}),
 ])
 def test_connection_verbs_route_to_the_exact_owner_and_never_resume(native_owner_stub, action, method, extra, sent):
     native_owner_stub.connection = {"connectors.operation.status": RAW_CONNECTION, "connectors.operation.wake": {"status": "ok"},
@@ -853,10 +852,38 @@ def test_connection_verbs_route_to_the_exact_owner_and_never_resume(native_owner
     assert result["state"] == "attached" and result["snapshot"] is None
     verbs = [call for call in native_owner_stub.calls if call[0] != "runtime.describe"]
     assert verbs == [(method, {"owner": {"type": "session", "session_id": "native"}, **sent})]
-    if action in {"connection_status", "connection_retry"}:
+    if action == "connection_status":
         assert result["connection"] == PUBLIC_CONNECTION
     if action == "connection_respond":
         assert result["connection_settled"] is True
+
+
+RETRY = {"session_id": "native", "action": "connection_retry", "op_id": "op-native", "authority_epoch": 1, "connector": "gmail"}
+OWNER = {"owner": {"type": "session", "session_id": "native"}}
+
+
+def test_retry_reads_the_requested_operation_on_its_own_connection_before_running_it(native_owner_stub):
+    native_owner_stub.connection = {"connectors.operation.status": RAW_CONNECTION, "connectors.connect": RAW_CONNECTION}
+    result = native_owner_stub.run(None, RETRY)
+    assert result["connection"] == PUBLIC_CONNECTION
+    assert [call for call in native_owner_stub.calls if call[0] != "runtime.describe"] == [
+        ("connectors.operation.status", {**OWNER, "op_id": "op-native"}),
+        ("connectors.connect", {**OWNER, "connectors": ["gmail"], "reconnect": True}),
+    ]
+
+
+def test_retry_never_runs_against_an_operation_that_replaced_the_requested_one(native_owner_stub):
+    native_owner_stub.connection = {"connectors.operation.status": RuntimeError("UNKNOWN_OPERATION"), "connectors.connect": RAW_CONNECTION}
+    result = native_owner_stub.run(None, RETRY)
+    assert (result["state"], result["reason"]) == ("refused", "UNKNOWN_OPERATION")
+    assert not any(call[0] == "connectors.connect" for call in native_owner_stub.calls)
+
+
+def test_retry_refuses_when_the_owner_answers_for_another_operation(native_owner_stub):
+    native_owner_stub.connection = {"connectors.operation.status": RAW_CONNECTION, "connectors.connect": {**RAW_CONNECTION, "op_id": "op-replacement"}}
+    result = native_owner_stub.run(None, RETRY)
+    assert (result["state"], result["reason"]) == ("refused", "UNKNOWN_OPERATION")
+    assert "connection" not in result
 
 
 def test_a_replaced_owner_refuses_the_late_answer_before_it_is_sent(native_owner_stub):
