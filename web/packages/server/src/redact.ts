@@ -5,7 +5,8 @@ import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
-import { hasNativeImages, messageText, normalizeUserDisplay } from './sessions/merge.js'
+import { codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withoutReasoningParts } from './sessions/merge.js'
+import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
 
 // Supported work instrumentation carries counts only, never transcript text or credentials.
@@ -2369,10 +2370,24 @@ function redactUserContentPart(part: unknown, enabled: boolean): unknown {
   return redacted
 }
 
+/**
+ * TAL-1945: a display copy of a `hold_stream` turn's row, without the text the user never received. A hidden assistant row
+ * keeps only its tool calls; a published row with `commentary_withheld` loses its commentary, which the Agent also flattens
+ * into `reasoning`. Stored rows and model replay keep theirs.
+ */
+function withoutWithheldText(message: unknown): unknown {
+  if (!isDict(message) || message.role !== 'assistant') return message
+  const hidden = message.display_kind === 'hidden'
+  if (!hidden && !(isDict(message.display_metadata) && message.display_metadata.commentary_withheld)) return message
+  const { codex_message_items: _withheld, ...display } = normalizeAssistantDisplay(message)
+  if (!hidden) return { ...display, reasoning: withoutReasoningParts(str(display.reasoning), codexCommentary(message)) }
+  return { ...Object.fromEntries(Object.entries(display).filter(([key]) => !REASONING_FIELDS.has(key))), content: Array.isArray(message.content) ? message.content.filter(isToolUse) : '' }
+}
+
 function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null): unknown {
   const isActive = Boolean(message && typeof message === 'object' && (message as Record<string, unknown>).role === 'user' && activeTurnToken !== null && (message as Record<string, unknown>)._active_turn_token === activeTurnToken)
   // Exports and nested public documents bypass scene hydration; project their user content at this boundary too.
-  const scrubbed = normalizeUserDisplay((scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0])
+  const scrubbed = withoutWithheldText(normalizeUserDisplay((scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]))
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)
   const item: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {

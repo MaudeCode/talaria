@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In profiles with a plugin that rewrites replies, the original text a held turn withheld no longer leaves the Web server in session data.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

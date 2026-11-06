@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
+import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
 import { toolEditDiff } from './sessions/tool-display.js'
 
 describe('redactSensitive', () => {
@@ -740,6 +741,46 @@ describe('redactSessionData', () => {
     expect(JSON.stringify(out)).not.toContain('hunter2')
     const call = ((out.messages as Record<string, unknown>[])[0]!.tool_calls as { function: { arguments: unknown } }[])[0]!
     expect(call.function.arguments).toEqual({ user: 'bob', password: '***' })
+  })
+
+  // TAL-1945: `hold_stream`: the user only ever got the rewritten reply, so nothing else of the turn leaves the server.
+  it('ships a held turn\'s tool calls and rewritten reply, and none of its withheld text', () => {
+    const commentary = (text: string) => ({ type: 'message', role: 'assistant', phase: 'commentary', content: [{ type: 'output_text', text }] })
+    const messages = withTurnIds([
+      { role: 'user', content: 'Go', _turn_id: 'held' },
+      { role: 'assistant', id: 1, content: 'HIDDEN-CONTENT', reasoning: 'HIDDEN-REASONING', reasoning_content: 'HIDDEN-RC', thinking: 'HIDDEN-THINK', _inline_thinking: 'HIDDEN-INLINE', reasoning_titles: ['HIDDEN-TITLE'], reasoning_details: [{ type: 'reasoning.text', text: 'HIDDEN-DETAIL' }], codex_reasoning_items: [{ type: 'reasoning', summary: [{ text: 'HIDDEN-SUMMARY' }] }], codex_message_items: [commentary('HIDDEN-COMMENTARY')], display_kind: 'hidden', tool_calls: [{ id: 'a', name: 'read_file', args: { path: 'one' } }], _turn_id: 'held' },
+      { role: 'tool', tool_call_id: 'a', content: 'one', _turn_id: 'held' },
+      { role: 'assistant', id: 2, content: [{ type: 'text', text: 'HIDDEN-BLOCK' }, { type: 'thinking', thinking: 'HIDDEN-BLOCK-THINK' }, { type: 'tool_use', id: 'b', name: 'read_file', input: { path: 'two' } }], display_kind: 'hidden', _turn_id: 'held' },
+      { role: 'tool', tool_call_id: 'b', content: 'two', _turn_id: 'held' },
+      { role: 'assistant', id: 3, content: 'Rewritten.', reasoning: 'Plan.\n\nWITHHELD-COMMENTARY', codex_message_items: [commentary('WITHHELD-COMMENTARY')], display_metadata: { commentary_withheld: true }, _turn_id: 'held' },
+    ])
+    const out = redactSessionData({ messages: hydrateAnchorActivityScenes(messages, {}) }, true)
+    expect(JSON.stringify(out)).not.toMatch(/HIDDEN|WITHHELD/)
+    const rows = out.messages as Record<string, unknown>[]
+    expect(rows.every((row) => MessageSchema.safeParse(row).success)).toBe(true)
+    expect(rows[1]).toMatchObject({ content: '', _display: 'hidden', tool_calls: [{ id: 'a', name: 'read_file' }] })
+    expect(rows[3]).toMatchObject({ content: [{ type: 'tool_use', id: 'b', name: 'read_file', input: { path: 'two' } }], _display: 'hidden' })
+    expect(rows[3]!.content).toHaveLength(1)
+    expect(rows[5]).toMatchObject({ content: 'Rewritten.', reasoning: 'Plan.', _display: 'row' })
+    expect((rows[5]!._anchor_activity_scene as { activity_rows: { row_id: string }[] }).activity_rows.map((row) => row.row_id)).toEqual(['tool:a', 'tool:b', '3:reasoning'])
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    ['a list', { reasoning: ['Plan.', 'WITHHELD-COMMENTARY'] }],
+    ['the provider field', { reasoning_content: 'Plan.\n\nWITHHELD-COMMENTARY' }],
+  ])('takes withheld commentary out of reasoning stored as %s (TAL-1945)', (_, reasoning) => {
+    const items = [{ type: 'message', phase: 'commentary', content: [{ type: 'output_text', text: 'WITHHELD-COMMENTARY' }] }]
+    const out = redactSessionData({ messages: [{ role: 'assistant', content: 'Rewritten.', codex_message_items: items, display_metadata: { commentary_withheld: true }, ...reasoning }] }, true)
+    expect(JSON.stringify(out)).not.toContain('WITHHELD')
+    expect((out.messages as Record<string, unknown>[])[0]).toMatchObject({ content: 'Rewritten.', reasoning: 'Plan.' })
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    ['a Codex row without the marker', { role: 'assistant', content: 'Reply.', reasoning: 'Plan.\n\nShown.', codex_message_items: [{ type: 'message', phase: 'commentary', content: [{ type: 'output_text', text: 'Shown.' }] }] }],
+    ['a Codex row whose marker is off', { role: 'assistant', content: 'Reply.', reasoning: 'Plan.\n\nShown.', codex_message_items: [{ type: 'message', phase: 'commentary', content: [{ type: 'output_text', text: 'Shown.' }] }], display_metadata: { commentary_withheld: false } }],
+    ['a hidden user row', { role: 'user', content: 'Wakeup prompt', display_kind: 'hidden' }],
+  ])('leaves %s as it is (TAL-1945)', (_, row) => {
+    expect(redactSessionData({ messages: [row] }, true).messages).toEqual([{ ...row, _display: row.display_kind === 'hidden' ? 'hidden' : 'row' }])
   })
 
   it('marks a user message longer than 20 lines or 2,000 characters collapsible (TAL-452)', () => {

@@ -1,7 +1,7 @@
 import { normalizeAssistantDisplay } from './merge.js'
 
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-const REASONING_FIELDS = new Set(['reasoning', 'reasoning_content', 'thinking', 'reasoning_titles', 'reasoning_details', 'codex_reasoning_items'])
+export const REASONING_FIELDS = new Set(['reasoning', 'reasoning_content', 'thinking', 'reasoning_titles', 'reasoning_details', 'codex_reasoning_items'])
 const CONTAINERS = new Set(['session', 'messages', 'context_messages', 'runtime_journal_snapshot', '_anchor_activity_scene', 'anchor_activity_scenes', 'scene', 'activity_rows', 'rows'])
 
 /** Display-only copies at the wire boundary; stored transcripts and Agent context retain their reasoning. */

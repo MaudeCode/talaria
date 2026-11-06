@@ -23,6 +23,23 @@ export const TOOL_ARG_CONTENT_CAP = TOOL_RESULT_SNIPPET_MAX
 
 export const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
+/**
+ * Codex (Responses API) narration between tool calls: `phase: 'commentary'` message items. The Agent routes that text
+ * into `reasoning` and leaves `content` empty, so the scene reads it here (`analysis` stays hidden).
+ */
+export function codexCommentary(message: Record<string, unknown>): string[] {
+  if (!Array.isArray(message.codex_message_items)) return []
+  return message.codex_message_items.flatMap((item) => isDict(item) && item.type === 'message' && str(item.phase).trim().toLowerCase() === 'commentary' && Array.isArray(item.content)
+    ? [item.content.map((part) => (isDict(part) && part.type === 'output_text' ? str(part.text) : '')).join('').trim()]
+    : []).filter(Boolean)
+}
+
+/** `reasoning` without text shown or withheld elsewhere (the commentary the Agent flattens into it). */
+export function withoutReasoningParts(reasoning: string, parts: string[]): string {
+  for (const part of parts) if (part) reasoning = reasoning.replace(part, '')
+  return reasoning.replace(/\n{3,}/g, '\n\n').trim()
+}
+
 export function escapeWorkspacePrefixPath(path: string): string {
   return path.replace(/\\/g, '\\\\').replace(/]/g, '\\]')
 }

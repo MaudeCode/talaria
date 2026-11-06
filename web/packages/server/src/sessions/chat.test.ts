@@ -4400,6 +4400,35 @@ describe('reasoning replay across turns (TAL-927)', () => {
     expect(histories[3]?.at(-1)).toMatchObject({ content: 'answer 3', reasoning_details: details, codex_reasoning_items: items })
     expect(histories[3]?.filter((m) => 'reasoning_details' in m).map((m) => m.content)).toEqual(['answer 3'])
   })
+
+  it("replays a held turn's stored text to the Agent while the session payload withholds it (TAL-1945)", async () => {
+    const sid = await newSession(s)
+    const commentary = (text: string) => ({ type: 'message', role: 'assistant', phase: 'commentary', content: [{ type: 'output_text', text }] })
+    const histories: Json[][] = []
+    sidecar.respond('chat.start', (params) => {
+      histories.push(params.conversation_history)
+      const now = Date.now() / 1000
+      return completed([
+        ...params.conversation_history,
+        { role: 'user', content: str(params.user_message), timestamp: now },
+        { role: 'assistant', content: 'HIDDEN-CONTENT', codex_message_items: [commentary('HIDDEN-COMMENTARY')], display_kind: 'hidden', tool_calls: [{ id: 'call_held', type: 'function', function: { name: 'read_file', arguments: '{}' } }], timestamp: now },
+        { role: 'tool', tool_call_id: 'call_held', content: 'tool result', timestamp: now },
+        { role: 'assistant', content: 'Rewritten.', reasoning: 'Plan.\n\nWITHHELD-COMMENTARY', codex_message_items: [commentary('WITHHELD-COMMENTARY')], display_metadata: { commentary_withheld: true }, timestamp: now },
+      ])
+    })
+    const turn = async (message: string): Promise<void> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    await turn('first')
+    await turn('second')
+    const assistants = histories[1]?.filter((m) => m.role === 'assistant') ?? []
+    expect(assistants[0]).toMatchObject({ content: 'HIDDEN-CONTENT', codex_message_items: [commentary('HIDDEN-COMMENTARY')] })
+    expect(assistants[1]).toMatchObject({ content: 'Rewritten.', reasoning: 'Plan.\n\nWITHHELD-COMMENTARY', codex_message_items: [commentary('WITHHELD-COMMENTARY')] })
+    const detail = await json(await s.get(`/api/session?session_id=${sid}`))
+    expect(JSON.stringify(detail)).not.toMatch(/HIDDEN|WITHHELD/)
+    expect(((detail.session as Json).messages as Json[]).find((m) => m.content === 'Rewritten.')).toMatchObject({ reasoning: 'Plan.' })
+  })
 })
 
 describe('live tool outcomes (TAL-313)', () => {
