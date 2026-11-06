@@ -465,6 +465,90 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(coordinator.connectionOperation?.opId, "op-native")
     }
 
+    /// A coordinator on a test-held server, for orderings that need several requests out at once.
+    private func heldConnection(host: String, pollingIntervals: ChatPollingIntervals = .connectionHeld) -> (ChatPendingActionCoordinator, ConnectionSessionDelegate, DeferredRequests) {
+        let requests = DeferredRequests()
+        DeferredMockURLProtocol.setOnRequest({ _ = requests.append($0) }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let delegate = ConnectionSessionDelegate()
+        let coordinator = ChatPendingActionCoordinator(
+            client: APIClient(baseURL: URL(string: "https://\(host)")!, session: URLSession(configuration: configuration)),
+            approvalStreamClient: SpySSEStreamingClient(),
+            clarifyStreamClient: SpySSEStreamingClient(),
+            pollingIntervals: pollingIntervals
+        )
+        coordinator.delegate = delegate
+        return (coordinator, delegate, requests)
+    }
+
+    func testAnAnswerFromBeforeANewerFrameCannotReopenTheOperation() async throws {
+        let (coordinator, delegate, requests) = heldConnection(host: "answer-fence.test")
+        _ = delegate
+        coordinator.applyConnectionOperation(try XCTUnwrap(Self.decodedFrame(Self.viewJSON())), sessionID: "session-abc")
+
+        let answer = Task { await coordinator.respondToConnectionOperation(.row(.approve, target: "linear"), env: nil, opID: "op-native") }
+        try await waitUntil { requests.count == 1 }
+        coordinator.applyConnectionOperation(try XCTUnwrap(Self.decodedFrame(Self.settledJSON())), sessionID: "session-abc")
+        requests.request(at: 0).complete(withJSON: try Self.viewJSON())
+        await answer.value
+
+        XCTAssertEqual(coordinator.connectionOperation?.settled, true, "The owner's newer frame settled it; the answer's older view cannot reopen it")
+        XCTAssertEqual(coordinator.connectionRunningTargets, [])
+    }
+
+    func testAnAnswerOverlappedByANewerFrameIsDecidedByARead() async throws {
+        let (coordinator, delegate, requests) = heldConnection(host: "answer-read.test")
+        _ = delegate
+        coordinator.applyConnectionOperation(try XCTUnwrap(Self.decodedFrame(Self.viewJSON())), sessionID: "session-abc")
+
+        let answer = Task { await coordinator.respondToConnectionOperation(.row(.approve, target: "linear"), env: nil, opID: "op-native") }
+        try await waitUntil { requests.count == 1 }
+        coordinator.applyConnectionOperation(try XCTUnwrap(Self.decodedFrame(Self.viewJSON(row: "gmail", state: "connected"))), sessionID: "session-abc")
+        requests.request(at: 0).complete(withJSON: try Self.viewJSON())
+        try await waitUntil { requests.count == 2 }
+
+        XCTAssertEqual(coordinator.connectionOperation?.targets.first { $0.name == "gmail" }?.state, "connected", "The newer frame stands")
+        XCTAssertEqual(coordinator.connectionRunningTargets, ["linear"], "Its own result is not known until the read")
+        XCTAssertEqual(requests.request(at: 1).request.httpMethod, "GET")
+        requests.request(at: 1).complete(withJSON: try Self.viewJSON(row: "linear", state: "connected"))
+        await answer.value
+
+        XCTAssertEqual(coordinator.connectionOperation?.targets.first { $0.name == "linear" }?.state, "connected")
+        XCTAssertEqual(coordinator.connectionRunningTargets, [])
+    }
+
+    /// A read that left before the answer says nothing about whether the answer landed.
+    func testAReadFromBeforeALostAnswerCannotDecideIt() async throws {
+        var intervals = ChatPollingIntervals.connectionHeld
+        let firstPoll = FirstPollRelease()
+        intervals.sleep = { _ in
+            if firstPoll.take() { return }
+            try await Task.sleep(for: .seconds(3600))
+        }
+        let (coordinator, delegate, requests) = heldConnection(host: "stale-read.test", pollingIntervals: intervals)
+        _ = delegate
+        coordinator.applyConnectionOperation(try XCTUnwrap(Self.decodedFrame(Self.viewJSON())), sessionID: "session-abc")
+        try await waitUntil { requests.count == 1 }
+        XCTAssertEqual(requests.request(at: 0).request.httpMethod, "GET")
+
+        let answer = Task { await coordinator.respondToConnectionOperation(.row(.skip, target: "gmail"), env: nil, opID: "op-native") }
+        try await waitUntil { requests.count == 2 }
+        requests.request(at: 1).complete(withJSON: #"{"error":"Unavailable","outcome_unknown":true}"#, statusCode: 503)
+        try await waitUntil { requests.count == 3 }
+
+        requests.request(at: 0).complete(withJSON: try Self.viewJSON())
+        try await Task.sleep(for: .milliseconds(100))
+        func row(_ name: String) -> ConnectorOperationView.Target? { coordinator.connectionOperation?.targets.first { $0.name == name } }
+        XCTAssertEqual(row("gmail")?.state, "skipped", "The older read does not roll the choice back")
+        XCTAssertEqual(row("notion")?.actions, [], "Nothing is answerable until a read from after the answer")
+
+        requests.request(at: 2).complete(withJSON: try Self.viewJSON(row: "gmail", state: "skipped"))
+        await answer.value
+        XCTAssertEqual(row("notion")?.actions, [.retry, .skip])
+    }
+
     func testADetailReadFromBeforeAFrameCannotCloseIt() async throws {
         let log = OwnerRequestLog()
         let release = DispatchSemaphore(value: 0)
@@ -604,6 +688,19 @@ private extension ChatPollingIntervals {
         var intervals = ChatPollingIntervals.standard
         intervals.sleep = { _ in try await Task.sleep(for: .milliseconds(5)) }
         return intervals
+    }
+}
+
+/// Lets one polling sleep through, so exactly one read starts.
+private final class FirstPollRelease: @unchecked Sendable {
+    private let lock = NSLock()
+    private var released = false
+
+    func take() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        defer { released = true }
+        return !released
     }
 }
 

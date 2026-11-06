@@ -701,10 +701,20 @@ extension ChatPendingActionCoordinator {
         state.errorMessage = nil
         connection = state
         delegate?.pendingActionCoordinatorWillSubmitAction()
+        // A read already out left before this answer, so it cannot say whether the answer landed.
+        connectionChangeCount &+= 1
+        let changes = connectionChangeCount
         do {
             let view = try await client.respondConnectorOperation(opID: opID, owner: owner, move: move, env: env)
             guard var current = currentConnection(state) else { return }
             current.inFlight.remove(move)
+            // A newer statement arrived on the way back, so this view may be the older one: a read decides.
+            guard changes == connectionChangeCount else {
+                if !current.confirmed.settled { current.unknown.insert(move) }
+                connection = current
+                await readConnectionOperation()
+                return
+            }
             connection = current
             connectionChangeCount &+= 1
             showConnection(view, sessionID: current.sessionID, closesSettled: move == .continueWithoutTheRest)
@@ -716,6 +726,8 @@ extension ChatPendingActionCoordinator {
     private func settleRefusedOrLostAnswer(_ move: ConnectorOperationMove, error: Error, of state: ConnectionOperationState) async {
         guard var current = currentConnection(state) else { return }
         current.inFlight.remove(move)
+        // Only a read from after this failure may decide what landed.
+        connectionChangeCount &+= 1
         // A 404 is the server saying this operation is gone, which a refusal of one move does not say.
         if case .http(404, _)? = error as? APIError {
             connection = current
