@@ -1,5 +1,37 @@
 # Sidecar RPC (TAL-245)
 
+RPC v78 adds `redaction.policy` (TAL-1919): a fingerprint and the process-wide
+plugin registry as `{ pattern, literal_prefix }` entries. It reads only the
+already imported Agent registry; an Agent without that registry returns an empty
+policy. The server fetches it through a ready gate after every compatible
+handshake, including reconnects. After each RPC handler and before a stream
+frame, the sidecar checks the native matcher identity and pushes one
+`redaction.policy` notification when the rules change. The push precedes the
+affected result, error, or frame. Concurrent policy reads do not consume pushes.
+
+The server applies the additive union synchronously in its shared redactor and
+invalidates its text memo on policy changes. Plugin matches are collected on
+original text and the existing control/ANSI-stripped views. Learned prefixes
+also use the shared bounded OSC payload/display scanner with their cached
+marker/stem index. An ambiguous learned prefix masks the remaining field from
+the earliest viable candidate; the scan stops after that first result. Overlaps are merged
+before masking. Disjoint built-in masks retain their display; an interfering
+match fully masks the enclosing built-in change interval, so a plugin cannot
+remove a credential name or prefix and expose its value. Display controls never
+count toward a plugin token's partial-mask length floor. Retaining learned rules across
+reconnects also prevents an older concurrent snapshot from weakening a push.
+Only literal rules or a literal prefix followed by one terminal character class
+or wildcard can execute as JavaScript regexes. Repeat minima are capped at 256
+to bound failed work per prefix candidate; grouped alternatives, suffix
+constraints and other forms use prefix masking. Portable Python/JavaScript
+escapes compile in Unicode mode; Python dot matching excludes LF only. Python-only syntax and
+semantics (including Unicode shorthand classes and absolute anchors) use
+conservative prefix masking. Proven token-only rules mask the following
+non-whitespace run; rules that may consume whitespace (including inline DOTALL)
+mask from their literal prefix through the remaining input. Fallback spans are
+fully masked: their conservative extent cannot establish the native match
+length needed to safely retain a head or tail. No per-string RPC or Agent change is needed.
+
 RPC v67 lets the sidecar call the server (TAL-1164). It writes a request in the
 `server.*` namespace on stdout with a string id `s:<n>`, and the server answers on
 the sidecar's stdin; integer ids stay the server's own requests. The server

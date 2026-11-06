@@ -10,6 +10,7 @@ import { PassThrough, Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
 import { SidecarClient, SidecarError, sidecarSpawnEnv } from './client.js'
+import { redactText } from '../redact.js'
 import { launchSidecar } from './discover.js'
 import { FakeSidecar } from './fake.js'
 
@@ -527,5 +528,37 @@ describe('abort listeners on a shared caller signal', () => {
     await expect(client.call('stt.stream_audio', { stream_id: 's' }, { signal: controller.signal })).rejects.toMatchObject({ condition: 'cancelled' })
     expect(listeners(controller.signal)).toBe(0)
     expect(requests).toHaveLength(0)
+  })
+})
+
+describe('SidecarClient redaction policy notifications', () => {
+  it('applies a pushed policy before dispatching the following live frame', async () => {
+    const text = 'pushacme_0123456789abcdef'
+    expect(redactText(text, true)).toBe(text)
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const handshake = (JSON.parse(readFileSync(fixture, 'utf8')) as Record<string, { result: Record<string, unknown> }[]>)['runtime.handshake']![0]!.result
+    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true })
+    const send = (value: Record<string, unknown>) => { child.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n') }
+    const stdin = new Writable({
+      write(chunk, _encoding, callback) {
+        const req = JSON.parse(String(chunk)) as { id: number; method: string }
+        if (req.method === 'runtime.handshake') send({ id: req.id, result: handshake })
+        else {
+          send({ method: 'redaction.policy', params: { fingerprint: 'pushed-policy', patterns: [{ pattern: 'pushacme_[a-z0-9]{10,}', literal_prefix: 'pushacme_' }] } })
+          send({ method: 'stream', params: { id: req.id, seq: 1, event: 'token', data: { text } } })
+          send({ id: req.id, result: { methods: [] } })
+        }
+        callback()
+      },
+      final(callback) { callback(); child.stdout.end(); child.emit('exit', 0, null) },
+    })
+    spawnBoundary.next = () => Object.assign(child, { stdin }) as unknown as ChildProcess
+    const client = new SidecarClient({ python: '', command: ['fake-sidecar'], agentDir: '', sidecarDir: '', hermesHome: '', log: () => undefined })
+    try {
+      await client.start()
+      const frames: unknown[] = []
+      await client.call('rpc.methods', {}, { onStream: (frame) => { frames.push(redactText((frame.data as { text: string }).text, true)) } })
+      expect(frames).toEqual(['pushac...cdef'])
+    } finally { spawnBoundary.next = null; await client.close() }
   })
 })

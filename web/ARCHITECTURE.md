@@ -70,7 +70,9 @@ results, exports, and public shares. It covers credential names and connection
 strings, provider tokens, and PEM, PGP, PuTTY and age private keys. MCP inventory
 uses the same credential-name check with its existing editable mask. URL
 userinfo matching stops at JSON string boundaries so JSON-LD stays readable.
-Redaction remains local to the server and never calls the Agent at runtime.
+Plugin credential patterns arrive from the sidecar at readiness and through
+policy-change notifications. Redaction remains synchronous and local to the
+server; individual strings never call the Agent.
 
 JSON responses use compact serialization by default. Raw handlers can request
 pretty output explicitly. Raw and oRPC JSON responses share asynchronous gzip

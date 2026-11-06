@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it, vi } from 'vitest'
-import { redactText } from './redact.js'
+import { applyRedactionPolicy, mightContainSensitiveText, redactText } from './redact.js'
 
 // Prototype spies change V8 fast paths even after restoration; keep them in an isolated test worker.
 describe('redactText cache', () => {
@@ -14,6 +14,32 @@ describe('redactText cache', () => {
       exec.mockRestore()
     }
   }
+
+  it('keeps the empty-policy prefilter work identical', () => {
+    const text = 'ordinary prefilter output'
+    const exec = vi.spyOn(RegExp.prototype, 'exec')
+    try {
+      expect(mightContainSensitiveText(text)).toBe(false)
+      const before = exec.mock.calls.length
+      applyRedactionPolicy({ fingerprint: 'empty-policy', patterns: [] })
+      exec.mockClear()
+      expect(mightContainSensitiveText(text)).toBe(false)
+      expect(exec.mock.calls.length).toBe(before)
+    } finally { exec.mockRestore() }
+  })
+
+  it.each([
+    { pattern: 'nonlinear_(a|aa)+$', prefix: 'nonlinear_', text: 'nonlinear_' + 'a'.repeat(24) + '!', expected: '***' },
+    { pattern: 'suffix_[a-z_]+$', prefix: 'suffix_', text: 'suffix_'.repeat(24) + '!', expected: '***' },
+    { pattern: 'minimum_[a-z_]{1000000,}', prefix: 'minimum_', text: 'minimum_' + 'a'.repeat(24), expected: '***' },
+  ])('never evaluates unsafe plugin rule $pattern on the shared event loop', ({ pattern, prefix, text, expected }) => {
+    applyRedactionPolicy({ fingerprint: pattern, patterns: [{ pattern, literal_prefix: prefix }] })
+    const exec = vi.spyOn(RegExp.prototype, 'exec')
+    try {
+      expect(redactText(text, true)).toBe(expected)
+      expect(exec.mock.contexts.some((regex) => regex instanceof RegExp && regex.source === pattern)).toBe(false)
+    } finally { exec.mockRestore() }
+  })
 
   it.each([64, 200 * 1024].flatMap((size) => [true, false].map((sensitive) => ({ size, sensitive }))))(
     'skips every regex pass on a repeated $size-character payload, sensitive=$sensitive', ({ size, sensitive }) => {
@@ -66,6 +92,11 @@ describe('redactText cache', () => {
     expect(first.result).toBe(text)
     expect(second.result).toBe(text)
     expect(second.passes).toBeGreaterThan(0)
+    const secret = 'hugeacme_0123456789abcdef'
+    const large = secret + ' ' + text
+    expect(redactText(large, true)).toBe(large)
+    applyRedactionPolicy({ fingerprint: 'uncached-policy', patterns: [{ pattern: 'hugeacme_[a-z0-9]{10,}', literal_prefix: 'hugeacme_' }] })
+    expect(redactText(large, true)).toBe('hugeac...cdef ' + text)
   })
 
   it('owns cached strings without retaining larger substring backing stores', () => {

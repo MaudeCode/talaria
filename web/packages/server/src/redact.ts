@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { type RedactionPolicy, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -290,8 +290,10 @@ const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
 /** A character a credential's prefix or body can hold (`SG.`, `glrt-a.b`, `gAAAA…=`): what a fail-closed run walks. */
 const RUN_CHAR_RE = /[A-Za-z0-9_.=-]/
+const payloadCharacter = (char: string, learned: boolean): boolean => learned ? !CONTROL_CHAR_RE.test(char) : RUN_CHAR_RE.test(char)
 /** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
 const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
+const STRING_ANYWHERE_RE = new RegExp(STRING_OPENER_RE.source.slice(1))
 const PAYLOAD_RUN_CAP = 65_536
 /**
  * The token families a split token is joined for, each with its own boundaries: `CRED_RE`'s prefixes, and `JWT_RE`, whose
@@ -444,18 +446,26 @@ const seedAfter = (prev: string | undefined): string | null => (prev === undefin
  * walk from it; a JWT's also after a `-`.
  * Candidates live only while they can grow into a prefix, which bounds them and keeps the scan linear.
  */
-function crossPayloadPrefixStarts(text: string): [start: number, end: number, marker: string][] {
+function crossPayloadPrefixStarts(text: string, learned?: { markers: ReadonlySet<string>; stems: ReadonlySet<string> }): [start: number, end: number, marker: string][] {
   const starts: [number, number, string][] = []
   if (!/[\x1b\x90\x98\x9d-\x9f]/.test(text)) return starts
+  const markers = learned?.markers ?? PAYLOAD_MARKERS
+  const stems = learned?.stems ?? PAYLOAD_MARKER_STEMS
+  const seed: typeof seedAfter = learned ? () => '' : seedAfter
   // Each candidate string, with the original index of its earliest start.
   let candidates = new Map<string, number>()
   // Grows a candidate by the run characters of `chars`, which starts at original index `at`.
   const grow = (into: Map<string, number>, candidate: string, start: number, chars: string, at: number): void => {
+    if (learned && starts.length) return
     for (let j = 0; j < chars.length; j += 1) {
-      if (!RUN_CHAR_RE.test(chars[j]!)) continue
+      if (!payloadCharacter(chars[j]!, Boolean(learned))) continue
       candidate += chars[j]!
-      if (PAYLOAD_MARKERS.has(candidate)) return void starts.push([start, at + j + 1, candidate])
-      if (!PAYLOAD_MARKER_STEMS.has(candidate)) return
+      if (markers.has(candidate)) {
+        // A shorter learned marker must not expose an earlier prefix still being assembled.
+        if (learned) for (const pending of [...candidates.values(), ...into.values()]) start = Math.min(start, pending)
+        return void starts.push([start, at + j + 1, candidate])
+      }
+      if (!stems.has(candidate)) return
     }
     const seen = into.get(candidate)
     if (seen === undefined || start < seen) into.set(candidate, start)
@@ -467,23 +477,23 @@ function crossPayloadPrefixStarts(text: string): [start: number, end: number, ma
     const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
     if (gap) {
       const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
-      const next = new Map(candidates)
-      for (const [candidate, start] of candidates) grow(next, candidate, start, gap.slice(from), k + from)
       const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
+      const next = new Map(candidates)
+      for (const [candidate, start] of candidates) grow(next, candidate, start, gap.slice(from, end), k + from)
       let tail = end
-      while (tail > from && RUN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
-      for (let j = tail; j < end; j += 1) {
-        const seed = seedAfter(j === tail ? undefined : gap[j - 1])
-        if (seed !== null) grow(next, seed, k + j, gap.slice(j, end), k + j)
+      while (tail > from && payloadCharacter(gap[tail - 1]!, Boolean(learned))) tail -= 1
+      for (let j = tail; j < end && (!learned || !starts.length); j += 1) {
+        const initial = seed(j === tail ? undefined : gap[j - 1])
+        if (initial !== null) grow(next, initial, k + j, gap.slice(j, end), k + j)
       }
       candidates = next
       prev = undefined
       k += gap.length
-    } else if (RUN_CHAR_RE.test(text[k]!)) {
+    } else if (payloadCharacter(text[k]!, Boolean(learned))) {
       const next = new Map<string, number>()
       for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!, k)
-      const seed = seedAfter(prev)
-      if (seed !== null) grow(next, seed, k, text[k]!, k)
+      const initial = seed(prev)
+      if (initial !== null) grow(next, initial, k, text[k]!, k)
       candidates = next
       prev = text[k]!
       k += 1
@@ -492,6 +502,7 @@ function crossPayloadPrefixStarts(text: string): [start: number, end: number, ma
       prev = undefined
       k += 1
     }
+    if (learned && starts.length) return starts
   }
   return starts
 }
@@ -570,19 +581,22 @@ function maskSplitTokens(text: string): string {
 }
 
 /** Replaces each union of overlapping original spans, given the longest of their texts. */
-function maskSpans(text: string, found: [number, number, string][], replace: (token: string) => string): string {
+function maskSpans(text: string, found: [number, number, string, boolean?][], replace: (token: string, opaque: boolean, overlaps: number) => string): string {
   const spans = found.sort((a, b) => a[0] - b[0])
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
     const start = spans[k]![0]
-    let [, end, token] = spans[k]!
+    let [, end, token, opaque = false] = spans[k]!
+    let overlaps = 1
     for (k += 1; k < spans.length && spans[k]![0] < end; k += 1) {
-      const [, nextEnd, nextToken] = spans[k]!
+      const [, nextEnd, nextToken, nextOpaque = false] = spans[k]!
+      opaque ||= nextOpaque
+      overlaps += 1
       end = Math.max(end, nextEnd)
       if (nextToken.length > token.length) token = nextToken
     }
-    out += text.slice(last, start) + replace(token)
+    out += text.slice(last, start) + replace(token, opaque, overlaps)
     last = end
   }
   return out + text.slice(last)
@@ -1400,13 +1414,13 @@ function redactSerializedUrls(text: string): string {
       value = decoded
     }
     if (typeof value !== 'string' || !value.includes('://') || !value.includes('@')) continue
-    let masked = redactSensitive(value)
+    let masked = redactBuiltinSensitive(value)
     const literal = text.slice(start + 1, contentEnd)
     if (literal !== value) {
       // Shell strings keep literal backslashes. Compare both readings before discarding an escape.
       let jsonLiteral = false
       try { JSON.parse(literal); jsonLiteral = true } catch { /* A plain command, not another serialization. */ }
-      const rawMask = jsonLiteral ? redactSensitive(literal) : redactRules(literal)
+      const rawMask = jsonLiteral ? redactBuiltinSensitive(literal) : redactRules(literal)
       if ((rawMask !== literal || masked !== value) && revealsMore(`${literal}\n${value}`, masked, rawMask, secretTokenCounts)) masked = '***'
     }
     if (masked === value) continue
@@ -1464,7 +1478,7 @@ function redactComposedWords(text: string): string {
     // inside the token, so a quoted value is masked whole.
     const plain = unit.replaceAll(WORD_SPACE, ' ')
     // A composed command can keep quotes for its inner shell; inspect that strictly shorter reading too.
-    const redact = plain.length < span.length && plain.includes('://') && plain.includes('@') ? redactSensitive : redactRules
+    const redact = plain.length < span.length && plain.includes('://') && plain.includes('@') ? redactBuiltinSensitive : redactRules
     const wanted = redact(plain)
     if (wanted === plain) continue
     const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
@@ -1729,6 +1743,115 @@ function secretTokenCounts(text: string): Map<string, number> {
   return counts
 }
 
+// Rules stay additive across concurrent snapshots and sidecar restarts: an older reply cannot undo a push.
+const pluginPatterns = new Map<string, ReturnType<typeof compilePluginPattern>>()
+const pluginPayloadPrefixes = { markers: new Set<string>(), stems: new Set<string>() }
+let policyFingerprint = ''
+
+function compilePluginPattern(pattern: string, prefix: string) {
+  const literal = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let tokenOnly = true
+  try {
+    const tail = pattern.slice(prefix.length)
+    // One terminal atom has no overlapping alternatives or variable suffix to backtrack through.
+    const simple = /^(?:\[(?:\\.|[^\]\\])+\]|\.)((?:[+*?]|\{([0-9]+)(?:,([0-9]*))?\})?)$/.exec(tail)
+    let source = literal
+    let characterClass = false
+    let portable = true
+    for (let i = 0; i < tail.length; i += 1) {
+      const char = tail[i]!
+      if (char === '\\') {
+        const escaped = tail[++i]
+        // An unsupported rule can stop at whitespace only when every consuming part is known to be token-only.
+        if (!escaped || !String.raw`wdSbBAZz\.^$*+?{}[]()|-`.includes(escaped)) tokenOnly = false
+        // Python's Unicode classes, boundaries, anchors and numeric escapes have different JS semantics.
+        if (!escaped || !String.raw`nrtfvx\.^$*+?{}[]()|-`.includes(escaped)) portable = false
+        source += `\\${escaped}`
+      } else {
+        if (char < '!' || char > '~' || char === '^' || (char === '.' && !characterClass)) tokenOnly = false
+        if (char === '[') characterClass = true
+        else if (char === ']') characterClass = false
+        // Python's dot excludes LF only; JS also excludes CR and the Unicode line/paragraph separators.
+        source += char === '.' && !characterClass ? '[^\\n]' : char
+      }
+    }
+    if (!pattern.startsWith(prefix)) { tokenOnly = false; throw new SyntaxError('Invalid plugin prefix') }
+    // Bound failed work at each literal-prefix candidate, even when a rule asks for a huge minimum length.
+    if (!portable || (tail && (!simple || Number(simple[2] ?? 0) > 256))) throw new SyntaxError('Unsupported plugin regex form')
+    // Unicode mode refuses identity escapes that otherwise silently turn Python anchors into literal letters.
+    return { prefix, regex: new RegExp(source, 'gu'), opaque: false }
+  } catch {
+    // The true match may be shorter than the fallback span, so retaining any of its head could expose it whole.
+    return { prefix, regex: new RegExp(`${literal}${tokenOnly ? '\\S*' : '[\\s\\S]*'}`, 'gu'), opaque: true }
+  }
+}
+
+export function applyRedactionPolicy(policy: RedactionPolicy): void {
+  if (policy.fingerprint === policyFingerprint) return
+  for (const { pattern, literal_prefix } of policy.patterns) {
+    if (pluginPatterns.has(pattern)) continue
+    pluginPatterns.set(pattern, compilePluginPattern(pattern, literal_prefix))
+    if (!pluginPayloadPrefixes.markers.has(literal_prefix)) {
+      pluginPayloadPrefixes.markers.add(literal_prefix)
+      for (let n = 1; n < literal_prefix.length; n += 1) pluginPayloadPrefixes.stems.add(literal_prefix.slice(0, n))
+    }
+  }
+  policyFingerprint = policy.fingerprint
+  cache.clear()
+  cacheBytes = 0
+}
+
+function redactPluginPatterns(text: string, builtin = text): string {
+  if (!pluginPatterns.size) return builtin
+  const spans: [number, number, string, boolean?][] = []
+  const seen = new Map<string, number>()
+  const collect = (shown: string, kept?: number[]): void => {
+    for (const { prefix, regex, opaque } of pluginPatterns.values()) {
+      if (!shown.includes(prefix)) continue
+      for (const match of shown.matchAll(regex)) {
+        const from = kept ? kept[match.index]! : match.index
+        const to = kept ? kept[match.index + match[0].length - 1]! + 1 : match.index + match[0].length
+        const key = `${from}:${to}`
+        const duplicate = seen.get(key)
+        if (duplicate !== undefined) { spans[duplicate]![3] ||= opaque; continue }
+        seen.set(key, spans.length)
+        spans.push([from, to, match[0], opaque])
+      }
+    }
+  }
+  collect(text)
+  for (const gaps of SPLIT_VIEWS) {
+    const view = splitView(text, gaps)
+    if (view) collect(view.stripped, view.kept)
+  }
+  if (STRING_ANYWHERE_RE.test(text)) {
+    const first = crossPayloadPrefixStarts(text, pluginPayloadPrefixes)[0]
+    // Payload choices leave the true match boundary unknown; hide the remaining field after the earliest candidate.
+    if (first) spans.push([first[0], text.length, '', true])
+  }
+  if (!spans.length) return builtin
+  let target = text
+  if (builtin !== text) {
+    // The enclosing changed interval conservatively covers every built-in mask without parsing its display form.
+    let start = 0
+    let end = text.length
+    let shownEnd = builtin.length
+    while (start < end && start < shownEnd && text[start] === builtin[start]) start += 1
+    while (end > start && shownEnd > start && text[end - 1] === builtin[shownEnd - 1]) { end -= 1; shownEnd -= 1 }
+    if (spans.every(([from, to]) => to <= start || from >= end)) {
+      const delta = builtin.length - text.length
+      for (const span of spans) if (span[0] >= end) { span[0] += delta; span[1] += delta }
+      target = builtin
+    } else spans.push([start, end, '', true])
+  }
+  // A union touching another rule must not re-expose characters one of its members would hide completely.
+  return maskSpans(target, spans, (token, opaque, overlaps) => opaque || overlaps > 1 ? '***' : mask(token.replace(CONTROL_CHARS_RE, '')))
+}
+
+export function redactSensitive(text: string): string {
+  return redactPluginPatterns(text, redactBuiltinSensitive(text))
+}
+
 /**
  * Threat model: the redactor reads only the tool's text. Variables the text itself assigns (`SEP=:; curl -u bob${SEP}x`)
  * are resolved in text order; shell control flow (conditionals, loops, functions, `read`, `unset`) is not modelled.
@@ -1736,7 +1859,7 @@ function secretTokenCounts(text: string): Map<string, number> {
  * expansions, URL authorities built from expansions) are the only guard for them, and a secret assembled entirely from
  * unknown variables can still be published.
  */
-export function redactSensitive(text: string): string {
+function redactBuiltinSensitive(text: string): string {
   if (!text) return text
   const redacted = redactShellText(text)
   // An escape sequence in a key or between a key and its value (`\x1b[1;31mAPI_KEY\x1b[m=…`, `pass\x1b[1mword …`) hides
@@ -2017,6 +2140,14 @@ const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source)
 const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
+  if (mightContainBuiltinSensitiveText(text)) return true
+  for (const { prefix } of pluginPatterns.values()) {
+    if (SPLIT_VIEWS.some((gaps) => text.replace(gaps, '').includes(prefix))) return true
+  }
+  return false
+}
+
+function mightContainBuiltinSensitiveText(text: string): boolean {
   if (!text) return false
   // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
   // redactor joins split tokens.
@@ -2065,7 +2196,8 @@ export function redactText(text: unknown, enabled: boolean): unknown {
     cache.set(key, hit)
     return hit
   }
-  const out = mightContainSensitiveText(text) ? redactSensitive(text) : text
+  // A plugin-only match needs no shell/assignment scan of an otherwise ordinary (possibly very large) payload.
+  const out = mightContainBuiltinSensitiveText(text) ? redactSensitive(text) : redactPluginPatterns(text)
   // Count both strings conservatively as UTF-16, even when V8 stores them as Latin-1.
   const bytes = 2 * (key.length + out.length)
   if (bytes > CACHE_MAX_BYTES) return out

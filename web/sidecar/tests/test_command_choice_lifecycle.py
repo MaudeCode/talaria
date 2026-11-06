@@ -2,6 +2,7 @@
 import contextlib
 import contextvars
 import json
+import io
 import queue
 import sys
 import threading
@@ -11,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from talaria_sidecar.methods import Registry, chat, commands
-from talaria_sidecar.rpc import CallContext
+from talaria_sidecar.rpc import CallContext, RpcServer
 
 
 @pytest.fixture
@@ -47,7 +48,8 @@ def bridge(monkeypatch, tmp_path):
     commands.register(registry)
     chat.register(registry)
     frames = queue.Queue()
-    server = SimpleNamespace(notify=lambda method, frame: frames.put(frame))
+    server = RpcServer(registry.methods, stdout=io.BytesIO())
+    server.notify = lambda method, frame: frames.put(frame) if method == "stream" else None
     params = {'command': '/choose', 'session_id': 'session', 'profile_home': str(tmp_path)}
     return registry.methods, server, frames, params, asker
 
