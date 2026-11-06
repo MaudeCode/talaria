@@ -17,7 +17,7 @@ import time
 STARTED = time.monotonic()
 agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
-from peer_phases import Phases, report_modes
+from peer_phases import POLL_SECONDS, Phases, report_modes
 
 EXECUTION_MODES = ["normal", "ignore_config", "safe"]
 if not (agent / "hermes_cli/gateway_client.py").exists():  # None of the fixtures imported below exist either.
@@ -159,7 +159,7 @@ def settle(call, sid, deadline=60):
         if not result["snapshot"]["pending"] and not result["snapshot"]["running"]:
             return result
         assert time.monotonic() < end, result
-        time.sleep(.05)
+        time.sleep(POLL_SECONDS)
 
 
 def gone(pids, deadline=45):
@@ -335,7 +335,7 @@ def probe(root: Path, home: Path, alpha: Path, workspace: Path, witness: Path, p
                     if not current["snapshot"]["running"] and all(p["status"] in {"unknown", "terminal"} for p in pending):
                         break
                     assert time.monotonic() < end, current
-                    time.sleep(.05)
+                    time.sleep(POLL_SECONDS)
                 if request_for(peer, text):
                     assert sentinels_in(request_for(peer, text)) == expected, request_for(peer, text)
                 else:

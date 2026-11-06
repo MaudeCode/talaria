@@ -4,6 +4,10 @@ import json
 import sys
 import time
 
+# Each poll is a full reconnect through a sidecar and the owner. Tighter polling only takes CPU from the turn being
+# waited for, most of all with parallel peers on a small CI runner.
+POLL_SECONDS = .25
+
 
 class Phases:
     def __init__(self, started):

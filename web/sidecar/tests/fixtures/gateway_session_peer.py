@@ -16,7 +16,7 @@ import time
 STARTED = time.monotonic()
 agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
-from peer_phases import Phases, report_modes
+from peer_phases import POLL_SECONDS, Phases, report_modes
 
 OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart"}
 
@@ -131,7 +131,7 @@ async def probe(home, peer, desc, *, require_gap=False):
                 if final["snapshot"] and not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             native_final = await rpc(native, "session.resume", session_id=sid)
             resumed_again = await rpc(native, "session.resume", session_id=sid)
             assert resumed_again["result"]["subscription_id"] == native_final["result"]["subscription_id"], resumed_again
@@ -152,7 +152,7 @@ async def probe(home, peer, desc, *, require_gap=False):
                 if final["snapshot"] and not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             reactions = final["snapshot"].get("reactions_supported") is True and not require_gap
             if reactions:
                 reaction_row = final["snapshot"]["messages"][-1]["row_id"]
@@ -253,7 +253,7 @@ async def probe_queued_controls(home, peer, desc):
                 if final["snapshot"] and not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             contexts = [body["messages"] for body in peer.requests]
             # Steering reaches the original execution before the edited queued turn starts.
             corrected = next(i for i, rows in enumerate(contexts) if "QUEUE_CORRECTION" in json.dumps(rows))
@@ -370,7 +370,7 @@ async def probe_control(home, peer, desc, kind):
                 if pending["result"]["prompts"]:
                     break
                 assert time.monotonic() < deadline, pending
-                await asyncio.sleep(.03)
+                await asyncio.sleep(POLL_SECONDS)
             prompt = pending["result"]["prompts"][0]
             await native.close()
         params = {"profile_home": str(home), "session_id": sid}
@@ -385,7 +385,7 @@ async def probe_control(home, peer, desc, kind):
             if not final["snapshot"]["pending"]:
                 break
             assert time.monotonic() < deadline, final
-            await asyncio.sleep(.03)
+            await asyncio.sleep(POLL_SECONDS)
         assert kind.upper() + "_FINISHED" in json.dumps(final["snapshot"]["messages"]), final
         if kind == "approval":
             assert not (home / "owned-removal").exists()
@@ -448,7 +448,7 @@ async def probe_batch(home, peer, desc):
                 if not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             tool = json.dumps([m for messages in peer.requests for m in messages if m["role"] == "tool"])
             assert "green" in tool and "large" in tool, tool
             assert "CLARIFY_FINISHED" in json.dumps(final["snapshot"]["messages"]), final
@@ -494,7 +494,7 @@ async def probe_batch_unavailable(home, peer, desc):
                 if not done["result"]["pending"]:
                     break
                 assert time.monotonic() < deadline, done
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
     finally:
         sidecar.close()
 
@@ -516,7 +516,7 @@ async def probe_restart(home, peer, desc, proc):
                 if pending["result"]["prompts"]:
                     break
                 assert time.monotonic() < deadline, pending
-                await asyncio.sleep(.03)
+                await asyncio.sleep(POLL_SECONDS)
             prompt = pending["result"]["prompts"][0]
         params = {"profile_home": str(home), "session_id": sid}
         # Web's watch was opened before the wait, as the server's is while the turn runs.
@@ -604,7 +604,7 @@ async def probe_profiles(home, peer, desc, proc, env):
             if not result["snapshot"]["pending"]:
                 return result["snapshot"]
             assert time.monotonic() < deadline, result
-            await asyncio.sleep(.03)
+            await asyncio.sleep(POLL_SECONDS)
     try:
         async with websocket(home, desc) as root_view, connect(url, subprotocols=protocols, max_queue=None) as alpha_view:
             created = await rpc(root_view, "session.create", request_id="same-request", source="cli", model="root-model", toolsets=["terminal"])
@@ -704,7 +704,7 @@ async def probe_dedicated(home, peer, desc, alpha, alpha_desc):
                     if not result["snapshot"]["pending"]:
                         break
                     assert time.monotonic() < deadline, result
-                    await asyncio.sleep(.03)
+                    await asyncio.sleep(POLL_SECONDS)
                 assert result["snapshot"]["info"]["model"] == name + "-model", result
                 assert "RECOVERY_ACK_" + name.upper() + "_HOME" in json.dumps(result["snapshot"]["messages"])
             count = len(peer.requests)
@@ -812,7 +812,7 @@ def probe_recovery(home, peer, env):
                 if safe["state"] == "attached" and not safe["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, safe
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             assert "RECOVERY_ACK_RECOVER_QUEUED" in json.dumps(safe["snapshot"]["messages"]), safe
             unknown = await asyncio.to_thread(call, "unknown")
             assert unknown["state"] == "attached", unknown
@@ -831,7 +831,7 @@ def probe_recovery(home, peer, env):
                 if not final["snapshot"]["pending"]:
                     break
                 assert time.monotonic() < deadline, final
-                await asyncio.sleep(.05)
+                await asyncio.sleep(POLL_SECONDS)
             assert "RECOVERY_ACK_AFTER_UNKNOWN" in json.dumps(final["snapshot"]["messages"]), final
         finally:
             sidecar.close()
@@ -947,7 +947,7 @@ async def probe_detail(home, peer, desc):
                 if context.get('reason') != 'changed':
                     break
                 assert time.monotonic() < deadline, inspected
-                await asyncio.sleep(.03)
+                await asyncio.sleep(POLL_SECONDS)
             assert context['available'] is True and context['categories'], inspected
             assert context['source'] in {'provider_usage', 'provider_usage_plus_estimate', 'local_estimate'}, context
             assert all(set(row) == {'label', 'characters', 'tokens', 'status', 'loaded'} for row in context['files']), context
