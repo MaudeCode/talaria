@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See each discussion member's current tool, elapsed time, stalled status and round.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

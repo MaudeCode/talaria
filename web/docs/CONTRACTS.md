@@ -362,6 +362,15 @@ attachment custody. The Web server owns authorization, bounded display windows,
 attribution, safe errors, member phases and permitted actions. Clients render
 these fields through the shared transcript, composer and approval components.
 
+The server projects each running member's redacted `tool`, epoch-seconds
+`started_at`, and `stalled` flag. A running member is stalled after 120 seconds
+without a frame, falling back to its start when no frame is known. Queued members
+have no tool or elapsed origin. The nullable `round` carries the 1-based running
+task round and the Agent's maximum, preferring the newest discussion thread with
+running work. Missing native metadata stays null or false, with no guessed round.
+Clients only format the elapsed duration and localize the labels. The existing
+room observation poll refreshes these fields even without new log events.
+
 `/api/groups/view` returns a server-ordered window. `before_seq` requests an older
 window; returning to the latest window resumes observation. One authenticated
 `/api/groups/stream` observer per owner/profile/room holds the native log cursor

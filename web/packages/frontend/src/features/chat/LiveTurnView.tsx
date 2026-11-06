@@ -148,7 +148,7 @@ function rateLimitLabel(wait: RateLimitWait, locale: string): string {
 
 /** Time since the run started in T3 Code's units (TAL-922): `42s`, then `5m`, then `1h 30m`. Redrawn each second and
  *  hidden from the live region so it is not announced every tick. */
-export function RunElapsed({ since }: { since: number }) {
+export function RunElapsed({ since, showSeconds = false }: { since: number; showSeconds?: boolean }) {
   const locale = useLocale()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -161,7 +161,7 @@ export function RunElapsed({ since }: { since: number }) {
     seconds < 60
       ? formatDurationUnits(locale, [seconds, 'second'])
       : minutes < 60
-        ? formatDurationUnits(locale, [minutes, 'minute'])
+        ? formatDurationUnits(locale, [minutes, 'minute'], ...(showSeconds ? [[seconds % 60, 'second'] as [number, 'second']] : []))
         : formatDurationUnits(locale, [Math.floor(minutes / 60), 'hour'], [minutes % 60, 'minute'])
   return <span className="live-run-elapsed" aria-hidden="true">{text}</span>
 }

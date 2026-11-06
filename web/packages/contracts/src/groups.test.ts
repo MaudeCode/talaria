@@ -12,6 +12,7 @@ it('pins the shared discussion projection for independently delivered clients', 
   expect(view.room?.context).toMatchObject({ routing: 'lead', lead_member_id: 'one' })
   expect(view.room?.members.map((m) => m.lead)).toEqual([true, false])
   expect(view.room?.members.map((m) => m.phase)).toEqual(['queued', 'running'])
+  expect(view.room).toMatchObject({ round: { current: 2, max: 3 }, members: [{ tool: null, started_at: null, stalled: false }, { tool: 'terminal', started_at: 1000, stalled: false }] })
   expect(GroupCatalogSchema.parse(fixture.inactive)).toMatchObject({ available: false, profiles: [], actions: [] })
   expect(JSON.stringify(fixture)).not.toMatch(/profile_home|authority_gateway_id|data_base64/)
 })

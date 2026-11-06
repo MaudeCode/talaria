@@ -10,7 +10,7 @@ export function groupFixture(sidecar: FakeSidecar) {
   const state = { driver: true, available: true, lostSend: false, disbanded: false, refuseRetry: false, room, events: [] as Record<string, unknown>[],
     contextOffered: true, refuseContext: false, lostContext: null as 'before' | 'after' | null,
     context: { purpose: '', notes: '', routing: 'everyone', lead_member_id: '' },
-    driver_status: { running: true, working: false, blocked: false, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string }[] } }
+    driver_status: { running: true, working: false, blocked: false, max_rounds: undefined as number | null | undefined, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string; tool?: string | null; started_at?: number | null; progress_at?: number | null; thread_id?: string | null; round_index?: number | null }[] } }
   function append(kind: string, text: string, member = members[0]!, eventId?: string) {
     const seq = state.events.length + 1
     const event = { room_id: room.room_id, seq, event_id: eventId ?? `event-${seq}`, kind, authority_epoch: 1,
