@@ -15,9 +15,13 @@ import sqlite3
 
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
+from .connectors import snapshot_view
 
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
-            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react"}
+            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
+            "connection_status", "connection_wake", "connection_respond", "connection_retry"}
+_CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
+_CONNECTION_EVENTS = {"connection.request", "connection.update"}
 _OWNER_READ_MAX_BYTES = 4 * 1024 * 1024
 _REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
 # A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
@@ -84,9 +88,22 @@ def _todo_state(value: object) -> dict | None:
                       for item in value["todos"] if isinstance(item, dict)], "revision": revision}
 
 
+def _connection(value: object) -> dict | None:
+    """A canonical owner's open operation, through the same allowlist as a direct one. A resume hands the raw request
+    payload, so an env default or launch detail never reaches the server in a snapshot or an event."""
+    if not isinstance(value, dict) or not isinstance(value.get("op_id"), str) or not isinstance(value.get("targets"), list):
+        return None
+    try:
+        return snapshot_view(value, owner="session", tool_call_id=value.get("tool_call_id") if isinstance(value.get("tool_call_id"), str) else None)
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
 def _event(value: dict) -> dict:
     if value.get("type") == "todo.updated":
         return {**value, "payload": _todo_state(value.get("payload")) or {}}
+    if value.get("type") in _CONNECTION_EVENTS:
+        return {**value, "payload": _connection(value.get("payload")) or {}}
     return value
 
 
@@ -108,7 +125,8 @@ def _snapshot(value: dict) -> dict:
             if isinstance(reaction, dict) and reaction.get("author") in ("user", "agent")
             and isinstance(reaction.get("emoji"), str) and reaction["emoji"] in _REACTION_EMOJIS] if isinstance(reactions, list) else []})
     return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys},
-            **({"todo_state": _todo_state(value["todo_state"])} if "todo_state" in value else {})}
+            **({"todo_state": _todo_state(value["todo_state"])} if "todo_state" in value else {}),
+            **({"pending_connection": _connection(value["pending_connection"])} if "pending_connection" in value else {})}
 
 
 def _wake_on_cancel(ctx, events: asyncio.Queue) -> None:
@@ -226,6 +244,29 @@ def _checkpoint_read(value, *, no_baseline=False):
     return result
 
 
+async def _connection_action(client, params: dict, described: dict) -> dict:
+    """One closed verb on the exact owner's operation; ``owner`` and every other wire field are composed here, never taken
+    from a caller. No resume or subscription: the owner looks the operation up by this session's route and starts nothing."""
+    if described["authority_epoch"] != params["authority_epoch"]:
+        return _refused("refused", "owner_changed")
+    owner = {"type": "session", "session_id": params["session_id"]}
+    action = params["action"]
+    result = {"state": "attached", "reason": None, "snapshot": None, "receipt": None}
+    if action == "connection_retry":
+        # The operation's own write path: the owner re-mints the named target on its open operation.
+        value = await client.rpc("connectors.connect", owner=owner, connectors=[params["connector"]], reconnect=True)
+    elif action == "connection_respond":
+        answered = await client.rpc("connection.respond", owner=owner, op_id=params["op_id"], result=params["connection_answer"])
+        return {**result, "connection_settled": answered.get("settled") is True}
+    elif action == "connection_wake":
+        await client.rpc("connectors.operation.wake", owner=owner, op_id=params["op_id"])
+        return result
+    else:
+        value = await client.rpc("connectors.operation.status", owner=owner, op_id=params["op_id"])
+    view = _connection(value)
+    return {**result, "connection": view} if view else _refused("refused", "owner_connection_invalid")
+
+
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayRPCError
 
@@ -267,6 +308,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
 
         receipt = lock = None
         try:
+            if params["action"] in _CONNECTION_ACTIONS:
+                return await _connection_action(client, params, described)
             if params["action"] == "checkpoint_diff":
                 # The owner resolves the physical target and frozen policy. Never resume or read host files.
                 value = await asyncio.wait_for(client.rpc("rollback.session_diff", session_id=sid, _timeout=25), timeout=30)
@@ -381,7 +424,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 for event in replay["events"]:
                     if event.get("session_id") != sid or event.get("replay_epoch") != epoch:
                         continue
-                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear"}
+                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear", *_CONNECTION_EVENTS}
                             or event.get("execution_generation") == snap["execution_generation"]
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", _event(event))
@@ -459,6 +502,23 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     await client.rpc("session.detach", session_id=sid, subscription_id=subscription)
 
 
+def _validate_connection(action: str, params: dict) -> None:
+    if (not isinstance(params.get("op_id"), str) or not params["op_id"]
+            or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0):
+        raise InvalidParams("a connection action requires its operation and owner identity")
+    if action == "connection_retry" and (not isinstance(params.get("connector"), str) or not params["connector"]):
+        raise InvalidParams("connection_retry requires a connector")
+    if action == "connection_respond":
+        answer = params.get("connection_answer")
+        row = answer.get("targets") if isinstance(answer, dict) else None
+        # One row's move or Continue, never both. The owner re-validates, and a credential never appears in this message.
+        if answer != {"settled_by": "continue"} and not (
+                isinstance(row, list) and len(row) == 1 and set(answer) == {"targets"} and isinstance(row[0], dict)
+                and set(row[0]) <= {"name", "status", "env"} and isinstance(row[0].get("name"), str) and row[0].get("status") in {"approved", "skipped"}
+                and (lambda env: isinstance(env, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()))(row[0].get("env", {}))):
+            raise InvalidParams("connection_respond requires one row's move or continue")
+
+
 def session(ctx, params: dict) -> dict:
     home = profile_home_param(params).resolve()
     action = params.get("action", "snapshot")
@@ -478,6 +538,8 @@ def session(ctx, params: dict) -> dict:
             or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
             or not isinstance(params.get("replay_epoch"), str) or not params["replay_epoch"]):
         raise InvalidParams("captured command requires command and owner identity")
+    if action in _CONNECTION_ACTIONS:
+        _validate_connection(action, params)
     required = {
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
         "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),

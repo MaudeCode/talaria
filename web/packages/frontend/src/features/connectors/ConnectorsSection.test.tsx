@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorsPage } from '@maudecode/talaria-web-contracts'
 
 // The shared Web/App fixture the server suite composes (contracts/fixtures/connectors.json).
-const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; connect_card: ConnectorOperationView }
+const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; connect_card: ConnectorOperationView; native_connection: { view: ConnectorOperationView } }
 const offered: ConnectorsPage = { ...shared.page, sign_in_required: false, sign_in_offer: {
   available: true, due: true, visible: true, offer_id: 'offer-1', actions: ['sign_in', 'dismiss'], refresh_after: null,
 } }
@@ -138,5 +138,46 @@ describe('ConnectCard (TAL-818)', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Continue' }))
     expect(api.respondConnectorOperation).toHaveBeenCalledWith({ op_id: 'op-chat', action: 'continue' })
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
+  })
+
+  it('reads and answers a canonical owner through the view\'s owner, and lets its live frames replace the view (TAL-1317)', async () => {
+    const native = shared.native_connection.view
+    operation = native
+    const read = vi.mocked(api.fetchConnectorOperation)
+    const answer = vi.mocked(api.respondConnectorOperation)
+    read.mockClear()
+    answer.mockClear()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const view = (initial: ConnectorOperationView) => <QueryClientProvider client={qc}><ConnectCard initial={initial} /></QueryClientProvider>
+    const { rerender } = render(view(native))
+    const card = screen.getByRole('region', { name: 'Connect apps' })
+    await userEvent.click(within(within(card).getAllByRole('listitem')[2]!).getByRole('button', { name: 'Try again' }))
+    expect(answer).toHaveBeenCalledWith({ op_id: 'op-native', ...native.owner, action: 'retry', target: 'notion', env: {} })
+    await waitFor(() => expect(read).toHaveBeenCalledWith('op-native', native.owner), { timeout: 4000 })
+    // A live frame moves the same card, and a settled one closes it.
+    operation = { ...native, targets: native.targets.map((t) => t.name === 'gmail' ? { ...t, state: 'connected', connect_url: null, actions: [] } : t) }
+    rerender(view(operation))
+    await waitFor(() => expect(within(card).queryByRole('link', { name: 'Authorize' })).not.toBeInTheDocument())
+    rerender(view({ ...operation, settled: true }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
+  }, 15_000)
+
+  it('wakes the owner on return from an authorization link only while the server offers it (TAL-1317)', async () => {
+    const native = shared.native_connection.view
+    operation = native
+    const answer = vi.mocked(api.respondConnectorOperation)
+    answer.mockClear()
+    renderWith(<ConnectCard initial={native} />)
+    await act(async () => { window.dispatchEvent(new Event('focus')); await Promise.resolve() })
+    expect(answer).toHaveBeenCalledWith({ op_id: 'op-native', ...native.owner, action: 'wake' })
+  })
+
+  it('never wakes a direct operation (TAL-1317)', async () => {
+    operation = shared.connect_card
+    const answer = vi.mocked(api.respondConnectorOperation)
+    answer.mockClear()
+    renderWith(<ConnectCard initial={shared.connect_card} />)
+    await act(async () => { window.dispatchEvent(new Event('focus')); await Promise.resolve() })
+    expect(answer).not.toHaveBeenCalled()
   })
 })

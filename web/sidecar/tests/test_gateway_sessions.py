@@ -51,7 +51,7 @@ def run_owner_peer(request, tmp_path, script, modes, timeout=200):
 def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
     # Compatible modes share one owner, so they repeat neither its boot nor its first-turn warmup (TAL-1780).
     run_owner_peer(request, tmp_path, "gateway_session_peer.py",
-                   ["shared", "batch", "approval", "clarify", "detail", "queued-controls", "model", "voice-stop"], timeout=400)
+                   ["shared", "batch", "approval", "clarify", "detail", "queued-controls", "model", "voice-stop", "connections"], timeout=400)
 
 
 @requires_agent
@@ -172,6 +172,11 @@ def native_owner_stub(tmp_path, monkeypatch):
                 raise TimeoutError()
         if method == "session.events.since":
             return {"events": owner.replay, "last_sequence": 4}
+        if method in {"connection.respond", "connectors.operation.status", "connectors.operation.wake", "connectors.connect"}:
+            reply = owner.connection[method]
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
     @asynccontextmanager
     async def connect(home, selected):
         assert home == tmp_path and selected is endpoint
@@ -787,3 +792,99 @@ def test_plan_gauge_snapshot_is_read_from_this_owner_and_cleared_on_omission(nat
     assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] == gauge
     owner.usage_stats = {}
     assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] is None
+
+
+RAW_CONNECTION = {
+    "op_id": "op-native", "seq": 3, "deadline_at": 1.0, "timeout_seconds": 1.0, "tool_call_id": "call-native",
+    "targets": [
+        {"name": "gmail", "kind": "connector", "action": "connect", "state": "initiated", "resolved": False, "connect_url": "https://vendor.example.test/a",
+         "connection_id": "private-connection", "attempt": "private-attempt", "alias": "private-alias", "launch": {"kind": "stdio", "target": "private-launch"}},
+        {"name": "linear", "kind": "mcp", "action": "install", "state": "pending", "resolved": False, "detail": "needs a key",
+         "required_env": [{"name": "LINEAR_API_KEY", "required": True, "secret": True, "default": "private-default", "prompt": "API key"}]},
+    ],
+}
+PUBLIC_CONNECTION = {
+    "op_id": "op-native", "seq": 3, "settled": False, "owner": "session", "tool_call_id": "call-native",
+    "targets": [
+        {"name": "gmail", "kind": "connector", "state": "initiated", "detail": "", "connect_url": "https://vendor.example.test/a", "required_env": []},
+        {"name": "linear", "kind": "mcp", "state": "pending", "detail": "needs a key", "connect_url": None,
+         "required_env": [{"name": "LINEAR_API_KEY", "prompt": "API key", "required": True, "secret": True}]},
+    ],
+}
+
+
+def test_snapshot_and_live_events_project_the_open_connection_through_the_direct_allowlist(native_owner_stub):
+    from types import SimpleNamespace
+    native_owner_stub.snapshot_extra = {"pending_connection": RAW_CONNECTION}
+    native_owner_stub.replay = [{"type": "connection.update", "session_id": "native", "replay_epoch": "epoch", "seq": 2, "payload": {**RAW_CONNECTION, "settled_at": None, "settled": False}}]
+    native_owner_stub.events = [{"type": "connection.update", "session_id": "native", "replay_epoch": "epoch", "seq": 5, "payload": {**RAW_CONNECTION, "seq": 4, "settled_at": 2.0, "settled": True}}]
+    frames = []
+    ctx = SimpleNamespace(cancelled=False)
+    def emit(kind, data):
+        frames.append((kind, data))
+        if kind == "event" and data["seq"] == 5:
+            ctx.cancelled = True
+    ctx.emit = emit
+    native_owner_stub.run(ctx, {"session_id": "native", "action": "watch"})
+    assert frames[0][1]["snapshot"]["pending_connection"] == PUBLIC_CONNECTION
+    events = [data["payload"] for kind, data in frames if kind == "event"]
+    assert events == [PUBLIC_CONNECTION, {**PUBLIC_CONNECTION, "seq": 4, "settled": True, "targets": [{**PUBLIC_CONNECTION["targets"][0], "connect_url": "https://vendor.example.test/a"}, PUBLIC_CONNECTION["targets"][1]]}]
+    assert "private-" not in json.dumps(frames)
+
+
+def test_an_owner_without_the_field_keeps_it_absent_and_null_clears_it(native_owner_stub):
+    assert "pending_connection" not in native_owner_stub.run(None, {"session_id": "native", "action": "snapshot"})["snapshot"]
+    native_owner_stub.snapshot_extra = {"pending_connection": None}
+    assert native_owner_stub.run(None, {"session_id": "native", "action": "snapshot"})["snapshot"]["pending_connection"] is None
+
+
+@pytest.mark.parametrize("action,method,extra,sent", [
+    ("connection_status", "connectors.operation.status", {}, {"op_id": "op-native"}),
+    ("connection_wake", "connectors.operation.wake", {}, {"op_id": "op-native"}),
+    ("connection_respond", "connection.respond", {"connection_answer": {"settled_by": "continue"}}, {"op_id": "op-native", "result": {"settled_by": "continue"}}),
+    ("connection_respond", "connection.respond", {"connection_answer": {"targets": [{"name": "linear", "status": "approved", "env": {"LINEAR_API_KEY": "synthetic"}}]}},
+     {"op_id": "op-native", "result": {"targets": [{"name": "linear", "status": "approved", "env": {"LINEAR_API_KEY": "synthetic"}}]}}),
+    ("connection_retry", "connectors.connect", {"connector": "gmail"}, {"connectors": ["gmail"], "reconnect": True}),
+])
+def test_connection_verbs_route_to_the_exact_owner_and_never_resume(native_owner_stub, action, method, extra, sent):
+    native_owner_stub.connection = {"connectors.operation.status": RAW_CONNECTION, "connectors.operation.wake": {"status": "ok"},
+                                    "connection.respond": {"status": "ok", "settled": True}, "connectors.connect": RAW_CONNECTION}
+    result = native_owner_stub.run(None, {"session_id": "native", "action": action, "op_id": "op-native", "authority_epoch": 1, **extra})
+    assert result["state"] == "attached" and result["snapshot"] is None
+    verbs = [call for call in native_owner_stub.calls if call[0] != "runtime.describe"]
+    assert verbs == [(method, {"owner": {"type": "session", "session_id": "native"}, **sent})]
+    if action in {"connection_status", "connection_retry"}:
+        assert result["connection"] == PUBLIC_CONNECTION
+    if action == "connection_respond":
+        assert result["connection_settled"] is True
+
+
+def test_a_replaced_owner_refuses_the_late_answer_before_it_is_sent(native_owner_stub):
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "connection_respond", "op_id": "op-native", "authority_epoch": 9, "connection_answer": {"settled_by": "continue"}})
+    assert (result["state"], result["reason"]) == ("refused", "owner_changed")
+    assert [call[0] for call in native_owner_stub.calls] == ["runtime.describe"]
+
+
+@pytest.mark.parametrize("failure,state,reason", [(RuntimeError("UNKNOWN_OPERATION"), "refused", "UNKNOWN_OPERATION"), (RuntimeError("CONNECTORS_UNAVAILABLE"), "refused", "CONNECTORS_UNAVAILABLE"), (TimeoutError(), "unavailable", "owner_connection_lost")])
+def test_a_refusal_keeps_its_reason_and_a_lost_answer_stays_unknown(native_owner_stub, failure, state, reason):
+    native_owner_stub.connection = {"connection.respond": failure}
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "connection_respond", "op_id": "op-native", "authority_epoch": 1, "connection_answer": {"settled_by": "continue"}})
+    assert (result["state"], result["reason"]) == (state, reason)
+    assert sum(call[0] == "connection.respond" for call in native_owner_stub.calls) == 1
+
+
+@pytest.mark.parametrize("params", [
+    {"action": "connection_status", "authority_epoch": 1},
+    {"action": "connection_status", "op_id": "op", "authority_epoch": True},
+    {"action": "connection_retry", "op_id": "op", "authority_epoch": 1},
+    {"action": "connection_respond", "op_id": "op", "authority_epoch": 1},
+    {"action": "connection_respond", "op_id": "op", "authority_epoch": 1, "connection_answer": {"settled_by": "deadline"}},
+    {"action": "connection_respond", "op_id": "op", "authority_epoch": 1, "connection_answer": {"targets": []}},
+    {"action": "connection_respond", "op_id": "op", "authority_epoch": 1, "connection_answer": {"settled_by": "continue", "targets": [{"name": "a", "status": "skipped"}]}},
+    {"action": "connection_respond", "op_id": "op", "authority_epoch": 1, "connection_answer": {"targets": [{"name": "a", "status": "connected"}]}},
+    {"action": "connection_respond", "op_id": "op", "authority_epoch": 1, "connection_answer": {"targets": [{"name": "a", "status": "approved", "env": {"K": 1}}]}},
+])
+def test_connection_verbs_are_closed(tmp_path, native_owner_stub, params):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", **params})

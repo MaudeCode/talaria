@@ -1,7 +1,8 @@
 import { PlanGaugeSchema } from './plan-usage.js'
 import { z } from 'zod'
 import { RateLimitWaitSchema, RunStatusSchema } from './run-status.js'
-import { ApprovalPendingSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ApprovalPendingSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ConnectorOperationViewSchema } from './connector-operation.js'
 export { RateLimitWaitSchema, type RateLimitWait } from './run-status.js'
 
 /**

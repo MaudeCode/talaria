@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import { ExternalLink } from 'lucide-react'
@@ -34,18 +34,34 @@ const isGone = (error: unknown): boolean => isApiError(error) && error.code === 
  */
 export function useConnectorOperation(initial: ConnectorOperationView) {
   const qc = useQueryClient()
+  const key = keys.connectors.operation(initial.op_id)
   const query = useQuery({
-    queryKey: keys.connectors.operation(initial.op_id),
-    queryFn: () => api.fetchConnectorOperation(initial.op_id),
+    queryKey: key,
+    queryFn: () => api.fetchConnectorOperation(initial.op_id, initial.owner),
     initialData: initial,
     retry: false,
     refetchInterval: (q) => (q.state.data?.settled || isGone(q.state.error) ? false : 2000),
   })
   const move = useMutation({
-    mutationFn: (move: { action: Move; target?: string; env?: Record<string, string> }) => api.respondConnectorOperation({ op_id: initial.op_id, ...move }),
-    onSuccess: (view) => qc.setQueryData(keys.connectors.operation(initial.op_id), view),
+    mutationFn: (move: { action: Move; target?: string; env?: Record<string, string> }) => api.respondConnectorOperation({ op_id: initial.op_id, ...initial.owner, ...move }),
+    onSuccess: (view) => qc.setQueryData(key, view),
     onError: (error) => showToast(error instanceof Error ? error.message : m.connectors_failed(), 5000, 'error'),
   })
+  // A canonical owner's later frames replace the view as they arrive, in the server's order.
+  const shown = useRef(initial)
+  useEffect(() => {
+    if (shown.current === initial || !initial.owner) return
+    shown.current = initial
+    qc.setQueryData(key, initial)
+  }, [initial]) // eslint-disable-line react-hooks/exhaustive-deps -- each frame once
+  // Back from the authorization link: the owner looks now, not at its next tick. The next read shows what it found.
+  const canWake = query.data.can_wake === true
+  useEffect(() => {
+    if (!canWake) return
+    const wake = () => { void api.respondConnectorOperation({ op_id: initial.op_id, ...initial.owner, action: 'wake' }).then((view) => qc.setQueryData(key, view), () => undefined) }
+    window.addEventListener('focus', wake)
+    return () => window.removeEventListener('focus', wake)
+  }, [canWake]) // eslint-disable-line react-hooks/exhaustive-deps -- one operation per mount
   return { view: query.data, lost: isGone(query.error), move }
 }
 

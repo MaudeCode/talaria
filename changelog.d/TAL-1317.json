@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web shows the connection card in chats its gateway owns, restores it when you reopen the chat, and sends your skips, retries, approvals and Continue to that gateway.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

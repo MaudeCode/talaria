@@ -6,7 +6,8 @@ import { checkpointDiffFiles } from '../workspace/rollback.js'
 import type { QueueAdmissionFence } from './admission.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
-import { OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
+import { isDeepStrictEqual } from 'node:util'
+import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
@@ -25,6 +26,7 @@ import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
 import { deriveTodoState, normalizeTodoSnapshot } from './todo.js'
+import { catalogNames, offeredMove, ownerConnection, settledConnection, type ConnectorMove } from '../tools/connectors.js'
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
@@ -32,7 +34,7 @@ interface Target { sid: string; profile: string; home: string; key: string }
 type Batch = GatewayClarifyBatch & { remaining: string[] }
 interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; reconcile?: () => void }
 /** The attach-only transport outlives individual run projections while a viewer holds it. */
-interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
+interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; connectionSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -93,6 +95,30 @@ function modelChange(receipt: Row, selection: Row = {}): ModelChange {
   if (receipt.status === 'noop' || receipt.status === undefined && Number.isInteger(receipt.revision)) return { state: 'applied' }
   return { state: 'refused', message: str(receipt.reason || receipt.message) || 'The owner did not confirm the model change' }
 }
+
+/** The owner's bounded refusal as the connector condition clients already handle; any other reason reads as the generic refusal. */
+const CONNECTION_REFUSALS: Record<string, [status: number, code: string, message: string]> = {
+  UNKNOWN_OPERATION: [404, 'operation_not_found', 'No connection operation with that id.'],
+  not_found: [404, 'operation_not_found', 'No connection operation with that id.'],
+  owner_changed: [404, 'operation_not_found', 'The owner of this connection changed.'],
+  CONNECTORS_UNAVAILABLE: [404, 'connectors_unavailable', 'Connectors are not available in this session.'],
+  NEEDS_NOUS_AUTH: [403, 'connectors_sign_in', 'Sign in to Nous Portal to use connectors.'],
+  FORBIDDEN_SCOPE: [403, 'connectors_forbidden', 'This account cannot manage connectors.'],
+  ORG_ACCESS_DENIED: [403, 'connectors_forbidden', 'This account cannot manage connectors for this organization.'],
+  permission_denied: [403, 'connectors_forbidden', 'This connection cannot be changed from here.'],
+  profile_mismatch: [403, 'connectors_forbidden', 'This connection cannot be changed from here.'],
+  LINK_STILL_VALID: [409, 'operation_refused', 'The authorization link is still valid. Open it instead.'],
+  gateway_restarting: [409, 'operation_refused', 'The owning gateway is restarting. Try again once it is back.'],
+  CONNECTOR_REQUEST_FAILED: [502, 'connectors_failed', 'Connector request failed. Try again explicitly.'],
+}
+const connectionRefused = (reason: string | null): HttpFailure => {
+  const [status, code, message] = (reason !== null && Object.hasOwn(CONNECTION_REFUSALS, reason) ? CONNECTION_REFUSALS[reason] : undefined) ?? [409, 'operation_refused', 'That move is not open on this connection.']
+  return new HttpFailure(status, message, { code })
+}
+
+/** The owner names the opening tool call only on its request and resume payloads; later frames of that operation keep it. */
+const keepToolCall = (operation: ConnectorOperationSnapshot, held: GatewaySnapshot['pending_connection']): ConnectorOperationSnapshot =>
+  ({ ...operation, tool_call_id: operation.tool_call_id ?? (held?.op_id === operation.op_id ? held.tool_call_id : null) })
 
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
@@ -164,7 +190,7 @@ export class GatewaySessions {
   private transport(target: Target, base: Row, snapshot: GatewaySnapshot): Observation {
     const prior = this.observations.get(target.key)
     if (prior && !prior.controller.signal.aborted) return prior
-    const observation: Observation = { controller: new AbortController(), snapshot, todoSequence: 0, replaying: true, completion: null, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
+    const observation: Observation = { controller: new AbortController(), snapshot, todoSequence: 0, connectionSequence: snapshot.last_sequence, replaying: true, completion: null, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
     this.observations.set(target.key, observation)
     this.noticeState(target, snapshot)
     observation.ended = (async () => {
@@ -184,6 +210,8 @@ export class GatewaySessions {
             if (result.replay_gap || completed && (completed.authority_epoch !== result.snapshot.authority_epoch || completed.replay_epoch !== result.snapshot.replay_epoch)) observation.completion = null
             const prior = observation.snapshot
             if (!sameExecution(prior, result.snapshot)) observation.todoSequence = 0
+            // The snapshot's open operation already holds every event up to its sequence.
+            observation.connectionSequence = result.snapshot.last_sequence
             observation.snapshot = newerTodo(prior, result.snapshot) ? { ...result.snapshot, todo_state: prior.todo_state, last_sequence: prior.last_sequence } : result.snapshot
             observation.replaying = (frame.data as Row).replaying === true
             this.noticeState(target, result.snapshot, result.replay_gap === true)
@@ -219,6 +247,18 @@ export class GatewaySessions {
               const scopedKey = `${state.identity}:plugin:${ownerStateId(key)}`
               if (event.type === 'notification.clear') this.notices.clear(target.key, scopedKey)
               else this.addNativeNotice(target, scopedKey, data)
+              this.changed(target)
+            } else if (event.type === 'connection.request' || event.type === 'connection.update') {
+              const snap = observation.snapshot
+              const operation = ConnectorOperationSnapshotSchema.safeParse(data)
+              if (!operation.success || event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
+                  || event.authority_epoch !== undefined && event.authority_epoch !== snap.authority_epoch
+                  || !Number.isSafeInteger(event.seq) || Number(event.seq) <= observation.connectionSequence) return
+              observation.connectionSequence = Number(event.seq)
+              const held = snap.pending_connection
+              // The owner holds one open operation. Its own counter orders frames; a closed operation never reopens.
+              if (held?.op_id === operation.data.op_id ? (operation.data.seq ?? 0) <= (held.seq ?? 0) : operation.data.settled) return
+              observation.snapshot = { ...snap, pending_connection: operation.data.settled ? null : keepToolCall(operation.data, held) }
               this.changed(target)
             } else if (event.type === 'session.info') {
               if (data.authority_epoch !== observation.snapshot.authority_epoch || Number(data.execution_generation) < observation.snapshot.execution_generation) return
@@ -475,6 +515,14 @@ export class GatewaySessions {
     return redactNestedMessageContainers(value, this.deps.redactEnabled()) as OwnerAttachment
   }
 
+  private connectionView(target: Target, epoch: number, operation: ConnectorOperationSnapshot): ConnectorOperationView {
+    return ownerConnection(keepToolCall(operation, this.observations.get(target.key)?.snapshot.pending_connection), { session_id: target.sid, authority_epoch: epoch }, catalogNames(target.home))
+  }
+
+  private snapshotConnection(target: Target, snapshot: GatewaySnapshot): ConnectorOperationView | null {
+    return snapshot.pending_connection ? this.connectionView(target, snapshot.authority_epoch, snapshot.pending_connection) : null
+  }
+
   private contextDetailKey(target: Target, snapshot: GatewaySnapshot | null): string | null {
     return snapshot ? ownerStateId(JSON.stringify([target.key, snapshot.authority_epoch, snapshot.replay_epoch, snapshot.revision, snapshot.execution_generation, snapshot.info, snapshot.last_sequence])) : null
   }
@@ -502,7 +550,7 @@ export class GatewaySessions {
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
     const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
-    const fields: Row = { ...base, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const fields: Row = { ...base, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: { ...this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), ...(snapshot ? { connection: this.snapshotConnection(target, snapshot) } : {}) }, composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })
@@ -608,6 +656,53 @@ export class GatewaySessions {
     if (params.action === 'react') this.changed(target)
     this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: sid })
     return result
+  }
+
+  private async connectionTarget(sid: string): Promise<Target> {
+    const target = await this.target(sid)
+    if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
+    return target
+  }
+
+  private async connectionRead(target: Target, epoch: number, opId: string): Promise<ConnectorOperationView> {
+    const result = await this.call(target, { action: 'connection_status', op_id: opId, authority_epoch: epoch })
+    if (result.state === 'attached' && result.connection) return this.connectionView(target, epoch, result.connection)
+    if (result.state === 'stopped') throw connectionRefused('not_found')
+    if (result.state === 'unavailable') throw new HttpFailure(503, 'Could not read this connection from its owner.', { code: 'connectors_failed', outcome_unknown: true })
+    throw connectionRefused(result.reason)
+  }
+
+  /** The operation as its exact owner holds it now. Opens no Agent, account or operation. */
+  async connection(sid: string, epoch: number, opId: string): Promise<ConnectorOperationView> {
+    return this.connectionRead(await this.connectionTarget(sid), epoch, opId)
+  }
+
+  /**
+   * One move on the owner's operation, rechecked against what it offers at dispatch. A lost acknowledgment is reconciled
+   * by reading the same operation, never by resending: the move may have landed, and it may have carried credentials.
+   */
+  async connectionMove(sid: string, epoch: number, opId: string, requested: ConnectorMove): Promise<ConnectorOperationView> {
+    const target = await this.connectionTarget(sid)
+    const view = await this.connectionRead(target, epoch, opId)
+    const move = offeredMove(view, requested)
+    if (!move) throw connectionRefused(null)
+    const fence = { op_id: opId, authority_epoch: epoch }
+    const row = view.targets.find((candidate) => candidate.name === move.target)
+    const result = await this.call(target, move.action === 'wake' ? { action: 'connection_wake', ...fence }
+      : move.action === 'retry' && row?.kind === 'connector' ? { action: 'connection_retry', ...fence, connector: row.name }
+      : { action: 'connection_respond', ...fence, connection_answer: move.action === 'continue' ? { settled_by: 'continue' }
+        : { targets: [{ name: move.target!, status: move.action === 'skip' ? 'skipped' : 'approved', ...(move.env ? { env: move.env } : {}) }] } })
+    if (result.state === 'refused' || result.state === 'incompatible') throw connectionRefused(result.reason)
+    this.changed(target)
+    if (result.connection?.op_id === opId) return this.connectionView(target, epoch, result.connection)
+    if (result.connection_settled) return settledConnection(view)
+    try {
+      return await this.connectionRead(target, epoch, opId)
+    } catch (error) {
+      // The owner closes an operation when it settles, so a move that lands last finds nothing left to read.
+      if (error instanceof HttpFailure && error.status === 404) return settledConnection(view)
+      throw error
+    }
   }
 
   /** The draft only fills the composer for review, so it is masked like the display preview (TAL-1884). */
@@ -806,6 +901,14 @@ export class GatewaySessions {
       }
       let pending = this.prompts(snapshot, target.sid, watch.batch)
       let ran = snapshot.running
+      let shownConnection: ConnectorOperationView | null = null
+      /** One view per operation: each change replaces it, and an operation a snapshot no longer holds settles it. */
+      const showConnection = async (current: ConnectorOperationView | null) => {
+        const next = current ?? (shownConnection && !shownConnection.settled ? settledConnection(shownConnection) : null)
+        if (!next || isDeepStrictEqual(next, shownConnection)) return
+        shownConnection = next
+        await put('connect_card', next)
+      }
       const prompts = async (snap: GatewaySnapshot) => {
         watch.snapshot = snap
         pending = this.prompts(snap, target.sid, watch.batch)
@@ -813,6 +916,7 @@ export class GatewaySessions {
         if (approval.pending) await put('approval', { ...approval.pending, pending_count: approval.pending_count })
         const clarify = pending.clarifyHeadFrame(target.sid)
         if (clarify) await put('clarify', clarify)
+        await showConnection(this.snapshotConnection(target, snap))
       }
       await prompts(snapshot)
       if (watch.controller.signal.aborted) return
@@ -853,6 +957,12 @@ export class GatewaySessions {
             const kind = str(event.type)
             if (kind === 'notification.show' || kind === 'notification.clear') {
               await put('notices', { session_id: target.sid, notices: this.nativeNotices(target, observation.snapshot) })
+              return
+            }
+            if (kind === 'connection.request' || kind === 'connection.update') {
+              const operation = keepToolCall(ConnectorOperationSnapshotSchema.parse(data), watch.snapshot.pending_connection)
+              watch.snapshot = { ...watch.snapshot, pending_connection: operation.settled ? null : operation }
+              await showConnection(this.connectionView(target, watch.snapshot.authority_epoch, operation))
               return
             }
             if (kind === 'todo.updated') {

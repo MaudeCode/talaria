@@ -161,5 +161,142 @@
     "connectors": [],
     "policy_revision": null,
     "rules_error": "Sign in to Nous Portal to use connectors."
+  },
+  "native_connection": {
+    "pending_connection": {
+      "op_id": "op-native",
+      "seq": 3,
+      "settled": false,
+      "owner": "session",
+      "tool_call_id": "call-native",
+      "targets": [
+        {
+          "name": "gmail",
+          "kind": "connector",
+          "state": "initiated",
+          "detail": "",
+          "connect_url": "https://vendor.example.test/authorize/conn-native?state=opaque-state",
+          "required_env": []
+        },
+        {
+          "name": "linear",
+          "kind": "mcp",
+          "state": "pending",
+          "detail": "",
+          "connect_url": null,
+          "required_env": [
+            {
+              "name": "LINEAR_API_KEY",
+              "prompt": "API key",
+              "required": true,
+              "secret": true
+            }
+          ]
+        },
+        {
+          "name": "notion",
+          "kind": "connector",
+          "state": "failed",
+          "detail": "The link expired",
+          "connect_url": null,
+          "required_env": []
+        },
+        {
+          "name": "slack",
+          "kind": "connector",
+          "state": "connected",
+          "detail": "",
+          "connect_url": null,
+          "required_env": []
+        },
+        {
+          "name": "jira",
+          "kind": "connector",
+          "state": "skipped",
+          "detail": "",
+          "connect_url": null,
+          "required_env": []
+        }
+      ]
+    },
+    "view": {
+      "op_id": "op-native",
+      "settled": false,
+      "outcome": null,
+      "can_continue": true,
+      "tool_call_id": "call-native",
+      "owner": {
+        "session_id": "local-24fa9f4bfead2fe04a0da5932e866e42cbba68160044a1cbbb9285cfcccc3cea",
+        "authority_epoch": 1
+      },
+      "can_wake": true,
+      "targets": [
+        {
+          "name": "gmail",
+          "title": "Gmail",
+          "kind": "connector",
+          "state": "initiated",
+          "detail": "",
+          "connect_url": "https://vendor.example.test/authorize/conn-native?state=opaque-state",
+          "actions": [
+            "skip"
+          ],
+          "env_fields": []
+        },
+        {
+          "name": "linear",
+          "title": "Linear",
+          "kind": "mcp",
+          "state": "pending",
+          "detail": "",
+          "connect_url": null,
+          "actions": [
+            "approve",
+            "skip"
+          ],
+          "env_fields": [
+            {
+              "name": "LINEAR_API_KEY",
+              "label": "API key",
+              "required": true,
+              "secret": true
+            }
+          ]
+        },
+        {
+          "name": "notion",
+          "title": "Notion",
+          "kind": "connector",
+          "state": "failed",
+          "detail": "The link expired",
+          "connect_url": null,
+          "actions": [
+            "retry",
+            "skip"
+          ],
+          "env_fields": []
+        },
+        {
+          "name": "slack",
+          "title": "Slack",
+          "kind": "connector",
+          "state": "connected",
+          "detail": "",
+          "connect_url": null,
+          "actions": [],
+          "env_fields": []
+        },
+        {
+          "name": "jira",
+          "title": "Jira",
+          "kind": "connector",
+          "state": "skipped",
+          "detail": "",
+          "connect_url": null,
+          "actions": [],
+          "env_fields": []
+        }
+      ]
+    }
   }
 }

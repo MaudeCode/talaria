@@ -10,6 +10,7 @@ import { AgentImportSourceSchema, AgentImportResultSchema } from '../agent-impor
 import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
 import { GatewayClarifyBatchSchema, GatewayCreateParamsSchema, GatewaySessionParamsSchema, GatewaySessionResultSchema } from '../gateway-session.js'
+import { ConnectorOperationSnapshotSchema } from '../connector-operation.js'
 
 /** Warnings and wording come from the Agent's selection guard registry, including future guard kinds. */
 export const ModelSelectionWarningSchema = z.object({ kind: z.string(), title: z.string(), model: z.string(), provider: z.string(), message: z.string() })
@@ -383,14 +384,6 @@ export const ConnectorPolicyBodySchema = z.object({
   tools: z.record(z.string(), z.object({ disable: z.array(z.string()) })).optional(),
   tags: z.object({ enable: z.array(z.string()).optional(), disable: z.array(z.string()).optional() }).optional(),
 })
-/** A connection operation's target (`tools/connectors/operation.py`): a hosted app account, or an MCP server the card approves. */
-export const ConnectorOperationTargetSchema = z.object({
-  name: z.string(), kind: z.string(), state: z.enum(['pending', 'initiated', 'connected', 'skipped', 'failed', 'expired', 'not_connected']), detail: z.string(),
-  connect_url: z.string().nullable().optional(),
-  required_env: z.array(z.object({ name: z.string(), prompt: z.string(), required: z.boolean(), secret: z.boolean() })),
-})
-/** `owner`: `account` for the Connectors page's connect, `session` for a chat card, which `tool_call_id` opened. */
-export const ConnectorOperationSnapshotSchema = z.object({ op_id: z.string(), settled: z.boolean(), owner: z.enum(['account', 'session']), tool_call_id: z.string().nullable(), targets: z.array(ConnectorOperationTargetSchema) })
 const ConnectorOp = ProfileHomeParams.extend({ op_id: z.string().min(1) })
 /**
  * Failures carry `data.condition`: `connectors_unavailable`, `connectors_sign_in`, `connectors_forbidden`, `connectors_org_required`,

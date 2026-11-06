@@ -8,7 +8,7 @@ import { expect, settle, test } from './fixtures'
 test.use({ serviceWorkers: 'block' })
 
 /** The views the server suite composes (contracts/fixtures/connectors.json). */
-const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; tools: ConnectorToolsView; connect_card: ConnectorOperationView }
+const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; tools: ConnectorToolsView; connect_card: ConnectorOperationView; native_connection: { view: ConnectorOperationView } }
 const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
   { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
 ] }
@@ -239,4 +239,46 @@ test('scheduled guest offer reuses OAuth, preserves the result, and dismisses wi
   await expect(later).toHaveCount(0)
   await expect(page.getByText('Moving connected apps.')).toHaveCount(0)
   expect(starts).toBe(2)
+})
+
+test('a canonical owner\'s connection card restores on attach and answers through that owner (TAL-1317)', async ({ page }, testInfo) => {
+  const native = shared.native_connection.view
+  const sid = native.owner!.session_id
+  let current = native
+  const moves: unknown[] = []
+  const reads: string[] = []
+  const owner_attachment = () => ({ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], connection: current })
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Native owner chat', workspace: '/workspace/native', read_only: true, read_only_reason: 'canonical_session', messages: [{ role: 'user', content: 'Connect my apps' }], owner_attachment: owner_attachment() } } }))
+  await page.route('**/api/connectors/operations/op-native**', async (route) => {
+    const request = route.request()
+    if (request.method() === 'GET') {
+      reads.push(new URL(request.url()).search)
+      return route.fulfill({ json: current })
+    }
+    const body = request.postDataJSON() as { action: string; target?: string }
+    moves.push(body)
+    if (body.action === 'skip') current = { ...current, targets: current.targets.map((t) => t.name === body.target ? { ...t, state: 'skipped', connect_url: null, actions: [], env_fields: [] } : t) }
+    if (body.action === 'continue') current = { ...current, settled: true, outcome: 'not_connected', can_continue: false, can_wake: false, targets: current.targets.map((t) => ({ ...t, connect_url: null, actions: [], env_fields: [] })) }
+    return route.fulfill({ json: current })
+  })
+  await page.goto(`/session/${sid}`)
+  await settle(page)
+  const card = page.getByRole('region', { name: 'Connect apps' })
+  await expect(card).toBeVisible()
+  await expect(card.getByRole('link', { name: 'Authorize' })).toHaveAttribute('href', native.targets[0]!.connect_url!)
+  await expect(card.locator('[data-connect-target="notion"]')).toContainText('The link expired')
+  await expect(card.locator('[data-connect-target="linear"] input')).toHaveAttribute('type', 'password')
+  expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`native-card-${testInfo.project.name}.png`) })
+  await card.locator('[data-connect-target="gmail"]').getByRole('button', { name: 'Skip' }).click()
+  await expect(card.locator('[data-connect-target="gmail"]')).toContainText('Skipped')
+  await expect.poll(() => reads.length, { timeout: 5000 }).toBeGreaterThan(0)
+  expect(reads.every((search) => search.includes(`session_id=${sid}`) && search.includes('authority_epoch=1'))).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`native-card-${testInfo.project.name}-moved.png`) })
+  await card.getByRole('button', { name: 'Continue' }).click()
+  await expect(card).toHaveCount(0)
+  expect(moves).toEqual([
+    { session_id: sid, authority_epoch: 1, action: 'skip', target: 'gmail' },
+    { session_id: sid, authority_epoch: 1, action: 'continue' },
+  ])
 })
