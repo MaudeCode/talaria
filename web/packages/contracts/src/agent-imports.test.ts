@@ -9,5 +9,10 @@ it('shares the profile import preview and unavailable results with native consum
   expect(AgentImportResultSchema.parse(fixture.unavailable).can_apply).toBe(false)
   expect(AgentImportResultSchema.parse(fixture.config_unavailable).catalog_required).toBe(false)
   expect(settingsContract.profileImport.preview['~orpc'].inputSchema?.parse(fixture.preview_input)).toEqual({ agent: 'cursor' })
+  const input = settingsContract.profileImport.preview['~orpc'].inputSchema
+  expect(input?.parse(fixture.grok_preview_input)).toEqual(fixture.grok_preview_input)
+  expect(input?.safeParse({ agent: 'grok-bot' }).success).toBe(false)
+  expect(input?.safeParse({ agent: 'cursor', export_text: '{}' }).success).toBe(false)
+  expect(AgentImportResultSchema.parse(fixture.discover).sources.map((row) => [row.agent, row.available, row.input])).toEqual([['cursor', true, 'none'], ['grok-bot', true, 'file'], ['openbot', false, 'none']])
   expect(settingsContract.profileImport.apply['~orpc'].inputSchema?.safeParse({ receipt: 'x', profile_home: '/foreign' }).success).toBe(false)
 })

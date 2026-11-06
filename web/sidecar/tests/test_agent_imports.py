@@ -7,6 +7,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from talaria_sidecar.errors import InvalidParams
 from talaria_sidecar.methods import Registry, build_methods
 from talaria_sidecar.methods.plugin_catalog import reviewed_importer
 
@@ -32,6 +33,7 @@ def imports(monkeypatch, tmp_path):
     (other / 'config.yaml').write_text('untouched')
     effects = []
     state = {'pin': 'reviewed', 'supported': True, 'failure': None}
+    bots = {}
 
     class Importer:
         def __init__(self, agent, source_root, target_root, execute=False, overwrite=False):
@@ -55,7 +57,7 @@ def imports(monkeypatch, tmp_path):
         (dest / 'import-sync.json').write_text('{"agents":{"cursor":{"source":"temporary"}}}')
     monkeypatch.setattr(Path, 'home', lambda: root)
     monkeypatch.setattr(subject.homes, 'scoped_home', lambda *a, **kw: nullcontext())
-    monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']]) if state['supported'] else None)
+    monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']], bots) if state['supported'] else None)
     monkeypatch.setattr(subject.config, 'assert_config_writable', lambda _home: None)
     monkeypatch.setattr(subject, '_PREVIEWS', {})
     monkeypatch.setattr(subject, '_refresh_runtime', lambda _home: True)
@@ -72,7 +74,7 @@ def tree(path):
 def test_preview_cancel_and_explicit_apply_are_isolated_and_redacted(imports):
     i = imports
     before, other = tree(i.target), tree(i.other)
-    assert i.call('discover')['sources'] == [{'agent': 'cursor', 'label': 'Cursor'}]
+    assert [row['agent'] for row in i.call('discover')['sources'] if row['available']] == ['cursor']
     preview = i.call('preview', agent='cursor')
     assert preview['status'] == 'preview' and preview['can_apply']
     assert tree(i.target) == before and i.effects == []
@@ -127,6 +129,21 @@ def test_unavailable_does_not_touch_profile_and_result_never_executes(imports):
     assert i.call('result', receipt=preview['receipt'])['status'] == 'changed'
     assert i.call('apply', receipt=preview['receipt'])['status'] == 'changed'
     assert i.effects == []
+
+
+@pytest.mark.parametrize('params', [dict(agent='grok-bot'), dict(agent='cursor', export_text='{}'), dict(agent='openbot', export_text='{}')])
+def test_only_a_grok_bot_preview_carries_an_export(imports, params):
+    with pytest.raises(InvalidParams):
+        imports.call('preview', **params)
+
+
+def test_snapshot_refuses_a_linked_directory_above_a_nested_input(imports):
+    i = imports
+    (i.other / 'jobs.json').write_text('{}')
+    (i.target / 'cron').symlink_to(i.other)
+    with pytest.raises(OSError):
+        i.subject._snapshot(i.target, ('cron/jobs.json',))
+    assert i.subject._snapshot(i.target, ('absent/jobs.json',))[0] == {}
 
 
 @pytest.mark.parametrize('moved, reaches_bytes', [(True, False), (False, True)])

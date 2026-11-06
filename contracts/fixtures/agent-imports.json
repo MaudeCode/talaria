@@ -27,6 +27,44 @@
     "can_apply": true,
     "message": null
   },
+  "grok_preview_input": {
+    "agent": "grok-bot",
+    "export_text": "{\"format\":\"grok-bot-export\"}"
+  },
+  "discover": {
+    "status": "available",
+    "sources": [
+      {
+        "agent": "cursor",
+        "label": "Cursor",
+        "available": true,
+        "input": "none",
+        "detail": null,
+        "export_prompt": null
+      },
+      {
+        "agent": "grok-bot",
+        "label": "Grok Bot",
+        "available": true,
+        "input": "file",
+        "detail": null,
+        "export_prompt": "Write a grok-bot-export document."
+      },
+      {
+        "agent": "openbot",
+        "label": "OpenBot",
+        "available": false,
+        "input": "none",
+        "detail": "Not found on this computer",
+        "export_prompt": null
+      }
+    ],
+    "items": [],
+    "stripped_secrets": [],
+    "receipt": null,
+    "can_apply": false,
+    "message": null
+  },
   "unavailable": {
     "status": "unavailable",
     "sources": [],

@@ -383,7 +383,7 @@ export const setDelegation = (write: DelegationWrite) => orpc().models.delegatio
 
 // Profile import is a native operation. Unknown writes reconcile through a read-only result route.
 export const discoverAgentImports = () => orpc().profileImport.discover()
-export const previewAgentImport = (agent: AgentImportSource) => orpc().profileImport.preview({ agent }, { signal: timeout(120_000) })
+export const previewAgentImport = (agent: AgentImportSource, export_text?: string) => orpc().profileImport.preview(export_text === undefined ? { agent } : { agent, export_text }, { signal: timeout(120_000) })
 export const applyAgentImport = (receipt: string) => orpc().profileImport.apply({ receipt }, { signal: timeout(120_000) })
 export const agentImportResult = (receipt: string) => orpc().profileImport.result({ receipt })
 

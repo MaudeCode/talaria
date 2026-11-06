@@ -292,11 +292,13 @@ def reviewed_importer(home):
             module = types.ModuleType(package)
             module.__path__ = []
             sys.modules[package] = module
-            for name in ('importer', 'sync'):
+            # Reviewed manifest order: a module's relative imports precede it; older pins carry no Bot modules.
+            for name in (file.removesuffix('.py') for file in hashes if file.endswith('.py')):
                 module = types.ModuleType(f'{package}.{name}')
                 module.__package__ = package
                 sys.modules[module.__name__] = module
                 exec(compile(bodies[name + '.py'], f'<reviewed-agent-importers/{name}.py>', 'exec'), module.__dict__)
-        return sys.modules[package + '.importer'].AgentImporter, sys.modules[package + '.sync'], [pin, str(root), _tree_digest(root)]
+        bots = {agent: sys.modules[f'{package}.{name}'] for agent, name in (('grok-bot', 'grok_bot'), ('openbot', 'openbot')) if name + '.py' in hashes}
+        return sys.modules[package + '.importer'].AgentImporter, sys.modules[package + '.sync'], [pin, str(root), _tree_digest(root)], bots
     except (ImportError, AttributeError, OSError, ValueError, TypeError, RpcError):
         return None

@@ -79995,7 +79995,7 @@
     "/api/profile/import": {
       "get": {
         "operationId": "profileImport.discover",
-        "summary": "Owner only: permitted local coding-agent sources and reviewed importer availability.",
+        "summary": "Owner only: permitted local agent sources, the input each needs and reviewed importer availability.",
         "tags": [
           "settings"
         ],
@@ -80021,7 +80021,7 @@
                     },
                     "sources": {
                       "type": "array",
-                      "maxItems": 3,
+                      "maxItems": 5,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -80029,18 +80029,59 @@
                             "enum": [
                               "claude-code",
                               "codex",
-                              "cursor"
+                              "cursor",
+                              "grok-bot",
+                              "openbot"
                             ],
                             "type": "string"
                           },
                           "label": {
                             "type": "string",
                             "maxLength": 64
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "input": {
+                            "enum": [
+                              "none",
+                              "file"
+                            ],
+                            "type": "string",
+                            "description": "`file`: the preview carries `export_text`."
+                          },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why the source is unavailable."
+                          },
+                          "export_prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 8192
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The message that asks the source to write its export."
                           }
                         },
                         "required": [
                           "agent",
-                          "label"
+                          "label",
+                          "available",
+                          "input",
+                          "detail",
+                          "export_prompt"
                         ]
                       }
                     },
@@ -80146,9 +80187,16 @@
                     "enum": [
                       "claude-code",
                       "codex",
-                      "cursor"
+                      "cursor",
+                      "grok-bot",
+                      "openbot"
                     ],
                     "type": "string"
+                  },
+                  "export_text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000000
                   }
                 },
                 "required": [
@@ -80181,7 +80229,7 @@
                     },
                     "sources": {
                       "type": "array",
-                      "maxItems": 3,
+                      "maxItems": 5,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -80189,18 +80237,59 @@
                             "enum": [
                               "claude-code",
                               "codex",
-                              "cursor"
+                              "cursor",
+                              "grok-bot",
+                              "openbot"
                             ],
                             "type": "string"
                           },
                           "label": {
                             "type": "string",
                             "maxLength": 64
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "input": {
+                            "enum": [
+                              "none",
+                              "file"
+                            ],
+                            "type": "string",
+                            "description": "`file`: the preview carries `export_text`."
+                          },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why the source is unavailable."
+                          },
+                          "export_prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 8192
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The message that asks the source to write its export."
                           }
                         },
                         "required": [
                           "agent",
-                          "label"
+                          "label",
+                          "available",
+                          "input",
+                          "detail",
+                          "export_prompt"
                         ]
                       }
                     },
@@ -80331,7 +80420,7 @@
                     },
                     "sources": {
                       "type": "array",
-                      "maxItems": 3,
+                      "maxItems": 5,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -80339,18 +80428,59 @@
                             "enum": [
                               "claude-code",
                               "codex",
-                              "cursor"
+                              "cursor",
+                              "grok-bot",
+                              "openbot"
                             ],
                             "type": "string"
                           },
                           "label": {
                             "type": "string",
                             "maxLength": 64
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "input": {
+                            "enum": [
+                              "none",
+                              "file"
+                            ],
+                            "type": "string",
+                            "description": "`file`: the preview carries `export_text`."
+                          },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why the source is unavailable."
+                          },
+                          "export_prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 8192
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The message that asks the source to write its export."
                           }
                         },
                         "required": [
                           "agent",
-                          "label"
+                          "label",
+                          "available",
+                          "input",
+                          "detail",
+                          "export_prompt"
                         ]
                       }
                     },
@@ -80488,7 +80618,7 @@
                     },
                     "sources": {
                       "type": "array",
-                      "maxItems": 3,
+                      "maxItems": 5,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -80496,18 +80626,59 @@
                             "enum": [
                               "claude-code",
                               "codex",
-                              "cursor"
+                              "cursor",
+                              "grok-bot",
+                              "openbot"
                             ],
                             "type": "string"
                           },
                           "label": {
                             "type": "string",
                             "maxLength": 64
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "input": {
+                            "enum": [
+                              "none",
+                              "file"
+                            ],
+                            "type": "string",
+                            "description": "`file`: the preview carries `export_text`."
+                          },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why the source is unavailable."
+                          },
+                          "export_prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 8192
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The message that asks the source to write its export."
                           }
                         },
                         "required": [
                           "agent",
-                          "label"
+                          "label",
+                          "available",
+                          "input",
+                          "detail",
+                          "export_prompt"
                         ]
                       }
                     },

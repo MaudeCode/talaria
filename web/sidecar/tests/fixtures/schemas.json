@@ -4167,7 +4167,7 @@
         ]
       },
       "sources": {
-        "maxItems": 3,
+        "maxItems": 5,
         "type": "array",
         "items": {
           "type": "object",
@@ -4177,17 +4177,58 @@
               "enum": [
                 "claude-code",
                 "codex",
-                "cursor"
+                "cursor",
+                "grok-bot",
+                "openbot"
               ]
             },
             "label": {
               "type": "string",
               "maxLength": 64
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "input": {
+              "type": "string",
+              "enum": [
+                "none",
+                "file"
+              ],
+              "description": "`file`: the preview carries `export_text`."
+            },
+            "detail": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Why the source is unavailable."
+            },
+            "export_prompt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 8192
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The message that asks the source to write its export."
             }
           },
           "required": [
             "agent",
-            "label"
+            "label",
+            "available",
+            "input",
+            "detail",
+            "export_prompt"
           ],
           "additionalProperties": false
         }

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Import agent setup now offers Grok Bot, from an export file the Bot writes, and OpenBot from its desktop database. Routines arrive as paused tasks, and the preview lists what will be imported.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

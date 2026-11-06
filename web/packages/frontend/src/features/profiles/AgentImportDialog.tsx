@@ -11,6 +11,7 @@ import { Select } from '../../ui/Select'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { appUrl } from '../../lib/appRoot'
+import { copyWithToast } from '../../lib/clipboard'
 
 /** Extends the profile dialog flow using the shared Dialog, FieldRow, Select and confirmation controls. */
 export function AgentImportDialog({ onClose }: { onClose: () => void }) {
@@ -19,13 +20,14 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
   const generation = useRef(0)
   const busy = useRef(false)
   const [agent, setAgent] = useState<AgentImportSource | ''>('')
+  const [exportFile, setExportFile] = useState<File | null>(null)
   const [report, setReport] = useState<AgentImportResult | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [lastReceipt, setLastReceipt] = useState<string | null>(null)
   const discovery = useQuery({ queryKey: keys.agentImports, queryFn: api.discoverAgentImports, retry: false })
   const operation = useMutation({
-    mutationFn: async (request: ({ action: 'preview'; source: AgentImportSource } | { action: 'apply' | 'result'; receipt: string }) & { context: object; generation: number }) => {
-      if (request.action === 'preview') return api.previewAgentImport(request.source)
+    mutationFn: async (request: ({ action: 'preview'; source: AgentImportSource; file: File | null } | { action: 'apply' | 'result'; receipt: string }) & { context: object; generation: number }) => {
+      if (request.action === 'preview') return request.file ? api.previewAgentImport(request.source, await request.file.text()) : api.previewAgentImport(request.source)
       if (request.action === 'result') return api.agentImportResult(request.receipt)
       try { return await api.applyAgentImport(request.receipt) } catch { return api.agentImportResult(request.receipt) }
     },
@@ -33,14 +35,18 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
       if (request.context !== getStreamContext()) return
       if (request.generation === generation.current) setReport(value)
       if (['applied', 'partial', 'unknown'].includes(value.status)) {
-        for (const queryKey of [keys.profiles, keys.activeProfile, keys.settings, keys.models, keys.memory, keys.skills.all, keys.mcp.all, keys.plugins]) void qc.invalidateQueries({ queryKey })
+        for (const queryKey of [keys.profiles, keys.activeProfile, keys.settings, keys.models, keys.memory, keys.skills.all, keys.mcp.all, keys.plugins, keys.crons.all]) void qc.invalidateQueries({ queryKey })
       }
     },
     onSettled: () => { busy.current = false },
   })
+  const selected = discovery.data?.sources.find((source) => source.agent === agent)
+  const needsFile = selected?.input === 'file'
+  const exportPrompt = selected?.export_prompt
+  const startOver = () => { generation.current++; setReport(null); setLastReceipt(null); operation.reset() }
   const run = (action: 'preview' | 'apply' | 'result', receipt?: string) => {
     if (busy.current) return
-    const selection = action === 'preview' && agent ? { action, source: agent } : action !== 'preview' && receipt ? { action, receipt } : null
+    const selection = action === 'preview' && agent ? { action, source: agent, file: needsFile ? exportFile : null } : action !== 'preview' && receipt ? { action, receipt } : null
     if (!selection) return
     busy.current = true
     operation.mutate({ ...selection, context, generation: generation.current })
@@ -56,12 +62,18 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
       {shown?.status === 'unavailable' && shown.catalog_required !== false && <a className="text-sm text-accent underline" href={appUrl('settings/plugins').href}>{m.profile_import_catalog()}</a>}
       {discovery.data?.status === 'available' && <>
         <FieldRow label={m.profile_import_source()} htmlFor="agent-import-source">
-          <Select className="min-h-11" id="agent-import-source" value={agent} onValueChange={(value) => { generation.current++; setAgent(value as AgentImportSource); setReport(null); setLastReceipt(null); operation.reset() }}>
+          <Select className="min-h-11" id="agent-import-source" value={agent} onValueChange={(value) => { setAgent(value as AgentImportSource); setExportFile(null); startOver() }}>
             <option value="">{m.profile_import_source()}</option>
-            {discovery.data.sources.map((source) => <option key={source.agent} value={source.agent}>{source.label}</option>)}
+            {discovery.data.sources.map((source) => <option key={source.agent} value={source.agent} disabled={!source.available}>{source.detail ? `${source.label}: ${source.detail}` : source.label}</option>)}
           </Select>
         </FieldRow>
-        {discovery.data.sources.length === 0 && <p className="text-sm text-muted">{m.profile_import_no_sources()}</p>}
+        {needsFile && <>
+          <FieldRow label={m.profile_import_export_file()} htmlFor="agent-import-file">
+            <input key={agent} id="agent-import-file" className="min-w-0 max-w-full text-sm" type="file" accept=".json,.md,.txt,application/json,text/markdown,text/plain" onChange={(event) => { setExportFile(event.target.files?.[0] ?? null); startOver() }} />
+          </FieldRow>
+          {exportPrompt && <div className="mt-2 flex justify-end"><Button className="min-h-11" onClick={() => { copyWithToast(exportPrompt) }}>{m.profile_import_copy_request()}</Button></div>}
+        </>}
+        {!discovery.data.sources.some((source) => source.available) && <p className="text-sm text-muted">{m.profile_import_no_sources()}</p>}
       </>}
       {operation.isError && <ErrorState error={operation.error} />}
       {shown?.status === 'applied' && <p role="status">{m.profile_import_done()}</p>}
@@ -70,11 +82,11 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
         {shown.items.map((item, index) => <li key={index} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted">{statusLabel(item.status)}</span></li>)}
       </ul>}
       {shown && shown.stripped_secrets.length > 0 && <div className="my-3 text-sm"><h3 className="font-medium">{m.profile_import_stripped()}</h3><ul className="break-all font-mono text-xs">{shown.stripped_secrets.map((name) => <li key={name}>{name}</li>)}</ul></div>}
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
+      <div className="sticky -bottom-5 -mb-5 mt-2 flex flex-wrap justify-end gap-2 bg-surface pb-5 pt-2">
         <Button className="min-h-11" onClick={close}>{m.cancel()}</Button>
         {(shown?.status === 'unknown' || operation.isError) && lastReceipt ? <Button className="min-h-11" onClick={() => run('result', lastReceipt)} disabled={operation.isPending} aria-busy={operation.isPending}>{m.profile_import_check()}</Button>
           : shown?.can_apply && shown.receipt ? <Button className="min-h-11" variant="primary" disabled={operation.isPending} aria-busy={operation.isPending} onClick={() => setConfirm(true)}>{m.profile_import_apply()}</Button>
-          : discovery.data?.status === 'available' && <Button className="min-h-11" variant="primary" onClick={() => run('preview')} disabled={!agent || operation.isPending} aria-busy={operation.isPending}>{m.profile_import_preview()}</Button>}
+          : discovery.data?.status === 'available' && <Button className="min-h-11" variant="primary" onClick={() => run('preview')} disabled={!agent || (needsFile && !exportFile) || operation.isPending} aria-busy={operation.isPending}>{m.profile_import_preview()}</Button>}
       </div>
     </Dialog>
     <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={m.profile_import_confirm()} description={m.profile_import_confirm_body()} confirmLabel={m.profile_import_apply()} cancelLabel={m.cancel()} onConfirm={() => { if (shown?.receipt) { setLastReceipt(shown.receipt); run('apply', shown.receipt) } }} />
