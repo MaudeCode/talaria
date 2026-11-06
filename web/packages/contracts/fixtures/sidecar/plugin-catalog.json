@@ -1,4 +1,110 @@
 {
-  "plugins.catalog": [{"params":{"profile_home":"<home>","query":"","offset":0,"limit":20},"result":{"supported":true,"entries":[{"name":"catalog-probe","title":"Catalog probe","description":"Synthetic pinned plugin","repo":"https://example.invalid/plugins/catalog-probe","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tier":"official","category":"tools","requirements":[],"installed_key":null,"installed_sha":null,"can_install":true,"refusal":null}],"total":1,"next_offset":null}}],
-  "plugins.install": [{"params":{"profile_home":"<home>","name":"catalog-probe"},"result":{"name":"catalog-probe","status":"needs_consent","findings":"Installs disabled. No dependency or capability permission is granted.","consent_token":"synthetic-preview"}}]
+  "plugins.catalog": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "query": "",
+        "offset": 0,
+        "limit": 20
+      },
+      "result": {
+        "supported": true,
+        "entries": [
+          {
+            "name": "catalog-probe",
+            "title": "Catalog probe",
+            "description": "Synthetic pinned plugin",
+            "repo": "https://example.invalid/plugins/catalog-probe",
+            "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tier": "official",
+            "category": "tools",
+            "requirements": [],
+            "installed_key": null,
+            "installed_sha": null,
+            "can_install": true,
+            "refusal": null,
+            "can_update": false
+          }
+        ],
+        "total": 1,
+        "next_offset": null
+      }
+    }
+  ],
+  "plugins.install": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "name": "catalog-probe"
+      },
+      "result": {
+        "name": "catalog-probe",
+        "status": "needs_consent",
+        "findings": "Installs disabled. No dependency or capability permission is granted.",
+        "consent_token": "synthetic-preview"
+      }
+    }
+  ],
+  "plugins.update_all": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "results": [
+          {
+            "name": "moved-probe",
+            "status": "updated",
+            "detail": ""
+          },
+          {
+            "name": "same-probe",
+            "status": "current",
+            "detail": ""
+          },
+          {
+            "name": "broken-probe",
+            "status": "failed",
+            "detail": "Plugin 'broken-probe' update was not published"
+          },
+          {
+            "name": "wider-probe",
+            "status": "needs_review",
+            "detail": "Updating 'wider-probe' adds tools: new_tool. Confirm to continue."
+          },
+          {
+            "name": "held-probe",
+            "status": "skipped",
+            "detail": "held with --ref (installed off the catalog pin); `hermes plugins update held-probe` moves it"
+          }
+        ],
+        "current": 1
+      }
+    }
+  ],
+  "plugins.auto_update": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "supported": true,
+        "auto_apply": false,
+        "check_hours": 24
+      }
+    }
+  ],
+  "plugins.auto_update_set": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "enabled": true
+      },
+      "result": {
+        "supported": true,
+        "auto_apply": true,
+        "check_hours": 24
+      }
+    }
+  ]
 }

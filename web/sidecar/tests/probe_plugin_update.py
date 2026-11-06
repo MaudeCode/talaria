@@ -1,10 +1,12 @@
-"""Real Agent Git/cache/scan compatibility; final PM publication uses disposable trees."""
+"""Real Agent Git/cache/scan, catalog re-pin and unattended-update compatibility; final PM publication uses disposable trees."""
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -114,4 +116,143 @@ with scoped_home(home):
     assert len(publications) == 1
     row = next(row for row in call('plugins.list')['plugins'] if row['key'] == 'update-probe')
     assert row['version'] == '2.0.0' and row['update_available'] is False, row
-    print('cached local update, caution consent, dangerous refusal and refreshed listing passed')
+
+    # TAL-1914: a catalog install re-pins through the Agent, and a widened pin needs the single-use consent.
+    from hermes_cli import plugin_catalog, plugins_cmd_catalog as native
+
+    @contextmanager
+    def reviewed_catalog(live):
+        # Offline: only the named synthetic entries, a safe scan and a disposable publication.
+        with patch.object(plugin_catalog, 'fetch_live_catalog', return_value=None), patch.object(plugin_catalog, 'load_catalog_live', return_value=list(live.values())), \
+             patch.object(native, 'get_live_catalog_entry', side_effect=live.get), patch.object(native, 'raise_if_removed'), patch.object(native, 'refuse_if_installed_removed'), \
+             patch.object(transaction, 'publish_plugin', side_effect=publish), patch.object(plugin_guard, 'scan_plugin', return_value=scan('safe')):
+            yield
+
+    def refused(method, condition, **params):
+        try:
+            call(method, **params)
+        except RpcError as exc:
+            assert exc.data['condition'] == condition, exc.to_json()
+            return str(exc)
+        raise AssertionError(f'{method} must refuse with {condition}')
+
+    catalog_repo = home.parent / 'catalog-upstream'
+    catalog_repo.mkdir()
+    git(catalog_repo, 'init', '-q')
+    git(catalog_repo, 'config', 'user.email', 'probe@example.invalid')
+    git(catalog_repo, 'config', 'user.name', 'Probe')
+    (catalog_repo / 'plugin.yaml').write_text('name: catalog-probe\nversion: 1.0.0\n')
+    (catalog_repo / '__init__.py').write_text('def register(ctx):\n    pass\n')
+    git(catalog_repo, 'add', '.')
+    git(catalog_repo, 'commit', '-qm', 'reviewed')
+    catalog_old = git(catalog_repo, 'rev-parse', 'HEAD')
+    (catalog_repo / 'plugin.yaml').write_text('name: catalog-probe\nversion: 2.0.0\nprovides_tools:\n  - widened_tool\n')
+    git(catalog_repo, 'add', '.')
+    git(catalog_repo, 'commit', '-qm', 'adds a tool')
+    catalog_new = git(catalog_repo, 'rev-parse', 'HEAD')
+    catalog_target = home / 'plugins' / 'catalog-probe'
+    git(home, 'clone', '-q', str(catalog_repo), str(catalog_target))
+    git(catalog_target, 'checkout', '-q', catalog_old)
+    block = {'name': 'catalog-probe', 'repo': catalog_repo.as_uri(), 'tier': 'official', 'pin': catalog_old, 'sha': catalog_old}
+    catalog_record = {'source': catalog_repo.as_uri(), 'revision': catalog_old, 'pinned': True, 'catalog': block}
+    records = pc._read_install_metadata()
+    pc._write_install_metadata({**records, 'catalog-probe': catalog_record})
+    entry = plugin_catalog.PluginCatalogEntry(name='catalog-probe', repo=catalog_repo.as_uri(), sha=catalog_new, description='Synthetic',
+                                              maintainer='Fixture', tier='official', category='tools')
+    from hermes_cli.plugins import discover_plugins
+    discover_plugins(force=True)
+
+    with reviewed_catalog({'catalog-probe': entry}):
+        row = next(row for row in call('plugins.list')['plugins'] if row['key'] == 'catalog-probe')
+        assert row['update_available'] is True and row['latest_revision'] == catalog_new, row
+        listed = call('plugins.catalog', query='catalog-probe', offset=0, limit=20)['entries'][0]
+        assert listed['installed_key'] == 'catalog-probe' and listed['can_update'] is True, listed
+        before = len(publications)
+        review = call('plugins.update', key='catalog-probe', accept_caution=False)
+        assert review['status'] == 'needs_consent' and review['verdict'] == 'widened' and 'widened_tool' in review['findings'], review
+        assert len(publications) == before and git(catalog_target, 'rev-parse', 'HEAD') == catalog_old
+        result = call('plugins.update', key='catalog-probe', accept_caution=True, consent_token=review['consent_token'])
+        assert result['status'] == 'updated' and len(publications) == before + 1, result
+        record = pc._read_install_metadata()['catalog-probe']
+        assert record['pinned'] is True and record['catalog']['pin'] == catalog_new and record['revision'] == catalog_new, record
+        row = next(row for row in call('plugins.list')['plugins'] if row['key'] == 'catalog-probe')
+        assert row['update_available'] is False, row
+        assert call('plugins.catalog', query='catalog-probe', offset=0, limit=20)['entries'][0]['can_update'] is False
+
+    try:
+        from hermes_cli import plugins_auto_update as auto
+    except ImportError:
+        assert call('plugins.auto_update') == {'supported': False, 'auto_apply': False, 'check_hours': 0}
+        refused('plugins.auto_update_set', 'plugin_update_unsupported', enabled=True)
+        refused('plugins.update_all', 'plugin_update_unsupported')
+        print('Agent before v0.23.0: catalog re-pin passed; neither unattended control is offered')
+        sys.exit(0)
+
+    assert call('plugins.auto_update') == {'supported': True, 'auto_apply': False, 'check_hours': 24}
+    assert call('plugins.auto_update_set', enabled=True)['auto_apply'] is True
+    assert call('plugins.auto_update')['auto_apply'] is True
+    assert call('plugins.auto_update', profile_home=str(other_home))['auto_apply'] is False, 'The switch crossed into another profile'
+    assert call('plugins.auto_update_set', enabled=False)['auto_apply'] is False
+    with patch('hermes_cli.config.is_managed', return_value=True):
+        assert 'managed' in refused('plugins.auto_update_set', 'plugin_update_refused', enabled=True)
+    assert call('plugins.auto_update')['auto_apply'] is False
+
+    # A second updater holds the plugin's lock in another thread: the real file lock refuses and nothing moves.
+    held, release = threading.Event(), threading.Event()
+    def hold_lock():
+        with scoped_home(home), auto.plugin_update_lock(target):
+            held.set()
+            release.wait(30)
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert held.wait(30)
+    try:
+        before = len(publications)
+        assert 'already being updated' in refused('plugins.update', 'plugin_update_refused', key='update-probe', accept_caution=False)
+        assert len(publications) == before
+    finally:
+        release.set()
+        holder.join()
+
+    # Update all over synthetic install records; only the plain update moves.
+    def behind(name, revised_manifest):
+        upstream = home.parent / f'{name}-upstream'
+        upstream.mkdir()
+        git(upstream, 'init', '-q')
+        git(upstream, 'config', 'user.email', 'probe@example.invalid')
+        git(upstream, 'config', 'user.name', 'Probe')
+        (upstream / 'plugin.yaml').write_text(f'name: {name}\nversion: 1.0.0\n')
+        (upstream / '__init__.py').write_text('def register(ctx):\n    pass\n')
+        git(upstream, 'add', '.')
+        git(upstream, 'commit', '-qm', 'initial')
+        first = git(upstream, 'rev-parse', 'HEAD')
+        installed = home / 'plugins' / name
+        git(home, 'clone', '-q', str(upstream), str(installed))
+        (upstream / 'plugin.yaml').write_text(revised_manifest)
+        git(upstream, 'add', '.')
+        git(upstream, 'commit', '-qm', 'revised')
+        return upstream, installed, first
+
+    _, moved, moved_old = behind('moved-probe', 'name: moved-probe\nversion: 2.0.0\n')
+    wider_repo, wider, wider_old = behind('wider-probe', 'name: wider-probe\nversion: 2.0.0\nprovides_tools:\n  - new_tool\n')
+    held_repo, held_target, held_old = behind('held-probe', 'name: held-probe\nversion: 2.0.0\n')
+    records = pc._read_install_metadata()
+    pc._write_install_metadata({**records,
+        'moved-probe': {'source': str(home.parent / 'moved-probe-upstream'), 'revision': moved_old, 'pinned': False},
+        'wider-probe': {'source': str(wider_repo), 'revision': wider_old, 'pinned': False},
+        'held-probe': {'source': str(held_repo), 'revision': held_old, 'pinned': True, 'catalog': {'name': 'held-probe', 'repo': str(held_repo), 'tier': 'official', 'sha': held_old}}})
+    published_before = len(publications)
+    held_entry = plugin_catalog.PluginCatalogEntry(name='held-probe', repo=str(held_repo), sha=git(held_repo, 'rev-parse', 'HEAD'), description='Synthetic',
+                                                   maintainer='Fixture', tier='official', category='tools')
+    with reviewed_catalog({'catalog-probe': entry, 'held-probe': held_entry}):
+        outcome = call('plugins.update_all')
+    statuses = {row['name']: row['status'] for row in outcome['results']}
+    assert statuses.get('moved-probe') == 'updated', outcome
+    assert statuses.get('wider-probe') == 'needs_review', outcome
+    assert statuses.get('held-probe') == 'skipped', outcome
+    assert 'held with --ref' in next(row['detail'] for row in outcome['results'] if row['name'] == 'held-probe'), outcome
+    assert len(publications) == published_before + 1, outcome
+    assert git(moved, 'rev-parse', 'HEAD') != moved_old
+    assert git(wider, 'rev-parse', 'HEAD') == wider_old, 'A widened update moved without review'
+    assert git(held_target, 'rev-parse', 'HEAD') == held_old, 'Update all moved a --ref hold'
+    print('catalog re-pin, profile-scoped switch, managed refusal, busy lock and Update all rows passed')

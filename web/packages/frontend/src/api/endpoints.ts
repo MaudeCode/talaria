@@ -344,6 +344,8 @@ export const clearUpdateNotifications = () => orpc().updateNotifications.clear({
 export const cancelUpdateNotification = (id: string) => orpc().updateNotifications.cancel({ id, cancel: true })
 export const performUpdateNotificationAction = (id: string, action_id: string) => orpc().updateNotifications.action({ id, action_id, perform: true, tab_id: tabId })
 export const updatePlugin = (key: string, accept_caution = false, consent_token?: string) => orpc().pluginUpdate({ key, accept_caution, ...(consent_token ? { consent_token } : {}) }, { signal: new AbortController().signal })
+export const updateAllPlugins = () => orpc().pluginUpdateAll(undefined, { signal: new AbortController().signal })
+export const setPluginAutoUpdate = (enabled: boolean) => orpc().pluginAutoUpdate({ enabled })
 export const fetchPlugins = () => orpc().plugins()
 export const fetchPluginCatalog = (query = '', offset = 0) => orpc().pluginCatalog({ query, offset, limit: 20 })
 export const installPlugin = (name: string, consent_token?: string) => orpc().pluginInstall({ name, ...(consent_token ? { consent_token } : {}) }, { signal: new AbortController().signal })

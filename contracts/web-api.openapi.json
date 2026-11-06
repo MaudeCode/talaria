@@ -99836,6 +99836,37 @@
                     },
                     "plugin_isolation_advisory": {
                       "type": "boolean"
+                    },
+                    "auto_update": {
+                      "type": "object",
+                      "properties": {
+                        "auto_apply": {
+                          "type": "boolean"
+                        },
+                        "check_hours": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "inactive_reason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "no_gateway",
+                                "checks_off"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "auto_apply",
+                        "check_hours",
+                        "inactive_reason"
+                      ]
                     }
                   },
                   "required": [
@@ -99970,6 +100001,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "can_update": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -99984,7 +100018,8 @@
                           "installed_key",
                           "installed_sha",
                           "can_install",
-                          "refusal"
+                          "refusal",
+                          "can_update"
                         ]
                       }
                     },
@@ -100133,7 +100168,7 @@
     "/api/plugins/update": {
       "post": {
         "operationId": "pluginUpdate",
-        "summary": "Operator only: update a profile-installed Git plugin through the Agent scan transaction. Caution requires accept_caution plus the single-use consent_token bound to the profile, installation and scanned revision; changed or expired consent returns 409. Dangerous always blocks.",
+        "summary": "Operator only: update a profile-installed Git plugin through the Agent scan transaction, or re-pin a catalog install to its reviewed pin. Holds the Agent's plugin update lock where it has one; a busy lock returns 409. A caution scan or a catalog pin that widens the plugin requires accept_caution plus the single-use consent_token bound to the profile, installation and what was reviewed; changed or expired consent returns 409. Dangerous always blocks.",
         "tags": [
           "tools"
         ],
@@ -100197,7 +100232,11 @@
                           "const": "needs_consent"
                         },
                         "verdict": {
-                          "const": "caution"
+                          "enum": [
+                            "caution",
+                            "widened"
+                          ],
+                          "type": "string"
                         },
                         "findings": {
                           "type": "string"
@@ -100238,6 +100277,134 @@
                         "findings"
                       ]
                     }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/update-all": {
+      "post": {
+        "operationId": "pluginUpdateAll",
+        "summary": "TAL-1914 (operator only): check the active profile's plugins and update each one the Agent can move unattended. Nothing changes for a `needs_review` or `skipped` row. 503 on an Agent before v0.23.0.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "updated",
+                              "current",
+                              "failed",
+                              "needs_review",
+                              "skipped"
+                            ],
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status",
+                          "detail"
+                        ]
+                      }
+                    },
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "results",
+                    "current"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/auto-update": {
+      "post": {
+        "operationId": "pluginAutoUpdate",
+        "summary": "TAL-1914 (operator only): set `plugins.auto_apply` for the active profile through the Agent. 409 with the Agent's refusal on a managed config; 503 on an Agent before v0.23.0.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "auto_apply": {
+                      "type": "boolean"
+                    },
+                    "check_hours": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "inactive_reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "no_gateway",
+                            "checks_off"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "auto_apply",
+                    "check_hours",
+                    "inactive_reason"
                   ]
                 }
               }

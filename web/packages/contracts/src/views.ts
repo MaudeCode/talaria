@@ -1228,11 +1228,18 @@ export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().op
    */
   oauth_clients: z.array(PluginOAuthClientViewSchema).optional() })
 /**
+ * TAL-1914: the active profile's `plugins.auto_apply` and `plugins.auto_update_check_hours`. `inactive_reason` says why the switch
+ * has no effect: the apply tick runs only in a gateway (`no_gateway`), and a zero interval never runs it (`checks_off`).
+ */
+export const PluginAutoUpdateViewSchema = z.object({ auto_apply: z.boolean(), check_hours: z.number().nonnegative(), inactive_reason: z.enum(['no_gateway', 'checks_off']).nullable() })
+export type PluginAutoUpdateView = z.infer<typeof PluginAutoUpdateViewSchema>
+/**
+ * `auto_update` (TAL-1914): present only on an Agent with the switch and Update all (v0.23.0+), which hides both on older Agents.
  * `read_only` (TAL-806): this session may not save plugin `settings` (not the server owner, or no sidecar).
  * `plugin_isolation_advisory` (TAL-820): more than one profile has third-party plugins installed and one of those runs them
  * `in_process`, so Settings recommends `plugins.isolation: host`; Talaria never sets the mode.
  */
-export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional() })
+export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional(), auto_update: PluginAutoUpdateViewSchema.optional() })
 /** `active`: the Agent holds the server connected. `failed` (TAL-1845): it reports a failed connect or a parked connection. */
 export const McpServerStatusSchema = z.enum(['active', 'configured', 'disabled', 'failed', 'invalid_config'])
 export const McpServerSchema = z.looseObject({ cost_policy: McpCostPolicySchema.nullable().optional(), events: McpEventsSchema.optional(), name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: McpServerStatusSchema.optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })

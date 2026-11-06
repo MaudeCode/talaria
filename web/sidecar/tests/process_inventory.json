@@ -97,7 +97,7 @@
     },
     "tests/test_plugin_updates.py::test_plugin_cached_update_and_scan_consent": {
       "layer": "compatibility",
-      "reason": "Real Agent cached updates, local Git staging and scan APIs; controlled scanner verdicts retain Agent policy, and only final PM publication uses disposable trees.",
+      "reason": "Real Agent cached updates, catalog re-pins, unattended Update all over synthetic install records, profile-scoped auto-update config and real update-lock exclusion; controlled scanner verdicts retain Agent policy, and only final PM publication uses disposable trees.",
       "cases": [""]
     },
     "tests/test_plugin_disabled_reason.py::test_only_a_plugin_the_update_still_holds_off_carries_the_reason": {

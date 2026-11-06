@@ -59,6 +59,37 @@ def _requirements(entry):
     return values + list(entry.known_issues)
 
 
+def _held(record):
+    """An install the user put on a commit with ``--ref`` (Agent v0.23.0+): only naming it in a terminal moves it."""
+    try:
+        from hermes_cli.plugins_auto_update import held_with_ref
+    except ImportError:
+        return False
+    return held_with_ref(record)
+
+
+def _can_update(entry, record, pc, native):
+    block = record.get('catalog')
+    return (isinstance(block, dict) and not _held(record) and not native.at_catalog_pin(block, entry.sha)
+            and _refusal(entry, pc, native) is None)
+
+
+def catalog_updates(records):
+    """``{install dir: catalog pin}`` for catalog installs that can move to their catalog's pin."""
+    agent = _agent()
+    names = {key: record['catalog'].get('name') for key, record in records.items()
+             if isinstance(record, dict) and isinstance(record.get('catalog'), dict)}
+    if agent is None or not names:
+        return {}
+    source, pc, native = agent
+    try:
+        entries = {entry.name: entry for entry in source.load_catalog_live()}
+        return {key: entries[name].sha for key, name in names.items()
+                if name in entries and _can_update(entries[name], records[key], pc, native)}
+    except Exception:  # noqa: BLE001  # A catalog failure offers no update; it must not hide the installed list.
+        return {}
+
+
 def catalog(query='', offset=0, limit=20):
     if not isinstance(query, str) or len(query) > 200 or type(offset) is not int or not 0 <= offset <= 10000 or type(limit) is not int or not 1 <= limit <= 50:
         raise InvalidParams('Invalid catalog search or page')
@@ -81,7 +112,8 @@ def catalog(query='', offset=0, limit=20):
                      'repo': entry.repo, 'sha': entry.sha, 'tier': entry.tier, 'category': entry.category,
                      'requirements': _requirements(entry), 'installed_key': key,
                      'installed_sha': str(record.get('revision') or '') or None,
-                     'can_install': not matches and refusal is None, 'refusal': refusal})
+                     'can_install': not matches and refusal is None, 'refusal': refusal,
+                     'can_update': key is not None and refusal is None and _can_update(entry, record, pc, native)})
     end = offset + limit
     return {'supported': True, 'entries': rows[offset:end], 'total': len(rows), 'next_offset': end if end < len(rows) else None}
 

@@ -1,11 +1,14 @@
 """Profile import boundary, using disposable trees and a native structured-API stub."""
 from contextlib import nullcontext
+import json
 from pathlib import Path
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 from talaria_sidecar.methods import Registry, build_methods
+from talaria_sidecar.methods.plugin_catalog import reviewed_importer
 
 
 def test_profile_import_rpc_is_registered():
@@ -124,6 +127,41 @@ def test_unavailable_does_not_touch_profile_and_result_never_executes(imports):
     assert i.call('result', receipt=preview['receipt'])['status'] == 'changed'
     assert i.call('apply', receipt=preview['receipt'])['status'] == 'changed'
     assert i.effects == []
+
+
+@pytest.mark.parametrize('moved, reaches_bytes', [(True, False), (False, True)])
+def test_auto_update_past_the_reviewed_pin_makes_import_unavailable(imports, monkeypatch, moved, reaches_bytes):
+    """plugins.auto_apply can move Agent Importers past agent_importer.json; the record alone must fail closed."""
+    from talaria_sidecar.methods import dashboard_plugins
+    i = imports
+    pin = next(iter(json.loads((Path(i.subject.plugin_catalog.__file__).parents[2] / 'agent_importer.json').read_text())['revisions']))
+    revision = 'f' * 40 if moved else pin
+    plugins = i.target / 'plugins'
+    (plugins / 'agent-importers').mkdir(parents=True)
+    entry = SimpleNamespace(name='agent-importers', sha=pin, repo='https://example.invalid/importers', requires_hermes='')
+    pc = SimpleNamespace(PluginOperationError=RuntimeError, _sanitize_plugin_name=lambda name, root: root / name,
+                         _read_install_metadata=lambda: {'agent-importers': {'revision': revision, 'catalog': {'name': 'agent-importers', 'sha': revision, 'repo': entry.repo}}})
+    native = SimpleNamespace(raise_if_removed=lambda *_: None, _refuse_unsupported_catalog_platform=lambda _: None)
+    source = SimpleNamespace(load_catalog=lambda: [entry], load_removed_list=lambda: [], _removed_from_list=lambda _: [])
+    for name, values in {'hermes_cli': {'plugin_catalog': source, 'plugins_cmd': pc, 'plugins_cmd_catalog': native},
+                         'hermes_cli.plugin_catalog': vars(source) | {'match_removed': lambda *_: False},
+                         'hermes_cli.plugins_manifest': {'requires_hermes_error': lambda _: None},
+                         'hermes_cli.web_server_dashboard': {'_plugin_enable_sets_here': lambda: ({'agent-importers'}, set())},
+                         'pm': {}, 'pm.workspace': {'enabled_plugin_dirs': lambda: {plugins / 'agent-importers'}}}.items():
+        module = ModuleType(name)
+        module.__path__ = []
+        module.__dict__.update(values)
+        monkeypatch.setitem(sys.modules, name, module)
+    read = []
+    monkeypatch.setattr(i.subject.plugin_catalog, '_agent', lambda: (source, pc, native))
+    monkeypatch.setattr(dashboard_plugins, '_supported', lambda: True)
+    monkeypatch.setattr(dashboard_plugins, '_read', lambda _root, name, *_, **__: read.append(name))
+    monkeypatch.setattr(i.subject.plugin_catalog, 'reviewed_importer', reviewed_importer)
+    before = tree(i.target)
+    status = i.call('preview', agent='cursor')
+    assert status['status'] == 'unavailable' and status['catalog_required'] is True
+    assert ('importer.py' in read) is reaches_bytes, 'The install record decides before the plugin bytes are read'
+    assert tree(i.target) == before and i.effects == []
 
 
 def test_unknown_outcome_is_durable_and_never_blindly_replayed(imports):

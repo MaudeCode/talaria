@@ -53,7 +53,8 @@ def catalog(monkeypatch, tmp_path):
     pc = SimpleNamespace(PluginOperationError=OperationError, PluginScanBlocked=ScanBlocked,
         _read_install_metadata=lambda: state['metadata'], _plugins_dir=lambda: state['home'] / 'plugins',
         _sanitize_plugin_name=lambda name, root: root / name)
-    native = SimpleNamespace(raise_if_removed=removed, _refuse_unsupported_catalog_platform=lambda _: None, install_catalog_entry=transaction)
+    native = SimpleNamespace(raise_if_removed=removed, _refuse_unsupported_catalog_platform=lambda _: None, install_catalog_entry=transaction,
+        at_catalog_pin=lambda block, sha: sha in (block.get('sha'), block.get('pin')))
     source = SimpleNamespace(load_catalog_live=lambda: state['entries'])
     monkeypatch.setattr(subject, '_agent', lambda: (source, pc, native))
     monkeypatch.setattr(subject, '_receipts', {})
@@ -131,6 +132,33 @@ def test_read_is_bounded_searchable_and_uses_installer_identity(catalog):
     assert row['installed_key'] == 'different-manifest-name' and row['can_install'] is False
     assert subject.catalog('memory', 0, 20)['total'] == 1
     assert effects == []
+
+
+@pytest.mark.parametrize('case, record, can_update', [
+    ('behind', {'catalog': {'name': 'probe', 'sha': 'b' * 40, 'pin': 'b' * 40}, 'pinned': True}, True),
+    ('at_pin', {'catalog': {'name': 'probe', 'sha': 'a' * 40, 'pin': 'a' * 40}, 'pinned': True}, False),
+    ('ref_hold', {'catalog': {'name': 'probe', 'sha': 'b' * 40}, 'pinned': True}, False),
+    ('removed', {'catalog': {'name': 'probe', 'sha': 'b' * 40, 'pin': 'b' * 40}, 'pinned': True}, False),
+])
+def test_only_a_catalog_install_behind_a_movable_pin_can_update(catalog, monkeypatch, case, record, can_update):
+    state, _, _ = catalog
+    (state['home'] / 'plugins' / 'probe').mkdir(parents=True)
+    state['metadata'] = {'probe': record}
+    state['removed'] = case == 'removed'
+    held = ModuleType('hermes_cli.plugins_auto_update')
+    held.held_with_ref = lambda row: row.get('pinned') is True and not row['catalog'].get('pin')
+    monkeypatch.setitem(sys.modules, 'hermes_cli.plugins_auto_update', held)
+    row = subject.catalog('', 0, 20)['entries'][0]
+    assert (row['installed_key'], row.get('can_update', 'missing')) == ('probe', can_update)
+    assert subject.catalog_updates(state['metadata']) == ({'probe': 'a' * 40} if can_update else {})
+
+
+def test_catalog_updates_offers_nothing_without_catalog_installs_or_an_agent(catalog, monkeypatch):
+    state, _, _ = catalog
+    monkeypatch.setattr(state['entries'][0], 'sha', 'c' * 40)
+    assert subject.catalog_updates({'git-plugin': {'source': 'https://example.invalid/git', 'pinned': False}}) == {}
+    monkeypatch.setattr(subject, '_agent', lambda: None)
+    assert subject.catalog_updates({'probe': {'catalog': {'name': 'probe', 'sha': 'b' * 40}}}) == {}
 
 
 def test_tree_review_binds_permissions_and_refuses_oversized_content(tmp_path):

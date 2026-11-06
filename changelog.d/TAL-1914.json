@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web Settings can now turn on plugin auto-update for a profile, update every plugin at once, and update a plugin installed from the catalog.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
