@@ -154,7 +154,7 @@ export function connectorTools(listing: Tools, policy: Policy | null): Connector
   }
 }
 
-const SKIPPABLE = new Set(['pending', 'initiated', 'failed', 'expired'])
+const UNRESOLVED = new Set(['pending', 'initiated', 'failed', 'expired'])
 
 /** Only a valid https link without embedded credentials reaches a client; anything else is withheld rather than rendered as a link. */
 function authorizationLink(raw: string | null | undefined): string | null {
@@ -186,10 +186,12 @@ export function connectorOperation(snapshot: Snapshot, names: Record<string, str
       const actions: ('skip' | 'retry' | 'approve')[] = []
       if (open && local && target.state === 'pending') actions.push('approve')
       if (open && (target.state === 'failed' || target.state === 'expired')) actions.push('retry')
-      if (open && SKIPPABLE.has(target.state)) actions.push('skip')
+      if (open && UNRESOLVED.has(target.state)) actions.push('skip')
       return {
         name: target.name, title: names[target.name] ?? connectorTitle(target.name), kind: target.kind, state: target.state, detail: target.detail,
         connect_url: open && target.state === 'initiated' ? authorizationLink(target.connect_url) : null,
+        // The Agent's consent line as written: redaction could mask part of the program the user is approving.
+        launch: open && UNRESOLVED.has(target.state) ? target.launch ?? null : null,
         actions,
         // An approval (or a failed install's retry) sends the credentials the install still needs.
         env_fields: open && local && (target.state === 'pending' || target.state === 'failed') ? target.required_env.map((field) => ({ name: field.name, label: field.prompt.trim() || field.name, required: field.required, secret: field.secret })) : [],
@@ -209,7 +211,7 @@ export function ownerConnection(snapshot: Snapshot, owner: NonNullable<Connector
 export function settledConnection(view: ConnectorOperationView): ConnectorOperationView {
   return { ...view, settled: true, can_continue: false, can_wake: false,
     outcome: view.targets.every((target) => target.state === 'connected') ? 'connected' : 'not_connected',
-    targets: view.targets.map((target) => ({ ...target, connect_url: null, actions: [], env_fields: [] })) }
+    targets: view.targets.map((target) => ({ ...target, connect_url: null, launch: null, actions: [], env_fields: [] })) }
 }
 
 export interface ConnectorMove { action: ConnectorOperationView['targets'][number]['actions'][number] | 'continue' | 'wake'; target?: string | undefined; env?: Record<string, string> | undefined }

@@ -303,6 +303,41 @@ def test_a_client_without_the_card_keeps_the_agents_plain_connect_link(tmp_path,
     assert "https://vendor.example.test/authorize/conn-gmail-1" in json.dumps(tool)
 
 
+LAUNCH_PROBE = r'''
+import json, sys
+sys.path.append(sys.argv[1])
+from tools.connectors.mcp_launch import launch_target
+from tools.connectors.operation import ConnectionOperation, Target
+from talaria_sidecar.methods.connectors import operation_view
+
+argv = ["-y", "mcp-server", "review  server.py", "--api-key=synthetic-flag-value", "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"]
+launch = launch_target(None, "npx", argv, {"SYNTHETIC_TOKEN": "synthetic-env-value"}, "/work dir")
+remote = launch_target("https://mcp.example.test/sse", None, None)
+targets = [Target("local", "mcp", "install", launch=launch), Target("hosted", "mcp", "install", launch=remote), Target("older", "mcp", "install")]
+print(json.dumps({"launch": launch, "remote": remote, "view": operation_view(ConnectionOperation(targets, session_key="session"))}))
+'''
+
+
+def test_an_mcp_operation_carries_the_agents_launch_line_and_only_env_names(tmp_path):
+    import subprocess
+
+    from conftest import isolated_env
+
+    if not (AGENT_DIR / "tools/connectors/mcp_launch.py").is_file():
+        pytest.skip("this Agent release sends no launch line")
+    run = subprocess.run([AGENT_PYTHON, "-c", LAUNCH_PROBE, str(AGENT_DIR)], env=isolated_env(tmp_path), capture_output=True, text=True, timeout=90)
+    assert run.returncode == 0, run.stderr[-4000:]
+    observed = json.loads(run.stdout.strip().splitlines()[-1])
+    assert_matches("connectors.operation", observed["view"])
+    local, hosted, older = observed["view"]["targets"]
+    assert local.get("launch") == {"kind": "stdio", "target": observed["launch"]["target"], "env": ["SYNTHETIC_TOKEN"], "cwd": observed["launch"]["cwd"]}
+    assert "'review  server.py'" in local["launch"]["target"] and "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789" in local["launch"]["target"]
+    assert hosted["launch"] == {"kind": "remote", "target": observed["remote"]["target"], "env": [], "cwd": None}
+    assert "launch" not in older
+    shown = json.dumps(observed["view"])
+    assert "synthetic-env-value" not in shown and "synthetic-flag-value" not in shown
+
+
 def test_the_operation_cache_never_drops_an_operation_still_open(monkeypatch, tmp_path):
     """A chat card's operation stays readable however many settled ones follow it: only settled ones age out."""
     from collections import OrderedDict

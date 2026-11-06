@@ -12,6 +12,7 @@ import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 type Target = ConnectorOperationView['targets'][number]
+type Launch = NonNullable<Target['launch']>
 interface Move { action: Target['actions'][number] | 'continue'; target?: string; env?: Record<string, string> }
 
 const STATE: Record<Target['state'], () => string> = {
@@ -52,7 +53,7 @@ export function useConnectorOperation(initial: ConnectorOperationView) {
   // Skip and Continue are the user's own choice: shown at once, rolled back on a refusal, decided by a read when the answer is lost.
   const choose = useResourceMutation({
     resource: ({ target }: Move) => target ? targetResource(initial.op_id, target) : operationResource(initial.op_id),
-    effect: ({ target }: Move) => target ? { fields: { state: 'skipped', connect_url: null, actions: [], env_fields: [] } } : { remove: true },
+    effect: ({ target }: Move) => target ? { fields: { state: 'skipped', connect_url: null, launch: null, actions: [], env_fields: [] } } : { remove: true },
     queryKey: key, mutationFn: answer, onSuccess: accepted, onError: failed,
   })
   // Approve and Try again run an authorization or install only the server can finish.
@@ -90,6 +91,22 @@ export function ConnectTargets({ view, move, running }: Pick<ReturnType<typeof u
   )
 }
 
+const LAUNCH_LINE: Record<Launch['kind'], (inputs: { target: string }) => string> = {
+  stdio: m.connectors_launch_stdio,
+  remote: m.connectors_launch_remote,
+}
+
+/** What the row will run or contact, in the approval card's command box: never cut, with the Agent's spacing kept, scrolling once it is long. */
+function LaunchLine({ launch }: { launch: Launch }) {
+  return (
+    <pre className="approval-cmd" data-connect-launch tabIndex={0}>
+      <span className="block">{LAUNCH_LINE[launch.kind]({ target: launch.target })}</span>
+      {launch.cwd && <span className="block">{m.connectors_launch_cwd({ cwd: launch.cwd })}</span>}
+      {launch.env.length > 0 && <span className="block">{m.connectors_launch_env({ names: launch.env.join(', ') })}</span>}
+    </pre>
+  )
+}
+
 function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; onMove: (action: Target['actions'][number], env?: Record<string, string>) => void }) {
   const [env, setEnv] = useState<Record<string, string>>({})
   const missing = target.env_fields.some((field) => field.required && !env[field.name]?.trim())
@@ -112,6 +129,7 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
         </div>
       </div>
       {target.detail && <div className="text-xs text-muted">{target.detail}</div>}
+      {target.launch && <LaunchLine launch={target.launch} />}
       {target.env_fields.map((field) => (
         <TextInput key={field.name} type={field.secret ? 'password' : 'text'} autoComplete="off" aria-label={field.label} placeholder={field.label}
           value={env[field.name] ?? ''} onChange={(e) => setEnv((current) => ({ ...current, [field.name]: e.target.value }))} />

@@ -6260,6 +6260,40 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "launch": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "stdio",
+                    "remote"
+                  ]
+                },
+                "target": {
+                  "type": "string"
+                },
+                "env": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cwd": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "target",
+                "env",
+                "cwd"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -6368,6 +6402,40 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "launch": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "stdio",
+                    "remote"
+                  ]
+                },
+                "target": {
+                  "type": "string"
+                },
+                "env": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cwd": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "target",
+                "env",
+                "cwd"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -6476,6 +6544,40 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "launch": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "stdio",
+                    "remote"
+                  ]
+                },
+                "target": {
+                  "type": "string"
+                },
+                "env": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cwd": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "target",
+                "env",
+                "cwd"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -10077,6 +10179,40 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "launch": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "stdio",
+                                    "remote"
+                                  ]
+                                },
+                                "target": {
+                                  "type": "string"
+                                },
+                                "env": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "cwd": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "target",
+                                "env",
+                                "cwd"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -10729,6 +10865,40 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "launch": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "stdio",
+                        "remote"
+                      ]
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "env": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cwd": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "env",
+                    "cwd"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -11125,6 +11295,40 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "launch": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "stdio",
+                                    "remote"
+                                  ]
+                                },
+                                "target": {
+                                  "type": "string"
+                                },
+                                "env": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "cwd": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "target",
+                                "env",
+                                "cwd"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -11777,6 +11981,40 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "launch": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "stdio",
+                        "remote"
+                      ]
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "env": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cwd": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "env",
+                    "cwd"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

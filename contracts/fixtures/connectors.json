@@ -128,6 +128,7 @@
         "state": "initiated",
         "detail": "",
         "connect_url": "https://vendor.example.test/authorize/conn-2",
+        "launch": null,
         "actions": [
           "skip"
         ],
@@ -140,6 +141,14 @@
         "state": "pending",
         "detail": "",
         "connect_url": null,
+        "launch": {
+          "kind": "stdio",
+          "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+          "env": [
+            "LINEAR_API_KEY"
+          ],
+          "cwd": "/workspace/linear"
+        },
         "actions": [
           "approve",
           "skip"
@@ -191,7 +200,15 @@
               "required": true,
               "secret": true
             }
-          ]
+          ],
+          "launch": {
+            "kind": "stdio",
+            "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+            "env": [
+              "LINEAR_API_KEY"
+            ],
+            "cwd": "/workspace/linear"
+          }
         },
         {
           "name": "notion",
@@ -238,6 +255,7 @@
           "state": "initiated",
           "detail": "",
           "connect_url": "https://vendor.example.test/authorize/conn-native?state=opaque-state",
+          "launch": null,
           "actions": [
             "skip"
           ],
@@ -250,6 +268,14 @@
           "state": "pending",
           "detail": "",
           "connect_url": null,
+          "launch": {
+            "kind": "stdio",
+            "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+            "env": [
+              "LINEAR_API_KEY"
+            ],
+            "cwd": "/workspace/linear"
+          },
           "actions": [
             "approve",
             "skip"
@@ -270,6 +296,7 @@
           "state": "failed",
           "detail": "The link expired",
           "connect_url": null,
+          "launch": null,
           "actions": [
             "retry",
             "skip"
@@ -283,6 +310,7 @@
           "state": "connected",
           "detail": "",
           "connect_url": null,
+          "launch": null,
           "actions": [],
           "env_fields": []
         },
@@ -293,6 +321,7 @@
           "state": "skipped",
           "detail": "",
           "connect_url": null,
+          "launch": null,
           "actions": [],
           "env_fields": []
         }

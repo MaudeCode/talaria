@@ -12,7 +12,7 @@ const offered: ConnectorsPage = { ...shared.page, sign_in_required: false, sign_
   available: true, due: true, visible: true, offer_id: 'offer-1', actions: ['sign_in', 'dismiss'], refresh_after: null,
 } }
 const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
-  { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
+  { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', launch: null, actions: ['skip'], env_fields: [] },
 ] }
 let operation = waiting
 vi.mock('../../api/endpoints', () => ({
@@ -138,6 +138,23 @@ describe('ConnectCard (TAL-818)', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Continue' }))
     await waitFor(() => expect(api.respondConnectorOperation).toHaveBeenCalledWith({ op_id: 'op-chat', action: 'continue' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
+  })
+
+  it('shows what an MCP row runs or contacts word for word until it is skipped (TAL-1907)', async () => {
+    const launch = shared.connect_card.targets.find((target) => target.name === 'linear')!.launch!
+    const remote = { name: 'hosted', title: 'Hosted', kind: 'mcp', state: 'pending', detail: '', connect_url: null, actions: ['approve', 'skip'], env_fields: [], launch: { kind: 'remote', target: 'https://mcp.example.test/sse', env: [], cwd: null } } satisfies ConnectorOperationView['targets'][number]
+    const view = { ...shared.connect_card, targets: [...shared.connect_card.targets, remote] }
+    operation = view
+    const answer = vi.mocked(api.respondConnectorOperation)
+    answer.mockImplementationOnce(() => new Promise(() => undefined))
+    renderWith(<ConnectCard initial={view} />)
+    const card = screen.getByRole('region', { name: 'Connect apps' })
+    const lines = (name: string) => [...card.querySelector(`[data-connect-target="${name}"] [data-connect-launch]`)?.children ?? []].map((line) => line.textContent)
+    expect(lines('linear')).toEqual([`Runs: ${launch.target}`, `Working dir: ${launch.cwd!}`, `Env: ${launch.env.join(', ')}`])
+    expect(lines('hosted')).toEqual(['Connects to: https://mcp.example.test/sse'])
+    expect(lines('gmail')).toEqual([])
+    await userEvent.click(within(card.querySelector<HTMLElement>('[data-connect-target="linear"]')!).getByRole('button', { name: 'Skip' }))
+    expect(lines('linear')).toEqual([])
   })
 
   it('reads and answers a canonical owner through the view\'s owner, and lets its live frames replace the view (TAL-1317)', async () => {

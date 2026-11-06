@@ -10,7 +10,7 @@ test.use({ serviceWorkers: 'block' })
 /** The views the server suite composes (contracts/fixtures/connectors.json). */
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; tools: ConnectorToolsView; connect_card: ConnectorOperationView; native_connection: { view: ConnectorOperationView } }
 const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
-  { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
+  { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', launch: null, actions: ['skip'], env_fields: [] },
 ] }
 
 {
@@ -241,6 +241,35 @@ test('scheduled guest offer reuses OAuth, preserves the result, and dismisses wi
   expect(starts).toBe(2)
 })
 
+test('an MCP row keeps a long command in a bounded box with every argument reachable (TAL-1907)', async ({ page }, testInfo) => {
+  const native = shared.native_connection.view
+  const sid = native.owner!.session_id
+  const target = ['npx -y mcp-linear', ...Array.from({ length: 120 }, (_, index) => `--include=/workspace/project/${String(index)}`), `'two  spaces'`, '--last-argument'].join(' ')
+  const view: ConnectorOperationView = { ...native, targets: native.targets.map((row) => row.name === 'linear' ? { ...row, launch: { ...row.launch!, target } } : row) }
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Native owner chat', workspace: '/workspace/native', read_only: true, read_only_reason: 'canonical_session', messages: [{ role: 'user', content: 'Connect my apps' }], owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], connection: view } } } }))
+  await page.route('**/api/connectors/operations/op-native**', (route) => route.fulfill({ json: view }))
+  await page.goto(`/session/${sid}`)
+  await settle(page)
+  const card = page.getByRole('region', { name: 'Connect apps' })
+  const row = card.locator('[data-connect-target="linear"]')
+  const box = row.locator('[data-connect-launch]')
+  await expect(box).toBeVisible()
+  expect(await box.evaluate((el) => el.firstElementChild!.textContent)).toBe(`Runs: ${target}`)
+  const size = await box.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }))
+  expect(size.clientHeight).toBeLessThanOrEqual(120)
+  expect(size.scrollHeight).toBeGreaterThan(size.clientHeight)
+  expect(size.scrollWidth).toBeLessThanOrEqual(size.clientWidth)
+  expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= innerWidth)).toBe(true)
+  await expect(row.getByRole('button', { name: 'Approve' })).toBeInViewport()
+  await page.screenshot({ path: testInfo.outputPath(`launch-line-${testInfo.project.name}.png`) })
+  await box.focus()
+  await page.keyboard.press('End')
+  await expect.poll(() => box.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`launch-line-${testInfo.project.name}-end.png`) })
+  await row.locator('input').fill('lin-key')
+  await expect(row.getByRole('button', { name: 'Approve' })).toBeEnabled()
+})
+
 test('a canonical owner\'s connection card restores on attach and answers through that owner (TAL-1317)', async ({ page }, testInfo) => {
   const native = shared.native_connection.view
   const sid = native.owner!.session_id
@@ -261,8 +290,8 @@ test('a canonical owner\'s connection card restores on attach and answers throug
     moves.push(body)
     // The owner has not answered yet: the page must already show the choice.
     if (body.action === 'skip') await ownerAnswers
-    if (body.action === 'skip') current = { ...current, targets: current.targets.map((t) => t.name === body.target ? { ...t, state: 'skipped', connect_url: null, actions: [], env_fields: [] } : t) }
-    if (body.action === 'continue') current = { ...current, settled: true, outcome: 'not_connected', can_continue: false, can_wake: false, targets: current.targets.map((t) => ({ ...t, connect_url: null, actions: [], env_fields: [] })) }
+    if (body.action === 'skip') current = { ...current, targets: current.targets.map((t) => t.name === body.target ? { ...t, state: 'skipped', connect_url: null, launch: null, actions: [], env_fields: [] } : t) }
+    if (body.action === 'continue') current = { ...current, settled: true, outcome: 'not_connected', can_continue: false, can_wake: false, targets: current.targets.map((t) => ({ ...t, connect_url: null, launch: null, actions: [], env_fields: [] })) }
     return route.fulfill({ json: current })
   })
   await page.goto(`/session/${sid}`)

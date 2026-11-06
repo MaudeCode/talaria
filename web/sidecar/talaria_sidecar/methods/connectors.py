@@ -250,10 +250,22 @@ def _operation(home: Path, op_id: str):
     return operation
 
 
+def _launch_view(launch: object) -> dict | None:
+    """What an MCP row will run or contact, as the Agent worded it for consent: its scrubbed line unchanged, and env names,
+    never values. None when an older Agent sends no line or this one is unreadable, so the row shows as it did before."""
+    if not isinstance(launch, dict) or launch.get("kind") not in ("stdio", "remote"):
+        return None
+    target, env, cwd = launch.get("target"), launch.get("env"), launch.get("cwd")
+    if not isinstance(target, str) or not target:
+        return None
+    return {"kind": launch["kind"], "target": target, "env": [name for name in env if isinstance(name, str)] if isinstance(env, list) else [],
+            "cwd": cwd if isinstance(cwd, str) else None}
+
+
 def snapshot_view(snapshot: dict, *, owner: str, tool_call_id: str | None) -> dict:
     """The operation as the sidecar reports it, whichever owner holds it: every target's state, the vendor's text, the
-    authorization link while the target waits on it (the Agent keeps a used link on a connected target), and the
-    credentials an MCP install still asks for. An allowlist: nothing else in the Agent's snapshot leaves here."""
+    authorization link while the target waits on it (the Agent keeps a used link on a connected target), the credentials
+    an MCP install still asks for, and what it will run. An allowlist: nothing else in the Agent's snapshot leaves here."""
     return {
         "op_id": snapshot["op_id"],
         **({"seq": snapshot["seq"]} if isinstance(snapshot.get("seq"), int) else {}),
@@ -267,6 +279,7 @@ def snapshot_view(snapshot: dict, *, owner: str, tool_call_id: str | None) -> di
                 "name": str(field.get("name") or ""), "prompt": str(field.get("prompt") or ""), "required": bool(field.get("required")),
                 "secret": bool(field.get("secret", True)),
             } for field in target.get("required_env") or [] if isinstance(field, dict) and field.get("name")],
+            **({"launch": launch} if target["kind"] == "mcp" and (launch := _launch_view(target.get("launch"))) else {}),
         } for target in snapshot["targets"]],
     }
 

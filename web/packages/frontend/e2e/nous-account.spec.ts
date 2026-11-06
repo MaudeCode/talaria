@@ -14,11 +14,11 @@ test('Nous result remains readable, survives reload, and reconnect is an explici
   await page.route('**/api/connectors/gmail/connect', async (route) => {
     writes.push(route.request().postDataJSON())
     await route.fulfill({ json: { op_id: 'reconnect-1', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
-      { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/gmail', actions: ['skip'], env_fields: [] },
+      { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/gmail', launch: null, actions: ['skip'], env_fields: [] },
     ] } })
   })
   await page.route('**/api/connectors/operations/reconnect-1', (route) => route.fulfill({ json: { op_id: 'reconnect-1', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
-    { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/gmail', actions: ['skip'], env_fields: [] },
+    { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/gmail', launch: null, actions: ['skip'], env_fields: [] },
   ] } }))
   await page.goto('/settings/providers')
   await settle(page)

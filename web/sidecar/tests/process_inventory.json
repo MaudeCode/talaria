@@ -995,6 +995,13 @@
         ""
       ]
     },
+    "tests/test_connectors.py::test_an_mcp_operation_carries_the_agents_launch_line_and_only_env_names": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real installed release's ConnectionOperation and launch scrubber produce the consent line the sidecar view must carry word for word, with env names and never env values. All values are synthetic; nothing runs and no network is used.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_connectors.py::test_the_operation_cache_never_drops_an_operation_still_open": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: the operation cache never drops an operation still open. Uses the real installed release, not a fabricated API response.",

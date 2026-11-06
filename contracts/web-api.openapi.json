@@ -2059,6 +2059,50 @@
                                                 }
                                               ]
                                             },
+                                            "launch": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "stdio",
+                                                        "remote"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "target": {
+                                                      "type": "string"
+                                                    },
+                                                    "env": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "cwd": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "target",
+                                                    "env",
+                                                    "cwd"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "actions": {
                                               "type": "array",
                                               "items": {
@@ -2104,6 +2148,7 @@
                                             "state",
                                             "detail",
                                             "connect_url",
+                                            "launch",
                                             "actions",
                                             "env_fields"
                                           ]
@@ -3039,6 +3084,50 @@
                                                 }
                                               ]
                                             },
+                                            "launch": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "stdio",
+                                                        "remote"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "target": {
+                                                      "type": "string"
+                                                    },
+                                                    "env": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "cwd": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "target",
+                                                    "env",
+                                                    "cwd"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "actions": {
                                               "type": "array",
                                               "items": {
@@ -3084,6 +3173,7 @@
                                             "state",
                                             "detail",
                                             "connect_url",
+                                            "launch",
                                             "actions",
                                             "env_fields"
                                           ]
@@ -3858,6 +3948,50 @@
                                                 }
                                               ]
                                             },
+                                            "launch": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "stdio",
+                                                        "remote"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "target": {
+                                                      "type": "string"
+                                                    },
+                                                    "env": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "cwd": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "target",
+                                                    "env",
+                                                    "cwd"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "actions": {
                                               "type": "array",
                                               "items": {
@@ -3903,6 +4037,7 @@
                                             "state",
                                             "detail",
                                             "connect_url",
+                                            "launch",
                                             "actions",
                                             "env_fields"
                                           ]
@@ -4978,6 +5113,50 @@
                                                 }
                                               ]
                                             },
+                                            "launch": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "stdio",
+                                                        "remote"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "target": {
+                                                      "type": "string"
+                                                    },
+                                                    "env": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "cwd": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "target",
+                                                    "env",
+                                                    "cwd"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "actions": {
                                               "type": "array",
                                               "items": {
@@ -5023,6 +5202,7 @@
                                             "state",
                                             "detail",
                                             "connect_url",
+                                            "launch",
                                             "actions",
                                             "env_fields"
                                           ]
@@ -8809,6 +8989,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -8854,6 +9078,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -9655,6 +9880,50 @@
                                           }
                                         ]
                                       },
+                                      "launch": {
+                                        "anyOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "stdio",
+                                                  "remote"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "target": {
+                                                "type": "string"
+                                              },
+                                              "env": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "cwd": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "target",
+                                              "env",
+                                              "cwd"
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "actions": {
                                         "type": "array",
                                         "items": {
@@ -9700,6 +9969,7 @@
                                       "state",
                                       "detail",
                                       "connect_url",
+                                      "launch",
                                       "actions",
                                       "env_fields"
                                     ]
@@ -13613,6 +13883,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -13658,6 +13972,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -17318,6 +17633,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -17363,6 +17722,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -18276,6 +18636,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -18321,6 +18725,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -19143,6 +19548,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -19188,6 +19637,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -20017,6 +20467,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -20062,6 +20556,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -23598,6 +24093,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -23643,6 +24182,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -24589,6 +25129,50 @@
                                                   }
                                                 ]
                                               },
+                                              "launch": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "kind": {
+                                                        "enum": [
+                                                          "stdio",
+                                                          "remote"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "target": {
+                                                        "type": "string"
+                                                      },
+                                                      "env": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "cwd": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "kind",
+                                                      "target",
+                                                      "env",
+                                                      "cwd"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
                                               "actions": {
                                                 "type": "array",
                                                 "items": {
@@ -24634,6 +25218,7 @@
                                               "state",
                                               "detail",
                                               "connect_url",
+                                              "launch",
                                               "actions",
                                               "env_fields"
                                             ]
@@ -25486,6 +26071,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -25531,6 +26160,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -29366,6 +29996,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -29411,6 +30085,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -30535,6 +31210,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -30580,6 +31299,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -31400,6 +32120,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -31445,6 +32209,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -35772,6 +36537,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -35817,6 +36626,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -39426,6 +40236,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -39471,6 +40325,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -43142,6 +43997,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -43187,6 +44086,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -46856,6 +47756,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -46901,6 +47845,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -50067,6 +51012,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -50112,6 +51101,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -50931,6 +51921,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -50976,6 +52010,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -60990,6 +62025,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -61035,6 +62114,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -64692,6 +65772,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -64737,6 +65861,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -65615,6 +66740,50 @@
                                           }
                                         ]
                                       },
+                                      "launch": {
+                                        "anyOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "stdio",
+                                                  "remote"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "target": {
+                                                "type": "string"
+                                              },
+                                              "env": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "cwd": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "target",
+                                              "env",
+                                              "cwd"
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "actions": {
                                         "type": "array",
                                         "items": {
@@ -65660,6 +66829,7 @@
                                       "state",
                                       "detail",
                                       "connect_url",
+                                      "launch",
                                       "actions",
                                       "env_fields"
                                     ]
@@ -68954,6 +70124,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -68999,6 +70213,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -69770,6 +70985,50 @@
                                               }
                                             ]
                                           },
+                                          "launch": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "stdio",
+                                                      "remote"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "target": {
+                                                    "type": "string"
+                                                  },
+                                                  "env": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "cwd": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "target",
+                                                  "env",
+                                                  "cwd"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
                                           "actions": {
                                             "type": "array",
                                             "items": {
@@ -69815,6 +71074,7 @@
                                           "state",
                                           "detail",
                                           "connect_url",
+                                          "launch",
                                           "actions",
                                           "env_fields"
                                         ]
@@ -73046,6 +74306,50 @@
                                                   }
                                                 ]
                                               },
+                                              "launch": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "kind": {
+                                                        "enum": [
+                                                          "stdio",
+                                                          "remote"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "target": {
+                                                        "type": "string"
+                                                      },
+                                                      "env": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "cwd": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "kind",
+                                                      "target",
+                                                      "env",
+                                                      "cwd"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
                                               "actions": {
                                                 "type": "array",
                                                 "items": {
@@ -73091,6 +74395,7 @@
                                               "state",
                                               "detail",
                                               "connect_url",
+                                              "launch",
                                               "actions",
                                               "env_fields"
                                             ]
@@ -95359,6 +96664,50 @@
                               }
                             ]
                           },
+                          "launch": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "stdio",
+                                      "remote"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "target": {
+                                    "type": "string"
+                                  },
+                                  "env": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "cwd": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "target",
+                                  "env",
+                                  "cwd"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "actions": {
                             "type": "array",
                             "items": {
@@ -95404,6 +96753,7 @@
                           "state",
                           "detail",
                           "connect_url",
+                          "launch",
                           "actions",
                           "env_fields"
                         ]
@@ -95604,6 +96954,50 @@
                               }
                             ]
                           },
+                          "launch": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "stdio",
+                                      "remote"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "target": {
+                                    "type": "string"
+                                  },
+                                  "env": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "cwd": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "target",
+                                  "env",
+                                  "cwd"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "actions": {
                             "type": "array",
                             "items": {
@@ -95649,6 +97043,7 @@
                           "state",
                           "detail",
                           "connect_url",
+                          "launch",
                           "actions",
                           "env_fields"
                         ]
@@ -95832,6 +97227,50 @@
                               }
                             ]
                           },
+                          "launch": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "stdio",
+                                      "remote"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "target": {
+                                    "type": "string"
+                                  },
+                                  "env": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "cwd": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "target",
+                                  "env",
+                                  "cwd"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "actions": {
                             "type": "array",
                             "items": {
@@ -95877,6 +97316,7 @@
                           "state",
                           "detail",
                           "connect_url",
+                          "launch",
                           "actions",
                           "env_fields"
                         ]

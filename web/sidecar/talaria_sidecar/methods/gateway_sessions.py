@@ -90,7 +90,7 @@ def _todo_state(value: object) -> dict | None:
 
 def _connection(value: object) -> dict | None:
     """A canonical owner's open operation, through the same allowlist as a direct one. A resume hands the raw request
-    payload, so an env default or launch detail never reaches the server in a snapshot or an event."""
+    payload, so an env default or anything else outside it never reaches the server in a snapshot or an event."""
     if not isinstance(value, dict) or not isinstance(value.get("op_id"), str) or not isinstance(value.get("targets"), list):
         return None
     try:
