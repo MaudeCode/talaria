@@ -10,6 +10,7 @@ import type { RequestContext } from '../http/context.js'
 import { bootTestServer, parseSseChunk, type SseFrame, type TestServer } from '../test/harness.js'
 import { AgentConfig } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import * as fileStats from '../fs/stat.js'
 
 it('bounds config reads across busy subscribers and refreshes reasoning on the heartbeat cadence', async () => {
   const home = mkdtempSync(join(tmpdir(), 'talaria-sse-policy-'))
@@ -20,7 +21,9 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
   sidecar.respond('config.get', () => ({ path, exists: true, config: { display: { show_reasoning: show } } }))
   writeFileSync(path, '# shown')
   await agentConfig.read(home)
+  const stat = vi.spyOn(fileStats, 'fileStatKey')
   const peek = vi.spyOn(agentConfig, 'peek')
+  const fileChecks = () => peek.mock.calls.filter(([, opts]) => opts?.cacheOnly !== true).length
   const clock = vi.spyOn(Date, 'now').mockReturnValue(10_000)
   const writers = Array.from({ length: 2 }, () => {
     const res = Object.assign(new EventEmitter(), { destroyed: false, writeHead: vi.fn(), flushHeaders: vi.fn(), write: vi.fn(), end: vi.fn() })
@@ -32,7 +35,8 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
   })
   try {
     for (let n = 0; n < 1000; n++) for (const { writer } of writers) writer.event('token', { text: 'public' })
-    expect(peek).toHaveBeenCalledTimes(2)
+    expect(stat).toHaveBeenCalledTimes(2)
+    expect(fileChecks()).toBe(2)
     for (const { res } of writers) expect(res.write).toHaveBeenCalledTimes(1000)
     show = false
     writeFileSync(path, '# hidden reasoning')
@@ -43,7 +47,7 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
       writer.event('token', { text: 'public', reasoning: 'private' })
       expect(JSON.stringify(res.write.mock.calls)).not.toContain('private')
     }
-    expect(peek).toHaveBeenCalledTimes(4)
+    expect(fileChecks()).toBe(4)
     show = true
     writeFileSync(path, '# shown again')
     clock.mockReturnValue(10_000 + 2 * SSE_HEARTBEAT_INTERVAL_MS)
@@ -54,10 +58,11 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
         expect(JSON.stringify(res.write.mock.calls)).toContain('restored')
       }
     })
-    expect(peek).toHaveBeenCalledTimes(6)
+    expect(fileChecks()).toBe(6)
   } finally {
     for (const { writer } of writers) writer.end()
     peek.mockRestore()
+    stat.mockRestore()
     clock.mockRestore()
     rmSync(home, { recursive: true, force: true })
   }

@@ -83,7 +83,9 @@ export class AgentConfig {
   }
 
   /** Synchronous last-known config for callers that cannot await (workspace resolution); refreshes in the background. */
-  peek(profileHome: string, opts: { refresh?: boolean } = {}): Config | null {
+  peek(profileHome: string, opts: { refresh?: boolean; cacheOnly?: boolean } = {}): Config | null {
+    // Callers with their own freshness bound can adopt an already-refreshed snapshot without another stat.
+    if (opts.cacheOnly) return this.cache.get(this.path(profileHome))?.config ?? null
     let key: string
     try { key = this.statKey(profileHome) } catch { return null }
     const hit = this.cache.get(this.path(profileHome))

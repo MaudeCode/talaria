@@ -12,7 +12,9 @@ is configured, clients must authenticate before opening any stream.
 Each connection resolves reasoning visibility when it starts and refreshes it
 at most once per `SSE_HEARTBEAT_INTERVAL_MS` (5 s), on a frame or an idle
 heartbeat. A changed or unreadable config hides reasoning while the matching
-config read is pending. This avoids checking the config file for every token.
+config read is pending. Already-refreshed in-memory preferences apply immediately,
+including Show on an attached owner watch, without checking the file again.
+This avoids checking the config file for every token.
 Tool redaction uses the current in-memory settings snapshot, so a completed
 settings write changes redaction immediately without reading the config file.
 

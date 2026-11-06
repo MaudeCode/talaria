@@ -1,4 +1,4 @@
-import { showReasoning } from '../config/agent-config.js'
+import { showReasoning, type Config } from '../config/agent-config.js'
 import { reasoningProjection } from '../sessions/reasoning-display.js'
 /**
  * Server-sent event endpoints: the chat relay with journal replay, the
@@ -61,6 +61,7 @@ export class SseWriter {
   private open = false
   private closed = false
   private show = false
+  private policyConfig: Config | null = null
   private policyCheckedAt = -Infinity
 
   constructor(private readonly ctx: RequestContext, private readonly release: () => void, private readonly connectionClose: boolean) {
@@ -96,17 +97,28 @@ export class SseWriter {
   private refreshPolicy(): void {
     if (this.isClosed) return
     const now = Date.now()
-    if (now - this.policyCheckedAt < SSE_HEARTBEAT_INTERVAL_MS) return
-    this.policyCheckedAt = now
     const home = this.ctx.deps.profileHome(this.ctx.deps.activeProfile())
+    if (now - this.policyCheckedAt < SSE_HEARTBEAT_INTERVAL_MS) {
+      const cached = this.ctx.deps.agentConfig.peek(home, { cacheOnly: true })
+      if (cached !== null && cached !== this.policyConfig) this.applyPolicy(cached)
+      return
+    }
+    this.policyCheckedAt = now
     const config = this.ctx.deps.agentConfig.peek(home, { refresh: false })
-    this.show = config !== null && showReasoning(config)
+    if (config === null) this.policyConfig = this.ctx.deps.agentConfig.peek(home, { cacheOnly: true })
+    this.applyPolicy(config)
     if (config === null) {
       // Fail closed while the changed file is read, including on continuously busy streams.
       void this.ctx.deps.agentConfig.read(home).then((fresh) => {
-        if (!this.isClosed && this.policyCheckedAt === now) this.show = showReasoning(fresh)
+        if (!this.isClosed && this.policyCheckedAt === now) this.applyPolicy(fresh)
       }).catch(() => undefined)
     }
+  }
+
+  private applyPolicy(config: Config | null): void {
+    this.show = config !== null && showReasoning(config)
+    // Keep the rejected snapshot's identity so a cache-only lookup cannot revive stale visibility.
+    if (config !== null) this.policyConfig = config
   }
 
   private write(chunk: string): void {
