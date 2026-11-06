@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Close chat search from the sidebar with a visible button.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
