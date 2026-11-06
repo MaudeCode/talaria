@@ -41,7 +41,7 @@ def test_skill_listing_helper_spellings(tmp_path, skill_helpers, catalog, spelli
         (folder / "SKILL.md").write_text(name)
     if catalog:
         skill_helpers._skill_catalog = lambda **kwargs: [
-            {"load_name": name, "name": name, "category": category, "status": "unique", "tier": 0}
+            {"load_name": name, "name": name, "category": category, "status": "unique", "tier": 0, "path": tmp_path / name / "SKILL.md"}
             for name, category in rows
         ]
     expected = ["zebra", "beta", "alpha"] if spelling != "missing" else ["alpha", "zebra", "beta"]
@@ -196,3 +196,50 @@ def test_skill_catalog_rpc_identity_and_profile_isolation(sidecar, hermes_home):
     for invalid in ("../outside", "/etc/passwd", "a:../../outside"):
         reply, _ = sidecar.call("skills.find", {**params, "name": invalid})
         assert "error" in reply
+
+
+def test_agent_without_skill_lock_reports_it_unavailable(tmp_path, skill_helpers):
+    """v0.22.5's shape: a catalog but no ``tools.skill_usage.set_locked``."""
+    skill_md = tmp_path / "skills" / "demo" / "SKILL.md"
+    skill_helpers._skill_catalog = lambda **kwargs: [{"load_name": "demo", "name": "demo", "category": None, "status": "unique", "tier": 0, "path": skill_md}]
+    assert skills.list_skills(tmp_path)["skills"][0]["locked"] is None
+    assert skills.set_skill_lock(tmp_path, "demo", True) == {"status": "unavailable"}
+
+
+@requires_agent
+def test_skill_lock_rpc_round_trip(sidecar, hermes_home):
+    folder = hermes_home / "skills" / "tools" / "lock-dir"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: lock-display\ndescription: mine\n---\nmine\n")
+    params = {"profile_home": str(hermes_home)}
+    usage_file = hermes_home / "skills" / ".usage.json"
+
+    def set_locked(name, locked):
+        result = sidecar.result("skills.set_locked", {**params, "name": name, "locked": locked})
+        assert validate(result, load_schema("skills.set_locked")) == []
+        return result["status"]
+
+    def listed():
+        rows = sidecar.result("skills.list", params)
+        assert validate(rows, load_schema("skills.list")) == []
+        return next(row["locked"] for row in rows["skills"] if row["name"] == "lock-display")
+
+    assert listed() is False
+    assert set_locked("lock-display", True) == "ok"
+    # Keyed by directory, the name the Agent's write guards resolve; rows carry the declared name.
+    usage = json.loads(usage_file.read_text())
+    assert usage["lock-dir"]["locked"] is True
+    assert "lock-display" not in usage
+    assert listed() is True
+    assert set_locked("lock-display", False) == "ok"
+    assert json.loads(usage_file.read_text())["lock-dir"]["locked"] is False
+    assert listed() is False
+
+    assert set_locked("does-not-exist", True) == "not_found"
+    assert "does-not-exist" not in json.loads(usage_file.read_text())
+
+    # An unreadable record cannot say a skill is unlocked, and a write must not replace it.
+    usage_file.write_text("{corrupt")
+    assert listed() is None
+    assert set_locked("lock-display", True) == "unreadable"
+    assert usage_file.read_text() == "{corrupt"

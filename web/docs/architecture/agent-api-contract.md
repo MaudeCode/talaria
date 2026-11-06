@@ -569,6 +569,15 @@ Older Agents without these helpers retain the legacy list and lookup shapes.
 Discovery and lookup accept both public and private Agent helper names, preferring
 the public names. Without either sorting helper, rows sort by category then name.
 
+Agents that ship `tools.skill_usage.set_locked` (v0.22.6+) keep a user's skill
+lock in the profile's `skills/.usage.json` and refuse their own writes to a locked
+skill; Talaria's editor stays allowed. `skills.set_locked` resolves the row's
+identifier through the same lookup and writes the lock under the skill's directory
+name, so two copies in same-named directories share one lock. A row's `locked` is
+null on older Agents and while the record is unreadable: the Agent's listing reads
+a corrupt record as empty and its write would replace it, so Web offers no lock
+and `POST /api/skills/lock` answers 409 without writing.
+
 ## Session titles
 
 Talaria generates session titles on the server and syncs them through `state_db.sync_title`.

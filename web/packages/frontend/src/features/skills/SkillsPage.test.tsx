@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -7,11 +7,15 @@ import fixture from '../../../../../../contracts/fixtures/skill-revisions.json'
 import planFixture from '../../../../../../contracts/fixtures/skill-replay-plan.json'
 import jobFixture from '../../../../../../contracts/fixtures/skill-replay-job.json'
 
-vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), fetchSkillContent: vi.fn(), fetchSkillRevisions: vi.fn(), fetchSkillReplayPlan: vi.fn(), fetchSkillReplays: vi.fn(), startSkillReplay: vi.fn(), cancelSkillReplay: vi.fn(), saveSkill: vi.fn(), deleteSkill: vi.fn(), toggleSkill: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })) }))
+vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), fetchSkillContent: vi.fn(), fetchSkillRevisions: vi.fn(), fetchSkillReplayPlan: vi.fn(), fetchSkillReplays: vi.fn(), startSkillReplay: vi.fn(), cancelSkillReplay: vi.fn(), saveSkill: vi.fn(), deleteSkill: vi.fn(), toggleSkill: vi.fn(), lockSkill: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })) }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ actions, children }: { actions: React.ReactNode; children: React.ReactNode }) => <div>{actions}{children}</div> }))
 import * as api from '../../api/endpoints'
+import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import { SkillsPage } from './SkillsPage'
+import { showToast } from '../toast/toast'
+
+vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 
 beforeEach(() => {
   vi.mocked(api.fetchSkills).mockReset().mockResolvedValue({ skills: [{ name: 'demo', description: 'Example skill', category: null, disabled: false }] })
@@ -25,6 +29,45 @@ beforeEach(() => {
 })
 
 afterEach(() => { vi.unstubAllGlobals() })
+
+function renderSkills() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  render(<QueryClientProvider client={client}><SkillsPage /></QueryClientProvider>)
+}
+
+const lockRow = (locked: boolean | null) => vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, locked }] })
+
+it('shows the lock at once, then rolls it back and reports a refusal', async () => {
+  lockRow(false)
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.lockSkill).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  renderSkills()
+  const lock = await screen.findByRole('button', { name: 'Lock demo' })
+  expect(lock).toHaveAttribute('aria-pressed', 'false')
+  await userEvent.click(lock)
+  expect(lock).toHaveAttribute('aria-pressed', 'true')
+  expect(api.lockSkill).toHaveBeenCalledWith('demo', true)
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/api/skills/lock', message: 'This Agent version cannot lock skills' })); await Promise.resolve() })
+  await vi.waitFor(() => expect(lock).toHaveAttribute('aria-pressed', 'false'))
+  expect(showToast).toHaveBeenCalledWith('This Agent version cannot lock skills', 4000, 'error')
+})
+
+it('unlocks a locked skill from its row menu, the same action as the row control', async () => {
+  lockRow(true)
+  vi.mocked(api.lockSkill).mockResolvedValue({ ok: true, name: 'demo', locked: false })
+  renderSkills()
+  expect(await screen.findByRole('button', { name: 'Lock demo' })).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.contextMenu(screen.getByRole('button', { name: /^demo/ }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Unlock' }))
+  expect(api.lockSkill).toHaveBeenCalledWith('demo', false)
+})
+
+it.each([[null], [undefined]])('offers no lock while the server reports it unavailable (%s)', async (locked) => {
+  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, ...(locked === null ? { locked } : {}) }] })
+  renderSkills()
+  await screen.findByRole('switch', { name: 'demo' })
+  expect(screen.queryByRole('button', { name: 'Lock demo' })).toBeNull()
+})
 
 async function openHistory() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

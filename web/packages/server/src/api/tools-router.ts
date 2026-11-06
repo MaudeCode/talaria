@@ -499,6 +499,7 @@ export const toolsRouter = os.router({
       if (input.name === undefined || input.enabled === undefined) throw new HttpError(400, 'Missing required field(s): name, enabled')
       return ctx.deps.skills.toggle(home(ctx), str(input.name).trim(), pyBool(input.enabled))
     })),
+    lock: os.skills.lock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.skills.setLocked(home(ctx), input.name, input.locked))),
   },
   memory: {
     compactionPreview: os.memory.compactionPreview.handler(({ input, context: { ctx } }) => run(async () => {

@@ -219,6 +219,8 @@ describe('contracts package', () => {
     const parsed = SkillsSchema.parse(shared('fixtures/skills.json'))
     expect(parsed.skills.map((row) => row.name)).toEqual(['a/one', 'b/two'])
     expect(parsed.skills.every((row) => row.load_name === row.name && row.status === 'ambiguous' && row.tier === 1)).toBe(true)
+    expect(parsed.skills.map((row) => row.locked)).toEqual([true, null])
+    expect(SkillsSchema.safeParse({ skills: [{ name: 'a/one', locked: 'yes' }] }).success).toBe(false)
   })
   it('parses the shared memory save refusals (TAL-886, TAL-784)', () => {
     const fixture = shared('fixtures/memory-write-refusals.json') as Record<string, unknown>

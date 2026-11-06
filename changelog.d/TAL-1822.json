@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Lock a skill from the Skills page so the Agent can't change it, while your own edits in Talaria stay allowed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

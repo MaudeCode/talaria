@@ -145,6 +145,7 @@
           "runtime.sync_dependencies",
           "skills.find",
           "skills.list",
+          "skills.set_locked",
           "skills.view",
           "state_db.append_message",
           "state_db.delete_cli_session",

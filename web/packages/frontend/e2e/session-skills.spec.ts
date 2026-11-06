@@ -11,8 +11,8 @@ test('the Skills page lists a conversation’s skill loads and refreshes counts 
   const { bootTestServer } = await import('../../server/dist/test/harness.js')
   const { FakeSidecar } = await import('../../server/dist/sidecar/fake.js')
   const library = [
-    { name: 'code-review', description: 'Review a diff for bugs and style', category: 'software', disabled: false },
-    { name: 'deploy', description: 'Ship the current branch', category: 'devops', disabled: false },
+    { name: 'code-review', description: 'Review a diff for bugs and style', category: 'software', disabled: false, locked: false },
+    { name: 'deploy', description: 'Ship the current branch', category: 'devops', disabled: false, locked: false },
   ]
   const sidecar = new FakeSidecar()
   sidecar.respond('skills.list', () => ({ success: true, skills: library, categories: [], count: library.length }))

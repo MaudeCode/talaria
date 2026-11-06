@@ -32,6 +32,7 @@ export function SkillsPage() {
     return list.filter((s) => (!category || s.category === category) && (!q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)))
   })()
   const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
+  const lock = useResourceMutation({ resource: ({ name }: { name: string; locked: boolean }) => `skill-lock:${name}`, effect: ({ locked }) => ({ value: locked }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, locked }: { name: string; locked: boolean }) => api.lockSkill(name, locked), onError: (e) => showErrorToast(e) })
 
   if (selected) return <SkillDetail key={selected} name={selected} onBack={() => setSelected(null)} />
   return (
@@ -54,7 +55,7 @@ export function SkillsPage() {
       {skills.isError && <ErrorState error={skills.error} onRetry={() => { void skills.refetch() }} />}
       {skills.isSuccess && filtered.length === 0 && <EmptyState>{m.skills_no_skills()}</EmptyState>}
       <ul className="skills-list flex flex-col divide-y divide-border-subtle" id="skillsList">
-        {filtered.map((s) => <SkillRow key={s.name} skill={s} uses={usage.data?.usage[s.name]?.use_count ?? 0} effect={effects[`skill:${s.name}`]} onSelect={setSelected} onToggle={toggle.mutate} />)}
+        {filtered.map((s) => <SkillRow key={s.name} skill={s} uses={usage.data?.usage[s.name]?.use_count ?? 0} effect={effects[`skill:${s.name}`]} lockEffect={effects[`skill-lock:${s.name}`]} onSelect={setSelected} onToggle={toggle.mutate} onLock={lock.mutate} />)}
       </ul>
     </HubPage>
   )

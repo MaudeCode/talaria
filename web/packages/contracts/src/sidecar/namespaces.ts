@@ -304,7 +304,7 @@ export const SkillCatalogIdentitySchema = z.object({
   load_name: z.string().optional(), declared_name: z.string().optional(),
   status: z.enum(['unique', 'ambiguous', 'shadowed']).optional(), tier: z.number().int().optional(),
 })
-export const SkillRowSchema = SkillCatalogIdentitySchema.extend({ name: z.string(), description: z.string(), category: z.string().nullable(), disabled: z.boolean() })
+export const SkillRowSchema = SkillCatalogIdentitySchema.extend({ name: z.string(), description: z.string(), category: z.string().nullable(), disabled: z.boolean(), locked: z.boolean().nullable() })
 export const SkillRevisionIdSchema = z.string().regex(/^[a-f0-9]{64}$/)
 export const SkillRevisionsInputSchema = z.object({ name: z.string().min(1).max(256), revision: SkillRevisionIdSchema.optional(), compare_to: SkillRevisionIdSchema.optional() })
 /** Read-only, profile/skill-bound saved history. Raw content hashes never authorize a write or replay. */
@@ -350,6 +350,7 @@ export const SKILLS_METHODS = {
   'skills.replay_case': { params: SkillReplayCaseParamsSchema, result: SkillReplayCaseResultSchema },
   'skills.list': { params: ProfileHomeParams.extend({ category: z.string().nullable().optional() }), result: z.object({ success: z.boolean().optional(), skills: z.array(SkillRowSchema), categories: z.array(z.string()), count: z.number().int(), message: z.string().optional() }) },
   'skills.view': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: SkillViewSchema },
+  'skills.set_locked': { params: ProfileHomeParams.extend({ name: z.string().min(1), locked: z.boolean() }), result: z.object({ status: z.enum(['ok', 'unavailable', 'not_found', 'unreadable', 'failed']) }) },
   'skills.find': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: z.object({ found: z.boolean(), skill_dir: z.string().nullable(), skill_md: z.string().nullable(), load_name: z.string().optional(), declared_name: z.string().optional(), sibling_load_names: z.array(z.string()).optional() }) },
 } as const
 
