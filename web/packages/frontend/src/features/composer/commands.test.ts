@@ -9,11 +9,14 @@ describe('parseCommand', () => {
   it('parses name and args', () => {
     expect(parseCommand('/model gpt-5')).toEqual({ name: 'model', args: 'gpt-5', raw: '/model gpt-5' })
     expect(parseCommand('  /STOP')).toMatchObject({ name: 'stop', args: '' })
+    expect(parseCommand('/queue one\ntwo')).toMatchObject({ name: 'queue', args: 'one\ntwo' })
   })
-  it('returns null for plain text or a lone slash', () => {
+  it('returns null for plain text, paths, or a lone slash', () => {
     expect(parseCommand('hello /x')).toBeNull()
     expect(parseCommand('/')).toBeNull()
     expect(parseCommand('/9')).toBeNull()
+    expect(parseCommand('/agents/notes.md summarize')).toBeNull()
+    expect(parseCommand('/tmp/example.js explain')).toBeNull()
   })
 })
 

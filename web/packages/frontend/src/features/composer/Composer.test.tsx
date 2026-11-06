@@ -762,21 +762,32 @@ describe('Composer', () => {
     expect(box).toHaveValue('/branch ')
   })
 
-  it('refuses a non-dispatchable Agent command using the server catalog (TAL-1759)', async () => {
+  it.each([
+    ['/agents', false],
+    ['/agents foo', false],
+    ['/agents/notes.md summarize', true],
+    ['/tmp/example.js explain', true],
+  ])('routes slash-looking text by its complete command token (TAL-1926): %s', async (text, sendAsText) => {
     vi.mocked(api.fetchCommands).mockResolvedValue({ commands: commandCatalog([
       { name: 'agents', description: 'List agents', category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, prompt: null },
     ]) })
-    vi.mocked(api.startChat).mockResolvedValue({ stream_id: 'unexpected', session_id: 's1' })
+    vi.mocked(api.startChat).mockClear().mockResolvedValue({ stream_id: 'path-message', session_id: 's1' })
+    vi.mocked(showToast).mockClear()
     const onLocalCommand = vi.fn(() => Promise.resolve(false))
     renderComposer(writable, null, noop, undefined, undefined, onLocalCommand)
     await act(async () => { await Promise.resolve() })
     const box = screen.getByRole('textbox')
-    fireEvent.change(box, { target: { value: '/agents' } })
-    fireEvent.keyDown(box, { key: 'Enter' })
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('/agents runs only in the Hermes CLI.', 3000))
-    expect(box).toHaveValue('/agents')
-    expect(onLocalCommand).not.toHaveBeenCalled()
-    expect(api.startChat).not.toHaveBeenCalled()
+    fireEvent.change(box, { target: { value: text } })
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); await Promise.resolve() })
+    if (sendAsText) {
+      expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', message: text }))
+      expect(showToast).not.toHaveBeenCalled()
+    } else {
+      expect(showToast).toHaveBeenCalledWith('/agents runs only in the Hermes CLI.', 3000)
+      expect(box).toHaveValue(text)
+      expect(onLocalCommand).not.toHaveBeenCalled()
+      expect(api.startChat).not.toHaveBeenCalled()
+    }
   })
 
   // TAL-314: the server catalog resolves a typed alias and says which client runs each command.

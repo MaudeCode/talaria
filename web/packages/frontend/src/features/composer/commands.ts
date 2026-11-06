@@ -6,10 +6,11 @@ import type { Command } from '../../contracts'
 
 export interface ParsedCommand { name: string; args: string; raw: string }
 
+// TAL-1927 tracks moving this classification to the server command contract.
 export function parseCommand(text: string): ParsedCommand | null {
   const t = text.trimStart()
   if (!t.startsWith('/')) return null
-  const mm = /^\/([a-zA-Z][\w-]*)\s*([\s\S]*)$/.exec(t)
+  const mm = /^\/([a-zA-Z][\w-]*)(?=\s|$)\s*([\s\S]*)$/.exec(t)
   if (!mm) return null
   return { name: (mm[1] ?? '').toLowerCase(), args: (mm[2] ?? '').trim(), raw: t }
 }
