@@ -1,0 +1,3 @@
+{
+  "skip": "CI-only change: sidecar pytest shards are dealt by recorded case duration; no shipped behavior changes."
+}

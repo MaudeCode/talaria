@@ -237,15 +237,14 @@ def shard_argument(args):
     return remaining, shard
 
 
-def shard_cases(nodeids, layers, index, count):
-    """Each layer's cases in collection order, dealt round-robin: a module's cases, slow ones included, spread over
-    every shard, and every shard computes the same split from the same collection."""
-    dealt = Counter()
+def shard_cases(nodeids, layers, weights, index, count):
+    """Each layer's cases, dealt by recorded duration: every shard computes the same split from the same collection and
+    the same committed record, so each case runs in exactly one."""
     chosen = []
-    for node in nodeids:
-        if dealt[layers[node]] % count == index - 1:
-            chosen.append(node)
-        dealt[layers[node]] += 1
+    for layer in dict.fromkeys(layers[node] for node in nodeids):
+        groups = balance([node for node in nodeids if layers[node] == layer], weights, count)
+        if index <= len(groups):
+            chosen += groups[index - 1][1]
     return chosen
 
 
@@ -477,17 +476,17 @@ def run(args):
             if any(arg in ('--collect-only', '--collectonly', '--co') for arg in remaining):
                 print('\n'.join(expected), flush=True)
                 return 0
+            recorded = json.loads(DURATIONS.read_text()) if DURATIONS.exists() else {}
+            weights = case_weights(expected, collected['layers'], recorded)
             suite = None
             if shard:
                 suite = {'shard': f'{shard[0]}/{shard[1]}', 'suite': expected}
-                expected = shard_cases(expected, collected['layers'], *shard)
+                expected = shard_cases(expected, collected['layers'], weights, *shard)
                 if not expected:
                     raise ValueError(f'shard {shard[0]}/{shard[1]} selected no cases')
             print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}"
                   f"{f' for shard {shard[0]}/{shard[1]}' if shard else ''}; diagnostics: {output}", flush=True)
             # Every layer's balanced groups share one pool of `selected` slots, longest estimate first.
-            recorded = json.loads(DURATIONS.read_text()) if DURATIONS.exists() else {}
-            weights = case_weights(expected, collected['layers'], recorded)
             pending = sorted(((estimate, layer, group) for layer in layers for estimate, group in balance(
                 [node for node in expected if collected['layers'][node] == layer], weights, selected)),
                 key=lambda entry: -entry[0])
