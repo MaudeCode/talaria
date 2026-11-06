@@ -1768,6 +1768,13 @@
         "[oauth_device_code]"
       ]
     },
+    "tests/test_plugin_providers.py::test_a_provider_that_left_core_offers_its_catalog_plugin": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a provider the profile names that left the Agent's core reports its catalog plugin. Uses the real installed release's left-core table; the synthetic plugin CLI is never spawned.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_oauth.py::test_plugin_oauth_sign_in_status_and_sign_out": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: a plugin-declared OAuth client signs in through the Agent's own PKCE helpers, loopback listener, token request (real TLS verification against a test CA) and grant store, and the Agent's CLI status reads the result. Uses the real installed release, not a fabricated API response.",

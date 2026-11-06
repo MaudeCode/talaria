@@ -795,12 +795,13 @@ export type KeySourceKind = z.infer<typeof KeySourceKindSchema>
  * TAL-603: `is_active` marks the active provider's card; `key_source_kind` is the key badge (`null` without a credential);
  * `models_total` is the catalog size, never below `models.length`. `is_active` and `key_source_kind` are absent from older servers.
  * TAL-641: `removable` marks a key Remove would clear: a built-in, not self-hosted, provider whose only key is its own profile `.env` variable.
+ * TAL-1812: `install_hint` names the reviewed catalog plugin (`POST /api/plugins/install`) that supplies this provider; only an operator's rows carry it.
  */
 export const ProviderSchema = z.looseObject({
   id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configured: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
   nous_account: NousAccountSchema.nullable().optional(), nous_account_error: NullableString.optional(),
-  is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(),
+  is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(), install_hint: z.string().optional(),
 })
 export const ProvidersSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
 /** TAL-411: the server's classification per colour basis; `/api/provider/quotas` only, at the profile's thresholds. */

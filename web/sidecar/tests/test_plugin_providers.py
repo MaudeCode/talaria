@@ -304,3 +304,34 @@ def test_an_oauth_plugin_is_ready_only_once_the_agent_holds_a_sign_in(tmp_path: 
         assert setup()["fake-key"] == "ready"
     finally:
         sidecar.close()
+
+
+@requires_agent
+def test_a_provider_that_left_core_offers_its_catalog_plugin(tmp_path: pathlib.Path) -> None:
+    home = tmp_path / "home" / ".hermes"
+    home.mkdir(parents=True)
+    (home / "config.yaml").write_text("model:\n  provider: copilot\n  default: gpt-5.5\n")
+    profile = {name: home / "profiles" / name for name in ("custom", "installed", "off")}
+    for path in profile.values():
+        path.mkdir(parents=True)
+    (profile["custom"] / "config.yaml").write_text("model:\n  provider: github\n  default: m\ncustom_providers:\n  - name: github\n    base_url: https://git.invalid/v1\n")
+    for name, extra in (("installed", ""), ("off", "plugins:\n  disabled:\n    - github-copilot\n")):
+        (profile[name] / "config.yaml").write_text(f"model:\n  provider: copilot\n  default: gpt-5.5\n{extra}")
+        _plugin(profile[name] / "plugins", "github-copilot", "github-copilot", name="copilot", display="GitHub Copilot",
+                command="talaria-test-cli-that-does-not-exist", models=("gpt-5.5",))
+    sidecar = SidecarProcess(home)
+    try:
+        def rows(path: pathlib.Path) -> list[dict]:
+            result = sidecar.result("plugins.providers", {"profile_home": str(path)})
+            assert validate(result, load_schema("plugins.providers")) == []
+            return result["providers"]
+
+        assert rows(home) == [{"name": "copilot", "display_name": "GitHub Copilot", "auth_type": "", "setup": "not_installed", "install_hint": "github-copilot"}]
+        # The profile's own endpoint under an old alias is not Copilot.
+        assert rows(profile["custom"]) == []
+        # The plugin supplies the provider: its own row, no offer.
+        assert [(row["name"], row["setup"], row.get("install_hint")) for row in rows(profile["installed"])] == [("copilot", "missing_cli", None)]
+        # A disabled plugin cannot be installed again, so it reads as not loaded.
+        assert [(row["name"], row["setup"], row.get("install_hint")) for row in rows(profile["off"])] == [("copilot", "not_loaded", None)]
+    finally:
+        sidecar.close()

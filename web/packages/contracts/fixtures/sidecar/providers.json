@@ -82,34 +82,6 @@
             ],
             "base_url_env_var": "LM_BASE_URL"
           },
-          "copilot": {
-            "id": "copilot",
-            "name": "GitHub Copilot",
-            "auth_type": "api_key",
-            "portal_base_url": "",
-            "inference_base_url": "https://api.githubcopilot.com",
-            "client_id": "",
-            "scope": "",
-            "extra": {},
-            "api_key_env_vars": [
-              "COPILOT_GITHUB_TOKEN",
-              "GH_TOKEN",
-              "GITHUB_TOKEN"
-            ],
-            "base_url_env_var": "COPILOT_API_BASE_URL"
-          },
-          "copilot-acp": {
-            "id": "copilot-acp",
-            "name": "GitHub Copilot ACP",
-            "auth_type": "external_process",
-            "portal_base_url": "",
-            "inference_base_url": "acp://copilot",
-            "client_id": "",
-            "scope": "",
-            "extra": {},
-            "api_key_env_vars": [],
-            "base_url_env_var": "COPILOT_ACP_BASE_URL"
-          },
           "gemini": {
             "id": "gemini",
             "name": "Google AI Studio",

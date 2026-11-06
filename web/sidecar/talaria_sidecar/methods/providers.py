@@ -326,7 +326,33 @@ def plugin_providers() -> list[dict]:
             continue
         name = str(profile.name).strip().lower()
         rows.append({"name": name, "display_name": str(profile.display_name or name).strip(), "auth_type": str(profile.auth_type), "setup": _setup_state(profile)})
-    return rows
+    return rows + _left_core_rows()
+
+
+def _left_core_rows() -> list[dict]:
+    """Rows for providers this profile routes through that moved into a catalog plugin and that nothing registers now.
+
+    The Agent's own table and selection predicate decide, so a custom endpoint under an old alias is not one of them. An
+    installed plugin that registers nothing (disabled, or broken) cannot be installed again, so it offers no install.
+    """
+    try:
+        from hermes_cli import left_core_migration as left
+        from hermes_constants import get_hermes_home
+
+        home = Path(get_hermes_home())
+        rows = []
+        for feature in left.LEFT_CORE:
+            if not feature.providers:
+                continue
+            present = left.plugin_present(feature.plugin, home)
+            for name in sorted(left.providers_selected(home, feature.providers)):
+                if left.provider_left_core(name) or _unavailable_plugin(name):
+                    offer = {"setup": "not_loaded"} if present else {"setup": "not_installed", "install_hint": feature.plugin}
+                    rows.append({"name": name, "display_name": str(feature.label), "auth_type": "", **offer})
+        return rows
+    except Exception:  # noqa: BLE001 - the offer is advice; every other provider stays listed
+        log.debug("left-core provider rows unavailable", exc_info=True)
+        return []
 
 
 def _plugin_catalog(provider_id: str) -> tuple[list[str], bool]:

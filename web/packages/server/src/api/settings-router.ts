@@ -425,7 +425,12 @@ export const settingsRouter = os.router({
     })),
   },
   providers: {
-    list: os.providers.list.handler(({ context: { ctx } }) => run(() => ctx.deps.catalog.providers(home(ctx)) as never)),
+    list: os.providers.list.handler(({ context: { ctx } }) => run(async () => {
+      const payload = await ctx.deps.catalog.providers(home(ctx))
+      // The install route is operator-only; a member's card keeps its explanation without the offer.
+      if (payload.providers.some((row) => row.install_hint) && !(await canManageServer(ctx))) for (const row of payload.providers) delete row.install_hint
+      return payload as never
+    })),
     setKey: os.providers.setKey.handler(({ input, context: { ctx } }) => run(() => setProviderKey(ctx, str(input.provider).trim().toLowerCase(), input.api_key === null || input.api_key === undefined ? null : str(input.api_key).trim() || null))),
     delete: os.providers.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const pid = str(input.provider).trim().toLowerCase()

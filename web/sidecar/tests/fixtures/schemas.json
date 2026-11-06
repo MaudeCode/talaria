@@ -1374,8 +1374,13 @@
                 "missing_cli",
                 "needs_setup",
                 "not_loaded",
+                "not_installed",
                 "unavailable"
               ]
+            },
+            "install_hint": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
             }
           },
           "required": [

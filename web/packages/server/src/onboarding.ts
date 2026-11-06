@@ -87,7 +87,7 @@ function oauthPayloadHasToken(state: unknown): boolean {
 export function providerOauthAuthenticated(providerRaw: string, home: string): boolean {
   let provider = providerRaw.trim().toLowerCase()
   provider = ({ claude: 'anthropic', 'claude-code': 'anthropic' } as Record<string, string>)[provider] ?? provider
-  if (!['openai-codex', 'copilot', 'copilot-acp', 'qwen-oauth', 'nous', 'xai-oauth', 'minimax-oauth', 'anthropic'].includes(provider)) return false
+  if (!['openai-codex', 'qwen-oauth', 'nous', 'xai-oauth', 'minimax-oauth', 'anthropic'].includes(provider)) return false
   try {
     const store = JSON.parse(readFileSync(join(home, 'auth.json'), 'utf8')) as Dict
     const providers = store.providers

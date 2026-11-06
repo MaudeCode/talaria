@@ -15,6 +15,12 @@ it('keeps member catalog reads display-only and refuses installation before call
   expect(await read.json()).toMatchObject({ read_only: true, entries: [{ can_install: false }] })
   expect((await server.get('/api/plugins/install', { method: 'POST', body: '{"name":"catalog-probe"}', headers })).status).toBe(403)
   expect(sidecar.calls.some((c) => c.method === 'plugins.install')).toBe(false)
+  // TAL-1812: the provider card's install offer follows the same operator gate.
+  sidecar.respond('plugins.providers', () => ({ providers: [{ name: 'left-core', display_name: 'Left Core', auth_type: '', setup: 'not_installed', install_hint: 'left-core-plugin' }] }))
+  const { providers } = await (await server.get('/api/providers', { headers })).json() as { providers: { id: string; install_hint?: string }[] }
+  const row = providers.find((p) => p.id === 'left-core')
+  expect(row).toBeDefined()
+  expect(row?.install_hint).toBeUndefined()
 })
 
 it('TAL-1331: exposes a bounded catalog and installs only after a profile-bound preview', async () => {

@@ -116,7 +116,8 @@ export const PluginInstallResultSchema = z.discriminatedUnion('status', [
 ])
 export type PluginInstallResult = z.infer<typeof PluginInstallResultSchema>
 export type PluginCatalog = z.infer<typeof PluginCatalogSchema>
-export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
+/** TAL-1812: `install_hint` is the catalog plugin that supplies a provider the profile names and no longer has (`setup: not_installed`). */
+export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'not_installed', 'unavailable']), install_hint: z.string().regex(/^[a-z0-9_-]{1,64}$/).optional() })
 /** Profile-owned Agent dashboards use Web protocol panels; native Desktop bundles need migration. */
 export const AgentDashboardPluginSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), label: z.string().max(80), version: z.string().max(40), description: z.string().max(300),
