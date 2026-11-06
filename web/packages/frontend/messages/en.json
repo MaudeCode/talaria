@@ -2838,6 +2838,7 @@
   "plugins_update_all_failed": "Failed",
   "plugins_update_all_needs_review": "Needs review",
   "plugins_update_all_skipped": "Skipped",
+  "plugins_row_menu": "Plugin actions",
   "plugins_auto_update": "Auto-update",
   "plugins_auto_update_every": "Every {hours} h",
   "plugins_auto_update_checks_off": "Checks off",

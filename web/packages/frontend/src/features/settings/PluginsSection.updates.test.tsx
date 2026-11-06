@@ -159,6 +159,24 @@ describe('TAL-1914', () => {
     expect(screen.queryByRole('list', { name: 'Update all results' })).not.toBeInTheDocument()
   })
 
+  it('a row menu offers the same actions as the row, and a row without actions has none', async () => {
+    const entry = { title: 'Behind', description: '', repo: 'https://example.invalid/p', sha: 'b'.repeat(40), tier: 'verified', category: 'tools', requirements: [], installed_sha: 'a'.repeat(40), can_install: false, refusal: null }
+    vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }, { key: 'plain', name: 'Plain' }] })
+    vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, total: 1, next_offset: null, entries: [{ ...entry, name: 'behind', installed_key: 'catalog-key', can_update: true }] })
+    vi.mocked(api.updatePlugin).mockResolvedValue({ key: 'catalog-key', status: 'updated' })
+    show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Catalog' }))
+    const plain = (await screen.findByText('Plain')).closest('li')!
+    expect(plain).not.toHaveAttribute('data-context-menu')
+    const row = (await screen.findByText('Behind')).closest('li')!
+    expect(within(row).getByRole('button', { name: 'Details' })).toBeVisible()
+    fireEvent.contextMenu(row)
+    const menu = await screen.findByRole('menu', { name: 'Plugin actions' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Details', 'Update'])
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Update' }))
+    await waitFor(() => expect(api.updatePlugin).toHaveBeenCalledWith('catalog-key', false, undefined))
+  })
+
   it('a behind catalog row updates through consent and leaves other rows alone', async () => {
     const entry = { title: 'Catalog', description: '', repo: 'https://example.invalid/p', sha: 'b'.repeat(40), tier: 'verified', category: 'tools', requirements: [], installed_sha: 'a'.repeat(40), can_install: false, refusal: null }
     vi.mocked(api.fetchPlugins).mockResolvedValue(plugins())

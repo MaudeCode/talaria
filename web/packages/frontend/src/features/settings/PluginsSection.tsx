@@ -5,6 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
@@ -93,13 +94,14 @@ export function PluginsSection() {
       {list.length === 0 && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
         {list.map((p) => (
-          <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} actions={<>
+          <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
               {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
-              {editable && p.update?.available && <Button variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={updateBusy} aria-busy={update.isPending && update.variables.key === p.key} onClick={() => requestUpdate(p.key)}>{m.plugins_update()}</Button>}
               {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
               <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
-              {editable && p.settings?.length ? <Button variant="ghost" className="px-2 py-1 text-xs" aria-expanded={open === p.key} onClick={() => setOpen(open === p.key ? null : p.key)}>{m.settings_title()}</Button> : null}
-            </>}>
+            </>} actions={[
+              ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => requestUpdate(p.key), disabled: updateBusy, busy: update.isPending && update.variables.key === p.key }] : []),
+              ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => setOpen(open === p.key ? null : p.key), expanded: open === p.key }] : []),
+            ]}>
             {p.disabled_reason && <p className="mt-1 text-[11px] text-warning [overflow-wrap:anywhere]">{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</p>}
             {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
             {scan?.key === p.key && scan.status === 'blocked' && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{scan.findings}</div>}
@@ -114,12 +116,19 @@ export function PluginsSection() {
   )
 }
 
-/** Installed and catalog entries share the existing Plugins row and disclosure layout. */
-function PluginRow({ title, description, actions, children }: { title: ReactNode; description: string; actions: ReactNode; children?: ReactNode }) {
-  return <li className="py-2"><div className="flex flex-wrap items-center gap-3">
+interface PluginRowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; expanded?: boolean }
+
+/** Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu. */
+function PluginRow({ title, description, status, actions, children }: { title: ReactNode; description: string; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
+  const row = <li className="py-2"><div className="flex flex-wrap items-center gap-3">
     <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="text-[11px] text-muted [overflow-wrap:anywhere]">{description}</div></div>
-    {actions}
+    {status}
+    {actions.map((action) => <Button key={action.label} variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={action.disabled === true} aria-busy={action.busy === true} aria-expanded={action.expanded} onClick={action.run}>{action.label}</Button>)}
   </div>{children}</li>
+  if (actions.length === 0) return row
+  return <ContextMenu label={m.plugins_row_menu()} trigger={row}>
+    {actions.map((action) => <MenuItem key={action.label} disabled={action.disabled === true} onClick={action.run}>{action.label}</MenuItem>)}
+  </ContextMenu>
 }
 
 const AUTO_UPDATE_RESOURCE = 'plugin-auto-update'
@@ -175,13 +184,14 @@ function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: bool
     {catalog.isPending ? <LoadingState /> : catalog.isError ? <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} /> : <>
       {!catalog.data.supported && <p className="py-2 text-xs text-muted">{m.plugins_catalog_unsupported()}</p>}
       {catalog.data.supported && catalog.data.total === 0 && <EmptyState>{m.plugins_catalog_empty()}</EmptyState>}
-      <ul className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry) => <PluginRow key={entry.name} title={entry.title} description={entry.description} actions={<>
+      <ul className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry) => <PluginRow key={entry.name} title={entry.title} description={entry.description} status={<>
         <span className="text-[11px] text-muted">{entry.tier} · {entry.category}</span>
         {entry.installed_key && <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span>}
-        <Button variant="ghost" className="min-h-11" aria-expanded={details === entry.name} onClick={() => setDetails(details === entry.name ? null : entry.name)}>{m.plugins_catalog_details()}</Button>
-        {entry.can_update && <Button variant="ghost" className="min-h-11" disabled={updating} aria-busy={updatingKey === entry.installed_key} onClick={() => { if (entry.installed_key) onUpdate(entry.installed_key) }}>{m.plugins_update()}</Button>}
-        {entry.can_install && <Button variant="ghost" className="min-h-11" aria-busy={install.isInstalling(entry.name)} disabled={install.isInstalling(entry.name)} onClick={() => install.request(entry.name)}>{m.plugins_catalog_install()}</Button>}
-      </>}>
+      </>} actions={[
+        { label: m.plugins_catalog_details(), run: () => setDetails(details === entry.name ? null : entry.name), expanded: details === entry.name },
+        ...(entry.can_update && entry.installed_key ? [{ label: m.plugins_update(), run: () => onUpdate(entry.installed_key ?? ''), disabled: updating, busy: updatingKey === entry.installed_key }] : []),
+        ...(entry.can_install ? [{ label: m.plugins_catalog_install(), run: () => install.request(entry.name), disabled: install.isInstalling(entry.name), busy: install.isInstalling(entry.name) }] : []),
+      ]}>
         {details === entry.name && <div className="mt-2 space-y-1 text-xs text-muted [overflow-wrap:anywhere]">
           <p>{entry.repo}</p><p>{entry.sha}</p>{entry.installed_sha && <p>{entry.installed_sha}</p>}
           {entry.requirements.map((requirement) => <p key={requirement}>{requirement}</p>)}
