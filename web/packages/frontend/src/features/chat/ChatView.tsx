@@ -177,14 +177,21 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }
   const onNewWorktreeChat = (workspace: string | undefined) => { void newWorktreeChat(workspace) }
 
+  const { updateSession, updateReasoning, dialog: modelDialog, notice: modelNotice, confirming, confirmingReasoning } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
   // TAL-1647: reasoning effort is each chat's own server state, keyed on the chat and refetched when its model changes.
   const reasoningKey = keys.reasoning(sessionId, session?.model, session?.model_provider)
-  const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(sessionId ?? '', session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
-  const reasoningEffect = useResourceEffects<string | null>()[JSON.stringify(reasoningKey)]
+  const reasoningQuery = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(sessionId ?? '', session?.model, session?.model_provider), enabled: !!session && !session.owner_attachment, staleTime: 30_000 })
+  // TAL-1319: an owner chat's level comes with its session from the owner; the profile's is never shown for it.
+  const ownerReasoning = session?.owner_attachment?.reasoning_control
+  const reasoningStatus = session?.owner_attachment ? ownerReasoning : reasoningQuery.data
+  const effects = useResourceEffects<string | null>()
+  const reasoningEffect = effects[JSON.stringify(reasoningKey)]
+  const ownerPick = effects[`session:${sessionId}`]?.fields
   // The chosen effort shows at once; the server's answer replaces it.
-  const reasoning = reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus.data?.reasoning_effort || null
-  const reasoningLevels = reasoningStatus.data?.supported_efforts
-  const reasoningSupported = reasoningStatus.data?.supports_reasoning_effort !== false || reasoningStatus.data?.supports_thinking_toggle === true
+  const reasoning = ownerPick && 'reasoning_effort' in ownerPick ? ownerPick.reasoning_effort as string | null
+    : confirmingReasoning ?? (reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus?.reasoning_effort || null)
+  const reasoningLevels = reasoningStatus?.supported_efforts
+  const reasoningSupported = reasoningStatus?.supports_reasoning_effort !== false || reasoningStatus.supports_thinking_toggle === true
   const reasoningWrite = useResourceMutation({
     resource: ({ key }: { key: typeof reasoningKey; level: string | null }) => JSON.stringify(key),
     queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
@@ -196,7 +203,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const sendReasoning = reasoningWrite.mutate
   // Capture the chat and model fields, not the query's escaping key array, so the compiler keeps this handler stable; the
   // answer and the optimistic value stay on the chat that was asked, whichever chat is open when it lands.
-  const setReasoning = (level: string | null) => { sendReasoning({ key: keys.reasoning(sessionId, session?.model, session?.model_provider), level }) }
+  const setReasoning = (level: string | null) => {
+    if (ownerReasoning?.actions.includes(level === null ? 'reset' : 'set')) updateReasoning(level)
+    else sendReasoning({ key: keys.reasoning(sessionId, session?.model, session?.model_provider), level })
+  }
   // History is projected by the server under the same preference as the live stream.
   const { mutate: setReasoningDisplay } = useResourceMutation({
     resource: () => 'reasoning-display', queryKey: [], readKeys: () => [['reasoning'], keys.sessions.all, ['worklog-history'], keys.settings], effect: (display: 'show' | 'hide') => ({ value: display }),
@@ -205,7 +215,6 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     onError: showErrorToast,
   })
 
-  const { updateSession, dialog: modelDialog, notice: modelNotice, confirming } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
   // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
   const sessionWrite = useSessionWrite({
     fields: ({ fields }: { sid: string; fields: Record<string, unknown>; run: () => Promise<unknown> }) => fields,
@@ -237,7 +246,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
   }
 
-  const onModelChange = (model: string, provider: string | null, ownerPayload?: { model: string }) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }, ownerPayload) }
+  const onModelChange = (model: string, provider: string | null, ownerPayload?: Parameters<typeof updateSession>[1]) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }, ownerPayload) }
   const onWorkspaceChange = (path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }
   const onExecutionModeChange = (mode: ExecutionMode) => {
     const canReference = executionModes.data?.modes.find((option) => option.mode === mode)?.can_reference === true

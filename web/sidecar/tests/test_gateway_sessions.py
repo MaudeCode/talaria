@@ -55,7 +55,7 @@ def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart"])
+@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart", "reasoning"])
 def test_real_native_owner_on_its_own_daemon(request, tmp_path, mode):
     run_owner_peer(request, tmp_path, "gateway_session_peer.py", [mode])
 

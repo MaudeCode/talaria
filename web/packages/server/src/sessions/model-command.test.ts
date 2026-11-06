@@ -7,7 +7,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 const servers: TestServer[] = []
 afterEach(async () => { for (const s of servers.splice(0)) await s.close() })
 const post = (s: TestServer, path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-const parsed = (fields: Record<string, unknown>) => ({ target: '', provider: null, reset: false, errors: [], unsupported_flags: [], ...fields })
+const parsed = (fields: Record<string, unknown>) => ({ target: '', provider: null, reset: false, reasoning: null, errors: [], unsupported_flags: [], ...fields })
 
 async function setup(model: unknown = { default: 'profile-model', provider: 'profile-provider' }) {
   const sidecar = new FakeSidecar()
@@ -69,7 +69,7 @@ describe('/model arguments (TAL-1814)', () => {
 
   it.each([
     ['the Agent\'s own refusal', parsed({ target: 'reset', errors: ['/model reset takes no flags'] }), '/model reset takes no flags'],
-    ['a flag Web cannot honor', parsed({ target: 'some/model', unsupported_flags: ['--global', '--reasoning'] }), '/model --global, --reasoning is not available here'],
+    ['a flag Web cannot honor', parsed({ target: 'some/model', reasoning: 'high', unsupported_flags: ['--global'] }), '/model --global, --reasoning is not available here'],
   ])('refuses %s without touching the chat', async (_, answer, message) => {
     const { s, sidecar, sid, command } = await setup()
     sidecar.respond('models.parse_switch_args', () => answer)

@@ -17,12 +17,15 @@ const body = { model: 'contributor', model_provider: 'custom' }
 const nativeOwner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [] }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
 let client = new QueryClient()
-function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string } }) {
+function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string; provider?: string; reasoning?: string } }) {
   return <QueryClientProvider client={client}><Picker {...props} /></QueryClientProvider>
 }
-function Picker({ sid = 's1', owner, change = body, ownerPayload }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string } }) {
-  const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
-  return <><button onClick={() => { updateSession(change, ownerPayload) }}>Pick model</button>{dialog}</>
+function Picker({ sid = 's1', owner, change = body, ownerPayload }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string; provider?: string; reasoning?: string } }) {
+  const { updateSession, updateReasoning, dialog, notice } = useSessionUpdate(sid, refresh, owner)
+  const shown = useResourceEffects()[`session:${sid}`]?.fields
+  return <><button onClick={() => { updateSession(change, ownerPayload) }}>Pick model</button>
+    <button onClick={() => { updateReasoning('low') }}>Pick level</button><button onClick={() => { updateReasoning(null) }}>Reset level</button>
+    <output>{shown && 'reasoning_effort' in shown ? `shown:${String(shown.reasoning_effort)}` : ''}</output><span>{notice?.content}</span>{dialog}</>
 }
 beforeEach(() => { client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); vi.mocked(api.updateSession).mockReset(); vi.mocked(api.ownerAction).mockReset(); refresh.mockClear() })
 it('Cancel leaves the selection unchanged, Confirm sends the exact server token', async () => {
@@ -90,6 +93,51 @@ it('sends an owner-run chat the server\'s own request while showing the resultin
   await userEvent.click(screen.getByText('Pick model'))
   await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
   expect(api.ownerAction).toHaveBeenCalledWith(expect.objectContaining({ operation: 'model', payload: { model: 'reset' } }))
+})
+
+it.each([['Pick level', 'low'], ['Reset level', null]])('%s writes the chat\'s own level through its owner fences (TAL-1319)', async (button, effort) => {
+  vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
+  render(<Chat owner={{ ...nativeOwner }} />)
+  await userEvent.click(screen.getByText(button))
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  expect(api.ownerAction).toHaveBeenCalledOnce()
+  expect(api.ownerAction).toHaveBeenCalledWith({ session_id: 's1', action: 'mutate', request_id: expect.any(String),
+    expected_revision: 8, execution_generation: 3, operation: 'reasoning', payload: { effort } })
+})
+
+it('shows the chosen level at once and sends a level picked behind a model against the revision the model produced (TAL-1319)', async () => {
+  let answer!: (value: never) => void
+  vi.mocked(api.ownerAction).mockReturnValueOnce(new Promise((resolve) => { answer = resolve })).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
+  render(<Chat owner={{ ...nativeOwner }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await userEvent.click(screen.getByText('Pick level'))
+  expect(screen.getByRole('status')).toHaveTextContent('shown:low')
+  expect(api.ownerAction).toHaveBeenCalledOnce()
+  await act(() => { answer({ ok: true, session: sessionFixture({ session_id: 's1', owner_attachment: { ...nativeOwner, revision: 9 } }) } as never); return Promise.resolve() })
+  await waitFor(() => expect(api.ownerAction).toHaveBeenCalledTimes(2))
+  expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'reasoning', expected_revision: 9 }))
+})
+
+it('commits a model and level chosen together once, and a confirmation keeps both (TAL-1319)', async () => {
+  const payload = { model: 'contributor', provider: 'custom', reasoning: 'high' }
+  vi.mocked(api.ownerAction).mockResolvedValueOnce({ ok: true, model_change: { state: 'confirmation_required', confirm: 'native-token', message: 'Native guard warning', model: 'contributor', provider: 'custom', reasoning: 'high' }, session: sessionFixture({ session_id: 's1' }) })
+    .mockResolvedValueOnce({ ok: true, session: sessionFixture({ session_id: 's1' }) })
+  render(<Chat owner={{ ...nativeOwner }} ownerPayload={payload} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(api.ownerAction).toHaveBeenCalledOnce()
+  expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'model', payload }))
+  await userEvent.click(within(dialog).getByText('Confirm'))
+  expect(api.ownerAction).toHaveBeenCalledTimes(2)
+  expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'model', payload: { ...payload, confirm: 'native-token' } }))
+})
+
+it('says a level waits for the turn when the owner holds it for the next one (TAL-1319)', () => {
+  const control = { reasoning_effort: 'high', supported_efforts: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: ['set' as const, 'reset' as const] }
+  const view = render(<Chat owner={{ ...nativeOwner, reasoning_control: { ...control, deferred: null } }} />)
+  expect(screen.queryByText('Applies after this turn')).toBeNull()
+  view.rerender(<Chat owner={{ ...nativeOwner, reasoning_control: { ...control, deferred: { effort: 'low' } } }} />)
+  expect(screen.getByText('Applies after this turn')).toBeVisible()
 })
 
 it('preserves an explicit null provider in a native model selection', async () => {

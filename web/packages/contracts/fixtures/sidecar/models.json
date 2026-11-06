@@ -156,6 +156,7 @@
         "target": "reset",
         "provider": null,
         "reset": true,
+        "reasoning": null,
         "errors": [],
         "unsupported_flags": []
       }

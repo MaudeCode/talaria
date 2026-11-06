@@ -18,7 +18,7 @@ agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
-OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart"}
+OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning"}
 
 
 def unsupported(mode):
@@ -33,6 +33,8 @@ def unsupported(mode):
         return "this supported Agent refuses every client during a restart's after-turn wait"
     if mode == "model" and not (agent / "gateway/session_deferred_pick.py").exists():
         return "this supported Agent does not expose deferred native model picks"
+    if mode == "reasoning" and not (agent / "gateway/session_mutation_policy.py").exists():
+        return "this supported Agent does not expose native reasoning picks"
     if mode == "voice-stop" and "voice_stopped" not in source("gateway/session_controls.py"):
         return "this supported Agent does not consume typed voice stops"
     # Only releases publishing these verbs can establish their execution semantics.
@@ -301,6 +303,87 @@ async def probe_model(home, peer, desc):
         peer.release.set()
         sidecar.close()
         viewer.close()
+
+
+async def probe_reasoning(home, peer, desc, proc, env):
+    """One chat's own level on a real owner: it follows the profile until picked, a pick holds through a profile edit and a
+    restart, a busy pick waits for the turn, a stale fence changes nothing, and a reset follows the profile again."""
+    sidecar = SidecarProcess(home)
+
+    def profile_level(level):
+        config = json.loads((home / "config.yaml").read_text())
+        (home / "config.yaml").write_text(json.dumps({**config, "agent": {"reasoning_effort": level}}))
+
+    def call(action, **params):
+        return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+
+    def current():
+        result = call("snapshot")
+        assert result["state"] == "attached", result
+        return result["snapshot"]
+
+    def mutate(request, operation, payload):
+        snap = current()
+        return call("mutate", request_id=request, expected_revision=snap["revision"], execution_generation=snap["execution_generation"],
+                    operation=operation, payload=payload)
+
+    def level():
+        return current()["info"].get("reasoning_effort")
+
+    async def settles_on(expected):
+        deadline = time.monotonic() + 30
+        while (found := await asyncio.to_thread(level)) != expected:
+            assert time.monotonic() < deadline, (expected, found)
+            await asyncio.sleep(POLL_SECONDS)
+
+    try:
+        async with websocket(home, desc) as native:
+            sid = (await rpc(native, "session.create", request_id="reasoning-create", source="cli", toolsets=[]))["result"]["session_id"]
+        profile_level("low")
+        await settles_on("low")
+        profile_level("medium")
+        await settles_on("medium")
+
+        stale = current()
+        picked = await asyncio.to_thread(mutate, "reasoning-set", "reasoning", {"effort": "high"})
+        assert picked["state"] == "attached" and picked["receipt"].get("status") is None, picked
+        assert picked["snapshot"]["info"]["reasoning_effort"] == "high", picked
+        refused = await asyncio.to_thread(call, "mutate", request_id="reasoning-stale", expected_revision=stale["revision"],
+                                          execution_generation=stale["execution_generation"], operation="reasoning", payload={"effort": "low"})
+        assert refused["state"] == "refused", refused
+        assert await asyncio.to_thread(level) == "high"
+        profile_level("low")
+        assert await asyncio.to_thread(level) == "high"
+
+        await asyncio.to_thread(call, "submit", request_id="reasoning-turn", text="BLOCK_STARTED")
+        assert await asyncio.to_thread(peer.blocked.wait, 25)
+        deferred = await asyncio.to_thread(mutate, "reasoning-busy", "reasoning", {"effort": "minimal"})
+        assert deferred["receipt"]["status"] == "deferred" and deferred["receipt"]["effort"] == "minimal", deferred
+        assert deferred["snapshot"]["info"]["reasoning_effort"] == "high", deferred
+        peer.release.set()
+        await settles_on("minimal")
+
+        reset = await asyncio.to_thread(mutate, "reasoning-reset", "reasoning", {"effort": None})
+        assert reset["state"] == "attached" and reset["snapshot"]["info"]["reasoning_effort"] == "low", reset
+        profile_level("medium")
+        await settles_on("medium")
+
+        before = current()["revision"]
+        combined = await asyncio.to_thread(mutate, "reasoning-combined", "model", {"model": "owner-fixture-picked", "provider": "custom", "reasoning": "high"})
+        assert combined["receipt"]["operation"] == "model", combined
+        assert (combined["snapshot"]["info"]["model"], combined["snapshot"]["info"]["reasoning_effort"]) == ("owner-fixture-picked", "high"), combined
+        assert combined["snapshot"]["revision"] == before + 1, combined
+
+        proc.kill()
+        proc.wait(timeout=10)
+        with daemon(agent, home, env, barrier=False):
+            profile_level("low")
+            assert await asyncio.to_thread(level) == "high"
+            await asyncio.to_thread(mutate, "reasoning-reset-after-restart", "reasoning", {"effort": None})
+            await settles_on("low")
+    finally:
+        peer.release.set()
+        sidecar.close()
 
 
 async def probe_voice_stop(home, peer, desc):
@@ -1115,6 +1198,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_model(home, peer, desc)
     if mode == "voice-stop":
         return probe_voice_stop(home, peer, desc)
+    if mode == "reasoning":
+        return probe_reasoning(home, peer, desc, proc, env)
     if mode == "profiles":
         return probe_profiles(home, peer, desc, proc, env)
     if mode in {"approval", "clarify"}:

@@ -1,7 +1,7 @@
 import type { FunctionComponent, MemoExoticComponent, NamedExoticComponent } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VisibleMessage } from './useTranscript'
 import { keys } from '../../api/queryKeys'
 import { sessionFixture } from '../../test/fixtures'
@@ -255,6 +255,71 @@ it('reads and writes reasoning per chat, and a late answer never reaches the nex
   } finally {
     vi.mocked(api.fetchReasoning).mockImplementation(() => Promise.resolve({ reasoning_effort: null }))
   }
+})
+
+describe('an owner chat\'s reasoning level (TAL-1319)', () => {
+  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [] }
+  const control = { reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: ['set' as const, 'reset' as const], deferred: null }
+  const open = (attachment: object) => {
+    const session = sessionFixture({ session_id: 'owner-chat', read_only: true, owner_attachment: attachment as never, messages: [{ id: 1, role: 'assistant', content: 'Owner answer' }] })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    vi.mocked(api.fetchSession).mockResolvedValue({ session })
+    qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+    render(<QueryClientProvider client={qc}><ChatView sessionId="owner-chat" /></QueryClientProvider>)
+    return session
+  }
+  beforeEach(() => { vi.mocked(api.ownerAction).mockReset(); vi.mocked(api.setReasoningEffort).mockReset(); vi.mocked(api.fetchReasoning).mockClear() })
+  const composerProps = () => lastComposer() as unknown as ComposerProps & { reasoning: string | null; reasoningLevels?: string[] }
+
+  it('shows the owner\'s level and levels, not the profile\'s', async () => {
+    open({ ...owner, reasoning_control: control })
+    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
+    expect(composerProps().reasoningLevels).toEqual(control.supported_efforts)
+    expect(api.fetchReasoning).not.toHaveBeenCalled()
+  })
+
+  it('shows a pick at once and writes it only through the owner', async () => {
+    const session = open({ ...owner, reasoning_control: control })
+    vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
+    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
+    act(() => { composerProps().onReasoningChange('low') })
+    await waitFor(() => expect(composerProps().reasoning).toBe('low'))
+    expect(api.ownerAction).toHaveBeenCalledWith(expect.objectContaining({ session_id: session.session_id, operation: 'reasoning', payload: { effort: 'low' }, expected_revision: 2, execution_generation: 1 }))
+    expect(api.setReasoningEffort).not.toHaveBeenCalled()
+  })
+
+  it('/reasoning takes the same path, and default resets', async () => {
+    open({ ...owner, reasoning_control: control })
+    vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
+    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
+    await act(async () => { await composerProps().onLocalCommand('reasoning', 'default') })
+    await waitFor(() => expect(composerProps().reasoning).toBeNull())
+    expect(api.ownerAction).toHaveBeenCalledWith(expect.objectContaining({ operation: 'reasoning', payload: { effort: null } }))
+    expect(api.setReasoningEffort).not.toHaveBeenCalled()
+  })
+
+  it('rolls a refused pick back to the actual level', async () => {
+    open({ ...owner, reasoning_control: control })
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.ownerAction).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
+    act(() => { composerProps().onReasoningChange('low') })
+    await waitFor(() => expect(composerProps().reasoning).toBe('low'))
+    await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/api/chat/owner-action', message: 'The owning Agent refused the action', body: {} })); await Promise.resolve() })
+    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
+    expect(showToast).toHaveBeenCalledWith('The owning Agent refused the action', 4000, 'error')
+    expect(api.setReasoningEffort).not.toHaveBeenCalled()
+  })
+
+  it('an owner without the control leaves the server to refuse, and shows no profile level', async () => {
+    open(owner)
+    await waitFor(() => expect(lastComposer().session).not.toBeNull())
+    expect(composerProps().reasoning).toBeNull()
+    vi.mocked(api.setReasoningEffort).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/reasoning', message: 'Reasoning changes are unavailable for this conversation', body: {} }))
+    act(() => { composerProps().onReasoningChange('low') })
+    await waitFor(() => expect(api.setReasoningEffort).toHaveBeenCalled())
+    expect(api.ownerAction).not.toHaveBeenCalled()
+  })
 })
 
 it('rolls a refused YOLO change back and finishes /personality without waiting (TAL-1384)', async () => {

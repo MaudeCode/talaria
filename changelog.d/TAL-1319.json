@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Set or reset a native chat's reasoning level from the composer. The change stays with that chat and leaves the profile default alone.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

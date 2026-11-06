@@ -7979,6 +7979,12 @@
       "reset": {
         "type": "boolean"
       },
+      "reasoning": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "errors": {
         "type": "array",
         "items": {
@@ -7996,6 +8002,7 @@
       "target",
       "provider",
       "reset",
+      "reasoning",
       "errors",
       "unsupported_flags"
     ],
@@ -10268,6 +10275,10 @@
               "string",
               "null"
             ]
+          },
+          "reasoning": {
+            "description": "The level chosen with this model; a confirmed resend carries it again.",
+            "type": "string"
           }
         },
         "required": [
@@ -11316,6 +11327,10 @@
               "string",
               "null"
             ]
+          },
+          "reasoning": {
+            "description": "The level chosen with this model; a confirmed resend carries it again.",
+            "type": "string"
           }
         },
         "required": [

@@ -2307,13 +2307,16 @@ export class SessionService {
   }
 
   /** TAL-1814: what raw `/model` arguments ask for. Nothing is written: the client applies the answer as a model write. */
-  async modelCommand(sid: string | undefined, args: string, currentModel?: string | null): Promise<{ model: string; model_provider: string | null; owner_payload?: { model: string } }> {
+  async modelCommand(sid: string | undefined, args: string, currentModel?: string | null): Promise<{ model: string; model_provider: string | null; owner_payload?: { model: string; provider?: string; reasoning?: string } }> {
     const sidecar = this.deps.sidecar?.()
     if (!sidecar) throw new HttpFailure(503, 'Agent sidecar is unavailable')
     const request = await sidecar.call('models.parse_switch_args', { args })
     const [refusal] = request.errors
     if (refusal) throw new HttpFailure(400, refusal)
-    if (request.unsupported_flags.length) throw new HttpFailure(400, `/model ${request.unsupported_flags.join(', ')} is not available here`)
+    // TAL-1319: only an owner commits a model and level together; a direct chat's level stays its own write.
+    const level = request.reasoning && sid !== undefined && await this.owner?.owns(sid) ? request.reasoning : null
+    const unsupported = [...request.unsupported_flags, ...(request.reasoning && !level ? ['--reasoning'] : [])]
+    if (unsupported.length) throw new HttpFailure(400, `/model ${unsupported.join(', ')} is not available here`)
     const s = sid === undefined ? null : await this.visibleSessionRecord(sid)
     const profile = s?.profile ?? null
     if (request.reset) {
@@ -2323,7 +2326,8 @@ export class SessionService {
     const target = request.target || s?.model || currentModel || (await this.profileDefaultRoute(profile))[0]
     const [model, model_provider] = this.deps.modelStateFromRequest(target, request.provider, s?.model_provider ?? null)
     // With no target the id is only what the chat already shows, so a provider inside it cannot override the named one.
-    return { model: model ?? target, model_provider: request.target ? model_provider : request.provider ?? model_provider }
+    const route = { model: model ?? target, model_provider: request.target ? model_provider : request.provider ?? model_provider }
+    return level ? { ...route, owner_payload: { model: route.model, ...(route.model_provider ? { provider: route.model_provider } : {}), reasoning: level } } : route
   }
 
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {

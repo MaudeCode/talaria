@@ -132,5 +132,208 @@
       "can_share": true,
       "workspace_name": "Home"
     }
+  },
+  "reasoning": {
+    "pinned": {
+      "info": {
+        "reasoning_effort": "high",
+        "reasoning_effort_wire": "high"
+      },
+      "attachment": {
+        "state": "attached",
+        "reason": null,
+        "restarting": false,
+        "can_submit": true,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 2,
+        "execution_generation": 1,
+        "active_admission": null,
+        "admissions": [],
+        "reasoning_control": {
+          "reasoning_effort": "high",
+          "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "supports_reasoning_effort": true,
+          "supports_thinking_toggle": true,
+          "actions": [
+            "set",
+            "reset"
+          ],
+          "deferred": null
+        }
+      }
+    },
+    "clamped": {
+      "info": {
+        "reasoning_effort": "xhigh",
+        "reasoning_effort_wire": "high"
+      },
+      "attachment": {
+        "state": "attached",
+        "reason": null,
+        "restarting": false,
+        "can_submit": true,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 2,
+        "execution_generation": 1,
+        "active_admission": null,
+        "admissions": [],
+        "reasoning_control": {
+          "reasoning_effort": "high",
+          "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "supports_reasoning_effort": true,
+          "supports_thinking_toggle": true,
+          "actions": [
+            "set",
+            "reset"
+          ],
+          "deferred": null
+        }
+      }
+    },
+    "provider_default": {
+      "info": {
+        "reasoning_effort": "",
+        "reasoning_effort_wire": ""
+      },
+      "attachment": {
+        "state": "attached",
+        "reason": null,
+        "restarting": false,
+        "can_submit": true,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 2,
+        "execution_generation": 1,
+        "active_admission": null,
+        "admissions": [],
+        "reasoning_control": {
+          "reasoning_effort": null,
+          "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "supports_reasoning_effort": true,
+          "supports_thinking_toggle": true,
+          "actions": [
+            "set",
+            "reset"
+          ],
+          "deferred": null
+        }
+      }
+    },
+    "deferred": {
+      "info": {
+        "reasoning_effort": "high",
+        "reasoning_effort_wire": "high"
+      },
+      "attachment": {
+        "state": "attached",
+        "reason": null,
+        "restarting": false,
+        "can_submit": true,
+        "can_interrupt": true,
+        "can_attach": false,
+        "revision": 2,
+        "execution_generation": 1,
+        "active_admission": null,
+        "admissions": [],
+        "reasoning_control": {
+          "reasoning_effort": "high",
+          "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "supports_reasoning_effort": true,
+          "supports_thinking_toggle": true,
+          "actions": [
+            "set",
+            "reset"
+          ],
+          "deferred": {
+            "effort": "low"
+          }
+        }
+      }
+    },
+    "restarting": {
+      "info": {
+        "reasoning_effort": "high",
+        "reasoning_effort_wire": "high"
+      },
+      "attachment": {
+        "state": "attached",
+        "reason": null,
+        "restarting": true,
+        "can_submit": false,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 2,
+        "execution_generation": 1,
+        "active_admission": null,
+        "admissions": [],
+        "reasoning_control": {
+          "reasoning_effort": "high",
+          "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "supports_reasoning_effort": true,
+          "supports_thinking_toggle": true,
+          "actions": [],
+          "deferred": null
+        }
+      }
+    },
+    "requests": {
+      "set": {
+        "session_id": "fixture",
+        "action": "mutate",
+        "request_id": "reasoning-pick",
+        "expected_revision": 2,
+        "execution_generation": 1,
+        "operation": "reasoning",
+        "payload": {
+          "effort": "low"
+        }
+      },
+      "reset": {
+        "session_id": "fixture",
+        "action": "mutate",
+        "request_id": "reasoning-pick",
+        "expected_revision": 2,
+        "execution_generation": 1,
+        "operation": "reasoning",
+        "payload": {
+          "effort": null
+        }
+      },
+      "combined": {
+        "session_id": "fixture",
+        "action": "mutate",
+        "request_id": "reasoning-pick",
+        "expected_revision": 2,
+        "execution_generation": 1,
+        "operation": "model",
+        "payload": {
+          "model": "picked",
+          "provider": "custom",
+          "reasoning": "high"
+        }
+      }
+    }
   }
 }

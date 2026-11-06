@@ -26,13 +26,15 @@ export function hideComposerControl(settings: ComposerProps['settings'], answeri
 /** Stable control groups at the existing DOM positions around the input and send actions. */
 export function ComposerControls({ placement, sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }: ControlsProps) {
   const hide = (key: string) => hideComposerControl(settings, answering, key)
+  // TAL-1319: an owner chat is read-only locally, and its owner's actions say whether its level can change.
+  const reasoningShown = (!session?.read_only || session.owner_attachment?.reasoning_control?.actions.includes('set')) && !hide('hide_composer_reasoning') && reasoningSupported
   const modelChoice = { ...(session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }), servedModel: session?.served_model ?? null }
   const modeChip = !sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
     : session?.execution_mode && session.execution_mode !== 'normal' ? <ExecutionModeChip value={session.execution_mode} /> : null
   if (placement === 'footer') return (
     <div className="composer-left flex items-center gap-1 min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-[641px]:flex-[1_1_auto] max-[641px]:w-auto max-[641px]:flex-nowrap max-[641px]:items-center max-[641px]:gap-x-2.5 max-[641px]:gap-y-0 max-[641px]:max-h-none max-[641px]:[-webkit-overflow-scrolling:touch] max-[341px]:gap-x-0.5">
       {!hide('hide_composer_model') && <div className="composer-model-wrap"><ModelChip {...modelChoice} onChange={onModelChange} /></div>}
-      {!session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
+      {reasoningShown && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
       <button className="icon-btn composer-mobile-config-btn has-tooltip" id="composerMobileConfigBtn" type="button" data-tooltip={m.composer_config_title()} aria-label={m.composer_config_title()} aria-expanded={configOpen} aria-controls="composerMobileConfigPanel" onClick={() => setConfigOpen((o) => !o)}>
         <SlidersHorizontal size={16} aria-hidden="true" />
       </button>
@@ -41,7 +43,7 @@ export function ComposerControls({ placement, sessionId, session, settings, pend
   if (placement === 'panel') return (
     <div className={cn('composer-mobile-config-panel', configOpen && 'open')} id="composerMobileConfigPanel" role="group" aria-label={m.composer_config_title()}>
       {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row {...modelChoice} onChange={onModelChange} />}
-      {stage === 'burger' && !session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
+      {stage === 'burger' && reasoningShown && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
       {/* The chat header carries the terminal toggle above phone width. */}
       {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
       {configOpen && stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}

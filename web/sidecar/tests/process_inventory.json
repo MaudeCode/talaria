@@ -1362,14 +1362,15 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_on_its_own_daemon": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility for modes needing owner state of their own, one disposable owner per case. [recovery] kills and replaces the owner to prove queued and unknown admissions recover. [secure] proves secure prompts and refusals against synthetic loopback owners. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. [dedicated] proves standalone profile owners refuse each other's sessions. [replay] proves the barrier daemon's replay gap reaches a watching viewer. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
+      "reason": "Supported-Agent API compatibility for modes needing owner state of their own, one disposable owner per case. [recovery] kills and replaces the owner to prove queued and unknown admissions recover. [secure] proves secure prompts and refusals against synthetic loopback owners. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. [dedicated] proves standalone profile owners refuse each other's sessions. [replay] proves the barrier daemon's replay gap reaches a watching viewer. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered. [reasoning] restarts the owner to prove a picked level outlives it.",
       "cases": [
         "[recovery]",
         "[secure]",
         "[profiles]",
         "[dedicated]",
         "[replay]",
-        "[restart]"
+        "[restart]",
+        "[reasoning]"
       ]
     },
     "tests/test_gateway_sessions.py::test_diagnostic_creation_refuses_without_starting": {
