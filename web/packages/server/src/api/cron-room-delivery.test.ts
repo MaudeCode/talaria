@@ -7,12 +7,16 @@ import { CronsSchema, CronMutationSchema } from '@maudecode/talaria-web-contract
 let server: TestServer | undefined
 afterEach(async () => { await server?.close() })
 
-async function setup() {
+async function setup(authenticated = false) {
   const sidecar = new FakeSidecar(), fixture = groupFixture(sidecar)
   let supported = true
   sidecar.respond('cron.delivery_options', () => ({ platforms: [{ value: 'local', label: 'Local' }], room_delivery_supported: supported }))
-  server = await bootTestServer({ sidecar, deps: (deps) => {
+  server = await bootTestServer({ sidecar, ...(authenticated ? { env: {
+    HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_GROUP_PROFILE_MAP: '{}',
+    HERMES_WEBUI_OIDC_ISSUER: 'https://identity.invalid', HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+  } } : {}), deps: (deps) => {
     deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true }, { name: 'helper' }])
+    deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true)
   } })
   return { sidecar, ...fixture, support: (value: boolean) => { supported = value } }
 }
@@ -32,6 +36,48 @@ it('offers manageable rooms by name in the requesting profile, only with Agent a
   support(true)
   state.room.members[1]!.profile = 'unmanaged'
   expect(await options()).toEqual([{ value: 'local', label: 'Local' }])
+})
+
+it.each(['trusted', 'oidc'] as const)('keeps room catalogs and delivery writes behind owner authority for %s sessions', async (authType) => {
+  const { sidecar } = await setup(true)
+  const base = { profile: null, toast_notifications: true, monitor: '', continuity: false }
+  const jobs = [{ ...base, id: 'room-job', deliver: 'room:discussion' }, { ...base, id: 'local-job', deliver: 'local' }]
+  sidecar.respond('cron.list', ({ profile_home }) => ({ jobs: profile_home === server!.deps.profileHome('default') ? jobs : [] }))
+  sidecar.respond('cron.get', ({ job_id }) => ({ job: jobs.find((job) => job.id === job_id) ?? null }))
+  sidecar.respond('cron.create', ({ job }) => ({ job: { ...base, ...job, id: 'created' } }))
+  sidecar.respond('cron.update', ({ job_id, updates }) => ({ job: { ...jobs.find((job) => job.id === job_id)!, ...updates } }))
+  sidecar.respond('cron.resume', () => ({ job: jobs[0]! }))
+  sidecar.respond('cron.run', ({ job_id }, emit) => { emit({ event: 'started', data: { job_id } }); return { job_id, status: 'completed', success: true } })
+  const cookie = server!.deps.auth.createSession({ authType, username: 'scoped-user', boundProfile: 'default' })
+  const headers = { cookie: `${server!.deps.auth.cookieName()}=${cookie}`, 'X-Remote-User': 'scoped-user', origin: server!.base,
+    'X-Hermes-CSRF-Token': server!.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+  sidecar.calls.length = 0
+  const choices = await server!.get('/api/crons/delivery-options', { headers })
+  expect.soft(await choices.json()).toEqual({ platforms: [{ value: 'local', label: 'Local' }] })
+  const listed = CronsSchema.parse(await (await server!.get('/api/crons', { headers })).json())
+  expect.soft(listed.jobs.find((job) => job.id === 'room-job')?.deliver_label).toBe('room:discussion')
+  for (const [path, body] of [
+    ['create', { schedule: 'every 1h', prompt: 'Digest', deliver: 'room:discussion' }],
+    ['create', { schedule: 'every 1h', prompt: 'Digest', deliver: ['local', 'room:discussion'] }],
+    ['update', { job_id: 'local-job', deliver: 'telegram, RoOm:discussion@helper' }],
+    ['update', { job_id: 'local-job', deliver: 'telegram,\u001croom:discussion' }],
+    ['update', { job_id: 'local-job', failure_deliver: ['local', 'room:discussion'] }],
+    ['update', { job_id: 'local-job', deliver: 'origin', origin: { platform: 'room', chat_id: 'discussion' } }],
+    ['update', { job_id: 'room-job', prompt: 'Replaced content' }],
+    ['resume', { job_id: 'room-job' }], ['run', { job_id: 'room-job' }],
+  ] as const) {
+    const response = await server!.get(`/api/crons/${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+    expect.soft(response.status, `${path} ${JSON.stringify(body)}`).toBe(403)
+  }
+  expect.soft(sidecar.calls.filter((call) => ['gateway.groups', 'cron.create', 'cron.update', 'cron.resume', 'cron.run'].includes(call.method))).toEqual([])
+  const local = await server!.get('/api/crons/create', { method: 'POST', headers, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', deliver: 'local' }) })
+  expect(local.status).toBe(200)
+  const owner = server!.deps.auth.createSession({ authType: 'password' })
+  const ownerHeaders = { cookie: `${server!.deps.auth.cookieName()}=${owner}`, origin: server!.base,
+    'X-Hermes-CSRF-Token': server!.deps.auth.csrfTokenForSession(owner)!, 'content-type': 'application/json' }
+  const allowed = await server!.get('/api/crons/create', { method: 'POST', headers: ownerHeaders, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', deliver: 'room:discussion' }) })
+  expect(allowed.status).toBe(200)
+  expect(CronMutationSchema.parse(await allowed.json()).job?.deliver_label).toBe('Design review')
 })
 
 it('projects room names on job reads and writes, preserves unknown targets, and uses the caller grant', async () => {

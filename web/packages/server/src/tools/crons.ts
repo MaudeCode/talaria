@@ -25,6 +25,7 @@ export interface CronDeps {
   modelOptions?: (home: string) => Promise<(model: string | null, provider: string | null) => string | null>
   /** The existing room catalog, scoped to the requesting person's native grant. */
   groupCatalog?: (profile: string, offset: number) => Promise<GroupCatalog>
+  roomDeliveryAllowed?: () => Promise<boolean>
   /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
   runningJobs?: Map<string, number>
   updateInProgress?: () => boolean
@@ -372,6 +373,14 @@ export class CronService {
     if (profile && !this.deps.profilesMatch(profile, row.profile)) throw new HttpFailure(409, 'This legacy task must be recreated in its execution profile before it can run or resume')
   }
 
+  private async requireRoomDeliveryAuthority(...jobs: Dict[]): Promise<void> {
+    // Include Python str.strip's extra whitespace, since the Agent normalizes these delivery tokens.
+    const targetsRoom = jobs.some((job) => [job.deliver, job.failure_deliver].some((lane) =>
+      (Array.isArray(lane) ? lane : [lane]).some((value) => /(?:^|,)[\s\u001c-\u001f\u0085]*room:/i.test(str(value))))
+      || str((job.origin as Dict | null)?.platform).trim().toLowerCase() === 'room')
+    if (targetsRoom && !(await this.deps.roomDeliveryAllowed?.())) throw new HttpFailure(403, 'Owner session required for Group Chat delivery')
+  }
+
   private async validateContext(home: string, fields: Dict): Promise<void> {
     const refs = continuityRefs(fields.context_from, false)
     if (!refs.length) return
@@ -494,6 +503,7 @@ export class CronService {
     if (profile !== null) job.profile = profile
     if (body.toast_notifications === false) job.toast_notifications = false
     job.owner_profile = active
+    await this.requireRoomDeliveryAuthority(job)
     await this.validateContext(executionHome, job)
     try {
       const result = await this.sidecar().call('cron.create', { profile_home: executionHome, job, execution_home: profile ? executionHome : null })
@@ -531,6 +541,7 @@ export class CronService {
       try { currentContextFrom = (await this.sidecar().call('cron.get', { profile_home: home, job_id: storedId })).job?.context_from ?? null } catch { currentContextFrom = null }
     }
     Object.assign(updates, jobFieldUpdates(body, currentContextFrom))
+    await this.requireRoomDeliveryAuthority(store.job, { ...store.job, ...updates })
     await this.validateContext(home, updates)
     try {
       const result = await this.sidecar().call('cron.update', { profile_home: home, job_id: storedId, updates })
@@ -544,7 +555,10 @@ export class CronService {
   private async simple(method: 'cron.pause' | 'cron.resume' | 'cron.delete' | 'cron.cancel', home: string, jobId: string, extra: Dict = {}): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, method === 'cron.delete' ? 'Missing required field(s): job_id' : 'job_id required')
     const store = await this.resolveStore(home, jobId)
-    if (method === 'cron.resume') this.requireExecutionStore(store)
+    if (method === 'cron.resume') {
+      this.requireExecutionStore(store)
+      await this.requireRoomDeliveryAuthority(store.job)
+    }
     try {
       const result = await this.sidecar().call(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
       // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
@@ -581,6 +595,7 @@ export class CronService {
       let job: Dict | null
       try { job = (await sidecar.call('cron.get', { profile_home: home, job_id: jobId })).job } catch { job = null }
       if (!job) throw new HttpFailure(404, 'Job not found')
+      await this.requireRoomDeliveryAuthority(job)
       const status = await sidecar.call('cron.status', { job_id: jobId })
       if ('job_id' in status && status.running) {
         running?.delete(jobId)
@@ -658,7 +673,7 @@ export class CronService {
   /** Both picker choices and job labels use the catalog's redaction and manageable-room policy. */
   private async roomNames(profile: string): Promise<Map<string, string>> {
     const names = new Map<string, string>()
-    if (!this.deps.groupCatalog) return names
+    if (!this.deps.groupCatalog || !(await this.deps.roomDeliveryAllowed?.())) return names
     let offset = 0
     try {
       for (;;) {

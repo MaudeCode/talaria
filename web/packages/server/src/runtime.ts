@@ -928,6 +928,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       updateInProgress: () => deps.updates.blocksNewWork(),
       modelOptions: (home) => catalog.modelOptionResolver(home),
       groupCatalog: (profile, offset) => deps.groups.catalog(deps.groups.scope(profile, requestScope.getStore()?.notificationOwner ?? 'local-owner'), offset),
+      roomDeliveryAllowed: () => sessionCanManageServer({ deps }, requestScope.getStore()?.trusted?.reconciled ?? null),
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
