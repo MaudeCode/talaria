@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import importlib
 import io
 import logging
@@ -308,14 +309,26 @@ def personalities(config) -> list[dict]:
     return [{"name": name, "description": describe_personality(value), "prompt": render_personality_prompt(value)} for name, value in available_personalities(config).items()]
 
 
+def _reads_discussion_limit(key: str) -> bool:
+    """TAL-1828: the Agent reads ``hosted_rooms.discussion.*`` by ``DiscussionLimits``'s fields, with no ``DEFAULT_CONFIG`` entry."""
+    section, _, field = key.rpartition(".")
+    if section != "hosted_rooms.discussion":
+        return False
+    try:
+        from gateway.hosted_room_discussion import DiscussionLimits
+    except ImportError:
+        return False
+    return field in {limit.name for limit in dataclasses.fields(DiscussionLimits)}
+
+
 def declares_key(key: str) -> bool:
-    """TAL-1825: whether the Agent's ``DEFAULT_CONFIG`` holds a dotted key."""
+    """TAL-1825: whether the installed Agent reads a dotted key: its ``DEFAULT_CONFIG`` holds it, or a code default does (TAL-1828)."""
     from hermes_cli.config import DEFAULT_CONFIG
 
     node = DEFAULT_CONFIG
     for part in key.split("."):
         if not isinstance(node, dict) or part not in node:
-            return False
+            return _reads_discussion_limit(key)
         node = node[part]
     return True
 

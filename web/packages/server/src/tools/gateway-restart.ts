@@ -45,7 +45,7 @@ const READY_WINDOW_MS = 90_000
 const READY_POLL_MS = 1_000
 
 /** TAL-1138: every gateway that ran before the restart now runs as a new process (another pid, or the same pid started again). */
-const replaced = (before: GatewayProcess[], after: GatewayProcess[]): boolean =>
+export const replaced = (before: GatewayProcess[], after: GatewayProcess[]): boolean =>
   before.every((old) => after.some((now) => now.dir === old.dir && (now.pid !== old.pid || (now.start_time !== null && now.start_time !== old.start_time))))
 
 /**

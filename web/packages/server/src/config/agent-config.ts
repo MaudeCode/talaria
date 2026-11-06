@@ -517,6 +517,20 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
   }
 }
 
+// ── group discussion limits ───────────────────────────────────────────
+
+/** TAL-1828: the key whose presence means the Agent reads both limits; they arrived together in v0.22.6. */
+export const DISCUSSION_LIMITS_KEY = 'hosted_rooms.discussion.max_rounds'
+const DISCUSSION_LIMIT_DEFAULTS = { max_rounds: 3, max_messages: 10 }
+export type DiscussionLimits = typeof DISCUSSION_LIMIT_DEFAULTS
+
+/** The limits a gateway loads from this config. Agent `_discussion_limits`: one malformed value drops both to the defaults. */
+export function discussionLimits(config: Config): DiscussionLimits {
+  const limits = { ...DISCUSSION_LIMIT_DEFAULTS, ...dict(dict(config.hosted_rooms).discussion) }
+  const valid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0
+  return valid(limits.max_rounds) && valid(limits.max_messages) ? { max_rounds: limits.max_rounds, max_messages: limits.max_messages } : { ...DISCUSSION_LIMIT_DEFAULTS }
+}
+
 // ── reasoning ─────────────────────────────────────────────────────────
 
 export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: string; supported_efforts: string[]; supports_reasoning_effort: boolean; supports_thinking_toggle: boolean; supports_session_scope: boolean }

@@ -5,6 +5,8 @@ import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
 import { WEB_UPDATE_CHANNELS } from '../tools/updates.js'
+import { replaced } from '../tools/gateway-restart.js'
+import type { GatewayProcess } from '../tools/health.js'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -16,7 +18,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -144,6 +146,48 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
+  Object.assign(into, await groupDiscussionFields(ctx, into.group_discussion_restart_baseline))
+  Reflect.deleteProperty(into, 'group_discussion_restart_baseline')
+}
+
+const DISCUSSION_LIMIT_FIELDS = { group_discussion_max_rounds: 'max_rounds', group_discussion_max_messages: 'max_messages' } as const
+const ROOT_PROFILE = 'default'
+const rootGateways = (ctx: RequestContext): Promise<GatewayProcess[]> => ctx.deps.gatewayRestarts.gateways(ROOT_PROFILE).catch(() => [])
+
+/** TAL-1828: the limits the running gateway loaded at startup, and that gateway. Kept in settings so a Web restart still knows. */
+interface DiscussionRestartBaseline { limits: DiscussionLimits; gateways: GatewayProcess[] }
+const isRestartBaseline = (value: unknown): value is DiscussionRestartBaseline => isDict(value) && isDict(value.limits) && Array.isArray(value.gateways)
+
+/** The baseline's gateway is gone, replaced by one that read the file since. With none visible at the save, only a later one proves that. */
+const restartedSince = (baseline: DiscussionRestartBaseline, live: GatewayProcess[]): boolean =>
+  baseline.gateways.length ? replaced(baseline.gateways, live) : live.length > 0
+
+/** A pinned profile's server cannot reach the `<root>/config.yaml` the Agent reads. */
+const discussionLimitsOffered = async (ctx: RequestContext): Promise<boolean> => !ctx.deps.isolatedProfileMode() && await ctx.deps.agentConfig.declaresKey(DISCUSSION_LIMITS_KEY)
+
+async function groupDiscussionFields(ctx: RequestContext, baseline: unknown): Promise<Dict> {
+  const unavailable = { group_discussion_max_rounds: null, group_discussion_max_messages: null, group_discussion_restart_required: null }
+  if (!(await canManageServer(ctx)) || !(await discussionLimitsOffered(ctx))) return unavailable
+  let limits: DiscussionLimits
+  try { limits = discussionLimits(await ctx.deps.agentConfig.read(ctx.deps.profileHome(ROOT_PROFILE), { profileFile: true })) } catch { return unavailable }
+  const pending = isRestartBaseline(baseline) && (limits.max_rounds !== baseline.limits.max_rounds || limits.max_messages !== baseline.limits.max_messages)
+  return { group_discussion_max_rounds: limits.max_rounds, group_discussion_max_messages: limits.max_messages, group_discussion_restart_required: pending && !restartedSince(baseline, await rootGateways(ctx)) }
+}
+
+/**
+ * Writes both limits, so a save next to a malformed value is the one that loads. A still-unapplied baseline stands, since
+ * its gateway has read no save since. Inside the config lock, so overlapping saves agree on it; a refused write leaves a
+ * baseline equal to the config, which requires nothing.
+ */
+async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<DiscussionLimits>): Promise<void> {
+  const gateways = await rootGateways(ctx)
+  await ctx.deps.agentConfig.update(ctx.deps.profileHome(ROOT_PROFILE), async (config) => {
+    const before = discussionLimits(config)
+    const prior = (await ctx.deps.settings.readRaw()).group_discussion_restart_baseline
+    if (!isRestartBaseline(prior) || restartedSince(prior, gateways)) await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: before, gateways } })
+    const rooms = dict(config.hosted_rooms)
+    config.hosted_rooms = { ...rooms, discussion: { ...dict(rooms.discussion), ...before, ...patch } }
+  }, { profileFile: true })
 }
 
 /** TAL-1870: a quota read with the sidebar's pins projected over its rows. */
@@ -161,6 +205,8 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (['confirm_external_links', 'trusted_link_hosts'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage link safety')
   // Redaction decides what every user of this server sees, so only an owner may change it.
   if ('api_redact_enabled' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage secret redaction')
+  // The Agent reads Group Chat limits from the root config, for every profile.
+  if (Object.keys(DISCUSSION_LIMIT_FIELDS).some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage Group Chat limits')
   if ('bot_name' in body) body.bot_name = displayBotName(body.bot_name)
   const authEnabledBefore = await auth.isAuthEnabled()
   const passwordAuthBefore = authEnabledBefore && (await auth.getPasswordHash()) !== null
@@ -183,6 +229,16 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const prepareAheadProvided = 'compression_prepare_ahead' in body
   const prepareAhead = body.compression_prepare_ahead
   Reflect.deleteProperty(body, 'compression_prepare_ahead')
+  const discussionPatch: Partial<DiscussionLimits> = {}
+  for (const [field, limit] of Object.entries(DISCUSSION_LIMIT_FIELDS)) {
+    if (!(field in body)) continue
+    const value = body[field]
+    if (!Number.isSafeInteger(value) || (value as number) <= 0) throw new HttpError(400, `${field} must be a positive integer`)
+    discussionPatch[limit] = value as number
+    Reflect.deleteProperty(body, field)
+  }
+  // Only saveGroupDiscussionLimits writes the baseline.
+  Reflect.deleteProperty(body, 'group_discussion_restart_baseline')
   if (requestedPassword && !authEnabledBefore && !(await onboardingGateAllows(ctx, authEnabledBefore))) {
     throw new HttpError(403, 'First password setup is only available from local networks when auth is not enabled. To bootstrap this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
   }
@@ -200,6 +256,10 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
     if (typeof prepareAhead !== 'boolean') throw new HttpError(400, 'compression_prepare_ahead must be a boolean')
     if (!(await deps.agentConfig.declaresKey(PREPARE_AHEAD_KEY))) throw new HttpError(409, 'This Agent does not offer prepared compaction.', { condition: 'setting_unavailable' })
     await deps.agentConfig.update(cfgHome, (c) => { c.compression = { ...dict(c.compression), prepare_ahead: prepareAhead } })
+  }
+  if (Object.keys(discussionPatch).length) {
+    if (!(await discussionLimitsOffered(ctx))) throw new HttpError(409, 'This Agent does not offer Group Chat limits.', { condition: 'setting_unavailable' })
+    await saveGroupDiscussionLimits(ctx, discussionPatch)
   }
   const maxTokens = maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : null
   if (!requestedPasswordless && requestedClear) await deps.clearPasskeys()

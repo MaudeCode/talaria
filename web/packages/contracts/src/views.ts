@@ -744,6 +744,9 @@ export const SettingsSchema = z.looseObject({
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
   compression_prepare_ahead: z.boolean().nullable().optional().describe('TAL-1825: the profile\'s `compression.prepare_ahead`; null when the Agent does not offer it.'),
+  group_discussion_max_rounds: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_rounds`, as a gateway loads it (default 3). Null when the session cannot manage the server or this server cannot offer it.'),
+  group_discussion_max_messages: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`.'),
+  group_discussion_restart_required: z.boolean().nullable().optional().describe('TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`.'),
   screen_reader_mode: z.boolean().optional().describe('TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one.'),
 })
 export type Settings = z.infer<typeof SettingsSchema>

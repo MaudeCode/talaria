@@ -20,6 +20,14 @@
       "result": {
         "declared": true
       }
+    },
+    {
+      "params": {
+        "key": "hosted_rooms.discussion.max_rounds"
+      },
+      "result": {
+        "declared": true
+      }
     }
   ],
   "config.env_write": [

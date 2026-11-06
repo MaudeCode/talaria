@@ -3,6 +3,7 @@ import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { useSettingField } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
+import { GatewayRestart } from './GatewayRestart'
 
 function Toggle({ label, hint, settingKey, fallback = false }: { label: string; hint?: string; settingKey: string; fallback?: boolean }) {
   const { bool, set } = useSettingField([settingKey])
@@ -14,8 +15,18 @@ function Toggle({ label, hint, settingKey, fallback = false }: { label: string; 
   )
 }
 
+function GroupDiscussionLimit({ label, settingKey }: { label: string; settingKey: string }) {
+  const { num, setAsync } = useSettingField([settingKey])
+  const id = `settings-${settingKey}`
+  return (
+    <FieldRow label={label} htmlFor={id} inline>
+      <TextInput id={id} type="number" retainDraft min={1} className="w-20" value={num(settingKey, 0) || ''} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) return setAsync({ [settingKey]: n }) }} />
+    </FieldRow>
+  )
+}
+
 export function ConversationSection() {
-  const { settings, str, set, setAsync, num } = useSettingField(['chat_activity_display_mode', 'default_message_mode', 'structured_code_default_view', 'structured_code_auto_tree_lines', 'max_tokens', 'compression_prepare_ahead', 'auto_title_refresh_every'])
+  const { settings, str, set, setAsync, num } = useSettingField(['chat_activity_display_mode', 'default_message_mode', 'structured_code_default_view', 'structured_code_auto_tree_lines', 'max_tokens', 'compression_prepare_ahead', 'auto_title_refresh_every', 'group_discussion_max_rounds', 'group_discussion_restart_required'])
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
@@ -56,6 +67,11 @@ export function ConversationSection() {
         <TextInput id="settingsMaxTokens" type="number" retainDraft min={1} className="w-28" placeholder={m.settings_placeholder_max_tokens_none()} value={num('max_tokens', 0) || ''} onChange={(e) => { const raw = e.target.value.trim(); if (raw === '') return setAsync({ max_tokens: null }); else { const n = Number(raw); if (Number.isInteger(n) && n > 0) return setAsync({ max_tokens: n }) } }} />
       </FieldRow>
       {typeof settings.data.compression_prepare_ahead === 'boolean' ? <Toggle label={m.settings_label_compression_prepare_ahead()} settingKey="compression_prepare_ahead" /> : null}
+      {typeof settings.data.group_discussion_max_rounds === 'number' ? <>
+        <GroupDiscussionLimit label={m.settings_label_group_discussion_max_rounds()} settingKey="group_discussion_max_rounds" />
+        <GroupDiscussionLimit label={m.settings_label_group_discussion_max_messages()} settingKey="group_discussion_max_messages" />
+        {settings.data.group_discussion_restart_required === true ? <FieldRow label={m.settings_label_group_discussion_restart()} inline><GatewayRestart /></FieldRow> : null}
+      </> : null}
       <FieldRow label={m.settings_label_auto_title_refresh()} htmlFor="settingsAutoTitleRefresh" inline>
         <Select id="settingsAutoTitleRefresh" value={str('auto_title_refresh_every', '0')} onValueChange={(v) => set({ auto_title_refresh_every: v })}>
           <option value="0">{m.settings_auto_title_refresh_off()}</option>
