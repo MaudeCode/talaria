@@ -5,8 +5,7 @@ import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
 import { WEB_UPDATE_CHANNELS } from '../tools/updates.js'
-import { replaced } from '../tools/gateway-restart.js'
-import type { GatewayProcess } from '../tools/health.js'
+import { gatewayRecordedAt, type GatewayProcess } from '../tools/health.js'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -154,13 +153,13 @@ const DISCUSSION_LIMIT_FIELDS = { group_discussion_max_rounds: 'max_rounds', gro
 const ROOT_PROFILE = 'default'
 const rootGateways = (ctx: RequestContext): Promise<GatewayProcess[]> => ctx.deps.gatewayRestarts.gateways(ROOT_PROFILE).catch(() => [])
 
-/** TAL-1828: the limits the running gateway loaded at startup, and that gateway. Kept in settings so a Web restart still knows. */
-interface DiscussionRestartBaseline { limits: DiscussionLimits; gateways: GatewayProcess[] }
-const isRestartBaseline = (value: unknown): value is DiscussionRestartBaseline => isDict(value) && isDict(value.limits) && Array.isArray(value.gateways)
+/** TAL-1828: the limits a gateway older than `saved_at` loaded at startup. Kept in settings so a Web restart still knows. */
+interface DiscussionRestartBaseline { limits: DiscussionLimits; saved_at: number }
+const isRestartBaseline = (value: unknown): value is DiscussionRestartBaseline => isDict(value) && isDict(value.limits) && typeof value.saved_at === 'number'
 
-/** The baseline's gateway is gone, replaced by one that read the file since. With none visible at the save, only a later one proves that. */
+/** Every gateway now running recorded its start after the save, so it read the file. No gateway, or an unreadable record, proves nothing. */
 const restartedSince = (baseline: DiscussionRestartBaseline, live: GatewayProcess[]): boolean =>
-  baseline.gateways.length ? replaced(baseline.gateways, live) : live.length > 0
+  live.length > 0 && live.every(({ dir }) => (gatewayRecordedAt(dir) ?? 0) > baseline.saved_at)
 
 /** A pinned profile's server cannot reach the `<root>/config.yaml` the Agent reads. */
 const discussionLimitsOffered = async (ctx: RequestContext): Promise<boolean> => !ctx.deps.isolatedProfileMode() && await ctx.deps.agentConfig.declaresKey(DISCUSSION_LIMITS_KEY)
@@ -184,7 +183,7 @@ async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<Dis
   await ctx.deps.agentConfig.update(ctx.deps.profileHome(ROOT_PROFILE), async (config) => {
     const before = discussionLimits(config)
     const prior = (await ctx.deps.settings.readRaw()).group_discussion_restart_baseline
-    if (!isRestartBaseline(prior) || restartedSince(prior, gateways)) await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: before, gateways } })
+    if (!isRestartBaseline(prior) || restartedSince(prior, gateways)) await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: before, saved_at: Date.now() } })
     const rooms = dict(config.hosted_rooms)
     config.hosted_rooms = { ...rooms, discussion: { ...dict(rooms.discussion), ...before, ...patch } }
   }, { profileFile: true })

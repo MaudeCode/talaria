@@ -1,5 +1,5 @@
 import { useJsonStorage } from '../test/storage.js'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
@@ -257,47 +257,69 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       })
     })
 
-    it('requires a restart after a save until the gateway that loaded the old limits is replaced', async () => {
-      const gateway = (pid: number) => [{ dir: s.state, pid, start_time: pid }]
-      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue(gateway(10))
+    /** A live gateway whose pid record was written `age` ms ago (negative: after every save in the test). */
+    const gatewayStarted = (age: number) => {
+      const record = join(s.state, 'gateway.pid')
+      writeFileSync(record, '{}')
+      utimesSync(record, new Date(Date.now() - age), new Date(Date.now() - age))
+      return [{ dir: s.state, pid: 10, start_time: 10 }]
+    }
+
+    it('requires a restart after a save until a gateway started since replaces the one that loaded the old limits', async () => {
+      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue(gatewayStarted(60_000))
       await withRootConfig({}, async () => {
-        expect((await fields()).group_discussion_restart_required).toBe(false)
-        const saved = await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
-        expect((await json(saved)).group_discussion_restart_required).toBe(true)
-        expect((await fields()).group_discussion_restart_required).toBe(true)
-        // A second edit keeps measuring from what the running gateway loaded, so returning to it needs no restart.
-        expect((await post(s, '/api/settings', { group_discussion_max_messages: 20 })).status).toBe(200)
-        expect((await fields()).group_discussion_restart_required).toBe(true)
-        await post(s, '/api/settings', { group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
-        expect((await fields()).group_discussion_restart_required).toBe(false)
-        // Overlapping saves (fast typing) still measure from what the gateway loaded, whichever lands last.
-        await s.deps.settings.save({ group_discussion_restart_baseline: null })
-        await Promise.all([post(s, '/api/settings', { group_discussion_max_rounds: 4 }), post(s, '/api/settings', { group_discussion_max_rounds: 6 }), post(s, '/api/settings', { group_discussion_max_rounds: 8 })])
-        await post(s, '/api/settings', { group_discussion_max_rounds: 3 })
-        expect((await fields()).group_discussion_restart_required).toBe(false)
-        await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
-        expect((await fields()).group_discussion_restart_required).toBe(true)
-        live.mockResolvedValue(gateway(11))
-        expect((await fields()).group_discussion_restart_required).toBe(false)
-        // Saving what the new gateway already loaded changes nothing it would need to reload.
-        await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
-        expect((await fields()).group_discussion_restart_required).toBe(false)
+        try {
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          const saved = await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          expect((await json(saved)).group_discussion_restart_required).toBe(true)
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          // A second edit keeps measuring from what the running gateway loaded, so returning to it needs no restart.
+          expect((await post(s, '/api/settings', { group_discussion_max_messages: 20 })).status).toBe(200)
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          await post(s, '/api/settings', { group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          // Overlapping saves (fast typing) still measure from what the gateway loaded, whichever lands last.
+          await s.deps.settings.save({ group_discussion_restart_baseline: null })
+          await Promise.all([post(s, '/api/settings', { group_discussion_max_rounds: 4 }), post(s, '/api/settings', { group_discussion_max_rounds: 6 }), post(s, '/api/settings', { group_discussion_max_rounds: 8 })])
+          await post(s, '/api/settings', { group_discussion_max_rounds: 3 })
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          live.mockResolvedValue(gatewayStarted(-60_000))
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          // Saving what the new gateway already loaded changes nothing it would need to reload.
+          await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+        } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
       })
     })
 
     it('stays required with no visible gateway until one starts, since nothing proves it read the save', async () => {
       const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([])
       await withRootConfig({}, async () => {
-        await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
-        expect((await fields()).group_discussion_restart_required).toBe(true)
-        live.mockResolvedValue([{ dir: s.state, pid: 12, start_time: 12 }])
-        expect((await fields()).group_discussion_restart_required).toBe(false)
+        try {
+          await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          live.mockResolvedValue(gatewayStarted(-60_000))
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+        } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
+      })
+    })
+
+    it('stays required when a gateway unseen at the save turns up with a record older than the save', async () => {
+      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([])
+      await withRootConfig({}, async () => {
+        try {
+          await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          live.mockResolvedValue(gatewayStarted(60_000))
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+        } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
       })
     })
 
     it('never takes a client\'s restart baseline, and never shows it', async () => {
       await withRootConfig({}, async () => {
-        const forged = { limits: { max_rounds: 99, max_messages: 99 }, gateways: [{ dir: s.state, pid: 1, start_time: 1 }] }
+        const forged = { limits: { max_rounds: 99, max_messages: 99 }, saved_at: 1 }
         const saved = await json(await post(s, '/api/settings', { group_discussion_restart_baseline: forged }))
         expect(saved).not.toHaveProperty('group_discussion_restart_baseline')
         expect((await s.deps.settings.readRaw()).group_discussion_restart_baseline ?? null).toBeNull()
