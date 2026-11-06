@@ -1463,6 +1463,27 @@ final class RegularSplitHostedTests: XCTestCase {
         return split
     }
 
+    /// A layout update landing between a Sidebar press and the turn that moves the column keeps the press (TAL-1897).
+    func testASidebarPressSurvivesALayoutUpdateThatLandsBeforeTheColumnMoves() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.padLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        let available = await awaitCondition { HostedAccessibility.toolbarItem("Sidebar", in: window) != nil }
+        XCTAssertTrue(available, "The window has no Sidebar action")
+        settle(0.5)
+        // Sent directly, because `activate` runs the turn the press queues.
+        let press = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window))
+        UIApplication.shared.sendAction(try XCTUnwrap(press.action), to: press.target, from: press, for: nil)
+        window.frame.size.width -= 60
+        window.layoutIfNeeded()
+        let opened = await awaitCondition {
+            HostedAccessibility.splitViewController(under: window.rootViewController)?.displayMode == .oneBesideSecondary
+        }
+        XCTAssertTrue(opened, "The layout update dropped the press")
+    }
+
     func testKanbanLoadingStaysInTheFoldPane() async throws {
         try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelLoadingArgument, "Loading Kanban")
     }
