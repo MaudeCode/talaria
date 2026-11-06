@@ -292,6 +292,8 @@ export class SettingsStore {
   defaultWorkspace: string
   private readonly botName: string
   private cache: Settings = {}
+  private cacheVersion = 0
+  private snapshot?: { raw: Settings; version: number; workspace: string; value: Settings }
 
   constructor(opts: SettingsStoreOptions) {
     this.documents = opts.documents
@@ -312,7 +314,15 @@ export class SettingsStore {
   }
 
   /** Sync policies use the last loaded server snapshot; request handlers and writes refresh through the async port. */
-  peek(): Settings { return this.fromRaw(this.cache) }
+  peek(): Settings {
+    if (this.snapshot?.raw !== this.cache || this.snapshot.version !== this.cacheVersion || this.snapshot.workspace !== this.defaultWorkspace) {
+      this.snapshot = { raw: this.cache, version: this.cacheVersion, workspace: this.defaultWorkspace, value: this.fromRaw(this.cache, false) }
+    }
+    return this.snapshot.value
+  }
+
+  /** Read one normalized policy without resolving the Agent's model defaults. */
+  peekValue(key: string): unknown { return this.peek()[key] }
 
   async readRaw(opts: { strict?: boolean } = {}): Promise<Settings> {
     try {
@@ -320,9 +330,11 @@ export class SettingsStore {
       const loaded = record ? record.value : {}
       if (typeof loaded !== 'object' || loaded === null || Array.isArray(loaded)) throw new Error('Settings must contain an object')
       this.cache = loaded as Settings
+      this.cacheVersion += 1
       return structuredClone(this.cache)
     } catch (error) {
       this.cache = {}
+      this.cacheVersion += 1
       if (opts.strict) throw error
       return {}
     }
@@ -330,7 +342,7 @@ export class SettingsStore {
 
   async load(): Promise<Settings> { return this.fromRaw(await this.readRaw()) }
 
-  private fromRaw(stored: Settings): Settings {
+  private fromRaw(stored: Settings, modelDefaults = true): Settings {
     const settings = this.defaults()
     if (!('worklog_details_expanded_default' in stored) && 'activity_feed_expanded_default' in stored) {
       settings.worklog_details_expanded_default = pyBool(stored.activity_feed_expanded_default)
@@ -351,9 +363,17 @@ export class SettingsStore {
       hasStoredAppearance ? stored.theme : settings.theme,
       hasStoredAppearance ? stored.skin : settings.skin,
     )
-    settings.default_model = this.hooks.defaultModel?.() ?? ''
-    const provider = this.hooks.defaultModelProvider?.()
-    if (provider) settings.default_model_provider = provider
+    if (modelDefaults) {
+      settings.default_model = this.hooks.defaultModel?.() ?? ''
+      const provider = this.hooks.defaultModelProvider?.()
+      if (provider) settings.default_model_provider = provider
+    } else {
+      // Hooks remain live across profile/config changes, but policy readers never invoke them.
+      Object.defineProperties(settings, {
+        default_model: { enumerable: true, configurable: true, get: () => this.hooks.defaultModel?.() ?? '' },
+        default_model_provider: { enumerable: true, configurable: true, get: () => this.hooks.defaultModelProvider?.() || stored.default_model_provider },
+      })
+    }
     return settings
   }
 
@@ -371,6 +391,7 @@ export class SettingsStore {
   private async writeSettings(persisted: Settings, expected: string | null): Promise<void> {
     await this.documents.put('settings', 'settings', persisted, expected)
     this.cache = structuredClone(persisted)
+    this.cacheVersion += 1
     this.writeVersion += 1
   }
 

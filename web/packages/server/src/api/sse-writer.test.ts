@@ -1,9 +1,72 @@
 import { createServer, get, type IncomingMessage, type ServerResponse } from 'node:http'
+import { EventEmitter } from 'node:events'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SseWriter, StreamSlots, SSE_HEARTBEAT_INTERVAL_MS } from './sse-routes.js'
 import type { RequestContext } from '../http/context.js'
 import { bootTestServer, parseSseChunk, type SseFrame, type TestServer } from '../test/harness.js'
+import { AgentConfig } from '../config/agent-config.js'
+import { FakeSidecar } from '../sidecar/fake.js'
+import * as fileStats from '../fs/stat.js'
+
+it('bounds config reads across busy subscribers and refreshes reasoning on the heartbeat cadence', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'talaria-sse-policy-'))
+  const sidecar = new FakeSidecar()
+  const agentConfig = new AgentConfig({ sidecar: () => sidecar, env: {} })
+  const path = join(home, 'config.yaml')
+  let show = true
+  sidecar.respond('config.get', () => ({ path, exists: true, config: { display: { show_reasoning: show } } }))
+  writeFileSync(path, '# shown')
+  await agentConfig.read(home)
+  const stat = vi.spyOn(fileStats, 'fileStatKey')
+  const peek = vi.spyOn(agentConfig, 'peek')
+  const fileChecks = () => peek.mock.calls.filter(([, opts]) => opts?.cacheOnly !== true).length
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(10_000)
+  const writers = Array.from({ length: 2 }, () => {
+    const res = Object.assign(new EventEmitter(), { destroyed: false, writeHead: vi.fn(), flushHeaders: vi.fn(), write: vi.fn(), end: vi.fn() })
+    const ctx = { res, pendingCookies: [], securityHeaders: () => ({}), markFinished: () => undefined,
+      deps: { agentConfig, profileHome: () => home, activeProfile: () => 'default' } } as unknown as RequestContext
+    const writer = new SseWriter(ctx, () => undefined, false)
+    writer.start()
+    return { writer, res }
+  })
+  try {
+    for (let n = 0; n < 1000; n++) for (const { writer } of writers) writer.event('token', { text: 'public' })
+    expect(stat).toHaveBeenCalledTimes(2)
+    expect(fileChecks()).toBe(2)
+    for (const { res } of writers) expect(res.write).toHaveBeenCalledTimes(1000)
+    show = false
+    writeFileSync(path, '# hidden reasoning')
+    clock.mockReturnValue(10_000 + SSE_HEARTBEAT_INTERVAL_MS)
+    for (const { writer, res } of writers) {
+      res.write.mockClear()
+      writer.event('reasoning', { text: 'private' })
+      writer.event('token', { text: 'public', reasoning: 'private' })
+      expect(JSON.stringify(res.write.mock.calls)).not.toContain('private')
+    }
+    expect(fileChecks()).toBe(4)
+    show = true
+    writeFileSync(path, '# shown again')
+    clock.mockReturnValue(10_000 + 2 * SSE_HEARTBEAT_INTERVAL_MS)
+    for (const { writer } of writers) writer.comment('heartbeat')
+    await vi.waitFor(() => {
+      for (const { writer, res } of writers) {
+        writer.event('reasoning', { text: 'restored' })
+        expect(JSON.stringify(res.write.mock.calls)).toContain('restored')
+      }
+    })
+    expect(fileChecks()).toBe(6)
+  } finally {
+    for (const { writer } of writers) writer.end()
+    peek.mockRestore()
+    stat.mockRestore()
+    clock.mockRestore()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 const FRAME_TEXT = 'x'.repeat(2000)
 /** Tool output as a shell prints it: redaction scans one long identifier run (FRAME_TEXT) several times slower. */
@@ -41,7 +104,7 @@ function read(url: string, paused = false): { done: Promise<{ text: string; erro
 /** One `SseWriter` per request on a real HTTP server, so backpressure comes from a real socket. */
 async function serve(handler: (sse: SseWriter, res: ServerResponse) => Promise<void> | void, release: () => void = () => undefined): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer((_req, res) => {
-    const ctx = { res, pendingCookies: [], securityHeaders: () => ({}), markFinished: () => undefined, deps: { log: () => undefined, agentConfig: { peek: () => null }, profileHome: () => '/synthetic/profile', activeProfile: () => 'default' } } as unknown as RequestContext
+    const ctx = { res, pendingCookies: [], securityHeaders: () => ({}), markFinished: () => undefined, deps: { log: () => undefined, agentConfig: { peek: () => ({ display: { show_reasoning: false } }) }, profileHome: () => '/synthetic/profile', activeProfile: () => 'default' } } as unknown as RequestContext
     void handler(new SseWriter(ctx, release, true), res)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))

@@ -1,4 +1,4 @@
-import { showReasoning } from '../config/agent-config.js'
+import { showReasoning, type Config } from '../config/agent-config.js'
 import { reasoningProjection } from '../sessions/reasoning-display.js'
 /**
  * Server-sent event endpoints: the chat relay with journal replay, the
@@ -60,6 +60,9 @@ export function clientStreamKey(ctx: RequestContext): string {
 export class SseWriter {
   private open = false
   private closed = false
+  private show = false
+  private policyConfig: Config | null = null
+  private policyCheckedAt = -Infinity
 
   constructor(private readonly ctx: RequestContext, private readonly release: () => void, private readonly connectionClose: boolean) {
     ctx.res.on('close', () => { this.closed = true; release() })
@@ -70,6 +73,7 @@ export class SseWriter {
   start(): void {
     if (this.open) return
     this.open = true
+    this.refreshPolicy()
     const headers: Record<string, string | string[]> = { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', ...this.ctx.securityHeaders() }
     if (this.connectionClose) headers.Connection = 'close'
     if (this.ctx.pendingCookies.length) { headers['Set-Cookie'] = [...this.ctx.pendingCookies]; this.ctx.pendingCookies = [] }
@@ -79,15 +83,42 @@ export class SseWriter {
   }
 
   event(event: string, data: unknown, eventId?: string | null): void {
-    const config = this.ctx.deps.agentConfig.peek(this.ctx.deps.profileHome(this.ctx.deps.activeProfile()))
-    const show = config !== null && showReasoning(config)
-    if (event === 'reasoning' && !show) return
-    const body = JSON.stringify(reasoningProjection(data ?? {}, show))
+    this.refreshPolicy()
+    if (event === 'reasoning' && !this.show) return
+    const body = JSON.stringify(reasoningProjection(data ?? {}, this.show))
     this.write(`${eventId ? `id: ${eventId}\n` : ''}event: ${event}\ndata: ${body}\n\n`)
   }
 
   comment(text: string): void {
+    this.refreshPolicy()
     this.write(`: ${text}\n\n`)
+  }
+
+  private refreshPolicy(): void {
+    if (this.isClosed) return
+    const now = Date.now()
+    const home = this.ctx.deps.profileHome(this.ctx.deps.activeProfile())
+    if (now - this.policyCheckedAt < SSE_HEARTBEAT_INTERVAL_MS) {
+      const cached = this.ctx.deps.agentConfig.peek(home, { cacheOnly: true })
+      if (cached !== null && cached !== this.policyConfig) this.applyPolicy(cached)
+      return
+    }
+    this.policyCheckedAt = now
+    const config = this.ctx.deps.agentConfig.peek(home, { refresh: false })
+    if (config === null) this.policyConfig = this.ctx.deps.agentConfig.peek(home, { cacheOnly: true })
+    this.applyPolicy(config)
+    if (config === null) {
+      // Fail closed while the changed file is read, including on continuously busy streams.
+      void this.ctx.deps.agentConfig.read(home).then((fresh) => {
+        if (!this.isClosed && this.policyCheckedAt === now) this.applyPolicy(fresh)
+      }).catch(() => undefined)
+    }
+  }
+
+  private applyPolicy(config: Config | null): void {
+    this.show = config !== null && showReasoning(config)
+    // Keep the rejected snapshot's identity so a cache-only lookup cannot revive stale visibility.
+    if (config !== null) this.policyConfig = config
   }
 
   private write(chunk: string): void {
