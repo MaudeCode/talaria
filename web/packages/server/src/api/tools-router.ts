@@ -3,7 +3,7 @@ import type { InferContractRouterInputs } from '@orpc/contract'
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayLifecycle, type GatewayMode, type GatewayStatus, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayLifecycle, type GatewayMode, type GatewayStatus, type PluginAutoUpdateView, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -120,6 +120,22 @@ async function pluginSettingsList(ctx: RequestContext) {
 async function pluginOAuthClients(ctx: RequestContext) {
   const result = await runningSidecar(ctx).call('plugins.oauth_status', { profile_home: home(ctx) })
   return new Map(result.supported ? result.plugins.map((entry) => [entry.key, entry.clients.map((client) => ({ ...client, can_sign_out: client.state !== 'logged_out' }))]) : [])
+}
+
+/** TAL-1914: the switch's state and why it has no effect. An unreadable gateway reads as none. */
+async function pluginAutoUpdateView(ctx: RequestContext, state: { auto_apply: boolean; check_hours: number }): Promise<PluginAutoUpdateView> {
+  const running = await currentGatewayStatus(ctx).then((status) => status.running, () => false)
+  return { auto_apply: state.auto_apply, check_hours: state.check_hours, inactive_reason: !running ? 'no_gateway' : state.check_hours === 0 ? 'checks_off' : null }
+}
+
+/** TAL-1914: the Agent's refusal on any plugin update route. */
+function throwPluginUpdateError(error: unknown): never {
+  if (error instanceof SidecarError) {
+    if (error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
+    if (['plugin_update_refused', 'plugin_update_consent_changed'].includes(error.condition)) throw new HttpError(409, error.message, { condition: error.condition })
+    if (error.condition === 'plugin_update_unsupported') throw new HttpError(503, error.message, { condition: error.condition })
+  }
+  throw error
 }
 
 const pluginSettingsFieldsView = (ctx: RequestContext, fields: PluginSettingField[]) => {
@@ -810,7 +826,9 @@ export const toolsRouter = os.router({
       }))
       // An advisory failure leaves the list itself readable.
       const advisory = await pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false })
-      return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory }
+      // So does an auto-update failure, which only hides the switch and Update all.
+      const autoUpdate = await sidecar.call('plugins.auto_update', { profile_home: home(ctx) }).catch((error: unknown) => { ctx.deps.log(`[plugins] auto-update state failed: ${str((error as Error).message)}`); return null })
+      return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory, ...(autoUpdate?.supported ? { auto_update: await pluginAutoUpdateView(ctx, autoUpdate) } : {}) }
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)
       return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
@@ -819,7 +837,7 @@ export const toolsRouter = os.router({
   pluginCatalog: os.pluginCatalog.handler(({ input, context: { ctx } }) => run(async () => {
     const result = await runningSidecar(ctx).call('plugins.catalog', { profile_home: home(ctx), ...input })
     const readOnly = !await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
-    return { ...result, read_only: readOnly, entries: result.entries.map((entry) => ({ ...entry, can_install: !readOnly && entry.can_install })) }
+    return { ...result, read_only: readOnly, entries: result.entries.map((entry) => ({ ...entry, can_install: !readOnly && entry.can_install, can_update: !readOnly && entry.can_update })) }
   })),
   pluginInstall: os.pluginInstall.handler(({ input, context: { ctx } }) => run(async () => {
     try {
@@ -836,11 +854,11 @@ export const toolsRouter = os.router({
     try {
       return await runningSidecar(ctx).call('plugins.update', { profile_home: home(ctx), key: input.key, accept_caution: input.accept_caution, ...(input.consent_token ? { consent_token: input.consent_token } : {}) }, { timeoutMs: 0 })
     } catch (error) {
-      if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
-      if (error instanceof SidecarError && ['plugin_update_refused', 'plugin_update_consent_changed'].includes(error.condition)) throw new HttpError(409, error.message, { condition: error.condition })
-      throw error
+      throwPluginUpdateError(error)
     }
   })),
+  pluginUpdateAll: os.pluginUpdateAll.handler(({ context: { ctx } }) => run(() => runningSidecar(ctx).call('plugins.update_all', { profile_home: home(ctx) }, { timeoutMs: 0 }).catch(throwPluginUpdateError))),
+  pluginAutoUpdate: os.pluginAutoUpdate.handler(({ input, context: { ctx } }) => run(async () => pluginAutoUpdateView(ctx, await runningSidecar(ctx).call('plugins.auto_update_set', { profile_home: home(ctx), enabled: input.enabled }).catch(throwPluginUpdateError)))),
   pluginSettings: os.pluginSettings.handler(({ input, context: { ctx } }) => run(() => serializePluginSettingsSave(async () => {
     const sidecar = runningSidecar(ctx)
     const fields = (await pluginSettingsList(ctx)).find((entry) => entry.key === input.key)?.fields

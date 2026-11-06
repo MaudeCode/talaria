@@ -1585,6 +1585,9 @@
                 "string",
                 "null"
               ]
+            },
+            "can_update": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -1599,7 +1602,8 @@
             "installed_key",
             "installed_sha",
             "can_install",
-            "refusal"
+            "refusal",
+            "can_update"
           ],
           "additionalProperties": false
         }
@@ -1739,7 +1743,10 @@
           },
           "verdict": {
             "type": "string",
-            "const": "caution"
+            "enum": [
+              "caution",
+              "widened"
+            ]
           },
           "findings": {
             "type": "string"
@@ -1784,6 +1791,96 @@
         "additionalProperties": false
       }
     ]
+  },
+  "plugins.update_all": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "current",
+                "failed",
+                "needs_review",
+                "skipped"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "status",
+            "detail"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "current": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "results",
+      "current"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.auto_update": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "auto_apply": {
+        "type": "boolean"
+      },
+      "check_hours": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "supported",
+      "auto_apply",
+      "check_hours"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.auto_update_set": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "auto_apply": {
+        "type": "boolean"
+      },
+      "check_hours": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "supported",
+      "auto_apply",
+      "check_hours"
+    ],
+    "additionalProperties": false
   },
   "plugins.isolation": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

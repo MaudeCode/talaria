@@ -191,8 +191,9 @@ DYNAMIC: list[tuple[str, str]] = [
 # network, a running gateway, or a real audio file.
 # TTS registration, profile scope and bounded audio are covered by test_tts and the installed-Agent probe, without live synthesis.
 # plugins.update needs an owned Git install and newer Agent APIs; test_plugin_updates covers its registered handler and scan transaction.
+# So does plugins.update_all, with plugins.auto_update and its set; their rows and refusals depend on the installed Agent.
 # plugins.catalog/install use the pinned local Git fixture in test_plugin_catalog, including typed replies and native publication.
-UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "models.selection_warnings", "runtime.agent_mutation", "runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec",
+UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "plugins.update_all", "plugins.auto_update", "plugins.auto_update_set", "models.selection_warnings", "runtime.agent_mutation", "runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec",
                "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "oauth.submit_redirect", "plugins.oauth_logout", "aux.complete", "tts.synthesize", "stt.transcribe", "stt.stream", "stt.stream_audio", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
                "worktree.create", "worktree.retain", "chat.start", "chat.interrupt", "chat.steer", "chat.steer_withdraw", "chat.steer_now", "chat.evict_agent", "chat.commit_memory", "chat.refine", "chat.compress", "chat.compress_finalize", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}
 

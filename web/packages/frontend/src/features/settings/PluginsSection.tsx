@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PluginOAuthClientView, PluginSettingView, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
+import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -12,27 +12,53 @@ import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { usePluginInstall } from './usePluginInstall'
 
 export function PluginsSection() {
   const qc = useQueryClient()
   const updating = useRef(false)
   const [scan, setScan] = useState<Exclude<PluginUpdateResult, { status: 'updated' }> | null>(null)
+  const [updatedAll, setUpdatedAll] = useState<{ context: object; rows: PluginUpdateAllRow[] } | null>(null)
+  const streamContext = useStreamContext()
+  const refreshInstalled = () => { for (const queryKey of [keys.plugins, keys.pluginCatalog]) void qc.invalidateQueries({ queryKey }) }
   const update = useMutation({
     mutationFn: ({ key, accept, token }: { key: string; accept: boolean; token?: string }) => api.updatePlugin(key, accept, token),
     onSuccess: (result) => {
       if (result.status === 'updated') {
         setScan(null)
         showToast(m.plugins_updated())
-        void qc.invalidateQueries({ queryKey: keys.plugins })
+        refreshInstalled()
       } else setScan(result)
     },
     onError: (error) => {
       showToast(error instanceof Error ? error.message : String(error), 5000, 'error')
-      void qc.invalidateQueries({ queryKey: keys.plugins })
+      refreshInstalled()
     },
     onSettled: () => { updating.current = false },
   })
+  const updateAll = useMutation({
+    mutationFn: (_context: object) => api.updateAllPlugins(),
+    onSuccess: (result, context) => {
+      if (context !== getStreamContext()) return
+      setUpdatedAll({ context, rows: result.results })
+      if (result.results.length === 0) showToast(m.plugins_update_all_none())
+    },
+    onError: (error, context) => {
+      if (context === getStreamContext()) showToast(error instanceof Error ? error.message : String(error), 5000, 'error')
+    },
+    onSettled: () => {
+      updating.current = false
+      refreshInstalled()
+    },
+  })
+  const requestUpdateAll = () => {
+    if (updating.current) return
+    updating.current = true
+    setScan(null)
+    setUpdatedAll(null)
+    updateAll.mutate(streamContext)
+  }
   const requestUpdate = (key: string, accept = false, token?: string) => {
     if (updating.current) return
     updating.current = true
@@ -51,10 +77,17 @@ export function PluginsSection() {
     return saved && p.settings ? { ...p, settings: p.settings.map((f) => f.key in saved ? { ...f, value: saved[f.key] } : f) } : p
   })
   const editable = !plugins.data.read_only
+  const autoUpdate = editable ? plugins.data.auto_update : undefined
+  const updateBusy = update.isPending || updateAll.isPending
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
-      <div className="flex justify-end"><Button variant="ghost" className="min-h-11" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>{m.plugins_catalog()}</Button></div>
-      {browsing && <PluginCatalogList />}
+      <div className="flex justify-end gap-2">
+        {autoUpdate && list.length > 0 && <Button variant="ghost" className="min-h-11" disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}>{m.plugins_update_all()}</Button>}
+        <Button variant="ghost" className="min-h-11" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>{m.plugins_catalog()}</Button>
+      </div>
+      {autoUpdate && <PluginAutoUpdateRow state={autoUpdate} />}
+      {updatedAll?.context === streamContext && updatedAll.rows.length > 0 && <PluginUpdateAllResults rows={updatedAll.rows} />}
+      {browsing && <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />}
       {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
       {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
       {list.length === 0 && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
@@ -62,7 +95,7 @@ export function PluginsSection() {
         {list.map((p) => (
           <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} actions={<>
               {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
-              {editable && p.update?.available && <Button variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={update.isPending} aria-busy={update.isPending && update.variables.key === p.key} onClick={() => requestUpdate(p.key)}>{m.plugins_update()}</Button>}
+              {editable && p.update?.available && <Button variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={updateBusy} aria-busy={update.isPending && update.variables.key === p.key} onClick={() => requestUpdate(p.key)}>{m.plugins_update()}</Button>}
               {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
               <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
               {editable && p.settings?.length ? <Button variant="ghost" className="px-2 py-1 text-xs" aria-expanded={open === p.key} onClick={() => setOpen(open === p.key ? null : p.key)}>{m.settings_title()}</Button> : null}
@@ -89,7 +122,45 @@ function PluginRow({ title, description, actions, children }: { title: ReactNode
   </div>{children}</li>
 }
 
-function PluginCatalogList() {
+const AUTO_UPDATE_RESOURCE = 'plugin-auto-update'
+
+/** TAL-1914: the active profile's switch, with the reason it has no effect in place of the check interval. */
+function PluginAutoUpdateRow({ state }: { state: PluginAutoUpdateView }) {
+  const effects = useResourceEffects<boolean>()
+  const save = useResourceMutation({
+    resource: () => AUTO_UPDATE_RESOURCE, effect: (enabled: boolean) => ({ value: enabled }), queryKey: keys.plugins,
+    mutationFn: (enabled) => api.setPluginAutoUpdate(enabled),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
+  const enabled = effects[AUTO_UPDATE_RESOURCE]?.value ?? state.auto_apply
+  const status = state.inactive_reason === 'no_gateway' ? m.gateway_not_running() : state.inactive_reason === 'checks_off' ? m.plugins_auto_update_checks_off() : enabled ? m.plugins_auto_update_every({ hours: state.check_hours }) : null
+  return <div className="border-b border-border-subtle"><FieldRow label={m.plugins_auto_update()} htmlFor="plugins-auto-update" inline>
+    <div className="flex items-center gap-3">
+      {status && <span className={state.inactive_reason ? 'text-[11px] text-warning' : 'text-[11px] tabular-nums text-muted'}>{status}</span>}
+      <Switch id="plugins-auto-update" checked={enabled} onCheckedChange={(checked) => save.mutate(checked)} />
+    </div>
+  </FieldRow></div>
+}
+
+const UPDATE_ALL_STATUS: Record<PluginUpdateAllRow['status'], { label: () => string; tone: string }> = {
+  updated: { label: m.plugins_update_all_updated, tone: 'text-success' },
+  current: { label: m.plugins_update_all_current, tone: 'text-muted' },
+  failed: { label: m.plugins_update_all_failed, tone: 'text-error' },
+  needs_review: { label: m.plugins_update_all_needs_review, tone: 'text-warning' },
+  skipped: { label: m.plugins_update_all_skipped, tone: 'text-muted' },
+}
+
+function PluginUpdateAllResults({ rows }: { rows: PluginUpdateAllRow[] }) {
+  return <ul aria-label={m.plugins_update_all_results()} className="flex flex-col gap-1 border-b border-border-subtle pb-2 text-xs">
+    {rows.map((row) => <li key={row.name} className="flex flex-wrap gap-x-2">
+      <span className="font-medium text-text">{row.name}</span>
+      <span className={UPDATE_ALL_STATUS[row.status].tone}>{UPDATE_ALL_STATUS[row.status].label()}</span>
+      {row.detail && <span className="min-w-0 text-muted [overflow-wrap:anywhere]">{row.detail}</span>}
+    </li>)}
+  </ul>
+}
+
+function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: boolean; updatingKey: string | null; onUpdate: (key: string) => void }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
@@ -108,6 +179,7 @@ function PluginCatalogList() {
         <span className="text-[11px] text-muted">{entry.tier} · {entry.category}</span>
         {entry.installed_key && <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span>}
         <Button variant="ghost" className="min-h-11" aria-expanded={details === entry.name} onClick={() => setDetails(details === entry.name ? null : entry.name)}>{m.plugins_catalog_details()}</Button>
+        {entry.can_update && <Button variant="ghost" className="min-h-11" disabled={updating} aria-busy={updatingKey === entry.installed_key} onClick={() => { if (entry.installed_key) onUpdate(entry.installed_key) }}>{m.plugins_update()}</Button>}
         {entry.can_install && <Button variant="ghost" className="min-h-11" aria-busy={install.isInstalling(entry.name)} disabled={install.isInstalling(entry.name)} onClick={() => install.request(entry.name)}>{m.plugins_catalog_install()}</Button>}
       </>}>
         {details === entry.name && <div className="mt-2 space-y-1 text-xs text-muted [overflow-wrap:anywhere]">

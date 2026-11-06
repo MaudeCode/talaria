@@ -246,6 +246,18 @@ expired confirmation requires a fresh review; a dangerous verdict blocks the upd
 continues in `hermes plugins update` in a terminal. Older Agents without cached update support
 show no update controls.
 
+A catalog install behind its reviewed pin shows Update too, in Plugins and in **Catalog**. A pin that
+adds tools, hooks, dependencies or host capabilities requires confirmation for that profile,
+installation, pin and addition; an install held on another commit with `--ref` stays where it is.
+Every update holds the Agent's one-updater lock, so a concurrent update is refused with nothing changed.
+
+On Agents from v0.23.0, **Update all** checks the active profile's plugins and moves each one the Agent
+can move unattended. A row that needs review or was skipped changed nothing, and that plugin's own
+Update walks the review. **Auto-update** sets `plugins.auto_apply` for the active profile only. It
+applies in that profile's gateway on its check interval, so the row says when no gateway is running or
+checks are off. With it on, Agent Importers can move past the pin Talaria reviewed; profile import then
+reports itself unavailable until the install is back on a reviewed pin.
+
 **Catalog** in Plugins settings browses the Agent's bounded, cached reviewed catalog by name,
 description, tier or category. Details show the source, reviewed pin, requirements and installed
 identity. **Install disabled** previews the exact staged tree, then asks the server owner to confirm.

@@ -766,6 +766,53 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('TAL-1914: ships the switch and its effect only on an Agent that has it, and maps the Agent refusal', async () => {
+    const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] }
+    const state = { supported: true, auto_apply: false, check_hours: 24 }
+    const writes: unknown[] = []
+    let gateway: 'own' | 'stopped' = 'stopped'
+    sidecar.respond('plugins.list', () => ({ plugins: [row], supported_hooks: [] }))
+    sidecar.respond('plugins.auto_update', () => state)
+    sidecar.respond('gateway.mode', () => ({ gateway_mode: gateway }))
+    sidecar.respond('plugins.auto_update_set', (params) => { writes.push(params); return { ...state, auto_apply: params.enabled } })
+    try {
+      expect((await json(await s.get('/api/plugins'))).auto_update).toEqual({ auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' })
+      gateway = 'own'
+      expect((await json(await s.get('/api/plugins'))).auto_update).toEqual({ auto_apply: false, check_hours: 24, inactive_reason: null })
+      expect(await json(await post(s, '/api/plugins/auto-update', { enabled: true }))).toEqual({ auto_apply: true, check_hours: 24, inactive_reason: null })
+      expect(writes).toEqual([{ profile_home: s.deps.profileHome('default'), enabled: true }])
+      state.check_hours = 0
+      expect((await json(await s.get('/api/plugins'))).auto_update).toMatchObject({ inactive_reason: 'checks_off' })
+      expect((await post(s, '/api/plugins/auto-update', { enabled: 'yes' })).status).toBe(400)
+      sidecar.respond('plugins.auto_update_set', () => { throw new SidecarError('Managed by a package manager', { condition: 'plugin_update_refused' }) })
+      const refused = await post(s, '/api/plugins/auto-update', { enabled: true })
+      expect(refused.status).toBe(409)
+      expect(await json(refused)).toMatchObject({ error: 'Managed by a package manager' })
+      sidecar.respond('plugins.auto_update', () => ({ supported: false, auto_apply: false, check_hours: 0 }))
+      expect(await json(await s.get('/api/plugins'))).not.toHaveProperty('auto_update')
+      sidecar.respond('plugins.auto_update', () => { throw new SidecarError('state unreadable', { condition: 'plugins_unavailable' }) })
+      const unreadable = await json(await s.get('/api/plugins'))
+      expect(unreadable).not.toHaveProperty('auto_update')
+      expect((unreadable.plugins as Json[]).map((plugin) => plugin.key)).toEqual(['probe'])
+    } finally {
+      for (const method of ['plugins.list', 'plugins.auto_update', 'plugins.auto_update_set', 'gateway.mode'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
+  it('TAL-1914: Update all returns the Agent rows, and an old Agent refuses it', async () => {
+    const calls: unknown[] = []
+    const rows = [{ name: 'moved', status: 'updated', detail: '' }, { name: 'wider', status: 'needs_review', detail: 'adds tools: x' }, { name: 'held', status: 'skipped', detail: 'held with --ref' }] as const
+    sidecar.respond('plugins.update_all', (params) => { calls.push(params); return { results: [...rows], current: 3 } })
+    try {
+      expect(await json(await post(s, '/api/plugins/update-all', {}))).toEqual({ results: rows, current: 3 })
+      expect(calls).toEqual([{ profile_home: s.deps.profileHome('default') }])
+      sidecar.respond('plugins.update_all', () => { throw new SidecarError('Too old', { condition: 'plugin_update_unsupported' }) })
+      expect((await post(s, '/api/plugins/update-all', {})).status).toBe(503)
+    } finally {
+      sidecar.respond('plugins.update_all', undefined)
+    }
+  })
+
   /** TAL-806: one synthetic plugin whose settings the fake sidecar keeps in memory; `.env` writes go through the fake's real file writer. */
   const fakePlugin = () => {
     const state = { home: '', saves: [] as Json[], secretEnvs: [] as Json[], current: { endpoint: 'https://example.invalid', limit: 5, verbose: null, mode: 'fast', rules: null } as Json }

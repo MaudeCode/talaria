@@ -563,14 +563,76 @@ def _plugin_update_modules():
     return plugins_cmd, plugins_transaction, cached_git_updates
 
 
+def _catalog_agent_module():
+    try:
+        from hermes_cli import plugins_cmd_catalog
+    except ImportError:
+        return None
+    return plugins_cmd_catalog
+
+
+def _plugin_auto_update():
+    """The Agent's unattended-update module (v0.23.0+); ``None`` hides Web's switch and Update all on older Agents."""
+    if _plugin_update_modules() is None:
+        return None
+    try:
+        from hermes_cli import plugins_auto_update
+    except ImportError:
+        return None
+    return plugins_auto_update
+
+
+def _require_plugin_auto_update():
+    auto = _plugin_auto_update()
+    if auto is None:
+        raise RpcError("This Hermes Agent cannot update plugins unattended", condition="plugin_update_unsupported")
+    return auto
+
+
+def _plugin_update_lock(target: pathlib.Path):
+    """The Agent's one-updater lock where it has one; a busy lock raises its ``PluginOperationError``, reported as a refusal."""
+    auto = _plugin_auto_update()
+    return auto.plugin_update_lock(target) if auto else contextlib.nullcontext()
+
+
+def plugin_auto_update_state() -> dict:
+    auto = _plugin_auto_update()
+    if auto is None:
+        return {"supported": False, "auto_apply": False, "check_hours": 0}
+    return {"supported": True, **auto.auto_update_state()}
+
+
+def set_plugin_auto_update(enabled) -> dict:
+    """The Agent writes ``plugins.auto_apply`` for the caller's profile, and refuses a managed config."""
+    if not isinstance(enabled, bool):
+        raise InvalidParams("plugins.auto_update_set requires a boolean enabled")
+    auto = _require_plugin_auto_update()
+    try:
+        return {"supported": True, **auto.set_auto_update(enabled)}
+    except _plugin_update_modules()[0].PluginOperationError as exc:
+        raise RpcError(str(exc), condition="plugin_update_refused") from exc
+
+
+def update_all_plugins() -> dict:
+    """The Agent's unattended batch: it moves nothing for a widened update, a caution scan or a ``--ref`` hold."""
+    outcome = _require_plugin_auto_update().update_all_unattended()
+    rows = [{"name": str(row["name"]), "status": row["status"], "detail": _clean_text(row["detail"], 300)} for row in outcome["results"]]
+    rows += [{"name": str(row["name"]), "status": "skipped", "detail": _clean_text(row["reason"], 300)} for row in outcome["skipped"]]
+    if any(row["status"] == "updated" for row in rows):
+        from hermes_cli.plugins import discover_plugins
+        discover_plugins(force=True)
+    return {"results": rows, "current": outcome["current"]}
+
+
 def update_plugin(key: str, accept_caution: bool, consent_token: str | None = None) -> dict:
-    """The Agent owns Git staging, scan consent and publication, under the caller's profile scope."""
+    """The Agent owns Git staging, catalog re-pins, scan consent and publication, under the caller's profile scope."""
     if not key or not isinstance(accept_caution, bool) or (consent_token is not None and not isinstance(consent_token, str)):
         raise InvalidParams("plugins.update requires a key and boolean accept_caution")
     modules = _plugin_update_modules()
     if modules is None:
         raise RpcError("This Hermes Agent cannot update plugins from Web", condition="plugin_update_unsupported")
     pc, transaction, _cached = modules
+    native = _catalog_agent_module()
     found = pc._find_plugin_entry(key)
     if found is None or not found[4]:
         raise RpcError(f"plugin {key!r} not found", condition="plugin_not_found")
@@ -578,7 +640,7 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
     target = pathlib.Path(str(found[4])).resolve()
     # Only profile-owned installs, never bundled, project or entrypoint plugins.
     if target.parent != (get_hermes_home() / "plugins").resolve():
-        raise InvalidParams("Only profile-installed Git plugins can be updated")
+        raise InvalidParams("Only profile-installed plugins can be updated")
     from pm.store import tree_digest
     from tools.plugin_guard import format_scan_report
 
@@ -625,25 +687,55 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
             return False
         return consent is not None and consent["revision"] == revision and consent["scan"] == scan_binding(scan)
 
+    def issue_consent(verdict: str, findings: str, pin: str, binding: str) -> dict:
+        token = secrets.token_urlsafe(32)
+        with _PLUGIN_UPDATE_CONSENT_LOCK:
+            if len(_PLUGIN_UPDATE_CONSENTS) >= 64:
+                _PLUGIN_UPDATE_CONSENTS.pop(next(iter(_PLUGIN_UPDATE_CONSENTS)))
+            _PLUGIN_UPDATE_CONSENTS[token] = {"identity": identity, "revision": pin, "scan": binding, "expires": time.monotonic() + 300}
+        return {"key": found[5], "status": "needs_consent", "verdict": verdict, "findings": findings, "consent_token": token}
+
+    def delta_binding(delta) -> str:
+        return hashlib.sha256(json.dumps(delta, sort_keys=True).encode()).hexdigest()
+
+    catalog_record = None
     try:
-        # A blanket force would bypass the callback: only the exact scanned identity can accept caution.
-        transaction.update_plugin(target, force=False, scan_decision_cb=accept_scan, carry_user_files=capture_revision)
+        with _plugin_update_lock(target):
+            catalog_record = native.catalog_install_record(target) if native else None
+            if catalog_record:
+                auto = _plugin_auto_update()
+                if auto and auto.held_with_ref(pc._read_install_metadata().get(target.name)):
+                    raise pc.PluginOperationError(auto.HELD_WITH_REF.format(name=found[5]))
+
+                # The Agent's own accept_capabilities is a blanket yes; only the exact widening the user read can accept.
+                def accept_widening(delta):
+                    nonlocal consent_changed
+                    if installed_identity() != identity:
+                        consent_changed = True
+                        return False
+                    if consent is None or consent["scan"] != delta_binding(delta):
+                        return False
+                    entry = native.get_live_catalog_entry(str(catalog_record["catalog_name"]))
+                    return entry is not None and consent["revision"] == entry.sha
+
+                try:
+                    native.repin_catalog_plugin(target, catalog_record, consent_cb=accept_widening)
+                except native.RepinConsentRequired as exc:
+                    if consent_changed:
+                        raise RpcError(changed_message, condition="plugin_update_consent_changed") from exc
+                    return issue_consent("widened", str(exc), exc.sha, delta_binding(exc.delta))
+            else:
+                # A blanket force would bypass the callback: only the exact scanned identity can accept caution.
+                transaction.update_plugin(target, force=False, scan_decision_cb=accept_scan, carry_user_files=capture_revision)
     except pc.PluginScanBlocked as exc:
         if consent_changed:
             raise RpcError(changed_message, condition="plugin_update_consent_changed") from exc
         scan = exc.scan_result
         verdict = getattr(scan, "verdict", "dangerous")
-        result = {"key": found[5], "status": "needs_consent" if verdict == "caution" else "blocked",
-                  "verdict": verdict, "findings": str(exc)}
-        if verdict == "caution":
-            token = secrets.token_urlsafe(32)
-            with _PLUGIN_UPDATE_CONSENT_LOCK:
-                if len(_PLUGIN_UPDATE_CONSENTS) >= 64:
-                    _PLUGIN_UPDATE_CONSENTS.pop(next(iter(_PLUGIN_UPDATE_CONSENTS)))
-                _PLUGIN_UPDATE_CONSENTS[token] = {"identity": identity, "revision": revision, "scan": scan_binding(scan),
-                                                 "expires": time.monotonic() + 300}
-            result["consent_token"] = token
-        return result
+        # A catalog re-pin has no caution step to confirm: the Agent accepts caution at a reviewed pin, so anything here blocks.
+        if verdict == "caution" and not catalog_record:
+            return issue_consent(verdict, str(exc), revision, scan_binding(scan))
+        return {"key": found[5], "status": "blocked", "verdict": verdict, "findings": str(exc)}
     except pc.PluginOperationError as exc:
         raise RpcError(str(exc), condition="plugin_update_consent_changed" if consent_changed else "plugin_update_refused") from exc
     from hermes_cli.plugins import discover_plugins
@@ -674,10 +766,15 @@ def plugin_visibility(selected_providers: dict) -> dict:
         raise RpcError(f"plugin manager unavailable: {exc}", condition="plugins_unavailable") from exc
     modules = _plugin_update_modules()
     updates = None
+    catalog_updates = {}
     if modules:
         from hermes_cli.plugins_provenance import read_sidecar_rows
         from hermes_constants import get_hermes_home
-        updates = modules[2](read_sidecar_rows(get_hermes_home() / "plugins"))
+
+        from .plugin_catalog import catalog_updates as behind_catalog
+        records = read_sidecar_rows(get_hermes_home() / "plugins")
+        updates = modules[2](records)
+        catalog_updates = behind_catalog(records)
     update_disabled = _update_disabled_reasons()
     rows = []
     for key, loaded in sorted((getattr(manager, "_plugins", {}) or {}).items(), key=lambda item: str(item[0])):
@@ -712,8 +809,9 @@ def plugin_visibility(selected_providers: dict) -> dict:
             row["is_active_provider"] = kind == "model-provider" and enabled
         if updates is not None:
             installed = pathlib.Path(str(getattr(manifest, "path", "") or "")).resolve()
-            owned = installed.parent == (get_hermes_home() / "plugins").resolve() and (installed / ".git").is_dir()
-            revision = updates.get(installed.name) if owned else None
+            in_profile = installed.parent == (get_hermes_home() / "plugins").resolve()
+            revision = updates.get(installed.name) if in_profile and (installed / ".git").is_dir() else None
+            revision = revision or (catalog_updates.get(installed.name) if in_profile else None)
             row["update_available"] = bool(revision)
             if revision:
                 row["latest_revision"] = revision
@@ -923,6 +1021,21 @@ def register(registry) -> None:
     def update(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return update_plugin(str(params.get("key") or "").strip(), params.get("accept_caution", False), params.get("consent_token"))
+
+    @registry.method("plugins.update_all")
+    def update_all(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return update_all_plugins()
+
+    @registry.method("plugins.auto_update")
+    def auto_update(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return plugin_auto_update_state()
+
+    @registry.method("plugins.auto_update_set")
+    def auto_update_set(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return set_plugin_auto_update(params.get("enabled"))
 
     @registry.method("plugins.isolation")
     def isolation(ctx: CallContext, params: dict) -> dict:

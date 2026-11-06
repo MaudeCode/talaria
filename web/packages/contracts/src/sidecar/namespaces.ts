@@ -109,16 +109,26 @@ export type PluginOAuthClient = z.infer<typeof PluginOAuthClientSchema>
 export const PluginDisabledReasonSchema = z.object({ kind: z.literal('update'), reason: z.string() })
 export const PluginUpdateResultSchema = z.discriminatedUnion('status', [
   z.object({ key: z.string(), status: z.literal('updated') }),
-  z.object({ key: z.string(), status: z.literal('needs_consent'), verdict: z.literal('caution'), findings: z.string(), consent_token: z.string().min(1) }),
+  /** `caution`: the scan of a Git update needs confirming. `widened` (TAL-1914): a catalog pin adds surface the install lacks. */
+  z.object({ key: z.string(), status: z.literal('needs_consent'), verdict: z.enum(['caution', 'widened']), findings: z.string(), consent_token: z.string().min(1) }),
   z.object({ key: z.string(), status: z.literal('blocked'), verdict: z.string(), findings: z.string() }),
 ])
 export type PluginUpdateResult = z.infer<typeof PluginUpdateResultSchema>
+/** TAL-1914: `supported` is false on an Agent without `hermes_cli.plugins_auto_update` (before v0.23.0). */
+export const PluginAutoUpdateStateSchema = z.object({ supported: z.boolean(), auto_apply: z.boolean(), check_hours: z.number().nonnegative() })
+/** TAL-1914: one plugin Update all looked at. `needs_review` and `skipped` changed nothing; `needs_review` goes through the plugin's own Update. */
+export const PluginUpdateAllRowSchema = z.object({ name: z.string(), status: z.enum(['updated', 'current', 'failed', 'needs_review', 'skipped']), detail: z.string() })
+export type PluginUpdateAllRow = z.infer<typeof PluginUpdateAllRowSchema>
+/** `current` counts the plugins the check found up to date; they have no row. */
+export const PluginUpdateAllResultSchema = z.object({ results: z.array(PluginUpdateAllRowSchema), current: z.number().int().nonnegative() })
 
 export const PluginCatalogQuerySchema = z.object({ query: z.string().trim().max(200).default(''), offset: z.coerce.number().int().min(0).max(10000).default(0), limit: z.coerce.number().int().min(1).max(50).default(20) })
 export const PluginInstallInputSchema = z.object({ name: z.string().regex(/^[a-z0-9_-]{1,64}$/), consent_token: z.string().min(1).max(128).optional() })
 export const PluginCatalogSchema = z.object({ supported: z.boolean(), read_only: z.boolean().optional(), entries: z.array(z.object({
   name: z.string(), title: z.string(), description: z.string(), repo: z.string(), sha: z.string(), tier: z.string(), category: z.string(),
   requirements: z.array(z.string()), installed_key: z.string().nullable(), installed_sha: z.string().nullable(), can_install: z.boolean(), refusal: z.string().nullable(),
+  /** TAL-1914: the install is behind this entry's pin and may move: not held with `--ref`, not refused, and this session may update. */
+  can_update: z.boolean(),
 })), total: z.number().int().nonnegative(), next_offset: z.number().int().nullable() })
 export const PluginInstallResultSchema = z.discriminatedUnion('status', [
   z.object({ name: z.string(), key: z.string(), status: z.literal('installed'), enabled: z.literal(false) }),
@@ -177,6 +187,9 @@ export const COMMANDS_METHODS = {
   'plugins.catalog': { params: ProfileHomeParams.extend(PluginCatalogQuerySchema.shape), result: PluginCatalogSchema },
   'plugins.install': { params: ProfileHomeParams.extend(PluginInstallInputSchema.shape), result: PluginInstallResultSchema },
   'plugins.update': { params: ProfileHomeParams.extend({ key: z.string().min(1), accept_caution: z.boolean().optional(), consent_token: z.string().min(1).max(128).optional() }), result: PluginUpdateResultSchema },
+  'plugins.update_all': { params: ProfileHomeParams, result: PluginUpdateAllResultSchema },
+  'plugins.auto_update': { params: ProfileHomeParams, result: PluginAutoUpdateStateSchema },
+  'plugins.auto_update_set': { params: ProfileHomeParams.extend({ enabled: z.boolean() }), result: PluginAutoUpdateStateSchema },
   /** TAL-820: each profile's `plugins.isolation` and installed third-party plugin count, read without loading a plugin. */
   'plugins.isolation': { params: BaseHomeParams, result: z.object({ profiles: z.array(z.object({ name: z.string(), isolation: z.enum(['in_process', 'host']), third_party_plugins: z.number().int() })) }) },
   /** TAL-806: plugins whose manifest declares settings; `supported` is false on an Agent without `hermes_cli.plugins_settings`. */
