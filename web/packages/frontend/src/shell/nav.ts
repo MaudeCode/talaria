@@ -33,13 +33,6 @@ export type SidebarSlot = PanelId | 'dashboard' | 'extensions'
 /** Expanded: the App's order, above the `More` disclosure. */
 export const SIDEBAR_PRIMARY: readonly SidebarSlot[] = ['tasks', 'kanban', 'skills', 'memory', 'insights']
 export const SIDEBAR_MORE: readonly SidebarSlot[] = ['workspaces', 'groups', 'todos', 'profiles', 'logs', 'extensions', 'dashboard']
-/** Collapsed: the icon rail's groups, with a separator between them. Settings sits in the footer. */
-export const SIDEBAR_RAIL_GROUPS: readonly (readonly SidebarSlot[])[] = [
-  ['chat', 'workspaces', 'groups'],
-  ['tasks', 'kanban', 'todos'],
-  ['skills', 'memory', 'profiles'],
-  ['insights', 'dashboard', 'logs', 'extensions'],
-]
 /** One row in both states: `shell.css` lays it out as a labelled row, or as an icon over its caption on the rail. */
 export const SIDEBAR_ROW = 'sidebar-row relative flex w-full min-h-8 flex-none items-center gap-2.5 rounded-(--rail-btn-radius) border-0 bg-transparent px-2.5 text-left text-sm text-muted no-underline cursor-pointer transition-[color,background] duration-(--dur) ease-(--ease) max-[641px]:min-h-11 hover:text-text hover:bg-hover [&.active]:text-(--rail-active-fg) [&.active]:bg-(--rail-active-bg) [&.active]:shadow-(--rail-active-shadow) [&.active]:[font-weight:var(--rail-active-weight)] [&.active_svg]:text-(--rail-active-icon-fg) [&_svg]:shrink-0 [&_svg]:size-[18px]'
 

@@ -24,6 +24,7 @@ test.describe('shell', () => {
     }
     // The icon rail shows every destination at once.
     await page.locator('#btnSidebarEdgeToggle').click()
+    await expect(page.locator('aside.sidebar [data-panel="logs"]')).toBeVisible()
     const rail = page.locator('nav[aria-label="Primary navigation"] a[href]:visible')
     const count = await rail.count()
     expect(count).toBeGreaterThanOrEqual(HUBS.length)
