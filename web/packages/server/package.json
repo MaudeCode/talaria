@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit --declaration false -p tsconfig.json",
     "lint": "oxlint --type-aware -c ../../.oxlintrc.json",
     "pretest": "(test -f ../contracts/dist/index.js || npm --prefix ../contracts run build) && (test -f ../../static/dist/index.html || npm --prefix ../frontend run build:fast) && npm run build",
     "test": "vitest run",
@@ -44,7 +44,8 @@
     "@types/mdast": "4.0.4",
     "@types/node": "24.13.6",
     "@types/ws": "8.18.1",
-    "typescript": "5.9.3",
+    "oxc-parser": "0.157.0",
+    "typescript": "7.0.2",
     "vitest": "5.0.0"
   },
   "engines": {

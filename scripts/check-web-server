@@ -10,6 +10,8 @@ mkdir -p "$state/home" "$state/tmp"
 cd "$root/web"
 npm ci --no-audit --no-fund
 npm run build -w packages/contracts
+# Typecheck skips declaration diagnostics for speed; this build keeps them in the local gate.
+npm run build -w packages/server
 # The server tests and npm-package checks serve the built frontend bundle, which is not committed (TAL-379).
 npm run build:fast -w packages/frontend
 npm run lint -w packages/contracts
