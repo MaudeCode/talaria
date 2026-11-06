@@ -90,6 +90,7 @@ const WEBAPP_LINK_CREDENTIAL_RE = /((?<![A-Za-z0-9_-])hermes-session=|\/webapp\/
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
 const QUOTED = String.raw`\$?'[^']*'|\$?"(?:[^"\\]|\\[\s\S])*"|\\"(?:[^"\\]|\\[^"])*\\"`
+const SHELL_COMPOSITION_RE = /["'\\$`]/
 /** A `"` / `'` not escaped by an odd run of backslashes. */
 const UNESCAPED_QUOTE_RE = [/(?:^|[^\\])(?:\\\\)*"/, /(?:^|[^\\])(?:\\\\)*'/] as const
 /** A quoted value's delimiters and content, or null for a bare value. */
@@ -869,7 +870,7 @@ function redactConnectionStrings(text: string): string {
 }
 
 /** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
-function redactCredentialParams(text: string): string {
+function redactCredentialParams(text: string, unquotedKeysOnly = false): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
@@ -878,6 +879,7 @@ function redactCredentialParams(text: string): string {
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    if (unquotedKeysOnly && quoteAt(m.index)) continue
     const keyEnd = m.index + head.length
     // A masked word may swallow a later flag's name but leave its value outside the mask. Keep scanning heads,
     // skipping those wholly masked before parsing their values, so overlapping heads still cost one scan.
@@ -955,8 +957,9 @@ function redactCredentialParams(text: string): string {
     }
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
     if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\$`]/.test(key) && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
-    // Fully masked: a partial mask would leak part of a password or passphrase.
-    out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
+    // Fully masked: keep a JSON string's delimiters even when its contents contain escaped quotes.
+    const jsonString = sep.startsWith('"') && sep.includes(':') && splitQuoted(value)?.open === '"'
+    out += text.slice(last, valueStart) + (jsonString ? '"***"' : /^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
   }
   return out + text.slice(last)
@@ -992,7 +995,10 @@ function redactUserFlags(text: string): string {
     }
     const secret = colon === -1 ? '' : body.slice(colon + 1)
     if (!secret || secret === '***' || shellWordInner(secret) === '***') continue
-    const masked = quoted ? `${quoted.open}${body.slice(0, colon + 1)}***${quoted.close}` : `${body.slice(0, colon + 1)}${maskShellWord(secret)}`
+    const prefix = body.slice(0, colon + 1)
+    const open = quoted ? '' : quoteTracker(prefix)(prefix.length)
+    const close = open && !quoteTracker(body)(body.length) ? open.slice(-1) : ''
+    const masked = quoted ? `${quoted.open}${prefix}***${quoted.close}` : `${prefix}${maskShellWord(secret)}${close}`
     out += text.slice(last, wordStart) + masked
     last = wordEnd
     USER_FLAG_RE.lastIndex = Math.max(wordEnd, USER_FLAG_RE.lastIndex)
@@ -1406,7 +1412,7 @@ function redactSerializedUrls(text: string): string {
  * substitution is otherwise the computed-key rules'.
  */
 function redactComposedWords(text: string): string {
-  if (!/["'\\$`]/.test(text)) return text
+  if (!SHELL_COMPOSITION_RE.test(text)) return text
   const closeOf = enclosingClose(text)
   const words: [start: number, end: number][] = []
   for (let i = 0; i < text.length; ) {
@@ -1777,7 +1783,13 @@ function redactShellText(text: string): string {
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
-  const literals = joined.includes('://') && joined.includes('@') ? redactSerializedUrls(joined) : joined
+  let guarded = joined
+  if (SHELL_COMPOSITION_RE.test(joined)) {
+    const input = redactConnectionStrings(redactPrivateKeys(joined))
+    guarded = redactCommandFlags(redactUserFlags(redactCredentialParams(input, true)))
+    if (joined.includes('=')) guarded = restoreCodeEnvKeyLiterals(input, guarded)
+  }
+  const literals = guarded.includes('://') && guarded.includes('@') ? redactSerializedUrls(guarded) : guarded
   const out = redactRules(redactComposedWords(literals))
   const redacted = joined !== text && out === joined ? text : out
   if (!joined.includes('=') || !joined.includes('$')) return redacted
@@ -1916,13 +1928,18 @@ function redactShellText(text: string): string {
   return masked === out ? redacted : masked
 }
 
+/** Protect complete key material before credential/URL passes can remove its header. */
+function redactPrivateKeys(text: string): string {
+  let out = maskSpans(text, privateKeySpans(text), () => PRIVATE_KEY_MASK).replace(PRIVKEY_RE, PRIVATE_KEY_MASK)
+  out = out.replace(AGE_KEY_RE, PRIVATE_KEY_MASK)
+  out = out.replace(B64_PEM_RE, (blob) => /^-----BEGIN[A-Z ]*PRIVATE KEY-----/.test(Buffer.from(blob, 'base64').toString('ascii', 0, 80)) ? PRIVATE_KEY_MASK : blob)
+  return out.replace(PPK_PRIVATE_RE, (_, head: string, eol: string) => `${head}${PRIVATE_KEY_MASK}${eol}`)
+}
+
 function redactRules(text: string): string {
   if (!text) return text
   const hasAssignment = text.includes('=')
-  let out = maskSplitTokens(maskSpans(text, privateKeySpans(text), () => '[REDACTED PRIVATE KEY]')).replace(CRED_RE, (_, t: string) => mask(t))
-  out = out.replace(AGE_KEY_RE, '[REDACTED PRIVATE KEY]')
-  out = out.replace(B64_PEM_RE, (blob) => /^-----BEGIN[A-Z ]*PRIVATE KEY-----/.test(Buffer.from(blob, 'base64').toString('ascii', 0, 80)) ? '[REDACTED PRIVATE KEY]' : blob)
-  out = out.replace(PPK_PRIVATE_RE, (_, head: string, eol: string) => `${head}[REDACTED PRIVATE KEY]${eol}`)
+  let out = maskSplitTokens(redactPrivateKeys(text)).replace(CRED_RE, (_, t: string) => mask(t))
   if (hasAssignment) {
     out = redactConnectionStrings(out).replace(SAS_RE, (_, head: string, value: string) => {
       const signature = /(?:^|&)sig=[^&]*/i.exec(value)
@@ -1958,7 +1975,6 @@ function redactRules(text: string): string {
   out = redactUserFlags(out)
   out = redactCommandFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
-  out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return hasAssignment ? restoreCodeEnvKeyLiterals(text, out) : out
 }
 

@@ -912,6 +912,17 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
     ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
   ],
+  'v0.23 credential arguments before inner rewrites': [
+    [JSON.stringify({ password: 'two" secret words' }), JSON.stringify({ password: '***' })],
+    ['curl --password "https://"TOKEN123456789"@github.com secret words"', 'curl --password ***'],
+    ['curl -u "https://"TOKEN123456789"@github.com secret words"', 'curl -u "https:***"'],
+    ['docker login -p "https://"TOKEN123456789"@github.com secret words"', 'docker login -p ***'],
+    [String.raw`SharedAccessSignature=hello\ world`, 'SharedAccessSignature=***'],
+    [String.raw`SharedAccessSignature=sv=1\&sig=hello\ world`, 'SharedAccessSignature=***'],
+    ['SSHPASS="https://"TOKEN123456789"@github.com secret words"', 'SSHPASS=***'],
+    ['AccountKey=-----BEGIN PRIVATE KEY-----\nsynthetic-private-42\n-----END PRIVATE KEY-----', 'AccountKey=***'],
+    [JSON.stringify({ password: 'https://"TOKEN123456789"@github.com secret words' }), JSON.stringify({ password: '***' })],
+  ],
   'v0.23 multiline shell groups': [
     ["{ echo ok\ncurl --'password' 's3cretpw'\n}", '{ echo ok\ncurl --password ***\n}'],
     ["( echo ok\ncurl --'password' 's3cretpw'\n)", '( echo ok\ncurl --password ***\n)'],
