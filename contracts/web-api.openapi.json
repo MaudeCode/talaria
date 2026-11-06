@@ -23682,6 +23682,17 @@
                   },
                   "args": {
                     "type": "string"
+                  },
+                  "current_model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The model the chat shows, kept by a provider-only command when Web has no record of the chat: an unsaved or Agent-owned one."
                   }
                 },
                 "required": [

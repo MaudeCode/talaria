@@ -345,7 +345,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'model': {
         if (!args) return true
         const scope = getStreamContext()
-        const { model, model_provider, owner_payload } = await api.modelCommand({ ...(sessionId ? { session_id: sessionId } : {}), args })
+        const { model, model_provider, owner_payload } = await api.modelCommand({ ...(sessionId ? { session_id: sessionId } : {}), args, current_model: (sessionId ? session?.model : shownChoices.model) ?? null })
         if (scope === getStreamContext()) onModelChange(model, model_provider, owner_payload)
         return true
       }

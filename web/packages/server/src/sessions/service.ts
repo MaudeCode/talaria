@@ -2294,7 +2294,7 @@ export class SessionService {
   }
 
   /** TAL-1814: what raw `/model` arguments ask for. Nothing is written: the client applies the answer as a model write. */
-  async modelCommand(sid: string | undefined, args: string): Promise<{ model: string; model_provider: string | null; owner_payload?: { model: string } }> {
+  async modelCommand(sid: string | undefined, args: string, currentModel?: string | null): Promise<{ model: string; model_provider: string | null; owner_payload?: { model: string } }> {
     const sidecar = this.deps.sidecar?.()
     if (!sidecar) throw new HttpFailure(503, 'Agent sidecar is unavailable')
     const request = await sidecar.call('models.parse_switch_args', { args })
@@ -2307,9 +2307,10 @@ export class SessionService {
       const [model, model_provider] = await this.profileDefaultRoute(profile)
       return { model, model_provider, owner_payload: { model: MODEL_RESET_TOKEN } }
     }
-    const target = request.target || s?.model || (await this.profileDefaultRoute(profile))[0]
+    const target = request.target || s?.model || currentModel || (await this.profileDefaultRoute(profile))[0]
     const [model, model_provider] = this.deps.modelStateFromRequest(target, request.provider, s?.model_provider ?? null)
-    return { model: model ?? target, model_provider }
+    // With no target the id is only what the chat already shows, so a provider inside it cannot override the named one.
+    return { model: model ?? target, model_provider: request.target ? model_provider : request.provider ?? model_provider }
   }
 
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {

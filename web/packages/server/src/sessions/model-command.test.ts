@@ -56,6 +56,17 @@ describe('/model arguments (TAL-1814)', () => {
     expect(await (await command('--provider openrouter', null)).json()).toEqual({ model: 'profile-model', model_provider: 'openrouter' })
   })
 
+  it('keeps the model a chat without a local record shows when only a provider is named', async () => {
+    const { s, sidecar, sid } = await setup()
+    sidecar.respond('models.parse_switch_args', () => parsed({ provider: 'openrouter' }))
+    const ask = async (body: Record<string, unknown>) => (await post(s, '/api/session/model-command', { args: '--provider openrouter', ...body })).json()
+    expect(await ask({ current_model: 'chosen-before-saving' })).toEqual({ model: 'chosen-before-saving', model_provider: 'openrouter' })
+    // A project's unsaved chat shows a qualified id; the named provider still wins over the one inside it.
+    expect(await ask({ current_model: '@gemini:gemini-2.5-flash' })).toEqual({ model: 'gemini-2.5-flash', model_provider: 'openrouter' })
+    // A chat Web keeps a record of answers from that record, not from what a stale view shows.
+    expect(await ask({ session_id: sid, current_model: 'stale-view' })).toEqual({ model: 'pinned-model', model_provider: 'openrouter' })
+  })
+
   it.each([
     ['the Agent\'s own refusal', parsed({ target: 'reset', errors: ['/model reset takes no flags'] }), '/model reset takes no flags'],
     ['a flag Web cannot honor', parsed({ target: 'some/model', unsupported_flags: ['--global', '--reasoning'] }), '/model --global, --reasoning is not available here'],

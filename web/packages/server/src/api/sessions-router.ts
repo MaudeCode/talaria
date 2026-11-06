@@ -338,7 +338,7 @@ export const sessionsRouter = os.router({
     })),
     modelCommand: os.session.modelCommand.handler(({ input, context: { ctx } }) => run(async () => {
       if (input.session_id !== undefined) await guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.modelCommand(input.session_id, input.args)
+      return ctx.deps.sessions.modelCommand(input.session_id, input.args, input.current_model)
     })),
     update: os.session.update.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
