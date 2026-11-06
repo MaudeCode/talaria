@@ -207,6 +207,33 @@ describe('buildTurnScene', () => {
     expect((scene.activity_rows as Json[]).map((r) => [r.role, r.text ?? null])).toEqual([['reasoning', 'Plan.'], ['prose', 'Reading both files.'], ['tool', null]])
   })
 
+  // TAL-1810: `hold_stream`: the user only ever got the rewritten reply. Empty content is where the scene falls back to commentary.
+  it.each([['no reply text', '', ''], ['a rewritten reply', 'Rewritten.', 'Rewritten.']])('shows a held turn\'s tool calls and none of its withheld text, with %s', (_, content, finalAnswer) => {
+    const messages = withTurnIds([
+      { role: 'user', content: 'Go', _turn_id: 'held' },
+      { role: 'assistant', id: 1, content: 'HIDDEN-CONTENT', reasoning: 'HIDDEN-REASONING', reasoning_titles: ['HIDDEN-TITLE'], display_kind: 'hidden', codex_message_items: [commentaryItem('HIDDEN-COMMENTARY')], tool_calls: [{ id: 'a', name: 'read_file' }], _turn_id: 'held' },
+      { role: 'tool', tool_call_id: 'a', content: 'one', _turn_id: 'held' },
+      { role: 'assistant', id: 2, content: [{ type: 'text', text: 'HIDDEN-BLOCK' }, { type: 'thinking', thinking: 'HIDDEN-THINKING' }, { type: 'tool_use', id: 'b', name: 'read_file', input: {} }], display_kind: 'hidden', _turn_id: 'held' },
+      { role: 'tool', tool_call_id: 'b', content: 'two', _turn_id: 'held' },
+      { role: 'assistant', id: 3, content, reasoning: 'Plan.\n\nWITHHELD-COMMENTARY', codex_message_items: [commentaryItem('WITHHELD-COMMENTARY')], display_metadata: { commentary_withheld: true }, _turn_id: 'held' },
+    ])
+    const hydrated = hydrateAnchorActivityScenes(messages, {}) as Json[]
+    const scene = hydrated[5]?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).map((r) => [r.row_id, r.text ?? (r.tool as Json).result])).toEqual([['tool:a', 'one'], ['tool:b', 'two'], ['3:reasoning', 'Plan.']])
+    expect(scene.final_answer).toBe(finalAnswer)
+    expect(JSON.stringify(scene)).not.toMatch(/HIDDEN|WITHHELD/)
+    expect(hydrated[1]).not.toHaveProperty('_anchor_activity_scene')
+  })
+
+  it('never takes a hidden row for the turn\'s reply (TAL-1810)', () => {
+    const hiddenCall = { role: 'assistant', content: 'HIDDEN', display_kind: 'hidden', tool_calls: [{ id: 'a', name: 'read_file' }] }
+    const trailing = hydrateAnchorActivityScenes(withTurnIds([{ role: 'assistant', content: 'Answer.', _turn_id: 't' }, { ...hiddenCall, _turn_id: 't' }]), {}) as Json[]
+    expect(trailing[0]?._anchor_activity_scene).toMatchObject({ final_answer: 'Answer.', terminal_state: 'completed', activity_rows: [{ row_id: 'tool:a' }] })
+    expect(trailing[1]).not.toHaveProperty('_anchor_activity_scene')
+    const hiddenOnly = hydrateAnchorActivityScenes(withTurnIds([{ ...hiddenCall, _turn_id: 't' }]), {}) as Json[]
+    expect(hiddenOnly[0]).not.toHaveProperty('_anchor_activity_scene')
+  })
+
   it('keeps content-array tool_use blocks in order with their text', () => {
     const scene = buildTurnScene(turnOf([
       { role: 'user', content: 'Weather?' },

@@ -315,6 +315,17 @@ function codexCommentary(message: Record<string, unknown>): string[] {
     : []).filter(Boolean)
 }
 
+const isHiddenAssistant = (m: Record<string, unknown>): boolean => m.role === 'assistant' && agentRowKind(m) === 'hidden'
+const hasToolCalls = (m: Record<string, unknown>): boolean => (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) || hasToolUseBlocks(m)
+
+/** TAL-1810: what a hidden assistant row (a held turn's text the user never got) adds to its scene: its tool calls alone. */
+function hiddenRowToolCalls(m: Record<string, unknown>): Record<string, unknown> {
+  return { role: m.role, message_id: m.message_id, id: m.id, timestamp: m.timestamp, tool_calls: m.tool_calls, content: Array.isArray(m.content) ? m.content.filter((part) => isDict(part) && part.type === 'tool_use') : '' }
+}
+
+/** The turn's assistant rows that can be its reply; a hidden row never is, so no scene settles on or answers from one. */
+const replyRows = (turn: [Record<string, unknown>, number][]): [Record<string, unknown>, number][] => turn.filter(([m]) => m.role === 'assistant' && !isHiddenAssistant(m))
+
 /** The turn's outcome: an explicit terminal state, else its error row's kind, else whether it answered. */
 export function terminalStateOf(last: Record<string, unknown>, finalAnswer: string): string {
   const label = str(last.provider_details_label)
@@ -354,15 +365,15 @@ export function fullToolResult(messages: unknown[], toolCallId: string): { resul
  * in the work, which renders open with no outcome.
  */
 export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: { clipToolResults?: boolean; running?: boolean } = {}): Record<string, unknown> | null {
-  const assistants = turn.filter(([m]) => m.role === 'assistant')
-  const last = assistants.at(-1)?.[0]
+  const last = replyRows(turn).at(-1)?.[0]
   if (!last) return null
   const finalAnswer = opts.running ? '' : finalAnswerOf(last)
   const results = toolReplies(turn.map(([m]) => m))
   const rows: SceneRow[] = []
   const seenTools = new Set<string>()
   const push = (row: Omit<SceneRow, 'order_index'>) => rows.push({ ...row, order_index: rows.length })
-  for (const [m, index] of turn) {
+  for (const [row, index] of turn) {
+    const m = isHiddenAssistant(row) ? hiddenRowToolCalls(row) : row
     const steer = isDict(m._steer) ? m._steer : null
     if (m.role === 'user' && steer) {
       // A persisted steer sits at its causal place; it ends one work phase and starts the next.
@@ -442,7 +453,9 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       for (const [i, call] of (Array.isArray(m.tool_calls) ? m.tool_calls : []).entries()) pushTool(call, i)
       continue
     }
-    const text = prose.trim() ? prose : commentary.join('\n\n')
+    // TAL-1810: commentary a held turn withheld stays out of the reasoning above and never shows as prose.
+    const shownCommentary = isDict(m.display_metadata) && m.display_metadata.commentary_withheld ? [] : commentary
+    const text = prose.trim() ? prose : shownCommentary.join('\n\n')
     if (m !== last || !finalAnswer.trim()) { if (text.trim()) push({ row_id: `${ref}:prose`, role: 'prose', text, ...at }) }
     for (const [i, call] of (Array.isArray(m.tool_calls) ? m.tool_calls : []).entries()) pushTool(call, i)
   }
@@ -498,12 +511,12 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
 /**
  * Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. Marker rows render as
  * their own cards, and the Agent's notice and hidden assistant rows are no reply (TAL-815), so no scene is built from or
- * attached to one.
+ * attached to one. TAL-1810: a hidden row that made tool calls stays, for those calls (see replyRows).
  */
 function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
   const turns = new Map<string, [Record<string, unknown>, number][]>()
   messages.forEach((m, index) => {
-    if (!isDict(m) || markerKind(m) || isCompactionRow(m) || (m.role === 'assistant' && agentRowKind(m))) return
+    if (!isDict(m) || markerKind(m) || isCompactionRow(m) || (m.role === 'assistant' && agentRowKind(m) && !(isHiddenAssistant(m) && hasToolCalls(m)))) return
     const id = str(m._turn_id)
     if (!id) return
     const rows = turns.get(id) ?? []
@@ -566,7 +579,7 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
   for (const [turnId, turn] of turnsOf(messages)) {
     const running = Boolean(opts.activeTurnId) && turnId === opts.activeTurnId
     if (running && opts.runningScene !== true) continue
-    const lastEntry = turn.filter(([m]) => m.role === 'assistant').at(-1)
+    const lastEntry = replyRows(turn).at(-1)
     if (!lastEntry) continue
     const [message, index] = lastEntry
     const absoluteTurn: [Record<string, unknown>, number][] = opts.baseIndex ? turn.map(([m, i]) => [m, i + opts.baseIndex!]) : turn

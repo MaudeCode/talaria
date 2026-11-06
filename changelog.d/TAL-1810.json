@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Turns from a plugin that rewrites replies before you see them now keep their tool cards in Talaria Web, and the Codex commentary the plugin withheld stays hidden.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
