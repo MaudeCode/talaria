@@ -505,6 +505,13 @@ also clears the zone. `cron.list` with `probe_store` reports `schedule_policy`,
 whether the Agent's `create_job` takes these fields. An Agent without them
 receives none, and the server answers `schedule_policy_available: false`.
 
+`cron.cancel` writes the Agent's per-attempt cancel marker in the store home's
+scope, so it reaches a run whoever started it. The Agent's scheduler polls that
+marker itself; `cron.run` polls it for a Web manual run, cancels through the
+owner, and books `cancelled` with no output or failure notice. A script job has
+no owner, so its Web run opens its own ledger row and the marker stops its
+process group. An Agent without the API refuses with `cron_cancel_unsupported`.
+
 New Agent records retain the creating Web profile in additive `owner_profile`
 metadata. The server uses it to keep those jobs in the creator's list and route
 edit, pause, resume, delete, manual run, output, history and recent-completion

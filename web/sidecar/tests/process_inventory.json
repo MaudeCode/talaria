@@ -1025,6 +1025,20 @@
         ""
       ]
     },
+    "tests/test_cron_health.py::test_stopping_a_gateway_claimed_run_ends_it_and_books_cancelled": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the Agent scheduler in another process reads the marker Web writes and books cancelled. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_health.py::test_stopping_a_manual_script_run_ends_it_and_books_cancelled": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a Web-run script job gets a real ledger row, and its process group stops on the Agent marker. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_health.py::test_run_now_refuses_when_the_ledger_is_unreadable": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: run now refuses when the ledger is unreadable. Uses the real installed release, not a fabricated API response.",
@@ -1044,6 +1058,14 @@
       "reason": "Supported-Agent API compatibility: started cancel waits for exact owner terminal before releasing run. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
+      ]
+    },
+    "tests/test_cron_owner.py::test_stopped_manual_run_books_cancelled_without_a_failure_notice": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the Agent cancel marker, written by Web or by the Agent itself, stops a Web manual run through the real owner and books cancelled. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[web]",
+        "[agent]"
       ]
     },
     "tests/test_cron_owner.py::test_workers_finds_long_interpreter_commands_at_narrow_terminal_width": {

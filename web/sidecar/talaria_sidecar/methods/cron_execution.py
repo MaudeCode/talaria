@@ -64,6 +64,45 @@ def pending_jobs(home):
     return result
 
 
+def operator_cancel(home, execution_id):
+    """The operator's first stop reason for this attempt (Web's Stop, ``hermes cron cancel``, the agent's own tool),
+    else ``None``. The Agent's marker outlives a lost submitter, so recovery reads the same answer."""
+    try:
+        from cron.cancellation import CancelRequest
+    except ImportError:
+        return None
+    with scoped_home(home, read_only=True):
+        request = CancelRequest(execution_id)
+        return request.reason if request.is_set() else None
+
+
+def clear_operator_cancel(home, execution_id):
+    from cron.cancellation import clear_cancel
+    with scoped_home(home, read_only=True):
+        clear_cancel(execution_id)
+
+
+def open_attempt(home, job_id):
+    """A ledger row for a Web run with no ``ManualExecution`` (a script job), so a stop request can find it. ``None`` on
+    an Agent that cannot stop a run."""
+    try:
+        from cron import executions
+        from cron import cancellation  # noqa: F401 - the capability this row exists for
+    except ImportError:
+        return None
+    with scoped_home(home, read_only=True):
+        row = executions.create_execution(job_id, source="web-manual")
+        executions.mark_execution_running(row["id"])
+    return row["id"]
+
+
+def close_attempt(home, execution_id, success, error):
+    """Terminal attempts are immutable, so this settles only a row the run's own booking left open."""
+    from cron import executions
+    with scoped_home(home, read_only=True):
+        executions.finish_execution(execution_id, success=success, error=error)
+
+
 def supported(job, *, recovery=False):
     if job.get("no_agent"):
         return False
@@ -178,6 +217,9 @@ class ManualExecution:
                     self.record["pause"] = {"paused_at": current["paused_at"], "reason": current["paused_reason"]}
                     self.save()
 
+    def stop_reason(self):
+        return operator_cancel(self.execution_home, self.execution_id)
+
     def cancel(self, reason):
         if self.record["cancel_reason"] is None:
             self.record["cancel_reason"] = reason
@@ -193,7 +235,12 @@ class ManualExecution:
             current = jobs.get_job(self.job["id"]) or {}
             row = executions.get_execution(self.execution_id)
             marked = self.execution_id in current.get("canonical_completions", [])
-            booked = marked or (row and row["status"] in {"completed", "failed"})
+            finished = getattr(executions, "FIRER_FINISHED_STATES", {"completed", "failed"})
+            booked = marked or (row and row["status"] in finished)
+            # Like the Agent's own firer, a run whose marker is set when it ends is a cancel, whatever it returned.
+            stopped = self.stop_reason()
+            if row and row["status"] in finished and row["status"] != "cancelled":
+                stopped = None
             # Our own mark releases the claim before pause cleanup. A successor's claim never qualifies.
             may_finish = bool(current) and (owns or (marked and not current.get("fire_claim")))
             if not booked and self.record["tail_started"]:
@@ -204,7 +251,14 @@ class ManualExecution:
             self.save()
             journal_path(self.job["id"], self.execution_id).unlink(missing_ok=True)
             if not may_finish:
-                self._finish_ledger(False, "Fire claim ownership lost before terminal completion.")
+                # Removing a job mid-run cancels it and drops its claim: that books the cancel, not a lost claim.
+                self._finish_ledger(False, stopped or "Fire claim ownership lost before terminal completion.", cancelled=bool(stopped))
+            elif stopped:
+                # Not ``finish_cancelled_run``: it omits the completion mark this record's recovery reads after a crash.
+                if not marked:
+                    jobs.mark_job_run(self.job["id"], False, f"Cancelled: {stopped}", status="cancelled", execution_id=self.execution_id,
+                                      **({"expected_fire_owner": self.owner} if self.owner else {}))
+                self._finish_ledger(False, stopped, cancelled=True)
             elif booked:
                 self._finish_ledger(success, error)
             else:
@@ -227,6 +281,9 @@ class ManualExecution:
                 _lift_pause(self.job["id"], pause)
             self.file.unlink()
             self.settled = True
+            if stopped:
+                clear_operator_cancel(self.execution_home, self.execution_id)
+                return {"job_id": self.job["id"], "status": "cancelled", "success": False, "error": stopped}
         reason = self.record["cancel_reason"]
         if not may_finish or reason == "claim_lost":
             return {"job_id": self.job["id"], "status": "failed", "success": False, "error": str(_ClaimLost())}
@@ -236,11 +293,13 @@ class ManualExecution:
             return {"job_id": self.job["id"], "status": "failed", "success": False, "error": reason}
         return {"job_id": self.job["id"], "status": "completed", "success": bool(success), "error": error}
 
-    def _finish_ledger(self, success, error):
+    def _finish_ledger(self, success, error, *, cancelled=False):
         from cron import executions
-        finish = executions.recover_receipted_execution if self.recovering else executions.finish_execution
-        kwargs = {"job_id": self.job["id"]} if self.recovering else {}
-        finish(self.execution_id, success=success, error=error, **kwargs)
+        if self.recovering:
+            # The Agent's recovery write has no cancelled verdict; the job record still books the cancel.
+            executions.recover_receipted_execution(self.execution_id, self.job["id"], success=success, error=error)
+        else:
+            executions.finish_execution(self.execution_id, success=success, error=error, **({"cancelled": True} if cancelled else {}))
 
 
 def run(job, home, execution_home, ctx, owner, *, recovery_only=False):

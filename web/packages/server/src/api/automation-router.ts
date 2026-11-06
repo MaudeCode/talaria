@@ -90,6 +90,7 @@ export const automationRouter = os.router({
     update: os.crons.update.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.update(home(ctx), input) as Promise<never>)),
     delete: os.crons.delete.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.delete(home(ctx), str(input.job_id)) as Promise<never>)),
     runNow: os.crons.runNow.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.runNow(home(ctx), str(input.job_id)) as Promise<never>)),
+    cancel: os.crons.cancel.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.cancel(home(ctx), str(input.job_id)) as Promise<never>)),
     pause: os.crons.pause.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.pause(home(ctx), str(input.job_id), input.reason ?? null) as Promise<never>)),
     resume: os.crons.resume.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.resume(home(ctx), str(input.job_id)) as Promise<never>)),
   },

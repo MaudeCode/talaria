@@ -63,6 +63,12 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.running = running || job.running === true || job.running_elsewhere === true
   delete payload.running_elsewhere
   delete payload.recovery_only
+  // TAL-1819: the attempt's identity stays on the server; clients get the decision.
+  const live = job.live_execution as { stopping?: unknown } | null | undefined
+  payload.stopping = live?.stopping === true
+  payload.can_stop = Boolean(live) && !payload.stopping
+  delete payload.live_execution
+  payload.last_outcome = completionOutcome(job.last_status)
   payload.last_failure = lastFailure(job.last_failure)
   payload.delivery_unconfirmed_platforms = unconfirmedPlatforms(job.last_delivery_unverified)
   delete payload.last_delivery_unverified
@@ -248,6 +254,7 @@ export function completionOutcome(status: unknown): CronRecentCompletion['outcom
   const s = str(status).trim().toLowerCase()
   if (s === 'error' || s === 'failed') return 'failed'
   if (s === 'ok' || s === 'success' || s === 'completed') return 'succeeded'
+  if (s === 'cancelled') return 'cancelled'
   return 'unknown'
 }
 
@@ -340,6 +347,7 @@ export class CronService {
     const optionFor = await this.deps.modelOptions?.(pickerHome)
     return rows.map((row) => {
       const payload: Dict = { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+      payload.can_stop = payload.can_stop === true && row.managed
       payload.model_option_id = optionFor?.(str(payload.model) || null, str(payload.provider) || null) ?? null
       return payload
     })
@@ -523,14 +531,14 @@ export class CronService {
     }
   }
 
-  private async simple(method: 'cron.pause' | 'cron.resume' | 'cron.delete', home: string, jobId: string, extra: Dict = {}): Promise<Dict> {
+  private async simple(method: 'cron.pause' | 'cron.resume' | 'cron.delete' | 'cron.cancel', home: string, jobId: string, extra: Dict = {}): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, method === 'cron.delete' ? 'Missing required field(s): job_id' : 'job_id required')
     const store = await this.resolveStore(home, jobId)
     if (method === 'cron.resume') this.requireExecutionStore(store)
     try {
       const result = await this.sidecar().call(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
       // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
-      return 'job' in result ? { ok: true, job: await this.view({ ...store, job: result.job }, home) } : { ok: true, job_id: jobId }
+      return 'job' in result ? { ok: true, job: await this.view({ ...store, job: result.job }, home) } : { ok: true, job_id: jobId, ...('status' in result ? { status: result.status } : {}) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
       // Python had no handler for `resume_job`'s ValueError (expired one-shot): it surfaced as a 500.
@@ -542,6 +550,8 @@ export class CronService {
   pause(home: string, jobId: string, reason: string | null): Promise<Dict> { return this.simple('cron.pause', home, jobId, { reason }) }
   resume(home: string, jobId: string): Promise<Dict> { return this.simple('cron.resume', home, jobId) }
   delete(home: string, jobId: string): Promise<Dict> { return this.simple('cron.delete', home, jobId) }
+  /** TAL-1819: reaches any live run of a managed job, whoever started it: the Agent's marker is per attempt, in the job's store. */
+  cancel(home: string, jobId: string): Promise<Dict> { return this.simple('cron.cancel', home, jobId, { reason: 'Stopped from Talaria' }) }
 
   /** Python `_handle_cron_run`: answer once the sidecar emits `started`; the run itself continues in the background. */
   async runNow(home: string, jobId: string): Promise<Dict> {

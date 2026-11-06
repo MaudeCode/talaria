@@ -2,7 +2,7 @@
 import type { CronJob, CronRunUsageSchema, CronStatusSchema } from '../../contracts'
 import type { z } from 'zod'
 
-export type CronState = 'running' | NonNullable<CronJob['derived_state']> | 'unknown'
+export type CronState = 'running' | 'stopping' | NonNullable<CronJob['derived_state']> | 'unknown'
 
 export function jobId(job: CronJob): string {
   return job.id ?? job.job_id ?? ''
@@ -21,6 +21,7 @@ export function lastRunAt(job: CronJob): string | number | null {
 
 /** A live run overlays the server's state; a server that omits it shows a neutral status. */
 export function cronState(job: CronJob, running = false): CronState {
+  if (job.stopping) return 'stopping'
   if (running || job.running) return 'running'
   return job.derived_state ?? 'unknown'
 }

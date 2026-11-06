@@ -458,7 +458,7 @@ export const STT_METHODS = {
 
 // ── cron ───────────────────────────────────────────────────────────────
 /** `running_elsewhere`: a live execution owner. `recovery_only`: a retained snapshot, not a source for new task context. */
-export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional() }).catchall(Json)
+export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional(), live_execution: z.object({ id: z.string(), stopping: z.boolean() }).nullable().optional() }).catchall(Json)
 const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
 const JobEnvelope = z.object({ job: CronJobSchema })
 export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })
@@ -479,9 +479,11 @@ export const CRON_METHODS = {
   // Python answered pause/resume with the raw `pause_job`/`resume_job` record (no API decoration).
   'cron.pause': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: z.object({ job: z.object({ id: z.string() }).catchall(Json) }) },
   'cron.resume': { params: CronJob, result: z.object({ job: z.object({ id: z.string() }).catchall(Json) }) },
+  // TAL-1819: asks the job's live run to stop; `not_running` when nothing is in flight. Refused with `cron_cancel_unsupported` on an Agent without the API.
+  'cron.cancel': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: z.object({ ok: z.literal(true), job_id: z.string(), status: z.enum(['stopping', 'not_running']) }) },
   'cron.run': { params: CronJob.extend({ execution_home: z.string().nullable().optional() }), result: z.union([
     z.object({ job_id: z.string(), status: z.literal('already_running'), elapsed: z.number() }),
-    z.object({ job_id: z.string(), status: z.enum(['completed', 'failed']), success: z.boolean(), error: z.string().nullable().optional(), delivery_error: z.string().nullable().optional() }),
+    z.object({ job_id: z.string(), status: z.enum(['completed', 'failed', 'cancelled']), success: z.boolean(), error: z.string().nullable().optional(), delivery_error: z.string().nullable().optional() }),
   ]), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('started'), data: z.object({ job_id: z.string() }) })]) },
   'cron.status': { params: z.object({ job_id: z.string().optional() }), result: z.union([z.object({ job_id: z.string(), running: z.boolean(), elapsed: z.number() }), z.object({ running: z.record(z.string(), z.number()) })]) },
   'cron.history': { params: CronJob.extend({ offset: z.number().int().optional(), limit: z.number().int().optional() }), result: z.object({ job_id: z.string(), runs: z.array(z.object({ filename: z.string(), size: z.number().int(), modified: z.number(), usage: CronUsageSchema })), total: z.number().int(), offset: z.number().int() }) },

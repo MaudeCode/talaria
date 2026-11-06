@@ -68,6 +68,37 @@ test('the task list is the page and a task opens as a detail with a way back', a
   }
 })
 
+test('Stop shows only on a stoppable live run, shows stopping at once and settles on the server (TAL-1819)', async ({ page }, info) => {
+  const base = { ...jobs[0]!, id: 'live', name: 'Live digest', running: true, last_outcome: 'succeeded' }
+  let row: Record<string, unknown> = { ...base, can_stop: true, stopping: false }
+  let answer: () => void = () => undefined
+  const answered = new Promise<void>((resolve) => { answer = resolve })
+  await routeTasks(page, jobs)
+  await page.route('**/api/crons', (route) => route.fulfill({ json: { jobs: [row, jobs[0]!, { ...jobs[0]!, id: 'other', name: 'Not stoppable', running: true, can_stop: false, stopping: false }], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [] } }))
+  await page.route('**/api/crons/cancel', async (route) => { await answered; await route.fulfill({ json: { ok: true, job_id: 'live', status: 'stopping' } }) })
+  await page.goto('/tasks?job=other')
+  const detail = page.getByTestId('cron-detail')
+  const stop = page.getByRole('button', { name: 'Stop', exact: true })
+  await expect(detail).toHaveAttribute('data-state', 'running')
+  await expect(stop).toHaveCount(0)
+  await page.goto('/tasks?job=live')
+  await expect(stop).toBeVisible()
+  await expect(stop).toBeInViewport()
+  await page.screenshot({ path: info.outputPath('stop-before.png') })
+  await stop.click()
+  // The cancel request is still unanswered: the choice shows at once.
+  await expect(detail).toHaveAttribute('data-state', 'stopping')
+  await expect(stop).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('stop-stopping.png') })
+  row = { ...base, can_stop: false, stopping: true }
+  answer()
+  await expect(detail).toHaveAttribute('data-state', 'stopping')
+  row = { ...base, running: false, can_stop: false, stopping: false, last_status: 'cancelled', last_run_at: '2026-10-18T09:00:00Z', last_outcome: 'cancelled' }
+  await expect(detail).toHaveAttribute('data-state', 'active', { timeout: 15_000 })
+  await expect(detail.getByText('· stopped')).toBeVisible()
+  await page.screenshot({ path: info.outputPath('stop-settled.png') })
+})
+
 test('a task whose last delivery is unconfirmed names the platforms on one line; a confirmed task says nothing (TAL-1850)', async ({ page }, info) => {
   await routeTasks(page, [...jobs, { ...jobs[0]!, id: 'unsure', name: 'Unsure digest', delivery_unconfirmed_platforms: ['telegram', 'slack'] }])
   await page.goto('/tasks?job=unsure')

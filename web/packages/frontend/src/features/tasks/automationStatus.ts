@@ -13,6 +13,7 @@ export function statusLabel(state: CronState | PromptQueueRun['phase'] | PromptQ
     case 'failed': return { label: m.prompt_queue_failed(), tone: 'text-error' }
     case 'refused': return { label: m.prompt_queue_refused(), tone: 'text-error' }
     case 'running': return { label: m.cron_status_running(), tone: 'text-accent-text' }
+    case 'stopping': return { label: m.cron_status_stopping(), tone: 'text-muted' }
     case 'needs_attention': case 'schedule_error': return { label: m.cron_status_needs_attention(), tone: 'text-warning' }
     case 'paused': return { label: m.cron_status_paused(), tone: 'text-muted' }
     case 'off': return { label: m.cron_status_off(), tone: 'text-muted' }

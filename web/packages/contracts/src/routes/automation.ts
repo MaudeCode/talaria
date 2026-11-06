@@ -49,6 +49,7 @@ export const automationContract = {
     update: oc.route({ method: 'POST', path: '/api/crons/update', tags }).input(Loose).output(CronMutationSchema),
     delete: oc.route({ method: 'POST', path: '/api/crons/delete', tags }).input(JobId).output(CronMutationSchema),
     runNow: oc.route({ method: 'POST', path: '/api/crons/run', tags, summary: 'Start a manual run in the sidecar; answers immediately with `status: running` (or `already_running`).' }).input(JobId).output(CronMutationSchema),
+    cancel: oc.route({ method: 'POST', path: '/api/crons/cancel', tags, summary: "Ask a task's live run to stop, whoever started it. Answers `status: stopping` (or `not_running`); the run books `cancelled` once it winds down and its schedule is untouched." }).input(JobId).output(CronMutationSchema),
     pause: oc.route({ method: 'POST', path: '/api/crons/pause', tags }).input(JobId.extend({ reason: z.string().nullable().optional() })).output(CronMutationSchema),
     resume: oc.route({ method: 'POST', path: '/api/crons/resume', tags }).input(JobId).output(CronMutationSchema),
   },

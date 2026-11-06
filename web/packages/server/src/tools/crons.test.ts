@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { CronService, jobForApi, type CronDeps } from './crons.js'
+import { completionOutcome, CronService, jobForApi, type CronDeps } from './crons.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { Dict } from '../config/agent-config.js'
+import { SidecarError } from '../sidecar/client.js'
 
 // Persisted shape from cron.jobs.create_job; synthetic ids only.
 const recurring: Dict = {
@@ -75,6 +76,13 @@ describe('cron derived state (TAL-296)', () => {
     expect(state({ ...legacy, status: 'error', next_run_at: null, next_run: 1_789_600_000 })).toBe('error')
     expect(state({ ...recurring, schedule: '0 9 * * *', enabled: false, state: 'completed', next_run_at: null })).toBe('needs_attention')
     expect(state({ ...recurring, schedule: '2026-12-24T09:00:00', repeat: { times: 1, completed: 1 }, enabled: false, state: 'completed', next_run_at: null })).toBe('off')
+  })
+})
+
+describe('cron run outcome', () => {
+  it('books a stopped run as cancelled, never as a failure or an unknown', () => {
+    expect(completionOutcome('cancelled')).toBe('cancelled')
+    expect(jobForApi({ ...recurring, last_status: 'cancelled' })).toMatchObject({ last_outcome: 'cancelled', derived_state: 'active' })
   })
 })
 
@@ -170,6 +178,29 @@ describe('cron job payloads carry the derived fields', () => {
     Object.assign(jobs[0]!, { running_elsewhere: false, last_failure: null })
     sidecar.respond('cron.list', () => ({ jobs: jobs as never[], store_health: null }))
     expect(await service.list('default', false)).toMatchObject({ unwritable_stores: [], jobs: [{ running: false, last_failure: null }] })
+  })
+
+  it('offers Stop for a managed live run, then reports it stopping until the run ends (TAL-1819)', async () => {
+    const { service, home, jobs, sidecar } = setup()
+    expect((await service.list('default', false)).jobs).toMatchObject([{ can_stop: false, stopping: false }])
+    Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: false } })
+    const [live] = (await service.list('default', false)).jobs as Dict[]
+    expect(live).toMatchObject({ can_stop: true, stopping: false })
+    expect(live).not.toHaveProperty('live_execution')
+    sidecar.respond('cron.cancel', (params) => { Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: true } }); return { ok: true, job_id: params.job_id, status: 'stopping' } })
+    expect(await service.cancel(home, String(recurring.id))).toEqual({ ok: true, job_id: recurring.id, status: 'stopping' })
+    expect(sidecar.calls.find((call) => call.method === 'cron.cancel')?.params).toMatchObject({ profile_home: home, job_id: recurring.id, reason: 'Stopped from Talaria' })
+    expect((await service.list('default', false)).jobs).toMatchObject([{ can_stop: false, stopping: true }])
+  })
+
+  it('refuses a Stop the sidecar refuses and never offers Stop on another profile\'s task (TAL-1819)', async () => {
+    const { service, home, jobs, sidecar } = setup()
+    sidecar.respond('cron.cancel', () => { throw new SidecarError('This Agent cannot stop a running task', { condition: 'cron_cancel_unsupported' }) })
+    await expect(service.cancel(home, String(recurring.id))).rejects.toMatchObject({ status: 400, message: 'This Agent cannot stop a running task' })
+    const readOnly = new CronService({ sidecar: () => sidecar, profileHome: (name) => `/synthetic/${name}`, profileNames: () => Promise.resolve([{ name: 'default', visible: true }, { name: 'other', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
+    Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: false } })
+    sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === '/synthetic/other' ? jobs as never[] : [] }))
+    expect((await readOnly.list('default', true)).jobs).toMatchObject([{ read_only: true, can_stop: false }])
   })
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {
