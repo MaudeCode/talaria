@@ -145,6 +145,9 @@ def path_suites(path):
             return {"tooling"}
         if local in ("scripts/validate-upstream-contract", "scripts/upstream-contract-probe"):
             return {"contracts", "tooling"}
+        if local in ("scripts/prepare-ui-simulator", "scripts/ready-simulator-documents",
+                     "scripts/ready-simulator-notifications", "scripts/seed-simulator-photo"):
+            return {"app", "tooling"}  # Hosted preparation needs proof on real CI simulators.
         if local.startswith("scripts/"):
             return {"app_tooling", "tooling"}
         return {"app"}
