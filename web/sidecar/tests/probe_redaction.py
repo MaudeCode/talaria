@@ -23,13 +23,16 @@ if not hasattr(PluginContext, 'register_redaction_patterns'):
     raise SystemExit(0)
 plugin = PluginContext(SimpleNamespace(name='synthetic-redaction'), None)
 cases = [
+    ('control_.{1,}', 'control_', 'control_' + '\u200b' * 8 + '12345678', '***'),
     (r'acme_[a-z0-9]{10,}', 'acme_', 'acme_0123456789abcdef', 'acme_0...cdef'),
     (r'anchored_[a-z0-9]{10,}\Z', 'anchored_', 'anchored_0123456789abcdef', 'anchor...cdef'),
     (r'unicodeword_\w{10,}', 'unicodeword_', 'unicodeword_' + 'α' * 16, 'unicod...αααα'),
     (r'unicodedigit_\d{10,}', 'unicodedigit_', 'unicodedigit_' + '١' * 16, 'unicod...١١١١'),
+    (r'nonlinear_(a|aa)+$', 'nonlinear_', 'nonlinear_' + 'a' * 24, 'nonlin...aaaa'),
     ('wildcard_.{10,}', 'wildcard_', 'wildcard_' + 'a' * 8 + '\u2028' + 'b' * 8, 'wildca...bbbb'),
 ]
 def register_pattern(ctx, params):
+    assert plugin.register_redaction_patterns([r'acme_(a+)+$']) == 0
     assert plugin.register_redaction_patterns([row[0] for row in cases]) == len(cases)
     ctx.emit('token', {'text': 'acme_0123456789abcdef'})
     return {'ok': True}
@@ -48,3 +51,4 @@ assert len([r for r in replies if r.get('method') == 'redaction.policy']) == 1
 assert next(r for r in replies if r.get('id') == 3)['result'] == policy
 for pattern, _, text, expected in cases:
     assert redact.redact_sensitive_text(text, force=True) == expected, pattern
+assert redact.redact_sensitive_text('acme_0123\u200b456789abcdef', force=True) == 'acme_0...cdef'

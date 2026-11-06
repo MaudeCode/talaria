@@ -570,19 +570,22 @@ function maskSplitTokens(text: string): string {
 }
 
 /** Replaces each union of overlapping original spans, given the longest of their texts. */
-function maskSpans(text: string, found: [number, number, string][], replace: (token: string) => string): string {
+function maskSpans(text: string, found: [number, number, string, boolean?][], replace: (token: string, opaque: boolean, overlaps: number) => string): string {
   const spans = found.sort((a, b) => a[0] - b[0])
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
     const start = spans[k]![0]
-    let [, end, token] = spans[k]!
+    let [, end, token, opaque = false] = spans[k]!
+    let overlaps = 1
     for (k += 1; k < spans.length && spans[k]![0] < end; k += 1) {
-      const [, nextEnd, nextToken] = spans[k]!
+      const [, nextEnd, nextToken, nextOpaque = false] = spans[k]!
+      opaque ||= nextOpaque
+      overlaps += 1
       end = Math.max(end, nextEnd)
       if (nextToken.length > token.length) token = nextToken
     }
-    out += text.slice(last, start) + replace(token)
+    out += text.slice(last, start) + replace(token, opaque, overlaps)
     last = end
   }
   return out + text.slice(last)
@@ -1400,13 +1403,13 @@ function redactSerializedUrls(text: string): string {
       value = decoded
     }
     if (typeof value !== 'string' || !value.includes('://') || !value.includes('@')) continue
-    let masked = redactSensitive(value)
+    let masked = redactBuiltinSensitive(value)
     const literal = text.slice(start + 1, contentEnd)
     if (literal !== value) {
       // Shell strings keep literal backslashes. Compare both readings before discarding an escape.
       let jsonLiteral = false
       try { JSON.parse(literal); jsonLiteral = true } catch { /* A plain command, not another serialization. */ }
-      const rawMask = jsonLiteral ? redactSensitive(literal) : redactRules(literal)
+      const rawMask = jsonLiteral ? redactBuiltinSensitive(literal) : redactRules(literal)
       if ((rawMask !== literal || masked !== value) && revealsMore(`${literal}\n${value}`, masked, rawMask, secretTokenCounts)) masked = '***'
     }
     if (masked === value) continue
@@ -1464,7 +1467,7 @@ function redactComposedWords(text: string): string {
     // inside the token, so a quoted value is masked whole.
     const plain = unit.replaceAll(WORD_SPACE, ' ')
     // A composed command can keep quotes for its inner shell; inspect that strictly shorter reading too.
-    const redact = plain.length < span.length && plain.includes('://') && plain.includes('@') ? redactSensitive : redactRules
+    const redact = plain.length < span.length && plain.includes('://') && plain.includes('@') ? redactBuiltinSensitive : redactRules
     const wanted = redact(plain)
     if (wanted === plain) continue
     const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
@@ -1734,13 +1737,19 @@ const pluginPatterns = new Map<string, { prefix: string; regex: RegExp }>()
 let policyFingerprint = ''
 
 function compilePluginPattern(pattern: string, prefix: string): RegExp {
+  const literal = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   try {
-    let source = ''
+    const tail = pattern.slice(prefix.length)
+    // One terminal atom has no overlapping alternatives or variable suffix to backtrack through.
+    const simple = /^(?:\[(?:\\.|[^\]\\])+\]|\.)((?:[+*?]|\{([0-9]+)(?:,([0-9]*))?\})?)$/.exec(tail)
+    // Bound failed work at each literal-prefix candidate, even when a rule asks for a huge minimum length.
+    if (!pattern.startsWith(prefix) || (tail && (!simple || Number(simple[2] ?? 0) > 256))) throw new SyntaxError('Unsupported plugin regex form')
+    let source = literal
     let characterClass = false
-    for (let i = 0; i < pattern.length; i += 1) {
-      const char = pattern[i]!
+    for (let i = 0; i < tail.length; i += 1) {
+      const char = tail[i]!
       if (char === '\\') {
-        const escaped = pattern[++i]
+        const escaped = tail[++i]
         // Python's Unicode classes, boundaries, anchors and numeric escapes have different JS semantics.
         if (!escaped || !String.raw`nrtfvx\.^$*+?{}[]()|-`.includes(escaped)) throw new SyntaxError('Unsupported Python regex escape')
         source += `\\${escaped}`
@@ -1754,7 +1763,6 @@ function compilePluginPattern(pattern: string, prefix: string): RegExp {
     // Unicode mode refuses identity escapes that otherwise silently turn Python anchors into literal letters.
     return new RegExp(source, 'gu')
   } catch {
-    const literal = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     return new RegExp(`${literal}\\S*`, 'gu')
   }
 }
@@ -1770,11 +1778,49 @@ export function applyRedactionPolicy(policy: RedactionPolicy): void {
   cacheBytes = 0
 }
 
-function redactPluginPatterns(text: string): string {
-  for (const { prefix, regex } of pluginPatterns.values()) {
-    if (text.includes(prefix)) text = text.replace(regex, (value) => mask(value))
+function redactPluginPatterns(text: string, builtin = text): string {
+  if (!pluginPatterns.size) return builtin
+  const spans: [number, number, string, boolean?][] = []
+  const seen = new Set<string>()
+  const collect = (shown: string, kept?: number[]): void => {
+    for (const { prefix, regex } of pluginPatterns.values()) {
+      if (!shown.includes(prefix)) continue
+      for (const match of shown.matchAll(regex)) {
+        const from = kept ? kept[match.index]! : match.index
+        const to = kept ? kept[match.index + match[0].length - 1]! + 1 : match.index + match[0].length
+        const key = `${from}:${to}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        spans.push([from, to, match[0]])
+      }
+    }
   }
-  return text
+  collect(text)
+  for (const gaps of SPLIT_VIEWS) {
+    const view = splitView(text, gaps)
+    if (view) collect(view.stripped, view.kept)
+  }
+  if (!spans.length) return builtin
+  let target = text
+  if (builtin !== text) {
+    // The enclosing changed interval conservatively covers every built-in mask without parsing its display form.
+    let start = 0
+    let end = text.length
+    let shownEnd = builtin.length
+    while (start < end && start < shownEnd && text[start] === builtin[start]) start += 1
+    while (end > start && shownEnd > start && text[end - 1] === builtin[shownEnd - 1]) { end -= 1; shownEnd -= 1 }
+    if (spans.every(([from, to]) => to <= start || from >= end)) {
+      const delta = builtin.length - text.length
+      for (const span of spans) if (span[0] >= end) { span[0] += delta; span[1] += delta }
+      target = builtin
+    } else spans.push([start, end, '', true])
+  }
+  // A union touching another rule must not re-expose characters one of its members would hide completely.
+  return maskSpans(target, spans, (token, opaque, overlaps) => opaque || overlaps > 1 ? '***' : mask(token.replace(CONTROL_CHARS_RE, '')))
+}
+
+export function redactSensitive(text: string): string {
+  return redactPluginPatterns(text, redactBuiltinSensitive(text))
 }
 
 /**
@@ -1784,7 +1830,7 @@ function redactPluginPatterns(text: string): string {
  * expansions, URL authorities built from expansions) are the only guard for them, and a secret assembled entirely from
  * unknown variables can still be published.
  */
-export function redactSensitive(text: string): string {
+function redactBuiltinSensitive(text: string): string {
   if (!text) return text
   const redacted = redactShellText(text)
   // An escape sequence in a key or between a key and its value (`\x1b[1;31mAPI_KEY\x1b[m=…`, `pass\x1b[1mword …`) hides
@@ -2005,7 +2051,7 @@ function redactPrivateKeys(text: string): string {
 function redactRules(text: string): string {
   if (!text) return text
   const hasAssignment = text.includes('=')
-  let out = redactPluginPatterns(maskSplitTokens(redactPrivateKeys(text))).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskSplitTokens(redactPrivateKeys(text)).replace(CRED_RE, (_, t: string) => mask(t))
   if (hasAssignment) {
     out = redactConnectionStrings(out).replace(SAS_RE, (_, head: string, value: string) => {
       const signature = /(?:^|&)sig=[^&]*/i.exec(value)

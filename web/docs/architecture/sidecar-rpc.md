@@ -10,10 +10,18 @@ frame, the sidecar checks the native matcher identity and pushes one
 affected result, error, or frame. Concurrent policy reads do not consume pushes.
 
 The server applies the additive union synchronously in its shared redactor and
-invalidates its text memo on policy changes. Retaining learned rules across
+invalidates its text memo on policy changes. Plugin matches are collected on
+original text and the existing control/ANSI-stripped views. Overlaps are merged
+before masking. Disjoint built-in masks retain their display; an interfering
+match fully masks the enclosing built-in change interval, so a plugin cannot
+remove a credential name or prefix and expose its value. Display controls never
+count toward a plugin token's partial-mask length floor. Retaining learned rules across
 reconnects also prevents an older concurrent snapshot from weakening a push.
-Patterns compile only with portable Python/JavaScript escapes in Unicode mode;
-Python dot matching is translated to exclude LF only. Python-only syntax and
+Only literal rules or a literal prefix followed by one terminal character class
+or wildcard can execute as JavaScript regexes. Repeat minima are capped at 256
+to bound failed work per prefix candidate; grouped alternatives, suffix
+constraints and other forms use prefix masking. Portable Python/JavaScript
+escapes compile in Unicode mode; Python dot matching excludes LF only. Python-only syntax and
 semantics (including Unicode shorthand classes and absolute anchors) mask the
 non-whitespace run starting at their literal prefix. No per-string RPC or Agent change is needed.
 

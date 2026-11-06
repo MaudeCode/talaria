@@ -28,6 +28,19 @@ describe('redactText cache', () => {
     } finally { exec.mockRestore() }
   })
 
+  it.each([
+    { pattern: 'nonlinear_(a|aa)+$', prefix: 'nonlinear_', text: 'nonlinear_' + 'a'.repeat(24) + '!', expected: 'nonlin...aaa!' },
+    { pattern: 'suffix_[a-z_]+$', prefix: 'suffix_', text: 'suffix_'.repeat(24) + '!', expected: 'suffix...ix_!' },
+    { pattern: 'minimum_[a-z_]{1000000,}', prefix: 'minimum_', text: 'minimum_' + 'a'.repeat(24), expected: 'minimu...aaaa' },
+  ])('never evaluates unsafe plugin rule $pattern on the shared event loop', ({ pattern, prefix, text, expected }) => {
+    applyRedactionPolicy({ fingerprint: pattern, patterns: [{ pattern, literal_prefix: prefix }] })
+    const exec = vi.spyOn(RegExp.prototype, 'exec')
+    try {
+      expect(redactText(text, true)).toBe(expected)
+      expect(exec.mock.contexts.some((regex) => regex instanceof RegExp && regex.source === pattern)).toBe(false)
+    } finally { exec.mockRestore() }
+  })
+
   it.each([64, 200 * 1024].flatMap((size) => [true, false].map((sensitive) => ({ size, sensitive }))))(
     'skips every regex pass on a repeated $size-character payload, sensitive=$sensitive', ({ size, sensitive }) => {
       const head = sensitive ? 'PASSWORD=syntheticCacheSecret\n' : 'ordinary cache output\n'
