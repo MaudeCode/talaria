@@ -90,6 +90,7 @@ const WEBAPP_LINK_CREDENTIAL_RE = /((?<![A-Za-z0-9_-])hermes-session=|\/webapp\/
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
 const QUOTED = String.raw`\$?'[^']*'|\$?"(?:[^"\\]|\\[\s\S])*"|\\"(?:[^"\\]|\\[^"])*\\"`
+const SHELL_WORD_BOUNDARY_RE = /[\s&;|<>()]/
 const SHELL_COMPOSITION_RE = /["'\\$`]/
 /** A `"` / `'` not escaped by an odd run of backslashes. */
 const UNESCAPED_QUOTE_RE = [/(?:^|[^\\])(?:\\\\)*"/, /(?:^|[^\\])(?:\\\\)*'/] as const
@@ -685,7 +686,7 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     // The word goes on past the enclosing quote when an adjacent piece follows (`'--password=foo'bar`).
     // An empty continuation (`"…", "x"`: JSON structure) leaves the word, and the enclosing quote, at the close.
     const next = text[close + 1] ?? ''
-    const after = next && !/[\s&;|<>()]/.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
+    const after = next && !SHELL_WORD_BOUNDARY_RE.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
     return after === close + 1 ? close : after
   }
   let depth = 0
@@ -746,7 +747,7 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
       if (depth === 0) return i
     } else if (c === '\n') return i
     // Shell metacharacters end a word outside a container.
-    else if (depth === 0 && /[\s&;|<>()]/.test(c)) return i
+    else if (depth === 0 && SHELL_WORD_BOUNDARY_RE.test(c)) return i
     // `,` `]` `}` inside a bare word are part of it (`correct]horse`); before a space, quote or the end they are structure.
     else if (depth === 0 && /[,\]}]/.test(c) && !/^[^\s,\]})"'\\]/.test(text[i + 1] ?? '')) return i
     else i += 1
@@ -1378,7 +1379,9 @@ function redactSerializedUrls(text: string): string {
     i = Math.min(i + 1, text.length)
     // ANSI-C/gettext quoting owns its dollar prefix; other glued pieces belong to shell composition.
     const prefix = text[start - 1] === '$' ? start - 1 : start
-    if ((prefix > 0 && !/[\s[({=:,]/.test(text[prefix - 1]!)) || (closed && i < text.length && !/[\s,;)\]}&|]/.test(text[i]!))) continue
+    const before = text[prefix - 1] ?? ''
+    const after = text[i] ?? ''
+    if ((prefix > 0 && !SHELL_WORD_BOUNDARY_RE.test(before) && !/[[{=:,]/.test(before)) || (closed && i < text.length && !SHELL_WORD_BOUNDARY_RE.test(after) && !/[,\]}]/.test(after))) continue
     let value: unknown
     if (quote === '"' && closed) {
       try { value = JSON.parse(text.slice(start, i)) as unknown } catch { /* Python repr or a capped literal. */ }
