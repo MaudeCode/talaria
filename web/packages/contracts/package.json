@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit --declaration false -p tsconfig.json",
     "lint": "oxlint --type-aware -c ../../.oxlintrc.json",
     "test": "vitest run",
     "openapi": "node scripts/generate-openapi.mjs",

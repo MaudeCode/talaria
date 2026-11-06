@@ -254,11 +254,15 @@ jobs:
       - name: Locale parity gate
         run: npm run i18n:gate
 
-      - name: Strict TypeScript
-        run: npm run typecheck
-
       - name: Oxlint (TypeScript, React, service worker, contract rules)
         run: npm run lint
+
+      # The lint step's prelint already generated the i18n and route outputs this needs. TypeScript 7 is a Go binary;
+      # collecting garbage less often saves about a quarter of its time here with no higher peak memory (TAL-1778).
+      - name: Strict TypeScript
+        env:
+          GOGC: "400"
+        run: npm run typecheck --ignore-scripts
 
       - name: Vitest
         run: npm test -- --maxWorkers=2
