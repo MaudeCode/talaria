@@ -2,7 +2,7 @@ import { expect, settle, test } from './fixtures'
 
 test('profile import previews, cancels, confirms and reconciles using keyboard and responsive controls', async ({ page }, testInfo) => {
   const calls: unknown[] = []
-  const base = { status: 'available', sources: [{ agent: 'cursor', label: 'Cursor' }], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
+  const base = { status: 'available', sources: [{ agent: 'cursor', label: 'Cursor', available: true, input: 'none', detail: null, export_prompt: null }], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
   const preview = { ...base, status: 'preview', items: [{ kind: 'rules', status: 'imported', label: 'Cursor rules' }, { kind: 'mcp-servers', status: 'conflict', label: 'MCP servers' }, { kind: 'skills', status: 'skipped', label: 'Skills' }], stripped_secrets: ['mcp_servers.example.env.API_TOKEN'], receipt: 'bound-fixture', can_apply: true }
   await page.route('**/api/profile/import', (route) => route.fulfill({ json: base }))
   await page.route('**/api/profile/import/preview', (route) => {
@@ -45,7 +45,7 @@ test('unknown import outcomes offer readback without replaying the write', async
   if (process.env.TALARIA_IMPORT_BEFORE === '1') return
   let applies = 0
   let reads = 0
-  const base = { status: 'available', sources: [{ agent: 'codex', label: 'Codex CLI' }], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
+  const base = { status: 'available', sources: [{ agent: 'codex', label: 'Codex CLI', available: true, input: 'none', detail: null, export_prompt: null }], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
   await page.route('**/api/profile/import', (route) => route.fulfill({ json: base }))
   await page.route('**/api/profile/import/preview', (route) => route.fulfill({ json: { ...base, status: 'preview', receipt: 'unknown-fixture', can_apply: true } }))
   await page.route('**/api/profile/import/apply', (route) => { applies++; return route.fulfill({ json: { ...base, status: 'unknown', message: 'Import outcome is unknown. Check the profile before starting a new preview.' } }) })
@@ -77,4 +77,39 @@ test('configuration refusals keep the profile unchanged and offer no unrelated i
   await expect(dialog.getByRole('link', { name: 'Open plugin catalog' })).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: 'Preview', exact: true })).toHaveCount(0)
   await page.screenshot({ path: `/tmp/TAL-1493-evidence/config-refusal-${testInfo.project.name}.png` })
+})
+
+test('TAL-1826: a Grok Bot export previews through the file input and an unavailable source stays disabled', async ({ page }) => {
+  const row = { available: true, input: 'none', detail: null, export_prompt: null }
+  const base = { status: 'available', items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null, sources: [
+    { ...row, agent: 'cursor', label: 'Cursor' },
+    { ...row, agent: 'grok-bot', label: 'Grok Bot', input: 'file', export_prompt: 'Write your setup as one grok-bot-export JSON document.' },
+    { ...row, agent: 'openbot', label: 'OpenBot', available: false, detail: 'Not found on this computer' },
+  ] }
+  const preview = { ...base, sources: [], status: 'preview', receipt: 'bound-fixture', can_apply: true, stripped_secrets: ['grok-bot-export.json: 1 token-like value(s) redacted'], items: [
+    { kind: 'role', status: 'imported', label: 'Instructions' },
+    { kind: 'memories', status: 'imported', label: 'Memories' },
+    { kind: 'skill', status: 'imported', label: 'Skill' },
+    { kind: 'routine', status: 'imported', label: 'Routine (paused task)' },
+    { kind: 'event-routines', status: 'imported', label: 'Event routines (saved as notes)' },
+  ] }
+  const calls: unknown[] = []
+  await page.route('**/api/profile/import', (route) => route.fulfill({ json: base }))
+  await page.route('**/api/profile/import/preview', (route) => {
+    calls.push(route.request().postDataJSON())
+    return route.fulfill({ json: preview })
+  })
+  await page.goto('/profiles')
+  await settle(page)
+  await page.getByRole('button', { name: 'Import agent setup' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox', { name: 'Source' }).click()
+  await expect(page.getByRole('option', { name: 'OpenBot: Not found on this computer' })).toHaveAttribute('aria-disabled', 'true')
+  await page.getByRole('option', { name: 'Grok Bot', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: 'Preview', exact: true })).toBeDisabled()
+  await dialog.getByLabel('Export file').setInputFiles({ name: 'grok-bot-export-account-health.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"grok-bot-export"}') })
+  await dialog.getByRole('button', { name: 'Preview', exact: true }).click()
+  await expect(dialog.getByText('Routine (paused task)', { exact: true })).toBeVisible()
+  expect(calls).toEqual([{ agent: 'grok-bot', export_text: '{"format":"grok-bot-export"}' }])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })

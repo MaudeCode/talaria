@@ -10,7 +10,8 @@ import type { AgentImportResult } from '@maudecode/talaria-web-contracts'
 const state = vi.hoisted(() => ({ context: {} }))
 vi.mock('../../stream/connection', () => ({ getStreamContext: () => state.context, useStreamContext: () => state.context }))
 vi.mock('../../api/endpoints', () => ({ discoverAgentImports: vi.fn(), previewAgentImport: vi.fn(), applyAgentImport: vi.fn(), agentImportResult: vi.fn() }))
-const available: AgentImportResult = { status: 'available', sources: [{ agent: 'cursor', label: 'Cursor' }], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
+const cursor = { agent: 'cursor', label: 'Cursor', available: true, input: 'none', detail: null, export_prompt: null } as const
+const available: AgentImportResult = { status: 'available', sources: [cursor], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
 const preview: AgentImportResult = { ...available, status: 'preview', items: [{ kind: 'rules', status: 'imported', label: 'Cursor rules' }, { kind: 'skill', status: 'conflict', label: 'Existing item kept' }], stripped_secrets: ['mcp_servers.fixture.env.API_TOKEN'], receipt: 'bound-preview', can_apply: true }
 beforeEach(() => {
   vi.resetAllMocks()

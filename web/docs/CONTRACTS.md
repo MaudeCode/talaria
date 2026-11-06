@@ -569,13 +569,32 @@ or Ignore config chat refuses a project: its Agent-owned chat is display-only in
 New chat sends only the project and the user's picks. The shared fixture is
 `contracts/fixtures/project-bindings.json`.
 
-## Coding-agent profile import
+## Agent profile import
 
 Owner-only `/api/profile/import` discovers the OS user's default `.claude`,
 `.codex` and `.cursor` source directories. `/preview` accepts only an agent ID;
 `/apply` accepts only an opaque receipt. `/result?receipt=…` reconciles without
 running the importer. Web renders the server's dispositions and secret names.
 App adoption is tracked separately in TAL-1494.
+
+Discovery also lists `grok-bot` and `openbot`. Each `sources` row carries
+`available`, `input` (`none` or `file`), `detail` (why it is unavailable) and
+`export_prompt` (the message that asks a Grok Bot to write its export). A Grok
+Bot preview carries the export as `export_text`, up to 4 million characters. It
+travels with the request because `/api/upload` only stores into a chat session's
+inbox; the receipt holds it in memory and nothing persists the document. An
+export names no local folders and starts no MCP commands: skill `path` and
+`mcp_servers` keys are dropped before the importer sees them, and credential-looking
+keys refuse the file. The app-cache checklist is skipped because it reads live
+paths. OpenBot's database and WAL are copied through held descriptors, up to 1 GiB,
+because SQLite opens by path and would follow a swapped file; SQLite only ever opens
+that private copy, so the source gains no files. Only the five `projection_*` tables
+the importer reads, plus each agent's skill folders, reach the importer; chat history
+stays behind, so ordinary app activity does not invalidate a preview. Discovery
+checks the database without copying it. Routines become paused cron jobs, published under the live
+store's jobs lock; a scheduler write after preview invalidates it. Neither source
+registers for sync. Revisions whose reviewed manifest lacks `grok_bot.py` and
+`openbot.py` report both rows unavailable.
 
 The adapter requires an installed, enabled catalog `agent-importers` plugin at
 the immutable revision the Agent's in-tree catalog pins. That revision must be

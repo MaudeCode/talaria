@@ -1,5 +1,5 @@
 import { DelegationWriteSchema } from '../delegation.js'
-import { AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
+import { AGENT_IMPORT_EXPORT_MAX_CHARS, AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ModelsLiveSchema, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
@@ -74,8 +74,8 @@ export const settingsContract = {
     linkCheck: oc.route({ method: 'POST', path: '/api/settings/link-check', tags, summary: 'Whether a clicked chat link opens without the confirmation dialog (only absolute HTTP(S) URLs, when `confirm_external_links` is off or the exact hostname is in `trusted_link_hosts`), and the hostname that dialog names (null when the URL has none).' }).input(z.object({ url: z.string().max(16384) })).output(z.object({ opens_directly: z.boolean(), host: z.string().nullable() })),
   },
   profileImport: {
-    discover: oc.route({ method: 'GET', path: '/api/profile/import', tags, summary: 'Owner only: permitted local coding-agent sources and reviewed importer availability.' }).output(AgentImportResultSchema),
-    preview: oc.route({ method: 'POST', path: '/api/profile/import/preview', tags, summary: 'Owner only: preview with no source or profile writes. Consent binds the active profile, reviewed plugin and source/target snapshots.' }).input(z.strictObject({ agent: AgentImportSourceSchema })).output(AgentImportResultSchema),
+    discover: oc.route({ method: 'GET', path: '/api/profile/import', tags, summary: 'Owner only: permitted local agent sources, the input each needs and reviewed importer availability.' }).output(AgentImportResultSchema),
+    preview: oc.route({ method: 'POST', path: '/api/profile/import/preview', tags, summary: 'Owner only: preview with no source or profile writes. Consent binds the active profile, reviewed plugin and source/target snapshots.' }).input(z.strictObject({ agent: AgentImportSourceSchema, export_text: z.string().min(1).max(AGENT_IMPORT_EXPORT_MAX_CHARS).optional() }).refine((value) => (value.agent === 'grok-bot') === (value.export_text !== undefined), 'export_text is required for grok-bot and refused otherwise')).output(AgentImportResultSchema),
     result: oc.route({ method: 'GET', path: '/api/profile/import/result', tags, summary: 'Owner only: read back a consumed import. Never runs the importer.' }).input(z.strictObject({ receipt: z.string().min(1).max(128) })).output(AgentImportResultSchema),
     apply: oc.route({ method: 'POST', path: '/api/profile/import/apply', tags, summary: 'Owner only: consume preview consent once, or reconcile its recorded outcome. Never replays an unknown import.' }).input(z.strictObject({ receipt: z.string().min(1).max(128) })).output(AgentImportResultSchema),
   },

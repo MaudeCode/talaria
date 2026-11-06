@@ -1095,4 +1095,7 @@ afterwards it reports `completed`, `error` or `unknown`.
 RPC v65 adds `profiles.import` with `discover`, `preview`, `apply` and read-only
 `result` actions. The shared result is `AgentImportResultSchema`. The adapter
 loads attested structured importer/sync APIs, not plugin CLI output or Desktop
-code. See Coding-agent profile import in `docs/CONTRACTS.md`.
+code. See Agent profile import in `docs/CONTRACTS.md`.
+
+RPC v80 adds the `grok-bot` and `openbot` sources, the `export_text` preview param
+and the `available`, `input`, `detail` and `export_prompt` source row fields.

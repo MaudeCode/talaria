@@ -13,6 +13,9 @@
     "471acd3b4d0d5c12f6f0f6b42db4a2f52a912dba": {
       "importer.py": "51d7efa68259ca9bfca4908f89b18efa3e61ad08692bf6654c6af3a3deef5554",
       "sync.py": "0b2bf82a6c90406fbf2cd1cac66db95ab523bd9fd2d102ea8f0272d0efd65c19",
+      "grok_bot_cache.py": "6aa448627533a634b5bef3c44f8615787416fb8b52c504acc5a5d1b0c1d603d7",
+      "grok_bot.py": "0bb7813fac6ddbd65c9e5ca258a600885b7c9d7f2d6a0ee6daf2d7dc83301bce",
+      "openbot.py": "9ad45a5e1a4efb27e4ecc80ab18f07d74643401d0978adce19488607a53f211c",
       "plugin.yaml": "c90f719db7947c01cc9942f56a0d9ec4e04c6bb6d1ed9a369787a22b01af4120"
     }
   }

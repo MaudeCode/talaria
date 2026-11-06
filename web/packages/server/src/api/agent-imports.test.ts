@@ -10,15 +10,17 @@ afterEach(async () => { await server?.close() })
 
 it('TAL-1493: exposes owner-only discovery, preview and explicit receipt application in the active profile', async () => {
   const sidecar = new FakeSidecar()
-  sidecar.respond('profiles.import', (params) => ({ status: params.action === 'discover' ? 'available' : params.action === 'preview' ? 'preview' : 'applied', profile: 'default', sources: [{ agent: 'cursor', label: 'Cursor' }], items: [], stripped_secrets: [], receipt: params.action === 'preview' ? 'opaque-preview' : null, can_apply: params.action === 'preview', message: null }))
+  sidecar.respond('profiles.import', (params) => ({ status: params.action === 'discover' ? 'available' : params.action === 'preview' ? 'preview' : 'applied', profile: 'default', sources: [{ agent: 'cursor', label: 'Cursor', available: true, input: 'none', detail: null, export_prompt: null }], items: [], stripped_secrets: [], receipt: params.action === 'preview' ? 'opaque-preview' : null, can_apply: params.action === 'preview', message: null }))
   server = await bootTestServer({ sidecar })
   const call = (path: string, body: unknown) => server!.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   expect((await server.get('/api/profile/import')).status, 'Owner can discover import sources').toBe(200)
   expect(await (await call('/api/profile/import/preview', { agent: 'cursor' })).json()).toMatchObject({ status: 'preview', receipt: 'opaque-preview' })
+  expect(await (await call('/api/profile/import/preview', { agent: 'grok-bot', export_text: '{"format":"grok-bot-export"}' })).json()).toMatchObject({ status: 'preview' })
   expect(await (await call('/api/profile/import/apply', { receipt: 'opaque-preview' })).json()).toMatchObject({ status: 'applied' })
   expect(sidecar.calls.filter((c) => c.method === 'profiles.import').map((c) => c.params)).toEqual([
     { action: 'discover', profile_home: server.deps.profileHome('default') },
     { action: 'preview', agent: 'cursor', profile_home: server.deps.profileHome('default') },
+    { action: 'preview', agent: 'grok-bot', export_text: '{"format":"grok-bot-export"}', profile_home: server.deps.profileHome('default') },
     { action: 'apply', receipt: 'opaque-preview', profile_home: server.deps.profileHome('default') },
   ])
   expect((await call('/api/profile/import/preview', { agent: '../../secrets' })).status).toBe(400)

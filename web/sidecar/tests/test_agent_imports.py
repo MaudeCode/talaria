@@ -2,11 +2,13 @@
 from contextlib import nullcontext
 import json
 from pathlib import Path
+import sqlite3
 import sys
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from talaria_sidecar.errors import InvalidParams
 from talaria_sidecar.methods import Registry, build_methods
 from talaria_sidecar.methods.plugin_catalog import reviewed_importer
 
@@ -32,6 +34,7 @@ def imports(monkeypatch, tmp_path):
     (other / 'config.yaml').write_text('untouched')
     effects = []
     state = {'pin': 'reviewed', 'supported': True, 'failure': None}
+    bots = {}
 
     class Importer:
         def __init__(self, agent, source_root, target_root, execute=False, overwrite=False):
@@ -55,7 +58,7 @@ def imports(monkeypatch, tmp_path):
         (dest / 'import-sync.json').write_text('{"agents":{"cursor":{"source":"temporary"}}}')
     monkeypatch.setattr(Path, 'home', lambda: root)
     monkeypatch.setattr(subject.homes, 'scoped_home', lambda *a, **kw: nullcontext())
-    monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']]) if state['supported'] else None)
+    monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']], bots) if state['supported'] else None)
     monkeypatch.setattr(subject.config, 'assert_config_writable', lambda _home: None)
     monkeypatch.setattr(subject, '_PREVIEWS', {})
     monkeypatch.setattr(subject, '_refresh_runtime', lambda _home: True)
@@ -72,7 +75,7 @@ def tree(path):
 def test_preview_cancel_and_explicit_apply_are_isolated_and_redacted(imports):
     i = imports
     before, other = tree(i.target), tree(i.other)
-    assert i.call('discover')['sources'] == [{'agent': 'cursor', 'label': 'Cursor'}]
+    assert [row['agent'] for row in i.call('discover')['sources'] if row['available']] == ['cursor']
     preview = i.call('preview', agent='cursor')
     assert preview['status'] == 'preview' and preview['can_apply']
     assert tree(i.target) == before and i.effects == []
@@ -127,6 +130,90 @@ def test_unavailable_does_not_touch_profile_and_result_never_executes(imports):
     assert i.call('result', receipt=preview['receipt'])['status'] == 'changed'
     assert i.call('apply', receipt=preview['receipt'])['status'] == 'changed'
     assert i.effects == []
+
+
+@pytest.mark.parametrize('params', [dict(agent='grok-bot'), dict(agent='cursor', export_text='{}'), dict(agent='openbot', export_text='{}')])
+def test_only_a_grok_bot_preview_carries_an_export(imports, params):
+    with pytest.raises(InvalidParams):
+        imports.call('preview', **params)
+
+
+def test_snapshot_refuses_a_linked_directory_above_a_nested_input(imports):
+    i = imports
+    (i.other / 'jobs.json').write_text('{}')
+    (i.target / 'cron').symlink_to(i.other)
+    with pytest.raises(OSError):
+        i.subject._snapshot(i.target, ('cron/jobs.json',))
+    assert i.subject._snapshot(i.target, ('absent/jobs.json',))[0] == {}
+
+
+def openbot_database(root, *, rows=('Verified agent',)):
+    user_data = root / '.config/OpenBot'
+    user_data.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(user_data / 'openbot.db')
+    db.execute('PRAGMA journal_mode = WAL')
+    db.execute('PRAGMA wal_autocheckpoint = 0')
+    db.execute('CREATE TABLE projection_agents (agent_id TEXT PRIMARY KEY, sort_order INTEGER, agent_json TEXT)')
+    db.executemany('INSERT INTO projection_agents VALUES (?, 0, ?)', [(name, json.dumps({'name': name, 'workspacePath': str(root / 'absent')})) for name in rows])
+    db.commit()
+    return user_data, db
+
+
+OPENBOT = SimpleNamespace(USER_DATA_DIRS=('.config/OpenBot',), DATABASE='openbot.db', _SKILL_DIRS=('.agents/skills',))
+
+
+def test_openbot_extract_stays_bound_to_the_verified_database(imports, monkeypatch):
+    i = imports
+    user_data, live = openbot_database(i.root)
+    live.close()
+    decoy = sqlite3.connect(i.root / 'replacement.db')
+    decoy.execute('CREATE TABLE projection_agents (agent_id TEXT PRIMARY KEY, sort_order INTEGER, agent_json TEXT)')
+    decoy.execute('INSERT INTO projection_agents VALUES (?, 0, ?)', ('Replacement agent', '{"name": "Replacement agent"}'))
+    decoy.commit()
+    decoy.close()
+    connect = sqlite3.connect
+
+    def swapped_before_open(*args, **kwargs):
+        # The window between any path check and SQLite's own open.
+        database = user_data / 'openbot.db'
+        if not database.is_symlink():
+            database.unlink()
+            database.symlink_to(i.root / 'replacement.db')
+        return connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', swapped_before_open)
+    rows = i.subject._openbot_source(OPENBOT)[1][i.subject._OPENBOT_ROWS]
+    assert b'Replacement agent' not in rows, 'SQLite followed a database swapped in after its check'
+    assert b'Verified agent' in rows
+
+
+def test_openbot_extract_reads_uncheckpointed_rows_without_touching_the_source(imports):
+    i = imports
+    user_data, live = openbot_database(i.root)
+    try:
+        before = {path.name: path.read_bytes() for path in user_data.iterdir() if path.name != 'openbot.db-shm'}
+        assert b'Verified agent' in i.subject._openbot_source(OPENBOT)[1][i.subject._OPENBOT_ROWS], 'A committed WAL row was lost'
+        assert {path.name: path.read_bytes() for path in user_data.iterdir() if path.name != 'openbot.db-shm'} == before
+    finally:
+        live.close()
+    i.subject._openbot_source(OPENBOT)
+    assert [path.name for path in user_data.iterdir()] == ['openbot.db'], 'Reading a closed database left SQLite files behind'
+
+
+@pytest.mark.parametrize('link', ['database', 'parent'])
+def test_openbot_extract_refuses_linked_inputs(imports, link):
+    i = imports
+    elsewhere = i.root / 'elsewhere'
+    _, live = openbot_database(elsewhere)
+    live.close()
+    (i.root / '.config').mkdir()
+    if link == 'parent':
+        (i.root / '.config/OpenBot').symlink_to(elsewhere / '.config/OpenBot')
+    else:
+        (i.root / '.config/OpenBot').mkdir()
+        (i.root / '.config/OpenBot/openbot.db').symlink_to(elsewhere / '.config/OpenBot/openbot.db')
+    with pytest.raises(OSError):
+        i.subject._openbot_source(OPENBOT)
 
 
 @pytest.mark.parametrize('moved, reaches_bytes', [(True, False), (False, True)])

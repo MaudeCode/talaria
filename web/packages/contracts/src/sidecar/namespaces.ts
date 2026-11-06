@@ -6,7 +6,7 @@ import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { McpEventsDataSchema } from '../mcp-events.js'
 import { ContextDetailSchema } from '../context-detail.js'
 import { z } from 'zod'
-import { AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
+import { AGENT_IMPORT_EXPORT_MAX_CHARS, AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
 import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
 import { GatewayClarifyBatchSchema, GatewayCreateParamsSchema, GatewaySessionParamsSchema, GatewaySessionResultSchema } from '../gateway-session.js'
@@ -313,7 +313,7 @@ export const ProfileRowSchema = z.object({
   canonical_session: CanonicalBotChatSchema.nullable().default(null),
 })
 export const PROFILES_METHODS = {
-  'profiles.import': { params: ProfileHomeParams.extend({ action: z.enum(['discover', 'preview', 'apply', 'result']), agent: AgentImportSourceSchema.optional(), receipt: z.string().min(1).max(128).optional() }), result: AgentImportResultSchema },
+  'profiles.import': { params: ProfileHomeParams.extend({ action: z.enum(['discover', 'preview', 'apply', 'result']), agent: AgentImportSourceSchema.optional(), export_text: z.string().min(1).max(AGENT_IMPORT_EXPORT_MAX_CHARS).optional(), receipt: z.string().min(1).max(128).optional() }), result: AgentImportResultSchema },
   'profiles.list': { params: BaseHomeParams, result: z.object({ profiles: z.array(ProfileRowSchema) }) },
   'profiles.create': { params: BaseHomeParams.extend({ name: z.string().min(1), clone_from: z.string().nullable().optional(), clone_config: z.boolean().optional() }), result: z.object({ profile: ProfileRowSchema }) },
   'profiles.delete': { params: BaseHomeParams.extend({ name: z.string().min(1) }), result: z.object({ ok: z.literal(true) }) },
