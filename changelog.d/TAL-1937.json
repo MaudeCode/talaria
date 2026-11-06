@@ -1,0 +1,3 @@
+{
+  "skip": "Test-only change: the sidecar Agent mutation test double ignores its bytecode as the real Agent does, and the test reports refused RPC results; no shipped behavior changes."
+}
