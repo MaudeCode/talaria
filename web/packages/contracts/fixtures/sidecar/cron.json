@@ -418,6 +418,20 @@
       }
     }
   ],
+  "cron.cancel": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "job_id": "9dc6d23bb99b",
+        "reason": "nothing in flight"
+      },
+      "result": {
+        "ok": true,
+        "job_id": "9dc6d23bb99b",
+        "status": "not_running"
+      }
+    }
+  ],
   "cron.history": [
     {
       "params": {

@@ -27,7 +27,7 @@ const full: CronJob = {
   schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null, repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
-  derived_state: 'active', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null,
+  derived_state: 'active', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null, can_stop: false, stopping: false, last_outcome: 'succeeded',
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
@@ -136,6 +136,37 @@ describe('TasksPage', () => {
     await act(async () => { pause.resolve({ ok: true }); resume.resolve({ ok: true }); await Promise.all([pause.promise, resume.promise]) })
     await waitFor(() => expect(list.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active'))
     expect(list.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
+  })
+
+  it('offers Stop only when the server says so, shows stopping at once and rolls back on a refusal (TAL-1819)', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const live = { ...full, running: true, can_stop: true }
+    const detail = await openJob('Feed', [live, { ...feed, running: true }])
+    expect(detail.queryByRole('button', { name: /^stop$/i })).toBeNull()
+    await selectJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^stop$/i }))
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'stopping')
+    expect(detail.queryByRole('button', { name: /^stop$/i })).toBeNull()
+    expect(api.cronAction).toHaveBeenCalledWith('stop', { job_id: full.id })
+    act(() => { held.resolve({ ok: false, error: 'This Hermes Agent can\'t stop a running task' }) })
+    await waitFor(() => expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'running'))
+    expect(detail.getByRole('button', { name: /^stop$/i })).toBeEnabled()
+    expect(showToast).toHaveBeenCalledWith('This Hermes Agent can\'t stop a running task', 4000, 'error')
+  })
+
+  it('settles a stop on the server: stopping while the run winds down, then its cancelled outcome (TAL-1819)', async () => {
+    const detail = await openJob('Digest', [{ ...full, running: true, can_stop: true }])
+    vi.mocked(api.cronAction).mockResolvedValue({ ok: true, job_id: full.id!, status: 'stopping' })
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, running: true, stopping: true }]))
+    await userEvent.click(detail.getByRole('button', { name: /^stop$/i }))
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Stopping job'))
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'stopping')
+    expect(detail.queryByRole('button', { name: /^stop$/i })).toBeNull()
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, last_status: 'cancelled', last_outcome: 'cancelled' }]))
+    await act(async () => { await qc.invalidateQueries({ queryKey: keys.crons.all }) })
+    await waitFor(() => expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active'))
+    expect(detail.getByText(/· stopped/)).toBeInTheDocument()
   })
 
   it('removes a deleted job at once after confirmation; Cancel changes nothing; a refusal brings it back', async () => {

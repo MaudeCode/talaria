@@ -1333,6 +1333,8 @@ export const CronScheduleSchema = z.looseObject({ kind: z.string().optional(), e
 export const CronRepeatSchema = z.looseObject({ times: NullableNumber.optional(), completed: z.number().optional() })
 export const CronDerivedStateSchema = z.enum(['needs_attention', 'schedule_error', 'paused', 'off', 'error', 'active'])
 export type CronDerivedState = z.infer<typeof CronDerivedStateSchema>
+/** How a run ended, classified by the server: `cancelled` is an operator's stop, never a failure. */
+export const CronRunOutcomeSchema = z.enum(['succeeded', 'failed', 'cancelled', 'unknown'])
 export const CronJobViewSchema = z.looseObject({
   read_only: z.boolean().optional(), owner_profile: NullableString.optional(), id: z.string().optional(), job_id: z.string().optional(), name: z.string().nullable().optional(), prompt: z.string().optional(), schedule: z.union([z.string(), CronScheduleSchema]).optional(),
   /** Server-filled (TAL-298): `schedule_display` is the schedule text clients show; `schedule_input` is the editor prefill the scheduler accepts back. */
@@ -1345,6 +1347,8 @@ export const CronJobViewSchema = z.looseObject({
   derived_state: CronDerivedStateSchema.optional(), needs_attention: z.boolean().optional(), resumable: z.boolean().optional(),
   /** Server-derived (TAL-599): a known cause clients explain in the needs-attention banner. */
   attention_hint: z.enum(['croniter_missing']).nullable(),
+  /** Server-derived (TAL-1819): a live run this client may stop, whoever started it; a stop on its way until that run ends; and how the latest run ended. */
+  can_stop: z.boolean(), stopping: z.boolean(), last_outcome: CronRunOutcomeSchema,
   /** Server-normalized (TAL-810): the job's latest failed run, kept after later successes; `at` is epoch seconds, null when unparseable. */
   last_failure: z.object({ at: z.number().nullable(), detail: z.string() }).nullable(),
   /** Server-derived (TAL-1850): the distinct platforms whose last delivery may not have arrived, empty when none. A re-send may duplicate the post, so clients offer no retry. */
@@ -1370,7 +1374,7 @@ export const CronContextSourcesSchema = z.object({ profile: z.string(), sources:
 export type CronContextSources = z.infer<typeof CronContextSourcesSchema>
 /** `GET /api/crons/recent` row: one job's latest completion, ordered and classified by the server. */
 export const CronRecentCompletionSchema = z.object({
-  job_id: z.string(), name: z.string().nullable(), status: z.string().nullable(), outcome: z.enum(['succeeded', 'failed', 'unknown']), completed_at: z.number(),
+  job_id: z.string(), name: z.string().nullable(), status: z.string().nullable(), outcome: CronRunOutcomeSchema, completed_at: z.number(),
   toast_notifications: z.boolean(), session_id: z.string(), message_count: z.number().int().optional(),
 })
 export type CronRecentCompletion = z.infer<typeof CronRecentCompletionSchema>

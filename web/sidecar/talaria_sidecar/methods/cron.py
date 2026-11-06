@@ -51,6 +51,14 @@ class _ClaimLost(RuntimeError):
         super().__init__(_CLAIM_LOST)
 
 
+class _OperatorStop(Exception):
+    """An operator stopped a run that has no owner to book it: this process books the cancel."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 def _main_model_pin() -> tuple[str | None, str | None]:
     """``(provider, model)`` the scoped profile's main agent runs on: the Agent's own ``cron.jobs._main_model_pin``.
 
@@ -218,25 +226,37 @@ def _store_health(cron_dir: Path) -> dict | None:
 
 
 def _live_executions(home: Path, job_ids: list[str], *, strict: bool = False) -> dict[str, dict]:
-    """Jobs whose latest attempt is claimed or running under a live owner: the gateway scheduler or another process.
+    """Jobs with an attempt claimed or running under a live owner: the gateway scheduler or another process.
 
     The executions ledger lives under ``get_hermes_home()``, not the cron store override, so it is read in the
     profile's scope. A store without a ledger never ran anything, and is not created by this read. An unreadable
     ledger reads idle for a listing; ``strict`` (run admission) refuses instead, since it cannot prove the job idle."""
     try:
-        from cron.executions import live_inflight_execution
+        from cron import executions
+        # Newest live attempt, not the latest row: a refused Run now's newer row must not hide the run it lost to.
+        read = getattr(executions, "live_executions", None) or (lambda ids: {job_id: record for job_id in ids if (record := executions.live_inflight_execution(job_id))})
     except ImportError:
         return {}
     if not job_ids or not (Path(home).expanduser() / "cron" / "executions.db").is_file():
         return {}
     try:
         with scoped_home(home):
-            return {job_id: record for job_id in job_ids if job_id and (record := live_inflight_execution(job_id))}
+            return read([job_id for job_id in job_ids if job_id])
     except Exception as exc:  # noqa: BLE001 - an unreadable ledger cannot prove a run; the list still loads
         if strict:
             raise RpcError("Cannot tell whether this task is already running: its executions ledger is unreadable", condition="cron_ledger_unreadable") from exc
         log.warning("Cron executions ledger unreadable in %s", home, exc_info=True)
         return {}
+
+
+def _stoppable(home: Path, live: dict[str, dict]) -> dict[str, dict]:
+    """Each live attempt an operator can stop, and whether a stop is already on its way. Empty on an Agent that cannot."""
+    try:
+        from cron.cancellation import cancel_requested
+    except ImportError:
+        return {}
+    with scoped_home(home, read_only=True):
+        return {job_id: {"id": record["id"], "stopping": cancel_requested(record["id"])} for job_id, record in live.items()}
 
 
 def _claim_fire(store_home: Path, job: dict) -> dict | bool | None:
@@ -381,7 +401,7 @@ def _child_main(job, execution_home, result_queue, cancel_event=None, execution_
                 return recover(job, execution_id, cancel_event)
             if execution_id is not None:
                 return run_job(job, cancel_event=cancel_event, execution_id=execution_id)
-            return run_job(job)
+            return run_job(job, cancel_event=cancel_event) if cancel_event is not None else run_job(job)
 
         if execution_home is None:
             result = execute()
@@ -447,17 +467,19 @@ def _stop(process) -> None:
     process.join()
 
 
-def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, execution=None):
+def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, execution=None, stop=None):
     from .cron_execution import SETTLEMENT_SECONDS, Unverified
 
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
-    cancel_event = ctx_mp.Event() if execution is not None else None
+    cancel_event = ctx_mp.Event() if execution is not None or stop is not None else None
 
     def start(recovering=False):
         args = (job, str(execution_home) if execution_home else None, result_queue)
         if execution is not None:
             args += (cancel_event, execution.execution_id, recovering)
+        elif cancel_event is not None:
+            args += (cancel_event,)
         child = ctx_mp.Process(target=_worker, args=(_child_main, *args))
         child.start()
         return child
@@ -471,9 +493,8 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, executi
 
     def cancel(reason):
         nonlocal settling
-        if execution is None:
-            return
-        execution.cancel(reason)
+        if execution is not None:
+            execution.cancel(reason)
         cancel_event.set()
         if settling is None:
             settling = time.monotonic() + SETTLEMENT_SECONDS
@@ -520,6 +541,8 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, executi
                         status, payload = "cancelled", ["cancelled", ""]
                         break
                     cancel("cancelled")
+                if stop is not None and settling is None and (reason := stop()):
+                    cancel(reason)
                 if not process.is_alive():
                     # The child may have put its result just before exiting; otherwise it died (OOM, signal) without one.
                     try:
@@ -537,6 +560,9 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, executi
                         break
                     cancel("Manual task timed out")
                 if settling is not None and time.monotonic() >= settling:
+                    if execution is None:
+                        _stop(process)
+                        raise _OperatorStop(stop())
                     raise Unverified("The owner has not provided a terminal receipt.")
         process.join(timeout=5)
         if process.is_alive():
@@ -612,9 +638,14 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
     job_id = job.get("id", "")
     execution_home = execution_home or store_home
     outcome: dict = {"job_id": job_id, "status": "completed"}
+    attempt = None
     try:
+        attempt = cron_execution.open_attempt(execution_home, job_id)
+        stop = (lambda: cron_execution.operator_cancel(execution_home, attempt)) if attempt else None
         heartbeat = _heartbeat(store_home, job_id, claim_owner)
-        success, output, final_response, error = _run_in_child(job, execution_home, ctx, heartbeat if claim_owner else None)
+        success, output, final_response, error = _run_in_child(job, execution_home, ctx, heartbeat if claim_owner else None, stop=stop)
+        if stop is not None and (reason := stop()):
+            raise _OperatorStop(reason)
         with _store(store_home), _owner_fence(jobs, job_id, claim_owner) as owns, contextlib.ExitStack() as delivery:
             if not owns:
                 raise _ClaimLost()
@@ -632,6 +663,12 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
                 success, error = False, "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
             _mark_run(jobs, job_id, success, error, claim_owner, delivery_error)
         outcome.update(success=bool(success), error=error, delivery_error=delivery_error)
+    except _OperatorStop as stopped:
+        from cron.cancellation import finish_cancelled_run
+        with _store(store_home), scoped_home(execution_home, read_only=True):
+            finish_cancelled_run(job, attempt, claim_owner)
+        cron_execution.clear_operator_cancel(execution_home, attempt)
+        outcome.update(status="cancelled", success=False, error=stopped.reason)
     except RpcError:
         with _store(store_home):
             try:
@@ -650,6 +687,8 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
     finally:
         with _RUNNING_LOCK:
             _RUNNING.pop(job_id, None)
+        if attempt:
+            cron_execution.close_attempt(execution_home, attempt, bool(outcome.get("success")), outcome.get("error") or "cancelled")
     return outcome
 
 
@@ -717,12 +756,15 @@ def register(registry) -> None:
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
         with _RUNNING_LOCK:
             active = set(_RUNNING)
+        stoppable = _stoppable(home, live)
         for index, job in enumerate(listed):
             jid = str(job.get("id") or "")
             if jid in pending and jid not in live and jid not in active:
                 # Web preflight must use the accepted fire's profile, even after external job edits.
                 job = listed[index] = job_for_api(pending[jid])
             job["running_elsewhere"] = jid in live
+            # Replaces the Agent's own field, which it read under the sidecar's home rather than this store's.
+            job["live_execution"] = stoppable.get(jid)
         return result
 
     @registry.method("cron.get")
@@ -849,6 +891,16 @@ def register(registry) -> None:
         if not job:
             raise RpcError("Job not found", condition="not_found")
         return {"job": dict(job)}
+
+    @registry.method("cron.cancel")
+    def cancel(ctx: CallContext, params: dict) -> dict:
+        """Ask the job's live run to stop; the run itself books ``cancelled``. Its schedule is untouched."""
+        jobs, home, job_id = _jobs(), profile_home_param(params), _job_id(params)
+        if not hasattr(jobs, "cancel_job_run"):
+            raise RpcError("This Hermes Agent can't stop a running task. Update it to v0.22.6 or newer.", condition="cron_cancel_unsupported")
+        with _store(home), scoped_home(home, read_only=True):
+            result = jobs.cancel_job_run(job_id, reason=params.get("reason"))
+        return {"ok": True, "job_id": job_id, "status": "stopping" if result.get("cancelled") else "not_running"}
 
     @registry.method("cron.run")
     def run(ctx: CallContext, params: dict) -> dict:

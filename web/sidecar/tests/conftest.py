@@ -13,6 +13,7 @@ import os
 import pathlib
 import queue
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -79,6 +80,13 @@ def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None,
         env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
     env.update(extra)
     return env
+
+
+def ledger_row(home: pathlib.Path, job_id: str) -> dict:
+    """The job's newest attempt in the Agent's executions ledger."""
+    with sqlite3.connect(f"file:{home / 'cron/executions.db'}?mode=ro", uri=True) as db:
+        db.row_factory = sqlite3.Row
+        return dict(db.execute("select * from executions where job_id=? order by rowid desc limit 1", (job_id,)).fetchone())
 
 
 class SidecarProcess:

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Stop a scheduled task's live run from its page, whether a schedule or Run now started it. A stopped run shows as stopped, not failed, and sends no failure notice.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

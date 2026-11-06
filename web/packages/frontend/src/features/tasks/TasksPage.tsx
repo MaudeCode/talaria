@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
 import { copyWithToast } from '../../lib/clipboard'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -37,9 +37,10 @@ type CronAction = Parameters<typeof api.cronAction>[0]
 type CronWrite = Exclude<CronAction, 'run'>
 const runKey = ['cron-run'] as const
 
-/** The job as pause, resume or delete leaves it, shown until the server's next read. */
+/** The job as stop, pause, resume or delete leaves it, shown until the server's next read. */
 function cronEffect(action: CronWrite): ResourceEffect {
   if (action === 'delete') return { remove: true }
+  if (action === 'stop') return { fields: { stopping: true, can_stop: false } }
   return { fields: action === 'pause' ? { derived_state: 'paused', resumable: true } : { derived_state: 'active', resumable: false, needs_attention: false, paused_reason: null } }
 }
 interface Editor { mode: EditorMode; job: CronJob | null }
@@ -67,7 +68,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   const effects = useResourceEffects()
   // The list polls because it carries `last_run_at`, the only completion signal that covers scheduled runs
   // (the status map below only tracks runs started from the UI).
-  const crons = useQuery({ queryKey: keys.crons.list(allProfiles), queryFn: () => api.fetchCrons(allProfiles), staleTime: 15_000, refetchInterval: 30_000 })
+  const crons = useQuery({ queryKey: keys.crons.list(allProfiles), queryFn: () => api.fetchCrons(allProfiles), staleTime: 15_000, refetchInterval: (query) => query.state.data?.jobs.some((job) => job.stopping) ? 3_000 : 30_000 })
   const status = useQuery({ queryKey: keys.crons.status, queryFn: api.fetchCronStatus, refetchInterval: 10_000, staleTime: 5_000 })
   const invalidate = () => qc.invalidateQueries({ queryKey: keys.crons.all })
   const action = useResourceMutation({
@@ -81,7 +82,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     readKeys: () => [keys.crons.list(false), keys.crons.list(true), keys.crons.status],
     effect: ({ action }) => cronEffect(action),
     mutationFn: ({ action, job }) => api.cronAction(action, { job_id: jobId(job) }),
-    onSuccess: (_res, vars) => showToast(vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : m.cron_job_deleted()),
+    onSuccess: (res, vars) => showToast(vars.action === 'stop' ? (res.status === 'not_running' ? m.cron_job_not_running() : m.cron_job_stopping()) : vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : m.cron_job_deleted()),
     onError: (e) => showErrorToast(e),
   })
   // Run now executes on the server: each job's button stays busy until its own run request settles, so a run is never sent twice.
@@ -310,6 +311,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
     : (
       <fieldset className="flex flex-wrap gap-2" aria-label={job.name ?? id}>
         <Button disabled={starting} aria-busy={starting || undefined} onClick={() => onAction('run')}><Play size={12} aria-hidden="true" /> {m.cron_run_now()}</Button>
+        {job.can_stop && <Button onClick={() => onAction('stop')}><Square size={12} aria-hidden="true" /> {m.cron_stop()}</Button>}
         {job.resumable === true && <Button onClick={() => onAction('resume')}><Play size={12} aria-hidden="true" /> {m.cron_resume()}</Button>}
         {job.resumable === false && <Button onClick={() => onAction('pause')}><Pause size={12} aria-hidden="true" /> {m.cron_pause()}</Button>}
         <Button onClick={onEdit}>{m.edit()}</Button>
@@ -352,7 +354,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
               {job.catch_up != null && <Row label={m.cron_catch_up_label()}>{job.catch_up ? m.cron_catch_up_run_once() : m.cron_catch_up_skip()}</Row>}
               {job.grace_minutes != null && <Row label={m.cron_grace_minutes_label()}>{job.grace_minutes}</Row>}
               <Row label={m.cron_next()}>{nextRun ? formatDate(nextRun) : m.not_available()}</Row>
-              <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}</Row>
+              <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}{job.last_outcome === 'cancelled' && <span className="text-muted"> · {m.cron_last_stopped()}</span>}</Row>
               {job.last_failure && <Row label={m.cron_last_failure_label()}>{job.last_failure.at !== null && <span className="text-muted">{formatDate(job.last_failure.at)} · </span>}<span className="font-mono text-[12px] text-error">{job.last_failure.detail}</span></Row>}
               <Row label={m.cron_deliver_label()}>{job.deliver || 'local'}</Row>
               <Row label={m.cron_profile_label()}>{profileLabel}{readOnly && ownerProfile && <span className="text-muted"> · {m.cron_owner_profile_label()}: {ownerProfile}</span>}</Row>

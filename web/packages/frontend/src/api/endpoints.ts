@@ -254,12 +254,13 @@ export const fetchMemory = (workspace?: string) => orpc().memory.get(workspace ?
 export const writeMemory = (body: { section: 'memory' | 'user' | 'soul'; content: string; revision: string }) => orpc().memory.write(body)
 export const fetchCronContextSources = (input: { profile?: string; editing_job_id?: string; exclude_job_id?: string; selected_refs?: string[] }) => orpc().crons.contextSources(input)
 export const fetchCrons = (allProfiles = false) => orpc().crons.list(allProfiles ? { all_profiles: '1' } : {})
-export const cronAction = (action: 'create' | 'update' | 'delete' | 'run' | 'pause' | 'resume', body: Record<string, unknown>) => {
+export const cronAction = (action: 'create' | 'update' | 'delete' | 'run' | 'stop' | 'pause' | 'resume', body: Record<string, unknown>) => {
   const c = orpc().crons
   if (action === 'create') return c.create(body)
   if (action === 'update') return c.update(body)
   if (action === 'delete') return c.delete(body)
   if (action === 'run') return c.runNow(body)
+  if (action === 'stop') return c.cancel(body)
   if (action === 'pause') return c.pause(body)
   return c.resume(body)
 }

@@ -100751,6 +100751,21 @@
                               }
                             ]
                           },
+                          "can_stop": {
+                            "type": "boolean"
+                          },
+                          "stopping": {
+                            "type": "boolean"
+                          },
+                          "last_outcome": {
+                            "enum": [
+                              "succeeded",
+                              "failed",
+                              "cancelled",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
                           "last_failure": {
                             "anyOf": [
                               {
@@ -100821,6 +100836,9 @@
                           "schedule_display",
                           "schedule_input",
                           "attention_hint",
+                          "can_stop",
+                          "stopping",
+                          "last_outcome",
                           "last_failure",
                           "delivery_unconfirmed_platforms",
                           "timezone",
@@ -101599,6 +101617,21 @@
                             }
                           ]
                         },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -101669,6 +101702,9 @@
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -101806,6 +101842,7 @@
                             "enum": [
                               "succeeded",
                               "failed",
+                              "cancelled",
                               "unknown"
                             ],
                             "type": "string"
@@ -102284,6 +102321,21 @@
                             }
                           ]
                         },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -102354,6 +102406,9 @@
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -102773,6 +102828,21 @@
                             }
                           ]
                         },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -102843,6 +102913,9 @@
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -103263,6 +103336,21 @@
                             }
                           ]
                         },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -103333,6 +103421,485 @@
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
+                        "last_failure",
+                        "delivery_unconfirmed_platforms"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "job_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "elapsed": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/cancel": {
+      "post": {
+        "operationId": "crons.cancel",
+        "summary": "Ask a task's live run to stop, whoever started it. Answers `status: stopping` (or `not_running`); the run books `cancelled` once it winds down and its schedule is untouched.",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "read_only": {
+                          "type": "boolean"
+                        },
+                        "owner_profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "prompt": {
+                          "type": "string"
+                        },
+                        "schedule": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string"
+                                },
+                                "expr": {
+                                  "type": "string"
+                                },
+                                "minutes": {
+                                  "type": "number"
+                                },
+                                "run_at": {
+                                  "type": "string"
+                                },
+                                "display": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
+                            }
+                          ]
+                        },
+                        "schedule_display": {
+                          "type": "string"
+                        },
+                        "schedule_input": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "paused": {
+                          "type": "boolean"
+                        },
+                        "paused_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "state": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "last_status": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "last_error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "last_delivery_error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "next_run_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "last_run_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "repeat": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "times": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "completed": {
+                                  "type": "number"
+                                }
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "last_run": {},
+                        "next_run": {},
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workdir": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "deliver": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "no_agent": {
+                          "type": "boolean"
+                        },
+                        "script": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "monitor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "continuity": {
+                          "type": "boolean"
+                        },
+                        "context_from": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toast_notifications": {
+                          "type": "boolean"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
+                          "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "delivery_unconfirmed_platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input",
+                        "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -103763,6 +104330,21 @@
                             }
                           ]
                         },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -103833,6 +104415,9 @@
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -104253,6 +104838,21 @@
                             }
                           ]
                         },
+                        "can_stop": {
+                          "type": "boolean"
+                        },
+                        "stopping": {
+                          "type": "boolean"
+                        },
+                        "last_outcome": {
+                          "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -104323,6 +104923,9 @@
                         "schedule_display",
                         "schedule_input",
                         "attention_hint",
+                        "can_stop",
+                        "stopping",
+                        "last_outcome",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",

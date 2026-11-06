@@ -10,6 +10,9 @@ import sys
 import time
 import types
 
+import pytest
+
+from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import cron
 
 
@@ -82,14 +85,26 @@ def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, ex
 def _run_now(monkeypatch, tmp_path) -> tuple[dict, list]:
     seen: list = []
     monkeypatch.setattr(cron, "run_tracked", lambda job, *args: seen.append((job, args)) or {"status": "completed"})
+    return _method("cron.run")(_Ctx(), {"profile_home": str(tmp_path), "job_id": "job-1"}), seen
+
+
+def _method(name: str):
     methods: dict = {}
 
     class Registry:
-        def method(self, name, **kwargs):
-            return lambda fn: methods.setdefault(name, fn)
+        def method(self, method_name, **kwargs):
+            return lambda fn: methods.setdefault(method_name, fn)
 
     cron.register(Registry())
-    return methods["cron.run"](_Ctx(), {"profile_home": str(tmp_path), "job_id": "job-1"}), seen
+    return methods[name]
+
+
+def test_stop_refuses_explicitly_on_an_agent_without_the_cancel_api(monkeypatch, tmp_path) -> None:
+    _stub_jobs(monkeypatch)
+    with pytest.raises(RpcError) as refusal:
+        _method("cron.cancel")(_Ctx(), {"profile_home": str(tmp_path), "job_id": "job-1"})
+    assert refusal.value.data["condition"] == "cron_cancel_unsupported"
+    assert "stop" in str(refusal.value).lower()
 
 
 def test_run_now_executes_the_claimed_record(monkeypatch, tmp_path) -> None:

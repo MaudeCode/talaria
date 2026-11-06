@@ -6730,6 +6730,29 @@
             },
             "recovery_only": {
               "type": "boolean"
+            },
+            "live_execution": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "stopping": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "stopping"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -6820,6 +6843,29 @@
               },
               "recovery_only": {
                 "type": "boolean"
+              },
+              "live_execution": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "stopping": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "stopping"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -6878,6 +6924,29 @@
           },
           "recovery_only": {
             "type": "boolean"
+          },
+          "live_execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "stopping": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "stopping"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6931,6 +7000,29 @@
           },
           "recovery_only": {
             "type": "boolean"
+          },
+          "live_execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "stopping": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "stopping"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7010,6 +7102,32 @@
     ],
     "additionalProperties": false
   },
+  "cron.cancel": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "const": true
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "stopping",
+          "not_running"
+        ]
+      }
+    },
+    "required": [
+      "ok",
+      "job_id",
+      "status"
+    ],
+    "additionalProperties": false
+  },
   "cron.run": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "anyOf": [
@@ -7044,7 +7162,8 @@
             "type": "string",
             "enum": [
               "completed",
-              "failed"
+              "failed",
+              "cancelled"
             ]
           },
           "success": {

@@ -97,6 +97,7 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
         ("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {"name": "hello2", "continuity": True}}),
         ("cron.pause", {"profile_home": str(home), "job_id": job_id}),
         ("cron.resume", {"profile_home": str(home), "job_id": job_id}),
+        ("cron.cancel", {"profile_home": str(home), "job_id": job_id, "reason": "nothing in flight"}),
         ("cron.history", {"profile_home": str(home), "job_id": job_id}),
         ("cron.output", {"profile_home": str(home), "job_id": job_id}),
         ("cron.run_detail", {"profile_home": str(home), "job_id": job_id, "filename": "2026-09-20T12-00-00.md"}),

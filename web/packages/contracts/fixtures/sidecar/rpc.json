@@ -43,6 +43,7 @@
           "connectors.remove",
           "connectors.respond",
           "connectors.tools",
+          "cron.cancel",
           "cron.create",
           "cron.delete",
           "cron.delivery_options",

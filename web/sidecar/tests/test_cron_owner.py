@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, OneToolCallModel, SidecarProcess, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, OneToolCallModel, SidecarProcess, isolated_env, ledger_row, requires_agent
 
 canonical_agent = pytest.mark.skipif(
     AGENT_DIR is None or not (AGENT_DIR / "cron/scheduler_authority.py").exists(),
@@ -234,6 +234,48 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
     time.sleep(.25)
     assert transcript() == settled, "task work persisted after the cancelled reply"
     assert not sidecar.result("cron.get", {"profile_home": str(home), "job_id": job["id"]})["job"].get("fire_claim")
+
+
+AGENT_CANCEL = "import sys; from cron.cancellation import cancel_run; assert cancel_run(sys.argv[1], reason=sys.argv[2])['cancelled']"
+
+
+@requires_agent
+@canonical_agent
+@pytest.mark.parametrize("via", ["web", "agent"])
+def test_stopped_manual_run_books_cancelled_without_a_failure_notice(owner, via):
+    home, model, sidecar, job = owner
+    params = {"profile_home": str(home), "job_id": job["id"]}
+    before = sidecar.result("cron.get", params)["job"]
+    model.terminal_release.unlink()
+    request = sidecar.request("cron.run", params)
+    assert model.started.wait(60), sidecar.stderr_lines[-20:]
+    [admission] = admissions(home)
+    if via == "web":
+        assert sidecar.result("cron.cancel", {**params, "reason": "first reason"})["status"] == "stopping"
+        assert sidecar.result("cron.cancel", {**params, "reason": "second reason"})["status"] == "stopping"
+    else:
+        subprocess.run([AGENT_PYTHON, "-c", AGENT_CANCEL, job["id"], "first reason"], cwd=AGENT_DIR, env=isolated_env(home), check=True, capture_output=True, text=True, timeout=30)
+    # The cancel crosses the same exact-owner path as a Web disconnect: the gateway latches it and the run ends.
+    model.wait_cancelled(admission)
+    [listed] = sidecar.result("cron.list", {"profile_home": str(home)})["jobs"]
+    assert listed["live_execution"]["stopping"] is True, listed
+    model.release.set()
+    model.terminal_release.touch()
+    reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := sidecar.next_message(timeout=60)) else None)
+    assert reply.get("result", {}).get("status") == "cancelled", (reply, sidecar.stderr_lines[-20:])
+    assert reply["result"]["error"] == "first reason"
+    stored = sidecar.result("cron.get", params)["job"]
+    assert stored["last_status"] == "cancelled" and not stored.get("last_error"), stored
+    assert not stored.get("last_failure") and not stored.get("failure_streak"), stored
+    assert stored["state"] == "scheduled" and not stored.get("fire_claim"), stored
+    assert_manual_run_booked(stored, before)
+    assert sidecar.result("cron.output", params)["outputs"] == [], "a stopped run saves and delivers no failure notice"
+    row = ledger_row(home, job["id"])
+    assert (row["status"], row["error"]) == ("cancelled", "first reason"), row
+    assert not (home / "cron/manual_runs" / (job["id"] + ".json")).exists()
+    assert not (home / "cron/cancels" / (row["id"] + ".cancel")).exists(), "a finished attempt leaves no marker"
+    [listed] = sidecar.result("cron.list", {"profile_home": str(home)})["jobs"]
+    assert listed["live_execution"] is None, listed
 
 
 def workers(sidecar):

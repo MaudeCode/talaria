@@ -5,15 +5,17 @@ from __future__ import annotations
 
 import pathlib
 import subprocess
+import time
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, ledger_row, requires_agent
 
 # Agent 0.21.6 added the store probe and the live-owner ledger check; older Agents report neither.
 HAS_STORE_PROBE = AGENT_DIR is not None and (AGENT_DIR / "cron" / "store_health.py").is_file()
 HAS_LEDGER = AGENT_DIR is not None and (AGENT_DIR / "cron" / "executions.py").is_file() and "def live_inflight_execution" in (AGENT_DIR / "cron" / "executions.py").read_text()
 requires_ledger = pytest.mark.skipif(not HAS_LEDGER, reason="the executions ledger's live-owner check requires Agent v0.21.6")
+requires_cancel = pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "cron" / "cancellation.py").is_file(), reason="on-demand run cancellation requires Agent v0.22.6")
 
 
 def _create(sidecar: SidecarProcess, home: pathlib.Path) -> str:
@@ -71,6 +73,79 @@ def _script_job(sidecar: SidecarProcess, home: pathlib.Path, source: str) -> str
     (home / "scripts").mkdir(exist_ok=True)
     (home / "scripts" / "task.py").write_text(source, encoding="utf-8")
     return sidecar.result("cron.create", {"profile_home": str(home), "job": {"schedule": "every 1h", "script": "task.py", "no_agent": True}})["job"]["id"]
+
+
+def _held_script(ready: pathlib.Path) -> str:
+    return f"import pathlib, time\npathlib.Path({str(ready)!r}).touch()\ntime.sleep(120)\n"
+
+
+def _wait_for_file(path: pathlib.Path) -> None:
+    deadline = time.monotonic() + 60
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path} never appeared"
+        time.sleep(.05)
+
+
+def _assert_booked_cancelled(sidecar: SidecarProcess, home: pathlib.Path, job_id: str, reason: str) -> None:
+    params = {"profile_home": str(home), "job_id": job_id}
+    stored = sidecar.result("cron.get", params)["job"]
+    assert stored["last_status"] == "cancelled" and not stored.get("last_error"), stored
+    assert not stored.get("last_failure") and not stored.get("failure_streak") and not stored.get("fire_claim"), stored
+    assert sidecar.result("cron.output", params)["outputs"] == [], "a stopped run saves and delivers no failure notice"
+    row = ledger_row(home, job_id)
+    assert (row["status"], row["error"]) == ("cancelled", reason), row
+    [listed] = sidecar.result("cron.list", {"profile_home": str(home)})["jobs"]
+    assert listed["live_execution"] is None and listed["running_elsewhere"] is False, listed
+
+
+_GATEWAY_FIRE = """
+import sys
+from cron import jobs, scheduler
+claimed = jobs.claim_job_for_fire(sys.argv[1], return_job=True)
+assert isinstance(claimed, dict), claimed
+scheduler.run_one_job(claimed)
+"""
+
+
+@requires_agent
+@requires_cancel
+def test_stopping_a_gateway_claimed_run_ends_it_and_books_cancelled(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    ready = tmp_path / "script-started"
+    job_id = _script_job(handshaken, hermes_home, _held_script(ready))
+    params = {"profile_home": str(hermes_home), "job_id": job_id}
+    owner = subprocess.Popen([AGENT_PYTHON, "-c", _GATEWAY_FIRE, job_id], cwd=AGENT_DIR, env=isolated_env(hermes_home, home=tmp_path), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        _wait_for_file(ready)
+        [listed] = handshaken.result("cron.list", {"profile_home": str(hermes_home)})["jobs"]
+        assert listed["live_execution"]["stopping"] is False and listed["running_elsewhere"] is True, listed
+        assert handshaken.result("cron.cancel", {**params, "reason": "first reason"})["status"] == "stopping"
+        assert handshaken.result("cron.cancel", {**params, "reason": "second reason"})["status"] == "stopping"
+        [listed] = handshaken.result("cron.list", {"profile_home": str(hermes_home)})["jobs"]
+        assert listed["live_execution"]["stopping"] is True, listed
+        assert owner.wait(timeout=60) == 0, owner.stderr.read()
+    finally:
+        owner.kill()
+        owner.communicate(timeout=30)
+    _assert_booked_cancelled(handshaken, hermes_home, job_id, "first reason")
+    assert handshaken.result("cron.cancel", params)["status"] == "not_running", "nothing is left to stop"
+
+
+@requires_agent
+@requires_cancel
+def test_stopping_a_manual_script_run_ends_it_and_books_cancelled(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    ready = tmp_path / "script-started"
+    job_id = _script_job(handshaken, hermes_home, _held_script(ready))
+    params = {"profile_home": str(hermes_home), "job_id": job_id}
+    request = handshaken.request("cron.run", params)
+    _wait_for_file(ready)
+    [listed] = handshaken.result("cron.list", {"profile_home": str(hermes_home)})["jobs"]
+    assert listed["live_execution"]["stopping"] is False, listed
+    assert handshaken.result("cron.cancel", {**params, "reason": "first reason"})["status"] == "stopping"
+    while (message := handshaken.next_message(timeout=60)).get("id") != request:
+        pass
+    assert message.get("result", {}).get("status") == "cancelled", message
+    assert message["result"]["error"] == "first reason"
+    _assert_booked_cancelled(handshaken, hermes_home, job_id, "first reason")
 
 
 @requires_agent
