@@ -31,6 +31,7 @@ SIDECAR_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIDECAR_ROOT))
 
 from talaria_sidecar.errors import RpcError  # noqa: E402
+from talaria_sidecar.methods.providers import parse_switch_args  # noqa: E402
 from talaria_sidecar.rpc import RpcServer  # noqa: E402
 
 FIXTURES = SIDECAR_ROOT.parent / "packages" / "contracts" / "fixtures" / "sidecar"
@@ -126,6 +127,7 @@ def build_methods() -> dict:
     subs = _substitutions()
     methods = {}
     spoken: dict[str, dict] = {}
+    switch_args: dict[str, dict] = {}
     for path in sorted(FIXTURES.glob("*.json")):
         for method, entries in json.loads(path.read_text()).items():
             if method.startswith("server."):
@@ -134,6 +136,8 @@ def build_methods() -> dict:
                 methods[method] = _replay(_resolve(entries[0], subs))
             if method == "text.spoken":
                 spoken = {entry["params"]["text"]: entry["result"] for entry in entries}
+            if method == "models.parse_switch_args":
+                switch_args = {entry["params"]["args"]: entry["result"] for entry in entries}
     handshake = methods["runtime.handshake"]
     methods["runtime.handshake"] = lambda ctx, params: {**handshake(ctx, params), "rpc_version": params.get("rpc_version", 1)}
     # Selection fixtures apply only to their recorded target; ordinary replay model picks stay neutral.
@@ -151,6 +155,8 @@ def build_methods() -> dict:
     methods["goals.evaluate"] = lambda ctx, params: {"status": None, "should_continue": False, "continuation_prompt": None, "verdict": "inactive", "reason": "no active goal", "message": ""}
     # TAL-906: a recorded text gets the Agent's recorded script; any other text is spoken as written.
     methods["text.spoken"] = lambda ctx, params: spoken.get(str(params.get("text") or ""), {"spoken_text": str(params.get("text") or "")})
+    # TAL-1814: recorded arguments get the Agent's recorded answer; any others read as a bare model id, as with no parser.
+    methods["models.parse_switch_args"] = lambda ctx, params: switch_args.get(str(params.get("args") or "")) or parse_switch_args(str(params.get("args") or ""))
     methods["worktree.create"] = _worktree_create
     methods["runtime.shutdown"] = _shutdown
     return methods
