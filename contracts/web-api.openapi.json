@@ -109735,6 +109735,9 @@
                               }
                             ]
                           },
+                          "deliver_label": {
+                            "type": "string"
+                          },
                           "skills": {
                             "type": "array",
                             "items": {
@@ -110601,6 +110604,9 @@
                             }
                           ]
                         },
+                        "deliver_label": {
+                          "type": "string"
+                        },
                         "skills": {
                           "type": "array",
                           "items": {
@@ -111305,6 +111311,9 @@
                             }
                           ]
                         },
+                        "deliver_label": {
+                          "type": "string"
+                        },
                         "skills": {
                           "type": "array",
                           "items": {
@@ -111811,6 +111820,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "deliver_label": {
+                          "type": "string"
                         },
                         "skills": {
                           "type": "array",
@@ -112320,6 +112332,9 @@
                             }
                           ]
                         },
+                        "deliver_label": {
+                          "type": "string"
+                        },
                         "skills": {
                           "type": "array",
                           "items": {
@@ -112828,6 +112843,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "deliver_label": {
+                          "type": "string"
                         },
                         "skills": {
                           "type": "array",
@@ -113347,6 +113365,9 @@
                             }
                           ]
                         },
+                        "deliver_label": {
+                          "type": "string"
+                        },
                         "skills": {
                           "type": "array",
                           "items": {
@@ -113854,6 +113875,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "deliver_label": {
+                          "type": "string"
                         },
                         "skills": {
                           "type": "array",

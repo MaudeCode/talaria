@@ -1346,7 +1346,10 @@ export const CronJobViewSchema = z.looseObject({
   schedule_display: z.string(), schedule_input: z.string(), enabled: z.boolean().optional(), paused: z.boolean().optional(), paused_reason: NullableString.optional(), state: NullableString.optional(), last_status: NullableString.optional(), last_error: NullableString.optional(),
   last_delivery_error: NullableString.optional(), next_run_at: z.union([z.string(), z.number(), z.null()]).optional(), last_run_at: z.union([z.string(), z.number(), z.null()]).optional(), repeat: z.union([CronRepeatSchema, z.number(), z.null()]).optional(),
   status: z.string().optional(), last_run: Json.optional(), next_run: Json.optional(), profile: NullableString.optional(), session_id: NullableString.optional(), model: NullableString.optional(), provider: NullableString.optional(), model_option_id: NullableString.optional(), workspace: NullableString.optional(),
-  workdir: NullableString.optional(), deliver: NullableString.optional(), skills: z.array(z.string()).optional(), no_agent: z.boolean().optional(), script: NullableString.optional(), monitor: NullableString.optional(), continuity: z.boolean().optional(),
+  workdir: NullableString.optional(), deliver: NullableString.optional(),
+  /** Server-resolved Group Chat name, otherwise the raw delivery target. Absent on older servers. */
+  deliver_label: z.string().optional(),
+  skills: z.array(z.string()).optional(), no_agent: z.boolean().optional(), script: NullableString.optional(), monitor: NullableString.optional(), continuity: z.boolean().optional(),
   context_from: z.union([z.array(z.string()), z.string(), z.null()]).optional(), reasoning_effort: NullableString.optional(), toast_notifications: z.boolean().optional(), running: z.boolean().optional(),
   /** Server-derived (TAL-296): the job's status, whether it needs attention, and whether its primary action is Resume. Live runs overlay it. */
   derived_state: CronDerivedStateSchema.optional(), needs_attention: z.boolean().optional(), resumable: z.boolean().optional(),

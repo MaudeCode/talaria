@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_cron_room_delivery.py::test_real_agent_room_delivery_posts_one_scheduled_message": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent room delivery API: the advertised parser must correspond to _deliver_result appending one scheduled user event to a disposable real room store. The real Agent interpreter and store are required.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_redaction_compatibility.py::test_native_plugin_redaction_policy": {
       "layer": "compatibility",
       "reason": "Real supported-Agent PluginContext registration, private registry and matcher identity must produce a policy push before a stream frame. A disposable native interpreter isolates process-wide registrations; no network or providers.",

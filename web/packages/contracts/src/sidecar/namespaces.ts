@@ -506,7 +506,7 @@ export const CRON_METHODS = {
   'cron.history': { params: CronJob.extend({ offset: z.number().int().optional(), limit: z.number().int().optional() }), result: z.object({ job_id: z.string(), runs: z.array(z.object({ filename: z.string(), size: z.number().int(), modified: z.number(), usage: CronUsageSchema })), total: z.number().int(), offset: z.number().int() }) },
   'cron.run_detail': { params: CronJob.extend({ filename: z.string().min(1) }), result: z.object({ job_id: z.string(), filename: z.string(), content: z.string(), snippet: z.string(), usage: CronUsageSchema }) },
   'cron.output': { params: CronJob.extend({ limit: z.number().int().optional() }), result: z.object({ job_id: z.string(), outputs: z.array(z.object({ filename: z.string(), content: z.string() })) }) },
-  'cron.delivery_options': { params: ProfileHomeParams, result: z.object({ platforms: z.array(z.object({ value: z.string(), label: z.string() })) }) },
+  'cron.delivery_options': { params: ProfileHomeParams, result: z.object({ platforms: z.array(z.object({ value: z.string(), label: z.string() })), room_delivery_supported: z.boolean().optional() }) },
 } as const
 
 // ── providers / models ─────────────────────────────────────────────────

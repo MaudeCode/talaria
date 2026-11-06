@@ -1009,11 +1009,14 @@ def register(registry) -> None:
     def delivery_options(ctx: CallContext, params: dict) -> dict:
         home = profile_home_param(params)
         known: set = set()
+        room_delivery_supported = False
         for module_name in ("cron.scheduler_delivery", "cron.scheduler"):
             try:
                 module = importlib.import_module(module_name)
             except Exception:  # noqa: BLE001
                 continue
+            if module_name == "cron.scheduler_delivery":
+                room_delivery_supported = callable(getattr(module, "parse_room_deliver_token", None))
             candidates = getattr(module, "_KNOWN_DELIVERY_PLATFORMS", None)
             if candidates:
                 known = set(candidates)
@@ -1025,4 +1028,4 @@ def register(registry) -> None:
                 break
         platforms = [{"value": "local", "label": "Local (save output only)"}, {"value": "origin", "label": "Origin (reply to creator)"}]
         platforms.extend({"value": name, "label": name.capitalize()} for name in sorted(known))
-        return {"platforms": platforms}
+        return {"platforms": platforms, "room_delivery_supported": room_delivery_supported}

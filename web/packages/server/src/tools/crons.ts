@@ -1,6 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
-import type { CronRecentCompletion, CronContextSources, CronDerivedState, CronJob, CronStoreHealth } from '@maudecode/talaria-web-contracts'
+import type { CronRecentCompletion, CronContextSources, CronDerivedState, CronJob, CronStoreHealth, GroupCatalog } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { parseProviderQualifiedModel, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -23,12 +23,15 @@ export interface CronDeps {
    * picker catalog. TAL-1381: prepared once per projected batch, so a list revalidates the catalog once, not per row.
    */
   modelOptions?: (home: string) => Promise<(model: string | null, provider: string | null) => string | null>
+  /** The existing room catalog, scoped to the requesting person's native grant. */
+  groupCatalog?: (profile: string, offset: number) => Promise<GroupCatalog>
   /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
   runningJobs?: Map<string, number>
   updateInProgress?: () => boolean
 }
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
+const ROOM_DELIVERY_RE = /^room:\s*([A-Za-z0-9][A-Za-z0-9._:-]*)(?:@([A-Za-z0-9_-]+))?$/i
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
 /** What a probing list collects from each store: failing writes (TAL-810) and whether the Agent takes a per-job schedule policy (TAL-1820). */
@@ -46,6 +49,7 @@ function modelSelection(model: unknown, provider: unknown): [string | null, stri
 /** Python `_cron_job_for_api`, plus the derived status every client renders (TAL-296). */
 export function jobForApi(job: Dict, running = false): Dict {
   const payload: Dict = { ...job }
+  payload.deliver_label = str(job.deliver) || 'local'
   // TAL-301: a job stored with a provider-qualified id (older clients) still reads back as a bare model and its provider.
   const qualified = parseProviderQualifiedModel(job.model)
   if (qualified) [payload.model, payload.provider] = qualified
@@ -345,8 +349,14 @@ export class CronService {
   private async views(rows: StoredJob[], pickerHome: string): Promise<Dict[]> {
     if (!rows.length) return []
     const optionFor = await this.deps.modelOptions?.(pickerHome)
-    return rows.map((row) => {
+    const targets = rows.map((row) => ROOM_DELIVERY_RE.exec(str(row.job.deliver).trim()))
+    const profiles = [...new Set(targets.flatMap((target, i) => target ? [target[2] ?? rows[i]!.profile] : []))]
+    const allowed = profiles.length ? await this.profileNames(await this.profileForHome(pickerHome)) : []
+    const roomNames = new Map(await Promise.all(profiles.filter((profile) => allowed.includes(profile)).map(async (profile) => [profile, await this.roomNames(profile)] as const)))
+    return rows.map((row, i) => {
       const payload: Dict = { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+      const target = targets[i]
+      if (target) payload.deliver_label = roomNames.get(target[2] ?? row.profile)?.get(target[1]!) ?? payload.deliver_label
       payload.can_stop = payload.can_stop === true && row.managed
       payload.model_option_id = optionFor?.(str(payload.model) || null, str(payload.provider) || null) ?? null
       return payload
@@ -645,10 +655,34 @@ export class CronService {
     return this.sidecar().call('cron.output', { profile_home: home, job_id: jobId, limit: Number.isFinite(l) ? Math.max(1, Math.min(500, l)) : 5 })
   }
 
+  /** Both picker choices and job labels use the catalog's redaction and manageable-room policy. */
+  private async roomNames(profile: string): Promise<Map<string, string>> {
+    const names = new Map<string, string>()
+    if (!this.deps.groupCatalog) return names
+    let offset = 0
+    try {
+      for (;;) {
+        const page = await this.deps.groupCatalog(profile, offset)
+        if (!page.available) return new Map()
+        for (const room of page.rooms) if (!room.disbanded) names.set(room.id, room.name)
+        if (page.next_offset === null) return names
+        if (page.next_offset <= offset) return new Map()
+        offset = page.next_offset
+      }
+    } catch { return new Map() }
+  }
+
   async deliveryOptions(home: string): Promise<{ platforms: { value: string; label: string }[] }> {
     const sidecar = this.deps.sidecar()
     const fallback = { platforms: [{ value: 'local', label: 'Local (save output only)' }, { value: 'origin', label: 'Origin (reply to creator)' }] }
     if (!sidecar) return fallback
-    try { return await sidecar.call('cron.delivery_options', { profile_home: home }) } catch { return fallback }
+    try {
+      const result = await sidecar.call('cron.delivery_options', { profile_home: home })
+      if (!result.room_delivery_supported) return { platforms: result.platforms }
+      const profile = await this.profileForHome(home)
+      const rooms = await this.roomNames(profile)
+      const suffix = this.deps.profilesMatch(profile, 'default') ? '' : `@${profile}`
+      return { platforms: [...result.platforms, ...[...rooms].map(([id, label]) => ({ value: `room:${id}${suffix}`, label }))] }
+    } catch { return fallback }
   }
 }
