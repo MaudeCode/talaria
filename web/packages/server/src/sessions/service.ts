@@ -1286,7 +1286,11 @@ export class SessionService {
       threshold_tokens: Number(s.threshold_tokens ?? 0) || 0,
       last_prompt_tokens: Number(s.last_prompt_tokens ?? 0) || 0,
     }
-    if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
+    if (loadMessages) {
+      raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
+      // Only a full load holds what the key measures (TAL-1823); a metadata read has no transcript to compare.
+      raw.context_detail_key = this.contextDetailKey(s)
+    }
     // TAL-1121: the running turn's live list outranks the settled one, so a read during the turn never shows an older plan.
     const unsettled = (s.active_stream_id ? this.deps.runtime.liveTodoState?.(s.active_stream_id) : null) ?? s.extra[UNSETTLED_TODO_KEY]
     if (limited) attachTodoSnapshot(raw, limited.todo, unsettled)

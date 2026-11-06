@@ -53,8 +53,11 @@ describe('context detail read boundary', () => {
         expect(params).toMatchObject({ session_id: session.session_id, profile_home: s.state, model: 'fixture-model', workspace: session.workspace })
         return detail
       })
-      const row = await s.deps.sessions.wireRow(session)
-      const res = await s.get(`/api/session/context-detail?session_id=${session.session_id}&context_detail_key=${String(row.context_detail_key)}`)
+      session.messages.push({ role: 'user', content: 'Earlier question.' }, { role: 'assistant', content: 'Earlier answer.' })
+      await s.deps.sessionStore.save(session)
+      // A reloaded chat holds only what the session read returned, in the window the transcript asks for.
+      const reloaded = await (await s.get(`/api/session?session_id=${session.session_id}&msg_limit=1`)).json() as { session: { context_detail_key?: string } }
+      const res = await s.get(`/api/session/context-detail?session_id=${session.session_id}&context_detail_key=${String(reloaded.session.context_detail_key)}`)
       expect(res.status).toBe(200)
       expect(ContextDetailSchema.parse(await res.json())).toEqual(detail)
       expect((await s.get(`/api/session/context-detail?session_id=${session.session_id}`)).status).toBe(400)
