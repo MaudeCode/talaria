@@ -29,9 +29,9 @@ describe('redactText cache', () => {
   })
 
   it.each([
-    { pattern: 'nonlinear_(a|aa)+$', prefix: 'nonlinear_', text: 'nonlinear_' + 'a'.repeat(24) + '!', expected: 'nonlin...aaa!' },
-    { pattern: 'suffix_[a-z_]+$', prefix: 'suffix_', text: 'suffix_'.repeat(24) + '!', expected: 'suffix...ix_!' },
-    { pattern: 'minimum_[a-z_]{1000000,}', prefix: 'minimum_', text: 'minimum_' + 'a'.repeat(24), expected: 'minimu...aaaa' },
+    { pattern: 'nonlinear_(a|aa)+$', prefix: 'nonlinear_', text: 'nonlinear_' + 'a'.repeat(24) + '!', expected: '***' },
+    { pattern: 'suffix_[a-z_]+$', prefix: 'suffix_', text: 'suffix_'.repeat(24) + '!', expected: '***' },
+    { pattern: 'minimum_[a-z_]{1000000,}', prefix: 'minimum_', text: 'minimum_' + 'a'.repeat(24), expected: '***' },
   ])('never evaluates unsafe plugin rule $pattern on the shared event loop', ({ pattern, prefix, text, expected }) => {
     applyRedactionPolicy({ fingerprint: pattern, patterns: [{ pattern, literal_prefix: prefix }] })
     const exec = vi.spyOn(RegExp.prototype, 'exec')

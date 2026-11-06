@@ -25,9 +25,11 @@ describe('plugin redaction policy', () => {
   })
 
   it.each([
-    { pattern: String.raw`anchored_[a-z0-9]{10,}\Z`, prefix: 'anchored_', text: 'anchored_0123456789abcdef', expected: 'anchor...cdef' },
-    { pattern: String.raw`unicodeword_\w{10,}`, prefix: 'unicodeword_', text: 'unicodeword_' + 'α'.repeat(16), expected: 'unicod...αααα' },
-    { pattern: String.raw`unicodedigit_\d{10,}`, prefix: 'unicodedigit_', text: 'unicodedigit_' + '١'.repeat(16), expected: 'unicod...١١١١' },
+    { pattern: 'xy(?= )', prefix: 'xy', text: 'before xy with long public context trailing', expected: 'before ***' },
+    { pattern: 'acmemulti_(?s:.*?)_end', prefix: 'acmemulti_', text: 'before acmemulti_first part\nsecond secret_end after', expected: 'before ***' },
+    { pattern: String.raw`anchored_[a-z0-9]{10,}\Z`, prefix: 'anchored_', text: 'anchored_0123456789abcdef', expected: '***' },
+    { pattern: String.raw`unicodeword_\w{10,}`, prefix: 'unicodeword_', text: 'unicodeword_' + 'α'.repeat(16), expected: '***' },
+    { pattern: String.raw`unicodedigit_\d{10,}`, prefix: 'unicodedigit_', text: 'unicodedigit_' + '١'.repeat(16), expected: '***' },
     { pattern: 'wildcard_.{10,}', prefix: 'wildcard_', text: 'wildcard_' + 'a'.repeat(8) + '\u2028' + 'b'.repeat(8), expected: 'wildca...bbbb' },
   ])('preserves Python credential coverage for $pattern', ({ pattern, prefix, text, expected }) => {
     applyRedactionPolicy({ fingerprint: pattern, patterns: [{ pattern, literal_prefix: prefix }] })

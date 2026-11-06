@@ -1733,37 +1733,44 @@ function secretTokenCounts(text: string): Map<string, number> {
 }
 
 // Rules stay additive across concurrent snapshots and sidecar restarts: an older reply cannot undo a push.
-const pluginPatterns = new Map<string, { prefix: string; regex: RegExp }>()
+const pluginPatterns = new Map<string, ReturnType<typeof compilePluginPattern>>()
 let policyFingerprint = ''
 
-function compilePluginPattern(pattern: string, prefix: string): RegExp {
+function compilePluginPattern(pattern: string, prefix: string) {
   const literal = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let tokenOnly = true
   try {
     const tail = pattern.slice(prefix.length)
     // One terminal atom has no overlapping alternatives or variable suffix to backtrack through.
     const simple = /^(?:\[(?:\\.|[^\]\\])+\]|\.)((?:[+*?]|\{([0-9]+)(?:,([0-9]*))?\})?)$/.exec(tail)
-    // Bound failed work at each literal-prefix candidate, even when a rule asks for a huge minimum length.
-    if (!pattern.startsWith(prefix) || (tail && (!simple || Number(simple[2] ?? 0) > 256))) throw new SyntaxError('Unsupported plugin regex form')
     let source = literal
     let characterClass = false
+    let portable = true
     for (let i = 0; i < tail.length; i += 1) {
       const char = tail[i]!
       if (char === '\\') {
         const escaped = tail[++i]
+        // An unsupported rule can stop at whitespace only when every consuming part is known to be token-only.
+        if (!escaped || !String.raw`wdSbBAZz\.^$*+?{}[]()|-`.includes(escaped)) tokenOnly = false
         // Python's Unicode classes, boundaries, anchors and numeric escapes have different JS semantics.
-        if (!escaped || !String.raw`nrtfvx\.^$*+?{}[]()|-`.includes(escaped)) throw new SyntaxError('Unsupported Python regex escape')
+        if (!escaped || !String.raw`nrtfvx\.^$*+?{}[]()|-`.includes(escaped)) portable = false
         source += `\\${escaped}`
       } else {
+        if (char < '!' || char > '~' || char === '^' || (char === '.' && !characterClass)) tokenOnly = false
         if (char === '[') characterClass = true
         else if (char === ']') characterClass = false
         // Python's dot excludes LF only; JS also excludes CR and the Unicode line/paragraph separators.
         source += char === '.' && !characterClass ? '[^\\n]' : char
       }
     }
+    if (!pattern.startsWith(prefix)) { tokenOnly = false; throw new SyntaxError('Invalid plugin prefix') }
+    // Bound failed work at each literal-prefix candidate, even when a rule asks for a huge minimum length.
+    if (!portable || (tail && (!simple || Number(simple[2] ?? 0) > 256))) throw new SyntaxError('Unsupported plugin regex form')
     // Unicode mode refuses identity escapes that otherwise silently turn Python anchors into literal letters.
-    return new RegExp(source, 'gu')
+    return { prefix, regex: new RegExp(source, 'gu'), opaque: false }
   } catch {
-    return new RegExp(`${literal}\\S*`, 'gu')
+    // The true match may be shorter than the fallback span, so retaining any of its head could expose it whole.
+    return { prefix, regex: new RegExp(`${literal}${tokenOnly ? '\\S*' : '[\\s\\S]*'}`, 'gu'), opaque: true }
   }
 }
 
@@ -1771,7 +1778,7 @@ export function applyRedactionPolicy(policy: RedactionPolicy): void {
   if (policy.fingerprint === policyFingerprint) return
   for (const { pattern, literal_prefix } of policy.patterns) {
     if (pluginPatterns.has(pattern)) continue
-    pluginPatterns.set(pattern, { prefix: literal_prefix, regex: compilePluginPattern(pattern, literal_prefix) })
+    pluginPatterns.set(pattern, compilePluginPattern(pattern, literal_prefix))
   }
   policyFingerprint = policy.fingerprint
   cache.clear()
@@ -1781,17 +1788,18 @@ export function applyRedactionPolicy(policy: RedactionPolicy): void {
 function redactPluginPatterns(text: string, builtin = text): string {
   if (!pluginPatterns.size) return builtin
   const spans: [number, number, string, boolean?][] = []
-  const seen = new Set<string>()
+  const seen = new Map<string, number>()
   const collect = (shown: string, kept?: number[]): void => {
-    for (const { prefix, regex } of pluginPatterns.values()) {
+    for (const { prefix, regex, opaque } of pluginPatterns.values()) {
       if (!shown.includes(prefix)) continue
       for (const match of shown.matchAll(regex)) {
         const from = kept ? kept[match.index]! : match.index
         const to = kept ? kept[match.index + match[0].length - 1]! + 1 : match.index + match[0].length
         const key = `${from}:${to}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        spans.push([from, to, match[0]])
+        const duplicate = seen.get(key)
+        if (duplicate !== undefined) { spans[duplicate]![3] ||= opaque; continue }
+        seen.set(key, spans.length)
+        spans.push([from, to, match[0], opaque])
       }
     }
   }

@@ -22,8 +22,12 @@ or wildcard can execute as JavaScript regexes. Repeat minima are capped at 256
 to bound failed work per prefix candidate; grouped alternatives, suffix
 constraints and other forms use prefix masking. Portable Python/JavaScript
 escapes compile in Unicode mode; Python dot matching excludes LF only. Python-only syntax and
-semantics (including Unicode shorthand classes and absolute anchors) mask the
-non-whitespace run starting at their literal prefix. No per-string RPC or Agent change is needed.
+semantics (including Unicode shorthand classes and absolute anchors) use
+conservative prefix masking. Proven token-only rules mask the following
+non-whitespace run; rules that may consume whitespace (including inline DOTALL)
+mask from their literal prefix through the remaining input. Fallback spans are
+fully masked: their conservative extent cannot establish the native match
+length needed to safely retain a head or tail. No per-string RPC or Agent change is needed.
 
 RPC v67 lets the sidecar call the server (TAL-1164). It writes a request in the
 `server.*` namespace on stdout with a string id `s:<n>`, and the server answers on

@@ -23,6 +23,8 @@ if not hasattr(PluginContext, 'register_redaction_patterns'):
     raise SystemExit(0)
 plugin = PluginContext(SimpleNamespace(name='synthetic-redaction'), None)
 cases = [
+    ('xy(?= )', 'xy', 'xy public context', '*** public context'),
+    ('acmemulti_(?s:.*?)_end', 'acmemulti_', 'acmemulti_first part\nsecond secret_end', 'acmemu..._end'),
     ('control_.{1,}', 'control_', 'control_' + '\u200b' * 8 + '12345678', '***'),
     (r'acme_[a-z0-9]{10,}', 'acme_', 'acme_0123456789abcdef', 'acme_0...cdef'),
     (r'anchored_[a-z0-9]{10,}\Z', 'anchored_', 'anchored_0123456789abcdef', 'anchor...cdef'),
