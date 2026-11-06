@@ -17,7 +17,7 @@ public final class AppIntentRouter {
     /// appeared (cold launch) or after (warm launch).
     public var pendingDeepLink: URL?
 
-    private init() {}
+    init() {}
 
     /// Records a deep link for the view layer to route. No-op on a nil URL so callers can
     /// pass the optional `TalariaDeepLink` builders without unwrapping.

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "You can now lock Talaria with Face ID, Touch ID or your passcode from Data & Storage in Settings, and the app switcher hides your chats while the lock is on.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

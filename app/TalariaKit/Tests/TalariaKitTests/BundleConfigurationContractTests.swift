@@ -16,6 +16,7 @@ final class BundleConfigurationContractTests: XCTestCase {
         let info = try propertyList("Talaria/Resources/Info.plist")
         let requiredDescriptions = [
             "NSCameraUsageDescription",
+            "NSFaceIDUsageDescription",
             "NSPhotoLibraryUsageDescription",
             "NSPhotoLibraryAddUsageDescription",
             "NSMicrophoneUsageDescription",

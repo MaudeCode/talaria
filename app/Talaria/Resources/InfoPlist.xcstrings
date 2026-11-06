@@ -1,0 +1,119 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSFaceIDUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Talaria ميزة Face ID لفتح قفل التطبيق عند تشغيل القفل."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria verwendet Face ID, um die App zu entsperren, wenn die Sperre aktiv ist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria uses Face ID to unlock the app when the lock is on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria usa Face ID para desbloquear la app cuando el bloqueo está activado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria utilise Face ID pour déverrouiller l'app lorsque le verrouillage est activé."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria משתמשת ב-Face ID לביטול נעילת האפליקציה כשהנעילה פועלת."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria usa Face ID per sbloccare l'app quando il blocco è attivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロックがオンのとき、TalariaはアプリのロックをFace IDで解除します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠금이 켜져 있으면 Talaria가 Face ID로 앱 잠금을 해제합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria gebruikt Face ID om de app te ontgrendelen wanneer de vergrendeling aan staat."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria używa Face ID do odblokowania aplikacji, gdy blokada jest włączona."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Talaria usa o Face ID para desbloquear o app quando o bloqueio está ativado."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria использует Face ID для разблокировки приложения, когда блокировка включена."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talaria, kilit açıkken uygulamanın kilidini açmak için Face ID kullanır."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لاک آن ہونے پر Talaria ایپ ان لاک کرنے کے لیے Face ID استعمال کرتا ہے۔"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟鎖定時,Talaria 會使用 Face ID 解鎖 App。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启锁定后,Talaria 使用面容 ID 解锁 App。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟鎖定時,Talaria 會使用 Face ID 解鎖 App。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

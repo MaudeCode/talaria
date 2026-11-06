@@ -18,5 +18,6 @@ enum PlatformBridges {
         PlatformHooks.authenticateInBrowser = { url, scheme in
             try await OIDCWebAuthenticationPresenter.shared.authenticate(url: url, callbackScheme: scheme)
         }
+        _ = AppLockCoverPresenter.shared
     }
 }

@@ -31,6 +31,9 @@
 		10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
 		10CA110C0DE000000000B003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
 		10CA110C0DE000000000B004 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */; };
+		958A00000000000000000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 958A00000000000000000002 /* InfoPlist.xcstrings */; };
+		958A00000000000000000003 /* AppLockCover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958A00000000000000000004 /* AppLockCover.swift */; };
+		958A00000000000000000005 /* AppLockHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958A00000000000000000006 /* AppLockHostedTests.swift */; };
 		1A2B3C4D5E6F700000000004 /* LDSwiftEventSource in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2B3C4D5E6F700000000094 /* LDSwiftEventSource */; };
 		1A2B3C4D5E6F700000000005 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2B3C4D5E6F700000000095 /* MarkdownUI */; };
 		1A2B3C4D5E6F700000000006 /* Splash in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2B3C4D5E6F700000000096 /* Splash */; };
@@ -486,6 +489,9 @@
 		7A1350000000000000000004 /* TalariaDev.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = TalariaDev.icon; sourceTree = "<group>"; };
 		10CA110C0DE000000000B002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
+		958A00000000000000000002 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		958A00000000000000000004 /* AppLockCover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockCover.swift; sourceTree = "<group>"; };
+		958A00000000000000000006 /* AppLockHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockHostedTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10D00000000000000000006 /* AppleAccountSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleAccountSettingsView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -951,6 +957,7 @@
 				7A1350000000000000000004 /* TalariaDev.icon */,
 				10CA110C0DE000000000B002 /* Localizable.xcstrings */,
 				10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */,
+				958A00000000000000000002 /* InfoPlist.xcstrings */,
 				1A2B3C4D5E6F700000000013 /* Info.plist */,
 				B5A100000000000000000015 /* Talaria.entitlements */,
 				1A2B3C4D5E6F70000000301 /* PrivacyInfo.xcprivacy */,
@@ -1000,6 +1007,7 @@
 				26AB000000000000000000F4 /* ProvidersViewModelTests.swift */,
 				759A00000000000000000004 /* UpdateSummaryTests.swift */,
 				182A00000000000000000004 /* WhatsNewHostedTests.swift */,
+				958A00000000000000000006 /* AppLockHostedTests.swift */,
 				26AB0000000000000000B402 /* AppIconAlternateTests.swift */,
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
 				C1TAL1890000000000000001 /* ChatCodeBlockCopyConfirmationTests.swift */,
@@ -1019,6 +1027,7 @@
 			children = (
 				AA1900000000000000000002 /* ReauthenticationSheet.swift */,
 				C1802698531BE592793E1EF9 /* OIDCWebAuthenticationPresenter.swift */,
+				958A00000000000000000004 /* AppLockCover.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -1673,6 +1682,7 @@
 				7A1350000000000000000003 /* TalariaDev.icon in Resources */,
 				10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */,
 				10CA110C0DE000000000B004 /* AppShortcuts.xcstrings in Resources */,
+				958A00000000000000000001 /* InfoPlist.xcstrings in Resources */,
 				1A2B3C4D5E6F70000000300 /* PrivacyInfo.xcprivacy in Resources */,
 				9E2A653D968A4ACDA19A8142 /* ThirdPartyNotices in Resources */,
 			);
@@ -1707,6 +1717,7 @@
 				73701D8B13BB6F8E3CD6CF2E /* PlatformBridges.swift in Sources */,
 				3D4F1093C37475450D78C02A /* AppIconChoice+Current.swift in Sources */,
 				AC7D8D40DE8FDF034F4AF1B1 /* OIDCWebAuthenticationPresenter.swift in Sources */,
+				958A00000000000000000003 /* AppLockCover.swift in Sources */,
 				DF70F1E3194F55301886A523 /* LiveActivityReconciler+App.swift in Sources */,
 				1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* ContentView.swift in Sources */,
@@ -2060,6 +2071,7 @@
 				26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */,
 				759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */,
 				182A00000000000000000003 /* WhatsNewHostedTests.swift in Sources */,
+				958A00000000000000000005 /* AppLockHostedTests.swift in Sources */,
 				26AB0000000000000000A402 /* AppIconAlternateTests.swift in Sources */,
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
 				C1TAL1890000000000000002 /* ChatCodeBlockCopyConfirmationTests.swift in Sources */,
