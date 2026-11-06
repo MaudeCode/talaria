@@ -141,7 +141,8 @@ export IOS_SIMULATOR_POOL_DIR="$state/pool"
 wait_until_active() {
     local pid=$1 target=${2:-1}
     for _ in {1..300}; do
-        read -r active < "$state/active"
+        # Unlocked, so this can land inside a run's truncate-then-write and read nothing.
+        read -r active < "$state/active" || { sleep 0.01; continue; }
         (( active >= target )) && return
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.01
