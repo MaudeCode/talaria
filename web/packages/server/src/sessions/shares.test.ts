@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Session } from './session.js'
-import { buildShareSnapshot, embedShareMedia } from './shares.js'
+import { buildShareSnapshot, embedShareMedia, shareMediaPaths } from './shares.js'
 import { LocalBlobStore } from './storage/blobs.js'
 
 /** One-shot hook: right after `fstatSync` samples the armed file's inode, append `bytes` to that same file. */
@@ -238,6 +238,21 @@ describe('buildShareSnapshot inline data', () => {
     expect(text).not.toContain('TAL1600-TOOL-OUTPUT')
     expect(text).not.toContain('TAL1600-REASONING')
     expect(text).toContain('The answer.')
+  })
+
+  it('publishes neither the text nor the media of a hidden row, whatever its role', () => {
+    const rows = [
+      { role: 'user', content: 'Visible question' },
+      { role: 'assistant', content: 'TAL1946-HIDDEN-ASSISTANT MEDIA:hidden-assistant.png', display_kind: 'hidden' },
+      { role: 'user', content: [{ type: 'text', text: 'TAL1946-HIDDEN-USER MEDIA:hidden-user.png' }], display_kind: 'hidden' },
+      { role: 'assistant', content: 'Rewritten. MEDIA:chart.png' },
+    ]
+    expect(shareMediaPaths(rows, [root], root, root)).toEqual([join(root, 'chart.png')])
+    const shared = buildShareSnapshot(new Session({ title: 'Held', messages: [] }, { workspace: root, model: null }), rows, { hermesHome: join(root, '.hermes'), attachmentRoot: root, home: root })
+    expect(shared.message_count).toBe(2)
+    expect(shared.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(JSON.stringify(shared)).not.toContain('TAL1946-HIDDEN')
+    expect(shared.messages[1]?.content).toContain('Rewritten.')
   })
 
   it('stays linear on long malformed repeated input', () => {

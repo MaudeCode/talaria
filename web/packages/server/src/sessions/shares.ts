@@ -187,7 +187,8 @@ export function embedShareMedia(text: string, allowedRoots: string[], home: stri
 
 /** The role and prose a snapshot publishes for a message, or null for one it leaves out. */
 function shareProse(message: unknown): { message: Record<string, unknown>; role: string; text: string } | null {
-  if (!isDict(message)) return null
+  // A snapshot publishes what the conversation shows: a hidden row is the text a `hold_stream` turn withheld, or an Agent row the user never saw.
+  if (!isDict(message) || message.display_kind === 'hidden') return null
   const role = str(message.role).trim().toLowerCase()
   if (role !== 'user' && role !== 'assistant') return null
   // Only the reply's prose is published: inline thinking and leaked tool-call XML never reach a snapshot.

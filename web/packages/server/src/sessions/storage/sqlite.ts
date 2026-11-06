@@ -72,7 +72,7 @@ class SqliteSessions implements SessionBackend {
   /**
    * One statement for every session. Terms of three or more characters narrow candidates through the trigram index;
    * shorter ones through `instr`. The index only narrows: the reference matcher decides on the original text, so results
-   * equal the JSON adapter's scan, including non-ASCII case folding.
+   * equal the JSON adapter's scan, including non-ASCII case folding, and a hidden row indexed before TAL-1946 never matches.
    */
   async searchMessages(sids: readonly string[], terms: readonly string[], depth: number): Promise<Map<string, MessageMatch>> {
     this.db.check()

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Public share links and session content search no longer include text that was hidden from the conversation.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

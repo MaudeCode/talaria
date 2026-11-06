@@ -130,6 +130,18 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
       expect(await s.searchMessages([], ['echo'], 0)).toEqual(new Map())
     })
 
+    it('finds no text held only in a hidden row, and keeps a later row at its index', async () => {
+      const s = fixture.storage.sessions
+      await write([
+        { role: 'user', content: 'start' },
+        { role: 'assistant', content: 'needle withheld', display_kind: 'hidden' },
+        { role: 'user', content: [{ type: 'text', text: 'needle steered' }], display_kind: 'hidden' },
+        { role: 'assistant', content: 'needle shown' },
+      ])
+      for (const query of ['withheld', 'steered', 'needle withheld']) expect(await s.searchMessages(['session'], sessionSearchTerms(query), 0), query).toEqual(new Map())
+      expect(await s.searchMessages(['session'], sessionSearchTerms('needle'), 0)).toEqual(new Map([['session', { idx: 3, text: 'needle shown' }]]))
+    })
+
     it('closes without losing committed data and rejects subsequent reads', async () => {
       await write([{ content: 'saved' }])
       await fixture.storage.close()
