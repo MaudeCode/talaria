@@ -360,6 +360,7 @@ export const sessionsRouter = os.router({
         return disabled as { ok: true; yolo_enabled: boolean }
       }
       const released = await ctx.deps.turns.respondApproval(sid, 'once', '', true)
+      if (typeof released._status === 'number' && released._status >= 400) { const { _status, error, ...rest } = released; throw new HttpError(_status, str(error), rest) }
       return { ok: true as const, yolo_enabled: Boolean(released.yolo_enabled ?? ctx.deps.sessions.yolo(sid).yolo_enabled), ...(released.stale_cleared ? { stale_cleared: true } : {}) }
     })),
     import: os.session.import.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.import(input)) as { ok: true; session: { session_id: string; title: string } })),

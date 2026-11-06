@@ -650,6 +650,10 @@ export class GatewaySessions {
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
   async submit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Row | null> {
+    return (await this.admit(sid, body, timing, fence))?.row ?? null
+  }
+
+  private async admit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<{ row: Row; receipt: GatewaySessionResult['receipt'] } | null> {
     const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
@@ -670,8 +674,8 @@ export class GatewaySessions {
     closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
     if (result.state === 'attached' && result.snapshot && result.receipt?.voice_stopped === true) {
       const watch = this.watches.get(target.key)
-      return { ok: true, status: 'suppressed', reason: 'voice_stopped', session_id: sid,
-        owner_attachment: this.attachment(result), session: await this.view(base, result, watch?.stream ?? null, target) }
+      return { receipt: result.receipt, row: { ok: true, status: 'suppressed', reason: 'voice_stopped', session_id: sid,
+        owner_attachment: this.attachment(result), session: await this.view(base, result, watch?.stream ?? null, target) } }
     }
     if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
@@ -680,7 +684,7 @@ export class GatewaySessions {
     const watch = snapshot && (refused || snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))
       ? this.watches.get(target.key) ?? this.watch(target, base, snapshot, refused ? str(result.receipt.admission_id) : undefined) : null
     this.deps.events.publish('owner_admission', { profile: target.profile, sessionId: sid })
-    return { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) }
+    return { receipt: result.receipt, row: { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) } }
   }
 
   /** Whether this chat runs on a canonical owner: the classification no client derives. */
@@ -869,13 +873,16 @@ export class GatewaySessions {
     if (steer.state === 'unavailable') return 'unconfirmed'
     // A voice-stop phrase reaches no agent, and the owner has already done what it asks.
     if (steer.state === 'attached' && (steer.receipt?.voice_stopped === true || steer.receipt?.status === 'queued' || steer.receipt?.status === 'redirected')) return 'steered'
+    let receipt: GatewaySessionResult['receipt'] | undefined
     try {
-      await this.submit(sid, { message: text, submission_id: `approval-instruction-${createHash('sha256').update(promptId).digest('hex').slice(0, 64)}` })
-      return 'queued'
+      receipt = (await this.admit(sid, { message: text, submission_id: `approval-instruction-${createHash('sha256').update(promptId).digest('hex').slice(0, 64)}` }))?.receipt
     } catch (error) {
       if (error instanceof HttpFailure && error.extra.outcome_unknown === true) return 'unconfirmed'
       throw error
     }
+    // The owner can settle an admission refused at once; a queued input cannot have run while its turn waits on this prompt.
+    if (receipt && 'admission_id' in receipt && receipt.status === 'terminal' && receipt.outcome === 'failed') throw new HttpFailure(409, 'The owning Agent refused this instruction')
+    return 'queued'
   }
 
   async cancel(stream: string): Promise<boolean | null> {

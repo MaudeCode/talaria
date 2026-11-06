@@ -2506,7 +2506,9 @@ export class TurnRunner {
     if (!owned) sessionId = (await this.deps.service().idForMutation(sessionId))
     const key = approvalTellKey(sessionId, approvalId || str(this.deps.pending.peekApproval(sessionId, '').entry?.approval_id))
     const told = this.approvalTells.get(key)
-    if (told === 'steering' || (told && choice !== 'deny')) return { ok: false, choice, error: 'This approval is already being denied', _status: 409 }
+    // Skipping approvals releases every parked one, so any committed to a deny refuses it, not only the one named here.
+    const skipsCommitted = enableYolo && [...this.approvalTells.keys()].some((committed) => committed.startsWith(approvalTellKey(sessionId, '')))
+    if (skipsCommitted || told === 'steering' || (told && choice !== 'deny')) return { ok: false, choice, error: 'This approval is already being denied', _status: 409 }
     if (!told && !instruction) return this.answerApproval(sessionId, choice, approvalId, enableYolo, owned)
     if (!told) {
       if (!owned && this.deps.pending.peekApproval(sessionId, approvalId).entry?.can_deny_with_instruction !== true) return { ok: false, choice, error: 'This approval does not take an instruction', _status: 409 }

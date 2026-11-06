@@ -92,6 +92,24 @@ describe('deny with an instruction in a direct chat', () => {
     expect(sent('chat.steer')).toHaveLength(1)
   })
 
+  it('refuses skipping approvals while any parked approval is committed to a deny, because skipping releases them all', async () => {
+    await park()
+    sidecar.respond('approval.set_yolo', () => ({ yolo_enabled: true, released: 1 }))
+    const releases = () => sent('approval.set_yolo').filter((p) => p.enabled === true)
+    s.deps.pending.submitApproval(sid, { approval_id: 'second-approval', request_id: 'second-approval', command: 'rm -rf y', session_id: sid, can_deny_with_instruction: true })
+    let release!: () => void
+    sidecar.respond('chat.steer', () => new Promise((resolve) => { release = () => { resolve({ accepted: true, fallback: null, can_redirect: false }) } }))
+    const told = post('/api/approval/respond', { session_id: sid, approval_id: 'second-approval', choice: 'deny', instruction: INSTRUCTION })
+    await vi.waitFor(() => { expect(sent('chat.steer')).toHaveLength(1) })
+    expect((await post('/api/session/yolo', { session_id: sid, enabled: true })).status).toBe(409)
+    expect(releases()).toEqual([])
+    release()
+    expect((await told).status).toBe(200)
+    expect(releases()).toEqual([])
+    expect((await post('/api/session/yolo', { session_id: sid, enabled: true })).status).toBe(200)
+    expect(releases()).toHaveLength(1)
+  })
+
   it('does not queue a steer whose outcome is unknown: it may have landed', async () => {
     await park()
     sidecar.respond('chat.steer', () => { throw new Error('synthetic lost acknowledgment') })
@@ -183,6 +201,17 @@ describe('deny with an instruction in a native owner chat', () => {
     expect(writes().some((p) => p.action === 'approval')).toBe(false)
     owner(accepted)
     expect(await (await tell()).json()).toMatchObject({ ok: true, instruction_outcome: 'steered' })
+  })
+
+  it('keeps the command held when the fallback admission settles refused at once', async () => {
+    const refused = { admission_id: 'refused-instruction', sequence: 2, status: 'terminal' as const, outcome: 'failed', authority_epoch: 1, execution_generation: 7, text: INSTRUCTION, input_id: 'refused' }
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action === 'steer') return { ...attached(live), receipt: correction('rejected') as GatewaySessionResult['receipt'] }
+      if (params.action === 'submit') return { ...attached(live), receipt: refused }
+      return attached(live)
+    })
+    expect((await tell()).status).toBe(409)
+    expect(writes().map((p) => p.action)).toEqual(['steer', 'submit'])
   })
 
   it('refuses a repeat and an allow while the steer is in flight, and steers once', async () => {
