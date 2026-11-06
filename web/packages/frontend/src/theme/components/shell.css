@@ -65,10 +65,15 @@
 .sidebar:has(> .resize-handle:hover) .edge-tab-join-bottom{background:radial-gradient(circle at 100% 100%,transparent calc(var(--r-md) - 3.5px),var(--accent) calc(var(--r-md) - 3px),var(--accent) calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
 /* z above .composer-wrap (10): the resize handle overlaps the card's left edge, which the composer wrap spans. */
 @media (min-width:641px){.sidebar{z-index:11}}
-/* One column, two layers. .sidebar-content holds the labelled rows above the panel, which takes the height; .sidebar-rail is the icon rail: an icon over its caption, destinations scrolling above a pinned footer. From 641px both stay mounted and .layout.sidebar-collapsed picks one; the other is hidden and out of the tab order, and the panel keeps its state and scroll. */
+/* Expanded destinations and chats share one scroll owner above the footer. The icon rail and Settings keep their own layout. Both sidebar layers stay mounted across collapse so panel state and scroll survive. */
 .sidebar .panel-view{background:transparent}
 .sidebar-rows{flex:0 1 auto;overflow-y:auto;scrollbar-width:none}
 .sidebar-panel{flex:1 1 160px;min-height:160px}
+.sidebar-scroll{overflow-y:auto;overscroll-behavior-y:contain;overflow-anchor:none}
+.sidebar-scroll > .sidebar-rows{flex:none;overflow:visible}
+.sidebar-scroll > .sidebar-panel{flex:1 0 auto;min-height:100%}
+.sidebar-scroll .panel-view{flex:1 0 auto;overflow:visible}
+.sidebar-scroll .session-list{flex:1 0 auto;overflow:visible;overscroll-behavior-y:auto}
 .sidebar-footer{padding-top:4px}
 .sidebar-footer > .sidebar-row:not(.sidebar-icon-row){flex:1 1 0;width:auto;min-width:0}
 .sidebar-icon-row{width:32px;padding:0;justify-content:center}

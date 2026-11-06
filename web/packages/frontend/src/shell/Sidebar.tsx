@@ -80,23 +80,25 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
   return (
     <nav className="sidebar-primary flex min-h-0 flex-1 flex-col" aria-label="Primary navigation">
       <div className="sidebar-content flex min-h-0 flex-1 flex-col min-[641px]:p-(--island-gap)" inert={rail}>
-        <div className="sidebar-rows flex min-h-0 flex-col gap-0.5">
-          {brand}
-          <button type="button" className={SIDEBAR_ROW} id="btnNewChat" aria-label={m.sidebar_new_chat()} onClick={() => { void newChat() }}><SidebarRowContent icon={SquarePen} label={m.sidebar_new_chat()} /></button>
-          {searchRow}
-          <span className="h-2 flex-none" aria-hidden="true" />
-          {rowsFor(SIDEBAR_PRIMARY, !rail)}
-          {moreRows.length > 0 && (
-            <button type="button" className={SIDEBAR_ROW} aria-label={m.tab_more()} aria-expanded={moreOpen} onClick={toggleMore}>
-              <ChevronDown {...ICON_PROPS} className={cn('transition-transform duration-(--dur)', !moreOpen && '-rotate-90')} />
-              <span className="sidebar-row-label min-w-0 truncate">{m.tab_more()}</span>
-              <span className="ms-auto text-xs tabular-nums text-muted" aria-hidden="true">{moreRows.length}</span>
-            </button>
-          )}
-          {moreOpen && moreRows}
-          <SidebarQuotas />
+        {brand}
+        <div className="sidebar-scroll flex min-h-0 flex-1 flex-col">
+          <div className="sidebar-rows flex min-h-0 flex-col gap-0.5">
+            <button type="button" className={SIDEBAR_ROW} id="btnNewChat" aria-label={m.sidebar_new_chat()} onClick={() => { void newChat() }}><SidebarRowContent icon={SquarePen} label={m.sidebar_new_chat()} /></button>
+            {searchRow}
+            <span className="h-2 flex-none" aria-hidden="true" />
+            {rowsFor(SIDEBAR_PRIMARY, !rail)}
+            {moreRows.length > 0 && (
+              <button type="button" className={SIDEBAR_ROW} aria-label={m.tab_more()} aria-expanded={moreOpen} onClick={toggleMore}>
+                <ChevronDown {...ICON_PROPS} className={cn('transition-transform duration-(--dur)', !moreOpen && '-rotate-90')} />
+                <span className="sidebar-row-label min-w-0 truncate">{m.tab_more()}</span>
+                <span className="ms-auto text-xs tabular-nums text-muted" aria-hidden="true">{moreRows.length}</span>
+              </button>
+            )}
+            {moreOpen && moreRows}
+            <SidebarQuotas />
+          </div>
+          <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
         </div>
-        <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
         <div className="sidebar-footer flex flex-none items-center gap-0.5">{destinationRow('settings', !rail)}{feedbackRow}{bell}</div>
       </div>
       {isDesktop && (

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scroll sidebar destinations out of the way to give chats more room on short screens.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
