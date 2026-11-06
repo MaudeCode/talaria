@@ -112,7 +112,7 @@ def _snapshot(value: dict) -> dict:
     # display rows, not those bindings or the inventory's system prompt and credential hint.
     message_keys = {"role", "content", "tool_calls", "tool_call_id", "name", "timestamp", "message_id", "row_id",
                     "reasoning", "reasoning_content", "display_kind", "finish_reason"}
-    info_keys = {"title", "model", "cwd", "source", "provider", "config_warning"}
+    info_keys = {"title", "model", "cwd", "source", "provider", "config_warning", "reasoning_effort", "reasoning_effort_wire"}
     rows = []
     for row in value["messages"]:
         metadata = row.get("display_metadata")

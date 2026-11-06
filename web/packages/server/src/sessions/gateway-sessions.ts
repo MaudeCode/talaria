@@ -1,3 +1,4 @@
+import { validReasoningEffort } from '../config/agent-config.js'
 import { applyPlanGauge } from './session.js'
 import { reasoningProjection } from './reasoning-display.js'
 import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
@@ -7,7 +8,7 @@ import type { QueueAdmissionFence } from './admission.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
+import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
@@ -81,12 +82,14 @@ function ownerUsage(payload: Row, complete = false): Row {
   return usage
 }
 
+const EFFORT_LIST_SECONDS = 30
+
 /** Translate only owner-confirmed outcomes; an unknown receipt never means applied. */
 function modelChange(receipt: Row, selection: Row = {}): ModelChange {
   const payload = receipt.payload && typeof receipt.payload === 'object' ? receipt.payload as Row : selection
   const model = str(receipt.target_model) || str(payload.model) || str(receipt.model)
   const provider = Object.hasOwn(receipt, 'target_provider') ? receipt.target_provider : payload.provider
-  const target = { ...(model ? { model } : {}), ...(provider === null || typeof provider === 'string' ? { provider } : {}) }
+  const target = { ...(model ? { model } : {}), ...(provider === null || typeof provider === 'string' ? { provider } : {}), ...(typeof payload.reasoning === 'string' ? { reasoning: payload.reasoning } : {}) }
   if (receipt.operation !== 'model') return { state: 'refused', message: 'The owner did not confirm the model change' }
   if (receipt.status === 'deferred') return { state: 'deferred', ...target }
   if (receipt.status === 'confirmation_required' && typeof receipt.confirm === 'string' && receipt.confirm && model)
@@ -137,6 +140,8 @@ export class GatewaySessions {
   private readonly notices: SessionNotices
   private readonly modelMutations = new Map<string, number>()
   private readonly modelChanges = new Map<string, { epoch: number; replay: string; change: ModelChange }>()
+  private readonly deferredReasoning = new Map<string, { epoch: number; replay: string; effort: string | null }>()
+  private readonly effortLists = new Map<string, { at: number; efforts: string[] }>()
 
   private rememberModelChange(target: Target, snapshot: GatewaySnapshot, change: ModelChange): void {
     this.modelChanges.set(target.key, { epoch: snapshot.authority_epoch, replay: snapshot.replay_epoch, change })
@@ -524,6 +529,41 @@ export class GatewaySessions {
     return redactNestedMessageContainers(value, this.deps.redactEnabled()) as OwnerAttachment
   }
 
+  /** The route's levels, kept as long as a direct chat's read (every session view asks). A failed read is not kept. */
+  private async routeEfforts(target: Target, model: string, provider: string): Promise<string[]> {
+    const key = JSON.stringify([target.home, model, provider])
+    const held = this.effortLists.get(key)
+    if (held && this.deps.now() - held.at < EFFORT_LIST_SECONDS) return held.efforts
+    try {
+      const efforts = (await this.deps.sidecar()?.call('models.reasoning_efforts', { profile_home: target.home, model, provider }))?.efforts
+      if (!efforts) return []
+      this.effortLists.set(key, { at: this.deps.now(), efforts })
+      return efforts
+    } catch { return [] }
+  }
+
+  /** A held pick lands at the owner's next idle boundary, and only on the owner that took it. */
+  private heldReasoning(target: Target, snapshot: GatewaySnapshot): OwnerReasoning['deferred'] {
+    const held = this.deferredReasoning.get(target.key)
+    if (!held) return null
+    if (held.epoch === snapshot.authority_epoch && held.replay === snapshot.replay_epoch && (snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))) return { effort: held.effort }
+    this.deferredReasoning.delete(target.key)
+    return null
+  }
+
+  /** TAL-1319: the level the owner reports for this chat. An owner that reports none offers no control, and the profile never stands in. */
+  private async reasoningControl(target: Target, result: GatewaySessionResult): Promise<OwnerReasoning | undefined> {
+    const snapshot = result.snapshot
+    if (!snapshot || !Object.hasOwn(snapshot.info, 'reasoning_effort')) return undefined
+    const supported = await this.routeEfforts(target, str(snapshot.info.model), str(snapshot.info.provider))
+    return {
+      reasoning_effort: str(snapshot.info.reasoning_effort_wire) || str(snapshot.info.reasoning_effort) || null,
+      supported_efforts: supported, supports_reasoning_effort: supported.length > 0, supports_thinking_toggle: supported.length > 0,
+      actions: this.attachment(result).can_submit ? ['set', 'reset'] : [],
+      deferred: this.heldReasoning(target, snapshot),
+    }
+  }
+
   private connectionView(target: Target, epoch: number, operation: ConnectorOperationSnapshot): ConnectorOperationView {
     return ownerConnection(keepToolCall(operation, this.observations.get(target.key)?.snapshot.pending_connection), { session_id: target.sid, authority_epoch: epoch }, catalogNames(target.home))
   }
@@ -559,7 +599,8 @@ export class GatewaySessions {
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
     const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
-    const fields: Row = { ...base, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: { ...this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), ...(snapshot ? { connection: this.snapshotConnection(target, snapshot) } : {}) }, composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const reasoningControl = await this.reasoningControl(target, result)
+    const fields: Row = { ...base, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: { ...this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), ...(snapshot ? { connection: this.snapshotConnection(target, snapshot) } : {}), ...(reasoningControl ? { reasoning_control: reasoningControl } : {}) }, composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })
@@ -642,6 +683,11 @@ export class GatewaySessions {
     return { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) }
   }
 
+  /** Whether this chat runs on a canonical owner: the classification no client derives. */
+  async owns(sid: string): Promise<boolean> {
+    return await this.target(sid) !== null
+  }
+
   async action(sid: string, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>): Promise<GatewaySessionResult> {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
@@ -649,6 +695,9 @@ export class GatewaySessions {
       try { await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile) }
       catch { throw new HttpFailure(400, 'The workspace must be trusted before selecting it') }
     }
+    const reasoningPick = params.action === 'mutate' && params.operation === 'reasoning'
+    const effort = params.payload?.effort
+    if (reasoningPick && effort !== null && (typeof effort !== 'string' || !effort || !validReasoningEffort(effort))) throw new HttpFailure(400, `Unknown reasoning effort '${str(effort)}'`)
     if (params.action === 'react') {
       const current = await this.call(target, { action: 'snapshot' })
       const row = current.snapshot?.messages.find((row) => row.row_id === params.row_id)
@@ -656,12 +705,21 @@ export class GatewaySessions {
           || !['user', 'assistant'].includes(str(row.role))) throw new HttpFailure(409, 'Reactions are unavailable for this message')
     }
     let result = await this.call(target, params)
-    if (params.action === 'react' && result.state === 'unavailable') {
-      // A toggle has no idempotency key. Read the owner after a lost ACK; never replay the write.
+    if ((params.action === 'react' || reasoningPick) && result.state === 'unavailable') {
+      // Read the owner after a lost ACK; never replay the write.
       result = await this.call(target, { action: 'snapshot' })
-      if (result.state !== 'attached' || !result.snapshot) throw new HttpFailure(503, 'Could not confirm the reaction. Reconnect to read its current value.', { outcome_unknown: true })
+      if (result.state !== 'attached' || !result.snapshot) throw new HttpFailure(503, 'Could not confirm the change. Reconnect to read its current value.', { outcome_unknown: true })
     }
     if (result.state !== 'attached' || !result.snapshot) throw new HttpFailure(409, 'The owning Agent refused the action', { owner_attachment: this.attachment(result) })
+    if (reasoningPick && result.receipt) {
+      const status = (result.receipt as Row).status
+      // An unknown receipt never means applied.
+      if (status !== undefined && status !== 'deferred') throw new HttpFailure(409, 'The owning Agent refused the action', { owner_attachment: this.attachment(result) })
+      if (status === 'deferred') this.deferredReasoning.set(target.key, { epoch: result.snapshot.authority_epoch, replay: result.snapshot.replay_epoch, effort: effort as string | null })
+      else this.deferredReasoning.delete(target.key)
+    }
+    // A level chosen with a model supersedes one still held.
+    if (params.action === 'mutate' && params.operation === 'model' && params.payload?.reasoning !== undefined) this.deferredReasoning.delete(target.key)
     if (params.action === 'react') this.changed(target)
     this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: sid })
     return result

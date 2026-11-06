@@ -1788,6 +1788,10 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "reasoning": {
+                                    "type": "string",
+                                    "description": "The level chosen with this model; a confirmed resend carries it again."
                                   }
                                 },
                                 "required": [
@@ -2124,6 +2128,80 @@
                                   }
                                 ],
                                 "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                              },
+                              "reasoning_control": {
+                                "type": "object",
+                                "properties": {
+                                  "reasoning_effort": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                  },
+                                  "supported_efforts": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "supports_reasoning_effort": {
+                                    "type": "boolean"
+                                  },
+                                  "supports_thinking_toggle": {
+                                    "type": "boolean"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "enum": [
+                                        "set",
+                                        "reset"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                  },
+                                  "deferred": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "effort": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "effort"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                  }
+                                },
+                                "required": [
+                                  "reasoning_effort",
+                                  "supported_efforts",
+                                  "supports_reasoning_effort",
+                                  "supports_thinking_toggle",
+                                  "actions",
+                                  "deferred"
+                                ],
+                                "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                               }
                             },
                             "required": [
@@ -2768,6 +2846,10 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "reasoning": {
+                                    "type": "string",
+                                    "description": "The level chosen with this model; a confirmed resend carries it again."
                                   }
                                 },
                                 "required": [
@@ -3104,6 +3186,80 @@
                                   }
                                 ],
                                 "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                              },
+                              "reasoning_control": {
+                                "type": "object",
+                                "properties": {
+                                  "reasoning_effort": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                  },
+                                  "supported_efforts": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "supports_reasoning_effort": {
+                                    "type": "boolean"
+                                  },
+                                  "supports_thinking_toggle": {
+                                    "type": "boolean"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "enum": [
+                                        "set",
+                                        "reset"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                  },
+                                  "deferred": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "effort": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "effort"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                  }
+                                },
+                                "required": [
+                                  "reasoning_effort",
+                                  "supported_efforts",
+                                  "supports_reasoning_effort",
+                                  "supports_thinking_toggle",
+                                  "actions",
+                                  "deferred"
+                                ],
+                                "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                               }
                             },
                             "required": [
@@ -3587,6 +3743,10 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "reasoning": {
+                                    "type": "string",
+                                    "description": "The level chosen with this model; a confirmed resend carries it again."
                                   }
                                 },
                                 "required": [
@@ -3923,6 +4083,80 @@
                                   }
                                 ],
                                 "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                              },
+                              "reasoning_control": {
+                                "type": "object",
+                                "properties": {
+                                  "reasoning_effort": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                  },
+                                  "supported_efforts": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "supports_reasoning_effort": {
+                                    "type": "boolean"
+                                  },
+                                  "supports_thinking_toggle": {
+                                    "type": "boolean"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "enum": [
+                                        "set",
+                                        "reset"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                  },
+                                  "deferred": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "effort": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "effort"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                  }
+                                },
+                                "required": [
+                                  "reasoning_effort",
+                                  "supported_efforts",
+                                  "supports_reasoning_effort",
+                                  "supports_thinking_toggle",
+                                  "actions",
+                                  "deferred"
+                                ],
+                                "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                               }
                             },
                             "required": [
@@ -4707,6 +4941,10 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "reasoning": {
+                                    "type": "string",
+                                    "description": "The level chosen with this model; a confirmed resend carries it again."
                                   }
                                 },
                                 "required": [
@@ -5043,6 +5281,80 @@
                                   }
                                 ],
                                 "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                              },
+                              "reasoning_control": {
+                                "type": "object",
+                                "properties": {
+                                  "reasoning_effort": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                  },
+                                  "supported_efforts": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "supports_reasoning_effort": {
+                                    "type": "boolean"
+                                  },
+                                  "supports_thinking_toggle": {
+                                    "type": "boolean"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "enum": [
+                                        "set",
+                                        "reset"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                  },
+                                  "deferred": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "effort": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "effort"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                  }
+                                },
+                                "required": [
+                                  "reasoning_effort",
+                                  "supported_efforts",
+                                  "supports_reasoning_effort",
+                                  "supports_thinking_toggle",
+                                  "actions",
+                                  "deferred"
+                                ],
+                                "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                               }
                             },
                             "required": [
@@ -8538,6 +8850,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -8874,6 +9190,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -9384,6 +9774,10 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "reasoning": {
+                              "type": "string",
+                              "description": "The level chosen with this model; a confirmed resend carries it again."
                             }
                           },
                           "required": [
@@ -9720,6 +10114,80 @@
                             }
                           ],
                           "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                        },
+                        "reasoning_control": {
+                          "type": "object",
+                          "properties": {
+                            "reasoning_effort": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                            },
+                            "supported_efforts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "supports_reasoning_effort": {
+                              "type": "boolean"
+                            },
+                            "supports_thinking_toggle": {
+                              "type": "boolean"
+                            },
+                            "actions": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "set",
+                                  "reset"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                            },
+                            "deferred": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "effort": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "effort"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                            }
+                          },
+                          "required": [
+                            "reasoning_effort",
+                            "supported_efforts",
+                            "supports_reasoning_effort",
+                            "supports_thinking_toggle",
+                            "actions",
+                            "deferred"
+                          ],
+                          "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                         }
                       },
                       "required": [
@@ -13342,6 +13810,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -13678,6 +14150,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -17047,6 +17593,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -17383,6 +17933,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -18005,6 +18629,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -18341,6 +18969,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -18872,6 +19574,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -19208,6 +19914,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -19746,6 +20526,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -20082,6 +20866,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -23327,6 +24185,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -23663,6 +24525,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -24318,6 +25254,10 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "reasoning": {
+                                      "type": "string",
+                                      "description": "The level chosen with this model; a confirmed resend carries it again."
                                     }
                                   },
                                   "required": [
@@ -24654,6 +25594,80 @@
                                     }
                                   ],
                                   "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                                },
+                                "reasoning_control": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reasoning_effort": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                    },
+                                    "supported_efforts": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "supports_reasoning_effort": {
+                                      "type": "boolean"
+                                    },
+                                    "supports_thinking_toggle": {
+                                      "type": "boolean"
+                                    },
+                                    "actions": {
+                                      "type": "array",
+                                      "items": {
+                                        "enum": [
+                                          "set",
+                                          "reset"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                    },
+                                    "deferred": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "effort": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "effort"
+                                          ]
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                    }
+                                  },
+                                  "required": [
+                                    "reasoning_effort",
+                                    "supported_efforts",
+                                    "supports_reasoning_effort",
+                                    "supports_thinking_toggle",
+                                    "actions",
+                                    "deferred"
+                                  ],
+                                  "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                                 }
                               },
                               "required": [
@@ -25215,6 +26229,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -25551,6 +26569,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -26088,12 +27180,18 @@
                       "properties": {
                         "model": {
                           "type": "string"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "reasoning": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "model"
                       ],
-                      "description": "The owner mutation an Agent-owned chat sends instead of the pair above, so `/model reset` stays the Agent's own request."
+                      "description": "The owner mutation an Agent-owned chat sends instead of the pair above, so `/model reset` stays the Agent's own request and `--reasoning` commits with its model."
                     }
                   },
                   "required": [
@@ -29095,6 +30193,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -29431,6 +30533,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -30264,6 +31440,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -30600,6 +31780,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -31129,6 +32383,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -31465,6 +32723,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -35501,6 +36833,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -35837,6 +37173,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -39155,6 +40565,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -39491,6 +40905,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -42871,6 +44359,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -43207,6 +44699,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -46585,6 +48151,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -46921,6 +48491,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -49796,6 +51440,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -50132,6 +51780,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -50660,6 +52382,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -50996,6 +52722,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -57752,6 +59552,7 @@
                           "rewind",
                           "reset",
                           "model",
+                          "reasoning",
                           "workspace",
                           "compress"
                         ],
@@ -57762,7 +59563,8 @@
                         "propertyNames": {
                           "type": "string"
                         },
-                        "additionalProperties": {}
+                        "additionalProperties": {},
+                        "description": "`reasoning`: `{effort}`, null resets to the profile. `model` may carry `reasoning` to commit both at once."
                       }
                     },
                     "required": [
@@ -60719,6 +62521,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -61055,6 +62861,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -61398,6 +63278,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reasoning": {
+                          "type": "string",
+                          "description": "The level chosen with this model; a confirmed resend carries it again."
                         }
                       },
                       "required": [
@@ -64421,6 +66305,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -64757,6 +66645,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -65344,6 +67306,10 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "reasoning": {
+                              "type": "string",
+                              "description": "The level chosen with this model; a confirmed resend carries it again."
                             }
                           },
                           "required": [
@@ -65680,6 +67646,80 @@
                             }
                           ],
                           "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                        },
+                        "reasoning_control": {
+                          "type": "object",
+                          "properties": {
+                            "reasoning_effort": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                            },
+                            "supported_efforts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "supports_reasoning_effort": {
+                              "type": "boolean"
+                            },
+                            "supports_thinking_toggle": {
+                              "type": "boolean"
+                            },
+                            "actions": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "set",
+                                  "reset"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                            },
+                            "deferred": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "effort": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "effort"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                            }
+                          },
+                          "required": [
+                            "reasoning_effort",
+                            "supported_efforts",
+                            "supports_reasoning_effort",
+                            "supports_thinking_toggle",
+                            "actions",
+                            "deferred"
+                          ],
+                          "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                         }
                       },
                       "required": [
@@ -68683,6 +70723,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -69019,6 +71063,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -69499,6 +71617,10 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reasoning": {
+                                  "type": "string",
+                                  "description": "The level chosen with this model; a confirmed resend carries it again."
                                 }
                               },
                               "required": [
@@ -69835,6 +71957,80 @@
                                 }
                               ],
                               "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                            },
+                            "reasoning_control": {
+                              "type": "object",
+                              "properties": {
+                                "reasoning_effort": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                },
+                                "supported_efforts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "supports_reasoning_effort": {
+                                  "type": "boolean"
+                                },
+                                "supports_thinking_toggle": {
+                                  "type": "boolean"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "set",
+                                      "reset"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                },
+                                "deferred": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "effort": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "effort"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                }
+                              },
+                              "required": [
+                                "reasoning_effort",
+                                "supported_efforts",
+                                "supports_reasoning_effort",
+                                "supports_thinking_toggle",
+                                "actions",
+                                "deferred"
+                              ],
+                              "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                             }
                           },
                           "required": [
@@ -72775,6 +74971,10 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "reasoning": {
+                                      "type": "string",
+                                      "description": "The level chosen with this model; a confirmed resend carries it again."
                                     }
                                   },
                                   "required": [
@@ -73111,6 +75311,80 @@
                                     }
                                   ],
                                   "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."
+                                },
+                                "reasoning_control": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reasoning_effort": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "The level this chat runs now, clamped for its route. Null is the provider default."
+                                    },
+                                    "supported_efforts": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "supports_reasoning_effort": {
+                                      "type": "boolean"
+                                    },
+                                    "supports_thinking_toggle": {
+                                      "type": "boolean"
+                                    },
+                                    "actions": {
+                                      "type": "array",
+                                      "items": {
+                                        "enum": [
+                                          "set",
+                                          "reset"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                                    },
+                                    "deferred": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "effort": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "effort"
+                                          ]
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                                    }
+                                  },
+                                  "required": [
+                                    "reasoning_effort",
+                                    "supported_efforts",
+                                    "supports_reasoning_effort",
+                                    "supports_thinking_toggle",
+                                    "actions",
+                                    "deferred"
+                                  ],
+                                  "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker."
                                 }
                               },
                               "required": [

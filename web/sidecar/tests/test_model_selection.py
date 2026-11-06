@@ -159,12 +159,13 @@ def test_real_provider_name_conflicts_refused_before_clients(tmp_path):
 def test_real_agent_parser_answers_model_arguments(tmp_path):
     script = textwrap.dedent('''
         from talaria_sidecar.methods.providers import parse_switch_args as parse
-        assert parse('reset') == dict(target='reset', provider=None, reset=True, errors=[], unsupported_flags=[])
-        assert parse('some/model --provider openrouter') == dict(target='some/model', provider='openrouter', reset=False, errors=[], unsupported_flags=[])
-        assert parse('some/model') == dict(target='some/model', provider=None, reset=False, errors=[], unsupported_flags=[])
+        assert parse('reset') == dict(target='reset', provider=None, reset=True, reasoning=None, errors=[], unsupported_flags=[])
+        assert parse('some/model --provider openrouter') == dict(target='some/model', provider='openrouter', reset=False, reasoning=None, errors=[], unsupported_flags=[])
+        assert parse('some/model') == dict(target='some/model', provider=None, reset=False, reasoning=None, errors=[], unsupported_flags=[])
         refused = parse('reset --provider openrouter')
         assert not refused['reset'] and len(refused['errors']) == 1, refused
-        assert parse('some/model --global --reasoning high')['unsupported_flags'] == ['--global', '--reasoning'], parse('some/model --global --reasoning high')
+        assert parse('some/model --global --reasoning high')['unsupported_flags'] == ['--global'], parse('some/model --global --reasoning high')
+        assert parse('some/model --reasoning high')['reasoning'] == 'high', parse('some/model --reasoning high')
     ''')
     env = isolated_env(tmp_path / 'launch')
     env['PYTHONPATH'] = f'{SIDECAR_ROOT}:{AGENT_DIR}'
@@ -174,4 +175,4 @@ def test_real_agent_parser_answers_model_arguments(tmp_path):
 
 def test_an_agent_without_the_parser_reads_the_whole_string_as_a_model_id(monkeypatch):
     monkeypatch.setitem(sys.modules, 'hermes_cli.model_switch', ModuleType('hermes_cli.model_switch'))
-    assert providers.parse_switch_args(' some/model ') == dict(target='some/model', provider=None, reset=False, errors=[], unsupported_flags=[])
+    assert providers.parse_switch_args(' some/model ') == dict(target='some/model', provider=None, reset=False, reasoning=None, errors=[], unsupported_flags=[])

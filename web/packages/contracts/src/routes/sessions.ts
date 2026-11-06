@@ -173,7 +173,7 @@ export const sessionsContract = {
     modelCommand: oc.route({ method: 'POST', path: '/api/session/model-command', tags }).input(z.object({ session_id: SessionIdSchema.optional(), args: z.string(), current_model: z.string().nullable().optional().describe('The model the chat shows, kept by a provider-only command when Web has no record of the chat: an unsaved or Agent-owned one.') })).output(z.object({
       model: z.string().describe('The model the chat runs after this command.'),
       model_provider: z.string().nullable().describe('The provider of that model, when one is chosen.'),
-      owner_payload: z.object({ model: z.string() }).optional().describe("The owner mutation an Agent-owned chat sends instead of the pair above, so `/model reset` stays the Agent's own request."),
+      owner_payload: z.object({ model: z.string(), provider: z.string().optional(), reasoning: z.string().optional() }).optional().describe("The owner mutation an Agent-owned chat sends instead of the pair above, so `/model reset` stays the Agent's own request and `--reasoning` commits with its model."),
     })),
     update: oc.route({ method: 'POST', path: '/api/session/update', tags }).input(SessionBody.extend({ workspace: z.string().optional(), model: z.string().nullable().optional().describe("`reset` returns the chat to its profile's default model, as on every Agent surface."), model_provider: z.string().nullable().optional(), confirm_token: z.string().optional() })).output(SessionEnvelopeSchema),
     toolsets: oc.route({ method: 'POST', path: '/api/session/toolsets', tags }).input(SessionBody.extend({ toolsets: z.array(z.string()).nullable().optional() })).output(z.object({ ok: z.literal(true), enabled_toolsets: z.array(z.string()).nullable() })),

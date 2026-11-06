@@ -644,11 +644,12 @@ def parse_switch_args(args: str) -> dict:
     try:
         from hermes_cli.model_switch import parse_model_switch_args
     except ImportError:
-        return {"target": args.strip(), "provider": None, "reset": False, "errors": [], "unsupported_flags": []}
+        return {"target": args.strip(), "provider": None, "reset": False, "reasoning": None, "errors": [], "unsupported_flags": []}
     request = parse_model_switch_args(args)
-    flags = (("--global", request.is_global), ("--once", request.is_once), ("--reasoning", request.reasoning_effort))
+    flags = (("--global", request.is_global), ("--once", request.is_once))
     return {
         "target": request.target, "provider": request.explicit_provider or None, "reset": request.is_reset,
+        "reasoning": request.reasoning_effort or None,
         "errors": request.error_messages(), "unsupported_flags": [flag for flag, used in flags if used],
     }
 

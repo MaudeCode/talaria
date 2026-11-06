@@ -940,6 +940,15 @@ owner-action response and `owner_attachment` view. An applied receipt has no `st
 carries the owner's message, target model/provider and `confirm` token. The existing
 confirmation dialog re-sends that token as `payload.confirm` with current owner fences.
 
+A level travels the same way. `operation: reasoning` takes `{effort}`, null gives the level
+back to the profile, and a model payload's `reasoning` commits both in one mutation. A
+busy owner answers `deferred` and keeps the actual level until the turn ends. The server
+projects `owner_attachment.reasoning_control` from the owner's `reasoning_effort` and
+`reasoning_effort_wire` session info, never from the profile config; an owner that reports
+neither has no control. After a lost acknowledgement it reads the owner back and never
+resends the write.
+RPC v79 adds the `reasoning` operation and the `models.parse_switch_args` `reasoning` result.
+
 A native idle mutation has no execution stamp. Its session-scoped subscription and replay
 still carry it; turn-generation filtering must not discard it. Observation of a deferred
 pick stays attached past the idle notification until its outcome is projected. In-flight

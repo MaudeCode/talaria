@@ -372,6 +372,16 @@ describe('Composer', () => {
     await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: native.session_id, message: 'Continue with the same Agent', submission_id: expect.stringMatching(/^[a-f0-9]{32}$/) })))
   })
 
+  it.each([
+    ['offers', ['set', 'reset'], true],
+    ['hides', [], false],
+  ] as const)('%s the reasoning picker as the owner\'s server-sent actions allow (TAL-1319)', (_, actions, shown) => {
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [],
+      reasoning_control: { reasoning_effort: 'high', supported_efforts: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: [...actions], deferred: null } }
+    renderComposer({ ...writable, read_only: true, owner_attachment: owner })
+    expect(document.querySelector('#composerReasoningChip') !== null).toBe(shown)
+  })
+
   it('explains an unsupported native CLI batch without offering a send', () => {
     renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, restarting: false, revision: null, execution_generation: null, admissions: [] } })
     expect(screen.getByText(/Continue in its native client/)).toBeInTheDocument()

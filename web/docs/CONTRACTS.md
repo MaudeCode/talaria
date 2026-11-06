@@ -323,6 +323,16 @@ other boards. Profile switching clears the existing Query cache and closes the
 previous detail selection. The shared fixture is
 `contracts/fixtures/kanban-inspection.json` at the repository root.
 
+## Canonical reasoning level
+
+`owner_attachment.reasoning_control` is one owner chat's own level, read from its owner:
+the effective `reasoning_effort`, `supported_efforts`, the permitted `actions` and any pick
+`deferred` to the end of the running turn. It is absent when the owner reports no level, and
+the chat then offers no picker. Set and reset use the fenced `mutate` owner action with
+`operation: reasoning` and `{effort}`, null for reset, and answer the refreshed session. A
+model and level chosen together are one `model` mutation with `reasoning` in its payload. The
+profile's `/api/reasoning` is never the source or fallback for these chats.
+
 ## Canonical message reactions
 
 Canonical message reactions use the closed `react` owner action on

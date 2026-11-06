@@ -4,7 +4,7 @@ import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { BackgroundTasksResponseSchema, ConnectorsPageSchema, ChatStartResponseSchema, DelegationStatusSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
-import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema } from './gateway-session.js'
+import { ExecutionModesSchema, GatewaySessionParamsSchema, ModelChangeSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -134,6 +134,15 @@ describe('contracts package', () => {
     const fixture = shared('fixtures/model-confirmation.json') as { request: unknown; refusal: unknown }
     expect(sessionsContract.session.update['~orpc'].inputSchema!.parse(fixture.request)).toEqual(fixture.request)
     expect(ModelConfirmationRequiredSchema.parse(fixture.refusal).warnings.map((warning) => warning.kind)).toEqual(['data_policy', 'context_cache'])
+  })
+  it('carries an owner chat\'s own reasoning control and its fenced writes (TAL-1319)', () => {
+    const { reasoning } = shared('fixtures/gateway-owner.json') as { reasoning: Record<'pinned' | 'clamped' | 'provider_default' | 'deferred' | 'restarting', { attachment: unknown }> & { requests: Record<string, unknown> } }
+    for (const name of ['pinned', 'clamped', 'provider_default', 'deferred', 'restarting'] as const) expect(OwnerAttachmentSchema.parse(reasoning[name].attachment)).toEqual(reasoning[name].attachment)
+    for (const write of Object.values(reasoning.requests)) expect(OwnerActionRequestSchema.parse(write)).toEqual(write)
+    expect(GatewaySessionParamsSchema.shape.operation.unwrap().options).toContain('reasoning')
+    // An older server omits the field, and the attachment stays valid.
+    expect(OwnerAttachmentSchema.parse((shared('fixtures/gateway-owner.json') as { normal: unknown }).normal)).not.toHaveProperty('reasoning_control')
+    expect(ModelChangeSchema.parse({ state: 'confirmation_required', confirm: 'token', model: 'picked', reasoning: 'high' }).reasoning).toBe('high')
   })
   it('preserves recorded owner capabilities and explicit unknown recovery actions', () => {
     const fixture = shared('fixtures/gateway-owner.json') as Record<string, unknown>

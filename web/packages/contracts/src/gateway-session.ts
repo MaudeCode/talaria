@@ -51,6 +51,7 @@ export const ModelChangeSchema = z.object({
   state: z.enum(['applied', 'deferred', 'confirmation_required', 'refused']),
   message: z.string().optional(), confirm: z.string().optional(),
   model: z.string().optional(), provider: z.string().nullable().optional(),
+  reasoning: z.string().optional().describe('The level chosen with this model; a confirmed resend carries it again.'),
 })
 export type ModelChange = z.infer<typeof ModelChangeSchema>
 export const GatewaySessionResultSchema = z.object({
@@ -97,7 +98,7 @@ export const GatewaySessionParamsSchema = z.object({
   prompt_id: z.string().optional(), choice: z.enum(['once', 'session', 'always', 'deny']).optional(),
   question_id: z.string().min(1).optional(), answer: z.string().optional(),
   expected_revision: z.number().int().nonnegative().optional(),
-  operation: z.enum(['rename', 'archive', 'sidebar', 'branch', 'delete', 'rewind', 'reset', 'model', 'workspace', 'compress']).optional(),
+  operation: z.enum(['rename', 'archive', 'sidebar', 'branch', 'delete', 'rewind', 'reset', 'model', 'reasoning', 'workspace', 'compress']).optional(),
   payload: ObjectSchema.optional(),
   op_id: z.string().min(1).optional().describe('`connection_*`: the operation; bound by the owner to this session, and by `authority_epoch` to this owner.'),
   connection_answer: ConnectionAnswerSchema.optional(),
@@ -138,9 +139,17 @@ export const OwnerActionRequestSchema = z.discriminatedUnion('action', [
   RecoveryAction.extend({ action: z.literal('retry') }),
   OwnerActionBase.extend({ action: z.literal('mutate'), request_id: GatewaySessionParamsSchema.shape.request_id.unwrap(),
     expected_revision: z.number().int().nonnegative(), execution_generation: z.number().int().nonnegative(),
-    operation: z.enum(['rename', 'rewind', 'reset', 'model', 'workspace', 'compress']), payload: ObjectSchema }),
+    operation: z.enum(['rename', 'rewind', 'reset', 'model', 'reasoning', 'workspace', 'compress']), payload: ObjectSchema.describe('`reasoning`: `{effort}`, null resets to the profile. `model` may carry `reasoning` to commit both at once.') }),
 ])
 export type OwnerActionRequest = z.infer<typeof OwnerActionRequestSchema>
+/** TAL-1319: one owner chat's own level, in `ReasoningStatus` terms. Read from its owner, never from the profile config. */
+export const OwnerReasoningSchema = z.object({
+  reasoning_effort: z.string().nullable().describe('The level this chat runs now, clamped for its route. Null is the provider default.'),
+  supported_efforts: z.array(z.string()), supports_reasoning_effort: z.boolean(), supports_thinking_toggle: z.boolean(),
+  actions: z.array(z.enum(['set', 'reset'])).describe('What this client may ask the owner now. Empty while the owner cannot take a change.'),
+  deferred: z.object({ effort: z.string().nullable() }).nullable().describe('A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset.'),
+})
+export type OwnerReasoning = z.infer<typeof OwnerReasoningSchema>
 /** The server decides every action. Native paths, principal bindings and transport tickets stay private. */
 export const OwnerAttachmentSchema = z.object({
   state: GatewaySessionResultSchema.shape.state, reason: z.string().nullable(),
@@ -151,6 +160,7 @@ export const OwnerAttachmentSchema = z.object({
   active_admission: GatewayAdmissionSchema.nullable().optional(),
   admissions: z.array(GatewayAdmissionSchema.extend({ actions: z.array(z.enum(['cancel', 'steer', 'edit', 'retry', 'discard'])) })),
   connection: ConnectorOperationViewSchema.nullable().optional().describe("TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."),
+  reasoning_control: OwnerReasoningSchema.optional().describe('Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker.'),
 })
 export type OwnerAttachment = z.infer<typeof OwnerAttachmentSchema>
 export type GatewaySnapshot = z.infer<typeof GatewaySnapshotSchema>

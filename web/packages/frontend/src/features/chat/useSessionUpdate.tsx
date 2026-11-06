@@ -12,7 +12,8 @@ import { keys } from '../../api/queryKeys'
 import { useResourceMutation } from '../sessions/useResourceMutation'
 
 type Update = Parameters<typeof api.updateSession>[1]
-interface Pending { sessionId: string; body: Update; decision: { error: string; confirm_token: string }; scope: object; native?: boolean }
+type OwnerPayload = NonNullable<Awaited<ReturnType<typeof api.modelCommand>>['owner_payload']>
+interface Pending { sessionId: string; body: Update; decision: { error: string; confirm_token: string }; scope: object; native?: boolean; ownerPayload?: OwnerPayload }
 type OwnerResult = Awaited<ReturnType<typeof api.ownerAction>>
 
 /** The chip shows the chosen model or workspace at once, and while its confirmation is open; Cancel or a refusal rolls it back. */
@@ -50,7 +51,8 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
       if (!explicitPick && offered.current === change.confirm) return
       offered.current = change.confirm
       setPending({ sessionId, native: true, body: { model: change.model, ...(change.provider !== undefined ? { model_provider: change.provider } : {}) },
-        decision: { error: change.message ?? '', confirm_token: change.confirm }, scope: getStreamContext() })
+        decision: { error: change.message ?? '', confirm_token: change.confirm }, scope: getStreamContext(),
+        ...(change.reasoning ? { ownerPayload: { model: change.model, ...(change.provider ? { provider: change.provider } : {}), reasoning: change.reasoning } } : {}) })
     } else setPending((p) => p?.native ? null : p)
   }
   useEffect(() => {
@@ -61,8 +63,9 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
   // A pick queued behind another is sent against the owner revision the earlier pick produced, not the one it saw.
   const latestOwner = useRef<{ sid: string; owner: OwnerAttachment } | null>(null)
   const write = useSessionWrite({
-    fields: ({ body }: { sid: string; body: Update; owner: OwnerAttachment | undefined; ownerPayload: { model: string } | undefined }) => chosenFields(body),
-    mutationFn: async ({ sid, body, owner: seen, ownerPayload }): Promise<{ native: OwnerResult | null; session: unknown }> => {
+    fields: ({ body, ownerPayload, effort }: { sid: string; body: Update; owner: OwnerAttachment | undefined; ownerPayload: OwnerPayload | undefined; effort: string | null | undefined }) =>
+      effort !== undefined ? { reasoning_effort: effort } : { ...chosenFields(body), ...(ownerPayload?.reasoning ? { reasoning_effort: ownerPayload.reasoning } : {}) },
+    mutationFn: async ({ sid, body, owner: seen, ownerPayload, effort }): Promise<{ native: OwnerResult | null; session: unknown }> => {
       if (!seen) return { native: null, session: (await api.updateSession(sid, body)).session }
       const carried = latestOwner.current?.sid === sid ? latestOwner.current.owner : undefined
       const owner = carried && (carried.revision ?? -1) > (seen.revision ?? -1) ? carried : seen
@@ -70,25 +73,25 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
       const modelPick = body.workspace === undefined
       const native = await api.ownerAction({ session_id: sid, action: 'mutate', request_id: randomHex(),
         expected_revision: owner.revision, execution_generation: owner.execution_generation,
-        operation: modelPick ? 'model' : 'workspace',
-        payload: modelPick ? { ...(ownerPayload ?? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}) }), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
+        operation: effort !== undefined ? 'reasoning' : modelPick ? 'model' : 'workspace',
+        payload: effort !== undefined ? { effort } : modelPick ? { ...(ownerPayload ?? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}) }), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
       const next = native.session?.owner_attachment
       if (next) latestOwner.current = { sid, owner: next }
       return { native, session: native.session }
     },
   })
   const send = write.mutate
-  const updateSession = (body: Update, ownerPayload?: { model: string }) => {
+  const updateSession = (body: Update, ownerPayload?: OwnerPayload, effort?: string | null) => {
     if (!sessionId) return
     if (nativeOwner && (nativeOwner.revision === null || nativeOwner.execution_generation === null)) return
     const life = lifecycle.current
     const scope = getStreamContext()
     const current = () => life !== null && lifecycle.current === life && scope === getStreamContext()
-    send({ sid: sessionId, body, owner: nativeOwner, ownerPayload }, {
+    send({ sid: sessionId, body, owner: nativeOwner, ownerPayload, effort }, {
       onSuccess: (result) => {
         if (!current()) return
         // The server's returned session replaces the shown choice at once; the reread converges the rest.
-        if (result.native) presentNative(result.native.model_change, body.workspace === undefined)
+        if (result.native) presentNative(result.native.model_change, effort === undefined && body.workspace === undefined)
         else setPending(null)
         void refresh(result.session as Session | undefined)
       },
@@ -103,13 +106,15 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
   const shown = pending?.sessionId === sessionId && pending?.scope === context ? pending : null
   const dialog = <ConfirmDialog open={shown !== null} onOpenChange={(open) => { if (!open) setPending((p) => p === shown ? null : p) }}
     title={m.dialog_confirm_title()} description={shown?.decision.error} confirmLabel={m.dialog_confirm_btn()} cancelLabel={m.cancel()}
-    onConfirm={() => shown ? updateSession({ ...shown.body, confirm_token: shown.decision.confirm_token }) : undefined} />
+    onConfirm={() => shown ? updateSession({ ...shown.body, confirm_token: shown.decision.confirm_token }, shown.ownerPayload) : undefined} />
   const change = nativeOwner?.model_change
   const deferredMessage = m.model_change_deferred()
-  const notice: ComposerNotice | null = change?.state === 'deferred'
+  const notice: ComposerNotice | null = change?.state === 'deferred' || nativeOwner?.reasoning_control?.deferred
     ? { id: 'model-change', tone: 'info', content: deferredMessage, announcement: deferredMessage }
     : change?.state === 'refused'
       ? { id: 'model-change', tone: 'error', content: change.message, announcement: change.message }
       : null
-  return { updateSession, dialog, notice, confirming: shown?.body ?? null }
+  /** TAL-1319: an owner chat's own level through the same fenced, ordered writes; null resets it to the profile. */
+  const updateReasoning = (effort: string | null) => { if (nativeOwner) updateSession({}, undefined, effort) }
+  return { updateSession, updateReasoning, dialog, notice, confirming: shown?.body ?? null, confirmingReasoning: shown?.ownerPayload?.reasoning }
 }
