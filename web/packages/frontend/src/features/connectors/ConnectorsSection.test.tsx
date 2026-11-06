@@ -25,7 +25,7 @@ vi.mock('../../api/endpoints', () => ({
   setConnectorRule: vi.fn(() => Promise.resolve({ ok: true, revision: 'rev-8' })),
   connectConnector: vi.fn(() => Promise.resolve(waiting)),
   fetchConnectorOperation: vi.fn(() => Promise.resolve(operation)),
-  respondConnectorOperation: vi.fn(({ action }: { action: string }) => Promise.resolve({ ...operation, settled: action === 'continue' })),
+  respondConnectorOperation: vi.fn(({ action }: { action: string }) => { operation = { ...operation, settled: action === 'continue' }; return Promise.resolve(operation) }),
   removeConnectorAccount: vi.fn(() => Promise.resolve({ ok: true })),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -136,7 +136,7 @@ describe('ConnectCard (TAL-818)', () => {
     await userEvent.type(within(card).getByLabelText('API key'), 'lin-key')
     expect(approve).toBeEnabled()
     await userEvent.click(within(card).getByRole('button', { name: 'Continue' }))
-    expect(api.respondConnectorOperation).toHaveBeenCalledWith({ op_id: 'op-chat', action: 'continue' })
+    await waitFor(() => expect(api.respondConnectorOperation).toHaveBeenCalledWith({ op_id: 'op-chat', action: 'continue' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
   })
 
@@ -179,5 +179,63 @@ describe('ConnectCard (TAL-818)', () => {
     renderWith(<ConnectCard initial={shared.connect_card} />)
     await act(async () => { window.dispatchEvent(new Event('focus')); await Promise.resolve() })
     expect(answer).not.toHaveBeenCalled()
+  })
+
+  it('shows Skip and Continue at once, rolls a refusal back and lets a read decide a lost answer (TAL-1317)', async () => {
+    const { ApiError } = await import('../../contracts')
+    const native = shared.native_connection.view
+    operation = native
+    const answer = vi.mocked(api.respondConnectorOperation)
+    answer.mockClear()
+    let settle!: { resolve: (view: ConnectorOperationView) => void; reject: (reason: Error) => void }
+    const held = () => new Promise<ConnectorOperationView>((resolve, reject) => { settle = { resolve, reject } })
+    const row = (name: string) => document.querySelector(`[data-connect-target="${name}"]`) as HTMLElement
+    renderWith(<ConnectCard initial={native} />)
+    const card = screen.getByRole('region', { name: 'Connect apps' })
+
+    // The owner has not answered: the row already shows the choice, and the rest of the card stays usable.
+    answer.mockImplementationOnce(held)
+    await userEvent.click(within(row('gmail')).getByRole('button', { name: 'Skip' }))
+    expect(within(row('gmail')).getByText('Skipped')).toBeInTheDocument()
+    expect(within(row('gmail')).queryByRole('link', { name: 'Authorize' })).toBeNull()
+    expect(within(card).getByRole('button', { name: 'Continue' })).toBeEnabled()
+    expect(within(row('notion')).getByRole('button', { name: 'Try again' })).toBeEnabled()
+    // A definite refusal restores the confirmed row.
+    await act(async () => { settle.reject(new ApiError({ kind: 'http', status: 409, code: 'operation_refused', message: 'Refused', path: '/api/connectors/operations/op-native', retryable: false })); await Promise.resolve() })
+    expect(await within(row('gmail')).findByRole('link', { name: 'Authorize' })).toBeInTheDocument()
+    expect(showToast).toHaveBeenCalledWith('Refused', 5000, 'error')
+
+    // The answer is lost: the choice stays until a fresh read decides, and nothing is sent again.
+    answer.mockClear()
+    answer.mockImplementationOnce(held)
+    await userEvent.click(within(row('gmail')).getByRole('button', { name: 'Skip' }))
+    operation = { ...native, targets: native.targets.map((t) => t.name === 'gmail' ? { ...t, state: 'skipped', connect_url: null, actions: [] } : t) }
+    await act(async () => { settle.reject(new ApiError({ kind: 'network', message: 'Lost', path: '/api/connectors/operations/op-native', retryable: true })); await Promise.resolve() })
+    await waitFor(() => expect(vi.mocked(api.fetchConnectorOperation)).toHaveBeenCalled())
+    expect(within(row('gmail')).getByText('Skipped')).toBeInTheDocument()
+    expect(answer).toHaveBeenCalledTimes(1)
+
+    // Continue closes the card before the owner answers, and a refusal brings it back.
+    answer.mockImplementationOnce(held)
+    await userEvent.click(within(card).getByRole('button', { name: 'Continue' }))
+    expect(screen.queryByRole('region', { name: 'Connect apps' })).toBeNull()
+    await act(async () => { settle.reject(new ApiError({ kind: 'http', status: 409, code: 'operation_refused', message: 'Refused', path: '/api/connectors/operations/op-native', retryable: false })); await Promise.resolve() })
+    expect(await screen.findByRole('region', { name: 'Connect apps' })).toBeInTheDocument()
+  }, 15_000)
+
+  it('keeps a busy state only on the install or authorization control that started it (TAL-1317)', async () => {
+    const native = shared.native_connection.view
+    operation = native
+    const answer = vi.mocked(api.respondConnectorOperation)
+    let finish!: (view: ConnectorOperationView) => void
+    answer.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    renderWith(<ConnectCard initial={native} />)
+    const row = (name: string) => document.querySelector(`[data-connect-target="${name}"]`) as HTMLElement
+    await userEvent.click(within(row('notion')).getByRole('button', { name: 'Try again' }))
+    expect(within(row('notion')).getByRole('button', { name: 'Try again' })).toBeDisabled()
+    expect(within(row('gmail')).getByRole('button', { name: 'Skip' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    await act(async () => { finish(native); await Promise.resolve() })
+    await waitFor(() => expect(within(row('notion')).getByRole('button', { name: 'Try again' })).toBeEnabled())
   })
 })

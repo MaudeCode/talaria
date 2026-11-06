@@ -247,6 +247,8 @@ test('a canonical owner\'s connection card restores on attach and answers throug
   let current = native
   const moves: unknown[] = []
   const reads: string[] = []
+  let answer: () => void = () => undefined
+  const ownerAnswers = new Promise<void>((resolve) => { answer = resolve })
   const owner_attachment = () => ({ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], connection: current })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Native owner chat', workspace: '/workspace/native', read_only: true, read_only_reason: 'canonical_session', messages: [{ role: 'user', content: 'Connect my apps' }], owner_attachment: owner_attachment() } } }))
   await page.route('**/api/connectors/operations/op-native**', async (route) => {
@@ -257,6 +259,8 @@ test('a canonical owner\'s connection card restores on attach and answers throug
     }
     const body = request.postDataJSON() as { action: string; target?: string }
     moves.push(body)
+    // The owner has not answered yet: the page must already show the choice.
+    if (body.action === 'skip') await ownerAnswers
     if (body.action === 'skip') current = { ...current, targets: current.targets.map((t) => t.name === body.target ? { ...t, state: 'skipped', connect_url: null, actions: [], env_fields: [] } : t) }
     if (body.action === 'continue') current = { ...current, settled: true, outcome: 'not_connected', can_continue: false, can_wake: false, targets: current.targets.map((t) => ({ ...t, connect_url: null, actions: [], env_fields: [] })) }
     return route.fulfill({ json: current })
@@ -272,6 +276,8 @@ test('a canonical owner\'s connection card restores on attach and answers throug
   await page.screenshot({ path: testInfo.outputPath(`native-card-${testInfo.project.name}.png`) })
   await card.locator('[data-connect-target="gmail"]').getByRole('button', { name: 'Skip' }).click()
   await expect(card.locator('[data-connect-target="gmail"]')).toContainText('Skipped')
+  await expect(card.getByRole('button', { name: 'Continue' })).toBeEnabled()
+  answer()
   await expect.poll(() => reads.length, { timeout: 5000 }).toBeGreaterThan(0)
   expect(reads.every((search) => search.includes(`session_id=${sid}`) && search.includes('authority_epoch=1'))).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`native-card-${testInfo.project.name}-moved.png`) })

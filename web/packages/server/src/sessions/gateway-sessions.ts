@@ -116,6 +116,15 @@ const connectionRefused = (reason: string | null): HttpFailure => {
   return new HttpFailure(status, message, { code })
 }
 
+/**
+ * Redaction masks a token-shaped query value, which breaks an authorization link. `ownerConnection` already vetted the
+ * link and redacted the view's text, so that one trusted view rejoins the redacted session whole.
+ */
+const keepConnection = (safe: Row, source: Row): Row => {
+  const connection = (source.owner_attachment as Row | undefined)?.connection
+  return connection === undefined ? safe : { ...safe, owner_attachment: { ...safe.owner_attachment as Row, connection } }
+}
+
 /** The owner names the opening tool call only on its request and resume payloads; later frames of that operation keep it. */
 const keepToolCall = (operation: ConnectorOperationSnapshot, held: GatewaySnapshot['pending_connection']): ConnectorOperationSnapshot =>
   ({ ...operation, tool_call_id: operation.tool_call_id ?? (held?.op_id === operation.op_id ? held.tool_call_id : null) })
@@ -583,7 +592,7 @@ export class GatewaySessions {
       })
       fields.workspace_name = (await this.deps.service.workspaceNames([fields]))(fields)
     }
-    return redactNestedMessageContainers(fields, this.deps.redactEnabled()) as Row
+    return keepConnection(redactNestedMessageContainers(fields, this.deps.redactEnabled()) as Row, fields)
   }
 
   async project(base: Row, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
@@ -845,7 +854,8 @@ export class GatewaySessions {
       let titles = new ReasoningTitleTracker()
       const calls = registry.liveToolCalls.get(watch.stream)!
       const put = async (event: string, data: Row) => {
-        const safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
+        let safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : event === 'connect_card' ? data : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
+        if (data.session) safe = { ...safe, session: keepConnection(safe.session as Row, data.session as Row) }
         // Progress is ephemeral, just like direct turns; a reload gets the channel's latest value after journal replay.
         if (event === 'tool_progress') { channel.put([event, safe, null, this.deps.redactEnabled()]); return }
         const record = await writer.appendSseEvent(event, safe)

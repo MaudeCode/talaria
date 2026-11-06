@@ -7,7 +7,7 @@ import { ConnectTargets, useConnectorOperation } from './ConnectTargets'
 /** TAL-818: a chat's `manage_connections` card: the apps the turn waits on, until the operation settles. */
 export function ConnectCard({ initial }: { initial: ConnectorOperationView }) {
   const operation = useConnectorOperation(initial)
-  const { view, lost, move } = operation
+  const { view, lost, move, running } = operation
   if (view.settled || lost) return null
   return (
     <div className="connect-card" role="region" aria-labelledby="connectCardHeading" id="connectCard">
@@ -16,9 +16,9 @@ export function ConnectCard({ initial }: { initial: ConnectorOperationView }) {
           <Link2 size={14} className="text-info" aria-hidden="true" />
           <span id="connectCardHeading">{m.connect_card_heading()}</span>
           <span className="flex-1" />
-          {view.can_continue && <Button variant="ghost" disabled={move.isPending} onClick={() => move.mutate({ action: 'continue' })}>{m.connect_card_continue()}</Button>}
+          {view.can_continue && <Button variant="ghost" onClick={() => move({ action: 'continue' })}>{m.connect_card_continue()}</Button>}
         </div>
-        <ConnectTargets view={view} move={move} />
+        <ConnectTargets view={view} move={move} running={running} />
       </div>
     </div>
   )

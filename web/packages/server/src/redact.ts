@@ -2089,9 +2089,7 @@ export function redactValue(v: unknown, enabled: boolean): unknown {
   if (typeof v === 'string') return redactText(v, enabled)
   if (Array.isArray(v)) return v.map((item) => redactValue(item, enabled))
   if (!v || typeof v !== 'object') return v
-  // A connection view's authorization link is the one credential-shaped value a client must follow; the server already vetted it (TAL-1317).
-  const operationTarget = Array.isArray((v as Record<string, unknown>).env_fields)
-  const out = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, operationTarget && k === 'connect_url' ? val : redactValue(val, enabled)]))
+  const out = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, redactValue(val, enabled)]))
   // TAL-604: a diff's `hunks` are re-parsed from its redacted text, which masks spans (a private key) that no single line shows.
   if (enabled && Array.isArray(out.hunks) && typeof out.diff === 'string') out.hunks = diffHunks(out.diff)
   return out

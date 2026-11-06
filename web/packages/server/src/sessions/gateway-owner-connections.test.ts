@@ -251,9 +251,13 @@ describe('canonical owner connection operations (TAL-1317)', () => {
     const raw = { ...pending, targets: [{ ...pending.targets[0]!, connect_url: link }] }
     const watch = await observeOwner(running({ pending_connection: raw }))
     expect((await detail()).owner_attachment?.connection?.targets[0]?.connect_url).toBe(link)
+    watch.snapshot({ last_sequence: 6 }, true)
     watch.finish()
-    const card = (await watch.read).find((frame) => frame.event === 'connect_card')
+    const frames = await watch.read
+    const card = frames.find((frame) => frame.event === 'connect_card')
     expect(ConnectorOperationViewSchema.parse(card!.data).targets[0]?.connect_url).toBe(link)
+    const session = frames.find((frame) => frame.event === 'session_snapshot')?.data as { session: { owner_attachment: { connection: ConnectorOperationView } } }
+    expect(session.session.owner_attachment.connection.targets[0]?.connect_url).toBe(link)
   })
 
   it('leaves direct connector operations on their own route', async () => {

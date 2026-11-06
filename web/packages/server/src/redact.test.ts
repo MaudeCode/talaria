@@ -1,12 +1,18 @@
 import { crc32 } from 'node:zlib'
 import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it } from 'vitest'
-import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { toolEditDiff } from './sessions/tool-display.js'
 
 describe('redactSensitive', () => {
+  it('gives no object a way out of redaction by its shape (TAL-1317)', () => {
+    const link = 'https://example.test/?token=abcdefghijklmnopqrstuvwx'
+    expect(JSON.stringify(redactNestedMessageContainers({ row: { env_fields: [], connect_url: link } }, true))).not.toContain('abcdefghijklmnopqrstuvwx')
+    expect(JSON.stringify(redactNestedMessageContainers({ row: { env_fields: [], connect_url: { nested: link } } }, true))).not.toContain('abcdefghijklmnopqrstuvwx')
+  })
+
   it.each([
     ['plain', '{"password":" x password=foo"}--password finalSecret987'],
     ['ANSI-coloured', '{"pass\x1b[31mword":" x password=foo"}--password finalSecret987'],
