@@ -10368,6 +10368,30 @@
               {
                 "type": "object",
                 "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "redirected",
+                      "rejected"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "voice_stopped": {
+                    "not": {}
+                  }
+                },
+                "required": [
+                  "status",
+                  "text"
+                ],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
                   "voice_stopped": {
                     "type": "boolean",
                     "const": true
@@ -11482,6 +11506,30 @@
                 },
                 "required": [
                   "operation"
+                ],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "redirected",
+                      "rejected"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "voice_stopped": {
+                    "not": {}
+                  }
+                },
+                "required": [
+                  "status",
+                  "text"
                 ],
                 "additionalProperties": {}
               },
