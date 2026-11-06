@@ -137,6 +137,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         mode={editor.mode}
         job={editor.job}
         jobs={jobs}
+        schedulePolicy={!!crons.data?.schedule_policy_available}
         onCancel={() => setEditor(null)}
         onSubmitted={(id) => { setEditor(null); if (id) onSelect(id) }}
         onCreated={(id) => { if (id && context === getStreamContext()) onSelect(id) }}
@@ -348,6 +349,8 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
             <dl className={DL}>
               <Row label={m.cron_status_label()}><span className={st.tone}>{st.label}</span>{job.paused_reason && <span className="text-muted"> · {job.paused_reason}</span>}</Row>
               <Row label={m.cron_schedule_preset_label()}><code>{job.schedule_display}</code></Row>
+              {job.catch_up != null && <Row label={m.cron_catch_up_label()}>{job.catch_up ? m.cron_catch_up_run_once() : m.cron_catch_up_skip()}</Row>}
+              {job.grace_minutes != null && <Row label={m.cron_grace_minutes_label()}>{job.grace_minutes}</Row>}
               <Row label={m.cron_next()}>{nextRun ? formatDate(nextRun) : m.not_available()}</Row>
               <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}</Row>
               {job.last_failure && <Row label={m.cron_last_failure_label()}>{job.last_failure.at !== null && <span className="text-muted">{formatDate(job.last_failure.at)} · </span>}<span className="font-mono text-[12px] text-error">{job.last_failure.detail}</span></Row>}

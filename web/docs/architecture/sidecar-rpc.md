@@ -499,6 +499,12 @@ under the store home's own `scoped_home`: a `pinned` update locks that
 profile's main model and provider, `${VAR}` references expand from its secret
 scope, and schedule times use its timezone. Reads keep the bare store override.
 
+`cron.create` and `cron.update` pass a job's `timezone`, `catch_up` and
+`grace_minutes` to the Agent, which validates them; a null clears one, and `''`
+also clears the zone. `cron.list` with `probe_store` reports `schedule_policy`,
+whether the Agent's `create_job` takes these fields. An Agent without them
+receives none, and the server answers `schedule_policy_available: false`.
+
 New Agent records retain the creating Web profile in additive `owner_profile`
 metadata. The server uses it to keep those jobs in the creator's list and route
 edit, pause, resume, delete, manual run, output, history and recent-completion

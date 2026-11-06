@@ -29,8 +29,10 @@ export interface CronDeps {
 }
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
-const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort']
+const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
+/** What a probing list collects from each store: failing writes (TAL-810) and whether the Agent takes a per-job schedule policy (TAL-1820). */
+interface StoreProbe { unwritable: CronStoreHealth[]; schedulePolicy: boolean }
 const isContextSource = (job: Dict): boolean => job.recovery_only !== true
 
 /** TAL-301: a picked catalog id (`@provider:model`) names its own provider, exactly as a chat request does; a bare id keeps the explicit one. */
@@ -64,6 +66,10 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.last_failure = lastFailure(job.last_failure)
   payload.delivery_unconfirmed_platforms = unconfirmedPlatforms(job.last_delivery_unverified)
   delete payload.last_delivery_unverified
+  // TAL-1820: the Agent stores an unset knob as an absent key; `grace_minutes: 0` is a real value.
+  payload.timezone = str(job.timezone).trim() || null
+  payload.catch_up = typeof job.catch_up === 'boolean' ? job.catch_up : null
+  payload.grace_minutes = typeof job.grace_minutes === 'number' ? job.grace_minutes : null
   Object.assign(payload, scheduleText(job))
   return payload
 }
@@ -124,7 +130,7 @@ function advanceCodePoints(text: string, from: number, count: number): number {
   return at
 }
 
-/** TAL-298: the schedule's display text and the editor's prefill, in the scheduler's own vocabulary (not localized copy). */
+/** TAL-298: the schedule's display text and the editor's prefill, in the scheduler's own vocabulary (not localized copy). TAL-1820: the display names a pinned zone; the prefill stays what the scheduler parses. */
 function scheduleText(job: Dict): { schedule_display: string; schedule_input: string } {
   const schedule = job.schedule
   const legacy = typeof schedule === 'string' ? schedule : ''
@@ -137,7 +143,8 @@ function scheduleText(job: Dict): { schedule_display: string; schedule_input: st
   else if (s.kind === 'interval' && minutes) [input, built] = [`every ${minutes}m`, minutes % 60 ? `every ${minutes}m` : `every ${minutes / 60}h`]
   else if (s.kind === 'once' && runAt) [input, built] = [runAt, `once at ${runAt}`]
   const display = str(job.schedule_display) || str(s.display) || legacy || built
-  return { schedule_display: display, schedule_input: input || legacy || display }
+  const zone = str(job.timezone).trim()
+  return { schedule_display: zone ? `${display} (${zone})` : display, schedule_input: input || legacy || display }
 }
 
 /** `repeat.times == null` means "forever" in the store; a missing record is not unlimited. */
@@ -299,9 +306,9 @@ export class CronService {
 
   /**
    * The physical store owns execution. Additive owner_profile metadata lets the creator manage a new job there.
-   * Passing `unwritable` probes each listed store's writes (TAL-810) and collects the ones that fail.
+   * Passing `probe` also probes each listed store (TAL-810, TAL-1820) and collects the results.
    */
-  private async storedJobs(active: string, unwritable?: CronStoreHealth[]): Promise<StoredJob[]> {
+  private async storedJobs(active: string, probe?: StoreProbe): Promise<StoredJob[]> {
     // ponytail: scan visible stores per request; add an index only if profile/job counts make this expensive.
     const rows: StoredJob[] = []
     const seen = new Set<string>()
@@ -313,10 +320,11 @@ export class CronService {
       seen.add(home)
       let jobs: Dict[]
       try {
-        const listed = await this.sidecar().call('cron.list', unwritable ? { profile_home: home, probe_store: true } : { profile_home: home })
+        const listed = await this.sidecar().call('cron.list', probe ? { profile_home: home, probe_store: true } : { profile_home: home })
         jobs = listed.jobs
         const health = listed.store_health
-        if (unwritable && health) unwritable.push({ profile, store: health.store, error: health.error, fix: health.fix, since: completedAtSeconds(health.since) })
+        if (probe && health) probe.unwritable.push({ profile, store: health.store, error: health.error, fix: health.fix, since: completedAtSeconds(health.since) })
+        if (probe && listed.schedule_policy) probe.schedulePolicy = true
       } catch (error) { if (local) throw error; continue }
       for (const job of jobs) {
         const creator = str(job.owner_profile).trim()
@@ -398,17 +406,17 @@ export class CronService {
   /** Python `/api/crons`: the active profile's rows plus foreign rows (hidden unless `all_profiles`). */
   async list(active: string, allProfiles: boolean): Promise<Dict> {
     const pickerHome = this.deps.profileHome(active)
-    const unwritable: CronStoreHealth[] = []
+    const probe: StoreProbe = { unwritable: [], schedulePolicy: false }
     const all = allProfiles && !this.deps.isolatedProfileMode()
     let rows: StoredJob[]
-    try { rows = await this.storedJobs(active, unwritable) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
+    try { rows = await this.storedJobs(active, probe) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [], schedule_policy_available: false }; throw error }
     // TAL-1381: hidden foreign rows are only counted, so they cost no projection.
     const managed = rows.filter((row) => row.managed)
     const others = rows.filter((row) => !row.managed)
     const shown = all ? [...managed, ...others] : managed
     // TAL-810: a failing store is reported for the active profile and for every store whose jobs this list shows.
     const shownStores = new Set([active, ...shown.map((row) => row.profile)])
-    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : others.length, unwritable_stores: unwritable.filter((store) => shownStores.has(store.profile)) }
+    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : others.length, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)), schedule_policy_available: probe.schedulePolicy }
   }
 
   /**

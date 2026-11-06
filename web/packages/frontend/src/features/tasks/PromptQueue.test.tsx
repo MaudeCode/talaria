@@ -28,7 +28,7 @@ function mount() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(api.fetchPromptQueues).mockResolvedValue({ runs: [run] })
-  vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [] })
+  vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [], schedule_policy_available: true })
   vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
 })
 afterEach(() => { cleanup(); teardownAll() })

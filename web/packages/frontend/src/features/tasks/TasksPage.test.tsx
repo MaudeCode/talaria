@@ -27,7 +27,7 @@ const full: CronJob = {
   schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null, repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
-  derived_state: 'active', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [],
+  derived_state: 'active', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null,
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
@@ -42,7 +42,7 @@ function Workbench() {
 }
 
 function cronList(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []): Awaited<ReturnType<typeof api.fetchCrons>> {
-  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores }
+  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores, schedule_policy_available: true }
 }
 
 let qc: QueryClient
@@ -317,7 +317,7 @@ describe('TasksPage', () => {
     expect(api.cronAction).toHaveBeenCalledWith('update', {
       job_id: 'ab12cd34ef56', name: 'Digest v2', schedule: '0 9 * * *', prompt: 'Summarise the inbox', script: 'collect.sh', no_agent: false,
       deliver: 'telegram', profile: 'work', toast_notifications: false, monitor: 'https://example.com/status', continuity: true,
-      context_from: ['feed0000feed'], reasoning_effort: 'high', model: 'gpt-5.6-sol', provider: 'openai-codex',
+      context_from: ['feed0000feed'], reasoning_effort: 'high', model: 'gpt-5.6-sol', provider: 'openai-codex', timezone: null, catch_up: null, grace_minutes: null,
     })
   })
 
@@ -337,6 +337,49 @@ describe('TasksPage', () => {
     await waitFor(() => expect(detail.getByRole('heading', { level: 1 })).not.toHaveTextContent('Digest v2'))
     expect(detail.getByRole('heading', { level: 1 })).toHaveTextContent('Digest')
     expect(showToast).toHaveBeenCalledWith('Schedule refused', 4000, 'error')
+  })
+
+  it('shows a pinned zone and policy at once after Save and rolls them back on the Agent refusal (TAL-1820)', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = within(await screen.findByRole('form', { name: /edit job/i }))
+    await userEvent.type(form.getByLabelText(/^time zone$/i), 'Mars/Olympus')
+    await userEvent.click(form.getByRole('combobox', { name: /^missed runs$/i }))
+    await userEvent.click(await screen.findByRole('option', { name: /^skip$/i }))
+    await userEvent.type(form.getByLabelText(/^grace \(minutes\)$/i), '0')
+    await userEvent.click(form.getByRole('button', { name: /^save$/i }))
+    expect(api.cronAction).toHaveBeenCalledWith('update', expect.objectContaining({ timezone: 'Mars/Olympus', catch_up: false, grace_minutes: 0 }))
+    expect(detail.getByText('0 9 * * * (Mars/Olympus)')).toBeInTheDocument()
+    expect(detail.getByText('0')).toBeInTheDocument()
+    act(() => { held.resolve({ ok: false, error: "Unknown timezone 'Mars/Olympus'" }) })
+    await waitFor(() => expect(detail.getByText('0 9 * * *')).toBeInTheDocument())
+    expect(detail.queryByText('0')).toBeNull()
+    expect(showToast).toHaveBeenCalledWith("Unknown timezone 'Mars/Olympus'", 4000, 'error')
+  })
+
+  it('sends an explicit clear for a pinned zone and shows the bare schedule at once (TAL-1820)', async () => {
+    vi.mocked(api.cronAction).mockImplementation(() => new Promise(() => undefined))
+    const pinned: CronJob = { ...full, timezone: 'Asia/Tokyo', catch_up: true, grace_minutes: 30, schedule_display: '0 9 * * * (Asia/Tokyo)' }
+    const detail = await openJob('Digest', [pinned, feed])
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = within(await screen.findByRole('form', { name: /edit job/i }))
+    await userEvent.clear(form.getByLabelText(/^time zone$/i))
+    await userEvent.clear(form.getByLabelText(/^grace \(minutes\)$/i))
+    await userEvent.click(form.getByRole('button', { name: /^save$/i }))
+    expect(api.cronAction).toHaveBeenCalledWith('update', expect.objectContaining({ timezone: null, catch_up: true, grace_minutes: null }))
+    expect(detail.getByText('0 9 * * *')).toBeInTheDocument()
+  })
+
+  it('offers no schedule policy when the Agent takes none (TAL-1820)', async () => {
+    const detail = await openJob('Digest')
+    vi.mocked(api.fetchCrons).mockResolvedValue({ ...cronList([full, feed]), schedule_policy_available: false })
+    await act(async () => { await qc.refetchQueries({ queryKey: keys.crons.all }) })
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const without = within(await screen.findByRole('form', { name: /edit job/i }))
+    expect(without.queryByLabelText(/^time zone$/i)).toBeNull()
+    expect(without.queryByRole('combobox', { name: /^missed runs$/i })).toBeNull()
   })
 
   it('shows a created job at once and opens the server job once it answers', async () => {
@@ -452,7 +495,7 @@ describe('TasksPage', () => {
     await openJob('Digest')
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(1))
     // The next list poll (every 30s in the app) carries the new last_run_at; the status map never saw this run.
-    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores: [] })
+    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores: [], schedule_policy_available: true })
     await qc.refetchQueries({ queryKey: keys.crons.list(false) })
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(2))
   })

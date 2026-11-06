@@ -1349,6 +1349,8 @@ export const CronJobViewSchema = z.looseObject({
   last_failure: z.object({ at: z.number().nullable(), detail: z.string() }).nullable(),
   /** Server-derived (TAL-1850): the distinct platforms whose last delivery may not have arrived, empty when none. A re-send may duplicate the post, so clients offer no retry. */
   delivery_unconfirmed_platforms: z.array(z.string()),
+  /** Server-normalized (TAL-1820): the job's schedule policy, null when unset. `timezone` is the IANA zone the schedule runs in, also named in `schedule_display`, else the profile's zone. `catch_up` is true to run once for missed runs, false to skip them, else the Agent's default. `grace_minutes` overrides the catch-up window; 0 never catches up. */
+  timezone: z.string().nullable(), catch_up: z.boolean().nullable(), grace_minutes: z.number().nullable(),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
 /** TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions), so its scheduler skips every run. `error` and `fix` are the Agent's text; `since` is the last write that landed (epoch seconds), null when unknown. */
@@ -1360,6 +1362,8 @@ export const CronsSchema = z.looseObject({
   ordered: z.boolean().optional(),
   active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional(),
   unwritable_stores: z.array(CronStoreHealthSchema),
+  /** TAL-1820: whether the running Agent takes `timezone`, `catch_up` and `grace_minutes`. When false, clients offer none of them and the server sends none. */
+  schedule_policy_available: z.boolean(),
 })
 export type Crons = z.infer<typeof CronsSchema>
 export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })

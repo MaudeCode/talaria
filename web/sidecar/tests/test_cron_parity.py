@@ -249,3 +249,27 @@ def test_schedule_times_follow_the_store_profiles_timezone(handshaken: SidecarPr
         assert handshaken.result("cron.pause", {"profile_home": str(beta), "job_id": job_id})["job"]["paused_at"].endswith("+09:00")
         job = handshaken.result("cron.resume", {"profile_home": str(beta), "job_id": job_id})["job"]
     assert job["next_run_at"].endswith("T09:00:00+09:00"), job
+
+
+@requires_agent
+def test_schedule_policy_round_trips_clears_and_returns_the_agents_refusal(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    home = str(hermes_home)
+    policy = lambda job: (job.get("timezone"), job.get("catch_up"), job.get("grace_minutes"))  # noqa: E731
+    update = lambda **updates: handshaken.result("cron.update", {"profile_home": home, "job_id": job_id, "updates": updates})["job"]  # noqa: E731
+    job = handshaken.result("cron.create", {"profile_home": home, "job": {"schedule": "0 9 * * *", "prompt": "say hi", "timezone": "America/New_York", "catch_up": False, "grace_minutes": 0}})["job"]
+    job_id = job["id"]
+    assert policy(job) == ("America/New_York", False, 0)
+    assert job["next_run_at"][10:].startswith("T09:00:00-0"), job
+    assert policy(update(timezone="Asia/Tokyo", catch_up=True, grace_minutes=30)) == ("Asia/Tokyo", True, 30)
+    assert policy(handshaken.result("cron.get", {"profile_home": home, "job_id": job_id})["job"]) == ("Asia/Tokyo", True, 30)
+    # A null clears each knob back to the profile's zone and the Agent's defaults, and '' clears the zone as well.
+    assert update(timezone=None, catch_up=None, grace_minutes=None)["next_run_at"][10:].startswith("T09:00:00"), job
+    assert policy(handshaken.result("cron.get", {"profile_home": home, "job_id": job_id})["job"]) == (None, None, None)
+    update(timezone="Asia/Tokyo")
+    assert policy(update(timezone="")) == (None, None, None)
+    for updates, refusal in (({"timezone": "Mars/Olympus"}, "Unknown timezone 'Mars/Olympus'"), ({"grace_minutes": 5000}, "grace_minutes")):
+        message, _ = handshaken.call("cron.update", {"profile_home": home, "job_id": job_id, "updates": updates})
+        assert refusal in message["error"]["message"], message
+        message, _ = handshaken.call("cron.create", {"profile_home": home, "job": {"schedule": "0 9 * * *", "prompt": "say hi", **updates}})
+        assert refusal in message["error"]["message"], message
+    assert handshaken.result("cron.list", {"profile_home": home, "probe_store": True})["schedule_policy"] is True

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Set a scheduled task's time zone, what happens to missed runs, and its catch-up grace window, and see the zone next to the schedule, including on tasks the agent pinned from a chat.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
