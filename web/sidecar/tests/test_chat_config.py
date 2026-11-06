@@ -1,6 +1,7 @@
 """Turn setup shares one Agent config read without retaining its mutable values."""
 
 import copy
+import dataclasses
 import sys
 import types
 from unittest.mock import Mock
@@ -99,3 +100,27 @@ def test_declares_key_walks_the_agent_defaults(monkeypatch, key, declared):
     monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
     monkeypatch.setitem(sys.modules, 'hermes_cli.config', module)
     assert config_methods.declares_key(key) is declared
+
+
+def _discussion_limits_module(monkeypatch, *fields):
+    """TAL-1828: an Agent's ``gateway.hosted_room_discussion``; no fields means the module predates the limits."""
+    module = types.ModuleType('gateway.hosted_room_discussion')
+    if fields:
+        module.DiscussionLimits = dataclasses.make_dataclass('DiscussionLimits', fields)
+    monkeypatch.setitem(sys.modules, 'gateway', types.ModuleType('gateway'))
+    monkeypatch.setitem(sys.modules, 'gateway.hosted_room_discussion', module)
+    config_module = types.ModuleType('hermes_cli.config')
+    config_module.DEFAULT_CONFIG = {}
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', config_module)
+
+
+@pytest.mark.parametrize(('key', 'declared'), [('hosted_rooms.discussion.max_rounds', True), ('hosted_rooms.discussion.max_messages', True), ('hosted_rooms.discussion.absent', False), ('hosted_rooms.discussion', False), ('other.max_rounds', False)])
+def test_declares_key_answers_for_the_discussion_limits_the_agent_reads_without_a_default(monkeypatch, key, declared):
+    _discussion_limits_module(monkeypatch, 'max_rounds', 'max_messages')
+    assert config_methods.declares_key(key) is declared
+
+
+def test_declares_key_denies_the_discussion_limits_on_an_agent_without_them(monkeypatch):
+    _discussion_limits_module(monkeypatch)
+    assert config_methods.declares_key('hosted_rooms.discussion.max_rounds') is False

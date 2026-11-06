@@ -458,6 +458,8 @@ export class SettingsStore {
           current[QUOTA_THRESHOLDS_BY_PROFILE_KEY] = byProfile
           continue
         }
+        // TAL-1828: no default, so `settings.json` gains the key only once Group Chat limits are edited.
+        if (k === 'group_discussion_restart_baseline') { current[k] = v; continue }
         if (k === 'dashboard_plugins' || !allowed.has(k)) continue
         if (k === 'theme') {
           if (typeof v === 'string' && v.trim()) { pendingTheme = v; themeExplicit = true }

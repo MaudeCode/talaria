@@ -79614,6 +79614,45 @@
                       ],
                       "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
                     },
+                    "group_discussion_max_rounds": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1828: the root config's `hosted_rooms.discussion.max_rounds`, as a gateway loads it (default 3). Null when the session cannot manage the server or this server cannot offer it."
+                    },
+                    "group_discussion_max_messages": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1828: the root config's `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`."
+                    },
+                    "group_discussion_restart_required": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`."
+                    },
                     "screen_reader_mode": {
                       "type": "boolean",
                       "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
@@ -79919,6 +79958,45 @@
                         }
                       ],
                       "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
+                    },
+                    "group_discussion_max_rounds": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1828: the root config's `hosted_rooms.discussion.max_rounds`, as a gateway loads it (default 3). Null when the session cannot manage the server or this server cannot offer it."
+                    },
+                    "group_discussion_max_messages": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1828: the root config's `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`."
+                    },
+                    "group_discussion_restart_required": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`."
                     },
                     "screen_reader_mode": {
                       "type": "boolean",

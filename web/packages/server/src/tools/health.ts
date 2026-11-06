@@ -305,6 +305,11 @@ export async function liveGateways(hermesHome: string, profileHome: string, now:
   return live
 }
 
+/** TAL-1828: when `dir`'s gateway process wrote its pid record, which the Agent creates once per process; null when unreadable. */
+export function gatewayRecordedAt(dir: string): number | null {
+  try { return statSync(join(dir, 'gateway.pid')).mtimeMs } catch { return null }
+}
+
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */
 export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const { env } = deps

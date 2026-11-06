@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings now sets how many rounds and replies a Group Chat discussion runs, with a restart button to apply the change.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

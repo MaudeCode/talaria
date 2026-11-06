@@ -1,5 +1,5 @@
 import { useJsonStorage } from '../test/storage.js'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
@@ -181,6 +181,182 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     } finally {
       sidecar.respond('config.declares_key', undefined)
     }
+  })
+
+  describe('Group Chat discussion limits (TAL-1828)', () => {
+    const fields = async (): Promise<Json> => {
+      const { group_discussion_max_rounds, group_discussion_max_messages, group_discussion_restart_required } = await json(await s.get('/api/settings'))
+      return { group_discussion_max_rounds, group_discussion_max_messages, group_discussion_restart_required }
+    }
+    const withRootConfig = async (config: Json, run: () => Promise<void>): Promise<void> => {
+      const before = structuredClone(configs.get(s.state))
+      configs.set(s.state, config)
+      s.deps.agentConfig.invalidate()
+      try { await run() } finally {
+        configs.set(s.state, before ?? {})
+        s.deps.agentConfig.invalidate()
+        await s.deps.settings.save({ group_discussion_restart_baseline: null })
+        vi.restoreAllMocks()
+      }
+    }
+
+    it('round-trips both values in the root config, keeping the section\'s other keys', async () => {
+      await withRootConfig({ model: { default: 'kept' }, hosted_rooms: { other: 1, discussion: { note: 'kept' } } }, async () => {
+        expect(await fields()).toEqual({ group_discussion_max_rounds: 3, group_discussion_max_messages: 10, group_discussion_restart_required: false })
+        const saved = await post(s, '/api/settings', { group_discussion_max_rounds: 5 })
+        expect(saved.status).toBe(200)
+        expect(await json(saved)).toMatchObject({ group_discussion_max_rounds: 5, group_discussion_max_messages: 10 })
+        expect((await post(s, '/api/settings', { group_discussion_max_messages: 25 })).status).toBe(200)
+        expect(configs.get(s.state)).toEqual({ model: { default: 'kept' }, hosted_rooms: { other: 1, discussion: { note: 'kept', max_rounds: 5, max_messages: 25 } } })
+        expect(await fields()).toMatchObject({ group_discussion_max_rounds: 5, group_discussion_max_messages: 25 })
+        expect(await s.deps.settings.readRaw()).not.toHaveProperty('group_discussion_max_rounds')
+      })
+    })
+
+    it.each([0, -1, 1.5, '5', null, true])('refuses %j before any write', async (value) => {
+      await withRootConfig({ hosted_rooms: { discussion: { max_rounds: 4 } } }, async () => {
+        for (const key of ['group_discussion_max_rounds', 'group_discussion_max_messages']) {
+          const refused = await post(s, '/api/settings', { [key]: value, bot_name: 'Refused' })
+          expect(refused.status).toBe(400)
+          expect(configs.get(s.state)).toEqual({ hosted_rooms: { discussion: { max_rounds: 4 } } })
+          expect((await json(await s.get('/api/settings'))).bot_name).not.toBe('Refused')
+        }
+      })
+    })
+
+    // The Agent's `_discussion_limits` drops the whole section on one bad value, so a saved value next to a typo would never load.
+    it.each([
+      ['a typo', { discussion: { max_rounds: 'typo', max_messages: 40 } }],
+      ['zero', { discussion: { max_rounds: 8, max_messages: 0 } }],
+      ['a null value', { discussion: { max_rounds: 8, max_messages: null } }],
+      ['a scalar section', { discussion: 'typo' }],
+    ])('reads %s as the Agent does, and a save repairs it', async (_name, hosted_rooms) => {
+      await withRootConfig({ hosted_rooms }, async () => {
+        expect(await fields()).toMatchObject({ group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
+        expect((await post(s, '/api/settings', { group_discussion_max_rounds: 6 })).status).toBe(200)
+        expect((configs.get(s.state)?.hosted_rooms as Json).discussion).toEqual({ max_rounds: 6, max_messages: 10 })
+      })
+    })
+
+    it.each([
+      ['an Agent without the key', () => ({ declared: false })],
+      ['an Agent that cannot say', () => { throw new SidecarError('sidecar not ready', { condition: 'sidecar_unavailable' }) }],
+    ])('reports the fields unavailable and refuses their write on %s', async (_name, answer) => {
+      await withRootConfig({}, async () => {
+        sidecar.respond('config.declares_key', answer)
+        try {
+          expect(await fields()).toEqual({ group_discussion_max_rounds: null, group_discussion_max_messages: null, group_discussion_restart_required: null })
+          const refused = await post(s, '/api/settings', { group_discussion_max_rounds: 5, bot_name: 'Refused' })
+          expect(refused.status).toBe(409)
+          expect(await json(refused)).toMatchObject({ condition: 'setting_unavailable' })
+          expect(configs.get(s.state)).toEqual({})
+          expect((await json(await s.get('/api/settings'))).bot_name).not.toBe('Refused')
+        } finally {
+          sidecar.respond('config.declares_key', undefined)
+        }
+      })
+    })
+
+    /** A live gateway whose pid record was written `age` ms ago (negative: after every save in the test). */
+    const gatewayStarted = (age: number) => {
+      const record = join(s.state, 'gateway.pid')
+      writeFileSync(record, '{}')
+      utimesSync(record, new Date(Date.now() - age), new Date(Date.now() - age))
+      return [{ dir: s.state, pid: 10, start_time: 10 }]
+    }
+
+    it('requires a restart after a save until a gateway started since replaces the one that loaded the old limits', async () => {
+      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue(gatewayStarted(60_000))
+      await withRootConfig({}, async () => {
+        try {
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          const saved = await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          expect((await json(saved)).group_discussion_restart_required).toBe(true)
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          // A second edit keeps measuring from what the running gateway loaded, so returning to it needs no restart.
+          expect((await post(s, '/api/settings', { group_discussion_max_messages: 20 })).status).toBe(200)
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          await post(s, '/api/settings', { group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          // Overlapping saves (fast typing) still measure from what the gateway loaded, whichever lands last.
+          await s.deps.settings.save({ group_discussion_restart_baseline: null })
+          await Promise.all([post(s, '/api/settings', { group_discussion_max_rounds: 4 }), post(s, '/api/settings', { group_discussion_max_rounds: 6 }), post(s, '/api/settings', { group_discussion_max_rounds: 8 })])
+          await post(s, '/api/settings', { group_discussion_max_rounds: 3 })
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          live.mockResolvedValue(gatewayStarted(-60_000))
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+          // Saving what the new gateway already loaded changes nothing it would need to reload.
+          await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+        } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
+      })
+    })
+
+    it('stays required with no visible gateway until one starts, since nothing proves it read the save', async () => {
+      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([])
+      await withRootConfig({}, async () => {
+        try {
+          await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+          live.mockResolvedValue(gatewayStarted(-60_000))
+          expect((await fields()).group_discussion_restart_required).toBe(false)
+        } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
+      })
+    })
+
+    it('stays required when a gateway unseen at the save turns up with a record older than the save', async () => {
+      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([])
+      await withRootConfig({}, async () => {
+        try {
+          await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          live.mockResolvedValue(gatewayStarted(60_000))
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+        } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
+      })
+    })
+
+    it('stays required for a gateway that started while the save was still writing, since it read the old file', async () => {
+      vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([{ dir: s.state, pid: 10, start_time: 10 }])
+      const write = sidecar.responderFor('config.set')!
+      sidecar.respond('config.set', async (...call) => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        writeFileSync(join(s.state, 'gateway.pid'), '{}')
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return write(...call)
+      })
+      await withRootConfig({}, async () => {
+        try {
+          await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
+          expect((await fields()).group_discussion_restart_required).toBe(true)
+        } finally {
+          sidecar.respond('config.set', write)
+          rmSync(join(s.state, 'gateway.pid'), { force: true })
+        }
+      })
+    })
+
+    it('never takes a client\'s restart baseline, and never shows it', async () => {
+      await withRootConfig({}, async () => {
+        const forged = { limits: { max_rounds: 99, max_messages: 99 }, saved_at: 1 }
+        const saved = await json(await post(s, '/api/settings', { group_discussion_restart_baseline: forged }))
+        expect(saved).not.toHaveProperty('group_discussion_restart_baseline')
+        expect((await s.deps.settings.readRaw()).group_discussion_restart_baseline ?? null).toBeNull()
+        expect((await fields()).group_discussion_restart_required).toBe(false)
+      })
+    })
+
+    it('writes the root config while a named profile is active', async () => {
+      mkdirSync(join(s.state, 'profiles', 'gcnamed'), { recursive: true })
+      await withRootConfig({}, async () => {
+        const cookie = ((await post(s, '/api/profile/switch', { name: 'gcnamed' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+        const saved = await post(s, '/api/settings', { group_discussion_max_rounds: 5 }, { cookie })
+        expect(saved.status).toBe(200)
+        expect(configs.get(s.state)).toEqual({ hosted_rooms: { discussion: { max_rounds: 5, max_messages: 10 } } })
+        expect(configs.get(join(s.state, 'profiles', 'gcnamed'))).toBeUndefined()
+      })
+    })
   })
 
   it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash', async () => {
@@ -2070,6 +2246,14 @@ describe('isolated profile mode', () => {
     body = await json(await s.get('/api/crons?all_profiles=1'))
     expect(body.all_profiles).toBe(false)
   })
+
+  // The Agent reads `<root>/config.yaml`, which a pinned profile's server cannot address (TAL-1828).
+  it('offers no Group Chat limits', async () => {
+    expect((await json(await s.get('/api/settings'))).group_discussion_max_rounds).toBeNull()
+    const refused = await post(s, '/api/settings', { group_discussion_max_rounds: 5 })
+    expect(refused.status).toBe(409)
+    expect(await json(refused)).toMatchObject({ condition: 'setting_unavailable' })
+  })
 })
 
 describe('settings save response keeps the derived fields a load returns', () => {
@@ -2178,6 +2362,43 @@ describe('Agent speed tiers (TAL-788)', () => {
     } finally { fake.respond('models.speed_tiers', responder) }
   })
 
+})
+
+it('reserves the root-scoped Group Chat limits for an owner (TAL-1828)', async () => {
+  const native = new FakeSidecar()
+  const server = await bootTestServer({ sidecar: native, env: { HERMES_WEBUI_PASSWORD: 'synthetic-test-password' } })
+  const configs = fakeConfigStore(native)
+  writeFileSync(join(server.state, 'config.yaml'), '# owned config\n')
+  configs.set(server.state, {})
+  const session = (bound: boolean) => {
+    const value = server.deps.auth.createSession({ authType: 'password', ...(bound ? { boundProfile: 'default' } : {}) })
+    return { cookie: `${server.deps.auth.cookieName()}=${value}`, origin: server.base, 'x-csrf-token': server.deps.auth.csrfTokenForSession(value) ?? '' }
+  }
+  try {
+    const member = session(true)
+    expect((await json(await server.get('/api/settings', { headers: member }))).group_discussion_max_rounds).toBeNull()
+    expect((await post(server, '/api/settings', { group_discussion_max_rounds: 5 }, member)).status).toBe(403)
+    expect(configs.get(server.state)).toEqual({})
+    const owner = session(false)
+    expect((await json(await server.get('/api/settings', { headers: owner }))).group_discussion_max_rounds).toBe(3)
+    expect((await post(server, '/api/settings', { group_discussion_max_rounds: 5 }, owner)).status).toBe(200)
+  } finally {
+    await server.close()
+  }
+})
+
+it('addresses the root config.yaml the Agent reads for Group Chat limits, past HERMES_CONFIG_PATH (TAL-1828)', async () => {
+  const native = new FakeSidecar()
+  const server = await bootTestServer({ sidecar: native, env: { HERMES_CONFIG_PATH: join(tmpdir(), 'talaria-unrelated-config.yaml') } })
+  const configs = fakeConfigStore(native)
+  writeFileSync(join(server.state, 'config.yaml'), '# owned config\n')
+  configs.set(server.state, {})
+  try {
+    expect((await post(server, '/api/settings', { group_discussion_max_rounds: 5 })).status).toBe(200)
+    expect(native.calls.filter((call) => call.method === 'config.set').map((call) => (call.params as { config_path: string }).config_path)).toEqual([join(server.state, 'config.yaml')])
+  } finally {
+    await server.close()
+  }
 })
 
 it('refuses delegation configuration and hides other profile identities for a bound non-owner (TAL-1499)', async () => {

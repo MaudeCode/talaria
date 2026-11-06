@@ -12,7 +12,7 @@ import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { showToast } from '../toast/toast'
 
-vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn(), fetchModels: vi.fn(), fetchAuxiliaryModels: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn(), fetchModels: vi.fn(), fetchAuxiliaryModels: vi.fn(), fetchAgentHealth: vi.fn(), restartAgent: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 const initial = { bot_name: 'Hermes', send_key: 'enter', pinned_sessions_limit: 3, structured_code_auto_tree_lines: 40, max_tokens: null, show_cli_sessions: false, sound_enabled: false }
 let user: UserEvent
@@ -70,6 +70,46 @@ it('offers no prepared compaction choice when the Agent has none (TAL-1825)', ()
   const qc = setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: null }))
   expect(screen.queryByRole('switch', { name: 'Prepare compaction in the background' })).toBeNull()
+})
+
+const limits = { group_discussion_max_rounds: 3, group_discussion_max_messages: 10, group_discussion_restart_required: false }
+
+it('shows a Group Chat limit at once and rolls back when the server refuses it (TAL-1828)', async () => {
+  vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits })
+  const held = deferred<typeof initial>()
+  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
+  const qc = setup()
+  act(() => qc.setQueryData(keys.settings, { ...initial, ...limits }))
+  const control = await screen.findByRole('spinbutton', { name: 'Group Chat rounds' })
+  fireEvent.change(control, { target: { value: '5' } })
+  expect(control).toHaveValue(5)
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ group_discussion_max_rounds: 5 }))
+  const message = 'group_discussion_max_rounds must be a positive integer'
+  held.reject(new ApiError({ kind: 'http', status: 400, path: 'api/settings', message, body: { error: message } }))
+  await waitFor(() => expect(showToast).toHaveBeenCalledWith(message, 4000, 'error'))
+  fireEvent.blur(control)
+  await waitFor(() => expect(control).toHaveValue(3))
+})
+
+it('offers no Group Chat limits when the server reports them unavailable (TAL-1828)', () => {
+  const qc = setup()
+  act(() => qc.setQueryData(keys.settings, { ...initial, group_discussion_max_rounds: null, group_discussion_max_messages: null, group_discussion_restart_required: null }))
+  expect(screen.queryByRole('spinbutton', { name: 'Group Chat rounds' })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: 'Group Chat replies' })).toBeNull()
+})
+
+it('offers the existing restart action only while the server requires one, and rereads settings after it (TAL-1828)', async () => {
+  vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits, group_discussion_restart_required: true })
+  vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
+  vi.mocked(api.restartAgent).mockResolvedValue({ ok: true, message: 'restarted' })
+  const qc = setup()
+  act(() => qc.setQueryData(keys.settings, { ...initial, ...limits }))
+  expect(screen.queryByRole('button', { name: 'Restart agent' })).toBeNull()
+  act(() => qc.setQueryData(keys.settings, { ...initial, ...limits, group_discussion_restart_required: true }))
+  vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits })
+  await user.click(await screen.findByRole('button', { name: 'Restart agent' }))
+  await waitFor(() => expect(api.restartAgent).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Restart agent' })).toBeNull())
 })
 
 it('keeps an empty numeric draft across unrelated refreshes and restores the confirmed value on blur', async () => {

@@ -658,6 +658,17 @@ null on Agents whose `DEFAULT_CONFIG` lacks the key (before v0.22.6), where a wr
 `setting_unavailable`. The Agent reads it once, at construction, so it is part of the cached chat
 Agent identity and a change replaces the Agent on the next turn.
 
+`group_discussion_max_rounds` and `group_discussion_max_messages` in `/api/settings` are
+`hosted_rooms.discussion.max_rounds` and `max_messages` in the root `config.yaml`, as a gateway
+loads them: one malformed value drops both to the defaults (3 and 10), and a save writes both.
+They are null for a session that cannot manage the server, for a server pinned to one profile, and
+on Agents without `DiscussionLimits` (before v0.22.6); a write then answers 403 or 409
+`setting_unavailable`. A gateway reads them once, at startup, so
+`group_discussion_restart_required` stays true after a save until every local gateway running
+recorded its start after that save (`gateway.pid`, which the Agent creates once per process), or
+the saved values match what the old gateway loaded. No visible gateway or an unreadable record
+keeps it true.
+
 Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
 on the next turn. The Agent's filter also scopes deferred tool search and calls.

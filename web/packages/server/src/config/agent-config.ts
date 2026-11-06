@@ -96,8 +96,8 @@ export class AgentConfig {
     return null
   }
 
-  /** Read-modify-write under a per-file lock (homes sharing an `HERMES_CONFIG_PATH` override serialise); `mutate` returns false to skip the write. */
-  async update(profileHome: string, mutate: (config: Config) => unknown, opts: ConfigFileOptions = {}): Promise<Config> {
+  /** Read-modify-write under a per-file lock (homes sharing an `HERMES_CONFIG_PATH` override serialise); `mutate` returns false to skip the write. `afterWrite` runs once the file holds the write, still under the lock. */
+  async update(profileHome: string, mutate: (config: Config) => unknown, opts: ConfigFileOptions & { afterWrite?: () => Promise<void> } = {}): Promise<Config> {
     const file = this.path(profileHome, opts)
     const prev = this.locks.get(file) ?? Promise.resolve()
     const run = prev.catch(() => undefined).then(async () => {
@@ -107,6 +107,7 @@ export class AgentConfig {
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
       await sidecar.call('config.set', { profile_home: profileHome, config_path: file, config })
       this.cache.delete(file)
+      await opts.afterWrite?.()
       return config
     })
     this.locks.set(file, run)
@@ -515,6 +516,20 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
   } catch {
     return null
   }
+}
+
+// ── group discussion limits ───────────────────────────────────────────
+
+/** TAL-1828: the key whose presence means the Agent reads both limits; they arrived together in v0.22.6. */
+export const DISCUSSION_LIMITS_KEY = 'hosted_rooms.discussion.max_rounds'
+const DISCUSSION_LIMIT_DEFAULTS = { max_rounds: 3, max_messages: 10 }
+export type DiscussionLimits = typeof DISCUSSION_LIMIT_DEFAULTS
+
+/** The limits a gateway loads from this config. Agent `_discussion_limits`: one malformed value drops both to the defaults. */
+export function discussionLimits(config: Config): DiscussionLimits {
+  const limits = { ...DISCUSSION_LIMIT_DEFAULTS, ...dict(dict(config.hosted_rooms).discussion) }
+  const valid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0
+  return valid(limits.max_rounds) && valid(limits.max_messages) ? { max_rounds: limits.max_rounds, max_messages: limits.max_messages } : { ...DISCUSSION_LIMIT_DEFAULTS }
 }
 
 // ── reasoning ─────────────────────────────────────────────────────────

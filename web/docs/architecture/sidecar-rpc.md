@@ -56,6 +56,8 @@ resolves that session's profile and answers with up to 50 of that profile's
 RPC v77 adds `config.declares_key` (TAL-1825): whether the installed Agent's
 `DEFAULT_CONFIG` holds a dotted key, so the server offers a setting only on Agents
 that read it. The cached chat Agent's signature also gains `compression.prepare_ahead`.
+It also answers for `hosted_rooms.discussion.*` (TAL-1828), which the Agent reads by the
+fields of `DiscussionLimits` with no `DEFAULT_CONFIG` entry.
 
 RPC v76 adds `state_db.request_prompt_refresh` (TAL-1821), which records the Agent's
 profile-wide prompt refresh epoch through `SessionDB.request_prompt_refresh`. The server
