@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Exercise simulator preparation with disposable tools; never touches a simulator."""
+import os
+from pathlib import Path
+import signal
+import subprocess
+import tempfile
+import time
+import unittest
+
+SCRIPTS = Path(__file__).resolve().parent
+FAKE_XCRUN = '''#!/usr/bin/env python3
+import os, pathlib, sys, time
+state = pathlib.Path(os.environ['PREPARE_TEST_STATE'])
+args = sys.argv[1:]
+with (state / 'calls').open('a') as log:
+    log.write(' '.join(args) + '\\n')
+if 'stream' in args:
+    (state / 'stream.pid').write_text(str(os.getpid()))
+    print('Filtering: collectionDidFinishGathering', flush=True)
+    while not (state / 'launched').exists():
+        time.sleep(.01)
+    if os.environ.get('PREPARE_TEST_MODE') == 'success':
+        print('{"eventMessage":"collectionDidFinishGathering"}', flush=True)
+    while True:
+        time.sleep(1)
+if 'show' in args:
+    time.sleep(.1)  # An expensive full-log scan must not extend the deadline.
+if len(args) > 1 and args[1] == 'terminate':
+    (state / 'terminate.pid').write_text(str(os.getpid()))
+    if os.environ.get('PREPARE_TEST_MODE') == 'timeout':
+        while True:
+            time.sleep(1)
+if len(args) > 1 and args[1] == 'launch':
+    (state / 'launch.pid').write_text(str(os.getpid()))
+    time.sleep(.1)  # Give the independently started stream time to attach.
+    (state / 'launched').touch()
+    if os.environ.get('PREPARE_TEST_MODE') == 'interrupt':
+        while True:
+            time.sleep(1)
+    if os.environ.get('PREPARE_TEST_MODE') == 'launch-failure':
+        sys.exit(42)
+'''
+
+
+class PreparationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='talaria-prepare-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        self.scratch = self.root / 'tmp'
+        self.scratch.mkdir()
+        tool = self.bin / 'xcrun'
+        tool.write_text(FAKE_XCRUN)
+        tool.chmod(0o755)
+        self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
+                        PREPARE_TEST_STATE=str(self.root), TMPDIR=str(self.scratch) + '/')
+
+    def run_documents(self, mode, interrupt=False):
+        self.env['PREPARE_TEST_MODE'] = mode
+        start = time.monotonic()
+        process = subprocess.Popen([str(SCRIPTS / 'ready-simulator-documents'), 'synthetic-simulator'],
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+        def clear_descendants():
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        self.addCleanup(clear_descendants)
+        try:
+            if interrupt:
+                deadline = time.monotonic() + 5
+                while not (self.root / 'launched').exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue((self.root / 'launched').exists(), 'Files launch was never attempted')
+                process.send_signal(signal.SIGTERM)
+            output, _ = process.communicate(timeout=63 if mode == 'timeout' else 8)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            output, _ = process.communicate()
+            self.fail(f'Files warm-up exceeded its 60-second wall-clock bound: {output}')
+        elapsed = time.monotonic() - start
+        return process.returncode, output, elapsed
+
+    def assert_cleanup(self):
+        calls = (self.root / 'calls').read_text().splitlines()
+        self.assertIn('simctl terminate synthetic-simulator com.apple.DocumentsApp', calls)
+        stream_pid = self.root / 'stream.pid'
+        self.assertTrue(stream_pid.exists(), 'No live log stream was started')
+        for name in ('stream', 'launch', 'terminate'):
+            with self.assertRaises(ProcessLookupError, msg=f'The {name} process survived script exit'):
+                os.kill(int((self.root / f'{name}.pid').read_text()), 0)
+        self.assertEqual(list(self.scratch.iterdir()), [], 'The stream log leaked')
+        self.assertEqual(sum('log stream ' in call for call in calls), 1, calls)
+        self.assertFalse(any('log show ' in call for call in calls), calls)
+
+    def test_deadline_and_timeout_cleanup(self):
+        code, output, elapsed = self.run_documents('timeout')
+        self.assertEqual(code, 0, output)  # A cold document picker remains a warning.
+        self.assertGreaterEqual(elapsed, 59, output)
+        self.assertLess(elapsed, 63, output)
+        self.assertRegex(output, r'Files never finished gathering.*[0-9]+s')
+        self.assert_cleanup()
+
+    def test_success_failure_and_signal_cleanup(self):
+        for mode, interrupt, expected in [('success', False, 0), ('launch-failure', False, 42),
+                                           ('interrupt', True, 143)]:
+            with self.subTest(mode=mode):
+                for item in self.root.glob('*'):
+                    if item.is_file():
+                        item.unlink()
+                code, output, _ = self.run_documents(mode, interrupt)
+                self.assertEqual(code, expected, output)
+                if mode == 'success':
+                    self.assertRegex(output, r'Files finished gathering.*[0-9]+s')
+                self.assert_cleanup()
+
+    def test_prepare_step_timings_and_keyboard_only(self):
+        # Keep the real orchestration script; replace only its external step executables.
+        repo = self.root / 'scripts'
+        repo.mkdir()
+        (repo / 'prepare-ui-simulator').write_bytes((SCRIPTS / 'prepare-ui-simulator').read_bytes())
+        (repo / 'prepare-ui-simulator').chmod(0o755)
+        for name in ('ready-simulator-notifications', 'seed-simulator-photo', 'ready-simulator-documents'):
+            step = repo / name
+            step.write_text('#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$PREPARE_TEST_STATE/steps"\nexit "${PREPARE_STEP_EXIT:-0}"\n')
+            step.chmod(0o755)
+        for options, steps, expected in [([], ['keyboard', 'notifications', 'photo', 'documents'], 0),
+                                         (['--keyboard-only'], ['keyboard'], 0),
+                                         ([], ['keyboard', 'notifications'], 42)]:
+            with self.subTest(options=options, expected=expected):
+                (self.root / 'steps').unlink(missing_ok=True)
+                result = subprocess.run([str(repo / 'prepare-ui-simulator'), *options, 'synthetic-simulator'],
+                                        env=dict(self.env, PREPARE_STEP_EXIT=str(expected)),
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                lines = result.stdout.splitlines()
+                self.assertEqual(len(lines), len(steps) * 2, result.stdout)
+                for index, step in enumerate(steps):
+                    for offset, phase in enumerate(('start', 'end')):
+                        self.assertRegex(lines[index * 2 + offset],
+                                         rf'^\d{{4}}-\d{{2}}-\d{{2}}T\S+ {step} {phase} elapsed=[0-9]+s$')
+                calls = (self.root / 'steps').read_text().splitlines() if (self.root / 'steps').exists() else []
+                self.assertEqual(len(calls), len(steps) - 1)
+
+
+if __name__ == '__main__':
+    unittest.main()

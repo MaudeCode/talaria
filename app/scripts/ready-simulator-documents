@@ -11,16 +11,55 @@ set -euo pipefail
 (( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-documents <simulator-udid>"; exit 64; }
 simulator_id=$1
 
-started=$(date '+%Y-%m-%d %H:%M:%S')
-xcrun simctl launch "$simulator_id" com.apple.DocumentsApp >/dev/null
-gathered() {
-    xcrun simctl spawn "$simulator_id" log show --start "$started" --style compact \
-        --predicate 'process == "Files" AND eventMessage CONTAINS "collectionDidFinishGathering"' 2>/dev/null |
-        grep -q collectionDidFinishGathering
+log_file=$(mktemp -t talaria-files-log)
+stream_pid=""
+launch_pid=""
+started=$SECONDS
+deadline=$(( started + 60 ))
+cleanup() {
+    local exit_status=$?
+    set +e
+    for pid in "$stream_pid" "$launch_pid"; do
+        [[ -z "$pid" ]] || kill "$pid" 2>/dev/null
+    done
+    # Termination is part of the same deadline; a stuck simctl must not stall the shard either.
+    xcrun simctl terminate "$simulator_id" com.apple.DocumentsApp >/dev/null 2>&1 &
+    local terminate_pid=$!
+    while (( SECONDS < deadline )) && {
+        kill -0 "$stream_pid" 2>/dev/null ||
+        { [[ -n "$launch_pid" ]] && kill -0 "$launch_pid" 2>/dev/null; } ||
+        kill -0 "$terminate_pid" 2>/dev/null
+    }; do
+        sleep 0.1
+    done
+    for pid in "$stream_pid" "$launch_pid" "$terminate_pid"; do
+        [[ -z "$pid" ]] && continue
+        kill -KILL "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+    done
+    rm -f "$log_file"
+    return "$exit_status"
 }
-for _ in {1..120}; do
-    gathered && break
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+xcrun simctl spawn "$simulator_id" log stream --style ndjson --level debug --timeout 60 \
+    --predicate 'process == "Files" AND eventMessage CONTAINS "collectionDidFinishGathering"' >"$log_file" 2>&1 &
+stream_pid=$!
+xcrun simctl launch "$simulator_id" com.apple.DocumentsApp >/dev/null &
+launch_pid=$!
+# Reserve the last second for terminating Files, including when launch itself hangs.
+while (( SECONDS < deadline - 1 )); do
+    if [[ -n "$launch_pid" ]] && ! kill -0 "$launch_pid" 2>/dev/null; then
+        wait "$launch_pid"
+        launch_pid=""
+    fi
+    if [[ -z "$launch_pid" ]] && grep -q '"eventMessage"[[:space:]]*:.*collectionDidFinishGathering' "$log_file"; then
+        print "Files finished gathering on simulator $simulator_id after $(( SECONDS - started ))s."
+        exit 0
+    fi
     sleep 1
 done
-gathered || print -u2 "Files never finished gathering on simulator $simulator_id; its document picker may still start cold."
-xcrun simctl terminate "$simulator_id" com.apple.DocumentsApp
+print -u2 "Files never finished gathering on simulator $simulator_id after $(( SECONDS - started ))s; its document picker may still start cold."

@@ -18,8 +18,17 @@ fi
 simulator_id=$1
 scripts=${0:A:h}
 
-xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
+prepare_step() {
+    local name=$1 started=$SECONDS exit_status=0
+    shift
+    print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name start elapsed=0s"
+    "$@" || exit_status=$?
+    print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name end elapsed=$(( SECONDS - started ))s"
+    return "$exit_status"
+}
+
+prepare_step keyboard xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
 [[ "$keyboard_only" == true ]] && exit 0
-"$scripts/ready-simulator-notifications" "$simulator_id"
-"$scripts/seed-simulator-photo" "$simulator_id"
-"$scripts/ready-simulator-documents" "$simulator_id"
+prepare_step notifications "$scripts/ready-simulator-notifications" "$simulator_id"
+prepare_step photo "$scripts/seed-simulator-photo" "$simulator_id"
+prepare_step documents "$scripts/ready-simulator-documents" "$simulator_id"
