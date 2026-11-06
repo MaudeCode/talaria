@@ -271,6 +271,7 @@ export class SessionService {
   /** TAL-1284: the one idle compaction this server runs at a time. */
   private idleCompactionJob: CompressionJob | null = null
   /** TAL-1284: each listed session's index row generation the idle sweep last tried. */
+  private readonly contextDetailReads = new Map<string, Promise<ContextDetail>>()
   private readonly idleCompactionTried = new Map<string, string>()
   private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
   private worktreesUnconfirmed = 0
@@ -1764,7 +1765,15 @@ export class SessionService {
     const before = marks()
     if (before !== expectedKey) return unavailableContextDetail('changed')
     try {
-      const detail = await sidecar.call('chat.context_detail', { session_id: sid, profile_home: this.deps.profileHome(profile), model: session.model, model_provider: session.model_provider, workspace: session.workspace })
+      // One sidecar read per profile and context, however many callers ask at once. A forged key was refused above.
+      const flight = JSON.stringify([profile, before])
+      let read = this.contextDetailReads.get(flight)
+      if (!read) {
+        read = sidecar.call('chat.context_detail', { session_id: sid, profile_home: this.deps.profileHome(profile), model: session.model, model_provider: session.model_provider, workspace: session.workspace })
+          .finally(() => this.contextDetailReads.delete(flight))
+        this.contextDetailReads.set(flight, read)
+      }
+      const detail = await read
       return this.deps.activeProfile() === profile && before === marks(await this.get404(sid)) ? detail : unavailableContextDetail('changed')
     } catch { return unavailableContextDetail() }
   }

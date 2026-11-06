@@ -1690,6 +1690,11 @@ def _execution_session_id(db, session_id: str) -> str:
     return session_id
 
 
+# A stored read walks the whole transcript on a shared RPC call slot, so waiting for a permit would hold one too: a read
+# past the limit is refused. ponytail: a fixed cap across profiles, per-profile permits if one profile starves the rest.
+_STORED_CONTEXT_READS = threading.BoundedSemaphore(4)
+
+
 def _stored_context_detail(home: Path, session_id: str) -> dict:
     """TAL-1823: a chat with no resident Agent (idle eviction, restart) measures its row's frozen prompt and tools[] pin,
     as the Agent's own agentless read does. Builds no Agent and opens the store read-only, since a writer would migrate it.
@@ -2858,7 +2863,12 @@ def register(registry) -> None:
         with _AGENT_CACHE_LOCK:
             cached = _AGENT_CACHE.get(sid)
         if cached is None:
-            return _stored_context_detail(home, sid)
+            if not _STORED_CONTEXT_READS.acquire(blocking=False):
+                return unavailable()
+            try:
+                return _stored_context_detail(home, sid)
+            finally:
+                _STORED_CONTEXT_READS.release()
         with _AGENT_CACHE_LOCK:
             if _AGENT_CACHE.get(sid) is not cached:
                 return unavailable("changed")

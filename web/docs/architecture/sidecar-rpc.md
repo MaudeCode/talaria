@@ -989,8 +989,9 @@ Native owner controls are outside this direct-sidecar API.
 model, provider and workspace. With no resident Agent it measures the session row's
 stored system prompt and tool pin through the Agent's `stored_context_breakdown`,
 opening `state.db` read-only; that read reports category estimates only, with
-unknown occupancy and no context files. It never creates an Agent or calls a model
-provider.
+unknown occupancy and no context files. Stored reads are capped per sidecar and a
+read past the cap is refused as unavailable, while the HTTP server coalesces parallel
+reads of one context. It never creates an Agent or calls a model provider.
 `gateway.session` with `action: context_detail` uses the authenticated owner's
 `session.context_breakdown` and optional `session.stats`, fenced by the resumed
 session identity, revision, authority/replay epochs and execution generation.

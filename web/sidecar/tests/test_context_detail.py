@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import textwrap
+import threading
 from types import SimpleNamespace
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, requires_agent
@@ -173,3 +174,32 @@ def test_a_failed_stored_read_exposes_no_diagnostics(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'tools.mcp_tool_agent', SimpleNamespace(pinned_tool_defs=lambda pin: []))
     result = _stored_read(tmp_path, monkeypatch, session_db=broken)
     assert result['reason'] == 'unavailable' and 'private' not in str(result)
+
+
+def test_stored_reads_past_the_limit_are_refused_without_holding_a_call_slot(tmp_path, monkeypatch):
+    opened, entered, release = [], threading.Semaphore(0), threading.Event()
+    def blocked(*a, **k):
+        opened.append(1)
+        entered.release()
+        release.wait(10)
+        raise RuntimeError('synthetic read end')
+    monkeypatch.setitem(sys.modules, 'agent.context_breakdown', SimpleNamespace(stored_context_breakdown=lambda *a: {}))
+    monkeypatch.setitem(sys.modules, 'tools.mcp_tool_agent', SimpleNamespace(pinned_tool_defs=lambda pin: []))
+    workers = [threading.Thread(target=_stored_read, args=(tmp_path, monkeypatch), kwargs={'session_db': blocked}) for _ in range(4)]
+    release_after_refusal = threading.Timer(2, release.set)
+    try:
+        for worker in workers:
+            worker.start()
+        for _ in workers:
+            assert entered.acquire(timeout=10)
+        release_after_refusal.start()
+        refused = _stored_read(tmp_path, monkeypatch, session_db=blocked)
+        assert refused['reason'] == 'unavailable'
+        assert len(opened) == 4, 'a refused read must not open the store'
+    finally:
+        release_after_refusal.cancel()
+        release.set()
+        for worker in workers:
+            worker.join(10)
+    # Finished reads give their permits back.
+    assert _stored_read(tmp_path, monkeypatch, session_db=blocked)['reason'] == 'unavailable' and len(opened) == 5
