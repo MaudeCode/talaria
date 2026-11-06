@@ -16,6 +16,7 @@ const quotaResponse = vi.hoisted((): { current: unknown } => ({ current: null })
 const providersResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
 vi.mock('../../api/endpoints', () => ({
   fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve(costHistory)), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
+  onboardingOauthStart: vi.fn(), onboardingOauthPoll: vi.fn(), onboardingOauthCancel: vi.fn(),
   saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(), installPlugin: vi.fn(),
   fetchProviders: vi.fn(() => Promise.resolve(providersResponse.current ?? { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] })),
   fetchProviderQuotas: vi.fn(() => Promise.resolve(quotaResponse.current ?? { version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources: [] })),
@@ -41,6 +42,21 @@ describe('ProvidersSection', () => {
   })
 
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
+
+  it('renders the server-offered device code and signed-in result (TAL-1827)', async () => {
+    providersResponse.current = { active_provider: 'device-test', providers: [{ id: 'device-test', display_name: 'Device Test', configurable: false, is_plugin_provider: true, has_key: false, device_login: true }, { id: 'no-hooks', display_name: 'No Hooks', configurable: false, is_plugin_provider: true }] }
+    vi.mocked(api.onboardingOauthStart).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'pending', user_code: 'TEST-1827', verification_url: 'https://device.example.test/login', expires_in: 90, interval: 1 })
+    vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'approved' })
+    renderSection()
+    const row = (await screen.findByText('Device Test')).closest<HTMLElement>('[data-provider="device-test"]')!
+    expect(within(screen.getByText('No Hooks').closest<HTMLElement>('[data-provider="no-hooks"]')!).queryByRole('button', { name: /Sign in/ })).toBeNull()
+    fireEvent.contextMenu(within(row).getByRole('button', { name: 'Sign in with Device Test' }), { clientX: 10, clientY: 10 })
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Sign in with Device Test' }))
+    expect(await within(row).findByText('TEST-1827')).toBeInTheDocument()
+    expect(within(row).getByRole('link')).toHaveAttribute('href', 'https://device.example.test/login')
+    expect(api.onboardingOauthStart).toHaveBeenCalledWith('device-test')
+    expect(await within(row).findByText('Signed in to Device Test.', {}, { timeout: 3000 })).toBeInTheDocument()
+  })
 
   it('installs the plugin a card offers through the reviewed catalog flow and rereads the row (TAL-1812)', async () => {
     providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, install_hint: 'github-copilot', auth_error: 'This provider is now a plugin. Install it, then sign in.' }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }

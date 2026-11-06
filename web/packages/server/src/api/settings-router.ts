@@ -622,7 +622,10 @@ export const settingsRouter = os.router({
         // TAL-1276: like plugin settings, a plugin client's sign-in is the server owner's.
         if (!(await canManageServer(ctx))) throw new HttpError(403, 'Only the server owner can sign in to a plugin\'s OAuth client.')
       } else if (SUPPORTED_PROVIDER_SETUPS[provider]?.oauth_flow !== 'device_code') {
-        throw new HttpError(400, `'${displayName(provider)}' does not sign in with a device code here. Run \`hermes auth\` in a terminal for it.`)
+        const catalog = await ctx.deps.catalog.providers(home(ctx))
+        if (!catalog.providers.some((row) => row.id === provider && row.device_login === true)) {
+          throw new HttpError(400, `'${displayName(provider)}' does not sign in with a device code here. Run \`hermes auth\` in a terminal for it.`)
+        }
       }
       const flow = await oauthCall(ctx, 'oauth.start', { profile_home: home(ctx), provider })
       if (plugin) rememberPluginFlow(flow.flow_id, home(ctx), flow)

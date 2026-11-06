@@ -53,6 +53,29 @@ describe('installed model-provider plugins in the provider catalog', () => {
   })
   afterAll(() => s.close())
 
+  it('offers and routes device sign-in only for the active profile plugin capability (TAL-1827)', async () => {
+    const original = plugins
+    const row = { name: 'device-test', display_name: 'Device Test', auth_type: 'oauth_device_code', setup: 'needs_setup' as const, device_login: true }
+    plugins = (home) => home === s.state ? [row] : []
+    sidecar.respond('oauth.start', (p) => ({ flow_id: 'device-flow', provider: p.provider, status: 'pending', user_code: 'TEST-1827', verification_url: 'https://device.example.test/login', expires_in: 90, interval: 1 }))
+    try {
+      s.deps.catalog.invalidate()
+      expect((await providers()).providers).toContainEqual(expect.objectContaining({ id: 'device-test', device_login: true, has_key: false }))
+      const started = await post(s, '/api/onboarding/oauth/start', { provider: 'device-test' })
+      expect(started.status).toBe(200)
+      expect(await json(started)).toMatchObject({ provider: 'device-test', user_code: 'TEST-1827' })
+      expect(sidecar.calls.filter((c) => c.method === 'oauth.start').at(-1)?.params).toEqual({ profile_home: s.state, provider: 'device-test' })
+      expect((await post(s, '/api/onboarding/oauth/start', { provider: 'device-test' }, { cookie: 'hermes_profile=other' })).status).toBe(400)
+      plugins = () => [{ ...row, device_login: false }]
+      s.deps.catalog.invalidate()
+      expect((await post(s, '/api/onboarding/oauth/start', { provider: 'device-test' })).status).toBe(400)
+    } finally {
+      plugins = original
+      sidecar.respond('oauth.start', undefined)
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('a ready plugin is its own provider card and picker group; built-ins and the default stay unchanged', async () => {
     const cards = await providers()
     const rows = cards.providers as Row[]

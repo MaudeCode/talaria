@@ -85463,6 +85463,10 @@
                           },
                           "install_hint": {
                             "type": "string"
+                          },
+                          "device_login": {
+                            "type": "boolean",
+                            "description": "Offer the existing device-code sign-in for this provider."
                           }
                         },
                         "required": [

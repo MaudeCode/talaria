@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { Button } from '../../ui/Button'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 import type { NousAccount, ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import { PageConnect } from '../connectors/ConnectTargets'
 import { useStreamContext } from '../../stream/connection'
@@ -141,9 +142,18 @@ function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'o
     }
   }
 
+  const done = approved || signedIn
+  function withActions(content: ReactElement) {
+    if (resultOnly) return content
+    const actionLabel = pendingId ? m.cancel() : done ? m.oauth_sign_in_again() : m.oauth_sign_in({ provider: label })
+    return <ContextMenu label={actionLabel} trigger={content}>
+      <MenuItem disabled={!pendingId && (busy || !canStart)} onClick={() => { void (pendingId ? cancel() : start()) }}>{actionLabel}</MenuItem>
+    </ContextMenu>
+  }
+
   if (pendingId && flow) {
-    return (
-      <div className="onboarding-oauth flex flex-col gap-2 rounded-lg border border-border px-3 py-3 text-sm" id={`${idPrefix}Panel`}>
+    return withActions(
+      <div className="onboarding-oauth flex flex-col gap-2 py-3 text-sm pointer-coarse:[&_button]:min-h-11" id={`${idPrefix}Panel`}>
         <p className="text-muted">{flow.user_code ? m.oauth_codex_step1() : m.oauth_plugin_hosts({ authorize_host: flow.authorize_host ?? '', token_host: flow.token_host ?? '' })}</p>
         <a className="break-all text-accent-text underline" href={flow.verification_url} target="_blank" rel="noopener noreferrer" id={`${idPrefix}Link`}>{flow.verification_url}</a>
         {flow.user_code && <code className="w-fit rounded-md border border-border2 bg-surface-subtle px-3 py-1.5 font-mono text-lg tracking-widest text-strong" id={`${idPrefix}Code`}>{flow.user_code}</code>}
@@ -156,12 +166,11 @@ function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'o
     )
   }
 
-  const done = approved || signedIn
   const ended = failure ?? accountError ?? (flow?.status === 'denied' ? m.oauth_denied()
     : flow?.status === 'expired' ? m.oauth_codex_expired()
       : flow?.status === 'cancelled' ? m.oauth_cancelled()
         : flow?.status === 'error' ? `${m.oauth_codex_error()}: ${flow.error ?? ''}` : null)
-  return (
+  return withActions(
     <div className="onboarding-oauth flex flex-col gap-2 text-sm pointer-coarse:[&_button]:min-h-11" id={`${idPrefix}Panel`}>
       {ended && <p className="text-warning" role="alert">{ended}</p>}
       {result ? <div role="status" className="flex flex-col gap-1 break-words" data-handoff-state={result.state}>

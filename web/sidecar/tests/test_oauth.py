@@ -12,7 +12,7 @@ import types
 import pytest
 
 from talaria_sidecar.errors import InvalidParams, RpcError
-from talaria_sidecar.methods import oauth
+from talaria_sidecar.methods import oauth, providers as provider_methods
 
 
 class Provider:
@@ -57,6 +57,7 @@ def provider(monkeypatch):
     monkeypatch.setattr(oauth, "scoped_home", scoped)
     monkeypatch.setattr(oauth, "_FLOWS", {})
     monkeypatch.setattr(oauth, "_GENERATIONS", {})
+    monkeypatch.setattr(provider_methods, "installed_plugin_profiles", lambda: [])
     return p
 
 
@@ -89,6 +90,57 @@ def test_an_approved_flow_saves_the_credential_under_its_own_home(provider, tmp_
     provider.answer.set()
     assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "openai-codex", "status": "approved", "error": None}
     assert provider.saved == [(tmp_path, {"access_token": "synthetic-access"})]
+
+
+@pytest.mark.parametrize("ending", ["approved", "cancelled", "denied", "expired", "error", "late"])
+def test_provider_device_flow_honors_state_interval_and_terminal_outcome(provider, monkeypatch, tmp_path, ending):
+    now, waits, states, workers = [1000.0], [], [], []
+    monkeypatch.setattr(oauth.time, "time", lambda: now[0])
+    monkeypatch.setattr(oauth.threading, "Thread", lambda *, target, args, **kw: types.SimpleNamespace(start=lambda: workers.append(lambda: target(*args))))
+
+    def begin():
+        return {"user_code": "PLUGIN-42", "verification_url": "https://device.example.test/login", "expires_in": 90, "interval": 3, "state": 0}
+
+    def poll(state):
+        states.append((provider.homes[-1], state))
+        if state == 0:
+            return {"status": "pending", "interval": 7, "state": 1}
+        if ending == "late":
+            now[0] += 100
+        return {"status": "approved" if ending == "late" else ending, "credential": {"token": "test-only"}}
+
+    profile = types.SimpleNamespace(name="device-test", start_device_login=begin, poll_device_login=poll,
+                                    save_device_login=lambda credential: provider.saved.append((provider.homes[-1], credential)))
+    monkeypatch.setattr(provider_methods, "installed_plugin_profiles", lambda: [("test-plugin", profile)])
+    try:
+        started = oauth.start(tmp_path, "device-test")
+    except RpcError as exc:
+        started = {"error": str(exc)}
+    assert started.get("user_code") == "PLUGIN-42", started
+    flow = oauth._FLOWS[started["flow_id"]]
+
+    class ClockEvent:
+        stopped = False
+
+        def set(self):
+            self.stopped = True
+
+        def is_set(self):
+            return self.stopped
+
+        def wait(self, interval):
+            waits.append(interval)
+            now[0] += interval
+            if ending == "cancelled":
+                oauth.cancel(tmp_path, started["flow_id"])
+            return self.stopped
+
+    flow.cancelled = ClockEvent()
+    workers[0]()
+    assert oauth.poll(tmp_path, started["flow_id"])["status"] == ("expired" if ending == "late" else ending)
+    assert waits == ([3] if ending == "cancelled" else [3, 7])
+    assert states == ([] if ending == "cancelled" else [(tmp_path, 0), (tmp_path, 1)])
+    assert provider.saved == ([(tmp_path, {"token": "test-only"})] if ending == "approved" else [])
 
 
 def test_a_declined_flow_ends_denied_and_saves_nothing(provider, tmp_path):

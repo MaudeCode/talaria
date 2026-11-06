@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Sign in to GitHub Copilot and other compatible provider plugins from Settings with a device code.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
