@@ -147,6 +147,20 @@
       }
     }
   ],
+  "models.parse_switch_args": [
+    {
+      "params": {
+        "args": "reset"
+      },
+      "result": {
+        "target": "reset",
+        "provider": null,
+        "reset": true,
+        "errors": [],
+        "unsupported_flags": []
+      }
+    }
+  ],
   "models.selection_warnings": [
     {
       "params": {

@@ -17,12 +17,12 @@ const body = { model: 'contributor', model_provider: 'custom' }
 const nativeOwner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [] }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
 let client = new QueryClient()
-function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string } }) {
   return <QueryClientProvider client={client}><Picker {...props} /></QueryClientProvider>
 }
-function Picker({ sid = 's1', owner, change = body }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+function Picker({ sid = 's1', owner, change = body, ownerPayload }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string } }) {
   const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
-  return <><button onClick={() => { updateSession(change) }}>Pick model</button>{dialog}</>
+  return <><button onClick={() => { updateSession(change, ownerPayload) }}>Pick model</button>{dialog}</>
 }
 beforeEach(() => { client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); vi.mocked(api.updateSession).mockReset(); vi.mocked(api.ownerAction).mockReset(); refresh.mockClear() })
 it('Cancel leaves the selection unchanged, Confirm sends the exact server token', async () => {
@@ -82,6 +82,14 @@ it('routes native model changes through the existing update flow with the owner 
   expect(api.ownerAction).toHaveBeenCalledWith({ session_id: 's1', action: 'mutate', request_id: expect.any(String),
     expected_revision: 8, execution_generation: 3, operation: 'model', payload: { model: 'contributor', provider: 'custom' } })
   expect(api.updateSession).not.toHaveBeenCalled()
+})
+
+it('sends an owner-run chat the server\'s own request while showing the resulting model (TAL-1814)', async () => {
+  vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
+  render(<Chat owner={{ ...nativeOwner }} ownerPayload={{ model: 'reset' }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  expect(api.ownerAction).toHaveBeenCalledWith(expect.objectContaining({ operation: 'model', payload: { model: 'reset' } }))
 })
 
 it('preserves an explicit null provider in a native model selection', async () => {

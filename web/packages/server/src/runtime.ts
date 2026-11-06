@@ -456,6 +456,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     resolveContextLength,
     modelOptionFor: (model, provider) => catalog.modelOptionFor(profileHome(activeProfile()), model, provider),
     warmModelOptions: () => catalog.warmModelOptions(profileHome(activeProfile())),
+    freshModelDefaults: async (profile) => {
+      await agentConfig.read(profileHome(profile ?? activeProfile())).catch(() => undefined)
+      return store.deps.defaults(profile)
+    },
     // Python `_session_model_state_from_request`: a provider-qualified id (`@nous:openai/gpt-5.4-mini`) is split so the
     // sidecar receives the bare model and the explicit provider wins over the requested one.
     modelStateFromRequest: (model, requestedProvider, currentProvider) => {

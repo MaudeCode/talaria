@@ -204,6 +204,8 @@ export interface SessionServiceDeps {
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
+  /** TAL-1814: the profile's default model, re-read from its config.yaml: a cold or edited config never reads as no default. */
+  freshModelDefaults: (profile: string | null) => Promise<{ model: string | null; modelProvider?: string | null }>
   /** TAL-1040: the explicit launch route for `provider`: its configured endpoint (model, providers or custom_providers), else null. */
   profileLaunchRoute?: (profile: string, provider: string) => { provider: string; baseUrl: string | null }
   /** TAL-542: the pair a stale session model starts on, from the profile's catalog; `null` keeps it. */
@@ -224,6 +226,9 @@ export interface SessionServiceDeps {
 }
 
 /** TAL-536: the most of a dead run's journal stale-stream cleanup reads (Python's recovery window). */
+/** The Agent reserves this `/model` target on every surface: it returns the chat to its profile's default model (TAL-1814). */
+const MODEL_RESET_TOKEN = 'reset'
+const isModelReset = (model: unknown): boolean => typeof model === 'string' && model.trim().toLowerCase() === MODEL_RESET_TOKEN
 const RECOVERY_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 const RECOVERY_JOURNAL_MAX_ROWS = 65536
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -2258,7 +2263,8 @@ export class SessionService {
       const oldModel = s.model
       const oldProvider = s.model_provider
       const hasModel = 'model' in body || 'model_provider' in body
-      const [model, provider] = hasModel ? this.deps.modelStateFromRequest('model' in body ? body.model : s.model, 'model_provider' in body ? body.model_provider : undefined, s.model_provider) : [s.model, s.model_provider]
+      const [model, provider] = isModelReset(body.model) ? await this.profileDefaultRoute(s.profile)
+        : hasModel ? this.deps.modelStateFromRequest('model' in body ? body.model : s.model, 'model_provider' in body ? body.model_provider : undefined, s.model_provider) : [s.model, s.model_provider]
       const nextModel = model ?? s.model
       const changed = hasModel && (str(oldModel) !== str(nextModel) || str(oldProvider) !== str(provider))
       const contextLength = changed ? (this.deps.resolveContextLength ? await this.deps.resolveContextLength(nextModel, provider, s.profile) : this.deps.contextLengthFor(nextModel, provider)) : s.context_length
@@ -2279,6 +2285,31 @@ export class SessionService {
     if (str(oldWs) !== str(newWs)) this.deps.runtime.closeTerminal(sid)
     await this.deps.workspaces.setLastWorkspace(newWs, s.profile)
     return { session: (await this.publicSession(s)) }
+  }
+
+  private async profileDefaultRoute(profile: string | null): Promise<[string, string | null]> {
+    const { model, modelProvider } = await this.deps.freshModelDefaults(profile)
+    if (!model) throw new HttpFailure(400, 'This profile has no default model to return to')
+    return [model, modelProvider ?? null]
+  }
+
+  /** TAL-1814: what raw `/model` arguments ask for. Nothing is written: the client applies the answer as a model write. */
+  async modelCommand(sid: string | undefined, args: string): Promise<{ model: string; model_provider: string | null; owner_payload?: { model: string } }> {
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar) throw new HttpFailure(503, 'Agent sidecar is unavailable')
+    const request = await sidecar.call('models.parse_switch_args', { args })
+    const [refusal] = request.errors
+    if (refusal) throw new HttpFailure(400, refusal)
+    if (request.unsupported_flags.length) throw new HttpFailure(400, `/model ${request.unsupported_flags.join(', ')} is not available here`)
+    const s = sid === undefined ? null : await this.visibleSessionRecord(sid)
+    const profile = s?.profile ?? null
+    if (request.reset) {
+      const [model, model_provider] = await this.profileDefaultRoute(profile)
+      return { model, model_provider, owner_payload: { model: MODEL_RESET_TOKEN } }
+    }
+    const target = request.target || s?.model || (await this.profileDefaultRoute(profile))[0]
+    const [model, model_provider] = this.deps.modelStateFromRequest(target, request.provider, s?.model_provider ?? null)
+    return { model: model ?? target, model_provider }
   }
 
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {
@@ -2318,8 +2349,8 @@ export class SessionService {
     })
   }
 
-  /** TAL-1647: the chat a reasoning read describes, or null for a chat Web keeps no record of; another profile's is not found. */
-  async reasoningSession(sid: string): Promise<Session | null> {
+  /** TAL-1647: the chat a read describes, or null for a chat Web keeps no record of; another profile's is not found. */
+  async visibleSessionRecord(sid: string): Promise<Session | null> {
     let s: Session
     try { s = await this.store.get((await this.resolveSessionId(sid)), { metadataOnly: true }) } catch (error) {
       if (error instanceof SessionNotFound) return null

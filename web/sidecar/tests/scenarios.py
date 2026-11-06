@@ -139,6 +139,7 @@ SCENARIOS: list[tuple[str, dict]] = [
         {"model": "gpt-6-astra", "provider": "openai", "base_url": "https://proxy.example/v1"},
     ]}),
     ("models.context_length", {"profile_home": "{home}", "model": "claude-sonnet-4-5", "provider": "anthropic"}),
+    ("models.parse_switch_args", {"args": "reset"}),
     ("models.estimate_tokens", {"messages": [{"role": "user", "content": "hello world"}]}),
     ("models.capabilities", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
     ("aux.resolve", {"profile_home": "{home}", "task": "title_generation"}),
