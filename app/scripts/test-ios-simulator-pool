@@ -111,6 +111,18 @@ fi
             'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [beta],
             'com.apple.CoreSimulator.SimRuntime.iOS-27-1': [point]}}))
         assert select()[0] == point['udid']
+        # Xcode can install a hardware-specific seed beside the released runtime of the same version.
+        stable_runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-27-2'
+        hardware_runtime = stable_runtime + '-iPhone19-4'
+        stable = dict(personal, udid='00000000-0000-0000-0000-000000000272')
+        hardware = dict(personal, udid='00000000-0000-0000-0000-000000001904')
+        runtimes.write_text(json.dumps({'runtimes': [
+            dict(identifier=stable_runtime, buildversion='24B8117'),
+            dict(identifier=hardware_runtime, buildversion='24B91016s')]}))
+        fixture.write_text(json.dumps({'devices': {stable_runtime: [stable], hardware_runtime: [hardware]}}))
+        assert select() == [stable['udid'], stable_runtime, personal['deviceTypeIdentifier']]
+        assert select(IOS_SIMULATOR_RUNTIME=hardware_runtime) == [
+            hardware['udid'], hardware_runtime, personal['deviceTypeIdentifier']]
         runtimes.write_text(released_runtimes)
         ipad = dict(released, deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4')
         selector_fixture(ipad, beta)
@@ -143,6 +155,13 @@ fi
             == 'No available iPhone simulator was found.'
         assert select(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-26-5') \
             == 'No available iPhone simulator was found.'
+        # The fresh-device path uses the same ordering and seed exclusion as existing-device selection.
+        runtimes.write_text(json.dumps({'runtimes': [
+            dict(identifier=stable_runtime, buildversion='24B8117', supportedDeviceTypes=catalog),
+            dict(identifier=hardware_runtime, buildversion='24B91016s', supportedDeviceTypes=catalog)]}))
+        fixture.write_text(json.dumps({'devices': {}}))
+        assert select() == [created, stable_runtime, catalog[0]['identifier']]
+        assert select(IOS_SIMULATOR_RUNTIME=hardware_runtime) == [created, hardware_runtime, catalog[0]['identifier']]
         save()
         first, child = owner()
         assert invoke() == devices[1]['udid']  # Independent checkout chooses another slot.

@@ -18,9 +18,9 @@ requested_type=${IOS_SIMULATOR_DEVICE_TYPE:-}
 # IOS_SIMULATOR_RUNTIME.
 # ponytail: build-number heuristic, revisit if Apple renumbers builds.
 prerelease=$(print -r -- "$runtimes_json" | /usr/bin/jq -c '
-    [.runtimes[] | select(.buildversion | test("^[0-9]+[A-Z][5-9][0-9]{3}[a-z]$")) | .identifier]')
-eligible='select(if $requested == "" then ([.] | inside($prerelease) | not) else . == $requested end)'
-newest_first='sort_by(split("iOS-")[1] | split("-") | map(tonumber)) | reverse'
+    [.runtimes[] | select(.buildversion | test("^[0-9]+[A-Z]([5-9][0-9]{3}|[0-9]{5,})[a-z]$")) | .identifier]')
+eligible='select(if $requested == "" then . as $runtime | ($prerelease | index($runtime)) == null else . == $requested end)'
+newest_first='sort_by(capture("iOS-(?<version>[0-9]+(?:-[0-9]+)*)").version | split("-") | map(tonumber)) | reverse'
 
 selection=$(
     xcrun simctl list devices available --json |
