@@ -17,6 +17,16 @@ if os.environ.get('PREPARE_TEST_MODE') == 'timeout' and args[1] == 'terminate':
     time.sleep(2)  # A busy host can delay the termination client before its request is dispatched.
 with (state / 'calls').open('a') as log:
     log.write(' '.join(args) + '\\n')
+if os.environ.get('PREPARE_TEST_MODE') in ('photo-timeout', 'photo-error') and args[1] == 'addmedia':
+    assert pathlib.Path(args[-1]).read_bytes().startswith(bytes.fromhex('ffd8'))
+    (state / 'photo-payload').write_text(args[-1])
+    (state / 'photo-client.pid').write_text(str(os.getpid()))
+    (state / 'photo-helper.pid').write_text(str(os.getppid()))
+    if os.environ['PREPARE_TEST_MODE'] == 'photo-error':
+        sys.exit(42)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    while True:
+        time.sleep(1)
 if os.environ.get('PREPARE_TEST_MODE') == 'notification-restart':
     if args[1] == 'push':
         counter = state / 'notification-pushes'
@@ -180,13 +190,63 @@ class PreparationTests(unittest.TestCase):
         finally:
             self.stop_process(process)
 
-    def copy_prepare_script(self):
+    def copy_prepare_script(self, *helpers):
         repo = self.root / 'scripts'
         repo.mkdir()
-        script = repo / 'prepare-ui-simulator'
-        script.write_bytes((SCRIPTS / 'prepare-ui-simulator').read_bytes())
-        script.chmod(0o755)
-        return script
+        for name in ('prepare-ui-simulator', *helpers):
+            script = repo / name
+            script.write_bytes((SCRIPTS / name).read_bytes())
+            script.chmod(0o755)
+        return repo / 'prepare-ui-simulator'
+
+    def test_photo_warmup_deadline_continues_preparation(self):
+        script = self.copy_prepare_script('seed-simulator-photo')
+        for name in ('ready-simulator-notifications', 'ready-simulator-documents'):
+            helper = script.with_name(name)
+            helper.write_text('#!/bin/sh\nexit 0\n')
+            helper.chmod(0o755)
+        process = subprocess.Popen([str(script), 'synthetic-simulator'],
+                                   env=dict(self.env, PREPARE_TEST_MODE='photo-timeout'),
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+        started = time.monotonic()
+        try:
+            try:
+                output, _ = process.communicate(timeout=63)
+            except subprocess.TimeoutExpired:
+                self.fail('Photo warm-up exceeded its 60-second wall-clock budget')
+            self.assertEqual(process.returncode, 0, output)
+            self.assertLess(time.monotonic() - started, 63, output)
+            self.assertIn('photo timed out (60-second budget including cleanup)', output)
+            self.assertIn('documents end', output)
+            for name in ('photo-helper.pid', 'photo-client.pid'):
+                with self.assertRaises(ProcessLookupError, msg=f'{name} survived photo warm-up'):
+                    os.kill(int((self.root / name).read_text()), 0)
+            self.assertEqual(list(self.scratch.iterdir()), [], 'Photo payload leaked')
+        finally:
+            self.stop_process(process, 'photo-helper.pid', 'photo-client.pid')
+
+    def test_photo_payload_cleanup_preserves_import_error(self):
+        process = subprocess.Popen([str(SCRIPTS / 'seed-simulator-photo'), 'synthetic-simulator'],
+                                   env=dict(self.env, PREPARE_TEST_MODE='photo-error'),
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+        try:
+            output, _ = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 42, output)
+            payload = Path((self.root / 'photo-payload').read_text())
+            self.assertIn(self.scratch, payload.parents, 'Photo payload escaped the requested temporary directory')
+            self.assertFalse(payload.exists(), 'Photo payload survived import failure')
+            self.assertEqual(list(self.scratch.iterdir()), [], 'Photo payload leaked after import failure')
+        finally:
+            self.stop_process(process, 'photo-client.pid')
+            receipt = self.root / 'photo-payload'
+            if receipt.exists():
+                payload = Path(receipt.read_text())
+                if payload.name.startswith('talaria-ui-photo.') and payload.suffix == '.jpg':
+                    # The baseline helper appends .jpg to a separately created tempfile; both are test-owned.
+                    payload.unlink(missing_ok=True)
+                    payload.with_suffix('').unlink(missing_ok=True)
 
     def test_group_permission_error_preserves_interruption(self):
         script = self.copy_prepare_script()
@@ -287,15 +347,18 @@ class PreparationTests(unittest.TestCase):
         repo = script.parent
         for name in ('ready-simulator-notifications', 'seed-simulator-photo', 'ready-simulator-documents'):
             step = repo / name
-            step.write_text('#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$PREPARE_TEST_STATE/steps"\nexit "${PREPARE_STEP_EXIT:-0}"\n')
+            step.write_text('#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$PREPARE_TEST_STATE/steps"\n'
+                            'if [ "${0##*/}" = "${PREPARE_FAIL_STEP:-}" ]; then exit "${PREPARE_STEP_EXIT:-0}"; fi\n')
             step.chmod(0o755)
-        for options, steps, expected in [([], ['keyboard', 'notifications', 'photo', 'documents'], 0),
-                                         (['--keyboard-only'], ['keyboard'], 0),
-                                         ([], ['keyboard', 'notifications'], 42)]:
+        for options, steps, expected, failed_step in [
+                ([], ['keyboard', 'notifications', 'photo', 'documents'], 0, ''),
+                (['--keyboard-only'], ['keyboard'], 0, ''),
+                ([], ['keyboard', 'notifications'], 42, 'ready-simulator-notifications'),
+                ([], ['keyboard', 'notifications', 'photo'], 42, 'seed-simulator-photo')]:
             with self.subTest(options=options, expected=expected):
                 (self.root / 'steps').unlink(missing_ok=True)
                 result = subprocess.run([str(repo / 'prepare-ui-simulator'), *options, 'synthetic-simulator'],
-                                        env=dict(self.env, PREPARE_STEP_EXIT=str(expected)),
+                                        env=dict(self.env, PREPARE_STEP_EXIT=str(expected), PREPARE_FAIL_STEP=failed_step),
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, expected, result.stderr)
                 lines = result.stdout.splitlines()

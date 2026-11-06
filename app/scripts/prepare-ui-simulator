@@ -1,7 +1,7 @@
 #!/bin/zsh
-# Prepares a booted simulator for UI tests: the keyboard's one-time slide-to-type introduction is marked as shown,
-# the notification service answers (scripts/ready-simulator-notifications, TAL-651), the Photos library holds a
-# photo the tests own (scripts/seed-simulator-photo, TAL-633) and the document picker's frameworks are warm
+# Prepares a booted simulator for hosted tests: the keyboard's one-time slide-to-type introduction is marked as shown,
+# the notification service answers (scripts/ready-simulator-notifications, TAL-651), photo import is warmed on a
+# best-effort basis (scripts/seed-simulator-photo, TAL-633), and the document picker's frameworks are warm
 # (scripts/ready-simulator-documents, TAL-751). The introduction takes the first software keyboard
 # down, and the composer collapses with it, on every freshly booted simulator (TAL-668); iOS 27 records it under
 # TextInput's DidShowContinuousPathIntroduction preference. --keyboard-only does just that, for a simulator whose
@@ -23,9 +23,9 @@ prepare_step() {
     local name=$1 started=$SECONDS exit_status=0 deadline=$(( EPOCHREALTIME + 60 ))
     shift
     print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name start elapsed=0s"
-    if [[ "$name" == notifications ]]; then
-        # Hosted timing exceeded 60s here; bound bootstatus, restarts and probes together.
-        python3 - "$deadline" "$@" <<'PYTHON' || exit_status=$?
+    if [[ "$name" == notifications || "$name" == photo ]]; then
+        # Hosted timing exceeded 60s in these clients; include their cleanup in the same budget.
+        python3 - "$deadline" "$name" "$@" <<'PYTHON' || exit_status=$?
 import os
 import signal
 import subprocess
@@ -33,13 +33,14 @@ import sys
 import time
 
 deadline = float(sys.argv[1])
-process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+step = sys.argv[2]
+process = subprocess.Popen(sys.argv[3:], start_new_session=True)
 
 def signal_clients(signum):
     try:
         os.killpg(process.pid, signum)
     except (ProcessLookupError, PermissionError):
-        # A simulator descendant can deny group signaling; the helper PID is still ours to stop.
+        # Group signaling can be denied; the helper PID is still ours to stop.
         try:
             process.send_signal(signum)
         except ProcessLookupError:
@@ -52,8 +53,9 @@ try:
         # Reserve the final second of the budget for helper/probe cleanup.
         exit_status = process.wait(timeout=max(0, deadline - time.time() - 1))
     except subprocess.TimeoutExpired:
-        print("notifications timed out (60-second budget including cleanup).", file=sys.stderr)
-        exit_status = 124
+        print(f"{step} timed out (60-second budget including cleanup).", file=sys.stderr)
+        # Hosted tests inject image bytes; the library asset only warms Photos. Readiness remains mandatory.
+        exit_status = 0 if step == "photo" else 124
 finally:
     signal_clients(signal.SIGTERM)
     try:
