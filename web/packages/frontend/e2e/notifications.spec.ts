@@ -208,7 +208,7 @@ test('rail captions fit under their icons; the bell keeps its full accessible na
   const bell = page.locator('aside.sidebar').getByRole('button', { name: 'Notifications', exact: true })
   await expect(bell).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
-  const captions = await page.locator('aside.sidebar .sidebar-row .sidebar-row-label:visible').evaluateAll((nodes) => nodes.map((node) => ({ text: node.textContent, fits: node.scrollWidth <= node.clientWidth })))
+  const captions = await page.locator('aside.sidebar .sidebar-row .sidebar-row-caption:visible').evaluateAll((nodes) => nodes.map((node) => ({ text: (node as HTMLElement).dataset.caption, fits: node.scrollWidth <= node.clientWidth })))
   await page.locator('aside.sidebar').screenshot({ path: testInfo.outputPath('rail-captions.png') })
   expect(captions.filter((caption) => !caption.fits)).toEqual([])
 })

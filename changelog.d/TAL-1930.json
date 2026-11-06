@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Web sidebar now collapses and expands in one smooth motion, with icons staying in place, instead of flashing between its open and closed layouts.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

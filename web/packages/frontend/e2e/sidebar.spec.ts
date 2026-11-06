@@ -16,18 +16,26 @@ const desktopOnly = (name: string) => { test.skip(name !== 'desktop', 'the tiled
 /** Clicks the edge tab and measures every animation frame until the motion has settled. */
 const framesOfToggle = (page: Page) => page.evaluate(async () => {
   const aside = document.querySelector('aside.sidebar') as HTMLElement
-  const frames: { aside: number; row: number | null; content: number | null; opacity: number | null; handle: string | null }[] = []
+  const frames: { aside: number; icon: number | null; rowOpacity: number | null; list: number | null; opacity: number | null; handle: string | null }[] = []
+  const tasks = aside.querySelector('[data-panel="tasks"]')
+  // What the eye gets: a parent's fade or hiding counts against the row.
+  const shownOpacity = (el: Element) => {
+    let shown = getComputedStyle(el).visibility === 'visible' ? 1 : 0
+    for (let node: Element | null = el; node && node !== aside; node = node.parentElement) shown *= Number(getComputedStyle(node).opacity)
+    return shown
+  }
   document.getElementById('btnSidebarEdgeToggle')!.click()
   const start = performance.now()
-  while (performance.now() - start < 700) {
+  while (performance.now() - start < 500) {
     await new Promise(requestAnimationFrame)
-    const content = document.querySelector('.sidebar-content')
+    const panel = document.querySelector('.sidebar-panel')
     const handle = aside.querySelector('.resize-handle')
     frames.push({
       aside: aside.getBoundingClientRect().width,
-      row: aside.querySelector('#btnNewChat')?.getBoundingClientRect().width ?? null,
-      content: content?.getBoundingClientRect().width ?? null,
-      opacity: content ? Number(getComputedStyle(content).opacity) : null,
+      icon: tasks?.querySelector('svg')?.getBoundingClientRect().left ?? null,
+      rowOpacity: tasks ? shownOpacity(tasks) : null,
+      list: panel?.firstElementChild?.getBoundingClientRect().width ?? null,
+      opacity: panel ? Number(getComputedStyle(panel).opacity) : null,
       handle: handle ? getComputedStyle(handle).visibility : null,
     })
   }
@@ -82,7 +90,7 @@ test('collapsed, the column is the labelled icon rail, and first paint draws the
   await collapsedOn(page, '/skills')
   expect(await width(page, 'aside.sidebar')).toBe(64)
   expect(await left(page, '#main')).toBe(64)
-  expect(await controls(page)).toEqual(['New conversation', 'Search', 'Chat', 'Spaces', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Skills', 'Memory', 'Profiles', 'Insights', 'Logs', 'Notifications', 'Settings'])
+  expect(await controls(page)).toEqual(['New conversation', 'Search', 'Chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'Spaces', 'Discussions', 'Todos', 'Profiles', 'Logs', 'Settings', 'Notifications'])
   for (const name of ['Chat', 'Spaces', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Skills', 'Memory', 'Profiles', 'Insights', 'Logs', 'Settings']) await expect(row(page, name), name).toBeInViewport({ ratio: 1 })
   for (const name of ['Search', 'Notifications']) await expect(button(page, name), name).toBeInViewport({ ratio: 1 })
   await expect(sidebar(page).locator('[aria-current="page"]:visible')).toHaveAttribute('aria-label', 'Skills')
@@ -186,10 +194,10 @@ for (const viewport of [
     await settle(page)
     if (viewport.width <= 900) await page.locator('#btnHamburger').click()
     const list = page.locator('#sessionList')
-    const destinations = sidebar(page).locator('.sidebar-content .sidebar-rows')
+    const destinations = sidebar(page).locator('.sidebar-rows')
     const visibleHeight = () => list.evaluate((el) => {
       const list = el.getBoundingClientRect()
-      const content = el.closest('.sidebar-content')!
+      const content = el.closest('.sidebar-primary')!
       const brand = content.querySelector('.sidebar-brand')!.getBoundingClientRect()
       const footer = content.querySelector('.sidebar-footer')!.getBoundingClientRect()
       return Math.max(0, Math.min(list.bottom, footer.top) - Math.max(list.top, brand.bottom))
@@ -225,12 +233,12 @@ test('More holds the rest and opens itself on a page inside it', async ({ page }
   await settle(page)
   const more = button(page, 'More')
   await expect(more).toHaveAttribute('aria-expanded', 'false')
-  await expect(row(page, 'Logs')).toHaveCount(0)
+  await expect(row(page, 'Logs')).toBeHidden()
   await more.click()
   for (const name of ['Spaces', 'Discussions', 'Todos', 'Profiles', 'Logs']) await expect(row(page, name), name).toBeVisible()
   expect(await stored(page, 'hermes-webui-sidebar-more-open')).toBe('1')
   await more.click()
-  await expect(row(page, 'Logs')).toHaveCount(0)
+  await expect(row(page, 'Logs')).toBeHidden()
   expect(await stored(page, 'hermes-webui-sidebar-more-open')).toBe('0')
 
   await page.goto('/logs')
@@ -433,7 +441,7 @@ test('a credit source shows its amount without a meter, and the rail has no quot
     await expect(quotaRow(page, 'qsrc_credits').getByRole('meter')).toHaveCount(0)
     await page.locator('#btnSidebarEdgeToggle').click()
     await expect(row(page, 'Chat')).toBeVisible()
-    await expect(page.locator('.sidebar-rail [data-section="sidebar-quotas"]')).toHaveCount(0)
+    await expect(page.locator('[data-section="sidebar-quotas"]')).toBeHidden()
     await expect(quotaGroup(page)).toBeHidden()
   })
 })
@@ -700,7 +708,7 @@ test('the phone drawer on Settings has Back and the sections, and Back closes it
   await expect(page.locator('.tabbar [data-tab]')).toHaveText(['Chat', 'Tasks', 'Kanban', 'Agent', 'More'])
 })
 
-test('expanding uncovers the rows at their full width, and collapsing fades them before the width moves', async ({ page }, info) => {
+test('collapsing and expanding morph one set of rows: icons stay put, nothing blanks and the list never squeezes', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -709,45 +717,55 @@ test('expanding uncovers the rows at their full width, and collapsing fades them
   await page.reload()
   await settle(page)
 
+  const assertMorph = (frames: Awaited<ReturnType<typeof framesOfToggle>>) => {
+    const widths = frames.map((frame) => frame.aside)
+    expect(widths.filter((w) => w > 64 && w < 360).length, 'the width animates').toBeGreaterThan(2)
+    const direction = Math.sign(widths.at(-1)! - widths[0]!)
+    expect(widths.filter((w, i) => i > 0 && (w - widths[i - 1]!) * direction < 0), 'the width never reverses').toEqual([])
+    expect(frames.filter((frame) => frame.rowOpacity !== 1), 'the destination rows never fade').toEqual([])
+    const icons = frames.map((frame) => frame.icon ?? 0)
+    expect(Math.max(...icons) - Math.min(...icons), 'the icon stays put').toBeLessThanOrEqual(12)
+    expect(frames.filter((frame) => (frame.list ?? 0) < 344), 'the list holds its stored width').toEqual([])
+  }
+
   const expanding = await framesOfToggle(page)
-  expect(expanding.some((frame) => frame.aside > 64 && frame.aside < 360), 'the width animates').toBe(true)
-  const rowWidth = expanding.at(-1)?.row
-  expect(rowWidth).toBeGreaterThan(300)
-  expect(expanding.filter((frame) => frame.row !== rowWidth)).toEqual([])
-  expect(expanding.filter((frame) => (frame.content ?? 0) < 360)).toEqual([])
-  expect(expanding.find((frame) => (frame.opacity ?? 0) > 0)?.aside, 'the width opens before the rows arrive').toBeGreaterThan(64)
+  assertMorph(expanding)
+  expect(expanding.at(-1)?.aside).toBe(360)
   expect(expanding.at(-1)?.opacity).toBe(1)
   expect(expanding.filter((frame) => frame.aside < 360 && frame.handle === 'visible'), 'the resize handle takes no hover as it sweeps past a pointer on the edge tab').toEqual([])
 
   const collapsing = await framesOfToggle(page)
-  const moved = collapsing.find((frame) => frame.aside < 360)
-  expect(moved?.opacity, 'the rows have faded when the width starts closing').toBe(0)
-  expect(collapsing.filter((frame) => frame.row !== rowWidth)).toEqual([])
+  assertMorph(collapsing)
   expect(collapsing.at(-1)?.aside).toBe(64)
+  expect(collapsing.at(-1)?.opacity).toBe(0)
 })
 
-test('once the motion settles, only the layer showing takes focus', async ({ page }, info) => {
+test('once the motion settles, rows the state hides take no focus', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  await collapsedOn(page, '/')
-  const expanded = page.locator('#btnNewChat')
-  const rail = sidebar(page).locator('.sidebar-rail a').first()
-  const takesFocus = (control: typeof rail) => control.evaluate((el) => { (el as HTMLElement).focus(); return document.activeElement === el })
-  await expect(expanded).toBeHidden()
-  expect(await takesFocus(expanded)).toBe(false)
-  expect(await takesFocus(rail)).toBe(true)
+  await collapsedOn(page, '/skills')
+  const newChat = page.locator('#btnNewChat')
+  const chat = page.locator('aside.sidebar [data-panel="chat"]')
+  const logs = page.locator('aside.sidebar [data-panel="logs"]')
+  const takesFocus = (control: typeof chat) => control.evaluate((el) => { (el as HTMLElement).focus(); return document.activeElement === el })
+  await expect(newChat).toBeHidden()
+  expect(await takesFocus(newChat)).toBe(false)
+  expect(await takesFocus(chat)).toBe(true)
+  expect(await takesFocus(logs)).toBe(true)
 
   await page.locator('#btnSidebarEdgeToggle').click()
-  await expect(rail).toBeHidden()
-  expect(await takesFocus(rail)).toBe(false)
-  expect(await takesFocus(expanded)).toBe(true)
+  await expect(chat).toBeHidden()
+  await expect(logs).toBeHidden()
+  expect(await takesFocus(chat)).toBe(false)
+  expect(await takesFocus(logs)).toBe(false)
+  expect(await takesFocus(newChat)).toBe(true)
 })
 
 test('reduced motion toggles at once with no fade', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.goto('/')
   await settle(page)
-  const instant = (frames: Awaited<ReturnType<typeof framesOfToggle>>) => frames.filter((frame) => (frame.aside !== 300 && frame.aside !== 64) || frame.opacity !== 1)
+  const instant = (frames: Awaited<ReturnType<typeof framesOfToggle>>) => frames.filter((frame) => (frame.aside !== 300 && frame.aside !== 64) || frame.opacity !== (frame.aside === 64 ? 0 : 1))
   const collapsing = await framesOfToggle(page)
   expect(instant(collapsing)).toEqual([])
   expect(collapsing.at(-1)?.aside).toBe(64)
@@ -776,7 +794,7 @@ test('dragging the edge resizes the column and its content with the pointer, wit
   await page.mouse.down()
   await page.mouse.move(box.x + 103, box.y + 100)
   expect(await width(page, 'aside.sidebar')).toBe(400)
-  expect(await width(page, '.sidebar-content')).toBe(400)
+  expect(await width(page, '.sidebar-panel > *')).toBe(384)
   await page.mouse.up()
   expect(await stored(page, 'hermes-webui-sidebar-width')).toBe('400')
 })

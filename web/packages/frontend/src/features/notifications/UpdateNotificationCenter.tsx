@@ -10,6 +10,7 @@ import { isApiError } from '../../contracts/common'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { SIDEBAR_ROW } from '../../shell/nav'
+import { SidebarRowContent } from '../../shell/SidebarRowContent'
 import { dismissToast, removeToast, showRichToast, showToast, type ToastAction } from '../toast/toast'
 import { StatusIcon, UpdatingDialog, type UpdateDialogTarget } from './UpdatingDialog'
 import { ServerStoppedOverlay } from '../notices/ServerStoppedOverlay'
@@ -328,8 +329,7 @@ export function UpdateNotificationCenterButton({ placement }: { placement: 'side
     ? cn(SIDEBAR_ROW, 'sidebar-icon-row has-tooltip')
     : 'app-titlebar-notifications relative inline-flex size-11 shrink-0 items-center justify-center bg-transparent border-0 text-muted rounded-lg cursor-pointer [-webkit-app-region:no-drag] hover:bg-hover hover:text-text'
   return <button type="button" className={buttonClass} data-panel={sidebar ? 'update-notifications' : undefined} data-tooltip={sidebar ? m.update_notifications() : undefined} aria-label={m.update_notifications()} onClick={center.show}>
-    <Bell size={18} strokeWidth={1.5} aria-hidden="true" />
-    {sidebar && <span className="sidebar-row-label">{m.update_notifications_rail_label()}</span>}
+    {sidebar ? <SidebarRowContent icon={Bell} label={m.update_notifications_rail_label()} /> : <Bell size={18} strokeWidth={1.5} aria-hidden="true" />}
     {center.unread > 0 && <span className="absolute right-1.5 top-1.5 min-w-4 h-4 rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-accent-fg text-center" aria-label={m.update_notifications_unread({ count: center.unread })}>{center.unread > 9 ? '9+' : center.unread}</span>}
   </button>
 }
