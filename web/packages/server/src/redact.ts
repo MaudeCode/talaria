@@ -1463,13 +1463,15 @@ function redactComposedWords(text: string): string {
     // The leak check reads quoted spaces as spaces (prose apostrophes pair up across words); the replacement keeps them
     // inside the token, so a quoted value is masked whole.
     const plain = unit.replaceAll(WORD_SPACE, ' ')
-    const wanted = redactRules(plain)
+    // A composed command can keep quotes for its inner shell; inspect that strictly shorter reading too.
+    const redact = plain.length < span.length && plain.includes('://') && plain.includes('@') ? redactSensitive : redactRules
+    const wanted = redact(plain)
     if (wanted === plain) continue
     const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
     // Apply a composed flag's mask with its following value even when this span is safe in isolation: an outer header
     // rule may swallow the flag name before the full-text pass reaches that value.
     if (!flag && !revealsMore(plain, asWritten, wanted)) continue
-    out += text.slice(last, start) + redactRules(unit).replaceAll(WORD_SPACE, ' ')
+    out += text.slice(last, start) + redact(unit).replaceAll(WORD_SPACE, ' ')
     last = spanEnd
     if (flag) k += 1
   }

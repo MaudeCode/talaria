@@ -967,6 +967,8 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     [`{'command': 'curl https://example.com/search?q=user@example.com'}`, `{'command': 'curl https://example.com/search?q=user@example.com'}`],
   ],
   'v0.23 serialized shell URL credentials': [
+    [`sh -c 'curl https://"correcthorse42"@github.com'""`, 'sh -c curl https://***@github.com'],
+    [`sh -c ""'curl https://"correcthorse42"@github.com'`, 'sh -c curl https://***@github.com'],
     ...['>out', '<in'].map((redirect): [string, string] => [`sh -c 'curl https://"correcthorse42"@github.com'${redirect}`, `sh -c 'curl https://***@github.com'${redirect}`]),
     [`sh -c $'curl https://"correcthorse42"@github.com'`, "sh -c $'curl https://***@github.com'"],
     [String.raw`{"command":"curl https://\"correcthorse42\"@github.com...`, String.raw`{"command":"curl https://***@github.com...`],
