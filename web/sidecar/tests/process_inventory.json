@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_model_selection.py::test_real_provider_name_conflicts_refused_before_clients": {
+      "layer": "compatibility",
+      "reason": "Real Agent config expansion, disabled-record semantics and runtime/auxiliary provider resolution must refuse name collisions before client construction. A separate Agent interpreter isolates native imports; all homes, URLs and keys are synthetic and no inference is sent.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_imports_contract.py::test_agent_catalog_ships_a_reviewed_importer": {
       "layer": "compatibility",
       "reason": "Reads the selected Agent's real in-tree plugin catalog entry with its own interpreter, so a release that re-pins agent-importers fails even though the fast import matrix stubs admission. Offline, disposable home.",

@@ -538,7 +538,8 @@ export const AuxUsageSchema = z.object({ prompt_tokens: z.number().int().optiona
 export const AUX_METHODS = {
   /**
    * One auxiliary completion. TAL-258: `model` (with `provider`) asks that model itself, reasoning off and no tools, instead
-   * of the task's auxiliary route; `credential_missing` means it has no credential. `finish_reason` is the provider's, when known.
+   * of the task's auxiliary route; `credential_missing` means it has no credential. `provider_name_ambiguous` refuses
+   * conflicting provider records before client construction, unless the task owns both its key and URL. `finish_reason` is the provider's, when known.
    */
   'aux.complete': { params: ProfileHomeParams.extend({ task: z.string().min(1), messages: z.array(Loose).min(1), main_runtime: Loose.nullable().optional(), main_fallback: z.boolean().optional(), max_tokens: z.number().int().nullable().optional(), temperature: z.number().nullable().optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional() }), result: z.object({ model: z.string(), text: z.string(), usage: AuxUsageSchema.nullable(), finish_reason: z.string().nullable().default(null) }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('token'), data: z.object({ text: z.string() }) })]) },
   'aux.delegation': { params: ProfileHomeParams.extend({ config: Loose }), result: DelegationRegistrySchema },

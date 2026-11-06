@@ -232,6 +232,7 @@ const meteringUsage = (c: UsageCounters): Record<string, unknown> => ({
 export function classifyProviderError(errStr: string, opts: { silentFailure?: boolean | undefined; condition?: string | undefined; compressionExhausted?: boolean | undefined } = {}): ErrorClassification {
   const lower = errStr.toLowerCase()
   if (opts.compressionExhausted) return COMPRESSION_EXHAUSTED
+  if (opts.condition === 'provider_name_ambiguous') return { label: 'Request refused', type: 'provider_name_ambiguous', hint: '' }
   // TAL-798: the Agent's local llama.cpp provider has no key to add; its server is off or still starting.
   if (opts.condition === 'local_runtime_unavailable') return { label: 'Local model server unavailable', type: 'local_runtime_unavailable', hint: 'The local model server is off or still starting. Turn it on in Hermes Agent, or pick another model.' }
   if (opts.condition === 'credential_missing') return { label: 'Authentication failed', type: 'auth_mismatch', hint: 'The selected model may not be supported by your configured provider or your API key is invalid. Run `hermes model` in your terminal to update credentials, then restart the WebUI.' }

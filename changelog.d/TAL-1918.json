@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Conflicting provider names are refused before a chat or title request can use the wrong endpoint or credentials.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
