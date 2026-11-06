@@ -9,6 +9,7 @@
 # Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>
 
 set -euo pipefail
+zmodload zsh/datetime
 keyboard_only=false
 if [[ "${1:-}" == --keyboard-only ]]; then
     keyboard_only=true
@@ -19,10 +20,48 @@ simulator_id=$1
 scripts=${0:A:h}
 
 prepare_step() {
-    local name=$1 started=$SECONDS exit_status=0
+    local name=$1 started=$SECONDS exit_status=0 deadline=$(( EPOCHREALTIME + 60 ))
     shift
     print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name start elapsed=0s"
-    "$@" || exit_status=$?
+    if [[ "$name" == notifications ]]; then
+        # Hosted timing exceeded 60s here; bound bootstatus, restarts and probes together.
+        python3 - "$deadline" "$@" <<'PYTHON' || exit_status=$?
+import os
+import signal
+import subprocess
+import sys
+import time
+
+deadline = float(sys.argv[1])
+process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(signum, lambda received, _: sys.exit(128 + received))
+try:
+    try:
+        # Reserve the final second of the budget for helper/probe cleanup.
+        exit_status = process.wait(timeout=max(0, deadline - time.time() - 1))
+    except subprocess.TimeoutExpired:
+        print("notifications timed out (60-second budget including cleanup).", file=sys.stderr)
+        exit_status = 124
+finally:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=max(0, deadline - time.time()))
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+sys.exit(exit_status if exit_status >= 0 else 128 - exit_status)
+PYTHON
+    else
+        "$@" || exit_status=$?
+    fi
     print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name end elapsed=$(( SECONDS - started ))s"
     return "$exit_status"
 }

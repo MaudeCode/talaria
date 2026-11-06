@@ -119,12 +119,69 @@ class PreparationTests(unittest.TestCase):
                     self.assertRegex(output, r'Files finished gathering.*[0-9]+s')
                 self.assert_cleanup()
 
-    def test_prepare_step_timings_and_keyboard_only(self):
-        # Keep the real orchestration script; replace only its external step executables.
+    def copy_prepare_script(self):
         repo = self.root / 'scripts'
         repo.mkdir()
-        (repo / 'prepare-ui-simulator').write_bytes((SCRIPTS / 'prepare-ui-simulator').read_bytes())
-        (repo / 'prepare-ui-simulator').chmod(0o755)
+        script = repo / 'prepare-ui-simulator'
+        script.write_bytes((SCRIPTS / 'prepare-ui-simulator').read_bytes())
+        script.chmod(0o755)
+        return script
+
+    def test_notification_step_deadline_kills_descendants(self):
+        script = self.copy_prepare_script()
+        notifications = script.with_name('ready-simulator-notifications')
+        notifications.write_text('\n'.join([
+            '#!/usr/bin/env python3',
+            'import os, pathlib, signal, subprocess, time',
+            'state = pathlib.Path(os.environ["PREPARE_TEST_STATE"])',
+            '(state / "notifications.pid").write_text(str(os.getpid()))',
+            'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
+            'child = subprocess.Popen(["sleep", "300"])',
+            '(state / "probe.pid").write_text(str(child.pid))',
+            'while True: time.sleep(1)',
+        ]) + '\n')
+        notifications.chmod(0o755)
+        process = subprocess.Popen([str(script), 'synthetic-simulator'], env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+        start = time.monotonic()
+        try:
+            try:
+                output, _ = process.communicate(timeout=63)
+            except subprocess.TimeoutExpired:
+                self.fail('Notification preparation exceeded its 60-second wall-clock bound')
+            self.assertEqual(process.returncode, 124, output)
+            self.assertLess(time.monotonic() - start, 63, output)
+            self.assertGreaterEqual(time.monotonic() - start, 59, output)
+            self.assertRegex(output, r'notifications end elapsed=[0-9]+s')
+            self.assertIn('notifications timed out (60-second budget including cleanup)', output)
+            self.assertNotIn('photo start', output)
+            probe_pid = int((self.root / 'probe.pid').read_text())
+            # An orphan can briefly be a zombie while init reaps it on Linux.
+            reap_deadline = time.monotonic() + 2
+            while True:
+                try:
+                    os.kill(probe_pid, 0)
+                except ProcessLookupError:
+                    break
+                self.assertLess(time.monotonic(), reap_deadline, 'A notification probe survived its deadline')
+                time.sleep(.01)
+        finally:
+            owned_groups = [process.pid]
+            helper_pid = self.root / 'notifications.pid'
+            if helper_pid.exists():
+                owned_groups.append(int(helper_pid.read_text()))
+            for group in owned_groups:
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.communicate()
+
+    def test_prepare_step_timings_and_keyboard_only(self):
+        # Keep the real orchestration script; replace only its external step executables.
+        script = self.copy_prepare_script()
+        repo = script.parent
         for name in ('ready-simulator-notifications', 'seed-simulator-photo', 'ready-simulator-documents'):
             step = repo / name
             step.write_text('#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$PREPARE_TEST_STATE/steps"\nexit "${PREPARE_STEP_EXIT:-0}"\n')
