@@ -2568,6 +2568,7 @@ describe('chat turns through the sidecar', () => {
     const bg = await json(res)
     expect(bg.session_id).not.toBe(sid)
     await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    await s.deps.turns.finished(String(bg.stream_id))
     expect(await backgroundTask(s, sid, bg.task_id)).toMatchObject({ record: { kind: 'background_command', status: 'completed', title: 'summarize repo' }, result: 'answer to summarize repo' })
     expect(String(bg.task_id)).toMatch(/^[0-9a-f]{8}$/)
     // The hidden bg session file is removed once the task completes; a failed run still completes the task.
@@ -2575,7 +2576,7 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
     const failed = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed' }))
     await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
-    await new Promise((r) => setTimeout(r, 50))
+    await s.deps.turns.finished(String(failed.stream_id))
     expect(await backgroundTask(s, sid, failed.task_id)).toMatchObject({ record: { status: 'failed', title: 'doomed' }, result: '(background task failed)' })
     // The failure cleanup runs after the error writeback, so the hidden session does not get re-saved into the sidebar.
     expect(existsSync(sessionPath(s.deps.sessionStore, String(failed.session_id)))).toBe(false)
@@ -2584,7 +2585,7 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }], { status: 'error', error: 'model refused', final_response: '', token_sent: false }))
     const inBand = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed too' }))
     await s.sse(`/api/chat/stream?stream_id=${String(inBand.stream_id)}&replay=1`, (f) => f.event === 'apperror')
-    await new Promise((r) => setTimeout(r, 50))
+    await s.deps.turns.finished(String(inBand.stream_id))
     expect(await backgroundTask(s, sid, inBand.task_id)).toMatchObject({ record: { status: 'failed', title: 'doomed too' }, result: '(background task failed)' })
     expect(existsSync(sessionPath(s.deps.sessionStore, String(inBand.session_id)))).toBe(false)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${str(params.user_message).split('\n').pop() ?? ''}` }]))
@@ -2595,8 +2596,8 @@ describe('chat turns through the sidecar', () => {
     expect(btw.parent_session_id).toBe(sid)
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(btw.stream_id)}&replay=1`, (f) => f.event === 'done')
     expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ ephemeral: true, answer: 'answer to what time is it' })
-    // The turn publishes `done` before it deletes the clone, so a request racing the frame may still find it briefly.
-    await expect.poll(async () => (await s.get(`/api/session?session_id=${String(btw.session_id)}`)).status, { timeout: 2000 }).toBe(404)
+    await s.deps.turns.finished(String(btw.stream_id))
+    expect((await s.get(`/api/session?session_id=${String(btw.session_id)}`)).status).toBe(404)
     expect(await json(await post(s, '/api/bg-task-complete-ack', { session_id: sid, task_id: 't1' }))).toEqual({ ok: true, session_id: sid, task_id: 't1', noop: true })
   })
 

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "More database credentials and private key formats are masked in conversations, tool details, exports, and public shares.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "JSON-LD content stays readable when secrets are masked.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

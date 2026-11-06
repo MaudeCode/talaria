@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { McpServerSchema } from '@maudecode/talaria-web-contracts'
-import { JoplinError, joplinSearch, McpService } from './mcp.js'
+import { JoplinError, joplinSearch, McpService, serverSummary } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { McpHealthProber } from './mcp-health.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
@@ -321,4 +321,14 @@ describe('MCP events opt-in and subscription health (TAL-1510)', () => {
     await service.update('/profiles/a', 'events', { events: false })
     expect(cfg.mcp_servers).toEqual({ events: { command: 'events-mcp' }, plain: { command: 'plain-mcp' } })
   })
+})
+
+// Inventory keeps its editable mask so submitting an unchanged secret preserves the stored value.
+it('masks shared credential names in MCP headers and environment inventory', () => {
+  const names = ['DB_PASS', 'DB_PW', 'MYSQL_PWD', 'SSHPASS', 'Authorization', 'API_KEY', 'JOPLIN_TOKEN', 'client_secret', 'credential', 'monkey', 'oauth']
+  const secrets = Object.fromEntries(names.map((key) => [key, 'synthetic-secret']))
+  for (const cfg of [{ command: 'mcp', env: { ...secrets, PWD: '/home/app' } }, { url: 'https://x.test', headers: secrets }]) {
+    const row = serverSummary('mcp', cfg, null)
+    expect(row.env ?? row.headers).toEqual({ ...Object.fromEntries(names.map((key) => [key, '••••••'])), ...('env' in cfg ? { PWD: '/home/app' } : {}) })
+  }
 })

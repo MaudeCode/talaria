@@ -866,6 +866,141 @@ const CONTEXT7_KEY = `ctx7sk-${'0'.repeat(8)}-${'0'.repeat(4)}-${'0'.repeat(4)}-
 /** The shape `secrets.token_urlsafe(32)` prints: 43 characters. */
 const WEBAPP_CREDENTIAL = `Zq7_${'k3Lm'.repeat(9)}x9-`
 const AGENT_PARITY: Record<string, [string, string][]> = {
+  'v0.23 glued credential names': [
+    ['PGPASSWORD=s3cretpw psql -h db', 'PGPASSWORD=*** psql -h db'],
+    ['MYSQL_PWD=s3cretpw mysql', 'MYSQL_PWD=*** mysql'],
+    ['SSHPASS=s3cretpw sshpass -e host', 'SSHPASS=*** sshpass -e host'],
+    ['pgpassword="two words" next', 'pgpassword="***" next'],
+    ['PWD=/home/app', 'PWD=/home/app'],
+    ['PGPASSFILE=', 'PGPASSFILE='],
+    ['PGPASSFILE=/home/app/.pgpass', 'PGPASSFILE=/home/app/.pgpass'],
+    ['passwordless: true', 'passwordless: true'],
+  ],
+  'v0.23 strong credential name casing': [
+    ['DBPASSWORD=s3cretpw', 'DBPASSWORD=***'],
+    ['ROOTPASSWD=s3cretpw', 'ROOTPASSWD=***'],
+    ['SECRETKEY=s3cretpw', 'SECRETKEY=***'],
+    ['MYSECRETKEY=s3cretpw', 'MYSECRETKEY=***'],
+  ],
+  'v0.23 qualified and affixed keys': [
+    ...['signing_key', 'encryption_key', 'encryptKey', 'master_key', 'hmac_key', 'symmetric_key', 'client-key-data', 'AccountKey', 'SharedAccessKey', 'dbpassword', 'rootpasswd', 'mySigningKey', 'my_api_key_value', 'secret_value', 'MY_API_KEY_B64', 'MYSECRETKEY'].map((key): [string, string] => [`{"${key}":"s3cretpw"}`, `{"${key}":"***"}`]),
+  ],
+  'v0.23 connection strings preserve shell value boundaries': [
+    [String.raw`host=db; password="two\" secret words"; database=x`, 'host=db; password=***; database=x'],
+    [String.raw`host=db; password='two words'\ and\ more; database=x`, 'host=db; password=***; database=x'],
+    [String.raw`host=db; password=two\;secret; database=x`, 'host=db; password=***; database=x'],
+    [String.raw`host=db; PWD="two\" secret words"; database=x`, 'host=db; PWD=***; database=x'],
+  ],
+  'v0.23 multiline connection strings': [
+    ["host=db; password=$(printf 'two\nsecret words'); database=x", 'host=db; password=***'],
+    ['host=db; PWD="two\nsecret words"; database=x', 'host=db; PWD="***"; database=x'],
+    ["host=db; PWD=$(printf 'two\nsecret words'); database=x", 'host=db; PWD=***'],
+  ],
+  'v0.23 escaped Basic pairs': [
+    [String.raw`proxy_password=user:hello\ world`, 'proxy_password=***'],
+    [String.raw`MY_PROXY_BASIC=user:hello\ world`, 'MY_PROXY_BASIC=user:***'],
+    [String.raw`MY_PROXY_BASIC="user:hello\" secret"`, 'MY_PROXY_BASIC="user:***"'],
+    [String.raw`proxy_password="user:hello\" secret"`, 'proxy_password=***'],
+    [String.raw`MY_PROXY_BASIC=user:hello\;secret`, 'MY_PROXY_BASIC=user:***'],
+  ],
+  'v0.23 connection strings': [
+    ['Driver=ODBC;PWD={s3;cr}}et};Server=db', 'Driver=ODBC;PWD={***};Server=db'],
+    ['Host=db;Password="two;words";Database=x', 'Host=db;Password="***";Database=x'],
+    ["host=db password='two words' dbname=x", "host=db password='***' dbname=x"],
+    ['host=db password=two\\ words dbname=x', 'host=db password=*** dbname=x'],
+    ['AccountKey=s3cretpw;Endpoint=x', 'AccountKey=***;Endpoint=x'],
+    ['SharedAccessKey=s3cretpw;Endpoint=x', 'SharedAccessKey=***;Endpoint=x'],
+    ['https://x.test/?AccountKey=s3cretpw&x=1', 'https://x.test/?AccountKey=***&x=1'],
+    ['https://x.test/?sv=1&sig=s3cretpw&x=1', 'https://x.test/?sv=1&sig=***&x=1'],
+    ['SharedAccessSignature=sv=1&sig=s3cretpw;Endpoint=x', 'SharedAccessSignature=***;Endpoint=x'],
+    ['https://x.test/?SharedAccessSignature=sv=1&sig=s3cretpw&foo=bar', 'https://x.test/?SharedAccessSignature=***&foo=bar'],
+    ['Server=db;PWD=\"two\"\"words\";Database=x', 'Server=db;PWD=\"***\";Database=x'],
+    ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
+    ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
+  ],
+  'v0.23 raw shell URL readings': [
+    [String.raw`curl 'https://abcde\x40s3cretpw@github.com'`, "curl '***'"],
+    [String.raw`curl 'https://abcde\u0040s3cretpw@github.com'`, "curl '***'"],
+    [String.raw`curl 'https://abcde\x2fs3cretpw@github.com'`, "curl '***'"],
+    [String.raw`curl "https://abcde\x40s3cretpw@github.com"`, 'curl "***"'],
+    [String.raw`{'command': 'curl https://abcde\\x40s3cretpw@github.com'}`, "{'command': 'curl https://***@github.com'}"],
+    [String.raw`curl 'https://example.com/search?q=abcde\x40value&mail=user@example.com'`, String.raw`curl 'https://example.com/search?q=abcde\x40value&mail=user@example.com'`],
+    [String.raw`echo '{"@context":"https://schema.org","@type":"\u0041"}'`, String.raw`echo '{"@context":"https://schema.org","@type":"\u0041"}'`],
+  ],
+  'v0.23 credential arguments before inner rewrites': [
+    [`sh -c 'curl --pass'word' "https://"TOKEN123456789"@github.com secret words"'`, "sh -c 'curl --pass'word' ***'"],
+    [JSON.stringify({ command: 'curl --password "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'curl --password ***' })],
+    [JSON.stringify({ command: 'curl -u "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'curl -u "https:***"' })],
+    [JSON.stringify({ command: 'docker login -p "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'docker login -p ***' })],
+    ['SharedAccessSignature=${VALUE:-hello world} next', 'SharedAccessSignature=*** next'],
+    ['SharedAccessSignature=$(printf hello world) next', 'SharedAccessSignature=***'],
+    [JSON.stringify({ password: 'two" secret words' }), JSON.stringify({ password: '***' })],
+    ['curl --password "https://"TOKEN123456789"@github.com secret words"', 'curl --password ***'],
+    ['curl -u "https://"TOKEN123456789"@github.com secret words"', 'curl -u "https:***"'],
+    ['docker login -p "https://"TOKEN123456789"@github.com secret words"', 'docker login -p ***'],
+    [String.raw`SharedAccessSignature=hello\ world`, 'SharedAccessSignature=***'],
+    [String.raw`SharedAccessSignature=sv=1\&sig=hello\ world`, 'SharedAccessSignature=***'],
+    ['SSHPASS="https://"TOKEN123456789"@github.com secret words"', 'SSHPASS=***'],
+    ['AccountKey=-----BEGIN PRIVATE KEY-----\nsynthetic-private-42\n-----END PRIVATE KEY-----', 'AccountKey=***'],
+    [JSON.stringify({ password: 'https://"TOKEN123456789"@github.com secret words' }), JSON.stringify({ password: '***' })],
+  ],
+  'v0.23 multiline shell groups': [
+    ["{ echo ok\ncurl --'password' 's3cretpw'\n}", '{ echo ok\ncurl --password ***\n}'],
+    ["( echo ok\ncurl --'password' 's3cretpw'\n)", '( echo ok\ncurl --password ***\n)'],
+    ['{ echo ok\ncurl https://cor"recthorse42"@github.com\n}', '{ echo ok\ncurl https://***@github.com\n}'],
+  ],
+  'v0.23 standalone and shell-quoted serializations': [
+    [JSON.stringify('curl https://"correcthorse42"@github.com'), JSON.stringify('curl https://***@github.com')],
+    [`echo '${JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' })}'`, "echo '***'"],
+    [`echo ${JSON.stringify(JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' }))}`, `echo ${JSON.stringify(JSON.stringify({ command: 'curl https://***@github.com' }))}`],
+    [`don't log ${JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' })}`, `don't log ${JSON.stringify({ command: 'curl https://***@github.com' })}`],
+    [`'curl https://"correcthorse42"@github.com'`, "'curl https://***@github.com'"],
+    [`echo '{"@context":"https://schema.org","@type":"X"}'`, `echo '{"@context":"https://schema.org","@type":"X"}'`],
+  ],
+  'v0.23 Python-repr URL credentials': [
+    [String.raw`{'command': 'curl https://"\cA\cB\cC"@github.com'}`, `{'command': 'curl https://***@github.com'}`],
+    [`{'command': 'curl https://"correcthorse42"@github.com'}`, `{'command': 'curl https://***@github.com'}`],
+    [String.raw`{'command': 'curl https://\'correcthorse42\'@github.com "note"'}`, `{'command': 'curl https://***@github.com "note"'}`],
+    [String.raw`{'command': 'echo \'note\'; curl https://"correcthorse42"@github.com'}`, String.raw`{'command': 'echo \'note\'; curl https://***@github.com'}`],
+    [String.raw`{'command': 'echo note\n curl https://"correcthorse42"@github.com'}`, String.raw`{'command': 'echo note\n curl https://***@github.com'}`],
+    [`{'payload': {'command': 'curl https://"correcthorse42"@github.com'}}`, `{'payload': {'command': 'curl https://***@github.com'}}`],
+    [`{'command': 'curl https://example.com/search?q=user@example.com'}`, `{'command': 'curl https://example.com/search?q=user@example.com'}`],
+  ],
+  'v0.23 serialized shell URL credentials': [
+    [`sh -c 'curl https://"correcthorse42"@github.com'""`, 'sh -c curl https://***@github.com'],
+    [`sh -c ""'curl https://"correcthorse42"@github.com'`, 'sh -c curl https://***@github.com'],
+    ...['>out', '<in'].map((redirect): [string, string] => [`sh -c 'curl https://"correcthorse42"@github.com'${redirect}`, `sh -c 'curl https://***@github.com'${redirect}`]),
+    [`sh -c $'curl https://"correcthorse42"@github.com'`, "sh -c $'curl https://***@github.com'"],
+    [String.raw`{"command":"curl https://\"correcthorse42\"@github.com...`, String.raw`{"command":"curl https://***@github.com...`],
+    [JSON.stringify({ command: "curl https://'correcthorse42'@github.com" }), JSON.stringify({ command: 'curl https://***@github.com' })],
+    [JSON.stringify({ command: 'curl https://"correcthorse42"@github.com' }), JSON.stringify({ command: 'curl https://***@github.com' })],
+    [JSON.stringify({ command: "curl https://cor'recthorse'42@github.com" }), JSON.stringify({ command: 'curl https://***@github.com' })],
+    [JSON.stringify({ output: JSON.stringify({ command: "curl https://'correcthorse42'@github.com" }) }), JSON.stringify({ output: JSON.stringify({ command: 'curl https://***@github.com' }) })],
+    [`INFO: ${JSON.stringify({ command: "curl https://'correcthorse42'@github.com" })}`, `INFO: ${JSON.stringify({ command: 'curl https://***@github.com' })}`],
+    [JSON.stringify({ command: 'curl https://example.com/search?q=user@example.com' }), JSON.stringify({ command: 'curl https://example.com/search?q=user@example.com' })],
+  ],
+  'v0.23 private key formats': [
+    ['-----BEGIN PGP PRIVATE KEY BLOCK-----\nsynthetic\n-----END PGP PRIVATE KEY BLOCK-----', '[REDACTED PRIVATE KEY]'],
+    [`AGE-SECRET-KEY-1${'A'.repeat(58)}`, '[REDACTED PRIVATE KEY]'],
+    [Buffer.from('-----BEGIN PRIVATE KEY-----\nsynthetic-key-material\n-----END PRIVATE KEY-----').toString('base64'), '[REDACTED PRIVATE KEY]'],
+    ['Private-Lines: 1\nQUJDREVGR0hJSktMTU5PUA==\nPrivate-MAC: abc', 'Private-Lines: 1\n[REDACTED PRIVATE KEY]\nPrivate-MAC: abc'],
+    ['Private-Lines: 1\\r\\n  4|QUJDREVGR0hJSktMTU5PUA==\\r\\nPrivate-MAC: abc', 'Private-Lines: 1\\r\\n[REDACTED PRIVATE KEY]\\r\\nPrivate-MAC: abc'],
+    [Buffer.from('-----BEGIN CERTIFICATE-----\nsynthetic-public-certificate\n-----END CERTIFICATE-----').toString('base64'), Buffer.from('-----BEGIN CERTIFICATE-----\nsynthetic-public-certificate\n-----END CERTIFICATE-----').toString('base64')],
+  ],
+  'v0.23 separator-glued tokens and network paths': [
+    [`backup-sk-${'A'.repeat(20)}`, 'backup-sk-AAA...AAAA'],
+    ['backup-sk-learn.txt', 'backup-sk-learn.txt'],
+    ['mount -t cifs //user:pw@host/share', 'mount -t cifs //user:***@host/share'],
+    ['MY_PROXY_BASIC=user:s3cretpw', 'MY_PROXY_BASIC=user:***'],
+    ['MY_LOGIN=user:pw', 'MY_LOGIN=user:***'],
+    ['MY_AUTH=user:pw', 'MY_AUTH=***'],
+    ['BASIC_AUTH=user:pw', 'BASIC_AUTH=***'],
+    ['MY_PROXY_BASIC="user:twoWords42"', 'MY_PROXY_BASIC="user:***"'],
+    ['IMAGE=redis:7-alpine', 'IMAGE=redis:7-alpine'],
+    ['{"@context":"https://schema.org","@type":"X"}', '{"@context":"https://schema.org","@type":"X"}'],
+    ['https://TOKEN@github.com', 'https://***@github.com'],
+    ['https://abcdef***@github.com', 'https://***@github.com'],
+  ],
   'env names ending in _KEY, _PASS or _PW': [
     ['OPENAI_KEY=xyzzyplugh1234567890abcd', 'OPENAI_KEY=xyzzyp...abcd'],
     ['MYSQL_PASS=ghi789', 'MYSQL_PASS=***'],
@@ -954,10 +1089,30 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
 }
 
 describe('Agent redactor parity', () => {
+  it.each(['complete', 'truncated'])('v0.23 masks Python-repr non-string snapshots when %s', (shape) => {
+    const host = shape === 'complete' ? 'github.com' : 'h'.repeat(200)
+    const frame = publicToolFrame({ name: 'search', args: { query: { command: `curl https://"correcthorse42"@${host}` } } }, true)
+    expect(frame.args).toEqual({ query: { command: `curl https://***@${host}` } })
+    expect(frame.target).toContain('curl https://***@')
+    expect(frame.target).not.toContain('correcthorse42')
+  })
+  it.each(['signing_key', 'encryption_key', 'master_key', 'hmac_key', 'PGPASSWORD', 'MYSQL_PWD', 'SSHPASS', 'AccountKey', 'dbpassword', 'MYSECRETKEY'])('masks object credential %s in live and persisted tool arguments', (key) => {
+    const call = { name: 'terminal', args: { [key]: 's3cretpw', passwordless: true } }
+    expect(publicToolFrame(call, true).args).toEqual({ [key]: '***', passwordless: true })
+    const row = redactSessionData({ messages: [{ role: 'assistant', tool_calls: [call] }] }, true)
+    expect(JSON.parse(JSON.stringify(row)) as unknown).toMatchObject({ messages: [{ tool_calls: [{ args: { [key]: '***', passwordless: true } }] }] })
+  })
   for (const [family, cases] of Object.entries(AGENT_PARITY)) {
     it.each(cases)(`masks ${family}: %j`, (input, expected) => {
       expect(redactText(input, true)).toBe(expected)
       expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
+      if (family.startsWith('v0.23')) {
+        const frame = publicToolFrame({ name: 'terminal', args: { command: input } }, true)
+        expect(frame.args).toEqual({ command: expected })
+        expect(frame.target).toBe(expected.trim().split('\n')[0]!.replace(/\s+/g, ' ').trim().slice(0, 120))
+        const row = redactSessionData({ messages: [{ role: 'assistant', content: input }] }, true)
+        expect(JSON.parse(JSON.stringify(row)) as unknown).toMatchObject({ messages: [{ content: expected }] })
+      }
     })
   }
   it('masks a lowercase env name beside a URL, and a prefix split by a control character, through the prefilter', () => {

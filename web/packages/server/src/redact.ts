@@ -21,7 +21,7 @@ const assignmentScan = channel('talaria.redaction.assignment-scan')
  */
 
 const CRED_RE = new RegExp(
-  '(?<![A-Za-z0-9_-])(' +
+  '(?<![A-Za-z0-9])(' +
     'sk-[A-Za-z0-9_-]{10,}' +
     '|ctx7sk-[A-Za-z0-9_-]{10,}' +
     '|ghp_[A-Za-z0-9]{10,}' +
@@ -90,6 +90,8 @@ const WEBAPP_LINK_CREDENTIAL_RE = /((?<![A-Za-z0-9_-])hermes-session=|\/webapp\/
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
 const QUOTED = String.raw`\$?'[^']*'|\$?"(?:[^"\\]|\\[\s\S])*"|\\"(?:[^"\\]|\\[^"])*\\"`
+const SHELL_WORD_BOUNDARY_RE = /[\s&;|<>()]/
+const SHELL_COMPOSITION_RE = /["'\\$`]/
 /** A `"` / `'` not escaped by an odd run of backslashes. */
 const UNESCAPED_QUOTE_RE = [/(?:^|[^\\])(?:\\\\)*"/, /(?:^|[^\\])(?:\\\\)*'/] as const
 /** A quoted value's delimiters and content, or null for a bare value. */
@@ -116,7 +118,7 @@ const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?
  * (`${SCHEME}bob:pw@host`). The password runs from the first `:` to the `@`, colons included (`bob:hunter:2@`);
  * `git@host:org/repo` has no password before its `@`.
  */
-const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\]+)(?=@[^\s@/'"\\])/g
+const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])((?:\/\/)?[A-Za-z0-9._%+-]+:)([^\s@/'"\\]+)(?=@[^\s@/'"\\])/g
 /** A `key=value` whose key is percent-encoded (`api%5Fkey=`): the destination decodes the key once, so it is checked decoded. */
 const PERCENT_KEY_RE = /(?<![A-Za-z0-9_.%-])((?=[A-Za-z0-9_.%-]*%[0-9A-Fa-f]{2})[A-Za-z0-9_.%-]+=)([^&#\s"'<>]*)/g
 const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
@@ -133,7 +135,7 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
  * identifier, which must hold a keyword, so the scan stays linear on long runs (`PWPWPW…`). The value is the shell word
  * after `=`, read by `shellWordEnd` (quotes, escapes, `$'…'`).
  */
-const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])((?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
+const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])(PGPASSWORD|MYSQL_PWD|SSHPASS|(?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
 /** The prefilter's view of `ENV_SUFFIX_RE`. */
 const ENV_SUFFIX_TEST_RE = new RegExp(ENV_SUFFIX_RE.source)
 /**
@@ -150,8 +152,9 @@ const ENV_STRONG_NAME_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session
  * The Agent's env-assignment gate: a name holding a whole keyword whose value is a credential, because the name is strong
  * or the value opaque (`GITHUB_TOKEN=abc` and `MAX_TOKENS=100` stay). Env lookups (`os.getenv(…)`) name a variable.
  */
+const GLUED_CREDENTIAL_NAME_RE = /^(?:PGPASSWORD|MYSQL_PWD|SSHPASS)$/i
 const isEnvCredential = (key: string, value: string): boolean =>
-  !/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_KEYWORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value))
+  GLUED_CREDENTIAL_NAME_RE.test(key) || (!/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_KEYWORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value)))
 /** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
 function looksOpaque(value: string): boolean {
   if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
@@ -165,11 +168,14 @@ function looksOpaque(value: string): boolean {
  */
 const URL_USERINFO_RE = /(\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
+const CRED_QUALIFIED_KEY_NAME = String.raw`(?:private|access|secret|session|signing|encryption|encrypt|master|hmac|symmetric|account|shared[_-]?access)[_-]?key`
+const CRED_VALUE_SUFFIX = String.raw`(?:_(?:value|data|b64|base64))?`
+const CRED_STRONG_KEY_END_RE = new RegExp(String.raw`(?:password|passwd|${CRED_QUALIFIED_KEY_NAME})${CRED_VALUE_SUFFIX}$`, 'i')
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|${CRED_QUALIFIED_KEY_NAME}|client[_-]?key[_-]?data|shared[_-]?access[_-]?signature|mysql_pwd|sshpass|sig|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
-const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
+const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}${CRED_VALUE_SUFFIX}$`, 'i')
 /**
  * A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`),
  * and a JSON `\uXXXX` escape decoded as a JSON parser does (`"pass\u0077ord"` → `password`).
@@ -181,8 +187,12 @@ const dequote = (text: string): string => text.replace(/\\\r?\n/g, '').replace(/
  * (`--pass'word'`)
  * (`COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY`, `companyProdEuAwsSessionToken`).
  */
-function isCredentialKey(key: string): boolean {
+export function isCredentialKey(key: string, inventory = false): boolean {
+  // MCP historically masks substring names too; keep its editable-mask contract while sharing credential families.
+  if (inventory && (/auth|token|key|secret|password|credential/i.test(key) || ENV_STRONG_NAME_RE.test(key))) return true
+  if (GLUED_CREDENTIAL_NAME_RE.test(dequote(key))) return true
   return dequote(key).split(/[.:/[\]]/).some((segment) => {
+    if (CRED_STRONG_KEY_END_RE.test(segment)) return true
     const words = segment.replace(/^-+/, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
     for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
     return false
@@ -234,10 +244,10 @@ const TELEGRAM_TOKEN_RE = /(bot)?(?<!\d)(\d{8,}):([-A-Za-z0-9_]{30,})/g
 /** An E.164 phone number, masked to its first and last digits; never inside a word or encoded data (`ab+1234567`). */
 const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
 /**
- * A bare token as URL userinfo (`https://TOKEN@github.com`, `ssh://…@`): no `user:` part, at least 8 characters. Round-trip
+ * A bare token as URL userinfo (`https://TOKEN@github.com`, `ssh://…@`): no `user:` part, at least 5 characters. Round-trip
  * URLs carry tokens in the query, so a bare userinfo credential is never one.
  */
-const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
+const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#"']{5,})(?=@\S)/gi
 /** C0, DEL, C1 and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
@@ -289,7 +299,7 @@ const PAYLOAD_RUN_CAP = 65_536
  */
 const TOKEN_TEST_RE = new RegExp(`${CRED_RE.source}|${JWT_RE.source}`)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
-const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
+const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
 const JWT_RUN_SOURCE = JWT_RE.source.replace(/^\\b/, '')
 /** A credential's or JWT's prefix and body from a position, without its boundaries. */
 const TOKEN_RUN_RE = new RegExp(`${CRED_RUN_RE.source}|${JWT_RUN_SOURCE}`, 'y')
@@ -303,12 +313,22 @@ const TOKEN_PREFIX_RE = new RegExp(`${CRED_START_RE.source.replace(/\{\d+,?\}/g,
 const TOKEN_PREFIX_RUN_RE = new RegExp(`${CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}')}|eyJ`, 'y')
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
+const B64_PEM_RE = /LS0tLS1CRUdJTi[A-Za-z0-9+/=]{60,}/g
+const AGE_KEY_RE = /AGE-SECRET-KEY-1[0-9A-Z]{20,}/g
+const PPK_EOL = String.raw`(?:\r?\n|\\r\\n|\\n)`
+const PPK_PRIVATE_RE = new RegExp(String.raw`(?<![\w-])(Private-Lines:[ \t]*[0-9]+[ \t]*(${PPK_EOL}))(?:[ \t]*(?:[0-9]+[|:\t][ \t]*)?[A-Za-z0-9+/=]{16,}[ \t]*(?:${PPK_EOL}|$))+`, 'g')
+const BASIC_PAIR_NAME_RE = /auth|basic|cred|login|proxy|userpass|userinfo/i
+const CONNSTR_KEY_RE = /(?<![^\s;"'])(?:password|pwd)[ \t]*=[ \t]*/gi
+const CONNSTR_KEY_TEST_RE = new RegExp(CONNSTR_KEY_RE.source, 'i')
+const CONNSTR_COMPANION_RE = /(?<![^\s;"'])(?:host|server|data\s+source|address|addr|network\s+address|user\s*id|uid|user(?:name)?|database|dbname|hostaddr|initial\s+catalog|port)[ \t]*=/i
+const CONNSTR_SEMICOLON_RE = /;[ \t]*(?:host|server|database|dbname|user(?:name)?|uid|pwd|password|driver|encrypt|port|sslmode|data\s+source)[ \t]*=/i
+const SAS_RE = /(?<![^;,?&'"\s])(SharedAccessSignature=)([^;\s'"),`|]+)/gi
 const PEM_OPENER = '-----BEGIN'
 /**
  * A private key through its end marker (captured) or, when that is missing (a display cap cut it off), to the end of the
  * text.
  */
-const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----(?:[\s\S]*?(-----END[A-Z ]*PRIVATE KEY-----)|[\s\S]*$)/g
+const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY(?: BLOCK)?-----(?:[\s\S]*?(-----END[A-Z ]*PRIVATE KEY(?: BLOCK)?-----)|[\s\S]*$)/g
 /** `PRIVKEY_RE` after its opener, from a position. */
 const PRIVKEY_REST_RE = new RegExp(PRIVKEY_RE.source.slice(PEM_OPENER.length), 'y')
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -515,6 +535,8 @@ function payloadRunSpan(text: string, start: number): [[number, number, string] 
  * the end of the text only when no view closes one there (`-----END PRI\x1b[1mVATE KEY-----`).
  */
 function privateKeySpans(text: string): [number, number, string][] {
+  // Split views only remove bytes; a PEM opener still requires a literal hyphen.
+  if (!text.includes('-')) return []
   const openers = crossPayloadPrefixStarts(text).filter(([, , marker]) => marker === PEM_OPENER).sort((a, b) => a[1] - b[1])
   const closed: [number, number, string][] = []
   const open: [number, number, string][] = []
@@ -664,7 +686,7 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     // The word goes on past the enclosing quote when an adjacent piece follows (`'--password=foo'bar`).
     // An empty continuation (`"…", "x"`: JSON structure) leaves the word, and the enclosing quote, at the close.
     const next = text[close + 1] ?? ''
-    const after = next && !/[\s&;|<>()]/.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
+    const after = next && !SHELL_WORD_BOUNDARY_RE.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
     return after === close + 1 ? close : after
   }
   let depth = 0
@@ -725,13 +747,16 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
       if (depth === 0) return i
     } else if (c === '\n') return i
     // Shell metacharacters end a word outside a container.
-    else if (depth === 0 && /[\s&;|<>()]/.test(c)) return i
+    else if (depth === 0 && SHELL_WORD_BOUNDARY_RE.test(c)) return i
     // `,` `]` `}` inside a bare word are part of it (`correct]horse`); before a space, quote or the end they are structure.
     else if (depth === 0 && /[,\]}]/.test(c) && !/^[^\s,\]})"'\\]/.test(text[i + 1] ?? '')) return i
     else i += 1
   }
   return Math.min(i, text.length)
 }
+
+const isProseApostrophe = (text: string, at: number): boolean =>
+  text[at] === "'" && /\p{L}/u.test(text[at - 1] ?? '') && /\p{L}/u.test(text[at + 1] ?? '')
 
 /**
  * The shell quote open at each position, read left to right once: `advance(index)` returns the quote (`'` or `"`) that
@@ -746,7 +771,7 @@ function quoteTracker(text: string): (index: number) => string {
       const c = text[pos]
       if (c === '\\' && state !== "'") escaped = pos += 1
       // An apostrophe between two letters is prose (`don't`), not a quote.
-      else if (c === "'" && /\p{L}/u.test(text[pos - 1] ?? '') && /\p{L}/u.test(text[pos + 1] ?? '')) continue
+      else if (isProseApostrophe(text, pos)) continue
       // `$'…'` is ANSI-C quoted: a backslash inside escapes the next character, `\'` included.
       else if (state === '' && c === "'" && text[pos - 1] === '$' && escaped !== pos - 1) state = "$'"
       else if (state === '' && (c === "'" || c === '"')) state = c
@@ -797,8 +822,61 @@ function redactEnvSuffixes(text: string): string {
   return out + text.slice(last)
 }
 
+/** Connection grammars are selected per line; shell value boundaries always use the complete text. */
+function redactConnectionStrings(text: string): string {
+  if (!CONNSTR_KEY_TEST_RE.test(text)) return text
+  const closeOf = enclosingClose(text)
+  const quoteAt = quoteTracker(text)
+  let out = ''
+  let last = 0
+  let lineEnd = -1
+  let companion = false
+  let semicolon = false
+  CONNSTR_KEY_RE.lastIndex = 0
+  for (let m = CONNSTR_KEY_RE.exec(text); m; m = CONNSTR_KEY_RE.exec(text)) {
+    if (m.index >= lineEnd) {
+      const lineStart = text.lastIndexOf('\n', m.index) + 1
+      const nextLine = text.indexOf('\n', m.index)
+      lineEnd = nextLine === -1 ? text.length : nextLine
+      const line = text.slice(lineStart, lineEnd)
+      companion = CONNSTR_COMPANION_RE.test(line)
+      semicolon = CONNSTR_SEMICOLON_RE.test(line)
+    }
+    if (!companion) { CONNSTR_KEY_RE.lastIndex = lineEnd; continue }
+    const start = CONNSTR_KEY_RE.lastIndex
+    let end = start
+    const open = text[start]
+    const close = semicolon && open === '{' ? '}' : open === '"' || open === "'" ? open : ''
+    if (close) {
+      end += 1
+      while (end < lineEnd) {
+        if (!semicolon && text[end] === '\\') { end += 2; continue }
+        if (text[end] === close) {
+          if (semicolon && text[end + 1] === close) { end += 2; continue }
+          end += 1
+          break
+        }
+        end += 1
+      }
+    } else {
+      while (end < lineEnd && !(semicolon ? /[;"'\r]/ : /[\s"']/).test(text[end]!)) end += !semicolon && text[end] === '\\' ? 2 : 1
+    }
+    end = Math.min(end, lineEnd)
+    if (start === end) continue
+    // An expansion or quoted shell word can cross lines. Keep its whole boundary before replacing its opener.
+    const shellEnd = shellWordEnd(text, start, quoteAt(start), closeOf)
+    const closed = close && text[end - 1] === close
+    const replacement = shellEnd > end ? maskShellWord(text.slice(start, shellEnd)) : close ? `${open}***${closed ? close : ''}` : '***'
+    end = Math.max(end, shellEnd)
+    out += text.slice(last, start) + replacement
+    last = end
+    CONNSTR_KEY_RE.lastIndex = end
+  }
+  return out + text.slice(last)
+}
+
 /** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
-function redactCredentialParams(text: string): string {
+function redactCredentialParams(text: string, unquotedKeysOnly = false): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
@@ -807,6 +885,7 @@ function redactCredentialParams(text: string): string {
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    if (unquotedKeysOnly && quoteAt(m.index)) continue
     const keyEnd = m.index + head.length
     // A masked word may swallow a later flag's name but leave its value outside the mask. Keep scanning heads,
     // skipping those wholly masked before parsing their values, so overlapping heads still cost one scan.
@@ -849,8 +928,10 @@ function redactCredentialParams(text: string): string {
     if (!sep) continue
     // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
     if (!/[=:]/.test(sep) && !dash) continue
+    const credentialKey = isCredentialKey(key)
+    const basicPair = !dash && sep.includes('=') && BASIC_PAIR_NAME_RE.test(key) && !credentialKey
     // A key with a substitution or variable piece may name a credential once the shell expands it: fail closed.
-    if (!computedStart && !DYNAMIC_KEY_PIECE_RE.test(key) && !isCredentialKey(key)) continue
+    if (!computedStart && !DYNAMIC_KEY_PIECE_RE.test(key) && !credentialKey && !basicPair) continue
     const valueStart = m.index + head.length
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s (decided before scanning the value).
     if (/authorization$/i.test(key) && /^:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue
@@ -872,10 +953,19 @@ function redactCredentialParams(text: string): string {
     const quoted = /["']/.test(value)
     // Nothing to mask: empty or already masked.
     if (!inner.trim() || inner === '***') continue
+    if (basicPair) {
+      const pair = /^([A-Za-z0-9._~-]{2,}):([^/@]+)$/s.exec(shellDequote(value))
+      if (!pair) continue
+      const quotedPair = splitQuoted(value)
+      out += text.slice(last, valueStart) + `${quotedPair?.open ?? ''}${pair[1]}:***${quotedPair?.close ?? ''}`
+      last = valueEnd
+      continue
+    }
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
-    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\$`]/.test(key) && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
-    // Fully masked: a partial mask would leak part of a password or passphrase.
-    out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
+    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\$`]/.test(key) && ENV_KEY_NAME_RE.test(key) && !CRED_STRONG_KEY_END_RE.test(dequote(key)) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
+    // Fully masked: keep a JSON string's delimiters even when its contents contain escaped quotes.
+    const jsonString = sep.startsWith('"') && sep.includes(':') && splitQuoted(value)?.open === '"'
+    out += text.slice(last, valueStart) + (jsonString ? '"***"' : /^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
   }
   return out + text.slice(last)
@@ -886,13 +976,14 @@ function redactCredentialParams(text: string): string {
  * with the shell-word scanner, and everything after its first `:` is masked. A single quoted pair keeps its quotes
  * (`"bob:***"`).
  */
-function redactUserFlags(text: string): string {
+function redactUserFlags(text: string, unquotedKeysOnly = false): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
   const closeOf = enclosingClose(text)
   USER_FLAG_RE.lastIndex = 0
   for (let m = USER_FLAG_RE.exec(text); m; m = USER_FLAG_RE.exec(text)) {
+    if (unquotedKeysOnly && quoteAt(m.index)) continue
     const wordStart = m.index + m[0].length
     const wordEnd = shellWordEnd(text, wordStart, quoteAt(wordStart), closeOf)
     const word = text.slice(wordStart, wordEnd)
@@ -911,7 +1002,10 @@ function redactUserFlags(text: string): string {
     }
     const secret = colon === -1 ? '' : body.slice(colon + 1)
     if (!secret || secret === '***' || shellWordInner(secret) === '***') continue
-    const masked = quoted ? `${quoted.open}${body.slice(0, colon + 1)}***${quoted.close}` : `${body.slice(0, colon + 1)}${maskShellWord(secret)}`
+    const prefix = body.slice(0, colon + 1)
+    const open = quoted ? '' : quoteTracker(prefix)(prefix.length)
+    const close = open && !quoteTracker(body)(body.length) ? open.slice(-1) : ''
+    const masked = quoted ? `${quoted.open}${prefix}***${quoted.close}` : `${prefix}${maskShellWord(secret)}${close}`
     out += text.slice(last, wordStart) + masked
     last = wordEnd
     USER_FLAG_RE.lastIndex = Math.max(wordEnd, USER_FLAG_RE.lastIndex)
@@ -1053,13 +1147,16 @@ function commandWords(text: string, from: number, enclosing: string, list: boole
  * `COMMAND_FLAGS` secrets in shell text and listed argv text (`['mysql', '-phunter2']`). A quoted word that holds a known
  * command (`sh -c 'mysql -phunter2'`) is read as a command of its own.
  */
-function redactCommandFlags(text: string): string {
+function redactCommandFlags(text: string, unquotedCommandsOnly = false): string {
+  // Every flag starts with a hyphen; ANSI-C escapes can also supply that byte.
+  if (!/[-\\]/.test(text)) return text
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
   const re = new RegExp(COMMAND_FLAG_RE)
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const quote = quoteAt(m.index).slice(-1)
+    if (unquotedCommandsOnly && quote) { re.lastIndex = Math.max(re.lastIndex, m.index + 1); continue }
     // A listed element (`'mysql',`) is read from its opening quote; a command inside a quoted argument ends at its close.
     let listed = quote !== '' && text[m.index + m[0].length] === quote
     // A computed word matched only to its first expansion (`"$(echo $(which docker))"`) is listed when it fills its quotes.
@@ -1076,7 +1173,7 @@ function redactCommandFlags(text: string): string {
       const from = masks.get(k)
       // A nested command is a quoted or substituted word with a space, strictly inside this text.
       const nested = (listed || !quote) && raw.length < text.length && /['"]|\$\(|\x60/.test(raw) && /\s/.test(raw) && COMMAND_FLAG_TEST_RE.test(raw)
-      const replaced = from !== undefined ? maskWordFrom(raw, words[k]!, from) : nested ? redactCommandFlags(raw) : raw
+      const replaced = from !== undefined ? maskWordFrom(raw, words[k]!, from) : nested ? redactCommandFlags(raw, unquotedCommandsOnly) : raw
       if (replaced === raw) continue
       out += text.slice(last, start) + replaced
       last = stop
@@ -1177,10 +1274,10 @@ function tokenCounts(text: string): Map<string, number> {
 }
 
 /** Whether `got` shows a whole token of `plain` more often than `wanted` does: a credential the rules masked in `wanted` survives. */
-function revealsMore(plain: string, got: string, wanted: string): boolean {
-  const source = tokenCounts(plain)
-  const allowed = tokenCounts(wanted)
-  for (const [token, count] of tokenCounts(got)) if (source.has(token) && count > (allowed.get(token) ?? 0)) return true
+function revealsMore(plain: string, got: string, wanted: string, counts = tokenCounts): boolean {
+  const source = counts(plain)
+  const allowed = counts(wanted)
+  for (const [token, count] of counts(got)) if (source.has(token) && count > (allowed.get(token) ?? 0)) return true
   return false
 }
 
@@ -1266,6 +1363,61 @@ function expansionEnd(word: string, i: number): number {
   return i + 2
 }
 
+/** Decode JSON/Python-repr URL strings and replace only changed literals, retaining their quote style and cap. */
+function redactSerializedUrls(text: string): string {
+  if (!/["']/.test(text)) return text
+  let out = ''
+  let last = 0
+  for (let i = 0; i < text.length; ) {
+    if ((text[i] !== '"' && text[i] !== "'") || isProseApostrophe(text, i)) { i += 1; continue }
+    const start = i
+    const quote = text[i]!
+    i += 1
+    while (i < text.length && text[i] !== quote) i += text[i] === '\\' ? 2 : 1
+    const contentEnd = Math.min(i, text.length)
+    const closed = i < text.length
+    i = Math.min(i + 1, text.length)
+    // ANSI-C/gettext quoting owns its dollar prefix; other glued pieces belong to shell composition.
+    const prefix = text[start - 1] === '$' ? start - 1 : start
+    const before = text[prefix - 1] ?? ''
+    const after = text[i] ?? ''
+    if ((prefix > 0 && !SHELL_WORD_BOUNDARY_RE.test(before) && !/[[{=:,]/.test(before)) || (closed && i < text.length && !SHELL_WORD_BOUNDARY_RE.test(after) && !/[,\]}]/.test(after))) continue
+    let value: unknown
+    if (quote === '"' && closed) {
+      try { value = JSON.parse(text.slice(start, i)) as unknown } catch { /* Python repr or a capped literal. */ }
+    }
+    if (typeof value !== 'string') {
+      // The snapshot's repr uses common ANSI-C backslash escapes; its cap may omit the closing quote.
+      let decoded = ''
+      for (let at = start + 1; at < contentEnd; at += 1) {
+        if (text[at] !== '\\' || at + 1 >= contentEnd) { decoded += text[at]!; continue }
+        const escape = text[at + 1]!
+        const [char, span] = escape === '/' && quote === '"' ? ['/', 1] as const
+          : /['"\\abfnrtvxuU0-7]/.test(escape) ? ansiEscape(text, at + 1) : [`\\${escape}`, 1] as const
+        decoded += char
+        at += span
+      }
+      value = decoded
+    }
+    if (typeof value !== 'string' || !value.includes('://') || !value.includes('@')) continue
+    let masked = redactSensitive(value)
+    const literal = text.slice(start + 1, contentEnd)
+    if (literal !== value) {
+      // Shell strings keep literal backslashes. Compare both readings before discarding an escape.
+      let jsonLiteral = false
+      try { JSON.parse(literal); jsonLiteral = true } catch { /* A plain command, not another serialization. */ }
+      const rawMask = jsonLiteral ? redactSensitive(literal) : redactRules(literal)
+      if ((rawMask !== literal || masked !== value) && revealsMore(`${literal}\n${value}`, masked, rawMask, secretTokenCounts)) masked = '***'
+    }
+    if (masked === value) continue
+    const encoded = JSON.stringify(masked).slice(1, -1)
+    const body = quote === "'" ? encoded.replace(/\\"|'/g, (c) => c === "'" ? "\\'" : '"') : encoded
+    out += text.slice(last, start) + quote + body + (closed ? quote : '')
+    last = i
+  }
+  return out + text.slice(last)
+}
+
 /**
  * Shell words whose quoting or escapes compose a delimiter, key or credential (`--password'='x`, `bob:pw'@'host`): each
  * is redacted as the program receives it. When the word as written, once redacted, still shows a token the dequoted
@@ -1276,7 +1428,7 @@ function expansionEnd(word: string, i: number): number {
  * substitution is otherwise the computed-key rules'.
  */
 function redactComposedWords(text: string): string {
-  if (!/["'\\$`]/.test(text)) return text
+  if (!SHELL_COMPOSITION_RE.test(text)) return text
   const closeOf = enclosingClose(text)
   const words: [start: number, end: number][] = []
   for (let i = 0; i < text.length; ) {
@@ -1311,13 +1463,15 @@ function redactComposedWords(text: string): string {
     // The leak check reads quoted spaces as spaces (prose apostrophes pair up across words); the replacement keeps them
     // inside the token, so a quoted value is masked whole.
     const plain = unit.replaceAll(WORD_SPACE, ' ')
-    const wanted = redactRules(plain)
+    // A composed command can keep quotes for its inner shell; inspect that strictly shorter reading too.
+    const redact = plain.length < span.length && plain.includes('://') && plain.includes('@') ? redactSensitive : redactRules
+    const wanted = redact(plain)
     if (wanted === plain) continue
     const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
     // Apply a composed flag's mask with its following value even when this span is safe in isolation: an outer header
     // rule may swallow the flag name before the full-text pass reaches that value.
     if (!flag && !revealsMore(plain, asWritten, wanted)) continue
-    out += text.slice(last, start) + redactRules(unit).replaceAll(WORD_SPACE, ' ')
+    out += text.slice(last, start) + redact(unit).replaceAll(WORD_SPACE, ' ')
     last = spanEnd
     if (flag) k += 1
   }
@@ -1647,7 +1801,14 @@ function redactShellText(text: string): string {
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
-  const out = redactRules(redactComposedWords(joined))
+  let guarded = joined
+  if (/["'\\`]|\$[({]/.test(joined)) {
+    const input = redactConnectionStrings(redactPrivateKeys(joined))
+    guarded = redactCommandFlags(redactUserFlags(redactCredentialParams(input, true), true), true)
+    if (joined.includes('=')) guarded = restoreCodeEnvKeyLiterals(input, guarded)
+  }
+  const literals = guarded.includes('://') && guarded.includes('@') ? redactSerializedUrls(guarded) : guarded
+  const out = redactRules(redactComposedWords(literals))
   const redacted = joined !== text && out === joined ? text : out
   if (!joined.includes('=') || !joined.includes('$')) return redacted
   // The views with the text's own assignments resolved only add masks to the redaction above, which keeps its own
@@ -1785,10 +1946,24 @@ function redactShellText(text: string): string {
   return masked === out ? redacted : masked
 }
 
+/** Protect complete key material before credential/URL passes can remove its header. */
+function redactPrivateKeys(text: string): string {
+  let out = maskSpans(text, privateKeySpans(text), () => PRIVATE_KEY_MASK).replace(PRIVKEY_RE, PRIVATE_KEY_MASK)
+  out = out.replace(AGE_KEY_RE, PRIVATE_KEY_MASK)
+  out = out.replace(B64_PEM_RE, (blob) => /^-----BEGIN[A-Z ]*PRIVATE KEY-----/.test(Buffer.from(blob, 'base64').toString('ascii', 0, 80)) ? PRIVATE_KEY_MASK : blob)
+  return out.replace(PPK_PRIVATE_RE, (_, head: string, eol: string) => `${head}${PRIVATE_KEY_MASK}${eol}`)
+}
+
 function redactRules(text: string): string {
   if (!text) return text
   const hasAssignment = text.includes('=')
-  let out = maskSplitTokens(maskSpans(text, privateKeySpans(text), () => '[REDACTED PRIVATE KEY]')).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskSplitTokens(redactPrivateKeys(text)).replace(CRED_RE, (_, t: string) => mask(t))
+  if (hasAssignment) {
+    out = redactConnectionStrings(out).replace(SAS_RE, (_, head: string, value: string) => {
+      const signature = /(?:^|&)sig=[^&]*/i.exec(value)
+      return head + '***' + (signature ? value.slice(signature.index + signature[0].length) : '')
+    })
+  }
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1812,13 +1987,12 @@ function redactRules(text: string): string {
   out = out.replace(PERCENT_KEY_RE, (whole, head: string, value: string) => (value && value !== '***' && isCredentialKey(percentDecode(head.slice(0, -1))) ? `${head}***` : whole))
   out = out.replace(BARE_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
-  out = out.replace(URL_BARE_TOKEN_RE, (_, head: string, token: string) => head + mask(token))
+  out = out.replace(URL_BARE_TOKEN_RE, (_, head: string, token: string) => head + (token.length < 8 && token.endsWith('***') ? token : mask(token)))
   out = out.replace(TELEGRAM_TOKEN_RE, (_, bot: string | undefined, id: string) => `${bot ?? ''}${id}:***`)
   out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
   out = redactUserFlags(out)
   out = redactCommandFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
-  out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return hasAssignment ? restoreCodeEnvKeyLiterals(text, out) : out
 }
 
@@ -1826,7 +2000,7 @@ const CASE_MARKERS = [
   'sk-', 'ctx7sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
-  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN', 'hermes-session=', '/webapp/launch#',
+  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN', 'LS0tLS1CRUdJTi', 'Private-Lines:', 'AGE-SECRET-KEY-1', 'hermes-session=', '/webapp/launch#',
 ]
 /** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`) and `JWT_RE`, the JWT's also as `JWT_ONLY`'s. */
 const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_RE.lastIndex = 0), TOKEN_PREFIX_RUN_RE.test(`${m}0-`))), `${JWT_ONLY}eyJ`])
@@ -1834,7 +2008,7 @@ const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_
 const PAYLOAD_MARKERS = new Set([...TOKEN_MARKERS, PEM_OPENER])
 const PAYLOAD_MARKER_STEMS = new Set([...PAYLOAD_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
 const LOWER_MARKERS = [
-  'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
+  'pgpassword', 'mysql_pwd', 'sshpass', 'pwd=', 'basic=', 'proxy', 'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
   'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'bearer ', 'cookie:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
@@ -1870,7 +2044,7 @@ function mightContainKeyword(text: string): boolean {
   if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
-  if (text.includes('=') && ENV_SUFFIX_TEST_RE.test(text)) return true
+  if (text.includes('=') && (ENV_SUFFIX_TEST_RE.test(text) || BASIC_PAIR_NAME_RE.test(text) || CONNSTR_KEY_TEST_RE.test(text))) return true
   return false
 }
 

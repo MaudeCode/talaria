@@ -160,33 +160,44 @@ describe('runtime seams from review round 10', () => {
     await post(s, '/api/session/rename', { session_id: sid, title: 'quiet' })
     expect(synced).toEqual([])
     await s.deps.settings.save({ sync_to_insights: true })
-    // The rename response waits for the state.db acknowledgement, so an immediate insights read sees the new title.
-    let ackSync: () => void = () => undefined
-    sidecar.respond('state_db.sync_title', (params) => new Promise((resolve) => { ackSync = () => { synced.push(params); resolve({ ok: true as const }) } }))
-    const renaming = post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
-    let settled = false
-    void renaming.then(() => { settled = true })
-    await new Promise((r) => setTimeout(r, 60))
-    expect(settled).toBe(false)
-    ackSync()
-    expect((await renaming).status).toBe(200)
-    sidecar.respond('state_db.sync_title', (params) => { synced.push(params); return { ok: true as const } })
-    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state, manual: true })
-    // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
-    // generated flag set) and syncs the new title as a user-requested one, so it replaces the manual name in state.db.
-    const manual = (await s.deps.sessionStore.get(sid))
-    manual.messages = [{ role: 'user', content: 'How do I rotate the deploy key on the staging cluster safely?' }, { role: 'assistant', content: 'Rotate it in two steps: add the new key, then remove the old one once every node picked it up.' }]
-    await s.deps.sessionStore.save(manual)
-    expect((await s.deps.sessionStore.get(sid)).manual_title).toBe(true)
-    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Rotate staging deploy key', usage: null }))
-    const regenerated = await post(s, '/api/session/title/regenerate', { session_id: sid })
-    expect(regenerated.status, await regenerated.clone().text()).toBe(200)
-    expect((await json(regenerated)).title).toBe('Rotate staging deploy key')
-    const after = (await s.deps.sessionStore.get(sid))
-    expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Rotate staging deploy key', false, true])
-    await new Promise((r) => setTimeout(r, 20))
-    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key', manual: true })
-    await s.deps.settings.save({ sync_to_insights: false })
+    try {
+      // The rename response waits for the state.db acknowledgement, so an immediate insights read sees the new title.
+      let entered!: () => void
+      let ackSync!: () => void
+      const syncing = new Promise<void>((resolve) => { entered = resolve })
+      const acknowledged = new Promise<void>((resolve) => { ackSync = resolve })
+      const original = sidecar.responderFor('state_db.sync_title')
+      sidecar.respond('state_db.sync_title', async (params) => { entered(); await acknowledged; synced.push(params); return { ok: true as const } })
+      const renaming = post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
+      let settled = false
+      void renaming.then(() => { settled = true })
+      try {
+        await syncing
+        expect(settled).toBe(false)
+        ackSync()
+        expect((await renaming).status).toBe(200)
+      } finally {
+        ackSync()
+        await renaming
+        sidecar.respond('state_db.sync_title', original)
+      }
+      expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state, manual: true })
+      // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
+      // generated flag set) and syncs the new title as a user-requested one, so it replaces the manual name in state.db.
+      const manual = (await s.deps.sessionStore.get(sid))
+      manual.messages = [{ role: 'user', content: 'How do I rotate the deploy key on the staging cluster safely?' }, { role: 'assistant', content: 'Rotate it in two steps: add the new key, then remove the old one once every node picked it up.' }]
+      await s.deps.sessionStore.save(manual)
+      expect((await s.deps.sessionStore.get(sid)).manual_title).toBe(true)
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Rotate staging deploy key', usage: null }))
+      const regenerated = await post(s, '/api/session/title/regenerate', { session_id: sid })
+      expect(regenerated.status, await regenerated.clone().text()).toBe(200)
+      expect((await json(regenerated)).title).toBe('Rotate staging deploy key')
+      const after = (await s.deps.sessionStore.get(sid))
+      expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Rotate staging deploy key', false, true])
+      expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key', manual: true })
+    } finally {
+      await s.deps.settings.save({ sync_to_insights: false })
+    }
   })
 
   it('a settled turn syncs the session usage to state.db only when sync_to_insights is on', async () => {
