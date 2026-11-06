@@ -14,10 +14,24 @@ import sys
 import threading
 import time
 
+STARTED = time.monotonic()
 agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
-from local_recovery_probe import Model, child_env, daemon, rpc, websocket
+from peer_phases import Phases, report_modes
+
+EXECUTION_MODES = ["normal", "ignore_config", "safe"]
+if not (agent / "hermes_cli/gateway_client.py").exists():  # None of the fixtures imported below exist either.
+    report_modes([], {mode: "this supported Agent does not expose native sessions" for mode in EXECUTION_MODES})
+    sys.exit(0)
+from local_recovery_probe import Model, child_env, daemon as owner_daemon, rpc, websocket
 from conftest import SidecarProcess
+
+PHASES = Phases(STARTED)
+
+
+def daemon(*args, **kwargs):
+    return PHASES.daemon(owner_daemon, *args, **kwargs)
+
 
 WITNESS_HOOK = '''
 import json, os, sys, threading
@@ -63,10 +77,14 @@ class Provider(Model):
         raw = self.rfile.read(int(self.headers["Content-Length"]))
         body = json.loads(raw)
         text = next((m.get("content", "") for m in reversed(body.get("messages", [])) if m["role"] == "user"), "")
-        if text == "FAIL_PROVIDER":
+        # A safe worker ignores the profile config, so it also names the chat from the held prompt. Holding that call too
+        # would only make the stopped worker wait out its 10 s join of the title thread (TAL-1780).
+        title = text == "BLOCK_STARTED" and body["messages"][0]["content"].startswith("You name chat sessions")
+        if text == "FAIL_PROVIDER" or title:
             self.server.requests.append(body)
-            payload = json.dumps({"error": {"message": "synthetic invalid request", "type": "invalid_request_error"}}).encode()
-            self.send_response(400)
+            payload = json.dumps({"choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": '{"title": "Fixture"}'}}]} if title
+                                 else {"error": {"message": "synthetic invalid request", "type": "invalid_request_error"}}).encode()
+            self.send_response(200 if title else 400)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
@@ -96,9 +114,9 @@ def write_profile(home: Path, workspace: Path, url: str, witness: Path, tag: str
         "model": {"provider": "custom", "default": "owner-fixture", "base_url": url},
         "agent": {"system_prompt": f"{tag}CONFIG_SENTINEL prompt"},
         "plugins": {"enabled": ["sentinel"]},
-        # The sentinel only witnesses a spawn and never answers, so each owner start would wait out the Agent's 60 s
-        # default connect timeout (TAL-1599).
-        "mcp_servers": {"sentinel": {"command": sys.executable, "args": [str(mcp)], "connect_timeout": 5}},
+        # The sentinel only witnesses a spawn and never answers, so each owner start waits out this connect timeout. The
+        # spawn happens first; nothing here depends on how long the owner then waits for a handshake (TAL-1599, TAL-1780).
+        "mcp_servers": {"sentinel": {"command": sys.executable, "args": [str(mcp)], "connect_timeout": 1}},
         "auxiliary": {"title_generation": {"enabled": False}}, "platform_toolsets": {"cli": []},
     }))
     (workspace / "AGENTS.md").write_text("RULES_SENTINEL project rule.\n")
@@ -329,7 +347,7 @@ def probe(root: Path, home: Path, alpha: Path, workspace: Path, witness: Path, p
             events = audit.take()
             gone({e["pid"] for e in events if e["worker"]})
             assert not any(path.endswith(("config.yaml", ".env")) for path in worker_opened(events)), events
-        print(json.dumps({"modes": ["normal", "ignore_config", "safe"], "sessions": ids, "provider_requests": len(peer.requests)}))
+        print(json.dumps({"modes": EXECUTION_MODES, "sessions": ids, "provider_requests": len(peer.requests)}))
     finally:
         peer.release.set()
         sidecar.close()
@@ -357,12 +375,17 @@ def main():
                AWS_EC2_METADATA_DISABLED="true", TALARIA_WITNESS_LOG=str(witness / "audit.jsonl"),
                TALARIA_WITNESS_ROOTS=os.pathsep.join([str(home), str(workspace)]))
     alpha_env = dict(env, HERMES_HOME=str(alpha), OPENAI_API_KEY="alpha-only")
+    ran = []
     try:
-        probe(root, home, alpha, workspace, witness, peer, env, alpha_env)
+        with PHASES.probe("execution"):
+            probe(root, home, alpha, workspace, witness, peer, env, alpha_env)
+        ran = EXECUTION_MODES
     finally:
+        report_modes(ran, {}, None if ran else "execution")
         peer.release.set()
         peer.shutdown()
         peer.server_close()
+        PHASES.report()
 
 
 if __name__ == "__main__":
