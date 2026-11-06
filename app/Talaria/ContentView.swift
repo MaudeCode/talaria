@@ -18,15 +18,18 @@ struct ContentView: View {
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
     @Bindable private var whatsNew: WhatsNewPresenter
+    private let appLock: AppLockModel
 
     init(
         authManager: AuthManager,
         draftStore: ChatDraftStore? = nil,
-        whatsNew: WhatsNewPresenter? = nil
+        whatsNew: WhatsNewPresenter? = nil,
+        appLock: AppLockModel? = nil
     ) {
         self.authManager = authManager
         self.draftStore = draftStore ?? .shared
         self.whatsNew = whatsNew ?? WhatsNewPresenter(pending: nil)
+        self.appLock = appLock ?? .shared
     }
 
     /// No sign-in, import, deep link or App Intent is waiting to take the screen, so What's New can be offered
@@ -38,6 +41,7 @@ struct ContentView: View {
             && pendingDeepLinkedSessionID == nil && pendingQuotaSourceID == nil
             && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil
             && intentRouter.pendingDeepLink == nil
+            && !appLock.isLocked && appLock.queuedDeepLinks.isEmpty
     }
 
     var body: some View {
@@ -52,7 +56,7 @@ struct ContentView: View {
                 guard !didCheckInitialPendingShare else { return }
                 didCheckInitialPendingShare = true
                 try? CacheStore.maintainCache(in: modelContext)
-                await sharedImports.importIfAvailable()
+                await importSharedDraftsUnlessLocked()
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
                 drainPendingIntentDeepLink()
@@ -63,6 +67,11 @@ struct ContentView: View {
             .onChange(of: intentRouter.pendingDeepLink) {
                 // Warm launch: the intent set the deep link after the view appeared.
                 drainPendingIntentDeepLink()
+            }
+            .onChange(of: appLock.isLocked) {
+                guard !appLock.isLocked else { return }
+                appLock.takeQueuedDeepLinks().forEach(route)
+                Task { await importSharedDraftsUnlessLocked() }
             }
             .task {
                 // #246: on cold launch, end any Live Activity left "running" by a
@@ -86,7 +95,7 @@ struct ContentView: View {
                 }
                 guard scenePhase == .active else { return }
                 try? CacheStore.maintainCache(in: modelContext)
-                Task { await sharedImports.importIfAvailable() }
+                Task { await importSharedDraftsUnlessLocked() }
                 // #248: the foreground pass stays silent — the in-session completion
                 // paths own notifications while the app is alive.
                 Task { await reconcileOrphanedLiveActivities(notifiesOnCompletion: false) }
@@ -190,7 +199,19 @@ struct ContentView: View {
         }
     }
 
+    /// Every external route enters here, so a locked app holds it until unlock.
     private func handleOpenURL(_ url: URL) {
+        guard appLock.admitDeepLink(url) else { return }
+        route(url)
+    }
+
+    /// A share opens its chat and composer, so it waits behind the lock with the deep links.
+    private func importSharedDraftsUnlessLocked() async {
+        guard !appLock.isLocked else { return }
+        await sharedImports.importIfAvailable()
+    }
+
+    private func route(_ url: URL) {
         if TalariaDeepLink.isOpenAppURL(url) {
             return
         }

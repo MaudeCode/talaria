@@ -386,6 +386,7 @@ final class LocalizationCatalogTests: XCTestCase {
         XCTAssertEqual(try projectKnownRegions(), expected.union(["Base"]))
         XCTAssertEqual(try catalogLanguages(at: "Talaria/Resources/Localizable.xcstrings"), expected)
         XCTAssertEqual(try catalogLanguages(at: "Talaria/Resources/AppShortcuts.xcstrings"), expected)
+        XCTAssertEqual(try catalogLanguages(at: "Talaria/Resources/InfoPlist.xcstrings"), expected)
     }
 
     func testAppShortcutPhrasesHaveDedicatedCatalogEntries() throws {

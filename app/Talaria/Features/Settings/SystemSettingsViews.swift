@@ -77,6 +77,8 @@ struct DataStorageSettingsView: View {
                 }
                 .disabled(isClearingCache)
             }
+
+            AppLockSettingsCard()
         }
         .alert("Clear this server's cache?", isPresented: $isConfirmingClearCache) {
             Button("Cancel", role: .cancel) {}
@@ -99,6 +101,29 @@ struct DataStorageSettingsView: View {
             cacheStatusMessage = String(localized: "Could not clear offline cache.")
         }
         isClearingCache = false
+    }
+}
+
+private struct AppLockSettingsCard: View {
+    @State private var lock = AppLockModel.shared
+    @State private var needsPasscode = false
+
+    var body: some View {
+        let method = lock.method
+        SettingsCard(title: String(localized: "Privacy")) {
+            SettingsToggleRow(
+                title: method.settingsTitle,
+                systemImage: method.systemImage,
+                isOn: Binding(get: { lock.switchPosition }, set: { enabled in
+                    Task { needsPasscode = await lock.setEnabled(enabled) == .unavailable && enabled }
+                })
+            )
+            .accessibilityIdentifier("settings-app-lock")
+
+            if needsPasscode {
+                SettingsErrorFootnote(SettingsErrorText(String(localized: "Set a device passcode to use this.")))
+            }
+        }
     }
 }
 
