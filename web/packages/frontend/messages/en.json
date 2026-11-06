@@ -2945,6 +2945,8 @@
 	"group_idle": "Idle",
 	"group_queued": "Queued",
 	"group_running": "Answering",
+	"group_stalled": "Stalled",
+	"group_round": "Round {current} of {max}",
 	"group_stopping": "Stopping",
 	"group_unknown": "Execution could not be confirmed. Refresh to reconcile.",
 	"group_failed": "Failed",

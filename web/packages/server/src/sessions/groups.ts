@@ -82,15 +82,27 @@ export class Groups {
     const actions = new Set(caps.methods)
     const pendingActions = active ? this.pendingActions(state) : { member: [], room: null }
     const context = actions.has('groups.context') && state.context ? state.context : null
+    const activity = active ? driver.member_activity ?? [] : []
+    const running = activity.filter((row) => row.status === 'running' && room.members.some((member) => member.member_id === row.member_id))
+    const thread = events.findLast((event) => event.kind === 'message.user' && event.payload.thread_id != null && running.some((row) => row.thread_id === event.payload.thread_id))?.payload.thread_id ?? running[0]?.thread_id
+    const rounds = running.filter((row) => row.thread_id === thread).flatMap((row) => row.round_index == null ? [] : [row.round_index])
+    const now = this.deps().nowSeconds()
     return { id: room.room_id, name: redactString(room.name), identity: this.identity(scope, room), revision: room.revision, disbanded: room.disbanded_at !== undefined,
       max_upload_bytes: Math.min(GROUP_ATTACHMENT_BYTES, this.deps().config.maxUploadBytes), attachment_limit: GROUP_ATTACHMENT_LIMIT,
       context: context && { ...context, purpose: redactString(context.purpose), notes: redactString(context.notes) }, purpose_limit: GROUP_ROOM_PURPOSE_LIMIT, notes_limit_bytes: GROUP_ROOM_NOTES_BYTES,
+      round: rounds.length && driver?.max_rounds != null ? { current: Math.max(...rounds) + 1, max: driver.max_rounds } : null,
       members: room.members.map((member) => {
         const pending = pendingActions.member.filter((a) => a.member_id === member.member_id && actions.has(`groups.${a.kind === 'approval' ? 'approve' : a.kind}`))
-        const status = driver?.member_activity?.find((a) => a.member_id === member.member_id)?.status
+        const memberActivity = activity.filter((row) => row.member_id === member.member_id)
+        const current = memberActivity.find((row) => row.status !== 'queued') ?? memberActivity[0]
+        const status = current?.status
         const terminal = events.findLast((e) => e.payload.member_id === member.member_id && ['turn.failed', 'turn.settled', 'turn.cancelled', 'turn.deferred'].includes(e.kind))
         const phase = pending.some((a) => a.kind === 'approval') ? 'approval' as const : status === 'indeterminate' || pending.some((a) => a.kind === 'discard') ? 'unknown' as const : status === 'deferred' || pending.some((a) => a.kind === 'retry') ? 'failed' as const : status ?? (driver?.working && driver.member_activity === undefined ? 'unknown' as const : terminal?.kind === 'turn.failed' ? 'failed' as const : 'idle' as const)
+        const lastSign = current?.progress_at ?? current?.started_at
         return { ...GroupMemberSchema.parse(member), display_name: redactString(member.display_name || member.profile), phase, lead: context?.routing === 'lead' && context.lead_member_id === member.member_id,
+          tool: phase === 'running' && current?.tool ? redactString(current.tool) : null,
+          started_at: phase === 'running' ? current?.started_at ?? null : null,
+          stalled: phase === 'running' && lastSign != null && now - lastSign >= 120,
           actions: pending.map((a) => ({ ...a, approval: a.approval ? { ...a.approval, command: a.approval.command ? redactString(a.approval.command) : undefined, description: a.approval.description ? redactString(a.approval.description) : undefined } : undefined })) }
       }),
       actions: active ? ROOM_ACTIONS.filter((action) => actions.has(`groups.${action}`) && (action !== 'stop' || driver.working || driver.blocked) && (action !== 'context' || context !== null)) : [],

@@ -8,6 +8,54 @@ import { SpaShell } from '../../server/dist/spa.js'
 
 test.use({ serviceWorkers: 'block' })
 
+test('live discussion activity shows tools, elapsed time, stalled members and the owning round', async ({ page }, info) => {
+  const { fixture, server } = await discussionServer()
+  const now = 1_800_000_000
+  server.deps.nowSeconds = () => now
+  fixture.state.driver_status.working = true
+  fixture.state.context = { purpose: '', notes: '', routing: 'lead', lead_member_id: 'two' }
+  fixture.state.driver_status.max_rounds = 3
+  fixture.state.driver_status.member_activity = [{ member_id: 'one', status: 'running', tool: 'terminal', started_at: now - 80, progress_at: now, thread_id: 'thread', round_index: 1 }]
+  const event = fixture.append('message.user', 'Review this proposal')
+  Object.assign(event.payload, { thread_id: 'thread' })
+  await page.clock.setFixedTime(new Date(now * 1000))
+  const evidence = process.env.TALARIA_GROUP_ACTIVITY_EVIDENCE
+  if (evidence) mkdirSync(evidence, { recursive: true })
+  const shot = async (name: string) => { if (evidence) await page.screenshot({ path: `${evidence}/${name}-${info.project.name}.png` }) }
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    const members = page.getByRole('list', { name: 'Members', exact: true })
+    await expect(members).toBeVisible()
+    await shot('initial')
+    await expect(members.getByRole('listitem').first()).toHaveText('Writer · terminal · 1m 20s')
+    await expect(members.getByRole('listitem').nth(1)).toHaveText('Reviewer · Lead · Idle')
+    await expect(page.getByText('Round 2 of 3', { exact: true })).toBeVisible()
+    expect(await members.getByRole('listitem').first().evaluate((el) => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).lineHeight) + 1)).toBe(true)
+    await shot('running')
+    // Real observer polls, even with no new transcript events, replace the tool and stalled state.
+    fixture.state.driver_status.member_activity[0]!.progress_at = now - 121
+    await expect(members.getByRole('status').first()).toContainText('Stalled')
+    await shot('stalled')
+    if (info.project.name === 'desktop') {
+      for (const [name, width, height] of [['outer-portrait', 382, 580], ['outer-landscape', 594, 368], ['inner-split', 385, 571], ['inner-portrait', 669, 867], ['inner-landscape', 951, 585]] as const) {
+        await page.setViewportSize({ width, height })
+        await expect(members).toBeInViewport()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        const row = members.getByRole('listitem').first()
+        expect(await row.evaluate((el) => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).lineHeight) + 1)).toBe(true)
+        await expect(page.getByRole('button', { name: 'Stop response', exact: true })).toBeInViewport()
+        await shot(name)
+      }
+    }
+    fixture.state.driver_status.member_activity = [{ member_id: 'one', status: 'running' }]
+    fixture.state.driver_status.max_rounds = undefined
+    await expect(members.getByRole('listitem').first()).toHaveText('Writer · Answering')
+    await expect(page.getByText('Round 2 of 3', { exact: true })).toHaveCount(0)
+    await expect(members.locator('.live-run-elapsed')).toHaveCount(0)
+    await shot('legacy')
+  } finally { await page.goto('about:blank'); await server.close() }
+})
+
 async function discussionServer() {
   const sidecar = new FakeSidecar(), fixture = groupFixture(sidecar)
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' }, deps: (deps) => {

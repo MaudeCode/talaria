@@ -27,7 +27,10 @@
             "display_name": "Writer",
             "phase": "idle",
             "actions": [],
-            "lead": false
+            "lead": false,
+            "tool": null,
+            "started_at": null,
+            "stalled": false
           },
           {
             "member_id": "two",
@@ -36,7 +39,10 @@
             "display_name": "Reviewer",
             "phase": "idle",
             "actions": [],
-            "lead": false
+            "lead": false,
+            "tool": null,
+            "started_at": null,
+            "stalled": false
           }
         ],
         "actions": [],
@@ -45,7 +51,8 @@
         "retry_task": null,
         "context": null,
         "purpose_limit": 500,
-        "notes_limit_bytes": 4096
+        "notes_limit_bytes": 4096,
+        "round": null
       }
     ],
     "actions": [
@@ -71,7 +78,10 @@
           "display_name": "Writer",
           "phase": "queued",
           "actions": [],
-          "lead": true
+          "lead": true,
+          "tool": null,
+          "started_at": null,
+          "stalled": false
         },
         {
           "member_id": "two",
@@ -80,7 +90,10 @@
           "display_name": "Reviewer",
           "phase": "running",
           "actions": [],
-          "lead": false
+          "lead": false,
+          "tool": "terminal",
+          "started_at": 1000,
+          "stalled": false
         }
       ],
       "actions": [
@@ -100,7 +113,11 @@
         "lead_member_id": "one"
       },
       "purpose_limit": 500,
-      "notes_limit_bytes": 4096
+      "notes_limit_bytes": 4096,
+      "round": {
+        "current": 2,
+        "max": 3
+      }
     },
     "rows": [
       {

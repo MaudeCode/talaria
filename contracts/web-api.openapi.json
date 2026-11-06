@@ -113823,6 +113823,29 @@
                                   ],
                                   "type": "string"
                                 },
+                                "tool": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "started_at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stalled": {
+                                  "type": "boolean"
+                                },
                                 "actions": {
                                   "type": "array",
                                   "items": {
@@ -113892,6 +113915,9 @@
                                 "profile",
                                 "handle",
                                 "phase",
+                                "tool",
+                                "started_at",
+                                "stalled",
                                 "actions",
                                 "lead"
                               ]
@@ -113956,6 +113982,34 @@
                             "maximum": 9007199254740991,
                             "exclusiveMinimum": 0
                           },
+                          "round": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "current": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "max": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "current",
+                                  "max"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "retry_task": {
                             "anyOf": [
                               {
@@ -114001,6 +114055,7 @@
                           "context",
                           "purpose_limit",
                           "notes_limit_bytes",
+                          "round",
                           "retry_task"
                         ]
                       }
@@ -114170,6 +114225,29 @@
                                     ],
                                     "type": "string"
                                   },
+                                  "tool": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "started_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "stalled": {
+                                    "type": "boolean"
+                                  },
                                   "actions": {
                                     "type": "array",
                                     "items": {
@@ -114239,6 +114317,9 @@
                                   "profile",
                                   "handle",
                                   "phase",
+                                  "tool",
+                                  "started_at",
+                                  "stalled",
                                   "actions",
                                   "lead"
                                 ]
@@ -114303,6 +114384,34 @@
                               "maximum": 9007199254740991,
                               "exclusiveMinimum": 0
                             },
+                            "round": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "current": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991,
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "max": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991,
+                                      "exclusiveMinimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "current",
+                                    "max"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "retry_task": {
                               "anyOf": [
                                 {
@@ -114348,6 +114457,7 @@
                             "context",
                             "purpose_limit",
                             "notes_limit_bytes",
+                            "round",
                             "retry_task"
                           ]
                         },

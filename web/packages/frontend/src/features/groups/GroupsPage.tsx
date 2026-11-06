@@ -14,6 +14,7 @@ import { Dialog } from '../../ui/Dialog'
 import { TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { Transcript } from '../chat/Transcript'
+import { RunElapsed } from '../chat/LiveTurnView'
 import { ApprovalCard } from '../chat/ApprovalCard'
 import { usePromptAnswer } from '../chat/usePromptAnswer'
 import { Composer } from '../composer/Composer'
@@ -195,7 +196,7 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
     }).catch(showErrorToast)
   }
   const isLead = (member: GroupRoom['members'][number]) => currentContext ? currentContext.value.routing === 'lead' && currentContext.value.lead_member_id === member.member_id : member.lead
-  const phase = (member: GroupRoom['members'][number]) => stopping === room?.identity && member.phase !== 'idle' ? m.group_stopping() : phaseLabel[member.phase]()
+  const phase = (member: GroupRoom['members'][number]) => stopping === room?.identity && member.phase !== 'idle' ? m.group_stopping() : member.stalled ? m.group_stalled() : phaseLabel[member.phase]()
   return <div ref={focus} tabIndex={-1} className={`${MAIN_VIEW} active`}>
     <PanelHead title={currentRename?.value ?? room?.name ?? provisionalName ?? m.group_discussions()} actions={<>
       <BackButton onClick={onBack} />
@@ -205,7 +206,8 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
       {room?.actions.includes('disband') && <Button onClick={() => { const rollback = onDisband(); void write({ action: 'disband', room_id: roomId, cancel_id: randomUuid() }).then(() => qc.invalidateQueries({ queryKey: ['groups'] }), (error: unknown) => { rollback(); showErrorToast(error) }) }}>{m.group_disband()}</Button>}
       {room?.actions.includes('stop') && <PanelHeadButton label={m.composer_stop()} disabled={stopping === room.identity} onClick={() => { const identity = room.identity; setStopping(identity); void write({ action: 'stop', room_id: roomId, cancel_id: randomUuid() }).catch(showErrorToast).finally(() => setStopping((current) => current === identity ? null : current)) }}><Square size={14} aria-hidden="true" /></PanelHeadButton>}
     </>} />
-    {room && <ul aria-label={m.group_members()} className="flex flex-wrap gap-x-5 gap-y-2 px-4 py-2 text-xs text-muted">{room.members.map((member) => <li key={member.member_id}>{member.display_name || member.profile}{isLead(member) && ` · ${m.group_lead()}`} · <span role="status">{phase(member)}</span></li>)}</ul>}
+    {room && <ul aria-label={m.group_members()} className="flex flex-wrap gap-x-5 gap-y-2 px-4 py-2 text-xs text-muted">{room.members.map((member) => <li key={member.member_id} title={`${member.display_name || member.profile} · ${phase(member)}${member.tool ? ` · ${member.tool}` : ''}`} className={`max-w-full truncate ${member.stalled ? 'text-warning' : ''}`}>{member.display_name || member.profile}{isLead(member) && ` · ${m.group_lead()}`} · <span role="status">{member.stalled || !member.tool || stopping === room.identity ? phase(member) : null}{member.tool && <>{member.stalled || stopping === room.identity ? ' · ' : ''}{member.tool}</>}{member.started_at != null && <> · <RunElapsed since={member.started_at * 1000} showSeconds /></>}</span></li>)}</ul>}
+    {room?.round && <p role="status" className="px-4 pb-2 text-xs text-muted">{m.group_round({ current: room.round.current, max: room.round.max })}</p>}
     {view.isPending && <LoadingState />}
     {view.isError && <ErrorState error={view.error} onRetry={() => { void view.refetch() }} />}
     {data && !data.available && <p role="status" className="p-4 text-sm text-muted">{m.group_unavailable()}</p>}

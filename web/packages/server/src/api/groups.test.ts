@@ -16,9 +16,9 @@ it('advertises unavailable rooms without a sidecar or starting any native gatewa
   expect(server.deps.registry.activeRuns.size).toBe(0)
 })
 
-async function setup() {
+async function setup(now?: () => number) {
   const sidecar = new FakeSidecar(), fixture = groupFixture(sidecar)
-  server = await bootTestServer({ sidecar, deps: (deps) => { deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true }, { name: 'helper' }]) } })
+  server = await bootTestServer({ sidecar, ...(now ? { now } : {}), deps: (deps) => { deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true }, { name: 'helper' }]) } })
   const scope = server.deps.groups.scope('default', 'local-owner')
   const catalogIdentity = (await server.deps.groups.catalog(scope)).identity
   return { sidecar, ...fixture, scope, catalogIdentity }
@@ -36,6 +36,7 @@ it('projects ordered attributed replies, current member phases and native task f
   const view = await read()
   expect(view.rows.map((r) => [r.index, r.author, r.message.content])).toEqual([[1, '', 'Review this'], [2, 'Writer', 'One'], [3, 'Reviewer', 'Two']])
   expect(view.room?.members.map((m) => m.phase)).toEqual(['queued', 'approval'])
+  expect(view.room).toMatchObject({ round: null, members: [{ tool: null, started_at: null, stalled: false }, { tool: null, started_at: null, stalled: false }] })
   const stale = await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 2, request_id: 'approval', choice: 'once' })
   expect(stale.status).toBe(409)
   const accepted = await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 3, request_id: 'approval', choice: 'once' })
@@ -43,6 +44,43 @@ it('projects ordered attributed replies, current member phases and native task f
   expect((await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 3, request_id: 'approval', choice: 'once' })).status).toBe(409)
   Reflect.deleteProperty(state.driver_status, 'member_activity')
   expect((await read()).room?.members.map((m) => m.phase)).toEqual(['unknown', 'unknown'])
+})
+
+it('projects live member tools and elapsed origins, with stall detection on the server clock', async () => {
+  const { state } = await setup(() => 1000)
+  const secret = `sk-${'a'.repeat(40)}`
+  state.driver_status.member_activity = [{ member_id: 'one', status: 'running', started_at: 800, progress_at: 881, tool: `terminal ${secret}` }, { member_id: 'two', status: 'queued', started_at: 800 }]
+  expect((await read()).room).toMatchObject({ members: [{ started_at: 800, stalled: false }, { tool: null, started_at: null, stalled: false }] })
+  expect((await read()).room?.members[0]?.tool).toContain('terminal')
+  expect(JSON.stringify((await read()).room)).not.toContain(secret)
+  state.driver_status.member_activity[0]!.progress_at = 879
+  expect((await read()).room).toMatchObject({ members: [{ stalled: true }, { stalled: false }] })
+  // A fresh retry has no previous attempt's progress; use its new start, then mark a quiet start stalled.
+  state.driver_status.member_activity[0] = { member_id: 'one', status: 'running', started_at: 990 }
+  expect((await read()).room?.members[0]).toMatchObject({ tool: null, started_at: 990, stalled: false })
+  state.driver_status.member_activity[0].started_at = 879
+  expect((await read()).room?.members[0]).toMatchObject({ stalled: true })
+  state.driver_status.member_activity[0] = { member_id: 'one', status: 'running', tool: null, started_at: null, progress_at: null }
+  expect((await read()).room?.members[0]).toMatchObject({ tool: null, started_at: null, stalled: false })
+})
+
+it('projects the running task round in its owning thread, with no guess for older Agents', async () => {
+  const { state, append } = await setup()
+  const older = append('message.user', 'Earlier thread'), newest = append('message.user', 'Newest thread')
+  Object.assign(older.payload, { thread_id: 'older' }); Object.assign(newest.payload, { thread_id: 'newest' })
+  state.driver_status.max_rounds = 3
+  state.driver_status.member_activity = [{ member_id: 'one', status: 'running', thread_id: 'older', round_index: 2 }, { member_id: 'two', status: 'running', thread_id: 'newest', round_index: 1 }]
+  expect((await read()).room).toMatchObject({ round: { current: 2, max: 3 } })
+  state.driver_status.member_activity[1]!.status = 'queued'
+  expect((await read()).room).toMatchObject({ round: { current: 3, max: 3 } })
+  delete state.driver_status.member_activity[0]!.round_index
+  expect((await read()).room).toMatchObject({ round: null })
+  state.driver_status.member_activity[0]!.round_index = 0
+  state.driver_status.max_rounds = null
+  expect((await read()).room).toMatchObject({ round: null })
+  state.driver_status.max_rounds = 3
+  state.driver_status.member_activity[0]!.status = 'queued'
+  expect((await read()).room).toMatchObject({ round: null })
 })
 
 it('keeps a stalled room usable: shows the wake failure and offers the room-level Retry (Agent v0.22.6)', async () => {
