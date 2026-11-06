@@ -1,4 +1,8 @@
 import type { Page } from '@playwright/test'
+import { defaultParseSearch } from '@tanstack/react-router'
+import { ProjectStore } from '../../server/dist/projects.js'
+import { JsonDocuments } from '../../server/dist/sessions/storage/json-documents.js'
+import { openServerState } from './server'
 import { expect, openChatFilters, openProjectActions, settle, test } from './fixtures'
 
 /** A project saves chat defaults, and its New chat starts on them (TAL-1032). */
@@ -9,7 +13,15 @@ const serverProject = async (page: Page, id: string) => ((await (await page.requ
 
 test('a project saves chat defaults and its new chat starts on them', async ({ page, errors }, testInfo) => {
   const suffix = testInfo.project.name
-  const id = ((await (await page.request.post('/api/projects/create', { data: { name: `Bound ${suffix}` } })).json()) as { project: { project_id: string } }).project.project_id
+  // Numeric IDs exercise the router's string-preserving URL encoding deterministically.
+  const id = suffix === 'mobile' ? '589985371805' : '589985371806'
+  const projects = new ProjectStore(new JsonDocuments(openServerState()), () => [])
+  await projects.mutate((rows) => {
+    const project = { project_id: id, name: `Bound ${suffix}`, profile: 'default' }
+    const at = rows.findIndex((row) => row.project_id === id)
+    if (at === -1) rows.push(project)
+    else rows[at] = project
+  }, { migrate: false })
   const home = ((await (await page.request.get('/api/workspaces')).json()) as { workspaces: { path: string }[] }).workspaces[0]!.path
   const add = async (name: string, path: string) => {
     const res = await page.request.post('/api/workspaces/add', { data: { path, name, create: true } })
@@ -69,7 +81,7 @@ test('a project saves chat defaults and its new chat starts on them', async ({ p
 
   // New chat starts in the project on its defaults; only the project goes to the server, which applies them.
   await menuItem('New chat')
-  await expect(page).toHaveURL(new RegExp(`[?&]project=${id}`))
+  await expect(page).toHaveURL((url) => (defaultParseSearch(url.search) as Record<string, unknown>).project === id)
   if (await hamburger.isVisible()) await page.keyboard.press('Escape')
   // A phone shows the composer chips once the prompt has focus.
   await page.locator('#msg').click()
