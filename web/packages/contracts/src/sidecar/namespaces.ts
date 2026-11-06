@@ -21,6 +21,16 @@ const Ok = z.object({ ok: z.boolean() })
 const Json = z.unknown()
 const Loose = z.record(z.string(), z.unknown())
 
+/** Process-wide additive plugin rules; the sidecar also pushes this shape as `redaction.policy`. */
+export const RedactionPolicySchema = z.object({
+  fingerprint: z.string().min(1),
+  patterns: z.array(z.object({ pattern: z.string().min(1), literal_prefix: z.string().min(2) })),
+})
+export type RedactionPolicy = z.infer<typeof RedactionPolicySchema>
+export const REDACTION_METHODS = {
+  'redaction.policy': { params: z.object({}), result: RedactionPolicySchema },
+} as const
+
 /** Profile-scoped toolset choices; clients render policy and selection without deriving them. */
 export const ToolsetsCatalogSchema = z.object({
   toolsets: z.array(z.object({

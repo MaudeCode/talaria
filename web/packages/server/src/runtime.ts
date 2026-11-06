@@ -2,6 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
+import { applyRedactionPolicy } from './redact.js'
 import { redactFeedbackText } from './feedback.js'
 import { SESSION_WAIT_DEFAULT_S, SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -1085,6 +1086,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     },
     log,
   })
+  await sidecar?.addReadyGate?.(async (call) => { applyRedactionPolicy(await call('redaction.policy', {})) })
   // TAL-1254: every (re)started sidecar owns the worktree chats' locks before it reports ready, so the Agent's sweep keeps them.
   await sidecar?.addReadyGate?.((call) => sessions.retainWorktrees(call))
 

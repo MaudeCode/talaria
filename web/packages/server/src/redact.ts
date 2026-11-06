@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { type RedactionPolicy, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -1729,6 +1729,34 @@ function secretTokenCounts(text: string): Map<string, number> {
   return counts
 }
 
+// Rules stay additive across concurrent snapshots and sidecar restarts: an older reply cannot undo a push.
+const pluginPatterns = new Map<string, { prefix: string; regex: RegExp }>()
+let policyFingerprint = ''
+
+export function applyRedactionPolicy(policy: RedactionPolicy): void {
+  if (policy.fingerprint === policyFingerprint) return
+  for (const { pattern, literal_prefix } of policy.patterns) {
+    if (pluginPatterns.has(pattern)) continue
+    let regex: RegExp
+    try { regex = new RegExp(pattern, 'g') } catch {
+      // Python-only syntax still protects every non-whitespace run starting with the admitted literal prefix.
+      const prefix = literal_prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      regex = new RegExp(`${prefix}\\S*`, 'g')
+    }
+    pluginPatterns.set(pattern, { prefix: literal_prefix, regex })
+  }
+  policyFingerprint = policy.fingerprint
+  cache.clear()
+  cacheBytes = 0
+}
+
+function redactPluginPatterns(text: string): string {
+  for (const { prefix, regex } of pluginPatterns.values()) {
+    if (text.includes(prefix)) text = text.replace(regex, (value) => mask(value))
+  }
+  return text
+}
+
 /**
  * Threat model: the redactor reads only the tool's text. Variables the text itself assigns (`SEP=:; curl -u bob${SEP}x`)
  * are resolved in text order; shell control flow (conditionals, loops, functions, `read`, `unset`) is not modelled.
@@ -1957,7 +1985,7 @@ function redactPrivateKeys(text: string): string {
 function redactRules(text: string): string {
   if (!text) return text
   const hasAssignment = text.includes('=')
-  let out = maskSplitTokens(redactPrivateKeys(text)).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = redactPluginPatterns(maskSplitTokens(redactPrivateKeys(text))).replace(CRED_RE, (_, t: string) => mask(t))
   if (hasAssignment) {
     out = redactConnectionStrings(out).replace(SAS_RE, (_, head: string, value: string) => {
       const signature = /(?:^|&)sig=[^&]*/i.exec(value)
@@ -2017,6 +2045,14 @@ const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source)
 const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
+  if (mightContainBuiltinSensitiveText(text)) return true
+  for (const { prefix } of pluginPatterns.values()) {
+    if (SPLIT_VIEWS.some((gaps) => text.replace(gaps, '').includes(prefix))) return true
+  }
+  return false
+}
+
+function mightContainBuiltinSensitiveText(text: string): boolean {
   if (!text) return false
   // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
   // redactor joins split tokens.
@@ -2065,7 +2101,8 @@ export function redactText(text: unknown, enabled: boolean): unknown {
     cache.set(key, hit)
     return hit
   }
-  const out = mightContainSensitiveText(text) ? redactSensitive(text) : text
+  // A plugin-only match needs no shell/assignment scan of an otherwise ordinary (possibly very large) payload.
+  const out = mightContainBuiltinSensitiveText(text) ? redactSensitive(text) : redactPluginPatterns(text)
   // Count both strings conservatively as UTF-16, even when V8 stores them as Latin-1.
   const bytes = 2 * (key.length + out.length)
   if (bytes > CACHE_MAX_BYTES) return out

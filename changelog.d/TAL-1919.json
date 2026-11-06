@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Hide credentials covered by plugin redaction rules in chats, live tool activity, and public shares.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

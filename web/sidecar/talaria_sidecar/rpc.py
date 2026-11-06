@@ -30,6 +30,7 @@ import threading
 import traceback
 from typing import Any, Callable
 
+from .redaction import RedactionPolicy
 from .startup_timing import StartupTiming, outcome_for
 
 from .errors import (
@@ -182,6 +183,7 @@ class CallContext:
 
     def emit(self, event: str, data: Any = None) -> None:
         """Send one stream frame for this request."""
+        self.server.redaction_policy.publish(self.server)
         with self._seq_lock:
             self._seq += 1
             seq = self._seq
@@ -192,6 +194,7 @@ class CallContext:
 
 class RpcServer:
     def __init__(self, methods: dict[str, Handler], *, stdin=None, stdout=None, max_calls: int = DEFAULT_MAX_CALLS):
+        self.redaction_policy = RedactionPolicy()
         self.methods = dict(methods)
         call_limit = max(1, int(max_calls))
         self._slots = threading.BoundedSemaphore(call_limit)
@@ -363,7 +366,10 @@ class RpcServer:
             ctx.timing.end("rpc_wait")
             ctx.timing.observe("rpc_start")
         try:
-            result = handler(ctx, params)
+            try:
+                result = handler(ctx, params)
+            finally:
+                self.redaction_policy.publish(self)
             status = result.get("status") if isinstance(result, dict) else None
             failed = isinstance(result, dict) and bool(result.get("failed") or result.get("partial") or result.get("error"))
             outcome = "cancelled" if ctx.cancelled or status == "cancelled" else "error" if status == "error" or failed else "ok"

@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_redaction_compatibility.py::test_native_plugin_redaction_policy": {
+      "layer": "compatibility",
+      "reason": "Real supported-Agent PluginContext registration, private registry and matcher identity must produce a policy push before a stream frame. A disposable native interpreter isolates process-wide registrations; no network or providers.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_model_selection.py::test_real_provider_name_conflicts_refused_before_clients": {
       "layer": "compatibility",
       "reason": "Real Agent config expansion, disabled-record semantics and runtime/auxiliary provider resolution must refuse name collisions before client construction. A separate Agent interpreter isolates native imports; all homes, URLs and keys are synthetic and no inference is sent.",

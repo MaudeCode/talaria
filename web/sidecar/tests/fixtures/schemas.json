@@ -425,6 +425,42 @@
     ],
     "additionalProperties": false
   },
+  "redaction.policy": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "fingerprint": {
+        "type": "string",
+        "minLength": 1
+      },
+      "patterns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "minLength": 1
+            },
+            "literal_prefix": {
+              "type": "string",
+              "minLength": 2
+            }
+          },
+          "required": [
+            "pattern",
+            "literal_prefix"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "fingerprint",
+      "patterns"
+    ],
+    "additionalProperties": false
+  },
   "goals.get": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

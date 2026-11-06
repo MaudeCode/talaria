@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  TOOLSETS_METHODS, AUX_METHODS, COMMANDS_METHODS, CONNECTORS_METHODS, CRON_METHODS, GATEWAY_METHODS, GROUP_METHODS, GOALS_METHODS, KANBAN_METHODS, MCP_METHODS, PROCESS_METHODS, PROFILES_METHODS,
+  REDACTION_METHODS, TOOLSETS_METHODS, AUX_METHODS, COMMANDS_METHODS, CONNECTORS_METHODS, CRON_METHODS, GATEWAY_METHODS, GROUP_METHODS, GOALS_METHODS, KANBAN_METHODS, MCP_METHODS, PROCESS_METHODS, PROFILES_METHODS,
   PROVIDERS_METHODS, SKILLS_METHODS, STATE_DB_METHODS, STT_METHODS, TTS_METHODS, OAUTH_METHODS, TEXT_METHODS, MEMORY_METHODS, USAGE_METHODS, WORKTREE_METHODS, CHECKPOINTS_METHODS, CHAT_METHODS, CONFIG_METHODS, WRITE_APPROVAL_METHODS,
 } from './namespaces.js'
 import {
@@ -29,6 +29,7 @@ export const SIDECAR_METHODS = {
   'runtime.sync_dependencies': { params: RuntimeSyncDependenciesParamsSchema, result: RuntimeSyncDependenciesResultSchema },
   'runtime.agent_mutation': { params: RuntimeAgentMutationParamsSchema, result: RuntimeAgentMutationResultSchema, stream: RuntimeAgentMutationStreamSchema },
   'runtime.agent_recovery': { params: RuntimeAgentRecoveryParamsSchema, result: RuntimeAgentRecoveryResultSchema },
+  ...REDACTION_METHODS,
   ...GOALS_METHODS,
   ...COMMANDS_METHODS,
   ...MESHY_METHODS,

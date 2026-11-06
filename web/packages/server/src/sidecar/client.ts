@@ -15,10 +15,11 @@ import { homedir } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import {
-  RPC_ERROR_CODES, RpcIncomingSchema, SIDECAR_METHODS, SIDECAR_RPC_VERSION,
+  RedactionPolicySchema, RPC_ERROR_CODES, RpcIncomingSchema, SIDECAR_METHODS, SIDECAR_RPC_VERSION,
   type AgentRuntimeMetadata, type ChatReadiness, type RpcErrorObject, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult,
 } from '@maudecode/talaria-web-contracts'
 
+import { applyRedactionPolicy } from '../redact.js'
 import { AGENT_IMPORT_ENV } from './env.js'
 import { answerSidecarRequest, type SidecarServerHandlers } from './server-methods.js'
 
@@ -298,6 +299,11 @@ export class SidecarClient implements SidecarLike {
     }
     const message = incoming.data
     if ('method' in message) {
+      if (message.method === 'redaction.policy') {
+        const policy = RedactionPolicySchema.safeParse(message.params)
+        if (policy.success) applyRedactionPolicy(policy.data)
+        else this.log('[sidecar] invalid redaction policy')
+      }
       if (message.method === 'stream') {
         const frame = message.params as { id: number; seq: number; event: string; data: unknown }
         const pending = this.pending.get(frame.id)
