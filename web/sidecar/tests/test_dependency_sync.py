@@ -115,8 +115,10 @@ def test_dependency_sync_writer_stops_with_its_rpc_owner(tmp_path, stop):
 def test_dependency_sync_refuses_overlapping_writers(tmp_path):
     agent, home = _looping_agent(tmp_path)
     proc = SidecarProcess(home, agent_dir=agent, python=sys.executable)
+    request = None
+    reaped = False
     try:
-        proc.request('runtime.sync_dependencies', {'agent_dir': str(agent)})
+        request = proc.request('runtime.sync_dependencies', {'agent_dir': str(agent)})
         _wait_for_file(agent / 'grandchild.pid')
         first = (agent / 'writer.pid').read_text()
         result = proc.result('runtime.sync_dependencies', {'agent_dir': str(agent)})
@@ -124,5 +126,17 @@ def test_dependency_sync_refuses_overlapping_writers(tmp_path):
         assert 'Another Agent dependency sync is still running' in result['detail']
         assert (agent / 'writer.pid').read_text() == first
     finally:
-        _clean_writers(agent)
-        proc.close()
+        try:
+            if request is not None:
+                proc.request('rpc.cancel', {'id': request})
+                while True:
+                    message = proc.next_message()
+                    assert message is not None, 'sidecar exited before dependency writer cleanup acknowledgement'
+                    if message.get('id') == request:
+                        # The RPC's finally waits for the supervisor to reap its writer before replying.
+                        reaped = True
+                        break
+        finally:
+            if not reaped:
+                _clean_writers(agent)
+            proc.close()
