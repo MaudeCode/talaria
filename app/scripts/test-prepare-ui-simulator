@@ -69,6 +69,7 @@ class PreparationTests(unittest.TestCase):
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            process.communicate()  # Reap the shell and close pipes even when launch was never reached.
         self.addCleanup(clear_descendants)
         try:
             if interrupt:

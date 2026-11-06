@@ -11,7 +11,7 @@ set -euo pipefail
 (( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-documents <simulator-udid>"; exit 64; }
 simulator_id=$1
 
-log_file=$(mktemp -t talaria-files-log)
+log_file=$(mktemp "${TMPDIR:-/tmp}/talaria-files-log.XXXXXX")
 stream_pid=""
 launch_pid=""
 started=$SECONDS
