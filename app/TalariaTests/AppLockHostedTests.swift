@@ -115,15 +115,16 @@ final class AppLockHostedTests: XCTestCase {
     }
 
     func testContentViewQueuesAnIntentDeepLinkUntilUnlock() async throws {
-        let router = AppIntentRouter.shared
-        addTeardownBlock { await MainActor.run { router.pendingDeepLink = nil } }
+        // Its own router: the test host's ContentView drains the shared one.
+        let router = AppIntentRouter()
         let model = model(results: [.cancelled])
         model.sceneDidChange(.active)
         await model.authentication?.value
 
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(
-            ContentView(authManager: fixture.environment.authManager, appLock: model).modelContainer(fixture.cache)
+            ContentView(authManager: fixture.environment.authManager, appLock: model, intentRouter: router)
+                .modelContainer(fixture.cache)
         )
         let link = try XCTUnwrap(TalariaDeepLink.openAppURL)
         router.requestDeepLink(link)

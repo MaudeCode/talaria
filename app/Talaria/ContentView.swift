@@ -16,7 +16,7 @@ struct ContentView: View {
     @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
-    @State private var intentRouter = AppIntentRouter.shared
+    @State private var intentRouter: AppIntentRouter
     @Bindable private var whatsNew: WhatsNewPresenter
     private let appLock: AppLockModel
 
@@ -24,12 +24,14 @@ struct ContentView: View {
         authManager: AuthManager,
         draftStore: ChatDraftStore? = nil,
         whatsNew: WhatsNewPresenter? = nil,
-        appLock: AppLockModel? = nil
+        appLock: AppLockModel? = nil,
+        intentRouter: AppIntentRouter? = nil
     ) {
         self.authManager = authManager
         self.draftStore = draftStore ?? .shared
         self.whatsNew = whatsNew ?? WhatsNewPresenter(pending: nil)
         self.appLock = appLock ?? .shared
+        _intentRouter = State(initialValue: intentRouter ?? .shared)
     }
 
     /// No sign-in, import, deep link or App Intent is waiting to take the screen, so What's New can be offered
