@@ -8,7 +8,7 @@ import { reasoningDisclosureKey } from './reasoning-titles.js'
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
+import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -304,17 +304,6 @@ export function anchorActivitySceneTransportPreview(stored: Record<string, unkno
 /** Terminal outcomes whose "Worked" disclosure opens by default, so readable partial work is not hidden. */
 const EXPANDED_OUTCOMES = new Set(['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'])
 
-/**
- * Codex (Responses API) narration between tool calls: `phase: 'commentary'` message items. The Agent routes that text
- * into `reasoning` and leaves `content` empty, so the scene reads it here (`analysis` stays hidden).
- */
-function codexCommentary(message: Record<string, unknown>): string[] {
-  if (!Array.isArray(message.codex_message_items)) return []
-  return message.codex_message_items.flatMap((item) => isDict(item) && item.type === 'message' && str(item.phase).trim().toLowerCase() === 'commentary' && Array.isArray(item.content)
-    ? [item.content.map((part) => (isDict(part) && part.type === 'output_text' ? str(part.text) : '')).join('').trim()]
-    : []).filter(Boolean)
-}
-
 const isHiddenAssistant = (m: Record<string, unknown>): boolean => m.role === 'assistant' && agentRowKind(m) === 'hidden'
 const hasToolCalls = (m: Record<string, unknown>): boolean => (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) || hasToolUseBlocks(m)
 
@@ -393,8 +382,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     let reasoning = reasoningFieldsText(m)
     // TAL-1175: inline thinking a settled row folded into `reasoning` (`_inline_thinking`) stays its own `:thinking` row.
     const settledInline = str(m._inline_thinking)
-    for (const part of [...commentary, settledInline]) if (part) reasoning = reasoning.replace(part, '')
-    reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
+    reasoning = withoutReasoningParts(reasoning, [...commentary, settledInline])
     const titles = Array.isArray(m.reasoning_titles) ? m.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
     if (reasoning || titles.length) push({ row_id: `${ref}:reasoning`, role: 'reasoning', text: reasoning, titles, ...at })
     const [prose, contentThinking] = splitDisplayText(messageText(m.content))
