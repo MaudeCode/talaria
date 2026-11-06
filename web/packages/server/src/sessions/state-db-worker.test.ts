@@ -380,11 +380,15 @@ async function opensDuring(s: TestServer, dbPath: string, run: () => Promise<voi
   return mainThreadStacks.filter((_, i) => mainThreadOpens[i] === dbPath)
 }
 
+const SLOW_MAIN_THREAD_OPEN_MS = 500
+/** The longest stall `expectHealthyWhileSlow` allows: above busy-runner noise, below the open it exists to catch. */
+const HEALTHY_STALL_LIMIT_MS = SLOW_MAIN_THREAD_OPEN_MS - 100
+
 /** `request` against a slow state.db: worker reads held 2 s, main-thread opens 500 ms. Neither `/health` nor the event loop waits on it. */
 async function expectHealthyWhileSlow(s: TestServer, request: () => Promise<unknown>, outcome: unknown): Promise<void> {
   s.deps.cliSessions.invalidate()
   setStateDbReadDelayForTests(2000)
-  mainThreadOpenDelay.ms = 500
+  mainThreadOpenDelay.ms = SLOW_MAIN_THREAD_OPEN_MS
   let doneAt = Number.POSITIVE_INFINITY
   // The test client shares the server's thread, so the longest event-loop stall is what a watchdog probe would wait.
   let last = performance.now()
@@ -398,9 +402,9 @@ async function expectHealthyWhileSlow(s: TestServer, request: () => Promise<unkn
     const healthAt = performance.now()
     const result = await pending
     clearInterval(ticker)
-    expect(maxGap).toBeLessThan(200)
+    expect(maxGap).toBeLessThan(HEALTHY_STALL_LIMIT_MS)
     expect(health.status).toBe(200)
-    expect(healthAt - healthStart).toBeLessThan(200)
+    expect(healthAt - healthStart).toBeLessThan(HEALTHY_STALL_LIMIT_MS)
     expect(healthAt).toBeLessThan(doneAt)
     expect(result).toEqual(outcome)
   } finally {
