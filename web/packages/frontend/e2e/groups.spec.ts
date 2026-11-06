@@ -350,6 +350,74 @@ test('rolls a refused settings save back to its draft and retries a lost one wit
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 
+test('shows a discussion paused at its cap and continues it optimistically, restoring Continue on refusal', async ({ page, errors }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')!
+  let hold: PromiseWithResolvers<undefined> | null = null
+  sidecar.respond('gateway.groups', async (params, emit, options) => {
+    if (params.operation.action === 'continue' && hold) await hold.promise
+    return native(params, emit, options)
+  })
+  const shot = async (name: string) => { if (process.env.TALARIA_GROUP_EVIDENCE) { mkdirSync(process.env.TALARIA_GROUP_EVIDENCE, { recursive: true }); await page.screenshot({ path: `${process.env.TALARIA_GROUP_EVIDENCE}/${name}-${info.project.name}.png` }) } }
+  const grants = () => fixture.state.events.filter((event) => event.kind === 'room.continued').length
+  try {
+    const ask = fixture.discussion('Review this', 'thread')
+    fixture.append('message.member', 'First take')
+    fixture.activity(ask, 'thread')
+    await page.goto(`${server.base}/groups?room=discussion`)
+    const notice = page.locator('.msg-row[data-role=notice]')
+    await expect(notice).toHaveText('Paused at the round limit')
+    await expect(page.locator('.composer-notice')).toContainText('Paused at the round limit · 5 left')
+    const resume = page.getByRole('button', { name: 'Continue', exact: true })
+    await expect(resume).toBeEnabled()
+    await shot('paused')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+
+    fixture.state.driver_status.member_activity = [{ member_id: 'one', status: 'stopping' }]
+    await expect(resume).toBeDisabled()
+    await shot('stop-pending')
+    fixture.state.driver_status.member_activity = []
+    await expect(resume).toBeEnabled()
+
+    fixture.state.refuseContinue = true
+    const refused = hold = Promise.withResolvers<undefined>()
+    await resume.click()
+    await expect(resume).toHaveCount(0)
+    await expect(notice).toHaveCount(0)
+    await shot('continued')
+    refused.resolve(undefined)
+    await expect(page.getByText('The Agent refused this discussion action.', { exact: true })).toBeVisible()
+    await expect(resume).toBeVisible()
+    await expect(notice).toBeVisible()
+    fixture.state.refuseContinue = false; hold = null
+
+    // The gateway never took it: the log still reads paused, so Continue comes back and nothing was granted.
+    fixture.state.lostContinue = 'dropped'
+    await resume.click()
+    await expect(page.getByText('Execution could not be confirmed. Refresh to reconcile.', { exact: true })).toBeVisible()
+    await expect(resume).toBeVisible()
+    expect(grants()).toBe(0)
+    fixture.state.lostContinue = null
+
+    // The response is lost after the grant landed: the log reads continued, so Continue stays gone with one grant.
+    await page.route('**/api/groups/action', async (route) => { await route.fetch(); await route.abort() })
+    await resume.click()
+    await expect.poll(grants).toBe(1)
+    await expect(notice).toHaveCount(0)
+    await expect(page.locator('.composer-notice')).toHaveCount(0)
+    await page.unroute('**/api/groups/action')
+    expect(grants()).toBe(1)
+    errors.splice(0, errors.length, ...errors.filter((error) => !error.includes('net::ERR_FAILED')))
+
+    fixture.activity(ask, 'thread', 'max_messages')
+    await expect(notice).toHaveText('Paused at the reply limit')
+    await expect(page.locator('.composer-notice')).toContainText('Paused at the reply limit · 4 left')
+    fixture.state.continueMethod = false
+    await expect(resume).toHaveCount(0)
+    await expect(notice).toBeVisible()
+  } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
 for (const refusal of ['receipt', 'http'] as const) test(`restores a ${refusal}-refused send when reconciliation reads fail`, async ({ page, errors }) => {
   const { server } = await discussionServer()
   let reads = 0

@@ -10,7 +10,9 @@ export function groupFixture(sidecar: FakeSidecar) {
   const state = { driver: true, available: true, lostSend: false, disbanded: false, refuseRetry: false, room, events: [] as Record<string, unknown>[],
     contextOffered: true, refuseContext: false, lostContext: null as 'before' | 'after' | null,
     context: { purpose: '', notes: '', routing: 'everyone', lead_member_id: '' },
-    driver_status: { running: true, working: false, blocked: false, max_rounds: undefined as number | null | undefined, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string; tool?: string | null; started_at?: number | null; progress_at?: number | null; thread_id?: string | null; round_index?: number | null }[] } }
+    /** Agent v0.23.0 `groups.continue`; `lostContinue` loses the response after (`applied`) or before (`dropped`) the grant lands. */
+    continueMethod: true, refuseContinue: false, lostContinue: null as 'applied' | 'dropped' | null,
+    driver_status: { running: true, working: false, blocked: false, max_rounds: undefined as number | null | undefined, max_continues: 5 as number | undefined, pending_actions: [] as Record<string, unknown>[], member_activity: [] as { member_id: string; status: string; tool?: string | null; started_at?: number | null; progress_at?: number | null; thread_id?: string | null; round_index?: number | null }[] } }
   function append(kind: string, text: string, member = members[0]!, eventId?: string) {
     const seq = state.events.length + 1
     const event = { room_id: room.room_id, seq, event_id: eventId ?? `event-${seq}`, kind, authority_epoch: 1,
@@ -41,11 +43,28 @@ export function groupFixture(sidecar: FakeSidecar) {
       payload: { discussion_event_id: 'event-1', thread_id: 'thread', task_id: 'dtask:1', lead_member_id: leadMemberId, member_ids: memberIds, fallback }, created_at: 1000 + seq })
     room.latest_seq = seq
   }
+  function gateway(kind: string, payload: Record<string, unknown>, eventId?: string) {
+    const seq = state.events.length + 1
+    const event = { room_id: room.room_id, seq, event_id: eventId ?? `${kind}:${seq}`, kind, authority_epoch: 1, actor: { kind: 'gateway', id: 'gateway' }, payload, created_at: 1000 + seq }
+    state.events.push(event); room.latest_seq = seq
+    return event
+  }
+  /** A user's message opening its own discussion thread, as every Web send does. */
+  function discussion(text: string, threadId: string) {
+    const event = append('message.user', text)
+    Object.assign(event.payload, { thread_id: threadId })
+    return event.event_id
+  }
+  /** Agent v0.23.0 `_append_room_status`: the discussion's outcome, `bounded` at its cap. */
+  function activity(discussionId: string, threadId: string, reason = 'max_rounds', status = 'bounded') {
+    return gateway('room.activity', { status, reason_code: reason, thread_id: threadId, discussion_event_id: discussionId }, `dactivity:${discussionId}:${reason}:${state.events.length}`)
+  }
+  const continued = (discussionId: string, threadId: string) => gateway('room.continued', { discussion_event_id: discussionId, thread_id: threadId, grant: 1 })
   sidecar.respond('gateway.groups', ({ operation }: SidecarParams<'gateway.groups'>) => {
     if (!state.available) return { state: 'unavailable', reason: 'unsupported', value: null }
     let value: Record<string, unknown>
     switch (operation.action) {
-      case 'capabilities': value = { driver: state.driver, authority_gateway_id: 'gateway', methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download', ...(state.contextOffered ? ['context'] : [])].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break
+      case 'capabilities': value = { driver: state.driver, authority_gateway_id: 'gateway', methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', ...(state.continueMethod ? ['continue'] : []), 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download', ...(state.contextOffered ? ['context'] : [])].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break
       case 'list': value = { rooms: state.disbanded ? [] : [room], next_offset: null }; break
       case 'create': room.room_id = operation.room_id; room.name = operation.name; room.members = operation.members.map((m) => ({ ...m, display_name: m.display_name ?? m.profile })); value = { room }; break
       case 'state': value = { room, driver_status: state.driver_status, ...(state.contextOffered ? { context: state.context } : {}) }; break
@@ -80,6 +99,13 @@ export function groupFixture(sidecar: FakeSidecar) {
       }
       case 'disband': state.disbanded = true; value = { tombstone: { room_id: room.room_id, disbanded_at: 1234 } }; break
       case 'stop': value = { cancelled: 1 }; break
+      case 'continue': {
+        if (state.refuseContinue) return { state: 'refused', reason: 'refused', value: null }
+        if (state.lostContinue === 'dropped') throw new SidecarError('response lost', { condition: 'sidecar_timeout' })
+        value = { continued: true, event: continued(operation.discussion_event_id, 'thread') }
+        if (state.lostContinue === 'applied') throw new SidecarError('response lost', { condition: 'sidecar_timeout' })
+        break
+      }
       case 'approve':
         if (!state.driver_status.pending_actions.some((a) => a.task_id === operation.task_id && a.request_id === operation.request_id)) return { state: 'refused', reason: 'refused', value: null }
         state.driver_status.pending_actions = state.driver_status.pending_actions.filter((a) => a.task_id !== operation.task_id || a.request_id !== operation.request_id)
@@ -94,5 +120,5 @@ export function groupFixture(sidecar: FakeSidecar) {
     }
     return { state: 'available', reason: null, value }
   })
-  return { state, members, append, stall, scheduled, assignment }
+  return { state, members, append, stall, scheduled, assignment, gateway, discussion, activity, continued }
 }

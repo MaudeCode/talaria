@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
-import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_NOTES_BYTES, GROUP_ROOM_PURPOSE_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupContextSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
+import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_NOTES_BYTES, GROUP_ROOM_PURPOSE_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupContextSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupPaused, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
 import { HttpFailure } from './service.js'
 import { StreamChannel, type StreamSubscriber } from './streams.js'
@@ -20,13 +20,56 @@ type State = z.infer<typeof NativeGroupStateSchema>
 type NativeEvent = z.infer<typeof NativeGroupLogSchema>['events'][number]
 type Capabilities = z.infer<typeof NativeGroupCapabilitiesSchema>
 interface Observation { identity: string; cursor: number; events: NativeEvent[] }
-const empty = (reason: GroupView['reason']): GroupView => ({ available: false, reason, room: null, rows: [], cursor: 0, has_more: false, next_before_seq: null })
+const empty = (reason: GroupView['reason']): GroupView => ({ available: false, reason, room: null, rows: [], paused: [], cursor: 0, has_more: false, next_before_seq: null })
 const reasons = new Set(['unsupported', 'stopped', 'refused', 'unavailable', 'unknown', 'driver_inactive'])
 const safeReason = (reason: string | null): GroupView['reason'] => reasons.has(reason ?? '') ? reason as GroupView['reason'] : 'unavailable'
 const sameMembers = (left: State['room']['members'], right: State['room']['members']) => left.length === right.length && left.every((m, i) => m.member_id === right[i]?.member_id && m.profile === right[i]?.profile && m.handle === right[i]?.handle)
 const localMembers = (members: State['room']['members']) => members.every((m) => !m.target || m.target.kind === 'local' && m.target.profile === m.profile)
+/** Each pass reads at most this many log pages; the next poll resumes a longer log where this one stopped. */
+const PAUSE_SCAN_PAGES = 20
+const PAUSE_LEDGERS = 32
+const PAUSE_EXCERPT_CHARS = 40
+
+/**
+ * The Agent's `paused_discussion` (`gateway/hosted_room_router.py`), folded per discussion so a whole log costs one pass.
+ * A pause can outlive any display window, and each Continue spends budget wherever its event sits in the log.
+ */
+class PauseLedger {
+  cursor = 0
+  private stop = 0
+  private readonly sources = new Map<string, { seq: number; excerpt: string }>()
+  private readonly discussions = new Map<string, { continues: number; bounded: NativeEvent | null }>()
+
+  /** Takes only the next contiguous events, so overlapping pages and concurrent readers fold each event once. */
+  fold(events: NativeEvent[]) {
+    for (const event of events) {
+      if (event.seq !== this.cursor + 1) continue
+      this.cursor = event.seq
+      const id = event.payload.discussion_event_id
+      if (event.kind === 'room.stop_requested') this.stop = event.seq
+      if (event.kind === 'message.user') {
+        const text = redactString(event.payload.text ?? '')
+        this.sources.set(event.event_id, { seq: event.seq, excerpt: text.length > PAUSE_EXCERPT_CHARS ? `${text.slice(0, PAUSE_EXCERPT_CHARS)}…` : text })
+        for (const discussion of this.discussions.values()) if ((discussion.bounded?.payload.thread_id ?? null) === (event.payload.thread_id ?? null)) discussion.bounded = null
+      }
+      if (!id || (event.kind !== 'room.continued' && event.kind !== 'room.activity')) continue
+      const discussion = this.discussions.get(id) ?? { continues: 0, bounded: null }
+      this.discussions.set(id, discussion)
+      if (event.kind === 'room.continued') { discussion.continues += 1; discussion.bounded = null }
+      else discussion.bounded = event.payload.status === 'bounded' ? event : null
+    }
+  }
+
+  continues(id: string) { return this.discussions.get(id)?.continues ?? 0 }
+
+  /** A Stop after a discussion's own message fences it for good, even one before a cap computed from an older snapshot. */
+  paused() {
+    return [...this.discussions].flatMap(([id, { continues, bounded }]) => bounded && this.stop <= (this.sources.get(id)?.seq ?? bounded.seq) ? [{ id, continues, event: bounded, excerpt: this.sources.get(id)?.excerpt || null }] : [])
+  }
+}
 
 export class Groups {
+  private readonly ledgers = new Map<string, PauseLedger>()
   private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void> }>()
   private droppedAction = false
   constructor(private readonly deps: () => AppDeps, private readonly pollMs = 1000) {}
@@ -131,22 +174,52 @@ export class Groups {
     return state
   }
 
-  private rows(scope: GroupScope, state: State, events: NativeEvent[]): GroupView['rows'] {
+  /** The room's ledger, caught up to `room.latest_seq`; null while a long log is still being read or a read failed. */
+  private async pauseLedger(scope: GroupScope, room: State['room'], caps: Capabilities, events: NativeEvent[] = [], signal?: AbortSignal) {
+    const identity = this.identity(scope, room)
+    const ledger = this.ledgers.get(identity) ?? new PauseLedger()
+    this.ledgers.delete(identity)
+    this.ledgers.set(identity, ledger)
+    if (this.ledgers.size > PAUSE_LEDGERS) this.ledgers.delete(this.ledgers.keys().next().value!)
+    ledger.fold(events)
+    const latest = room.latest_seq ?? 0
+    for (let page = 0; page < PAUSE_SCAN_PAGES && ledger.cursor < latest; page++) {
+      const log = await this.log(scope, room, ledger.cursor, Math.min(caps.max_log_limit, 100), signal)
+      if (!log?.events.length) return null
+      ledger.fold(log.events)
+    }
+    return ledger.cursor >= latest ? ledger : null
+  }
+
+  private paused(state: State, caps: Capabilities, ledger: PauseLedger | null): GroupPaused[] {
+    const driver = state.driver_status
+    const available = !state.room.disbanded_at && driver?.running === true && caps.methods.includes('groups.continue')
+    const stopping = driver?.member_activity?.some((a) => a.status === 'stopping') === true
+    const paused = ledger?.paused() ?? []
+    return paused.flatMap(({ id, continues, event, excerpt }): GroupPaused[] => {
+      const cap = event.payload.reason_code
+      if (cap !== 'max_rounds' && cap !== 'max_messages') return []
+      const left = Math.max(0, (driver?.max_continues ?? 0) - continues)
+      return [{ discussion_event_id: id, event_id: event.event_id, cap, continues_left: left, continue_state: !available || !left ? 'none' : stopping ? 'stop_pending' : 'offered', excerpt: paused.length > 1 ? excerpt : null }]
+    })
+  }
+
+  private rows(scope: GroupScope, state: State, events: NativeEvent[], paused: GroupPaused[]): GroupView['rows'] {
     return events.flatMap((event): GroupView['rows'] => {
       const member = state.room.members.find((m) => m.member_id === event.actor.id && m.member_id === event.payload.member_id && m.profile === event.actor.profile)
-      if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) {
-        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
-          message: { role: 'assistant' as const, content: redactString(event.payload.error), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, _notice_kind: 'wake_failed' as const } }]
-      }
+      const notice = (fields: Partial<GroupView['rows'][number]['message']>): GroupView['rows'] => [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
+        message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, ...fields } }]
+      if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) return notice({ content: redactString(event.payload.error), _notice_kind: 'wake_failed' })
       if (event.kind === 'room.assignment' && event.actor.kind === 'gateway') {
         const name = (id: string | undefined) => { const seat = state.room.members.find((m) => m.member_id === id); return seat && redactString(seat.display_name || seat.profile) }
         const lead = name(event.payload.lead_member_id), assignees = (event.payload.member_ids ?? []).map(name)
         // A room's members are fixed, so a name that does not resolve is not this room's assignment.
         if (!lead || !assignees.length || assignees.some((a) => a === undefined)) return []
         const alone = event.payload.fallback === true || (assignees.length === 1 && event.payload.member_ids?.[0] === event.payload.lead_member_id)
-        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
-          message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, _notice_kind: 'lead_assigned' as const, _lead_assignment: { lead, assignees: alone ? [] : assignees.flatMap((a) => a ?? []) } } }]
+        return notice({ _notice_kind: 'lead_assigned', _lead_assignment: { lead, assignees: alone ? [] : assignees.flatMap((a) => a ?? []) } })
       }
+      const pause = paused.find((p) => p.event_id === event.event_id)
+      if (pause) return notice({ _notice_kind: `paused_${pause.cap}` })
       const user = event.kind === 'message.user' && event.actor.kind === 'user'
       if (!user && (event.kind !== 'message.member' || event.actor.kind !== 'member' || !member)) return []
       const scheduled = user && SCHEDULED_ACTOR.test(event.actor.id)
@@ -172,7 +245,7 @@ export class Groups {
     const { caps, reason } = await this.supported(scope, signal)
     if (!caps) return empty(reason)
     const state = await this.state(scope, roomId, caps, signal)
-    if (state.room.disbanded_at !== undefined) return { available: true, reason: null, room: this.project(scope, state, caps), rows: [], cursor: state.room.latest_seq ?? 0, has_more: false, next_before_seq: null }
+    if (state.room.disbanded_at !== undefined) return { available: true, reason: null, room: this.project(scope, state, caps), rows: [], paused: [], cursor: state.room.latest_seq ?? 0, has_more: false, next_before_seq: null }
     const latest = state.room.latest_seq ?? 0
     const end = Math.min(before === undefined ? latest : before - 1, latest)
     const identity = this.identity(scope, state.room)
@@ -200,7 +273,8 @@ export class Groups {
     const retained = events.slice(-100)
     if (observation) Object.assign(observation, { identity, cursor: seq, events: retained })
     const previous = (retained[0]?.seq ?? 1) > 1 ? retained[0]!.seq : null
-    return { available: true, reason: null, room: this.project(scope, state, caps, retained), rows: this.rows(scope, state, retained), cursor: seq, has_more: previous !== null, next_before_seq: previous }
+    const paused = this.paused(state, caps, await this.pauseLedger(scope, state.room, caps, events, signal))
+    return { available: true, reason: null, room: this.project(scope, state, caps, retained), rows: this.rows(scope, state, retained, paused), paused, cursor: seq, has_more: previous !== null, next_before_seq: previous }
   }
 
   async write(scope: GroupScope, identity: string | null, operation: GroupOperation): Promise<GroupWriteResult> {
@@ -208,6 +282,7 @@ export class Groups {
     const result: GroupWriteResult = { outcome: 'refused', reason: 'unavailable', room_id: operation.room_id, event_id: 'event_id' in operation ? operation.action === 'send' ? nativeEventId(operation.event_id) : operation.event_id : null, attachment: null }
     let forwarded = operation
     let expectedRoom: SidecarParams<'gateway.groups'>['expected_room']
+    let granted = 0
     if (operation.action === 'attachment.upload' && Buffer.from(operation.data_base64, 'base64').length > Math.min(GROUP_ATTACHMENT_BYTES, this.deps().config.maxUploadBytes)) throw new HttpFailure(413, 'Discussion attachment exceeds the upload limit')
     const { caps, reason } = await this.supported(scope)
     if (!caps) return { ...result, reason }
@@ -234,10 +309,20 @@ export class Groups {
         const permitted = (operation.action === 'retry' && isDeepStrictEqual(room.retry_task, { member_id: operation.member_id, task_id: operation.task_id, execution_generation: operation.execution_generation })) || room.members.flatMap((m) => m.actions).some((a) => a.kind === (operation.action === 'approve' ? 'approval' : operation.action) && a.member_id === operation.member_id && a.task_id === operation.task_id && a.execution_generation === operation.execution_generation && (operation.action !== 'approve' || a.request_id === operation.request_id))
         if (!permitted) throw new HttpFailure(409, 'Discussion task changed')
       }
+      if (operation.action === 'continue') {
+        const ledger = await this.pauseLedger(scope, current.room, caps)
+        if (this.paused(current, caps, ledger).find((p) => p.discussion_event_id === operation.discussion_event_id)?.continue_state !== 'offered') return { ...result, reason: 'refused' }
+        granted = ledger?.continues(operation.discussion_event_id) ?? 0
+      }
     }
     let response = await this.call(scope, forwarded, undefined, expectedRoom)
     if (response.state === 'available' && !this.validReceipt(forwarded, response.value)) response = { state: 'unknown', reason: 'unknown', value: null }
     if (response.state !== 'available') {
+      // A Continue carries no client identity: its own `room.continued` in the log is the only proof it landed.
+      if (response.state === 'unknown' && operation.action === 'continue') {
+        const latest = await this.state(scope, operation.room_id, caps).then((state) => this.pauseLedger(scope, state.room, caps)).catch(() => null)
+        if (latest && latest.continues(operation.discussion_event_id) > granted) return { ...result, outcome: 'confirmed', reason: null }
+      }
       // Reconcile durable send/create identities; a transport loss never triggers another write.
       if (response.state === 'unknown' && operation.action === 'context' && await this.findEvent(scope, operation.room_id, operation.event_id, CONTEXT_EVENT).catch(() => null)) return { ...result, outcome: 'confirmed', reason: null }
       if (response.state === 'unknown' && ['send', 'create', 'rename', 'disband'].includes(operation.action)) {
@@ -270,6 +355,10 @@ export class Groups {
           return receipt.event.room_id === operation.room_id && receipt.event.event_id === operation.event_id && receipt.event.kind === CONTEXT_EVENT
         }
         case 'stop': return z.object({ cancelled: z.number().int().nonnegative() }).safeParse(value).success
+        case 'continue': {
+          const { event } = z.object({ continued: z.literal(true), event: NativeGroupEventSchema }).parse(value)
+          return event.kind === 'room.continued' && event.room_id === operation.room_id && event.payload.discussion_event_id === operation.discussion_event_id
+        }
         case 'disband': return z.object({ tombstone: z.object({ room_id: z.literal(operation.room_id), disbanded_at: z.number() }) }).safeParse(value).success
         case 'approve': return z.object({ approved: z.literal(true) }).safeParse(value).success
         case 'retry': return z.object({ retried: z.literal(true) }).safeParse(value).success

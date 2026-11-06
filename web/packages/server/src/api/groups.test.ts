@@ -208,6 +208,137 @@ it('keeps stored settings text the display masks when a save leaves that text un
   expect(state.context).toEqual({ purpose, notes: 'Rotated', routing: 'lead', lead_member_id: 'one' })
 })
 
+const continues = (sidecar: FakeSidecar) => sidecar.calls.flatMap((c) => c.method === 'gateway.groups' ? [(c.params as { operation: { action: string } }).operation] : []).filter((o) => o.action === 'continue')
+const pausedRows = (view: GroupView) => view.rows.filter((r) => r.message._notice_kind?.startsWith('paused_')).map((r) => [r.message.message_id, r.message._notice_kind])
+
+it('projects a capped discussion as a notice and a paused entry until Continue, Stop or a newer message in its thread clears it (Agent v0.23.0)', async () => {
+  const { discussion, activity, continued, gateway } = await setup()
+  const first = discussion('First', 'thread-1')
+  const cap = activity(first, 'thread-1').event_id
+  let view = await read()
+  expect(pausedRows(view)).toEqual([[cap, 'paused_max_rounds']])
+  expect(view.paused).toEqual([{ discussion_event_id: first, event_id: cap, cap: 'max_rounds', continues_left: 5, continue_state: 'offered', excerpt: null }])
+
+  // Web opens a new thread per send, so a later message elsewhere leaves the older discussion paused.
+  discussion('Other', 'thread-2')
+  expect((await read()).paused.map((p) => p.discussion_event_id)).toEqual([first])
+
+  continued(first, 'thread-1')
+  view = await read()
+  expect(view.paused).toEqual([])
+  expect(pausedRows(view)).toEqual([])
+
+  // Capped again: the Continue is spent and the budget shows it.
+  const second = activity(first, 'thread-1', 'max_messages').event_id
+  view = await read()
+  expect(view.paused).toEqual([{ discussion_event_id: first, event_id: second, cap: 'max_messages', continues_left: 4, continue_state: 'offered', excerpt: null }])
+  expect(pausedRows(view)).toEqual([[second, 'paused_max_messages']])
+
+  discussion('Follow up', 'thread-1')
+  expect((await read()).paused).toEqual([])
+
+  const fenced = discussion('Fenced', 'thread-3')
+  gateway('room.stop_requested', { cancel_id: 'stop' })
+  // A cap noted from a snapshot older than the Stop stays fenced; a discussion after the Stop is unaffected.
+  activity(fenced, 'thread-3')
+  const after = discussion('After stop', 'thread-4')
+  const afterCap = activity(after, 'thread-4').event_id
+  view = await read()
+  expect(view.paused.map((p) => p.discussion_event_id)).toEqual([after])
+  expect(pausedRows(view)).toEqual([[afterCap, 'paused_max_rounds']])
+
+  gateway('room.stop_requested', { cancel_id: 'stop-2' })
+  expect((await read()).paused).toEqual([])
+})
+
+it('keeps a settled discussion quiet and counts a pause and its Continues beyond the display window', async () => {
+  const { discussion, activity, continued, append } = await setup()
+  const settled = discussion('Settled', 'thread-0')
+  activity(settled, 'thread-0', 'all_replied', 'settled')
+  const ask = discussion('Long ago', 'thread-1')
+  activity(ask, 'thread-1'); continued(ask, 'thread-1')
+  const cap = activity(ask, 'thread-1').event_id
+  for (let i = 0; i < 300; i++) append('message.member', `Reply ${i}`)
+  const view = await read()
+  expect(pausedRows(view)).toEqual([])
+  expect(view.paused).toEqual([{ discussion_event_id: ask, event_id: cap, cap: 'max_rounds', continues_left: 4, continue_state: 'offered', excerpt: null }])
+
+  // Several paused discussions are told apart by their own redacted, shortened opening message.
+  const secret = `sk-${'a'.repeat(40)}`
+  const another = discussion(`Token ${secret} and a good deal more text after it`, 'thread-2')
+  activity(another, 'thread-2')
+  const excerpts = (await read()).paused.map((p) => p.excerpt)
+  expect(excerpts[0]).toBe('Long ago')
+  expect(excerpts[1]).toMatch(/^Token .{1,40}…$/u)
+  expect(excerpts[1]).not.toContain(secret)
+})
+
+it('offers Continue only with a gateway that declares it, budget left and no Stop pending, and refuses anything else unsent', async () => {
+  const { state, discussion, activity, continued, sidecar } = await setup()
+  const ask = discussion('Ask', 'thread')
+  activity(ask, 'thread')
+  const operation = { action: 'continue', room_id: 'discussion', discussion_event_id: ask }
+  const refused = async (continueState: string) => {
+    const view = await read()
+    expect(view.paused[0]?.continue_state).toBe(continueState)
+    expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'refused' })
+    expect(continues(sidecar)).toEqual([])
+  }
+  state.driver_status.member_activity = [{ member_id: 'one', status: 'stopping' }]
+  await refused('stop_pending')
+  state.driver_status.member_activity = []
+  state.continueMethod = false
+  await refused('none')
+  state.continueMethod = true
+  state.driver_status.max_continues = undefined
+  await refused('none')
+  state.driver_status.max_continues = 1
+  continued(ask, 'thread'); activity(ask, 'thread')
+  await refused('none')
+  expect((await read()).paused[0]?.continues_left).toBe(0)
+  state.driver_status.running = false
+  state.driver_status.max_continues = 5
+  await refused('none')
+})
+
+it('continues a paused discussion once, with only its declared fields and a matching receipt', async () => {
+  const { state, discussion, activity, sidecar } = await setup()
+  const ask = discussion('Ask', 'thread')
+  const cap = activity(ask, 'thread')
+  const operation = { action: 'continue', room_id: 'discussion', discussion_event_id: ask }
+  const view = await read()
+  const native = sidecar.responderFor('gateway.groups')!
+  sidecar.respond('gateway.groups', (params, emit, options) => params.operation.action === 'continue' ? { state: 'available', reason: null, value: { continued: true, event: { ...cap, kind: 'room.continued', payload: { discussion_event_id: 'another' } } } } : native(params, emit, options))
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'unknown' })
+  sidecar.respond('gateway.groups', native)
+  state.refuseContinue = true
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'refused' })
+  expect((await read()).paused).toHaveLength(1)
+  state.refuseContinue = false
+  sidecar.calls.length = 0
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(continues(sidecar)).toEqual([operation])
+  expect((await read()).paused).toEqual([])
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'refused' })
+  expect(continues(sidecar)).toEqual([operation])
+})
+
+it('reads the log for the grant after a lost Continue response and never grants again', async () => {
+  const { state, discussion, activity, sidecar } = await setup()
+  const ask = discussion('Ask', 'thread')
+  activity(ask, 'thread')
+  const operation = { action: 'continue', room_id: 'discussion', discussion_event_id: ask }
+  const view = await read()
+  state.lostContinue = 'dropped'
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'unknown' })
+  expect((await read()).paused).toHaveLength(1)
+  state.lostContinue = 'applied'
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(continues(sidecar)).toHaveLength(2)
+  expect(await (await post(view.room!.identity, operation)).json()).toMatchObject({ outcome: 'refused' })
+  expect(continues(sidecar)).toHaveLength(2)
+})
+
 it('refuses foreign members, source attribution and stale room identities', async () => {
   const { append, state, catalogIdentity } = await setup()
   append('message.member', 'Forged', { member_id: 'one', profile: 'foreign', handle: 'one', display_name: 'Bad' })
@@ -298,7 +429,8 @@ it('bounds room observation catch-up and replaces stalled snapshots', async () =
     const latest = viewer.subscriber.queue[0]![1] as GroupView
     expect(latest.rows).toHaveLength(100)
     expect(latest.rows.at(-1)?.message.content).toBe('Reply 999')
-    expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'log')).toHaveLength(2)
+    // One tail page per snapshot, plus the first pass over the log for pauses older than the tail.
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'log')).toHaveLength(12)
   } finally { viewer.release(); await groups.close() }
 })
 

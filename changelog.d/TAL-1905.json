@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A group discussion that stops at its round or reply limit now says so in Talaria Web and offers Continue.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

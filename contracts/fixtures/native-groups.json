@@ -199,6 +199,30 @@
             ]
           }
         }
+      },
+      {
+        "key": "6:dactivity:event-1:max_rounds",
+        "index": 6,
+        "author": "",
+        "scheduled": false,
+        "message": {
+          "role": "assistant",
+          "message_id": "dactivity:event-1:max_rounds",
+          "timestamp": 1006,
+          "_turn_id": "dactivity:event-1:max_rounds",
+          "_notice_kind": "paused_max_rounds"
+        },
+        "attachments": []
+      }
+    ],
+    "paused": [
+      {
+        "discussion_event_id": "event-1",
+        "event_id": "dactivity:event-1:max_rounds",
+        "cap": "max_rounds",
+        "continues_left": 5,
+        "continue_state": "offered",
+        "excerpt": null
       }
     ],
     "cursor": 4,

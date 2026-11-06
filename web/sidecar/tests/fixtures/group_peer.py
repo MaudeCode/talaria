@@ -113,6 +113,11 @@ def probe(home, peer):
         rest = call("log", room_id="fixture-room", since_seq=first["cursor"], limit=100)
         assert [e["seq"] for e in first["events"] + rest["events"] if e["seq"] <= log["cursor"]] == seqs
         assert call("state", room_id="fixture-room")["room"]["room_id"] == "fixture-room"
+        if "groups.continue" in caps["methods"]:
+            assert call("state", room_id="fixture-room")["driver_status"]["max_continues"] > 0
+            unpaused, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
+                "operation": {"action": "continue", "room_id": "fixture-room", "discussion_event_id": sent["event"]["event_id"]}})
+            assert unpaused["result"]["state"] == "refused", unpaused
         wait_for("fixture-room", lambda s: not s["driver_status"]["working"])
         call("disband", room_id="fixture-room", cancel_id="fixture-disband")
         assert call("list")["rooms"] == []

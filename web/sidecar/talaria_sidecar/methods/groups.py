@@ -15,6 +15,7 @@ _FIELDS = {
     "rename": {"room_id", "event_id", "name"}, "disband": {"room_id", "cancel_id"},
     "context": {"room_id", "event_id", "purpose", "notes", "routing", "lead_member_id"},
     "send": {"room_id", "event_id", "payload"}, "stop": {"room_id", "cancel_id"},
+    "continue": {"room_id", "discussion_event_id"},
     "retry": {"room_id", "member_id", "task_id", "execution_generation"},
     "discard": {"room_id", "member_id", "task_id", "execution_generation"},
     "approve": {"room_id", "member_id", "task_id", "execution_generation", "request_id", "choice"},
