@@ -237,7 +237,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
   }
 
-  const onModelChange = (model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }) }
+  const onModelChange = (model: string, provider: string | null, ownerPayload?: { model: string }) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }, ownerPayload) }
   const onWorkspaceChange = (path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }
   const onExecutionModeChange = (mode: ExecutionMode) => {
     const canReference = executionModes.data?.modes.find((option) => option.mode === mode)?.can_reference === true
@@ -342,7 +342,13 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         setReasoning(arg === 'default' ? null : arg)
         return true
       }
-      case 'model': if (args) onModelChange(args, null); return true
+      case 'model': {
+        if (!args) return true
+        const scope = getStreamContext()
+        const { model, model_provider, owner_payload } = await api.modelCommand({ ...(sessionId ? { session_id: sessionId } : {}), args, current_model: (sessionId ? session?.model : shownChoices.model) ?? null })
+        if (scope === getStreamContext()) onModelChange(model, model_provider, owner_payload)
+        return true
+      }
       case 'workspace': if (args) onWorkspaceChange(args); return true
       case 'personality': {
         // TAL-612: alone it lists the personalities and changes nothing.

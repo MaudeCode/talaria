@@ -639,7 +639,27 @@ def selection_warnings(home: Path, params: dict) -> dict:
     return {"warnings": [_plain(w) for w in result], "context_tokens": tokens or None, "provider": provider, "base_url": base_url}
 
 
+def parse_switch_args(args: str) -> dict:
+    """The Agent's one `/model` parser (TAL-1814). An Agent without it reads the whole string as a model id."""
+    try:
+        from hermes_cli.model_switch import parse_model_switch_args
+    except ImportError:
+        return {"target": args.strip(), "provider": None, "reset": False, "errors": [], "unsupported_flags": []}
+    request = parse_model_switch_args(args)
+    flags = (("--global", request.is_global), ("--once", request.is_once), ("--reasoning", request.reasoning_effort))
+    return {
+        "target": request.target, "provider": request.explicit_provider or None, "reset": request.is_reset,
+        "errors": request.error_messages(), "unsupported_flags": [flag for flag, used in flags if used],
+    }
+
+
 def register(reg) -> None:
+    @reg.method("models.parse_switch_args")
+    def parse_switch(ctx: CallContext, params: dict) -> dict:
+        if not isinstance(params.get("args"), str):
+            raise InvalidParams("args is required")
+        return parse_switch_args(params["args"])
+
     @reg.method("models.selection_warnings")
     def selection(ctx: CallContext, params: dict) -> dict:
         if not params.get("model") or not params.get("session_id"):

@@ -38,7 +38,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchClarifyPending: () => Promise.resolve({ pending: null }),
   fetchAgentHealth: () => Promise.resolve({ available: true }),
   branchSession: vi.fn(() => Promise.resolve({ session_id: 'branched' })),
-  clearSession: vi.fn(), undoSession: vi.fn(), setSessionToolsets: vi.fn(), setSessionYolo: vi.fn(), setReasoningEffort: vi.fn(), setPersonality: vi.fn(), ownerAction: vi.fn(),
+  clearSession: vi.fn(), undoSession: vi.fn(), setSessionToolsets: vi.fn(), setSessionYolo: vi.fn(), setReasoningEffort: vi.fn(), setPersonality: vi.fn(), ownerAction: vi.fn(), updateSession: vi.fn(), modelCommand: vi.fn(),
 }))
 // Probe the real row bodies inside their existing React.memo boundary, without a production test prop.
 vi.mock('./MessageRow', async (original) => {
@@ -204,7 +204,7 @@ it('updates row controls when the server changes read-only and branching capabil
   expect(screen.getByRole('button', { name: 'Branch from here' })).toBeInTheDocument()
 })
 
-interface ComposerProps { session: { enabled_toolsets?: string[] | null; personality?: string | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
+interface ComposerProps { onModelChange: (model: string, provider: string | null) => void; session: { model?: string | null; enabled_toolsets?: string[] | null; personality?: string | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
   onToolsetsChange: (t: string[] | null) => void; onToggleYolo: () => void; onReasoningChange: (level: string | null) => void
   onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>; onOwnerAction: (request: object) => Promise<void> }
 const lastComposer = () => composer.mock.calls.at(-1)![0] as ComposerProps
@@ -289,6 +289,46 @@ it.each([
   await act(async () => { refuse(refusal()); await Promise.resolve() })
   await waitFor(() => expect(shown(lastComposer())).toEqual(confirmed))
   expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
+})
+
+it('/model shows the server\'s parsed result at once and rolls a refused write back, never pinning its raw arguments (TAL-1814)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.updateSession).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  vi.mocked(api.modelCommand).mockResolvedValue({ model: 'profile-model', model_provider: 'profile-provider', owner_payload: { model: 'reset' } })
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  const before = lastComposer().session?.model
+  await expect(lastComposer().onLocalCommand('model', 'reset')).resolves.toBe(true)
+  await waitFor(() => expect(api.updateSession).toHaveBeenCalled())
+  expect(api.updateSession).toHaveBeenCalledWith('memo-chat', { model: 'profile-model', model_provider: 'profile-provider' })
+  expect(api.modelCommand).toHaveBeenCalledWith({ session_id: 'memo-chat', args: 'reset', current_model: before ?? null })
+  await waitFor(() => expect(lastComposer().session?.model).toBe('profile-model'))
+  await act(async () => { refuse(refusal()); await Promise.resolve() })
+  await waitFor(() => expect(lastComposer().session?.model).toBe(before))
+  expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
+})
+
+it('/model on an unsaved chat asks about the chosen model and shows the answer (TAL-1814)', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={qc}><ChatView sessionId={null} /></QueryClientProvider>)
+  await waitFor(() => expect(composer).toHaveBeenCalled())
+  act(() => { lastComposer().onModelChange('chosen-model', 'first-provider') })
+  await waitFor(() => expect(composer.mock.lastCall![0].pendingChoices).toMatchObject({ model: 'chosen-model' }))
+  vi.mocked(api.modelCommand).mockResolvedValue({ model: 'chosen-model', model_provider: 'second-provider' })
+  await act(async () => { await lastComposer().onLocalCommand('model', '--provider second-provider') })
+  expect(api.modelCommand).toHaveBeenCalledWith({ args: '--provider second-provider', current_model: 'chosen-model' })
+  await waitFor(() => expect(composer.mock.lastCall![0].pendingChoices).toMatchObject({ model: 'chosen-model', model_provider: 'second-provider' }))
+  expect(api.updateSession).not.toHaveBeenCalled()
+})
+
+it('/model leaves the chat alone and hands the server\'s refusal to the composer (TAL-1814)', async () => {
+  vi.mocked(api.modelCommand).mockRejectedValue(refusal())
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  await expect(lastComposer().onLocalCommand('model', 'reset --provider x')).rejects.toThrow('Refused by the server')
+  expect(api.updateSession).not.toHaveBeenCalled()
 })
 
 it('rereads YOLO after an unknown outcome and shows what the server kept, without resending (TAL-1384)', async () => {

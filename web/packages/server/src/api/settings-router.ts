@@ -466,7 +466,7 @@ export const settingsRouter = os.router({
     get: os.reasoning.get.handler(({ input, context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
       // TAL-1647: a chat answers with its own effort for the model its turns run on; a chat Web keeps no record of reads the profile's.
-      const chat = input.session_id === undefined ? null : await ctx.deps.sessions.reasoningSession(input.session_id)
+      const chat = input.session_id === undefined ? null : await ctx.deps.sessions.visibleSessionRecord(input.session_id)
       return chat ? chatReasoningStatus(ctx, config, chat) : reasoningStatus(config, effortsResolver(ctx), { model: input.model ?? null, provider: input.provider ?? null, baseUrl: input.base_url ?? null })
     })),
     set: os.reasoning.set.handler(({ input, context: { ctx } }) => run(async () => {

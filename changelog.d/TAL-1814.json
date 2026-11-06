@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "`/model reset` returns a chat to its profile's default model, and `/model <id> --provider <name>` picks both, instead of treating the whole text as a model name.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

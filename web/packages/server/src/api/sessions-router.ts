@@ -336,6 +336,10 @@ export const sessionsRouter = os.router({
       await guardVisibility(ctx, input.session_id)
       return (await ctx.deps.sessions.undo(input.session_id)) as { ok: true; removed_count: number; removed_preview: string } | { error: string }
     })),
+    modelCommand: os.session.modelCommand.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.session_id !== undefined) await guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.modelCommand(input.session_id, input.args, input.current_model)
+    })),
     update: os.session.update.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
       return (await ctx.deps.sessions.update(input.session_id, input)) as { session: { session_id: string; title: string } }

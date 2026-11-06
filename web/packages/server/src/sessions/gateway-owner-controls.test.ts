@@ -258,6 +258,7 @@ describe('canonical owner attachment', () => {
 
   it.each([
     [{ operation: 'model', model: 'picked', revision: 3, execution_generation: 1 }, { state: 'applied' }],
+    [{ operation: 'model', status: 'noop', model: 'picked' }, { state: 'applied' }],
     [{ operation: 'model', status: 'deferred', model: 'picked' }, { state: 'deferred', model: 'picked' }],
     [{ operation: 'model', status: 'confirmation_required', confirm: 'owner-token', confirm_message: 'Guard warning' }, { state: 'confirmation_required', confirm: 'owner-token', message: 'Guard warning', model: 'picked' }],
     [{ operation: 'model', status: 'refused', reason: 'model_resolution_failed' }, { state: 'refused', message: 'model_resolution_failed' }],

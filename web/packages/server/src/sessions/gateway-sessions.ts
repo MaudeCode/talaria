@@ -89,7 +89,8 @@ function modelChange(receipt: Row, selection: Row = {}): ModelChange {
   if (receipt.status === 'deferred') return { state: 'deferred', ...target }
   if (receipt.status === 'confirmation_required' && typeof receipt.confirm === 'string' && receipt.confirm && model)
     return { state: 'confirmation_required', message: str(receipt.confirm_message), confirm: receipt.confirm, ...target }
-  if (receipt.status === undefined && Number.isInteger(receipt.revision)) return { state: 'applied' }
+  // A `/model reset` on a chat already running its default changes nothing and is not a refusal.
+  if (receipt.status === 'noop' || receipt.status === undefined && Number.isInteger(receipt.revision)) return { state: 'applied' }
   return { state: 'refused', message: str(receipt.reason || receipt.message) || 'The owner did not confirm the model change' }
 }
 

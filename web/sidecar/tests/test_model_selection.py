@@ -1,9 +1,12 @@
 """The installed Agent's real guard registry with synthetic routes and local pricing, never provider traffic."""
 import json
 import subprocess
+import sys
 import textwrap
+from types import ModuleType
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, isolated_env, requires_agent
+from talaria_sidecar.methods import providers
 
 
 @requires_agent
@@ -150,3 +153,25 @@ def test_real_provider_name_conflicts_refused_before_clients(tmp_path):
     run = subprocess.run([AGENT_PYTHON, '-c', script, str(tmp_path / 'profile')], env=env, capture_output=True, text=True, timeout=60)
     assert run.returncode == 0, run.stdout + run.stderr
     assert json.loads(run.stdout.splitlines()[-1])['refusals'] == 40
+
+
+@requires_agent
+def test_real_agent_parser_answers_model_arguments(tmp_path):
+    script = textwrap.dedent('''
+        from talaria_sidecar.methods.providers import parse_switch_args as parse
+        assert parse('reset') == dict(target='reset', provider=None, reset=True, errors=[], unsupported_flags=[])
+        assert parse('some/model --provider openrouter') == dict(target='some/model', provider='openrouter', reset=False, errors=[], unsupported_flags=[])
+        assert parse('some/model') == dict(target='some/model', provider=None, reset=False, errors=[], unsupported_flags=[])
+        refused = parse('reset --provider openrouter')
+        assert not refused['reset'] and len(refused['errors']) == 1, refused
+        assert parse('some/model --global --reasoning high')['unsupported_flags'] == ['--global', '--reasoning'], parse('some/model --global --reasoning high')
+    ''')
+    env = isolated_env(tmp_path / 'launch')
+    env['PYTHONPATH'] = f'{SIDECAR_ROOT}:{AGENT_DIR}'
+    run = subprocess.run([AGENT_PYTHON, '-c', script], env=env, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr
+
+
+def test_an_agent_without_the_parser_reads_the_whole_string_as_a_model_id(monkeypatch):
+    monkeypatch.setitem(sys.modules, 'hermes_cli.model_switch', ModuleType('hermes_cli.model_switch'))
+    assert providers.parse_switch_args(' some/model ') == dict(target='some/model', provider=None, reset=False, errors=[], unsupported_flags=[])

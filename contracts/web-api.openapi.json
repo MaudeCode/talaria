@@ -23663,6 +23663,92 @@
         }
       }
     },
+    "/api/session/model-command": {
+      "post": {
+        "operationId": "session.modelCommand",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                  },
+                  "args": {
+                    "type": "string"
+                  },
+                  "current_model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The model the chat shows, kept by a provider-only command when Web has no record of the chat: an unsaved or Agent-owned one."
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string",
+                      "description": "The model the chat runs after this command."
+                    },
+                    "model_provider": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The provider of that model, when one is chosen."
+                    },
+                    "owner_payload": {
+                      "type": "object",
+                      "properties": {
+                        "model": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "model"
+                      ],
+                      "description": "The owner mutation an Agent-owned chat sends instead of the pair above, so `/model reset` stays the Agent's own request."
+                    }
+                  },
+                  "required": [
+                    "model",
+                    "model_provider"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/update": {
       "post": {
         "operationId": "session.update",
@@ -23691,7 +23777,8 @@
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "`reset` returns the chat to its profile's default model, as on every Agent surface."
                   },
                   "model_provider": {
                     "anyOf": [
