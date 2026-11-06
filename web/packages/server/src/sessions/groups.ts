@@ -213,6 +213,11 @@ export class Groups {
       const room = this.project(scope, current, caps)
       if ((ROOM_ACTIONS as readonly string[]).includes(operation.action) && !room.actions.includes(operation.action as typeof ROOM_ACTIONS[number])) return { ...result, reason: 'refused' }
       if (operation.action === 'context' && operation.routing === 'lead' && !current.room.members.some((m) => m.member_id === operation.lead_member_id)) throw new HttpFailure(400, 'Ineligible discussion lead')
+      // The Agent requires both texts on every save and clients only ever see them masked, so text still equal to its mask is unchanged.
+      if (operation.action === 'context' && current.context) {
+        const stored = current.context
+        forwarded = { ...operation, purpose: operation.purpose === redactString(stored.purpose) ? stored.purpose : operation.purpose, notes: operation.notes === redactString(stored.notes) ? stored.notes : operation.notes }
+      }
       if (['retry', 'discard', 'approve'].includes(operation.action) && 'task_id' in operation) {
         const permitted = (operation.action === 'retry' && isDeepStrictEqual(room.retry_task, { member_id: operation.member_id, task_id: operation.task_id, execution_generation: operation.execution_generation })) || room.members.flatMap((m) => m.actions).some((a) => a.kind === (operation.action === 'approve' ? 'approval' : operation.action) && a.member_id === operation.member_id && a.task_id === operation.task_id && a.execution_generation === operation.execution_generation && (operation.action !== 'approve' || a.request_id === operation.request_id))
         if (!permitted) throw new HttpFailure(409, 'Discussion task changed')

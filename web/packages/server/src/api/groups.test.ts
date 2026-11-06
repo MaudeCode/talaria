@@ -156,6 +156,20 @@ it('reconciles a lost settings save, retries one event_id and never writes twice
   expect(forwarded()).toEqual([])
 })
 
+it('keeps stored settings text the display masks when a save leaves that text unchanged', async () => {
+  const { state } = await setup()
+  const secret = `sk-${'a'.repeat(40)}`, purpose = `Rotate ${secret}`, notes = `Key: ${secret}`
+  state.context = { purpose, notes, routing: 'everyone', lead_member_id: '' }
+  const view = await read()
+  const masked = view.room!.context!
+  expect(masked.purpose + masked.notes).not.toContain(secret)
+  const save = (event_id: string, fields: object) => post(view.room!.identity, { action: 'context', room_id: 'discussion', event_id, purpose: masked.purpose, notes: masked.notes, routing: 'lead', lead_member_id: 'one', ...fields })
+  expect(await (await save('lead-only', {})).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(state.context).toEqual({ purpose, notes, routing: 'lead', lead_member_id: 'one' })
+  expect(await (await save('edited', { notes: 'Rotated' })).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(state.context).toEqual({ purpose, notes: 'Rotated', routing: 'lead', lead_member_id: 'one' })
+})
+
 it('refuses foreign members, source attribution and stale room identities', async () => {
   const { append, state, catalogIdentity } = await setup()
   append('message.member', 'Forged', { member_id: 'one', profile: 'foreign', handle: 'one', display_name: 'Bad' })

@@ -386,7 +386,8 @@ It is null on a gateway without `groups.context` and for a routing this contract
 does not know, so those rooms stay usable and offer no settings to overwrite. The
 `context` action saves one `room.context_set` event per `event_id`. A lost response
 reads the log for that event; a retry reuses the id, and the Agent returns the first
-event rather than writing again. A `room.assignment` becomes a `lead_assigned` notice
+event rather than writing again. A submitted purpose or note still equal to the
+masked text the server shows keeps its stored value. A `room.assignment` becomes a `lead_assigned` notice
 row whose `_lead_assignment` names the lead and assignees by display name, with no
 assignees when the lead took the message alone. `room.context_set` stays hidden.
 
