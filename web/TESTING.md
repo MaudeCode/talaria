@@ -104,7 +104,8 @@ one pool of at most `TALARIA_SIDECAR_WORKERS` processes, longest estimate first,
 and each worker runs exactly its listed cases.
 Refresh the record from a full active-pin run's merged report: the `testsuite`
 elements of every CI `agent-compatibility-<release>-shard-<n>` artifact's
-`<release>.shard-<n>.junit.xml` under one `testsuites` root.
+`<release>.shard-<n>.junit.xml` under one `testsuites` root. Pick a run whose shard
+jobs took about the same time to build: a faster runner records its cases as cheaper.
 
 ```bash
 python3 sidecar/scripts/suite_runner.py --record-durations path/to/merged.junit.xml
