@@ -50,8 +50,8 @@ xcrun simctl spawn "$simulator_id" log stream --style ndjson --level debug --tim
 stream_pid=$!
 xcrun simctl launch "$simulator_id" com.apple.DocumentsApp >/dev/null &
 launch_pid=$!
-# Reserve the last second for terminating Files, including when launch itself hangs.
-while (( SECONDS < deadline - 1 )); do
+# Reserve five seconds for the termination client to start and send its request on a busy host.
+while (( SECONDS < deadline - 5 )); do
     if [[ -n "$launch_pid" ]] && ! kill -0 "$launch_pid" 2>/dev/null; then
         wait "$launch_pid"
         launch_pid=""

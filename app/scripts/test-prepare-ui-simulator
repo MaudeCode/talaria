@@ -10,11 +10,30 @@ import unittest
 
 SCRIPTS = Path(__file__).resolve().parent
 FAKE_XCRUN = '''#!/usr/bin/env python3
-import os, pathlib, sys, time
+import os, pathlib, signal, sys, time
 state = pathlib.Path(os.environ['PREPARE_TEST_STATE'])
 args = sys.argv[1:]
+if os.environ.get('PREPARE_TEST_MODE') == 'timeout' and args[1] == 'terminate':
+    time.sleep(2)  # A busy host can delay the termination client before its request is dispatched.
 with (state / 'calls').open('a') as log:
     log.write(' '.join(args) + '\\n')
+if os.environ.get('PREPARE_TEST_MODE') == 'notification-restart':
+    if args[1] == 'push':
+        counter = state / 'notification-pushes'
+        attempt = int(counter.read_text()) + 1 if counter.exists() else 1
+        counter.write_text(str(attempt))
+        (state / f'notification-push-{attempt}.pid').write_text(str(os.getpid()))
+        if attempt > 1:
+            sys.exit(1)  # Fast unauthorized response: the notification service answered.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        while True:
+            time.sleep(1)
+    if 'launchctl' in args:
+        (state / 'notification-restart.pid').write_text(str(os.getpid()))
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        while True:
+            time.sleep(1)
+    sys.exit(0)
 if 'stream' in args:
     (state / 'stream.pid').write_text(str(os.getpid()))
     print('Filtering: collectionDidFinishGathering', flush=True)
@@ -52,11 +71,33 @@ class PreparationTests(unittest.TestCase):
         self.bin.mkdir()
         self.scratch = self.root / 'tmp'
         self.scratch.mkdir()
+        self.stopped = {}
         tool = self.bin / 'xcrun'
         tool.write_text(FAKE_XCRUN)
         tool.chmod(0o755)
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
                         PREPARE_TEST_STATE=str(self.root), TMPDIR=str(self.scratch) + '/')
+
+    def stop_process(self, process, *pid_files):
+        if process in self.stopped:
+            return self.stopped[process]
+        owned_pids = [process.pid]
+        for name in pid_files:
+            marker = self.root / name
+            if marker.exists():
+                owned_pids.append(int(marker.read_text()))
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        for pid in owned_pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        result = process.communicate() if not process.stdout.closed else ('', None)
+        self.stopped[process] = result
+        return result
 
     def run_documents(self, mode, interrupt=False):
         self.env['PREPARE_TEST_MODE'] = mode
@@ -64,13 +105,8 @@ class PreparationTests(unittest.TestCase):
         process = subprocess.Popen([str(SCRIPTS / 'ready-simulator-documents'), 'synthetic-simulator'],
                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, start_new_session=True)
-        def clear_descendants():
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.communicate()  # Reap the shell and close pipes even when launch was never reached.
-        self.addCleanup(clear_descendants)
+        self.document_process = process
+        self.addCleanup(self.stop_process, process, 'stream.pid', 'launch.pid', 'terminate.pid')
         try:
             if interrupt:
                 deadline = time.monotonic() + 5
@@ -113,11 +149,36 @@ class PreparationTests(unittest.TestCase):
                 for item in self.root.glob('*'):
                     if item.is_file():
                         item.unlink()
-                code, output, _ = self.run_documents(mode, interrupt)
-                self.assertEqual(code, expected, output)
-                if mode == 'success':
-                    self.assertRegex(output, r'Files finished gathering.*[0-9]+s')
-                self.assert_cleanup()
+                try:
+                    code, output, _ = self.run_documents(mode, interrupt)
+                    self.assertEqual(code, expected, output)
+                    if mode == 'success':
+                        self.assertRegex(output, r'Files finished gathering.*[0-9]+s')
+                    self.assert_cleanup()
+                finally:
+                    self.stop_process(self.document_process, 'stream.pid', 'launch.pid', 'terminate.pid')
+
+    def test_stalled_restart_allows_next_notification_probe(self):
+        self.env['PREPARE_TEST_MODE'] = 'notification-restart'
+        process = subprocess.Popen([str(SCRIPTS / 'ready-simulator-notifications'), 'synthetic-simulator'],
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+        started = time.monotonic()
+        try:
+            try:
+                output, _ = process.communicate(timeout=13)
+            except subprocess.TimeoutExpired:
+                self.fail('A stalled dasd restart prevented the next notification readiness probe')
+            self.assertEqual(process.returncode, 0, output)
+            self.assertLess(time.monotonic() - started, 12, output)
+            self.assertEqual((self.root / 'notification-pushes').read_text(), '2')
+            self.assertIn('restart client did not finish within 5s; probing again', output)
+            for name in ('notification-push-1.pid', 'notification-restart.pid', 'notification-push-2.pid'):
+                with self.assertRaises(ProcessLookupError, msg=f'{name} survived readiness completion'):
+                    os.kill(int((self.root / name).read_text()), 0)
+            self.assertEqual(list(self.scratch.iterdir()), [], 'Notification payload leaked')
+        finally:
+            self.stop_process(process)
 
     def copy_prepare_script(self):
         repo = self.root / 'scripts'
@@ -126,6 +187,57 @@ class PreparationTests(unittest.TestCase):
         script.write_bytes((SCRIPTS / 'prepare-ui-simulator').read_bytes())
         script.chmod(0o755)
         return script
+
+    def test_group_permission_error_preserves_interruption(self):
+        script = self.copy_prepare_script()
+        hooks = self.root / 'python-hooks'
+        hooks.mkdir()
+        # Inject the observed syscall error through Python's existing startup interface, without a root process.
+        (hooks / 'sitecustomize.py').write_text('\n'.join([
+            'import errno, os, pathlib, sys',
+            'if sys.argv[0] == "-":',
+            '    state = pathlib.Path(os.environ["PREPARE_TEST_STATE"])',
+            '    (state / "wrapper.pid").write_text(str(os.getpid()))',
+            '    def denied(*args):',
+            '        raise PermissionError(errno.EPERM, "simulated hosted group permission failure")',
+            '    os.killpg = denied',
+        ]) + '\n')
+        notifications = script.with_name('ready-simulator-notifications')
+        notifications.write_text('\n'.join([
+            '#!/usr/bin/env python3',
+            'import os, pathlib, time',
+            'state = pathlib.Path(os.environ["PREPARE_TEST_STATE"])',
+            '(state / "permission-child.pid").write_text(str(os.getpid()))',
+            'while True: time.sleep(1)',
+        ]) + '\n')
+        notifications.chmod(0o755)
+        process = subprocess.Popen([str(script), 'synthetic-simulator'],
+                                   env=dict(self.env, PYTHONPATH=str(hooks)),
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+        try:
+            deadline = time.monotonic() + 3
+            while not (self.root / 'permission-child.pid').exists() and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertTrue((self.root / 'permission-child.pid').exists(), 'Notification client never started')
+            os.kill(int((self.root / 'wrapper.pid').read_text()), signal.SIGTERM)
+            try:
+                process.wait(timeout=4)
+            except subprocess.TimeoutExpired:
+                self.fail('Denied group signaling left the owned notification helper running')
+            # Capture liveness before test-owned cleanup drains pipes held by a leaked helper.
+            try:
+                os.kill(int((self.root / 'permission-child.pid').read_text()), 0)
+                child_alive = True
+            except ProcessLookupError:
+                child_alive = False
+            output, _ = self.stop_process(process, 'wrapper.pid', 'permission-child.pid')
+            self.assertEqual(process.returncode, 143, output)
+            self.assertNotIn('PermissionError', output)
+            self.assertNotIn('photo start', output)
+            self.assertFalse(child_alive, 'Denied group signaling leaked the owned notification helper')
+        finally:
+            self.stop_process(process, 'wrapper.pid', 'permission-child.pid')
 
     def test_notification_step_deadline_kills_descendants(self):
         script = self.copy_prepare_script()
@@ -167,16 +279,7 @@ class PreparationTests(unittest.TestCase):
                 self.assertLess(time.monotonic(), reap_deadline, 'A notification probe survived its deadline')
                 time.sleep(.01)
         finally:
-            owned_groups = [process.pid]
-            helper_pid = self.root / 'notifications.pid'
-            if helper_pid.exists():
-                owned_groups.append(int(helper_pid.read_text()))
-            for group in owned_groups:
-                try:
-                    os.killpg(group, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            process.communicate()
+            self.stop_process(process, 'notifications.pid', 'probe.pid')
 
     def test_prepare_step_timings_and_keyboard_only(self):
         # Keep the real orchestration script; replace only its external step executables.

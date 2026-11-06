@@ -34,6 +34,17 @@ import time
 
 deadline = float(sys.argv[1])
 process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+
+def signal_clients(signum):
+    try:
+        os.killpg(process.pid, signum)
+    except (ProcessLookupError, PermissionError):
+        # A simulator descendant can deny group signaling; the helper PID is still ours to stop.
+        try:
+            process.send_signal(signum)
+        except ProcessLookupError:
+            pass
+
 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(signum, lambda received, _: sys.exit(128 + received))
 try:
@@ -44,18 +55,12 @@ try:
         print("notifications timed out (60-second budget including cleanup).", file=sys.stderr)
         exit_status = 124
 finally:
+    signal_clients(signal.SIGTERM)
     try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=max(0, deadline - time.time()))
+        process.wait(timeout=min(1, max(0, deadline - time.time())))
     except subprocess.TimeoutExpired:
         pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+    signal_clients(signal.SIGKILL)
     process.wait()
 sys.exit(exit_status if exit_status >= 0 else 128 - exit_status)
 PYTHON
