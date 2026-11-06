@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The context popover now fills for any chat with history, including after the agent went idle or the server restarted, instead of saying details are unavailable before the first turn.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

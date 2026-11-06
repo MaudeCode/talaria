@@ -1002,6 +1002,13 @@
         ""
       ]
     },
+    "tests/test_context_detail.py::test_a_chat_with_no_resident_agent_measures_its_stored_prompt_and_tools": {
+      "layer": "compatibility",
+      "reason": "Real installed SessionDB, stored_context_breakdown and pinned_tool_defs measure a stored session through a real sidecar with no Agent built, which a boundary fake cannot prove. Disposable state.db, no network.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_atomicity.py::test_store_transaction_publishes_one_complete_job_state": {
       "layer": "compatibility",
       "reason": "Supported-Agent store-lock exclusion: real cron.create and cron.resume are held at event barriers while real list/get/run readers and an external Agent update_job writer race them on the installed release's reentrant jobs lock. Fakes cannot prove that lock's exclusion or reentrancy. Disposable homes; the run lookup is captured and never executes a job.",

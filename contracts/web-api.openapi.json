@@ -8803,7 +8803,7 @@
     "/api/session/context-detail": {
       "get": {
         "operationId": "session.contextDetail",
-        "summary": "Read bounded, safe allocation estimates and context-file metadata from the existing Agent only.",
+        "summary": "Read bounded, safe allocation estimates and context-file metadata from the existing Agent or the session's stored prompt and tools, never building an Agent.",
         "tags": [
           "sessions"
         ],

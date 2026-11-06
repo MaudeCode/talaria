@@ -985,8 +985,12 @@ Native owner controls are outside this direct-sidecar API.
 
 ### Context inspection
 
-`chat.context_detail` reads only a matching resident Agent in the requested profile,
-model, provider and workspace. It never creates an Agent or calls a model provider.
+`chat.context_detail` reads a matching resident Agent in the requested profile,
+model, provider and workspace. With no resident Agent it measures the session row's
+stored system prompt and tool pin through the Agent's `stored_context_breakdown`,
+opening `state.db` read-only; that read reports category estimates only, with
+unknown occupancy and no context files. It never creates an Agent or calls a model
+provider.
 `gateway.session` with `action: context_detail` uses the authenticated owner's
 `session.context_breakdown` and optional `session.stats`, fenced by the resumed
 session identity, revision, authority/replay epochs and execution generation.
@@ -1001,7 +1005,8 @@ retire the cached resident Agent through the existing session-update boundary.
 Session views carry an opaque
 `context_detail_key` so clients discard details on context/owner replacement.
 Web mounts the query only inside the existing open ring popover or mobile context
-row, with no retained cache. Unsupported and pre-build reads are unavailable.
+row, with no retained cache. Unsupported reads and sessions with no stored prompt
+are unavailable.
 
 RPC version 55 adds `drafts.review`, the profile/session-scoped outbound draft
 adapter. Its read/edit/approve variants share typed producer content and action
