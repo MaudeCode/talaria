@@ -172,7 +172,7 @@ def repository_only(path):
         path.endswith(".md")
         or re.fullmatch(r"[A-Z][A-Z_]*", path) is not None
         or path.startswith((
-            "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
+            "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".githooks/", ".agents/", ".agy/", ".codex/",
             ".xcodebuildmcp/", DIRECTORY + "/", "TalariaKit/Tests/",
             # The UI-test fixture server is compiled only into DEBUG builds (`#if DEBUG`), so it never ships.
             "Talaria/Config/UITestFixture",

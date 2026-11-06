@@ -364,6 +364,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.write("NOTICE", "Repository metadata\n")
         self.write(".codex/environments/environment.toml", "# Local agent tooling\n")
         self.write(".xcodebuildmcp/config.yaml", "# Local test runner settings\n")
+        self.write(".githooks/pre-push", "#!/bin/sh\n")
         self.write("TalariaKit/Tests/TalariaKitTests/FixtureTests.swift", "// Package test\n")
         self.write("Talaria/Config/UITestFixture+Example.swift", "#if DEBUG\n#endif\n")
         self.commit("TAL-2: documentation")
