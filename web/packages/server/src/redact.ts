@@ -167,11 +167,14 @@ function looksOpaque(value: string): boolean {
  */
 const URL_USERINFO_RE = /(\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|(?:private|access|secret|session|signing|encryption|encrypt|master|hmac|symmetric|account|shared[_-]?access)[_-]?key|client[_-]?key[_-]?data|shared[_-]?access[_-]?signature|mysql_pwd|sshpass|sig|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
+const CRED_QUALIFIED_KEY_NAME = String.raw`(?:private|access|secret|session|signing|encryption|encrypt|master|hmac|symmetric|account|shared[_-]?access)[_-]?key`
+const CRED_VALUE_SUFFIX = String.raw`(?:_(?:value|data|b64|base64))?`
+const CRED_STRONG_KEY_END_RE = new RegExp(String.raw`(?:password|passwd|${CRED_QUALIFIED_KEY_NAME})${CRED_VALUE_SUFFIX}$`, 'i')
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|${CRED_QUALIFIED_KEY_NAME}|client[_-]?key[_-]?data|shared[_-]?access[_-]?signature|mysql_pwd|sshpass|sig|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
-const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}(?:_(?:value|data|b64|base64))?$`, 'i')
+const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}${CRED_VALUE_SUFFIX}$`, 'i')
 /**
  * A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`),
  * and a JSON `\uXXXX` escape decoded as a JSON parser does (`"pass\u0077ord"` → `password`).
@@ -188,7 +191,7 @@ export function isCredentialKey(key: string, inventory = false): boolean {
   if (inventory && (/auth|token|key|secret|password|credential/i.test(key) || ENV_STRONG_NAME_RE.test(key))) return true
   if (GLUED_CREDENTIAL_NAME_RE.test(dequote(key))) return true
   return dequote(key).split(/[.:/[\]]/).some((segment) => {
-    if (/(?:password|passwd)$/i.test(segment)) return true
+    if (CRED_STRONG_KEY_END_RE.test(segment)) return true
     const words = segment.replace(/^-+/, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
     for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
     return false
@@ -956,7 +959,7 @@ function redactCredentialParams(text: string, unquotedKeysOnly = false): string 
       continue
     }
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
-    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\$`]/.test(key) && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
+    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\$`]/.test(key) && ENV_KEY_NAME_RE.test(key) && !CRED_STRONG_KEY_END_RE.test(dequote(key)) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
     // Fully masked: keep a JSON string's delimiters even when its contents contain escaped quotes.
     const jsonString = sep.startsWith('"') && sep.includes(':') && splitQuoted(value)?.open === '"'
     out += text.slice(last, valueStart) + (jsonString ? '"***"' : /^[[{(]/.test(value) ? '***' : maskShellWord(value))
@@ -970,13 +973,14 @@ function redactCredentialParams(text: string, unquotedKeysOnly = false): string 
  * with the shell-word scanner, and everything after its first `:` is masked. A single quoted pair keeps its quotes
  * (`"bob:***"`).
  */
-function redactUserFlags(text: string): string {
+function redactUserFlags(text: string, unquotedKeysOnly = false): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
   const closeOf = enclosingClose(text)
   USER_FLAG_RE.lastIndex = 0
   for (let m = USER_FLAG_RE.exec(text); m; m = USER_FLAG_RE.exec(text)) {
+    if (unquotedKeysOnly && quoteAt(m.index)) continue
     const wordStart = m.index + m[0].length
     const wordEnd = shellWordEnd(text, wordStart, quoteAt(wordStart), closeOf)
     const word = text.slice(wordStart, wordEnd)
@@ -1140,13 +1144,14 @@ function commandWords(text: string, from: number, enclosing: string, list: boole
  * `COMMAND_FLAGS` secrets in shell text and listed argv text (`['mysql', '-phunter2']`). A quoted word that holds a known
  * command (`sh -c 'mysql -phunter2'`) is read as a command of its own.
  */
-function redactCommandFlags(text: string): string {
+function redactCommandFlags(text: string, unquotedCommandsOnly = false): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
   const re = new RegExp(COMMAND_FLAG_RE)
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const quote = quoteAt(m.index).slice(-1)
+    if (unquotedCommandsOnly && quote) { re.lastIndex = Math.max(re.lastIndex, m.index + 1); continue }
     // A listed element (`'mysql',`) is read from its opening quote; a command inside a quoted argument ends at its close.
     let listed = quote !== '' && text[m.index + m[0].length] === quote
     // A computed word matched only to its first expansion (`"$(echo $(which docker))"`) is listed when it fills its quotes.
@@ -1163,7 +1168,7 @@ function redactCommandFlags(text: string): string {
       const from = masks.get(k)
       // A nested command is a quoted or substituted word with a space, strictly inside this text.
       const nested = (listed || !quote) && raw.length < text.length && /['"]|\$\(|\x60/.test(raw) && /\s/.test(raw) && COMMAND_FLAG_TEST_RE.test(raw)
-      const replaced = from !== undefined ? maskWordFrom(raw, words[k]!, from) : nested ? redactCommandFlags(raw) : raw
+      const replaced = from !== undefined ? maskWordFrom(raw, words[k]!, from) : nested ? redactCommandFlags(raw, unquotedCommandsOnly) : raw
       if (replaced === raw) continue
       out += text.slice(last, start) + replaced
       last = stop
@@ -1388,10 +1393,11 @@ function redactSerializedUrls(text: string): string {
     let masked = redactSensitive(value)
     const literal = text.slice(start + 1, contentEnd)
     if (literal !== value) {
-      // Shell-quoted JSON keeps its backslashes; consider that reading before discarding any escape.
+      // Shell strings keep literal backslashes. Compare both readings before discarding an escape.
       let jsonLiteral = false
       try { JSON.parse(literal); jsonLiteral = true } catch { /* A plain command, not another serialization. */ }
-      if (jsonLiteral && revealsMore(literal, masked, redactSensitive(literal), secretTokenCounts)) masked = '***'
+      const rawMask = jsonLiteral ? redactSensitive(literal) : redactRules(literal)
+      if ((rawMask !== literal || masked !== value) && revealsMore(`${literal}\n${value}`, masked, rawMask, secretTokenCounts)) masked = '***'
     }
     if (masked === value) continue
     const encoded = JSON.stringify(masked).slice(1, -1)
@@ -1784,9 +1790,9 @@ function redactShellText(text: string): string {
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
   let guarded = joined
-  if (SHELL_COMPOSITION_RE.test(joined)) {
+  if (/["'\\`]|\$[({]/.test(joined)) {
     const input = redactConnectionStrings(redactPrivateKeys(joined))
-    guarded = redactCommandFlags(redactUserFlags(redactCredentialParams(input, true)))
+    guarded = redactCommandFlags(redactUserFlags(redactCredentialParams(input, true), true), true)
     if (joined.includes('=')) guarded = restoreCodeEnvKeyLiterals(input, guarded)
   }
   const literals = guarded.includes('://') && guarded.includes('@') ? redactSerializedUrls(guarded) : guarded

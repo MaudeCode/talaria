@@ -876,8 +876,14 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['PGPASSFILE=/home/app/.pgpass', 'PGPASSFILE=/home/app/.pgpass'],
     ['passwordless: true', 'passwordless: true'],
   ],
+  'v0.23 strong credential name casing': [
+    ['DBPASSWORD=s3cretpw', 'DBPASSWORD=***'],
+    ['ROOTPASSWD=s3cretpw', 'ROOTPASSWD=***'],
+    ['SECRETKEY=s3cretpw', 'SECRETKEY=***'],
+    ['MYSECRETKEY=s3cretpw', 'MYSECRETKEY=***'],
+  ],
   'v0.23 qualified and affixed keys': [
-    ...['signing_key', 'encryption_key', 'encryptKey', 'master_key', 'hmac_key', 'symmetric_key', 'client-key-data', 'AccountKey', 'SharedAccessKey', 'dbpassword', 'rootpasswd', 'mySigningKey', 'my_api_key_value', 'secret_value', 'MY_API_KEY_B64'].map((key): [string, string] => [`{"${key}":"s3cretpw"}`, `{"${key}":"***"}`]),
+    ...['signing_key', 'encryption_key', 'encryptKey', 'master_key', 'hmac_key', 'symmetric_key', 'client-key-data', 'AccountKey', 'SharedAccessKey', 'dbpassword', 'rootpasswd', 'mySigningKey', 'my_api_key_value', 'secret_value', 'MY_API_KEY_B64', 'MYSECRETKEY'].map((key): [string, string] => [`{"${key}":"s3cretpw"}`, `{"${key}":"***"}`]),
   ],
   'v0.23 connection strings preserve shell value boundaries': [
     [String.raw`host=db; password="two\" secret words"; database=x`, 'host=db; password=***; database=x'],
@@ -912,7 +918,21 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Server=db;PWD={unterminated', 'Server=db;PWD={***'],
     ['Host=db;pwd = {s3;cr};Database=x', 'Host=db;pwd = {***};Database=x'],
   ],
+  'v0.23 raw shell URL readings': [
+    [String.raw`curl 'https://abcde\x40s3cretpw@github.com'`, "curl '***'"],
+    [String.raw`curl 'https://abcde\u0040s3cretpw@github.com'`, "curl '***'"],
+    [String.raw`curl 'https://abcde\x2fs3cretpw@github.com'`, "curl '***'"],
+    [String.raw`curl "https://abcde\x40s3cretpw@github.com"`, 'curl "***"'],
+    [String.raw`{'command': 'curl https://abcde\\x40s3cretpw@github.com'}`, "{'command': 'curl https://***@github.com'}"],
+    [String.raw`curl 'https://example.com/search?q=abcde\x40value&mail=user@example.com'`, String.raw`curl 'https://example.com/search?q=abcde\x40value&mail=user@example.com'`],
+    [String.raw`echo '{"@context":"https://schema.org","@type":"\u0041"}'`, String.raw`echo '{"@context":"https://schema.org","@type":"\u0041"}'`],
+  ],
   'v0.23 credential arguments before inner rewrites': [
+    [JSON.stringify({ command: 'curl --password "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'curl --password ***' })],
+    [JSON.stringify({ command: 'curl -u "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'curl -u "https:***"' })],
+    [JSON.stringify({ command: 'docker login -p "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'docker login -p ***' })],
+    ['SharedAccessSignature=${VALUE:-hello world} next', 'SharedAccessSignature=*** next'],
+    ['SharedAccessSignature=$(printf hello world) next', 'SharedAccessSignature=***'],
     [JSON.stringify({ password: 'two" secret words' }), JSON.stringify({ password: '***' })],
     ['curl --password "https://"TOKEN123456789"@github.com secret words"', 'curl --password ***'],
     ['curl -u "https://"TOKEN123456789"@github.com secret words"', 'curl -u "https:***"'],
@@ -1071,7 +1091,7 @@ describe('Agent redactor parity', () => {
     expect(frame.target).toContain('curl https://***@')
     expect(frame.target).not.toContain('correcthorse42')
   })
-  it.each(['signing_key', 'encryption_key', 'master_key', 'hmac_key', 'PGPASSWORD', 'MYSQL_PWD', 'SSHPASS', 'AccountKey', 'dbpassword'])('masks object credential %s in live and persisted tool arguments', (key) => {
+  it.each(['signing_key', 'encryption_key', 'master_key', 'hmac_key', 'PGPASSWORD', 'MYSQL_PWD', 'SSHPASS', 'AccountKey', 'dbpassword', 'MYSECRETKEY'])('masks object credential %s in live and persisted tool arguments', (key) => {
     const call = { name: 'terminal', args: { [key]: 's3cretpw', passwordless: true } }
     expect(publicToolFrame(call, true).args).toEqual({ [key]: '***', passwordless: true })
     const row = redactSessionData({ messages: [{ role: 'assistant', tool_calls: [call] }] }, true)
