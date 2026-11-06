@@ -335,5 +335,48 @@
         }
       }
     }
+  },
+  "approval_instruction": {
+    "pending": {
+      "approval_id": "approval-native",
+      "session_id": "fixture",
+      "command": "echo fixture",
+      "allowed_choices": [
+        "once",
+        "deny"
+      ],
+      "can_enable_yolo": false,
+      "can_deny_with_instruction": true,
+      "pending_count": 1
+    },
+    "request": {
+      "session_id": "fixture",
+      "approval_id": "approval-native",
+      "choice": "deny",
+      "instruction": "Use the staging copy instead"
+    },
+    "responses": {
+      "steered": {
+        "ok": true,
+        "choice": "deny",
+        "instruction_outcome": "steered"
+      },
+      "queued": {
+        "ok": true,
+        "choice": "deny",
+        "instruction_outcome": "queued"
+      },
+      "unconfirmed": {
+        "ok": true,
+        "choice": "deny",
+        "instruction_outcome": "unconfirmed"
+      }
+    },
+    "steer_receipt": {
+      "status": "queued",
+      "text": "Use the staging copy instead",
+      "execution_generation": 7,
+      "authority_epoch": 1
+    }
   }
 }

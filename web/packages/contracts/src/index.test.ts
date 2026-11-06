@@ -1,4 +1,4 @@
-import { AcceptedSourceReferenceSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
+import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
@@ -143,6 +143,15 @@ describe('contracts package', () => {
     // An older server omits the field, and the attachment stays valid.
     expect(OwnerAttachmentSchema.parse((shared('fixtures/gateway-owner.json') as { normal: unknown }).normal)).not.toHaveProperty('reasoning_control')
     expect(ModelChangeSchema.parse({ state: 'confirmation_required', confirm: 'token', model: 'picked', reasoning: 'high' }).reasoning).toBe('high')
+  })
+  it('carries a deny with an instruction and the owner verdict on its steer (TAL-1912)', () => {
+    const { approval_instruction: fixture } = shared('fixtures/gateway-owner.json') as { approval_instruction: { pending: unknown; request: unknown; responses: Record<string, unknown>; steer_receipt: unknown } }
+    expect(ApprovalPendingSchema.parse(fixture.pending)).toEqual(fixture.pending)
+    expect(ApprovalRespondRequestSchema.parse(fixture.request)).toEqual(fixture.request)
+    for (const response of Object.values(fixture.responses)) expect(ApprovalRespondResponseSchema.parse(response)).toEqual(response)
+    expect(GatewaySessionResultSchema.parse({ state: 'attached', reason: null, snapshot: null, receipt: fixture.steer_receipt }).receipt).toEqual(fixture.steer_receipt)
+    expect(GatewaySessionResultSchema.safeParse({ state: 'attached', reason: null, snapshot: null, receipt: { status: 'delivered', text: 'x' } }).success).toBe(false)
+    expect(ApprovalRespondResponseSchema.safeParse({ ok: true, instruction_outcome: 'lost' }).success).toBe(false)
   })
   it('preserves recorded owner capabilities and explicit unknown recovery actions', () => {
     const fixture = shared('fixtures/gateway-owner.json') as Record<string, unknown>

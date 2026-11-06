@@ -370,6 +370,9 @@ requests are declined. During a restart's after-turn wait (`restart_wait`), the 
 for snapshots, watches, receipts, approvals, clarify answers and interrupts, refuses other actions with
 `gateway_restarting`, and the server ships `owner_attachment.restarting` so clients stop sending. A
 watch opened before the wait polls discovery, never its own socket, and emits `restarting` when the wait begins.
+A deny with an instruction (`instruction` on `/api/approval/respond`) is one operation in `TurnRunner.respondApproval`:
+it steers the running turn (`chat.steer` directly, the `steer` action on an owner), then denies, and refuses every other
+answer to that approval meanwhile. A refused steer queues the text in that session; an unconfirmed one is never resent.
 
 Diagnostic fresh chats (`execution_mode` `ignore_config` or `safe` on `POST /api/session/new`) are
 minted by the same owner through `gateway.create`, which requests `session.create` with the Agent's

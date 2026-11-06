@@ -51,7 +51,7 @@ def run_owner_peer(request, tmp_path, script, modes, timeout=200):
 def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
     # Compatible modes share one owner, so they repeat neither its boot nor its first-turn warmup (TAL-1780).
     run_owner_peer(request, tmp_path, "gateway_session_peer.py",
-                   ["shared", "batch", "approval", "clarify", "detail", "queued-controls", "model", "voice-stop", "connections"], timeout=400)
+                   ["shared", "batch", "approval", "approval-tell", "clarify", "detail", "queued-controls", "model", "voice-stop", "connections"], timeout=400)
 
 
 @requires_agent
@@ -96,6 +96,26 @@ def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, native_owner_s
     assert (method, {"session_id": "native", "admission_id": "queued", **extra}) in native_owner_stub.calls
     assert result["receipt"] == {"admission_id": "queued"}
     assert native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "admission_id": "queued", **extra})["receipt"] == result["receipt"]
+
+
+def test_steer_forwards_only_its_declared_fields_and_returns_the_owner_verdict(native_owner_stub):
+    verdict = {"status": "rejected", "text": "Do this", "execution_generation": 7, "authority_epoch": 1, "delivered": False}
+    native_owner_stub.receipt = verdict
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "steer", "execution_generation": 7, "text": "Do this",
+                                          "admission_id": "ignored", "prompt_id": "ignored", "choice": "deny", "profile": "other"})
+    steers = [call for call in native_owner_stub.calls if call[0] == "session.steer"]
+    assert steers == [("session.steer", {"session_id": "native", "execution_generation": 7, "text": "Do this"})]
+    assert result["receipt"] == verdict
+
+
+@pytest.mark.parametrize("missing", ["execution_generation", "text"])
+def test_steer_requires_its_declared_fields_before_connecting(tmp_path, native_owner_stub, missing):
+    from talaria_sidecar.errors import InvalidParams
+    params = {"profile_home": str(tmp_path), "session_id": "native", "action": "steer", "execution_generation": 7, "text": "Do this"}
+    del params[missing]
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, params)
+    assert not [call for call in native_owner_stub.calls if call[0] == "session.steer"]
 
 
 @pytest.mark.parametrize("shown,failure", [(True, None), (False, None), (True, "refused"), (True, "timeout")])
@@ -154,7 +174,7 @@ def native_owner_stub(tmp_path, monkeypatch):
             return owner.export
         if method == "message.react" and getattr(owner, "reaction_failure", None):
             raise RuntimeError(owner.reaction_failure)
-        if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued", "message.react"}:
+        if method in {"session.mutate", "session.steer", "prompt.steer_queued", "prompt.replace_queued", "message.react"}:
             owner.payload = params.get("payload")
             return owner.receipt
         if method == "session.context_breakdown":

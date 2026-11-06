@@ -557,21 +557,27 @@ export type SteerSendNowResponse = z.infer<typeof SteerSendNowResponseSchema>
 export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, text: z.string().min(1), display_text: z.string().optional(), steer_id: z.string().optional() })
 /** `accepted: false` with a `fallback` reason means the message was not delivered; the caller keeps the draft. */
 /** TAL-460: a steer sent while a background turn runs starts the user's own turn instead; `started_turn` is its start response. */
-export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional(), started_turn: ChatStartResponseSchema.optional() })
+export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional(), started_turn: ChatStartResponseSchema.optional(),
+  outcome_unknown: z.boolean().optional().describe('The steer lost its acknowledgment and may have landed; `accepted` is false only because it is unconfirmed.') })
 export type SteerResponse = z.infer<typeof SteerResponseSchema>
 
 export const ApprovalPendingSchema = z.looseObject({
   allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional()
     .describe('The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four.'),
   can_enable_yolo: z.boolean().optional(),
+  can_deny_with_instruction: z.boolean().optional()
+    .describe('This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
 export type ApprovalPending = z.infer<typeof ApprovalPendingSchema>
 export const ApprovalPendingEnvelopeSchema = z.looseObject({ pending: ApprovalPendingSchema.nullable(), pending_count: z.number().int() })
 export const ApprovalChoiceSchema = z.enum(['once', 'session', 'always', 'deny'])
-export const ApprovalRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, choice: ApprovalChoiceSchema, approval_id: z.string().optional(), command: z.string().optional(), yolo: z.boolean().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
-export const ApprovalRespondResponseSchema = z.looseObject({ ok: z.boolean(), choice: z.string().optional(), yolo_enabled: z.boolean().optional(), stale_cleared: z.boolean().optional(), error: z.string().optional(), pending_count: z.number().optional() })
+export const ApprovalRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, choice: ApprovalChoiceSchema, approval_id: z.string().optional(), instruction: z.string().optional(), command: z.string().optional(), yolo: z.boolean().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
+export const ApprovalRespondResponseSchema = z.looseObject({ ok: z.boolean(), choice: z.string().optional(), yolo_enabled: z.boolean().optional(), stale_cleared: z.boolean().optional(), error: z.string().optional(), pending_count: z.number().optional(),
+  instruction_outcome: z.enum(['steered', 'queued', 'unconfirmed']).optional()
+    .describe('Where a deny\'s instruction went: into the running turn, queued next in this session, or unknown because the steer lost its acknowledgment (it may have landed, so it is not sent again).') })
+export type ApprovalInstructionOutcome = NonNullable<z.infer<typeof ApprovalRespondResponseSchema>['instruction_outcome']>
 
 export const ClarifyChoiceSchema = z.union([z.string(), z.looseObject({ label: z.string().optional(), value: z.string().optional(), text: z.string().optional() })])
 /** One question the client asks, in server order; answers are keyed by `qid`. A single-question prompt is one `q0` step. */

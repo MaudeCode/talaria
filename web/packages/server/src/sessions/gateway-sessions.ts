@@ -1,7 +1,7 @@
 import { validReasoningEffort } from '../config/agent-config.js'
 import { applyPlanGauge } from './session.js'
 import { reasoningProjection } from './reasoning-display.js'
-import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail, type ApprovalInstructionOutcome } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { QueueAdmissionFence } from './admission.js'
@@ -785,10 +785,10 @@ export class GatewaySessions {
     return redactString(text, this.deps.redactEnabled())
   }
 
-  private prompts(snapshot: GatewaySnapshot | null, sid: string, batch: Batch | null): PendingPrompts {
+  private prompts(snapshot: GatewaySnapshot | null, sid: string, batch: Batch | null, restarting = false): PendingPrompts {
     const pending = new PendingPrompts(new SessionEventBus(), this.deps.now)
     for (const prompt of snapshot?.prompts ?? []) {
-      const data = { ...prompt, session_id: sid, request_id: prompt.prompt_id, timeout_seconds: 0, allowed_choices: prompt.choices, can_enable_yolo: false }
+      const data = { ...prompt, session_id: sid, request_id: prompt.prompt_id, timeout_seconds: 0, allowed_choices: prompt.choices, can_enable_yolo: false, can_deny_with_instruction: !restarting }
       if (prompt.kind === 'approval') pending.submitApproval(sid, { ...data, approval_id: prompt.prompt_id })
       else if (prompt.kind === 'clarify') pending.submitClarify(sid, { ...data, clarify_id: prompt.prompt_id })
     }
@@ -818,7 +818,7 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(404, 'Session not found')
     const result = await this.call(target, { action: 'snapshot' })
-    const pending = this.prompts(result.snapshot, sid, this.batch(target))
+    const pending = this.prompts(result.snapshot, sid, this.batch(target), result.restarting === true)
     const envelope = kind === 'approval' ? pending.approvalPending(sid) : pending.clarifyPending(sid)
     return { pending: envelope.pending ? redactNestedMessageContainers(envelope.pending, this.deps.redactEnabled()) as Row : null, pending_count: envelope.pending_count }
   }
@@ -852,6 +852,30 @@ export class GatewaySessions {
     if (kind === 'approval') pending.resolveApproval(sid, id)
     else pending.resolveClarify(sid, id)
     return true
+  }
+
+  /**
+   * TAL-1912: the instruction of a deny, to this prompt's running turn. A refused steer queues in this session under an
+   * id stable for the prompt; a lost acknowledgment may have landed, so it is never sent anywhere else. Throws when
+   * nothing took the text, which leaves the prompt held for another answer.
+   */
+  async tell(sid: string, promptId: string, text: string): Promise<ApprovalInstructionOutcome> {
+    const target = await this.target(sid)
+    if (!target) throw new HttpFailure(404, 'Session not found')
+    const current = await this.call(target, { action: 'snapshot' })
+    const entry = this.prompts(current.snapshot, sid, this.batch(target), current.restarting === true).peekApproval(sid, promptId).entry
+    if (entry?.can_deny_with_instruction !== true) throw new HttpFailure(409, 'This approval does not take an instruction')
+    const steer = await this.call(target, { action: 'steer', execution_generation: Number(entry.execution_generation), text })
+    if (steer.state === 'unavailable') return 'unconfirmed'
+    // A voice-stop phrase reaches no agent, and the owner has already done what it asks.
+    if (steer.state === 'attached' && (steer.receipt?.voice_stopped === true || steer.receipt?.status === 'queued' || steer.receipt?.status === 'redirected')) return 'steered'
+    try {
+      await this.submit(sid, { message: text, submission_id: `approval-instruction-${createHash('sha256').update(promptId).digest('hex').slice(0, 64)}` })
+      return 'queued'
+    } catch (error) {
+      if (error instanceof HttpFailure && error.extra.outcome_unknown === true) return 'unconfirmed'
+      throw error
+    }
   }
 
   async cancel(stream: string): Promise<boolean | null> {
@@ -979,7 +1003,7 @@ export class GatewaySessions {
       }
       const prompts = async (snap: GatewaySnapshot) => {
         watch.snapshot = snap
-        pending = this.prompts(snap, target.sid, watch.batch)
+        pending = this.prompts(snap, target.sid, watch.batch, watch.restarting)
         const approval = pending.approvalPending(target.sid)
         if (approval.pending) await put('approval', { ...approval.pending, pending_count: approval.pending_count })
         const clarify = pending.clarifyHeadFrame(target.sid)

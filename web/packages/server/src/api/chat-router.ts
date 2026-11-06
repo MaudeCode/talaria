@@ -176,7 +176,9 @@ export const chatRouter = os.router({
       const enableYolo = input.yolo === true
       // Python `_gateway_approval_failure` envelope; the TS backend has no run mirrors, so any exact-owner relay is unavailable.
       if (str(input.run_id).trim() || str(input.mirror_token).trim()) throw new HttpError(409, GATEWAY_APPROVAL_RELAY_UNAVAILABLE, { ok: false, choice, relayed: false, code: 'gateway_run_unavailable', ...(enableYolo ? { yolo_enabled: ctx.deps.sessions.yolo(sid).yolo_enabled === true } : {}) })
-      const result = await ctx.deps.turns.respondApproval(sid, choice, str(input.approval_id), enableYolo)
+      const instruction = str(input.instruction).trim()
+      if (input.instruction !== undefined && (!instruction || choice !== 'deny' || enableYolo || !str(input.approval_id))) throw new HttpError(400, 'An instruction needs its text, a deny and the approval it answers')
+      const result = await ctx.deps.turns.respondApproval(sid, choice, str(input.approval_id), enableYolo, instruction)
       if (typeof result._status === 'number' && result._status >= 400) { const { _status, error, ...rest } = result; throw new HttpError(_status, str(error), rest) }
       return result as { ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }
     })),
