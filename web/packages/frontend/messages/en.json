@@ -2990,6 +2990,8 @@
 	"group_notes": "Shared notes",
 	"group_notes_too_long": "Shared notes must fit in {n} bytes.",
 	"group_routing": "Who answers",
+	"group_routing_auto": "Automatic",
+	"group_auto_routed": "Picked {members}",
 	"group_routing_everyone": "Everyone",
 	"group_routing_lead": "{name} assigns each message",
 	"group_lead": "Lead",

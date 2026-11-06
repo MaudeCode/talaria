@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose automatic routing in Group Chat settings and see which members were picked.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

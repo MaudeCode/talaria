@@ -7881,6 +7881,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -7890,7 +7891,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -12933,6 +12941,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -12942,7 +12951,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -16763,6 +16779,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -16772,7 +16789,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -23537,6 +23561,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -23546,7 +23571,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -29682,6 +29714,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -29691,7 +29724,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -36459,6 +36499,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -36468,7 +36509,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -40238,6 +40286,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -40247,7 +40296,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -44079,6 +44135,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -44088,7 +44145,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -47918,6 +47982,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -47927,7 +47992,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -62425,6 +62497,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -62434,7 +62507,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -66256,6 +66336,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -66265,7 +66346,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -70766,6 +70854,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -70775,7 +70864,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -75106,6 +75202,7 @@
                                       "session_finalize",
                                       "wake_failed",
                                       "lead_assigned",
+                                      "auto_routed",
                                       "paused_max_rounds",
                                       "paused_max_messages"
                                     ],
@@ -75115,7 +75212,14 @@
                                     "type": "object",
                                     "properties": {
                                       "lead": {
-                                        "type": "string"
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "assignees": {
                                         "type": "array",
@@ -118117,6 +118221,17 @@
                               "type": "string"
                             }
                           },
+                          "routing_modes": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "everyone",
+                                "lead",
+                                "auto"
+                              ],
+                              "type": "string"
+                            }
+                          },
                           "context": {
                             "anyOf": [
                               {
@@ -118131,7 +118246,8 @@
                                   "routing": {
                                     "enum": [
                                       "everyone",
-                                      "lead"
+                                      "lead",
+                                      "auto"
                                     ],
                                     "type": "string"
                                   },
@@ -118233,6 +118349,7 @@
                           "attachment_limit",
                           "members",
                           "actions",
+                          "routing_modes",
                           "context",
                           "purpose_limit",
                           "notes_limit_bytes",
@@ -118519,6 +118636,17 @@
                                 "type": "string"
                               }
                             },
+                            "routing_modes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "everyone",
+                                  "lead",
+                                  "auto"
+                                ],
+                                "type": "string"
+                              }
+                            },
                             "context": {
                               "anyOf": [
                                 {
@@ -118533,7 +118661,8 @@
                                     "routing": {
                                       "enum": [
                                         "everyone",
-                                        "lead"
+                                        "lead",
+                                        "auto"
                                       ],
                                       "type": "string"
                                     },
@@ -118635,6 +118764,7 @@
                             "attachment_limit",
                             "members",
                             "actions",
+                            "routing_modes",
                             "context",
                             "purpose_limit",
                             "notes_limit_bytes",
@@ -120112,6 +120242,7 @@
                                   "session_finalize",
                                   "wake_failed",
                                   "lead_assigned",
+                                  "auto_routed",
                                   "paused_max_rounds",
                                   "paused_max_messages"
                                 ],
@@ -120121,7 +120252,14 @@
                                 "type": "object",
                                 "properties": {
                                   "lead": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "assignees": {
                                     "type": "array",
@@ -120687,7 +120825,8 @@
                           "routing": {
                             "enum": [
                               "everyone",
-                              "lead"
+                              "lead",
+                              "auto"
                             ],
                             "type": "string"
                           },

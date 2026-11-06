@@ -158,11 +158,51 @@ it('offers no settings on a gateway without groups.context, or for a routing thi
   expect(without.room?.members.map((m) => m.lead)).toEqual([false, false])
   expect(await (await post(without.room!.identity, { action: 'context', room_id: 'discussion', event_id: 'save', purpose: '', notes: '', routing: 'everyone' })).json()).toMatchObject({ outcome: 'refused', reason: 'unsupported' })
   state.contextOffered = true
-  state.context = { purpose: 'Kept', notes: '', routing: 'auto', lead_member_id: '' }
+  state.context = { purpose: 'Kept', notes: '', routing: 'future-routing', lead_member_id: '' }
   const unknown = await read()
   expect(unknown.available).toBe(true)
   expect(unknown.room?.context).toBeNull()
   expect(unknown.room?.actions).toEqual(['send', 'rename', 'disband'])
+})
+
+it.each([
+  [undefined, ['everyone', 'lead']],
+  [['everyone', 'lead', 'auto'], ['everyone', 'lead', 'auto']],
+  [['auto', 'future-routing', 'everyone'], ['auto', 'everyone']],
+  [[], []],
+])('offers the driver routing modes %j, with the legacy default only when absent', async (native, offered) => {
+  const { state } = await setup()
+  state.driver_status.routing_modes = native
+  const view = await read()
+  expect(view.room?.routing_modes).toEqual(offered)
+  const response = await post(view.room!.identity, { action: 'context', room_id: 'discussion', event_id: 'automatic', purpose: '', notes: '', routing: 'auto' })
+  expect(await response.json()).toMatchObject({ outcome: offered?.includes('auto') ? 'confirmed' : 'refused' })
+})
+
+it('keeps Desktop auto settings readable without an advertised routing mode', async () => {
+  const { state } = await setup()
+  state.context = { purpose: 'Desktop purpose', notes: 'Kept', routing: 'auto', lead_member_id: '' }
+  const view = await read()
+  expect(view.room?.context).toEqual(state.context)
+  expect(view.room?.actions).toContain('context')
+  expect(view.room?.members.map((m) => m.lead)).toEqual([false, false])
+  expect(await (await post(view.room!.identity, { action: 'context', room_id: 'discussion', event_id: 'preserve-auto', purpose: 'Edited', notes: 'Kept', routing: 'auto' })).json()).toMatchObject({ outcome: 'confirmed' })
+})
+
+it('projects automatic picks as resolved notices, hiding everyone, fallback and invalid picks', async () => {
+  const { gateway, append, members } = await setup()
+  gateway('room.routed', { member_ids: ['two', 'one'], everyone: false, fallback: false })
+  gateway('room.routed', { member_ids: ['one', 'two'], everyone: true, fallback: false })
+  gateway('room.routed', { member_ids: ['one', 'two'], everyone: false, fallback: true })
+  gateway('room.routed', { member_ids: ['foreign'], everyone: false, fallback: false })
+  gateway('room.routed', { member_ids: [], everyone: false, fallback: false })
+  const forged = gateway('room.routed', { member_ids: ['one'], everyone: false, fallback: false })
+  forged.actor.kind = 'member'
+  append('message.member', 'Answer', members[1])
+  expect((await read()).rows.map((r) => [r.author, r.message._notice_kind, r.message._lead_assignment])).toEqual([
+    ['', 'auto_routed', { lead: null, assignees: ['Reviewer', 'Writer'] }],
+    ['Reviewer', undefined, undefined],
+  ])
 })
 
 it('reconciles a lost settings save, retries one event_id and never writes twice', async () => {

@@ -52,7 +52,11 @@
         "context": null,
         "purpose_limit": 500,
         "notes_limit_bytes": 4096,
-        "round": null
+        "round": null,
+        "routing_modes": [
+          "everyone",
+          "lead"
+        ]
       }
     ],
     "actions": [
@@ -117,7 +121,12 @@
       "round": {
         "current": 2,
         "max": 3
-      }
+      },
+      "routing_modes": [
+        "everyone",
+        "lead",
+        "auto"
+      ]
     },
     "rows": [
       {
@@ -201,14 +210,34 @@
         }
       },
       {
-        "key": "6:dactivity:event-1:max_rounds",
+        "key": "6:drouted-fixture",
         "index": 6,
+        "author": "",
+        "scheduled": false,
+        "attachments": [],
+        "message": {
+          "role": "assistant",
+          "message_id": "drouted-fixture",
+          "timestamp": 1006,
+          "_turn_id": "drouted-fixture",
+          "_notice_kind": "auto_routed",
+          "_lead_assignment": {
+            "lead": null,
+            "assignees": [
+              "Reviewer"
+            ]
+          }
+        }
+      },
+      {
+        "key": "7:dactivity:event-1:max_rounds",
+        "index": 7,
         "author": "",
         "scheduled": false,
         "message": {
           "role": "assistant",
           "message_id": "dactivity:event-1:max_rounds",
-          "timestamp": 1006,
+          "timestamp": 1007,
           "_turn_id": "dactivity:event-1:max_rounds",
           "_notice_kind": "paused_max_rounds"
         },
@@ -225,7 +254,7 @@
         "excerpt": null
       }
     ],
-    "cursor": 4,
+    "cursor": 7,
     "has_more": false,
     "next_before_seq": null
   },
