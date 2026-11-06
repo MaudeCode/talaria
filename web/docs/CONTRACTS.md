@@ -585,11 +585,13 @@ travels with the request because `/api/upload` only stores into a chat session's
 inbox; the receipt holds it in memory and nothing persists the document. An
 export names no local folders and starts no MCP commands: skill `path` and
 `mcp_servers` keys are dropped before the importer sees them, and credential-looking
-keys refuse the file. OpenBot's database opens read-only, where SQLite may leave
-its empty `-wal` and `-shm` files beside a cleanly closed database, and only the five
-`projection_*` tables the importer reads, plus each agent's skill folders, reach
-its private copy; chat history stays behind, so ordinary app activity does not
-invalidate a preview. Routines become paused cron jobs, published under the live
+keys refuse the file. The app-cache checklist is skipped because it reads live
+paths. OpenBot's database and WAL are copied through held descriptors, up to 1 GiB,
+because SQLite opens by path and would follow a swapped file; SQLite only ever opens
+that private copy, so the source gains no files. Only the five `projection_*` tables
+the importer reads, plus each agent's skill folders, reach the importer; chat history
+stays behind, so ordinary app activity does not invalidate a preview. Discovery
+checks the database without copying it. Routines become paused cron jobs, published under the live
 store's jobs lock; a scheduler write after preview invalidates it. Neither source
 registers for sync. Revisions whose reviewed manifest lacks `grok_bot.py` and
 `openbot.py` report both rows unavailable.

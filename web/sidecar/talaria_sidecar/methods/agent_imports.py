@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sqlite3
 import stat
 import tempfile
@@ -30,6 +31,7 @@ _MEMORY_FILES = {'memories/MEMORY.md', 'memories/USER.md'}
 _PREVIEWS = {}
 _MAX_FILES = 2048
 _MAX_BYTES = 16 * 1024 * 1024
+_MAX_DATABASE_BYTES = 1024 * 1024 * 1024
 _LEDGER = '.talaria-agent-imports'
 _EXPORT = 'grok-bot-export.json'
 _OPENBOT_ROWS = 'openbot-rows.json'
@@ -70,14 +72,15 @@ def _directory(path):
         os.close(fd)
 
 
-def _read(fd, name):
+def _read(fd, name, *, limit=_MAX_BYTES, into=None):
+    """Read one regular file through its held descriptor, into memory or streamed to ``into``."""
     child = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
     try:
         info = os.fstat(child)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > _MAX_BYTES:
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
             raise OSError('Unsafe or oversized import file')
         with os.fdopen(os.dup(child), 'rb') as stream:
-            body = stream.read(_MAX_BYTES + 1)
+            body = stream.read(limit + 1) if into is None else shutil.copyfileobj(stream, into)
         after = os.fstat(child)
         if (info.st_size, info.st_mtime_ns, info.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
             raise OSError('Import input changed during read')
@@ -144,9 +147,8 @@ def _agent_rows(tables):
                 yield row, at, agent
 
 
-def _openbot_source(module):
-    """Read-only extract of what the reviewed reader uses: the tables it queries and each agent's skill folders.
-    Chat history, provider accounts and the browser profile stay behind, and unrelated app activity keeps a preview valid."""
+def _openbot_user_data(module):
+    """The OpenBot data folder holding a regular database. Every read of it goes through descriptors."""
     os_home = Path.home()
     user_data = next((os_home / d for d in module.USER_DATA_DIRS if (os_home / d / module.DATABASE).is_file()), None)
     if user_data is None:
@@ -155,22 +157,53 @@ def _openbot_source(module):
         info = os.stat(module.DATABASE, dir_fd=fd, follow_symlinks=False)
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise OSError('Unsafe OpenBot database')
-    tables = {}
-    try:
-        # SQLite opens by path, so the no-follow check above is the anchor; mode=ro cannot write through a swapped file.
-        db = sqlite3.connect(f'{(user_data / module.DATABASE).as_uri()}?mode=ro', uri=True)
+    return user_data
+
+
+def _copy_openbot_database(user_data, name, scratch):
+    """A private copy for SQLite, which opens by path and would follow anything swapped in after a check.
+    The database and its WAL carry every committed row; SQLite rebuilds the live-only -shm index itself."""
+    for attempt in range(3):
         try:
-            for table in _OPENBOT_TABLES:
-                if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone():
-                    cursor = db.execute(f'SELECT * FROM "{table}"')
-                    rows = cursor.fetchmany(_MAX_FILES + 1)
-                    if len(rows) > _MAX_FILES:
-                        raise OSError('OpenBot database too large')
-                    tables[table] = dict(columns=[column[0] for column in cursor.description], rows=[list(row) for row in rows])
-        finally:
-            db.close()
-    except sqlite3.Error as error:
-        raise OSError('Unreadable OpenBot database') from error
+            with _directory(user_data) as fd:
+                with (scratch / name).open('wb') as out:
+                    identity = _read(fd, name, limit=_MAX_DATABASE_BYTES, into=out)[1]
+                with (scratch / (name + '-wal')).open('wb') as out:
+                    try:
+                        _read(fd, name + '-wal', limit=_MAX_DATABASE_BYTES, into=out)
+                    except FileNotFoundError:
+                        pass
+                # A checkpoint between the two reads would pair a WAL with the wrong database.
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if (info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns, info.st_ctime_ns) != identity:
+                    raise OSError('OpenBot database changed during read')
+            return scratch / name
+        except OSError:
+            if attempt == 2:
+                raise
+
+
+def _openbot_source(module):
+    """Extract of what the reviewed reader uses: the tables it queries and each agent's skill folders.
+    Chat history, provider accounts and the browser profile never reach it, and unrelated app activity keeps a preview valid."""
+    os_home = Path.home()
+    user_data = _openbot_user_data(module)
+    tables = {}
+    with tempfile.TemporaryDirectory(prefix='talaria-openbot-') as temp:
+        try:
+            db = sqlite3.connect(_copy_openbot_database(user_data, module.DATABASE, Path(temp)))
+            try:
+                for table in _OPENBOT_TABLES:
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone():
+                        cursor = db.execute(f'SELECT * FROM "{table}"')
+                        rows = cursor.fetchmany(_MAX_FILES + 1)
+                        if len(rows) > _MAX_FILES:
+                            raise OSError('OpenBot database too large')
+                        tables[table] = dict(columns=[column[0] for column in cursor.description], rows=[list(row) for row in rows])
+            finally:
+                db.close()
+        except sqlite3.Error as error:
+            raise OSError('Unreadable OpenBot database') from error
     files, identities = {}, {}
     id_at = tables['projection_agents']['columns'].index('agent_id') if 'projection_agents' in tables else 0
     for index, (row, at, agent) in enumerate(_agent_rows(tables)):
@@ -221,6 +254,9 @@ def _native(agent, importer, bots, source, target, execute):
         class Export(bots[agent].GrokBotImporter):
             def load_bots(self):
                 return [(path, _export_bot(bot)) for path, bot in super().load_bots()]
+            def import_shared(self):
+                # The app-cache checklist reads live paths, and its reasons never cross this boundary anyway.
+                pass
         native = Export([source / _EXPORT], target, execute=execute, overwrite=False)
     elif agent == 'openbot':
         native = bots[agent].OpenBotImporter(source, target, execute=execute, overwrite=False)
@@ -273,7 +309,7 @@ def _project(report):
              'rules': 'Cursor rules', 'config': 'Configuration', 'slash-commands': 'Slash commands',
              'role': 'Instructions', 'user-facts': 'User facts', 'routines': 'Routines', 'routine': 'Routine (paused task)',
              'event-routines': 'Event routines (saved as notes)', 'apps': 'Connected apps', 'export': 'Export file',
-             'bots': 'Other Bots', 'routine-check': 'Routines missing from the export', 'database': 'OpenBot database',
+             'database': 'OpenBot database',
              'agents': 'OpenBot agents', 'mcp-env-passthrough': 'MCP environment variables'}
     statuses = {'imported', 'skipped', 'conflict', 'error'}
     items = report.get('items')
@@ -409,10 +445,10 @@ def run(ctx, params):
                     detail = _NEEDS_NEWER
                     if 'openbot' in bots:
                         try:
-                            _source('openbot', bots)
+                            # Only a preview copies the database, however large it has grown.
+                            _openbot_user_data(bots['openbot'])
                             detail = None
-                        except (OSError, ValueError, TypeError):
-                            # A malformed database costs only this row, never the sources beside it.
+                        except OSError:
                             detail = 'Not found on this computer'
                     sources.append(_row('openbot', _BOT_SOURCES['openbot'], available=detail is None, detail=detail))
                     return _result('available', sources=sources)
