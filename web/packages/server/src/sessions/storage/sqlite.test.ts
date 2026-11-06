@@ -105,6 +105,15 @@ it('keeps the previous revision and an agreeing search index when a write throws
   expect((await sessions.searchMessages(['session'], ['kept'], 0)).get('session')?.idx).toBe(0)
 })
 
+it('finds no match in a hidden row indexed before its text was excluded', async () => {
+  const { storage } = open()
+  await storage.sessions.write('session', { doc: doc('session'), messages: { kind: 'replace', rows: [{ role: 'assistant', content: 'older withheld words', display_kind: 'hidden' }, { role: 'assistant', content: 'older shown words' }] } }, null)
+  storage.db.db.exec("UPDATE messages SET search_text = 'older withheld words' WHERE idx = 0")
+  expect(await storage.sessions.searchMessages(['session'], sessionSearchTerms('withheld'), 0)).toEqual(new Map())
+  expect(await storage.sessions.searchMessages(['session'], sessionSearchTerms('older'), 0)).toEqual(new Map([['session', { idx: 1, text: 'older shown words' }]]))
+  expect(await storage.sessions.diagnose()).toEqual([])
+})
+
 it('reports and rebuilds a search index that disagrees with its messages', async () => {
   const { storage } = open()
   await storage.sessions.write('session', { doc: doc('session'), messages: { kind: 'replace', rows: rows(2) } }, null)
