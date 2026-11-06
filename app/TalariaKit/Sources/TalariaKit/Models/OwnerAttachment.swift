@@ -25,12 +25,20 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
     }
     /// Queued and outcome-unknown inputs, oldest first.
     public let admissions: [OwnerAdmission]
+    /// TAL-1321: the owner's open connection operation. Null when it holds none; absent when the server read no owner
+    /// snapshot, which says nothing either way. Outside `CodingKeys`, so the offline copy never holds it.
+    public let connection: ConnectorOperationView?
+    public let statesConnection: Bool
 
     public var isAttached: Bool { state == "attached" }
     public var hasUnknownAdmission: Bool { admissions.contains(where: \.isOutcomeUnknown) }
 
     enum CodingKeys: String, CodingKey {
         case state, reason, canSubmit, canInterrupt, canAttach, revision, executionGeneration, modelChange, admissions
+    }
+
+    private enum LiveCodingKeys: String, CodingKey {
+        case connection
     }
 
     public init(state: String, reason: String? = nil, canSubmit: Bool, canInterrupt: Bool, canAttach: Bool, admissions: [OwnerAdmission] = [], revision: Int? = nil, executionGeneration: Int? = nil) {
@@ -43,6 +51,8 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
         self.executionGeneration = executionGeneration
         self.modelChange = nil
         self.admissions = admissions
+        self.connection = nil
+        self.statesConnection = false
     }
 
     public init(from decoder: Decoder) throws {
@@ -60,6 +70,9 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
         executionGeneration = container.decodeLossyIntIfPresent(forKey: .executionGeneration)
         modelChange = try? container.decodeIfPresent(ModelChange.self, forKey: .modelChange)
         admissions = container.decodeLossyArrayIfPresent(OwnerAdmission.self, forKey: .admissions) ?? []
+        let live = try decoder.container(keyedBy: LiveCodingKeys.self)
+        statesConnection = live.contains(.connection)
+        connection = try? live.decodeIfPresent(ConnectorOperationView.self, forKey: .connection)
     }
 }
 

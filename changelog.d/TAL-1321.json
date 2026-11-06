@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The App shows a chat's connection card above the composer, restores it when you reopen the chat, and lets you authorize, approve with a masked key, skip, retry or continue from your phone.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

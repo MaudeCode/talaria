@@ -182,6 +182,52 @@ final class StreamHostedTests: XCTestCase {
         XCTAssertNotNil(grown, "The question area did not grow")
     }
 
+    /// TAL-1321: a running turn waits on its connection operation in the composer's panel; the answers go through the
+    /// operation's route, the masked credential reaches only that route, and the turn goes on once it settles.
+    func testAConnectionOperationIsAnsweredFromTheComposerPanel() async throws {
+        UITestFixtureURLProtocol.resetConnectionOperation()
+        defer { UITestFixtureURLProtocol.resetConnectionOperation() }
+        let window = try await hostFixtureChat(["--ui-test-chat-connection"])
+        _ = try await requireElement(in: window, label: "Connect Apps")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Resize connection area"), "The panel is the clarification's, with its grip")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Gmail, Waiting for authorization"))
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Runs: npx -y mcp-linear --api-key=***"))
+        settle(0.5)
+        attachHostedScreenshot(window, name: "connection-panel-open")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Skip Gmail"))
+        _ = try await requireElement(in: window, label: "Gmail, Skipped")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Try again Notion"))
+        _ = try await requireElement(in: window, label: "Notion, Connected")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "connection-panel-mixed")
+
+        let field = try XCTUnwrap(secureFields(in: window).first, "The install asks for its masked key")
+        field.becomeFirstResponder()
+        field.insertText("synthetic-secret")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "connection-panel-secret-entry")
+        let approve = await awaitElement(in: window) {
+            $0.accessibilityLabel == "Approve Linear" && !$0.accessibilityTraits.contains(.notEnabled)
+        }
+        HostedAccessibility.activate(try XCTUnwrap(approve, "Approve never enabled after typing"))
+
+        _ = try await requireElement(in: window, label: "Agent continued")
+        let state = UITestFixtureURLProtocol.connectionOperationState.withLock { $0 }
+        XCTAssertEqual(state.answers.map { $0["action"] }, ["skip", "retry", "approve"])
+        XCTAssertEqual(state.env, ["LINEAR_API_KEY": "synthetic-secret"])
+        _ = try await requireElement(in: window, label: "Not Connected")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "connection-panel-result")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Close connection result"))
+        let closed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Not Connected" }
+        XCTAssertTrue(closed)
+    }
+
+    private func secureFields(in view: UIView) -> [UITextField] {
+        ((view as? UITextField).map { $0.isSecureTextEntry ? [$0] : [] } ?? []) + view.subviews.flatMap(secureFields(in:))
+    }
+
     /// A batch steps between questions keeping each answer, and submits typed and selected answers together (TAL-367).
     func testBatchClarificationDeliversTypedAndMultiSelectAnswers() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])

@@ -69,6 +69,7 @@
 		157502000000000000000001 /* FeedbackComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157502000000000000000002 /* FeedbackComposerTests.swift */; };
 		157501000000000000000001 /* FeedbackHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157501000000000000000002 /* FeedbackHostedTests.swift */; };
 		C1A887000000000000000003 /* VaultPromptSheetHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */; };
+		C1A132100000000000000003 /* ConnectionOperationHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A132100000000000000004 /* ConnectionOperationHostedTests.swift */; };
 		D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856DB3766E41DE9EB67A261 /* FixtureApp.swift */; };
 		D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8564E4D45F8F4C581740A3A /* HostedView.swift */; };
 		C4840000000000000000001A /* ComposerChipLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4840000000000000000001B /* ComposerChipLayoutTests.swift */; };
@@ -162,6 +163,7 @@
 		A04200000000000000000003 /* ApprovalRequestOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04200000000000000000004 /* ApprovalRequestOverlay.swift */; };
 		C1A042000000000000000003 /* ClarificationRequestOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A042000000000000000004 /* ClarificationRequestOverlay.swift */; };
 		C1A887000000000000000001 /* VaultPromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A887000000000000000002 /* VaultPromptSheet.swift */; };
+		C1A132100000000000000001 /* ConnectionOperationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A132100000000000000002 /* ConnectionOperationContent.swift */; };
 		C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000106 /* PerformanceBudgetTests.swift */; };
 		C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */; };
 		1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */; };
@@ -346,6 +348,7 @@
 		C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000004 /* UITestFixture+Kanban.swift */; };
 		C06900000000000000000836 /* UITestFixture+Crons.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000835 /* UITestFixture+Crons.swift */; };
 		C06900000000000000001044 /* UITestFixture+OwnerChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000001043 /* UITestFixture+OwnerChat.swift */; };
+		C1A132100000000000000005 /* UITestFixture+ConnectionOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A132100000000000000006 /* UITestFixture+ConnectionOperation.swift */; };
 		22AB000000000000000000B2 /* WorkspaceManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F2 /* WorkspaceManagerView.swift */; };
 		C03120000000000000B004 /* GitWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F004 /* GitWorkspaceView.swift */; };
 		C03120000000000000B005 /* GitDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F005 /* GitDiffView.swift */; };
@@ -522,6 +525,7 @@
 		157502000000000000000002 /* FeedbackComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/FeedbackComposerTests.swift; sourceTree = "<group>"; };
 		157501000000000000000002 /* FeedbackHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackHostedTests.swift; sourceTree = "<group>"; };
 		C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultPromptSheetHostedTests.swift; sourceTree = "<group>"; };
+		C1A132100000000000000004 /* ConnectionOperationHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionOperationHostedTests.swift; sourceTree = "<group>"; };
 		D856DB3766E41DE9EB67A261 /* FixtureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApp.swift; sourceTree = "<group>"; };
 		D8564E4D45F8F4C581740A3A /* HostedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedView.swift; sourceTree = "<group>"; };
 		C4840000000000000000001B /* ComposerChipLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerChipLayoutTests.swift; sourceTree = "<group>"; };
@@ -600,6 +604,7 @@
 		A04200000000000000000004 /* ApprovalRequestOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalRequestOverlay.swift; sourceTree = "<group>"; };
 		C1A042000000000000000004 /* ClarificationRequestOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationRequestOverlay.swift; sourceTree = "<group>"; };
 		C1A887000000000000000002 /* VaultPromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultPromptSheet.swift; sourceTree = "<group>"; };
+		C1A132100000000000000002 /* ConnectionOperationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionOperationContent.swift; sourceTree = "<group>"; };
 		C22600000000000000000106 /* PerformanceBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceBudgetTests.swift; sourceTree = "<group>"; };
 		C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayCatchUpPerformanceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
@@ -784,6 +789,7 @@
 		C06900000000000000000004 /* UITestFixture+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Kanban.swift"; sourceTree = "<group>"; };
 		C06900000000000000000835 /* UITestFixture+Crons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Crons.swift"; sourceTree = "<group>"; };
 		C06900000000000000001043 /* UITestFixture+OwnerChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+OwnerChat.swift"; sourceTree = "<group>"; };
+		C1A132100000000000000006 /* UITestFixture+ConnectionOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+ConnectionOperation.swift"; sourceTree = "<group>"; };
 		22AB000000000000000000F2 /* WorkspaceManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagerView.swift; sourceTree = "<group>"; };
 		C03120000000000000F004 /* GitWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceView.swift; sourceTree = "<group>"; };
 		C03120000000000000F005 /* GitDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffView.swift; sourceTree = "<group>"; };
@@ -996,6 +1002,7 @@
 				157502000000000000000002 /* FeedbackComposerTests.swift */,
 				157501000000000000000002 /* FeedbackHostedTests.swift */,
 				C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */,
+				C1A132100000000000000004 /* ConnectionOperationHostedTests.swift */,
 				D856DB3766E41DE9EB67A261 /* FixtureApp.swift */,
 				D8564E4D45F8F4C581740A3A /* HostedView.swift */,
 				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
@@ -1229,6 +1236,7 @@
 				A04200000000000000000004 /* ApprovalRequestOverlay.swift */,
 				C1A042000000000000000004 /* ClarificationRequestOverlay.swift */,
 				C1A887000000000000000002 /* VaultPromptSheet.swift */,
+				C1A132100000000000000002 /* ConnectionOperationContent.swift */,
 				1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */,
 				C03190000000000000F002 /* InlineAudioPlayerView.swift */,
 				BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */,
@@ -1369,6 +1377,7 @@
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
 				C06900000000000000000835 /* UITestFixture+Crons.swift */,
 				C06900000000000000001043 /* UITestFixture+OwnerChat.swift */,
+				C1A132100000000000000006 /* UITestFixture+ConnectionOperation.swift */,
 				4F9EB4168ADAD8328E21CCDF /* AppIconChoice+Current.swift */,
 			);
 			path = Config;
@@ -1907,6 +1916,7 @@
 				C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */,
 				C06900000000000000000836 /* UITestFixture+Crons.swift in Sources */,
 				C06900000000000000001044 /* UITestFixture+OwnerChat.swift in Sources */,
+				C1A132100000000000000005 /* UITestFixture+ConnectionOperation.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
 				C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */,
@@ -2002,6 +2012,7 @@
 				A04200000000000000000003 /* ApprovalRequestOverlay.swift in Sources */,
 				C1A042000000000000000003 /* ClarificationRequestOverlay.swift in Sources */,
 				C1A887000000000000000001 /* VaultPromptSheet.swift in Sources */,
+				C1A132100000000000000001 /* ConnectionOperationContent.swift in Sources */,
 				3F91D2A54B9A4F66A2C01002 /* TasksView.swift in Sources */,
 				3F91D2A54B9A4F66A2C01004 /* TaskDetailView.swift in Sources */,
 				C166A0000000000000000001 /* TaskRunHistoryViews.swift in Sources */,
@@ -2060,6 +2071,7 @@
 				157502000000000000000001 /* FeedbackComposerTests.swift in Sources */,
 				157501000000000000000001 /* FeedbackHostedTests.swift in Sources */,
 				C1A887000000000000000003 /* VaultPromptSheetHostedTests.swift in Sources */,
+				C1A132100000000000000003 /* ConnectionOperationHostedTests.swift in Sources */,
 				D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */,
 				D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */,
 				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,

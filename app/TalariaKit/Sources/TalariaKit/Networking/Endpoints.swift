@@ -63,6 +63,8 @@ public enum Endpoint: Sendable {
     case clarifyPending(sessionID: String)
     case clarifyStream(sessionID: String)
     case clarifyRespond
+    /// TAL-1321: one connection operation; a read names its canonical owner in the query, an answer in its body.
+    case connectorOperation(opID: String, owner: ConnectorOperationView.Owner?)
     case btw
     case background
     /// TAL-372: the session's background work, one shared record each.
@@ -279,6 +281,8 @@ public enum Endpoint: Sendable {
             return "/api/approval/stream"
         case .approvalRespond:
             return "/api/approval/respond"
+        case let .connectorOperation(opID, _):
+            return "/api/connectors/operations/\(opID)"
         case .clarifyPending:
             return "/api/clarify/pending"
         case .clarifyStream:
@@ -608,6 +612,8 @@ public enum Endpoint: Sendable {
             let .clarifyPending(sessionID),
             let .clarifyStream(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
+        case let .connectorOperation(_, owner):
+            return owner.map { [URLQueryItem(name: "session_id", value: $0.sessionId), URLQueryItem(name: "authority_epoch", value: String($0.authorityEpoch))] } ?? []
         case let .backgroundTasks(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
         case let .backgroundResult(sessionID, taskID):
@@ -749,6 +755,8 @@ public enum Endpoint: Sendable {
             url = updateNotificationURL(relativeTo: baseURL, id: id, suffix: "/dismiss")
         case let .updateNotificationAction(id, actionID):
             url = updateNotificationURL(relativeTo: baseURL, id: id, actionID: actionID)
+        case let .connectorOperation(opID, _):
+            url = connectorOperationURL(relativeTo: baseURL, opID: opID)
         default:
             url = baseURL.appending(path: path)
         }
@@ -783,6 +791,16 @@ public enum Endpoint: Sendable {
             return root
         }
         components.percentEncodedPath += "/\(encodedSlug)\(suffix)"
+        return components.url ?? root
+    }
+
+    /// `opID` is the server's opaque identity, sent back as one path segment.
+    private func connectorOperationURL(relativeTo baseURL: URL, opID: String) -> URL {
+        let root = baseURL.appending(path: "/api/connectors/operations")
+        guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
+              let encodedID = opID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed)
+        else { return root }
+        components.percentEncodedPath += "/\(encodedID)"
         return components.url ?? root
     }
 

@@ -232,6 +232,38 @@ struct ClarificationRequestContent: View {
     }
 }
 
+/// A compact action in the pending-input panel, on the same surface as a clarification's choices. A busy button shows it
+/// on this control alone.
+struct PendingInputButton: View {
+    let title: String
+    var accessibilityLabel: String? = nil
+    var isBusy = false
+    var isDisabled = false
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if isBusy { ProgressView().controlSize(.small) }
+                Text(title)
+            }
+            .font(.callout.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .foregroundStyle(isDisabled ? Color.secondary : Color.primary)
+            .choiceButtonSurface(reduceTransparency: reduceTransparency)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.chatTactile(.capsule))
+        .disabled(isDisabled)
+        .accessibilityLabel(accessibilityLabel ?? title)
+        .accessibilityValue(isBusy ? String(localized: "In progress") : "")
+    }
+}
+
 private extension View {
     @ViewBuilder
     func choiceButtonSurface(reduceTransparency: Bool) -> some View {

@@ -554,6 +554,17 @@ struct ChatView: View {
                 guard let prompt else { return }
                 Task { await submitClarification(response, promptID: prompt.id) }
             },
+            connectionOperation: viewModel.connectionOperation,
+            connectionRunningTargets: viewModel.connectionRunningTargets,
+            connectionErrorMessage: viewModel.connectionErrorMessage,
+            onConnectionMove: { move, env in
+                guard let opID = viewModel.connectionOperation?.opId else { return }
+                Task { await viewModel.respondToConnectionOperation(move, env: env, opID: opID) }
+            },
+            onDismissConnection: {
+                guard let opID = viewModel.connectionOperation?.opId else { return }
+                viewModel.dismissConnectionOperation(opID: opID)
+            },
             sessionStart: isOpeningFiles && !viewModel.isSubmittingMessage ? nil : sessionStart,
             hasSession: viewModel.hasSession,
             sessionToolsets: viewModel.sessionToolsets,
@@ -720,6 +731,11 @@ struct ChatView: View {
         chat
         .onChange(of: viewModel.clarificationPrompt?.requestID, initial: true) { _, requestID in
             guard requestID != nil else { return }
+            clarificationPanelHeight = 320
+            dismissKeyboard()
+        }
+        .onChange(of: viewModel.connectionOperation?.opId, initial: true) { _, opID in
+            guard opID != nil else { return }
             clarificationPanelHeight = 320
             dismissKeyboard()
         }
@@ -2001,7 +2017,7 @@ struct ChatView: View {
             hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,
             isLoadingComposerConfiguration: viewModel.isLoadingComposerConfiguration,
             isBusyOrUnavailable: isComposerBusyOrUnavailable,
-            requiresExpandedPresentation: composerRequiresExpandedPresentation || viewModel.clarificationPrompt != nil
+            requiresExpandedPresentation: composerRequiresExpandedPresentation || viewModel.clarificationPrompt != nil || viewModel.connectionOperation != nil
         )
     }
 
@@ -3363,6 +3379,8 @@ struct ChatView: View {
         case .active:
             viewModel.refreshListenPlaybackProgressAfterSceneActivation()
             endResponseCompletionBackgroundTask()
+            // Back from an authorization link: the owner looks now, not at its next tick.
+            Task { await viewModel.wakeConnectionOperation() }
             Task {
                 await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
                 if completionAcknowledger.viewedThrough != nil {

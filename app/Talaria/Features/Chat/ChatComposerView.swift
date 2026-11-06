@@ -123,6 +123,11 @@ struct MessageComposerView: View {
     var onToggleClarificationChoice: (String) -> Void = { _ in }
     var onSelectClarificationQuestion: (Int) -> Void = { _ in }
     var onSubmitClarification: (String) -> Void = { _ in }
+    var connectionOperation: ConnectorOperationView? = nil
+    var connectionRunningTargets: Set<String> = []
+    var connectionErrorMessage: String? = nil
+    var onConnectionMove: (ConnectorOperationMove, [String: String]?) -> Void = { _, _ in }
+    var onDismissConnection: () -> Void = {}
     /// Set while a new chat's session is being created, or failed to be (TAL-636): nothing that needs the
     /// session can be used yet.
     var sessionStart: ComposerSessionStart? = nil
@@ -607,6 +612,21 @@ struct MessageComposerView: View {
                 .id(clarificationPrompt.id)
                 Divider()
                     .padding(.horizontal, 16)
+            } else if let connectionOperation {
+                clarificationResizeHandle
+                // Keyed by the operation, so a replacement starts with no typed credentials.
+                ConnectionOperationContent(
+                    operation: connectionOperation,
+                    runningTargets: connectionRunningTargets,
+                    errorMessage: connectionErrorMessage,
+                    onMove: onConnectionMove,
+                    onDismiss: onDismissConnection
+                )
+                .frame(height: displayedClarificationHeight)
+                .clipped()
+                .id(connectionOperation.opId)
+                Divider()
+                    .padding(.horizontal, 16)
             }
 
             composerSurface
@@ -649,9 +669,9 @@ struct MessageComposerView: View {
                         )
                     }
             )
-            .accessibilityLabel("Resize question area")
+            .accessibilityLabel(clarificationPrompt == nil ? "Resize connection area" : "Resize question area")
             .accessibilityValue("\(Int(displayedClarificationHeight / max(1, maximumClarificationHeight) * 100))%")
-            .accessibilityHint("Swipe up or down to resize the question area.")
+            .accessibilityHint(clarificationPrompt == nil ? "Swipe up or down to resize the connection area." : "Swipe up or down to resize the question area.")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment:

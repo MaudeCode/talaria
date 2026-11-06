@@ -2073,6 +2073,7 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse) {}
 
+    func streamCoordinatorApplyConnectionOperation(_ view: ConnectorOperationView) {}
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse) {}
 
     func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool {
