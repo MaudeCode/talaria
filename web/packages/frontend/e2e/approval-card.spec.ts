@@ -58,6 +58,57 @@ test('dismissing an approval stops Enter from approving it; the next approval in
   expect(responses).toEqual([])
 })
 
+/** The command stays held while the instruction is typed; the card leaves on submit and returns on refusal (TAL-1912). */
+test('a deny carries an instruction, Esc goes back, and a refusal brings the text back', async ({ page, errors, approval: { send, responses } }, info) => {
+  const shot = async (state: string) => {
+    if (!process.env.TALARIA_APPROVAL_EVIDENCE_DIR) return
+    mkdirSync(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, { recursive: true })
+    await page.screenshot({ path: join(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, `${info.project.name}-tell-${state}.png`) })
+  }
+  const card = page.getByRole('alertdialog')
+  const tell = card.getByRole('button', { name: 'No, and tell Hermes instead' })
+  const box = card.getByRole('textbox', { name: 'What should Hermes do instead?' })
+  send('approval', { approval_id: 'plain', command: 'echo no row', can_deny_with_instruction: false })
+  await expect(card).toContainText('echo no row')
+  await expect(tell).toHaveCount(0)
+  await shot('no-row')
+  send('approval', { approval_id: 'told', command: 'DROP TABLE build_cache', can_deny_with_instruction: true })
+  await expect(card).toContainText('DROP TABLE build_cache')
+  await shot('choices')
+  await tell.click()
+  await expect(box).toBeFocused()
+  await expect(card).toContainText('DROP TABLE build_cache')
+  await box.fill('Use INSERT OR REPLACE instead')
+  await expect(card.getByRole('button', { name: 'Deny and send' })).toBeEnabled()
+  await shot('typing')
+  await page.keyboard.press('Escape')
+  await expect(tell).toBeFocused()
+  await expect(box).toHaveCount(0)
+  expect(responses).toEqual([])
+  await tell.click()
+  await expect(box).toHaveValue('Use INSERT OR REPLACE instead')
+  await page.unroute('**/api/approval/respond')
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const told: unknown[] = []
+  await page.route('**/api/approval/respond', async (route) => {
+    told.push(route.request().postDataJSON())
+    await held
+    await route.fulfill({ status: 400, json: { error: 'The Agent refused this answer' } })
+  })
+  await box.press('Enter')
+  await expect(card).toHaveCount(0)
+  await shot('left')
+  expect(told).toEqual([expect.objectContaining({ choice: 'deny', approval_id: 'told', instruction: 'Use INSERT OR REPLACE instead' })])
+  release()
+  await expect(box).toHaveValue('Use INSERT OR REPLACE instead')
+  await shot('refused')
+  expect(told).toHaveLength(1)
+  expect(responses).toEqual([])
+  // This refusal is the scenario; the page logs it like any failed request.
+  errors.splice(0)
+})
+
 test('menu keyboard actions retain ownership while an approval is visible', async ({ page, approval: { send, responses } }, info) => {
   const card = page.getByRole('alertdialog')
   const screenshot = async (state: string) => {
