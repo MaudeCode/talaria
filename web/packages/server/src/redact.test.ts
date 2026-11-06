@@ -928,6 +928,7 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     [String.raw`echo '{"@context":"https://schema.org","@type":"\u0041"}'`, String.raw`echo '{"@context":"https://schema.org","@type":"\u0041"}'`],
   ],
   'v0.23 credential arguments before inner rewrites': [
+    [`sh -c 'curl --pass'word' "https://"TOKEN123456789"@github.com secret words"'`, "sh -c 'curl --pass'word' ***'"],
     [JSON.stringify({ command: 'curl --password "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'curl --password ***' })],
     [JSON.stringify({ command: 'curl -u "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'curl -u "https:***"' })],
     [JSON.stringify({ command: 'docker login -p "https://"TOKEN123456789"@github.com secret words"' }), JSON.stringify({ command: 'docker login -p ***' })],

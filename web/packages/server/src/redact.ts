@@ -534,6 +534,8 @@ function payloadRunSpan(text: string, start: number): [[number, number, string] 
  * the end of the text only when no view closes one there (`-----END PRI\x1b[1mVATE KEY-----`).
  */
 function privateKeySpans(text: string): [number, number, string][] {
+  // Split views only remove bytes; a PEM opener still requires a literal hyphen.
+  if (!text.includes('-')) return []
   const openers = crossPayloadPrefixStarts(text).filter(([, , marker]) => marker === PEM_OPENER).sort((a, b) => a[1] - b[1])
   const closed: [number, number, string][] = []
   const open: [number, number, string][] = []
@@ -1145,6 +1147,8 @@ function commandWords(text: string, from: number, enclosing: string, list: boole
  * command (`sh -c 'mysql -phunter2'`) is read as a command of its own.
  */
 function redactCommandFlags(text: string, unquotedCommandsOnly = false): string {
+  // Every flag starts with a hyphen; ANSI-C escapes can also supply that byte.
+  if (!/[-\\]/.test(text)) return text
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
@@ -1372,6 +1376,8 @@ function redactSerializedUrls(text: string): string {
     const contentEnd = Math.min(i, text.length)
     const closed = i < text.length
     i = Math.min(i + 1, text.length)
+    // A quote glued to another word piece belongs to shell composition, not a serialized literal.
+    if ((start > 0 && !/[\s[({=:,]/.test(text[start - 1]!)) || (closed && i < text.length && !/[\s,;)\]}&|]/.test(text[i]!))) continue
     let value: unknown
     if (quote === '"' && closed) {
       try { value = JSON.parse(text.slice(start, i)) as unknown } catch { /* Python repr or a capped literal. */ }
