@@ -39,7 +39,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 /** Square icon button with a mandatory accessible name. */
 export function IconButton({ label, children, className, active, type = 'button', ...props }: IconButtonProps) {
   return (
-    <button type={type} aria-label={label} title={props.title ?? label} {...props} className={cn('inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border-0 bg-transparent text-muted transition-colors hover:bg-hover hover:text-text', active && 'bg-accent-bg text-accent-text', className)}>
+    <button type={type} aria-label={label} title={props.title ?? label} {...props} className={cn('inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border-0 transition-colors hover:bg-hover hover:text-text', active ? 'bg-accent-bg text-accent-text' : 'bg-transparent text-muted', className)}>
       {children}
     </button>
   )

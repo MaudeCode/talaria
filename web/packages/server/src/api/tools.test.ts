@@ -79,9 +79,30 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
   afterAll(() => s.close())
 
+  it.each([
+    ['ok', 200, { ok: true, name: 'mine', locked: true }],
+    ['unavailable', 409, { error: 'This Agent version cannot lock skills' }],
+    ['not_found', 404, { error: "Skill 'mine' not found" }],
+    ['unreadable', 409, { error: 'skills/.usage.json could not be read; repair it before changing a lock' }],
+    ['failed', 409, { error: 'skills/.usage.json could not be written' }],
+  ] as const)('answers a %s skill lock write as %i', async (status, code, body) => {
+    sidecar.respond('skills.set_locked', () => ({ status }))
+    const res = await post(s, '/api/skills/lock', { name: 'mine', locked: true })
+    expect(res.status).toBe(code)
+    expect(await json(res)).toMatchObject(body)
+    expect(sidecar.calls.filter((c) => c.method === 'skills.set_locked').at(-1)?.params).toEqual({ profile_home: s.state, name: 'mine', locked: true })
+  })
+
+  it('refuses an ambiguous skill lock name as a bad request', async () => {
+    sidecar.respond('skills.set_locked', () => { throw new SidecarError('Ambiguous skill name', { code: -32602, condition: 'invalid_params' }) })
+    const res = await post(s, '/api/skills/lock', { name: 'dup-demo', locked: true })
+    expect(res.status).toBe(400)
+    expect(await json(res)).toMatchObject({ error: 'Ambiguous skill name' })
+  })
+
   it('lists skills from the Agent, reads usage counters, and saves/toggles/deletes local skills', async () => {
     sidecar.respond('skills.find', () => ({ found: false, skill_dir: null, skill_md: null }))
-    sidecar.respond('skills.list', (params) => ({ success: true, skills: [{ name: 'alpha', description: 'A', category: params.category ?? null, disabled: false }, { name: 'beta', description: 'B', category: null, disabled: true }], categories: [], count: 2 }))
+    sidecar.respond('skills.list', (params) => ({ success: true, skills: [{ name: 'alpha', description: 'A', category: params.category ?? null, disabled: false, locked: false }, { name: 'beta', description: 'B', category: null, disabled: true, locked: false }], categories: [], count: 2 }))
     let res = await s.get('/api/skills?category=tools')
     expect(res.status).toBe(200)
     expect(((await json(res)).skills as Json[]).map((r) => r.name)).toEqual(['alpha', 'beta'])

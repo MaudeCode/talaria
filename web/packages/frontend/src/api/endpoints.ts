@@ -242,6 +242,7 @@ export const cancelSkillReplay = (id: string) => orpc().skills.replayCancel({ id
 export const saveSkill = (name: string, content: string) => orpc().skills.save({ name, content })
 export const deleteSkill = (name: string) => orpc().skills.delete({ name })
 export const toggleSkill = (name: string, enabled: boolean) => orpc().skills.toggle({ name, enabled })
+export const lockSkill = (name: string, locked: boolean) => orpc().skills.lock({ name, locked })
 export const fetchSkillsUsage = () => orpc().skills.usage()
 /** TAL-819: the Agent's staged skill or memory writes; approve applies them, reject discards them. */
 export const fetchPendingWrites = (kind: 'skills' | 'memory') => orpc().pendingWrites.list({ kind })

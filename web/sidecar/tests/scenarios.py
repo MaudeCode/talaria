@@ -63,6 +63,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("skills.list", {"profile_home": "{profile}"}),
     ("skills.list", {"profile_home": "{profile}", "category": "apple"}),
     ("skills.find", {"profile_home": "{profile}", "name": "apple-notes"}),
+    ("skills.set_locked", {"profile_home": "{profile}", "name": "does-not-exist", "locked": True}),
     ("skills.view", {"profile_home": "{profile}", "name": "apple-notes"}),
     ("skills.view", {"profile_home": "{profile}", "name": "does-not-exist"}),
     ("skills.revisions", {"profile_home": "{profile}", "name": "apple-notes"}),

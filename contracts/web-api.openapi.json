@@ -83687,6 +83687,16 @@
                           },
                           "disabled": {
                             "type": "boolean"
+                          },
+                          "locked": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -84018,6 +84028,66 @@
                     "ok",
                     "name",
                     "enabled"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/lock": {
+      "post": {
+        "operationId": "skills.lock",
+        "summary": "Locks a skill against Agent edits by recording it in the profile's `skills/.usage.json`, or clears the lock. A row's `locked` is null where a lock cannot be read or set. The user's own edits stay allowed. 404: unknown skill. 409: the Agent has no skill lock, or its record is unreadable or unwritable.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "locked"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "locked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "name",
+                    "locked"
                   ]
                 }
               }

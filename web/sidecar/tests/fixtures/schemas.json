@@ -4946,13 +4946,20 @@
             },
             "disabled": {
               "type": "boolean"
+            },
+            "locked": {
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           },
           "required": [
             "name",
             "description",
             "category",
-            "disabled"
+            "disabled",
+            "locked"
           ],
           "additionalProperties": false
         }
@@ -5083,6 +5090,26 @@
         "additionalProperties": false
       }
     ]
+  },
+  "skills.set_locked": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "unavailable",
+          "not_found",
+          "unreadable",
+          "failed"
+        ]
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "additionalProperties": false
   },
   "skills.find": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

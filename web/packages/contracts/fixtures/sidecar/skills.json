@@ -15,7 +15,8 @@
             "tier": 1,
             "description": "Manage Apple Notes via memo CLI: create, search, edit.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "apple-reminders",
@@ -25,7 +26,8 @@
             "tier": 1,
             "description": "Apple Reminders via remindctl: add, list, complete.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "findmy",
@@ -35,7 +37,8 @@
             "tier": 1,
             "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "imessage",
@@ -45,7 +48,8 @@
             "tier": 1,
             "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "claude-code",
@@ -55,7 +59,8 @@
             "tier": 1,
             "description": "Delegate coding to Claude Code CLI (features, PRs).",
             "category": "autonomous-ai-agents",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "codex",
@@ -65,7 +70,8 @@
             "tier": 1,
             "description": "Delegate coding to OpenAI Codex CLI (features, PRs).",
             "category": "autonomous-ai-agents",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "computer-use",
@@ -75,7 +81,8 @@
             "tier": 1,
             "description": "Drive the desktop background-first; escalate on signal.",
             "category": "autonomous-ai-agents",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "hermes-agent",
@@ -85,7 +92,8 @@
             "tier": 1,
             "description": "Use, configure, theme, extend, and orchestrate Hermes Agent.",
             "category": "autonomous-ai-agents",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "opencode",
@@ -95,7 +103,8 @@
             "tier": 1,
             "description": "Delegate coding to OpenCode CLI (features, PR review).",
             "category": "autonomous-ai-agents",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "architecture-diagram",
@@ -105,7 +114,8 @@
             "tier": 1,
             "description": "Dark-themed SVG architecture/cloud/infra diagrams as HTML.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "ascii-video",
@@ -115,7 +125,8 @@
             "tier": 1,
             "description": "ASCII video: convert video/audio to colored ASCII MP4/GIF.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "baoyu-infographic",
@@ -125,7 +136,8 @@
             "tier": 1,
             "description": "Infographics: 21 layouts x 21 styles (\u4fe1\u606f\u56fe, \u53ef\u89c6\u5316).",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "claude-design",
@@ -135,7 +147,8 @@
             "tier": 1,
             "description": "Design one-off HTML artifacts (landing, deck, prototype).",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "design-md",
@@ -145,7 +158,8 @@
             "tier": 1,
             "description": "Author/validate/export Google's DESIGN.md token spec files.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "humanizer",
@@ -155,7 +169,8 @@
             "tier": 1,
             "description": "Humanize text: strip AI-isms and add real voice.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "manim-video",
@@ -165,7 +180,8 @@
             "tier": 1,
             "description": "Manim CE animations: 3Blue1Brown math/algo videos.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "p5js",
@@ -175,7 +191,8 @@
             "tier": 1,
             "description": "p5.js sketches: gen art, shaders, interactive, 3D.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "popular-web-designs",
@@ -185,7 +202,8 @@
             "tier": 1,
             "description": "54 real design systems (Stripe, Linear, Vercel) as HTML/CSS.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "songwriting-and-ai-music",
@@ -195,7 +213,8 @@
             "tier": 1,
             "description": "Songwriting craft and Suno AI music prompts.",
             "category": "creative",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "email-inbox-triage",
@@ -205,7 +224,8 @@
             "tier": 1,
             "description": "Triage an inbox: prioritize threads, draft replies safely.",
             "category": "email",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "himalaya",
@@ -215,7 +235,8 @@
             "tier": 1,
             "description": "Himalaya CLI: IMAP/SMTP email from terminal.",
             "category": "email",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "gif-search",
@@ -225,7 +246,8 @@
             "tier": 1,
             "description": "Search/download GIFs from Tenor via curl + jq.",
             "category": "media",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "songsee",
@@ -235,7 +257,8 @@
             "tier": 1,
             "description": "Audio spectrograms/features (mel, chroma, MFCC) via CLI.",
             "category": "media",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "youtube-content",
@@ -245,7 +268,8 @@
             "tier": 1,
             "description": "YouTube transcripts to summaries, threads, blogs.",
             "category": "media",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "obsidian",
@@ -255,7 +279,8 @@
             "tier": 1,
             "description": "Read, search, create, and edit notes in the Obsidian vault.",
             "category": "note-taking",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "airtable",
@@ -265,7 +290,8 @@
             "tier": 1,
             "description": "Airtable REST API via curl. Records CRUD, filters, upserts.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "box",
@@ -275,7 +301,8 @@
             "tier": 1,
             "description": "Box manages cloud files, sharing, search, and metadata.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "document-to-action-items",
@@ -285,7 +312,8 @@
             "tier": 1,
             "description": "Extract cited obligations, deadlines, tasks from documents.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "docx",
@@ -295,7 +323,8 @@
             "tier": 1,
             "description": "Create, read, edit, template, and review Word .docx files.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "google-workspace",
@@ -305,7 +334,8 @@
             "tier": 1,
             "description": "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "maps",
@@ -315,7 +345,8 @@
             "tier": 1,
             "description": "Geocode, POIs, routes, timezones via OpenStreetMap/OSRM.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "meeting-action-items",
@@ -325,7 +356,8 @@
             "tier": 1,
             "description": "Turn meeting notes into cited decisions, owners, tickets.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "notion",
@@ -335,7 +367,8 @@
             "tier": 1,
             "description": "Notion API + ntn CLI: pages, databases, markdown, Workers.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "pdf",
@@ -345,7 +378,8 @@
             "tier": 1,
             "description": "PDF files: create, read, merge, fill, OCR, edit text.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "powerpoint",
@@ -355,7 +389,8 @@
             "tier": 1,
             "description": "Create, read, edit .pptx decks with python-pptx.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "product-price-monitor",
@@ -365,7 +400,8 @@
             "tier": 1,
             "description": "Watch product, flight, or listing prices; alert on target.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "teams-meeting-pipeline",
@@ -375,7 +411,8 @@
             "tier": 1,
             "description": "Teams meeting summaries, job replay, Graph subscriptions.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "weekly-review-planning",
@@ -385,7 +422,8 @@
             "tier": 1,
             "description": "Weekly reset: commitments, stalled work, next-week plan.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "xlsx",
@@ -395,7 +433,8 @@
             "tier": 1,
             "description": "Create, read, edit Excel .xlsx workbooks and CSVs.",
             "category": "productivity",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "arxiv",
@@ -405,7 +444,8 @@
             "tier": 1,
             "description": "Search arXiv papers by keyword, author, category, or ID.",
             "category": "research",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "competitor-news-monitor",
@@ -415,7 +455,8 @@
             "tier": 1,
             "description": "Watch named companies for material news; cited digests.",
             "category": "research",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "grounded-citations",
@@ -425,7 +466,8 @@
             "tier": 1,
             "description": "Ground answers and documents in cited, verifiable sources.",
             "category": "research",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "llm-wiki",
@@ -435,7 +477,8 @@
             "tier": 1,
             "description": "Karpathy's LLM Wiki: build/query interlinked markdown KB.",
             "category": "research",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "xurl",
@@ -445,7 +488,8 @@
             "tier": 1,
             "description": "X/Twitter via xurl CLI: raw post search, posting, DM, media.",
             "category": "social-media",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "codebase-inspection",
@@ -455,7 +499,8 @@
             "tier": 1,
             "description": "Inspect codebases w/ pygount: LOC, languages, ratios.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "dogfood",
@@ -465,7 +510,8 @@
             "tier": 1,
             "description": "Exploratory QA of web apps: find bugs, evidence, reports.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "github",
@@ -475,7 +521,8 @@
             "tier": 1,
             "description": "GitHub via gh CLI: PRs, issues, reviews, repos, auth.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "hermes-agent-skill-authoring",
@@ -485,7 +532,8 @@
             "tier": 1,
             "description": "Author in-repo SKILL.md files: frontmatter and structure.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "inspecting-hermes-desktop-dom",
@@ -495,7 +543,8 @@
             "tier": 1,
             "description": "Read the live Hermes desktop DOM/CSS over CDP.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "node-inspect-debugger",
@@ -505,7 +554,8 @@
             "tier": 1,
             "description": "Debug Node.js via --inspect + Chrome DevTools Protocol CLI.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "python-debugpy",
@@ -515,7 +565,8 @@
             "tier": 1,
             "description": "Debug Python: pdb REPL + debugpy remote (DAP).",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "requesting-code-review",
@@ -525,7 +576,8 @@
             "tier": 1,
             "description": "Pre-commit review: security scan, quality gates, auto-fix.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "simplify-code",
@@ -535,7 +587,8 @@
             "tier": 1,
             "description": "Parallel 4-agent cleanup of recent code changes.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "spike",
@@ -545,7 +598,8 @@
             "tier": 1,
             "description": "Throwaway experiments to validate an idea before build.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "systematic-debugging",
@@ -555,7 +609,8 @@
             "tier": 1,
             "description": "4-phase root cause debugging: understand bugs before fixing.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "test-driven-development",
@@ -565,7 +620,8 @@
             "tier": 1,
             "description": "TDD: enforce RED-GREEN-REFACTOR, tests before code.",
             "category": "software-development",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "blocked-page-recovery",
@@ -575,7 +631,8 @@
             "tier": 1,
             "description": "Use when a fetch fails: 403/429, paywall, WAF, bot wall.",
             "category": "web",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           }
         ],
         "categories": [
@@ -610,7 +667,8 @@
             "tier": 1,
             "description": "Manage Apple Notes via memo CLI: create, search, edit.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "apple-reminders",
@@ -620,7 +678,8 @@
             "tier": 1,
             "description": "Apple Reminders via remindctl: add, list, complete.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "findmy",
@@ -630,7 +689,8 @@
             "tier": 1,
             "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           },
           {
             "name": "imessage",
@@ -640,7 +700,8 @@
             "tier": 1,
             "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
             "category": "apple",
-            "disabled": false
+            "disabled": false,
+            "locked": false
           }
         ],
         "categories": [
@@ -665,6 +726,18 @@
         "sibling_load_names": [
           "apple-notes"
         ]
+      }
+    }
+  ],
+  "skills.set_locked": [
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "does-not-exist",
+        "locked": true
+      },
+      "result": {
+        "status": "not_found"
       }
     }
   ],

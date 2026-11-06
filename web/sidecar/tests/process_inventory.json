@@ -2200,6 +2200,13 @@
         ""
       ]
     },
+    "tests/test_skills_catalog.py::test_skill_lock_rpc_round_trip": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: skill lock record. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_state_db_delete_guard.py::test_legacy_agent_refuses_retained_runtime_history": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: legacy agent refuses retained runtime history. Uses the real installed release, not a fabricated API response.",

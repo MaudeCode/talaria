@@ -27,7 +27,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 const viewed = (name: string) => ({ success: true as const, name, description: 'd', tags: [], related_skills: [], content: 'body', path: `/skills/${name}/SKILL.md`, skill_dir: `/skills/${name}`, linked_files: {} })
-const LIBRARY = [{ name: 'review', description: 'Code review', category: null, disabled: false }, { name: 'deploy', description: 'Ship it', category: null, disabled: false }]
+const LIBRARY = [{ name: 'review', description: 'Code review', category: null, disabled: false, locked: false }, { name: 'deploy', description: 'Ship it', category: null, disabled: false, locked: false }]
 
 async function boot(sidecar = new FakeSidecar()): Promise<{ server: TestServer; sidecar: FakeSidecar }> {
   sidecar.respond('skills.list', () => ({ success: true, skills: LIBRARY, categories: [], count: LIBRARY.length }))

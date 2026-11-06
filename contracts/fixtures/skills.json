@@ -8,7 +8,8 @@
       "tier": 1,
       "description": "First copy",
       "category": "a",
-      "disabled": false
+      "disabled": false,
+      "locked": true
     },
     {
       "name": "b/two",
@@ -18,7 +19,8 @@
       "tier": 1,
       "description": "Second copy",
       "category": "b",
-      "disabled": false
+      "disabled": false,
+      "locked": null
     }
   ]
 }

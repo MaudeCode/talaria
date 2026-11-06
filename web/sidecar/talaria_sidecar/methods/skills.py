@@ -1,8 +1,8 @@
 """``skills.*``: skill discovery and parsing through the Agent's skill utilities.
 
-File writes (save, delete, toggle) live in the server; this namespace only
-parses SKILL.md trees the way ``tools.skills_tool`` does so the WebUI list
-matches what the Agent loads.
+File writes (save, delete, toggle) live in the server; this namespace parses
+SKILL.md trees the way ``tools.skills_tool`` does so the WebUI list matches what
+the Agent loads, and writes the Agent's own lock record.
 """
 
 from __future__ import annotations
@@ -64,6 +64,46 @@ def _category(skill_md: Path, dirs: list[Path], local: Path) -> str | None:
     return None
 
 
+def _skill_usage():
+    """The Agent's lock record (``tools.skill_usage``, v0.22.6+), or None before it."""
+    try:
+        from tools import skill_usage
+    except ImportError:
+        return None
+    return skill_usage if hasattr(skill_usage, "set_locked") else None
+
+
+def _locked_dirs() -> set[str] | None:
+    """Locked directory names; None without the Agent's lock or while its record is unreadable."""
+    usage = _skill_usage()
+    if usage is None:
+        return None
+    try:
+        # The listing reads a corrupt record as empty, and only the strict read tells that from no locks.
+        usage.is_locked("")
+    except (OSError, ValueError):
+        return None
+    return set(usage.locked_skill_names())
+
+
+def _row_locked(locked: set[str] | None, skill_md: Path) -> bool | None:
+    return None if locked is None else skill_md.parent.name in locked
+
+
+def set_skill_lock(profile_home: Path, name: str, locked: bool) -> dict:
+    """Write the lock under the skill's directory name, the key the Agent's write guards resolve."""
+    usage = _skill_usage()
+    if usage is None:
+        return {"status": "unavailable"}
+    skill_dir, skill_md = find_skill(name, search_dirs(profile_home / "skills"))
+    if skill_md is None or skill_md.name != "SKILL.md":
+        return {"status": "not_found"}
+    # The Agent's write starts from the same lenient read, so it would replace a corrupt record.
+    if _locked_dirs() is None:
+        return {"status": "unreadable"}
+    return {"status": "ok" if usage.set_locked(skill_dir.name, locked) else "failed"}
+
+
 def list_skills(profile_home: Path, category: str | None = None) -> dict:
     try:
         from agent.skill_utils import get_disabled_skill_names, is_disabled_entry
@@ -71,11 +111,12 @@ def list_skills(profile_home: Path, category: str | None = None) -> dict:
     except ImportError:
         return _legacy_list_skills(profile_home, category)
     disabled = get_disabled_skill_names("webui")
+    locked = _locked_dirs()
     # Keep disabled rows manageable, but never advertise shadowed or unloadable copies.
     out = [{"name": entry["load_name"], "load_name": entry["load_name"],
             "declared_name": entry["name"], "status": entry["status"], "tier": entry["tier"],
             "description": entry.get("description") or "", "category": entry.get("category"),
-            "disabled": is_disabled_entry(entry, disabled)}
+            "disabled": is_disabled_entry(entry, disabled), "locked": _row_locked(locked, entry["path"])}
            for entry in _skill_catalog(skip_disabled=True) if entry["load_name"]]
     if category:
         out = [s for s in out if s.get("category") == category]
@@ -94,6 +135,7 @@ def _legacy_list_skills(profile_home: Path, category: str | None = None) -> dict
         skills_dir.mkdir(parents=True, exist_ok=True)
         return {"success": True, "skills": [], "categories": [], "count": 0, "message": f"No skills found. Skills directory created at {skills_dir}/"}
     disabled = disabled_skill_names(profile_home)
+    locked = _locked_dirs()
     dirs = search_dirs(skills_dir)
     seen: set[str] = set()
     out = []
@@ -118,7 +160,7 @@ def _legacy_list_skills(profile_home: Path, category: str | None = None) -> dict
                 if len(description) > MAX_DESCRIPTION_LENGTH:
                     description = description[: MAX_DESCRIPTION_LENGTH - 3] + "..."
                 seen.add(name)
-                out.append({"name": name, "description": description, "category": _category(skill_md, dirs, skills_dir), "disabled": name in disabled})
+                out.append({"name": name, "description": description, "category": _category(skill_md, dirs, skills_dir), "disabled": name in disabled, "locked": _row_locked(locked, skill_md)})
             except Exception:  # noqa: BLE001
                 log.debug("Skipping skill at %s", skill_md, exc_info=True)
     if category:
@@ -330,6 +372,18 @@ def register(registry) -> None:
         home = profile_home_param(params)
         with scoped_home(home):
             return list_skills(home, params.get("category") or None)
+
+    @registry.method("skills.set_locked")
+    def set_locked(ctx: CallContext, params: dict) -> dict:
+        home = profile_home_param(params)
+        name = str(params.get("name") or "").strip()
+        if not name:
+            raise InvalidParams("name is required")
+        locked = params.get("locked")
+        if not isinstance(locked, bool):
+            raise InvalidParams("locked must be a boolean")
+        with scoped_home(home):
+            return set_skill_lock(home, name, locked)
 
     @registry.method("skills.view")
     def view(ctx: CallContext, params: dict) -> dict:

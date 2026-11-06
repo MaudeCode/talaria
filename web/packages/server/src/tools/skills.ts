@@ -179,6 +179,23 @@ export class SkillsService {
     await this.refreshPrompts(profileHome)
     return { ok: true, name, enabled }
   }
+
+  /** The Agent keeps the lock in `.usage.json` and enforces it on its own writes; this service's writes stay allowed. */
+  async setLocked(profileHome: string, name: string, locked: boolean): Promise<{ ok: true; name: string; locked: boolean }> {
+    let status: SidecarResult<'skills.set_locked'>['status']
+    try { ({ status } = await this.sidecar().call('skills.set_locked', { profile_home: profileHome, name, locked })) }
+    catch (error) {
+      if (error instanceof SidecarError && error.code === -32602) throw new HttpFailure(400, error.message)
+      throw error
+    }
+    switch (status) {
+      case 'ok': return { ok: true, name, locked }
+      case 'not_found': throw new HttpFailure(404, `Skill '${name}' not found`)
+      case 'unavailable': throw new HttpFailure(409, 'This Agent version cannot lock skills')
+      case 'unreadable': throw new HttpFailure(409, 'skills/.usage.json could not be read; repair it before changing a lock')
+      case 'failed': throw new HttpFailure(409, 'skills/.usage.json could not be written')
+    }
+  }
 }
 
 function localSkillName(raw: string): string {
