@@ -90,6 +90,23 @@ describe('anchored walk', () => {
       await expect(readFileContentAsync(root, 'a')).rejects.toBeInstanceOf(NotFoundError)
     })
 
+    it('refuses once the resolved root itself has been swapped for an outside symlink', async () => {
+      const base = realpathSync(mkdtempSync(join(tmpdir(), 'anchored-swap-')))
+      try {
+        const ws = join(base, 'ws')
+        mkdirSync(ws)
+        writeFileSync(join(ws, 'f.txt'), 'inside')
+        writeFileSync(join(outside, 'f.txt'), 'outside')
+        expect((await readFileContentAsync(ws, 'f.txt')).content).toBe('inside')
+        renameSync(ws, `${ws}-real`)
+        symlinkSync(outside, ws)
+        await expect(readFileContentAsync(ws, 'f.txt')).rejects.toBeInstanceOf(PathTraversalError)
+      } finally {
+        rmSync(base, { recursive: true, force: true })
+        rmSync(join(outside, 'f.txt'), { force: true })
+      }
+    })
+
     it('never answers with the outside file, whichever open a parent is swapped for an outside symlink before', async () => {
       fixture()
       let opens = 0

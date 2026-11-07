@@ -183,6 +183,14 @@ describe('project-os dashboard (TAL-266)', () => {
     expect((await projectOsDashboard('ops', deps({ lastWorkspace: join(root, 'work'), boards: () => Promise.reject(new Error('down')) }))).repo_root).toBe(join(root, 'real'))
   })
 
+  it('reads a workspace named through a symlink and keeps showing the path as named', async () => {
+    write('real/docs/project-os/PROJECT.md', 'linked goal\n')
+    write('real/.ax/status/active.json', { repo_root: join(root, 'linked') })
+    symlinkSync(join(root, 'real'), join(root, 'linked'))
+    const body = await projectOsDashboard('', deps({ lastWorkspace: join(root, 'linked') }))
+    expect(body).toMatchObject({ repo_root: join(root, 'linked'), goal_summary: 'linked goal' })
+  })
+
   it('uses root-level docs in a non-git onboarding workspace', async () => {
     write('PROJECT.md', `Onboarding ${root}\nTO_BE_VALIDATED_BY_HERMES\n자동 승격 금지\n`)
     write('docs/project-os/PROJECT.md', 'nested\n')

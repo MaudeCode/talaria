@@ -45,6 +45,8 @@ const clip = (value: string): string => Array.from(value).slice(0, SUMMARY_MAX).
  */
 interface Repo { path: string; anchor: string; rel: string }
 const ownRoot = (path: string): Repo => ({ path, anchor: path, rel: '' })
+/** A root named by a workspace or board: shown as named, read through the path it resolves to now. */
+const namedRoot = async (path: string): Promise<Repo> => ({ path, anchor: await resolvePathLikePythonAsync(path), rel: '' })
 
 async function readDoc(repo: Repo, file: string): Promise<Doc | null> {
   try { return { ...await readFileContentAsync(repo.anchor, repo.rel ? `${repo.rel}/${file}` : file), path: file } } catch { return null }
@@ -123,7 +125,7 @@ async function candidateRepoRoots(workspaceRoot: string | null, cwd: string): Pr
 }
 
 async function resolveRepoRootForBoard(repoRoot: string | null, slug: string, cwd: string): Promise<Repo | null> {
-  const existing = repoRoot !== null && await exists(repoRoot) ? ownRoot(repoRoot) : null
+  const existing = repoRoot !== null && await exists(repoRoot) ? await namedRoot(repoRoot) : null
   if (!slug) return existing
   if (existing !== null && await repoMatchesBoard(existing, slug)) return existing
   for (const candidate of await candidateRepoRoots(repoRoot, cwd)) if (await repoMatchesBoard(candidate, slug)) return candidate
@@ -176,9 +178,10 @@ async function onboardingContext(root: string, project: Doc | null, plan: Doc | 
  * Any other target is the explicit external root Python followed.
  */
 async function redirect(from: Repo, target: string): Promise<Repo> {
-  const rel = relative(from.anchor, resolve(expandHome(target))).split(sep).join('/')
-  if (rel === '') return ownRoot(from.anchor)
-  if (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel)) return { path: join(from.anchor, rel), anchor: from.anchor, rel }
+  const base = from.rel ? from.anchor : from.path
+  const rel = relative(base, resolve(expandHome(target))).split(sep).join('/')
+  if (rel === '') return from.rel ? ownRoot(from.anchor) : from
+  if (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel)) return { path: join(base, rel), anchor: from.anchor, rel }
   return ownRoot(await resolvePathLikePythonAsync(target))
 }
 

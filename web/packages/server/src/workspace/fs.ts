@@ -695,13 +695,17 @@ async function openAnchoredAsync(target: string): Promise<FileHandle> {
   }
 }
 
-/** `readFileContent` off the event loop, or that read itself where no descriptor or inode path exists to anchor the walk. */
-export async function readFileContentAsync(workspace: string, rel: string): Promise<FileContent> {
-  if (!DESCRIPTOR_PATHS && !INODE_PATHS) return readFileContent(workspace, rel)
+/**
+ * `readFileContent` off the event loop. `root` is the caller's already resolved root and is never resolved again here, so
+ * an ancestor swapped at any point sends the target outside it or fails the walk. Where no descriptor or inode path exists
+ * to anchor the walk, the synchronous read does it.
+ */
+export async function readFileContentAsync(root: string, rel: string): Promise<FileContent> {
   const refuse = (): NotFoundError => new NotFoundError(`Not a file: ${rel}`)
   if (!POLICY.supported) throw refuse()
-  const target = await resolvePathLikePythonAsync(resolve(workspace, rel))
-  if (!isWithin(target, await resolvePathLikePythonAsync(workspace))) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
+  const target = await resolvePathLikePythonAsync(resolve(root, rel))
+  if (!isWithin(target, root)) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
+  if (!DESCRIPTOR_PATHS && !INODE_PATHS) return readFileContent(root, rel)
   let handle: FileHandle
   try { handle = await openAnchoredAsync(target) } catch { throw refuse() }
   try {
