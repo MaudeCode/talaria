@@ -3,8 +3,10 @@
  * resuming from the grammar state after the last completed line, and results live in a bounded LRU keyed by the
  * full content. The `code` plugin keeps `@streamdown/code`'s interface for the blocks Streamdown renders itself.
  */
-import { bundledLanguages, bundledLanguagesInfo, createHighlighter, type GrammarState, type HighlighterGeneric, type ThemedToken, type TokensResult } from 'shiki'
+import { createHighlighterCore, isPlainLang, type GrammarState, type HighlighterCore, type ThemedToken, type ThemeInput as ShikiThemeInput, type TokensResult } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import { bundledLanguages, bundledLanguagesInfo, type BundledLanguage } from 'shiki/langs'
+import { bundledThemes, type BundledTheme } from 'shiki/themes'
 import type { CodeHighlighterPlugin, HighlightOptions, ThemeInput } from 'streamdown'
 
 /** Tokenizes `code`, continuing from `grammarState` when one is given. */
@@ -96,27 +98,38 @@ const themeName = (theme: ThemeInput): string => (typeof theme === 'string' ? th
 /** Every fence label Shiki highlights, aliases included; the code-block renderer claims these. */
 export const HIGHLIGHTED_LANGUAGES = [...supported, ...aliases.keys()]
 
-// Languages and themes are resolved at runtime, so the maps hold Shiki's string-keyed highlighter type.
-type Highlighter = HighlighterGeneric<string, string>
-const loading = new Map<string, Promise<Highlighter>>()
-const loaded = new Map<string, Highlighter>()
+const cores = new Map<string, Promise<HighlighterCore>>()
+const loading = new Map<string, Promise<unknown>>()
+const loaded = new Map<string, HighlighterCore>()
 const loadListeners = new Set<() => void>()
 const shared = createIncrementalHighlighter()
 
 function scopeOf(language: string, themes: Themes) {
   const resolved = resolveLanguage(language)
   const lang = supported.has(resolved) ? resolved : 'text'
-  return { lang, key: `${lang}:${themeName(themes[0])}:${themeName(themes[1])}` }
+  const pair = `${themeName(themes[0])}:${themeName(themes[1])}`
+  return { lang, pair, key: `${lang}:${pair}` }
 }
 
-/** Loads the language and themes once; Shiki fetches each grammar lazily. */
+/** The one highlighter for a theme pair; it starts with no languages. */
+function loadCore(pair: string, themes: Themes): Promise<HighlighterCore> {
+  const pending = cores.get(pair)
+  if (pending) return pending
+  const promise = createHighlighterCore({ themes: themes.map((theme) => (typeof theme === 'string' ? bundledThemes[theme as BundledTheme] : theme)) as ShikiThemeInput[], langs: [], engine })
+  // Every language shares this instance, so a failed load must not end highlighting for the ones still to come.
+  promise.then((highlighter) => { loaded.set(pair, highlighter) }, () => { cores.delete(pair) })
+  cores.set(pair, promise)
+  return promise
+}
+
+/** Loads the theme pair's highlighter and the language once; Shiki fetches each grammar lazily. */
 export function loadHighlighter(language: string, themes: Themes): Promise<unknown> {
-  const { lang, key } = scopeOf(language, themes)
+  const { lang, pair, key } = scopeOf(language, themes)
   const pending = loading.get(key)
   if (pending) return pending
-  const promise = createHighlighter({ themes: themes as Parameters<typeof createHighlighter>[0]['themes'], langs: [lang], engine }) as Promise<Highlighter>
-  // A failed load stays failed, as in `@streamdown/code`; callers report it and keep the plain text.
-  promise.then((highlighter) => { loaded.set(key, highlighter); for (const listener of loadListeners) listener() }, () => undefined)
+  const promise = loadCore(pair, themes).then((highlighter) => (isPlainLang(lang) ? undefined : highlighter.loadLanguage(bundledLanguages[lang as BundledLanguage])))
+  // A failed language load stays failed, as in `@streamdown/code`; callers report it and keep the plain text.
+  promise.then(() => { for (const listener of loadListeners) listener() }, () => undefined)
   loading.set(key, promise)
   return promise
 }
@@ -126,19 +139,36 @@ export function subscribeHighlighterLoads(listener: () => void): () => void {
   return () => { loadListeners.delete(listener) }
 }
 
-/** Whether `loadHighlighter` has finished for this language and these themes. */
-export function highlighterLoaded(language: string, themes: Themes): boolean {
-  return loaded.has(scopeOf(language, themes).key)
+/** The theme pair's highlighter once it can tokenize `lang`. */
+function readyHighlighter(lang: string, pair: string): HighlighterCore | undefined {
+  const highlighter = loaded.get(pair)
+  return highlighter && (isPlainLang(lang) || highlighter.getLoadedLanguages().includes(lang)) ? highlighter : undefined
 }
 
-/** Tokens for `code`, or null until its highlighter has loaded. */
+/** Whether `loadHighlighter` has finished for this language and these themes. */
+export function highlighterLoaded(language: string, themes: Themes): boolean {
+  const { lang, pair } = scopeOf(language, themes)
+  return readyHighlighter(lang, pair) !== undefined
+}
+
+const grammarIds = new WeakMap<object, number>()
+let lastGrammarId = 0
+function grammarId(grammar: object): number {
+  const id = grammarIds.get(grammar) ?? ++lastGrammarId
+  grammarIds.set(grammar, id)
+  return id
+}
+
+/** Tokens for `code`, or null until its language has loaded. */
 export function highlightCode({ code, language, themes }: HighlightOptions, incomplete: boolean): TokensResult | null {
-  const { lang, key } = scopeOf(language, themes)
-  const highlighter = loaded.get(key)
+  const { lang, pair, key } = scopeOf(language, themes)
+  const highlighter = readyHighlighter(lang, pair)
   if (!highlighter) return null
-  const target = highlighter.getLoadedLanguages().includes(lang) ? lang : 'text'
-  const options = { lang: target, themes: { light: themeName(themes[0]), dark: themeName(themes[1]) } }
-  return shared.highlight(code, key, incomplete, (part, grammarState) => highlighter.codeToTokens(part, grammarState ? { ...options, grammarState } : options))
+  const options = { lang, themes: { light: themeName(themes[0]), dark: themeName(themes[1]) } }
+  // Loading a language rebuilds every grammar that lazily embeds it (Markdown embeds most). A saved grammar state
+  // does not survive that, so a rebuilt grammar starts a new scope and its blocks tokenize again from the top.
+  const scope = isPlainLang(lang) ? key : `${key}:${grammarId(highlighter.getLanguage(lang))}`
+  return shared.highlight(code, scope, incomplete, (part, grammarState) => highlighter.codeToTokens(part, grammarState ? { ...options, grammarState } : options))
 }
 
 const THEMES: Themes = ['github-light', 'github-dark']

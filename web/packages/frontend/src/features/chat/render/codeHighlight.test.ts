@@ -1,7 +1,28 @@
 import { createHighlighter, type GrammarState } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-import { describe, expect, it } from 'vitest'
+import type { HighlighterCore } from 'shiki/core'
+import { describe, expect, it, vi } from 'vitest'
 import { createIncrementalHighlighter, type Tokenize } from './codeHighlight'
+
+const { created, failure } = vi.hoisted(() => ({ created: [] as HighlighterCore[], failure: { nextCore: false } }))
+
+// Either Shiki entry counts, so a per-language instance built through the root entry fails the count too.
+vi.mock('shiki', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('shiki')>()
+  return { ...actual, createHighlighter: async (...args: Parameters<typeof actual.createHighlighter>) => { const highlighter = await actual.createHighlighter(...args); created.push(highlighter); return highlighter } }
+})
+vi.mock('shiki/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('shiki/core')>()
+  return {
+    ...actual,
+    createHighlighterCore: async (...args: Parameters<typeof actual.createHighlighterCore>) => {
+      if (failure.nextCore) { failure.nextCore = false; throw new Error('theme chunk failed') }
+      const highlighter = await actual.createHighlighterCore(...args)
+      created.push(highlighter)
+      return highlighter
+    },
+  }
+})
 
 /** Splits code into one token per line and records every line it was given. */
 function recordingTokenizer() {
@@ -91,5 +112,61 @@ describe('incremental code highlighting (TAL-1402)', () => {
     expect(highlighter.size()).toBe(500)
     const recent = highlighter.highlight('block 1999\nbody', 'ts', false, tokenize)
     expect(highlighter.highlight('block 1999\nbody', 'ts', false, tokenize)).toBe(recent)
+  })
+})
+
+describe('one Shiki highlighter per theme pair (TAL-1706)', () => {
+  const themes: ['github-light', 'github-dark'] = ['github-light', 'github-dark']
+  const KEYWORD = '#D73A49'
+  const keyword = (result: { tokens: { htmlStyle?: Record<string, string> }[][] } | null) => result?.tokens[0]?.[0]?.htmlStyle?.color
+  /** The module's highlighters are module state, so each case starts from a fresh copy. */
+  const fresh = async () => { vi.resetModules(); created.length = 0; return import('./codeHighlight') }
+
+  it('serves every language from one highlighter, sharing a concurrent load', async () => {
+    const { loadHighlighter } = await fresh()
+    await Promise.all([loadHighlighter('ts', themes), loadHighlighter('typescript', themes)])
+    await loadHighlighter('python', themes)
+
+    expect(created).toHaveLength(1)
+    expect(created[0]?.getLoadedLanguages()).toEqual(expect.arrayContaining(['typescript', 'python']))
+  })
+
+  it('highlights a loaded language synchronously and holds back one whose grammar has not arrived', async () => {
+    const { highlightCode, highlighterLoaded, loadHighlighter } = await fresh()
+    await loadHighlighter('ts', themes)
+
+    expect(keyword(highlightCode({ code: 'const a = 1', language: 'ts', themes }, false))).toBe(KEYWORD)
+    expect(keyword(highlightCode({ code: 'const b = 2', language: 'typescript', themes }, false))).toBe(KEYWORD)
+    // Plain tokens here would stay cached as this block's result after python loads.
+    const python = { code: 'def f(): pass', language: 'python', themes }
+    expect(highlighterLoaded('python', themes)).toBe(false)
+    expect(highlightCode(python, false)).toBeNull()
+    await loadHighlighter('python', themes)
+    expect(highlighterLoaded('python', themes)).toBe(true)
+    expect(keyword(highlightCode(python, false))).toBe(KEYWORD)
+    // A label no grammar claims has nothing to load and renders as plain text.
+    await loadHighlighter('no-such-language', themes)
+    expect(highlightCode({ code: 'plain', language: 'no-such-language', themes }, false)?.tokens[0]?.[0]?.content).toBe('plain')
+  })
+
+  it('restarts a streaming block when a later language load rebuilds its grammar', async () => {
+    const { highlightCode, loadHighlighter } = await fresh()
+    const code = '# Title\n\n```python\ndef f():\n  return 1\n```\n\nAfter **bold** text\n\n- list `code`'
+    await loadHighlighter('markdown', themes)
+    highlightCode({ code: code.slice(0, code.indexOf('  return')), language: 'markdown', themes }, true)
+    // Markdown lazily embeds python, so this replaces the grammar the stream's saved state came from.
+    await loadHighlighter('python', themes)
+    const done = highlightCode({ code, language: 'markdown', themes }, false)
+
+    expect(done?.tokens).toEqual(created[0]?.codeToTokens(code, { lang: 'markdown', themes: { light: themes[0], dark: themes[1] } }).tokens)
+  })
+
+  it('retries the highlighter for the next language after a failed load', async () => {
+    const { highlightCode, loadHighlighter } = await fresh()
+    failure.nextCore = true
+    await expect(loadHighlighter('ts', themes)).rejects.toThrow('theme chunk failed')
+    await loadHighlighter('python', themes)
+
+    expect(keyword(highlightCode({ code: 'def f(): pass', language: 'python', themes }, false))).toBe(KEYWORD)
   })
 })

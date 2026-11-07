@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats that mix code languages use less memory in Talaria Web, and its Markdown renderer no longer loads the unused WebAssembly highlighter engine.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

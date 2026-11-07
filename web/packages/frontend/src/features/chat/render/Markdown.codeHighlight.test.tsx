@@ -5,12 +5,12 @@ import Markdown from './MarkdownRenderer'
 const { tokenized } = vi.hoisted(() => ({ tokenized: [] as string[] }))
 
 // Record every line handed to Shiki, whichever code plugin asks for it.
-vi.mock('shiki', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('shiki')>()
+vi.mock('shiki/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('shiki/core')>()
   return {
     ...actual,
-    createHighlighter: async (...args: Parameters<typeof actual.createHighlighter>) => {
-      const highlighter = await actual.createHighlighter(...args)
+    createHighlighterCore: async (...args: Parameters<typeof actual.createHighlighterCore>) => {
+      const highlighter = await actual.createHighlighterCore(...args)
       const codeToTokens = highlighter.codeToTokens.bind(highlighter)
       highlighter.codeToTokens = (code, options) => { tokenized.push(...code.split('\n')); return codeToTokens(code, options) }
       return highlighter
