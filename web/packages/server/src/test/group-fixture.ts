@@ -62,16 +62,18 @@ export function groupFixture(sidecar: FakeSidecar) {
   const continued = (discussionId: string, threadId: string) => gateway('room.continued', { discussion_event_id: discussionId, thread_id: threadId, grant: 1 })
   sidecar.respond('gateway.groups', ({ operation }: SidecarParams<'gateway.groups'>) => {
     if (!state.available) return { state: 'unavailable', reason: 'unsupported', value: null }
+    // The sidecar checks the driver before every operation, not only `capabilities`.
+    if (!state.driver) return { state: 'unavailable', reason: 'driver_inactive', value: null }
     let value: Record<string, unknown>
     switch (operation.action) {
-      case 'capabilities': value = { driver: state.driver, authority_gateway_id: 'gateway', methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', ...(state.continueMethod ? ['continue'] : []), 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download', ...(state.contextOffered ? ['context'] : [])].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break
+      case 'capabilities': value = { driver: state.driver, authority_gateway_id: room.authority_gateway_id, methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', ...(state.continueMethod ? ['continue'] : []), 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download', ...(state.contextOffered ? ['context'] : [])].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break
       case 'list': value = { rooms: state.disbanded ? [] : [room], next_offset: null }; break
       case 'create': room.room_id = operation.room_id; room.name = operation.name; room.members = operation.members.map((m) => ({ ...m, display_name: m.display_name ?? m.profile })); value = { room }; break
       case 'state': value = { room, driver_status: state.driver_status, ...(state.contextOffered ? { context: state.context } : {}) }; break
       case 'log': {
         const events = state.events.filter((event) => Number(event.seq) > operation.since_seq).slice(0, operation.limit ?? 100)
         const cursor = Number(events.at(-1)?.seq ?? operation.since_seq)
-        value = { events, cursor, latest_seq: room.latest_seq, has_more: cursor < room.latest_seq, authority: { gateway_id: 'gateway', epoch: room.authority_epoch } }; break
+        value = { events, cursor, latest_seq: room.latest_seq, has_more: cursor < room.latest_seq, authority: { gateway_id: room.authority_gateway_id, epoch: room.authority_epoch } }; break
       }
       case 'send': {
         const eventId = `user:${createHash('sha256').update(operation.event_id).digest('hex')}`

@@ -613,6 +613,9 @@ test('shows a discussion paused at its cap and continues it optimistically, rest
     await expect(notice).toHaveText('Paused at the reply limit')
     await expect(page.locator('.composer-notice')).toContainText('Paused at the reply limit · 4 left')
     fixture.state.continueMethod = false
+    // The room observer keeps capabilities for 30 seconds.
+    const nowSeconds = server.deps.nowSeconds
+    server.deps.nowSeconds = () => nowSeconds() + 30
     await expect(resume).toHaveCount(0)
     await expect(notice).toBeVisible()
   } finally { hold?.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }

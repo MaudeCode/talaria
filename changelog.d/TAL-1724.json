@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "An open discussion in Talaria Web now updates only when something in it changes, instead of resending the whole room every second.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

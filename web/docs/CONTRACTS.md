@@ -405,8 +405,12 @@ room observation poll refreshes these fields even without new log events.
 window; returning to the latest window resumes observation. One authenticated
 `/api/groups/stream` observer per owner/profile/room holds the native log cursor
 while viewers exist. Snapshots replace the displayed window, so replay cannot
-duplicate rows. Gaps or authority replacement rebuild a bounded snapshot. The
-last viewer releases observation without stopping native execution.
+duplicate rows. Gaps or authority replacement rebuild a bounded snapshot. A
+snapshot is sent only when the view differs from the last one sent or a viewer
+joins; between snapshots the stream carries keepalive comments. The observer
+keeps capabilities for 30 seconds and re-reads them when a viewer joins or a
+room read fails. The last viewer releases observation without stopping native
+execution.
 
 Uploads use `/api/groups/upload`; the server classifies the declared MIME, and
 the native store validates MIME, bytes and room custody. The server verifies

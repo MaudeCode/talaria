@@ -19,7 +19,8 @@ const nativeEventId = (requestId: string) => `user:${createHash('sha256').update
 type State = z.infer<typeof NativeGroupStateSchema>
 type NativeEvent = z.infer<typeof NativeGroupLogSchema>['events'][number]
 type Capabilities = z.infer<typeof NativeGroupCapabilitiesSchema>
-interface Observation { identity: string; cursor: number; events: NativeEvent[] }
+/** `capabilities` serves only this watch, so one-shot reads and writes keep fencing on the current authority. */
+interface Observation { identity: string; cursor: number; events: NativeEvent[]; capabilities: { caps: Capabilities; at: number } | null }
 const empty = (reason: GroupView['reason']): GroupView => ({ available: false, reason, room: null, rows: [], paused: [], cursor: 0, has_more: false, next_before_seq: null })
 const reasons = new Set(['unsupported', 'stopped', 'refused', 'unavailable', 'unknown', 'driver_inactive'])
 const safeReason = (reason: string | null): GroupView['reason'] => reasons.has(reason ?? '') ? reason as GroupView['reason'] : 'unavailable'
@@ -29,6 +30,7 @@ const localMembers = (members: State['room']['members']) => members.every((m) =>
 const PAUSE_SCAN_PAGES = 20
 const PAUSE_LEDGERS = 32
 const PAUSE_EXCERPT_CHARS = 40
+const WATCH_CAPABILITIES_SECONDS = 30
 
 /**
  * The Agent's `paused_discussion` (`gateway/hosted_room_router.py`), folded per discussion so a whole log costs one pass.
@@ -79,7 +81,7 @@ class PauseLedger {
 
 export class Groups {
   private readonly ledgers = new Map<string, PauseLedger>()
-  private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void> }>()
+  private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void>; sent: GroupView | null; observation: Observation }>()
   private droppedAction = false
   constructor(private readonly deps: () => AppDeps, private readonly pollMs = 1000) {}
 
@@ -244,21 +246,44 @@ export class Groups {
     })
   }
 
-  private async log(scope: GroupScope, room: State['room'], cursor: number, limit: number, signal?: AbortSignal) {
-    const response = await this.call(scope, { action: 'log', room_id: room.room_id, since_seq: cursor, limit }, signal)
+  private async readLog(scope: GroupScope, roomId: string, cursor: number, limit: number, signal?: AbortSignal) {
+    const response = await this.call(scope, { action: 'log', room_id: roomId, since_seq: cursor, limit }, signal)
     const parsed = NativeGroupLogSchema.safeParse(response.value)
-    if (response.state !== 'available' || !parsed.success) return null
-    const log = parsed.data
+    return response.state === 'available' && parsed.success ? parsed.data : null
+  }
+
+  private fencedLog(room: State['room'], cursor: number, log: z.infer<typeof NativeGroupLogSchema>) {
     if (log.authority.gateway_id !== room.authority_gateway_id || log.authority.epoch !== room.authority_epoch) return null
     let seq = cursor
     for (const event of log.events) { if (event.room_id !== room.room_id || event.seq !== seq + 1) return null; seq = event.seq }
     return log.cursor === seq ? log : null
   }
 
+  private async log(scope: GroupScope, room: State['room'], cursor: number, limit: number, signal?: AbortSignal) {
+    const log = await this.readLog(scope, room.room_id, cursor, limit, signal)
+    return log && this.fencedLog(room, cursor, log)
+  }
+
   async view(scope: GroupScope, roomId: string, before?: number, signal?: AbortSignal, observation?: Observation): Promise<GroupView> {
-    const { caps, reason } = await this.supported(scope, signal)
+    const now = this.deps().nowSeconds()
+    const cached = observation?.capabilities && now - observation.capabilities.at < WATCH_CAPABILITIES_SECONDS ? observation.capabilities.caps : null
+    const { caps, reason } = cached ? { caps: cached, reason: null } : await this.supported(scope, signal)
     if (!caps) return empty(reason)
-    const state = await this.state(scope, roomId, caps, signal)
+    const limit = Math.min(caps.max_log_limit, 100)
+    // A watch already knows where its next page starts, so that page need not wait for the state read that fences it.
+    const [state, concurrent] = await Promise.all([
+      this.state(scope, roomId, caps, signal).catch((error: unknown) => {
+        if (!cached) throw error
+        return null
+      }),
+      observation?.identity ? this.readLog(scope, roomId, observation.cursor, limit, signal) : null,
+    ])
+    if (!state) {
+      // The cached capabilities may be what went stale: a restart changes the authority and a stop has a reason of its own.
+      Object.assign(observation!, { identity: '', capabilities: null })
+      return this.view(scope, roomId, before, signal)
+    }
+    if (observation && !cached) observation.capabilities = { caps, at: now }
     if (state.room.disbanded_at !== undefined) return { available: true, reason: null, room: this.project(scope, state, caps), rows: [], paused: [], cursor: state.room.latest_seq ?? 0, has_more: false, next_before_seq: null }
     const latest = state.room.latest_seq ?? 0
     const end = Math.min(before === undefined ? latest : before - 1, latest)
@@ -267,9 +292,12 @@ export class Groups {
     const start = resumed ? observation.cursor : Math.max(0, end - 100)
     const events = resumed ? [...observation.events] : []
     let seq = start
+    let first = resumed ? concurrent : null
     // Native byte caps can shorten a page. Drain this bounded window without skipping its tail.
+    // A concurrent page that predates the state's newest event ends this pass short; the next poll resumes from it.
     do {
-      const log = await this.log(scope, state.room, seq, Math.min(caps.max_log_limit, 100), signal)
+      const log = first ? this.fencedLog(state.room, seq, first) : await this.log(scope, state.room, seq, limit, signal)
+      first = null
       if (!log) {
         if (observation) { observation.identity = ''; return this.view(scope, roomId, before, signal) }
         return empty('unavailable')
@@ -443,14 +471,18 @@ export class Groups {
     let watcher = this.watchers.get(key)
     if (!watcher) {
       const channel = new StreamChannel(), controller = new AbortController()
-      watcher = { channel, controller, done: Promise.resolve() }
+      const observation: Observation = { identity: '', cursor: 0, events: [], capabilities: null }
+      const started = watcher = { channel, controller, done: Promise.resolve(), sent: null as GroupView | null, observation }
       this.watchers.set(key, watcher)
       const run = async () => {
-        const observation: Observation = { identity: '', cursor: 0, events: [] }
         while (!controller.signal.aborted) {
           const view = await this.view(scope, roomId, undefined, controller.signal, observation).catch(() => empty('unavailable'))
           if (controller.signal.aborted) break
-          channel.replace(['snapshot', view, view.room ? `${view.room.identity}:${view.cursor}` : null])
+          // An unchanged room sends nothing; the stream route's keepalive holds the connection.
+          if (!isDeepStrictEqual(view, started.sent)) {
+            started.sent = view
+            channel.replace(['snapshot', view, view.room ? `${view.room.identity}:${view.cursor}` : null])
+          }
           await new Promise<void>((resolve) => {
             const finish = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', finish); resolve() }
             const timer = setTimeout(finish, this.pollMs)
@@ -459,6 +491,10 @@ export class Groups {
         }
       }
       watcher.done = run()
+    } else {
+      // A joining viewer's route-read snapshot can predate the last frame, so the next tick reads capabilities afresh and resends.
+      watcher.sent = null
+      watcher.observation.capabilities = null
     }
     const [subscriber] = watcher.channel.subscribeWithSnapshot()
     const current = watcher
