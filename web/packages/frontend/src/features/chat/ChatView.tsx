@@ -25,7 +25,7 @@ import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest } from '../composer/Composer'
 import { composerStateId, useQueuedTurns, type QueuedTurn } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
-import { ApprovalCard } from './ApprovalCard'
+import { ApprovalCards } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
 import { ConnectCard } from '../connectors/ConnectCard'
 import { useClarify } from './useClarify'
@@ -97,6 +97,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     return () => setWatchingRun(false)
   }, [sessionId, watchingRun])
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [dismissedApproval, setDismissedApproval] = useState<string | undefined>()
   const onToggleTerminal = () => setTerminalOpen((t) => !t)
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(composerStateId(session))
@@ -555,7 +556,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>
         {hero && <h2 className="composer-hero-title" id="emptyHeroTitle">{wsLabel ? m.empty_hero_title_workspace({ a0: wsLabel }) : m.empty_hero_title()}</h2>}
         <div className="composer-flyout">
-          {sessionId && live?.approval && <ApprovalCard key={live.approval.approval_id} sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
+          {sessionId && <ApprovalCards key={sessionId} sessionId={sessionId} pending={live?.approval ?? null} onResolved={(approvalId) => { dispatch({ type: 'clear_approval', sessionId, approvalId }) }} onDismissed={setDismissedApproval} />}
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {connectCard && <ConnectCard key={connectCard.op_id} initial={connectCard} />}
@@ -567,6 +568,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         </div>
         {(sessionId || canReference) && <SessionReferences key={bootstrap.profile?.name} profile={bootstrap.profile?.name ?? 'default'} selected={sessionId ? session?.source_references ?? [] : pending.source_references ?? []} {...(!sessionId ? { onChange: (source_references: AcceptedSourceReference[]) => setPending((p) => ({ ...p, source_references })) } : {})} />}
         <Composer
+          liveStatusHidden={!!live?.approval && live.approval.approval_id !== dismissedApproval}
           sessionId={sessionId}
           session={composerSession}
           pendingChoices={sessionId ? undefined : shownChoices}

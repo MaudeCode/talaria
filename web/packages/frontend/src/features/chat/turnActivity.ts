@@ -178,7 +178,7 @@ export function continuedActivity(activity: TurnActivity, turn: LiveTurn): TurnA
     const live = item.kind === 'tool' ? turn.tools[item.call.id] : undefined
     if (!live || item.kind !== 'tool') return item
     const call = item.call
-    return { ...item, call: { ...call, progress: live.progress ?? null, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView } }
+    return { ...item, call: { ...call, progress: live.progress ?? null, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView, approvalOutcome: live.approvalOutcome } }
   })
   return { ...activity, items, continued: liveActivity(turn, toolIdsOf(activity)).items.length > 0 }
 }

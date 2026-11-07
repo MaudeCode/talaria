@@ -6,7 +6,7 @@ import { m } from '../../../paraglide/messages.js'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { readPersistedJson, writePersistedJson } from '../../../lib/persisted'
-import { motionOn, revealHeight, REVEAL_MS, TRAVEL_EASE } from '../../../lib/motion'
+import { motionOn, prefersReducedMotion, revealHeight, REVEAL_MS, TRAVEL_EASE } from '../../../lib/motion'
 import { SwapText } from '../../../ui/SwapText'
 import type { ToolCardData } from './ToolCard'
 
@@ -55,6 +55,26 @@ export function useDisclosure(id: string, defaultOpen: boolean): [boolean, () =>
   return [open, () => { if (context) context.choose(key, !open); else setLocal(!open) }]
 }
 
+/** The tint's length in tools.css. */
+const APPROVAL_FLASH_MS = 1600
+
+/**
+ * TAL-1783: the class that tints a row, or the group folding it, once as the server reports the answer to an approval
+ * holding one of these calls. An answer already there at mount (a row folding into a group, a reload) announces nothing.
+ */
+export function useApprovalFlash(calls: ToolCardData[]): string | undefined {
+  const answer = calls.findLast((call) => call.approvalOutcome)
+  const key = answer && `${answer.id}:${String(answer.approvalOutcome)}`
+  const [shown, setShown] = useState(key)
+  const flashing = key !== shown
+  useEffect(() => {
+    if (!flashing) return
+    const end = setTimeout(() => { setShown(key) }, APPROVAL_FLASH_MS)
+    return () => { clearTimeout(end) }
+  }, [flashing, key])
+  return flashing && !prefersReducedMotion() ? `tool-flash-${String(answer?.approvalOutcome)}` : undefined
+}
+
 export function terminalOutcomeLabel(status: string): string | null {
   switch (status) {
     case 'running': case 'completed': return null
@@ -76,6 +96,7 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   // The server decides whether a settled turn's work opens by default; nested groups start closed.
   const defaultOpen = !nested && expandedByDefault
   const [chosen, toggle] = useDisclosure(sequenceKey ?? disclosureId, defaultOpen)
+  const flash = useApprovalFlash(calls)
   const open = live || chosen
   const bodyId = useId()
   // Only the reader's click moves the body; a live turn settling folds through SettleSpacer, and entry never animates.
@@ -111,7 +132,7 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   return (
     <div className={cn('tool-group tool-worklog-group agent-activity-group activity', nested && 'activity-sequence-group', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-live-activity-current={active ? '1' : undefined} data-open={open ? '1' : '0'}>
       {!live && (
-        <button type="button" className="tool-call-group-summary tool-worklog-summary activity-summary" aria-expanded={open} aria-controls={bodyId} onClick={() => { clicked.current = true; toggle() }}>
+        <button type="button" className={cn('tool-call-group-summary tool-worklog-summary activity-summary', flash)} aria-expanded={open} aria-controls={bodyId} onClick={() => { clicked.current = true; toggle() }}>
           <span className="as-dot" aria-hidden="true" />
           <SwapText className="tool-call-group-label tool-worklog-label as-text" text={summary} />
           {failed > 0 && <span className="tool-call-group-duration text-error">{failed}✕</span>}

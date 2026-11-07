@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Answering a command approval in Talaria Web now slides the card back behind the composer, lights the command's row as it is allowed or denied, and keeps the status chip out of the card's way.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

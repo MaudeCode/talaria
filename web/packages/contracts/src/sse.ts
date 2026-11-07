@@ -1,7 +1,7 @@
 import { PlanGaugeSchema } from './plan-usage.js'
 import { z } from 'zod'
 import { RateLimitWaitSchema, RunStatusSchema } from './run-status.js'
-import { ApprovalPendingSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ApprovalPendingSchema, ToolApprovalOutcomeSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 import { ConnectorOperationViewSchema } from './connector-operation.js'
 export { RateLimitWaitSchema, type RateLimitWait } from './run-status.js'
 
@@ -19,7 +19,7 @@ const Text = z.looseObject({ text: z.string().optional(), already_streamed: z.bo
 const Reasoning = z.looseObject({ text: z.string().optional(), titles: z.array(z.string()).optional(), name: z.string().optional(), session_id: z.string().optional(), disclosure_key: z.string().optional() })
 const Tool = z.looseObject({ name: z.string().optional(), ...ToolDisplayFields, preview: z.string().nullable().optional(), args: z.unknown().optional(), event_type: z.string().optional(), session_id: z.string().optional(), /** The call's one id, the same on its `tool` and `tool_complete` frames; `after_tool_call_id` names it. */ id: z.string(), timestamp: z.number().optional() })
 const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), is_error: z.boolean().optional(), cost_usd: z.number().nullable().optional(), result: z.unknown().optional(), result_view: ToolResultViewSchema.optional(), output: z.unknown().optional() })
-const Approval = z.looseObject({ allowed_choices: ApprovalPendingSchema.shape.allowed_choices, can_enable_yolo: ApprovalPendingSchema.shape.can_enable_yolo, can_deny_with_instruction: ApprovalPendingSchema.shape.can_deny_with_instruction, approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
+const Approval = z.looseObject({ tool_call_id: ApprovalPendingSchema.shape.tool_call_id, allowed_choices: ApprovalPendingSchema.shape.allowed_choices, can_enable_yolo: ApprovalPendingSchema.shape.can_enable_yolo, can_deny_with_instruction: ApprovalPendingSchema.shape.can_deny_with_instruction, approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
 const Clarify = z.looseObject({ steps: z.array(ClarifyStepSchema).optional(), vault: VaultPromptSchema.optional(), clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), choices: z.array(z.unknown()).optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_seconds: z.number().optional(), timeout_at: z.number().optional(), index: z.number().optional(), total: z.number().optional() })
 const Compression = z.looseObject({ session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), usage: z.looseObject({ ...ContextUsageFields, plan_gauge: PlanGaugeSchema.nullable().optional() }).optional() })
 /**
@@ -58,7 +58,7 @@ const BgTask = z.looseObject({ session_id: z.string().optional(), task_id: z.str
 const ServerTurn = z.looseObject({ session_id: z.string().optional(), stream_id: z.string().optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).optional() })
 const Loose = z.looseObject({})
 export const CHAT_EVENT_NAMES = [
-  'session_snapshot', 'token', 'reasoning', 'tool', 'tool_progress', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
+  'session_snapshot', 'token', 'reasoning', 'tool', 'tool_progress', 'tool_complete', 'tool_approval', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
   'goal', 'goal_continue', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
   'server_turn_started', 'notices', 'session_goal', 'rate_limit_wait', 'run_status', 'connect_card', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
@@ -73,6 +73,8 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('tool'), data: Tool }),
   z.object({ event: z.literal('tool_progress'), data: z.object({ id: z.string(), progress: ToolProgressSchema.nullable() }) }),
   z.object({ event: z.literal('tool_complete'), data: ToolComplete }),
+  /** TAL-1783: the server took an answer to the approval holding this call, so its row can show it was unlocked or refused. */
+  z.object({ event: z.literal('tool_approval'), data: z.object({ id: z.string(), outcome: ToolApprovalOutcomeSchema }) }),
   z.object({ event: z.literal('approval'), data: Approval }),
   /** TAL-514: the last pending approval was withdrawn (answered elsewhere, or the Agent stopped waiting); clients drop the card. */
   z.object({ event: z.literal('approval_cleared'), data: z.looseObject({ session_id: z.string().optional(), pending_count: z.number() }) }),

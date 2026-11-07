@@ -17,7 +17,7 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { PendingSteer, RunStatus, RateLimitWait, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -36,6 +36,8 @@ export interface LiveToolCall {
   costUsd: number | null
   /** TAL-315: the server's result sections, from `tool_complete`. */
   resultView: ToolResultView | null
+  /** TAL-1783: the server's report on the approval that held this call. */
+  approvalOutcome?: ToolApprovalOutcome | undefined
   startedAt: number
 }
 
@@ -108,7 +110,7 @@ export type StreamAction =
   | { type: 'event'; sessionId: string; streamId: string; event: ChatEvent; lastEventId: string; now: number }
   | { type: 'settle'; sessionId: string; streamId: string; session: Session | null }
   | { type: 'teardown'; sessionId: string }
-  | { type: 'clear_approval'; sessionId: string }
+  | { type: 'clear_approval'; sessionId: string; approvalId: string | undefined }
   | { type: 'clear_clarify'; sessionId: string }
   /** A steer this tab is sending: shown until the server reports it (or it is taken), dropped when refused. */
   | { type: 'steer_sending'; sessionId: string; steerId: string; text: string }
@@ -249,6 +251,10 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args }
       const known = id in t.tools
       return { ...t, tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
+    }
+    case 'tool_approval': {
+      const call = stamped.tools[event.data.id]
+      return call ? { ...stamped, tools: { ...stamped.tools, [call.id]: { ...call, approvalOutcome: event.data.outcome } } } : stamped
     }
     case 'approval': {
       if (terminal) return stamped
@@ -391,7 +397,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     }
     case 'clear_approval': {
       const turn = state.turns[action.sessionId]
-      if (!turn?.approval) return state
+      // The answered card outlives its answer (TAL-1783): the server may already have moved on to the next approval.
+      if (!turn?.approval || turn.approval.approval_id !== action.approvalId) return state
       return { turns: { ...state.turns, [action.sessionId]: { ...turn, approval: null } } }
     }
     case 'clear_clarify': {

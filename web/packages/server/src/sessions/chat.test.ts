@@ -3215,6 +3215,45 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end')
   })
 
+  it.each([['once', 'allowed'], ['session', 'allowed'], ['always', 'allowed'], ['deny', 'denied']])('tells the turn which tool row an approval answered with %s unlocked: %s (TAL-1783)', async (choice, outcome) => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'git push' }, tid: 'call-push' } })
+      emit({ event: 'approval', data: { request_id: 'held', command: 'git push', tool_call_id: 'call-push', session_id: sid, allow_session: true, allow_permanent: true } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'push' }))
+    const streamId = String(start.stream_id)
+    const asked = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'approval')
+    expect(asked.find((f) => f.event === 'approval')?.data).toMatchObject({ approval_id: 'held', tool_call_id: 'call-push' })
+    sidecar.respond('approval.respond', () => ({ ok: true, resolved: 1, choice }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice, approval_id: 'held' }))).toEqual({ ok: true, choice })
+    const after = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(asked.length)}`, (f) => f.event === 'tool_approval')
+    expect(after.find((f) => f.event === 'tool_approval')?.data).toEqual({ id: 'call-push', outcome })
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+  })
+
+  it('reports no tool row for an approval the Agent did not tie to a call (TAL-1783)', async () => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'approval', data: { request_id: 'unlinked', command: 'git push', session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'push' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'approval')
+    sidecar.respond('approval.respond', () => ({ ok: true, resolved: 1, choice: 'once' }))
+    await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'unlinked' })
+    release()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+    expect(frames.map((f) => f.event)).not.toContain('tool_approval')
+  })
+
   it('withdraws an approval the Agent timed out and shows the one queued behind it (TAL-514)', async () => {
     const sid = await newSession(s)
     let release: () => void = () => undefined

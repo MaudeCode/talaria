@@ -10,6 +10,7 @@ import { usePromptAnswer } from './usePromptAnswer'
 import { cn } from '../../ui/cn'
 import { isImeEnter } from '../../lib/isImeEnter'
 import { showToast } from '../toast/toast'
+import { prefersReducedMotion } from '../../lib/motion'
 
 // Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
 const interactiveTarget = [
@@ -22,12 +23,16 @@ const interactiveTarget = [
     .map((role) => `[role~="${role}"]`),
 ].join(',')
 
+/** How long the exit waits for its transition to report its end: past the 320 ms slide in approvals.css. */
+const EXIT_FALLBACK_MS = 500
+
 /**
  * Destructive-command approval. Rendered inline above the composer (legacy
  * placement) with alertdialog semantics; Enter answers "allow once" when focus
- * is outside interactive controls. Cleared by the terminal event or a successful respond.
+ * is outside interactive controls. An answer slides it back behind the composer (TAL-1783), and it resolves once that
+ * exit has finished and the server has taken the answer; a refusal brings it back. Cleared early by the terminal event.
  */
-export function ApprovalCard({ sessionId, pending, onResolved, transport }: { sessionId: string; pending: ApprovalPending; onResolved: () => void; transport?: { send: (choice: 'once' | 'session' | 'always' | 'deny') => Promise<unknown>; waiting: () => Promise<boolean> } }) {
+export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDismissed, transport }: { sessionId: string; pending: ApprovalPending; onResolved: () => void; onLeaving?: (leaving: boolean) => void; onDismissed?: () => void; transport?: { send: (choice: 'once' | 'session' | 'always' | 'deny') => Promise<unknown>; waiting: () => Promise<boolean> } }) {
   const headingId = useId(), descriptionId = useId()
   const [collapsed, setCollapsed] = useState(false)
   const [dismissed, setDismissed] = useState(false)
@@ -37,7 +42,9 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
   const [instruction, setInstruction] = useState('')
   const telling = canTell && tellOpen
   const refocusTell = useRef(false)
-  // The card leaves as soon as the user answers; a refused answer brings it back with the error.
+  const [confirmed, setConfirmed] = useState<string | null>(null)
+  const [exited, setExited] = useState(false)
+  // The card starts leaving as soon as the user answers; a refused answer brings it back with the error.
   const resource = `approval:${sessionId}:${pending.approval_id ?? ''}`
   const { answer, answered: isAnswered } = usePromptAnswer({
     resource: () => resource, queryKey: keys.approval(sessionId),
@@ -48,9 +55,20 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
       return result
     },
     waiting: transport?.waiting ?? (async () => { const { pending: head } = await api.fetchApprovalPending(sessionId); return !!head && (head.approval_id ?? '') === (pending.approval_id ?? '') }),
-    onAnswered: onResolved,
+    onAnswered: () => { setConfirmed(resource) },
   })
-  const answered = isAnswered(resource)
+  const answered = isAnswered(resource) || confirmed === resource
+  if (exited && !answered) setExited(false)
+  const gone = answered && (exited || prefersReducedMotion())
+  useEffect(() => {
+    if (!answered) return
+    const fallback = setTimeout(() => { setExited(true) }, EXIT_FALLBACK_MS)
+    return () => { clearTimeout(fallback) }
+  }, [answered])
+  const resolve = useEffectEvent(onResolved)
+  useEffect(() => { if (confirmed === resource && gone) resolve() }, [confirmed, resource, gone])
+  const reportLeaving = useEffectEvent((leaving: boolean) => { onLeaving?.(leaving) })
+  useEffect(() => { reportLeaving(answered) }, [answered])
   // The server publishes the choices the approval accepts; absent (an older server) accepts all four (TAL-1414).
   const offers = (choice: 'once' | 'session' | 'always' | 'deny') => pending.allowed_choices?.includes(choice) ?? true
   const respond = (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => { if (!answered && offers(choice)) answer({ choice, yolo }) }
@@ -70,18 +88,18 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [sessionId, pending.approval_id, dismissed, answered, offersOnce, telling])
-  if (dismissed || answered) return null
+  if (dismissed || gone) return null
   const command = pending.command ?? pending.action ?? ''
   return (
-    <div className={cn('visible', collapsed && 'collapsed', "approval-card mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-warning bg-surface shadow-md")} role="alertdialog" aria-labelledby={headingId} aria-describedby={descriptionId} id="approvalCard">
-      <div className="approval-inner p-3">
+    <div className={cn(answered ? 'leaving' : 'visible', collapsed && 'collapsed', "approval-card mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-warning bg-surface shadow-md")} role="alertdialog" aria-labelledby={headingId} aria-describedby={descriptionId} aria-hidden={answered || undefined} inert={answered} id="approvalCard">
+      <div className="approval-inner p-3" onTransitionEnd={(e) => { if (answered && e.target === e.currentTarget && e.propertyName === 'transform') setExited(true) }}>
         <div className="approval-header flex items-center gap-2 text-sm font-semibold text-text">
           <AlertTriangle size={14} className="text-warning" aria-hidden="true" />
           <span id={headingId}>{pending.title ?? m.approval_heading()}</span>
           {pending.pending_count && pending.pending_count > 1 && <span className="approval-counter text-xs text-muted">{m.approval_pending_count({ n: pending.pending_count })}</span>}
           <span className="flex-1" />
           <IconButton label={collapsed ? m.approval_expand() : m.approval_collapse()} className="h-7 w-7" aria-expanded={!collapsed} onClick={() => setCollapsed((c) => !c)}>{collapsed ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}</IconButton>
-          <IconButton label={m.approval_dismiss()} className="h-7 w-7" onClick={() => setDismissed(true)}><X size={14} aria-hidden="true" /></IconButton>
+          <IconButton label={m.approval_dismiss()} className="h-7 w-7" onClick={() => { setDismissed(true); onDismissed?.() }}><X size={14} aria-hidden="true" /></IconButton>
         </div>
         <div className={cn(collapsed && 'hidden')}>
           {(pending.description ?? pending.question ?? pending.reason) && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description ?? pending.question ?? pending.reason}</div>}
@@ -115,4 +133,19 @@ export function ApprovalCard({ sessionId, pending, onResolved, transport }: { se
       </div>
     </div>
   )
+}
+
+/** The chat's approval, plus the answered one still leaving: the stream can clear or replace a card during its exit. */
+export function ApprovalCards({ sessionId, pending, onResolved, onDismissed }: { sessionId: string; pending: ApprovalPending | null; onResolved: (approvalId: string | undefined) => void; onDismissed?: (approvalId: string | undefined) => void }) {
+  const [leaving, setLeaving] = useState<ApprovalPending | null>(null)
+  const cards = [...(leaving && leaving.approval_id !== pending?.approval_id ? [leaving] : []), ...(pending ? [pending] : [])]
+  return cards.map((card) => {
+    const forget = () => { setLeaving((held) => (held?.approval_id === card.approval_id ? null : held)) }
+    return <ApprovalCard
+      key={card.approval_id} sessionId={sessionId} pending={card}
+      onLeaving={(on) => { if (on) setLeaving(card); else forget() }}
+      onResolved={() => { forget(); onResolved(card.approval_id) }}
+      onDismissed={() => { onDismissed?.(card.approval_id) }}
+    />
+  })
 }

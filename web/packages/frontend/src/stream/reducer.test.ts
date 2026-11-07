@@ -90,6 +90,14 @@ describe('stream reducer: ordering and projection', () => {
     expect(s.turns[SID]!.approval).toBeNull()
     expect(s.turns[SID]!.status).toBe(status)
   })
+  it('clears only the approval the client answered, never the one queued behind it (TAL-1783)', () => {
+    let s = started()
+    s = ev(s, 'approval', { approval_id: 'next', command: 'git tag', pending_count: 1 })
+    s = streamReducer(s, { type: 'clear_approval', sessionId: SID, approvalId: 'answered' })
+    expect(s.turns[SID]!.approval?.approval_id).toBe('next')
+    s = streamReducer(s, { type: 'clear_approval', sessionId: SID, approvalId: 'next' })
+    expect(s.turns[SID]!.approval).toBeNull()
+  })
   it('projects metering, context status, steer consumption and compression', () => {
     let s = started()
     s = ev(s, 'metering', { tps: 21.5, tps_available: true, usage: { input_tokens: 100, output_tokens: 10, estimated_cost: null, cache_read_tokens: 0, cache_write_tokens: 0 } })

@@ -65,6 +65,39 @@ beforeEach(() => {
 })
 afterEach(() => { resetClientForTests(); resetConnectionsForTests(); vi.restoreAllMocks() })
 
+it.each([
+  ['fades', false],
+  ['hides at once under reduced motion', true],
+])('the live status chip steps aside while an approval card is up and comes back after: %s (TAL-1783)', async (_, reduced) => {
+  window.matchMedia = vi.fn(() => ({ matches: reduced, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  const session = sessionFixture({ session_id: 'approval-chat', messages: [{ id: 1, role: 'user', content: 'Question' }] })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  dispatch({ type: 'start', sessionId: session.session_id, streamId: 'approval-run', turnId: null, userMessageId: null, userText: 'Next question', now: Date.now() })
+  const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  const chip = () => view.container.querySelector('[data-notice="live"]')
+  const shown = () => { expect(chip()).toBeInTheDocument(); expect(chip()).not.toHaveClass('is-leaving') }
+  await waitFor(shown)
+  let seq = 0
+  const emit = (event: ChatEvent) => act(() => dispatch({ type: 'event', sessionId: session.session_id, streamId: 'approval-run', event, lastEventId: `approval-run:${++seq}`, now: Date.now() }))
+  const faded = vi.fn()
+  const fades = new MutationObserver(() => { if (view.container.querySelector('[data-notice="live"].is-leaving')) faded() })
+  fades.observe(view.container, { subtree: true, childList: true, attributes: true })
+  emit({ event: 'approval', data: { approval_id: 'chip-1', command: 'git push', pending_count: 1 } })
+  await waitFor(() => { expect(chip()).toBeNull() })
+  fades.disconnect()
+  expect(faded.mock.calls.length > 0).toBe(!reduced)
+  emit({ event: 'approval_cleared', data: { pending_count: 0 } })
+  await waitFor(shown)
+  // A card the user dismissed is no longer up, whatever the stream still holds.
+  emit({ event: 'approval', data: { approval_id: 'chip-2', command: 'git tag', pending_count: 1 } })
+  await waitFor(() => { expect(view.container.querySelector('.approval-card')).toBeInTheDocument() })
+  fireEvent.click(screen.getByRole('button', { name: /dismiss approval/i }))
+  await waitFor(shown)
+})
+
 it('renders the composer once for a draft while only its status pill follows three token frames', async () => {
   const session = sessionFixture({ session_id: 'composer-chat', worktree_branch: 'synthetic-worktree', messages: [{ id: 1, role: 'user', content: 'Question' }] })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })

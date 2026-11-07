@@ -1,6 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import type { Locator } from '@playwright/test'
 import { expect, expectPromptReachable, test as base } from './fixtures'
 
 const test = base.extend<{ approval: { send: (event: string, data: unknown) => void; responses: { choice: string }[] } }>({
@@ -43,7 +44,39 @@ const test = base.extend<{ approval: { send: (event: string, data: unknown) => v
   },
 })
 
-test.use({ serviceWorkers: 'block' })
+test.use({ serviceWorkers: 'block', video: process.env.TALARIA_APPROVAL_EVIDENCE_DIR ? { mode: 'on', size: { width: 1280, height: 800 } } : 'off' })
+
+/** The motion a browser alone can run: jsdom has no CSS transitions or animations (TAL-1783). */
+test('an answered approval tucks behind the composer, and the row it held lights once', async ({ page, approval: { send } }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  // Only an evidence recording needs time to read the card.
+  const pause = async (ms: number) => { if (process.env.TALARIA_APPROVAL_EVIDENCE_DIR) await page.waitForTimeout(ms) }
+  const chip = page.locator('[data-notice="live"]')
+  const card = page.locator('.approval-card')
+  const answer = async (id: string, tool: string, command: string, button: RegExp, outcome: string, keyframes: string, row: Locator) => {
+    send('tool', { id: tool, name: 'terminal', kind: 'shell', target: command })
+    await expect(row).toBeVisible()
+    send('approval', { approval_id: id, tool_call_id: tool, command, description: 'Force-pushing rewrites the history of the remote branch.' })
+    await expect(card).toHaveClass(/visible/)
+    await expect(chip).toHaveCount(0)
+    await pause(1000)
+    await card.getByRole('button', { name: button }).click()
+    await expect(card).toHaveClass(/leaving/)
+    const inner = card.locator('.approval-inner')
+    expect(await inner.evaluate((el) => el.getAnimations().map((a) => (a.effect as KeyframeEffect).getTiming().duration))).toContain(320)
+    await expect(card).toHaveCount(0)
+    await expect(chip).toBeVisible()
+    send('tool_approval', { id: tool, outcome })
+    await expect.poll(() => row.evaluate((el) => el.getAnimations().map((a) => (a as CSSAnimation).animationName))).toEqual([keyframes])
+    await expect.poll(() => row.evaluate((el) => el.getAnimations().length)).toBe(0)
+  }
+  await expect(chip).toBeVisible()
+  await answer('a1', 'push', 'git push origin main --force-with-lease', /allow once/i, 'allowed', 'newflash', page.locator('[data-tool-id="push"] .tool-card-header'))
+  send('tool_complete', { id: 'push', name: 'terminal', kind: 'shell', target: 'git push origin main --force-with-lease', is_error: false, duration: 1.2 })
+  await answer('a2', 'reset', 'git reset --hard origin/main', /^deny$/i, 'denied', 'newflash-error', page.locator('.tool-worklog-summary'))
+  send('tool_complete', { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset --hard origin/main', is_error: true, duration: 0.1 })
+  await pause(700)
+})
 
 /** A dismissed approval card no longer answers Enter; the next approval shows again (TAL-503). */
 test('dismissing an approval stops Enter from approving it; the next approval in the turn is visible', async ({ page, approval: { send, responses } }) => {
