@@ -48,6 +48,7 @@ test('pinned boards persist through the real settings API and fit foldable viewp
       for (const [name, width, height] of [['outer-portrait', 382, 580], ['outer-landscape', 594, 368], ['inner-split', 385, 571], ['inner-portrait', 669, 867], ['inner-landscape', 951, 585]] as const) {
         await page.setViewportSize({ width, height })
         await expect(page.getByRole('button', { name: 'Board actions', exact: true })).toBeVisible()
+        expect((await page.locator('.main-view-body').boundingBox())?.height ?? 0).toBeGreaterThan(64)
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
         await page.screenshot({ path: info.outputPath(`pins-${name}.png`), fullPage: true })
       }

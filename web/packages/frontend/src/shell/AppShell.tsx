@@ -69,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 export const MAIN_VIEW = 'main-view flex flex-1 min-h-0 min-w-0 flex-col bg-bg'
 
 /** Hub page frame (skills, memory, spaces, profiles, tasks, insights, logs). */
-export function HubPage({ title, help, actions, toolbar, children, id }: { title: string; help?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode; id?: string }) {
+export function HubPage({ title, help, actions, toolbar, children, id, toolbarClassName }: { title: string; help?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode; id?: string; toolbarClassName?: string }) {
   return (
     <div className={MAIN_VIEW + ' hub-page active'} id={id}>
       <header className="main-view-header relative z-10 flex items-center justify-start gap-3 min-h-14 px-8 py-3 border-b border-border shrink-0 bg-bg max-[769px]:px-3.5 max-[769px]:py-2.5 max-[769px]:min-h-12">
@@ -79,7 +79,7 @@ export function HubPage({ title, help, actions, toolbar, children, id }: { title
         </div>
         {actions && <div className="main-view-actions flex items-center gap-1.5 shrink-0 ml-auto">{actions}</div>}
       </header>
-      {toolbar && <div className="hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 px-7 py-2.5 border-b border-border max-[769px]:px-3.5 max-[769px]:py-2">{toolbar}</div>}
+      {toolbar && <div className={cn("hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 px-7 py-2.5 border-b border-border max-[769px]:px-3.5 max-[769px]:py-2 ", toolbarClassName)}>{toolbar}</div>}
       <div className="main-view-body flex-1 min-h-0 overflow-y-auto pt-6 px-8 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-8">{children}</div>
     </div>
   )

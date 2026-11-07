@@ -216,6 +216,7 @@ export function KanbanPage() {
   return (
     <HubPage
       title={m.tab_kanban()}
+      toolbarClassName="[@media(max-height:450px)]:max-h-32 [@media(max-height:450px)]:overflow-y-auto"
       actions={
         <>
           <IconButton label={m.refresh()} onClick={() => { void invalidate() }}><RefreshCw size={16} aria-hidden="true" /></IconButton>
