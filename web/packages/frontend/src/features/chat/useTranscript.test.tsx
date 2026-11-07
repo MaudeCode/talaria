@@ -135,7 +135,7 @@ async function childReader(extra: Partial<Session> = {}) {
   vi.mocked(api.fetchSession).mockResolvedValueOnce(childDetail(96, childRows(96), extra))
   await act(async () => { await hook.result.current.loadOlder() })
   expect(loaded(hook.result.current.rows)).toEqual(indexes(96, 8))
-  return hook
+  return { ...hook, qc, wrapper }
 }
 const indexes = (from: number, count: number) => Array.from({ length: count }, (_, i) => from + i)
 /** The rows' absolute indexes, after proving each one still holds the row at that index. */
@@ -210,6 +210,20 @@ it('an advance does not reread owner history, and its refreshed rows stay on top
   expect(loaded(result.current.rows)).toEqual(indexes(96, 10))
   expect(result.current.rows[0]?.message.reasoning).toBe('refreshed')
   expect(result.current.rows[4]?.message.reasoning).toBeUndefined()
+})
+
+it('a remount never overlays owner history the previous reader cached (TAL-1925)', async () => {
+  const reasoning = { show_reasoning: true }
+  vi.mocked(api.fetchSession).mockResolvedValue(childDetail(96, childRows(96), reasoning))
+  const { qc, wrapper, unmount } = await childReader(reasoning)
+  await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+  unmount()
+  // The transcript shrank between visits: the same base now holds fewer loaded rows than that cached read.
+  qc.setQueryData(keys.sessions.detail('child'), childDetail(98, childRows(98), reasoning))
+  vi.mocked(api.fetchSession).mockResolvedValueOnce(childDetail(96, childRows(96, 2), reasoning))
+  const { result } = renderHook(() => useTranscript('child'), { wrapper })
+  await act(async () => { await result.current.loadOlder() })
+  expect(loaded(result.current.rows)).toEqual(indexes(96, 6))
 })
 
 it('keeps a cached entry page requested during layout when mount effects run', async () => {

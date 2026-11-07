@@ -71,6 +71,10 @@ function settlePages(pages: OlderPages, sessionId: string | null, streamContext:
   return { sessionId, streamContext, offset, tail, cut: false, epoch: advanced ? pages.epoch : pages.epoch + 1, items: advanced ? [...pages.items, ...previous.slice(0, passed)] : [] }
 }
 
+/** Numbers each mounted reader: the query cache outlives a reader, and its page epochs restart with it. */
+let lastPageReader = 0
+const nextPageReader = () => ++lastPageReader
+
 export function useTranscript(sessionId: string | null, equalLive?: (previous: LiveTurn | null, next: LiveTurn | null) => boolean) {
   const qc = useQueryClient()
   const streamContext = useStreamContext()
@@ -102,6 +106,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
   if (settledPages !== pages) setPages(settledPages)
   const { epoch: pageEpoch, items: older } = settledPages
   const base = Math.max(0, windowOffset - older.length)
+  const [pageReader] = useState(nextPageReader)
   const pageScope = ({ sessionId, pageEpoch, streamContext })
   // A replaced history retires its pages, and the window it replaces can't feed the next advance.
   const retirePages = () => setPages((s) => ({ ...s, epoch: s.epoch + 1, items: [], cut: true }))
@@ -121,7 +126,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
   // page in the tail's invalidation family without dropping scroll history. An advance keeps `base`, so it
   // rereads nothing: rows it carried over are newer than this read and follow it.
   const olderHistory = useQuery({
-    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', pageEpoch, base, session?.show_reasoning],
+    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', pageReader, pageEpoch, base, session?.show_reasoning],
     queryFn: async ({ signal }) => {
       let before = windowOffset
       const chunks: Message[][] = []
