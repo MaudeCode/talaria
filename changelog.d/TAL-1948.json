@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening or messaging a conversation that belongs to another profile or person is refused without changing that conversation.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

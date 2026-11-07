@@ -4,8 +4,10 @@
  * request-supplied top-level `session_id` outside the request's profile answers
  * 404 before the handler runs.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BootstrapSchema } from '@maudecode/talaria-web-contracts'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { Session, type Message, type SessionInit } from '../sessions/session.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 
 interface Identity { headers: Record<string, string>; csrf: string }
@@ -148,5 +150,185 @@ describe('request-profile session visibility', () => {
     await s.deps.sessionStore.save(session)
     expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: root.headers })).status).toBe(404)
     expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: work.headers })).status).toBe(200)
+  })
+})
+
+/** TAL-1948: an ultimately refused request leaves the other profile's document and the resident cache exactly as they were. */
+describe.each(['json', 'sqlite'])('a refused session request on %s storage', (backend) => {
+  const sidecar = new FakeSidecar()
+  const partial: Message = { role: 'assistant', content: 'unfinished', _partial: true, timestamp: 2 }
+  const repairable: Message[] = [{ role: 'user', content: 'question', timestamp: 1 }, partial, { ...partial }]
+  const defaults = { workspace: '/synthetic', model: null, modelProvider: null }
+  let s: TestServer
+  let root: Identity
+  let work: Identity
+  let seeded = 0
+
+  beforeAll(async () => {
+    s = await bootTestServer({ sidecar, env: { TALARIA_STORAGE: backend, HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+    root = await login(s, 'lee', 'dev')
+    work = await login(s, 'kim', 'ops')
+  })
+  afterAll(() => s.close())
+  afterEach(() => { vi.restoreAllMocks() })
+
+  const store = () => s.deps.sessionStore
+  const sessions = () => store().deps.storage.sessions
+
+  /** Commit a document straight to storage, as another process would: no resident session and no local revision. */
+  async function commit(sid: string, init: SessionInit): Promise<void> {
+    const { messages, ...doc } = new Session({ session_id: sid, ...init }, defaults).toDocument()
+    const rows = messages as Message[]
+    await sessions().write(sid, { doc, messages: { kind: 'replace', rows }, all: rows }, await sessions().revision(sid))
+  }
+  async function seed(init: SessionInit = {}): Promise<string> {
+    const sid = `refusal${String(++seeded)}`
+    await commit(sid, { profile: 'work', messages: repairable, ...init })
+    return sid
+  }
+  /** The document kept in storage with its duplicate rows, resident under the same revision. */
+  async function resident(sid: string): Promise<Session> {
+    const session = (await store().load(sid, { repairDuplicates: false }))!
+    await store().touch(session)
+    return session
+  }
+  const state = async (sid: string) => {
+    const stored = await sessions().readDocument(sid)
+    return { revision: await sessions().revision(sid), profile: stored?.doc.profile, rows: stored?.messages, cache: [...store().sessions.keys()], resident: store().sessions.get(sid) }
+  }
+  /** Runs `act`, then proves it wrote nothing and left the stored rows, revision and the cache's membership and order alone. */
+  async function untouched<T>(sid: string, act: () => Promise<T>): Promise<T> {
+    const before = await state(sid)
+    const writes = vi.spyOn(sessions(), 'write')
+    const result = await act()
+    expect(writes).not.toHaveBeenCalled()
+    writes.mockRestore()
+    const after = await state(sid)
+    expect(after).toEqual(before)
+    expect(after.resident).toBe(before.resident)
+    return result
+  }
+  const detail = (id: Identity, sid: string, metadataOnly = false): Promise<Response> => s.get(`/api/session?session_id=${sid}${metadataOnly ? '&messages=0' : ''}`, { headers: id.headers })
+  /** Every shared-gate surface and both detail modes, answering as the profile's refusal contract says. */
+  async function refuseEverywhere(sid: string, id: Identity = root, detailStatus = 409): Promise<void> {
+    await untouched(sid, async () => {
+      expect((await detail(id, sid)).status).toBe(detailStatus)
+      expect((await detail(id, sid, true)).status).toBe(detailStatus)
+      expect((await s.get(`/api/session/draft?session_id=${sid}`, { headers: id.headers })).status).toBe(404)
+      expect((await post(s, id, '/api/session/rename', { session_id: sid, title: 'x' })).status).toBe(404)
+      expect((await post(s, id, '/api/chat/start', { session_id: sid, message: 'hi' })).status).toBe(404)
+      // Ids no request guard sees: an upload's form field and a source reference.
+      const form = new FormData()
+      form.set('session_id', sid)
+      form.set('file', new Blob(['synthetic']), 'note.txt')
+      expect((await s.get('/api/upload', { method: 'POST', body: form, headers: id.headers })).status).toBe(404)
+      const profile = id === work ? 'work' : 'default'
+      expect((await post(s, id, '/api/session/new', { profile, request_id: `refused-${sid}`, source_references: [{ session_id: sid, tip_session_id: sid, profile }] })).status).toBe(409)
+    })
+  }
+  /** A metadata read as a backend without a usable header answers it. */
+  const metadataRead = (mode: 'legacy' | 'unreadable' | 'without its late profile'): void => {
+    const read = sessions().readDocument.bind(sessions())
+    vi.spyOn(sessions(), 'readDocument').mockImplementation(async (sid, opts) => {
+      if (opts?.metadataOnly && mode === 'unreadable') throw new SyntaxError('synthetic unreadable header')
+      const stored = await read(sid)
+      if (!stored || !opts?.metadataOnly || mode === 'legacy') return stored
+      const { profile: _late, ...doc } = stored.doc
+      return { ...stored, doc, messages: [], metadataOnly: true }
+    })
+  }
+
+  it('refuses a cold document with a modern header before repairing or caching it', async () => {
+    await refuseEverywhere(await seed())
+  })
+
+  it.each(['legacy', 'unreadable', 'without its late profile'] as const)('refuses a cold document whose metadata read is %s, which falls back to a full read', async (mode) => {
+    const sid = await seed()
+    metadataRead(mode)
+    await refuseEverywhere(sid)
+  })
+
+  it('refuses a legacy document without a profile from another profile with a plain 404', async () => {
+    await refuseEverywhere(await seed({ profile: null }), work, 404)
+  })
+
+  it('refuses a warm foreign session without promoting it', async () => {
+    const sid = await seed()
+    await resident(sid)
+    await store().touch(new Session({ session_id: `${sid}newer`, profile: 'default' }, defaults))
+    await refuseEverywhere(sid)
+  })
+
+  it('refuses when storage moved a resident session to another profile, whichever read serves the request', async () => {
+    const sid = await seed({ profile: 'default', messages: [{ role: 'user', content: 'question', timestamp: 1 }] })
+    await resident(sid)
+    await commit(sid, { profile: 'work', messages: repairable })
+    await refuseEverywhere(sid)
+  })
+
+  it('refuses a resident session of another profile when storage names this one, until a full read serves it', async () => {
+    const sid = await seed({ messages: [{ role: 'user', content: 'question', timestamp: 1 }] })
+    await resident(sid)
+    await commit(sid, { profile: 'default', messages: [{ role: 'user', content: 'question', timestamp: 1 }, { role: 'assistant', content: 'answer', timestamp: 2 }] })
+    await untouched(sid, async () => {
+      expect(await s.deps.sessions.sessionIdVisible(sid)).toBe(false)
+      expect((await detail(root, sid, true)).status).toBe(409)
+    })
+    // A full read serves the document, not the stale resident: its answer stays what the loader finds.
+    expect((await detail(root, sid)).status).toBe(200)
+    expect(store().sessions.get(sid)?.profile).toBe('default')
+  })
+
+  it('reads an id whose stored identity is malformed or unreadable as no document, and never repairs it', async () => {
+    const malformed = await seed()
+    const read = sessions().readDocument.bind(sessions())
+    const answer = vi.spyOn(sessions(), 'readDocument').mockImplementation(async (sid, opts) => {
+      const stored = await read(sid, opts)
+      return sid === malformed && stored ? { ...stored, doc: { ...stored.doc, session_id: 'someone-else' } } : stored
+    })
+    await untouched(malformed, async () => {
+      expect(await s.deps.sessions.sessionIdVisible(malformed)).toBe(true)
+      expect((await detail(root, malformed)).status).toBe(404)
+    })
+    answer.mockRestore()
+    const unreadable = await seed()
+    const writes = vi.spyOn(sessions(), 'write')
+    vi.spyOn(sessions(), 'readDocument').mockRejectedValue(new SyntaxError('synthetic corrupt document'))
+    expect(await s.deps.sessions.sessionIdVisible(unreadable)).toBe(true)
+    expect((await detail(root, unreadable)).status).toBe(404)
+    expect(writes).not.toHaveBeenCalled()
+    expect(store().sessions.has(unreadable)).toBe(false)
+  })
+
+  it('still repairs and caches a document for its own profile', async () => {
+    const sid = await seed({ profile: 'default' })
+    expect(await s.deps.sessions.sessionIdVisible(sid)).toBe(true)
+    expect((await detail(root, sid)).status).toBe(200)
+    expect((await sessions().readDocument(sid))?.messages).toHaveLength(2)
+    expect(store().sessions.has(sid)).toBe(true)
+    const mismatch = await seed()
+    expect(await (await detail(root, mismatch)).json()).toMatchObject({ code: 'session_profile_mismatch', session_id: mismatch, profile: 'work' })
+  })
+
+  it('admits chat only for an empty placeholder the request retags, and starts no turn otherwise', async () => {
+    const started = (): number => sidecar.calls.filter((call) => call.method === 'chat.start').length
+    const before = started()
+    for (const init of [{ messages: repairable }, { messages: [], context_messages: [{ role: 'user', content: 'kept', timestamp: 1 }] }, { messages: [], pending_user_message: 'queued' }]) {
+      const sid = await seed(init)
+      await untouched(sid, async () => {
+        expect((await post(s, root, '/api/chat/start', { session_id: sid, message: 'hi', profile: 'default' })).status).toBe(404)
+      })
+    }
+    const placeholder = await seed({ messages: [] })
+    await untouched(placeholder, async () => {
+      expect((await post(s, root, '/api/chat/start', { session_id: placeholder, message: 'hi' })).status).toBe(404)
+    })
+    expect(started()).toBe(before)
+    expect(s.deps.registry.activeRuns.size).toBe(0)
+    sidecar.respond('chat.start', () => new Promise(() => undefined))
+    const admitted = await post(s, root, '/api/chat/start', { session_id: placeholder, message: 'hi', profile: 'default' })
+    expect(admitted.status).toBe(200)
+    expect(store().sessions.get(placeholder)?.profile).toBe('default')
+    expect(((await admitted.json()) as { stream_id?: string }).stream_id).toBeTruthy()
   })
 })

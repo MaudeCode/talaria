@@ -22,7 +22,7 @@ import type { SessionEventBus } from './events.js'
 import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, pruneSidebarParents, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetModelFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
-import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionStore } from './store.js'
+import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionOwnership, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState, tsFloat } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
@@ -361,7 +361,8 @@ export class SessionService {
   /** The owner of `sid` lets this request see it, whatever its profile; always true while isolation is off. */
   async personMaySeeSessionId(sid: string): Promise<boolean> {
     if (!this.store.personAccess()) return true
-    try { return this.personMaySee((await this.store.get(sid, { metadataOnly: true })).owner_person_id) } catch { return this.personMaySeeForeign(sid) }
+    const owners = await this.store.inspectOwnership(sid, { metadataOnly: true })
+    return owners.length ? owners.every((owner) => this.personMaySee(owner.owner_person_id)) : this.personMaySeeForeign(sid)
   }
 
   /** A session with no Web document: an Agent-owned chat a person created, else unowned Agent state. */
@@ -385,7 +386,8 @@ export class SessionService {
       const recorded = owners.get(id)
       if (recorded) return recorded
       if (id !== sid) {
-        try { return (await this.store.get(id, { metadataOnly: true, cacheOnMiss: false })).owner_person_id } catch { /* no Web document */ }
+        const [owner] = await this.store.inspectOwnership(id, { metadataOnly: true })
+        if (owner) return owner.owner_person_id
       }
       const report = await stateDbSessionReadAsync(emptyLineageReport(id), 'stateDbLineageReport', path, id)
       const root = report.found ? str(report.lineage_key) : ''
@@ -409,14 +411,14 @@ export class SessionService {
     if (typeof raw !== 'string' || !raw.trim()) return true
     const sid = raw.trim()
     if (!isSafeSessionId(sid)) return false
-    let session: Session
-    try {
-      session = (await this.store.get(sid, { metadataOnly: true }))
-    } catch {
-      // No Web session: an Agent-owned chat (its recorded person), Agent state or no session at all (unowned).
-      return this.personMaySeeForeign(sid)
-    }
-    return this.visibleToRequest(session)
+    const owners = await this.store.inspectOwnership(sid, { metadataOnly: true })
+    // No Web session: an Agent-owned chat (its recorded person), Agent state or no session at all (unowned).
+    return owners.length ? owners.every((owner) => this.visibleToRequest(owner)) : this.personMaySeeForeign(sid)
+  }
+
+  /** TAL-1948: a read of `sid` would be refused, known before anything loads it. Only an inspected Web document refuses. */
+  private async refusedBeforeLoad(sid: string, opts: { metadataOnly?: boolean }): Promise<boolean> {
+    return (await this.store.inspectOwnership(sid, opts)).some((owner) => !this.visibleToRequest(owner))
   }
 
   private localTargets: { key: string; ids: Map<string, string> } | null = null
@@ -1205,6 +1207,7 @@ export class SessionService {
     const msgLimit = parseMsgLimit(query.msg_limit ?? null)
     const msgBeforeRaw = query.msg_before
     const msgBefore = msgBeforeRaw ? (Number.isInteger(Number(msgBeforeRaw)) ? Number(msgBeforeRaw) : null) : null
+    for (const owner of await this.store.inspectOwnership(sid, { metadataOnly: !loadMessages })) this.assertDetailVisible(sid, owner)
     let s: Session
     try {
       s = (await this.store.get(sid, { metadataOnly: !loadMessages }))
@@ -1212,13 +1215,17 @@ export class SessionService {
       return (await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore))
     }
     const revisionBefore = (await this.loadRevision(s))
-    if (!this.visibleToRequest(s)) {
-      // Another person's session is not found, whatever its profile; only an own session reports a profile mismatch.
-      if (s.profile && this.personMaySee(s.owner_person_id)) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: s.profile })
-      throw new HttpFailure(404, 'Session not found')
-    }
+    // The document can change owner after the inspection above.
+    this.assertDetailVisible(sid, s)
     await this.clearStaleStreamState(s)
     return this.detailPayload(s, loadMessages, msgLimit, msgBefore, revisionBefore)
+  }
+
+  private assertDetailVisible(sid: string, owner: SessionOwnership): void {
+    if (this.visibleToRequest(owner)) return
+    // Another person's session is not found, whatever its profile; only an own session reports a profile mismatch.
+    if (owner.profile && this.personMaySee(owner.owner_person_id)) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: owner.profile })
+    throw new HttpFailure(404, 'Session not found')
   }
 
   /** Project an already settled session without reloading it or running endpoint recovery/profile gates. */
@@ -1343,6 +1350,7 @@ export class SessionService {
     const parentId = s.parent_session_id
     if (!parentId || str(s.session_source).trim().toLowerCase() !== 'fork' || s.compression_recovery_source_session_id) return null
     let title: unknown
+    if (await this.refusedBeforeLoad(parentId, { metadataOnly: true })) return null
     try {
       const parent = (await this.store.get(parentId, { metadataOnly: true, promote: false, cacheOnMiss: false }))
       if (!this.visibleToRequest(parent)) return null
@@ -1851,6 +1859,7 @@ export class SessionService {
     if (ref.profile !== profile) throw unavailable()
     const path = this.stateDbPath(profile)
     if (await this.store.wasDeleted(ref.session_id) || await this.store.wasDeleted(ref.tip_session_id)) throw unavailable()
+    if (await this.refusedBeforeLoad(ref.tip_session_id, { metadataOnly: !history })) throw unavailable()
     let local: Session | null = null
     try { local = await this.store.get(ref.tip_session_id, { metadataOnly: !history }) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
     if (local ? !this.visibleToRequest(local) : !(await this.personMaySeeForeign(ref.tip_session_id))) throw unavailable()

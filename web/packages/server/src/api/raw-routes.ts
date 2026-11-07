@@ -454,6 +454,8 @@ export async function uploadFile(ctx: RequestContext, form: MultipartResult): Pr
 async function uploadSessionVisible(ctx: RequestContext, sessionId: string): Promise<boolean> {
   let session: Session
   try {
+    // A form field passes no request guard: refuse here, before the load can repair or cache the session.
+    if (!(await ctx.deps.sessions.sessionIdVisible(sessionId))) throw new SessionNotFound(sessionId)
     session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
   } catch {
     await ctx.json({ error: 'Session not found' }, { status: 404 })

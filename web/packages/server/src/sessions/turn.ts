@@ -518,6 +518,8 @@ export class TurnRunner {
   /** TAL-808: a session's first detail after a restart reads its goal before answering, so it tells no one else. */
   async loadGoal(sessionId: string): Promise<void> {
     if (this.goals.has(sessionId)) return
+    // The detail is about to be refused: nothing of the session is loaded for it.
+    if (!(await this.deps.service().sessionIdVisible(sessionId))) return
     let s: Session
     try { s = (await this.deps.store.get(sessionId, { metadataOnly: true })) } catch { return }
     await this.readGoal(s)

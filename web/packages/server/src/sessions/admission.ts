@@ -5,6 +5,7 @@ import type { AppDeps } from '../http/context.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { ensureAgentRuntimeCurrent, HttpFailure } from './service.js'
 import type { Session } from './session.js'
+import type { SessionOwnership } from './store.js'
 import { compressionRecoveryPayload } from './session.js'
 import { isGenericContinuationIntent, type StartTurnOptions, type TurnRunner } from './turn.js'
 import { str } from '../util.js'
@@ -48,17 +49,30 @@ export function requireField(body: Record<string, unknown>, ...fields: string[])
   if (missing.length) throw new HttpFailure(400, `Missing required field(s): ${missing.join(', ')}`)
 }
 
-function visibleOrRetag(deps: AppDeps, s: Session, requestedProfile: string): void {
+/** Whether the request reaches this owner directly, or only if the session is an empty placeholder it may retag; 404 otherwise. */
+function chatAccess(deps: AppDeps, owner: SessionOwnership, requestedProfile: string): 'visible' | 'placeholder' {
   // TAL-48: another person's session is not found and is never retagged.
-  if (!deps.sessions.personMaySee(s.owner_person_id)) throw new HttpFailure(404, 'Session not found')
+  if (!deps.sessions.personMaySee(owner.owner_person_id)) throw new HttpFailure(404, 'Session not found')
   const active = deps.activeProfile()
-  if (deps.profilesMatch(s.profile, active)) return
-  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || s.hasPendingPrompt
-  if (requestedProfile && deps.profilesMatch(requestedProfile, active) && !hasTurns) {
-    s.profile = requestedProfile
-    return
-  }
+  if (deps.profilesMatch(owner.profile, active)) return 'visible'
+  if (requestedProfile && deps.profilesMatch(requestedProfile, active)) return 'placeholder'
   throw new HttpFailure(404, 'Session not found')
+}
+
+const hasTurns = (s: Session): boolean => s.messages.length > 0 || s.context_messages.length > 0 || s.hasPendingPrompt
+
+function visibleOrRetag(deps: AppDeps, s: Session, requestedProfile: string): void {
+  if (chatAccess(deps, s, requestedProfile) === 'visible') return
+  if (hasTurns(s)) throw new HttpFailure(404, 'Session not found')
+  s.profile = requestedProfile
+}
+
+/** TAL-1948: `visibleOrRetag`'s refusals, answered before `get` can repair or cache the session. */
+async function refuseChatBeforeLoad(deps: AppDeps, sid: string, requestedProfile: string): Promise<void> {
+  const access = (await deps.sessionStore.inspectOwnership(sid)).map((owner) => chatAccess(deps, owner, requestedProfile))
+  if (!access.includes('placeholder')) return
+  const session = await deps.sessionStore.inspectFull(sid).catch(() => null)
+  if (session && hasTurns(session)) throw new HttpFailure(404, 'Session not found')
 }
 
 /** Check the server catalog even when a client's catalog is missing or stale, before either backend receives text. */
@@ -128,6 +142,8 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   timing?.begin('catalog_wait')
   timing?.end('catalog_wait', 'noop')
   const closeLoad = timing?.begin('session_load')
+  const requestedProfile = str(body.profile).trim()
+  await refuseChatBeforeLoad(deps, sid, requestedProfile)
   let s: Session
   try {
     s = (await deps.sessionStore.get(sid))
@@ -145,7 +161,6 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
   // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
   if ((await deps.sessions.isReadOnly(s)) || s.branchSourceReadonly || (await deps.sessions.isSubagentViewOnly(sid))) throw new HttpFailure(403, 'Read-only imported sessions cannot be continued from WebUI')
-  const requestedProfile = str(body.profile).trim()
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpFailure(400, 'invalid profile')
   visibleOrRetag(deps, s, requestedProfile)
   closeOwnership?.()
