@@ -4,8 +4,9 @@
  * tick, run-journal retention on a long interval. Node closes session
  * channels on the last unsubscribe, so the channel reaper has nothing to do.
  */
-import { closeSync, existsSync, fstatSync, ftruncateSync, openSync, readSync } from 'node:fs'
-import { writeFully } from '../fs/atomic.js'
+import { ftruncateSync, readSync } from 'node:fs'
+import { open, type FileHandle } from 'node:fs/promises'
+import { writeFully, writeFullyAsync } from '../fs/atomic.js'
 import { join } from 'node:path'
 import type { RunJournal } from '../sessions/journal.js'
 import { isSafeSessionId } from '../sessions/session.js'
@@ -14,6 +15,8 @@ import type { SessionBackend } from '../sessions/storage/backend.js'
 export const HYGIENE_INTERVAL_MS = 60_000
 const RETENTION_INTERVAL_S = 6 * 3600
 const LOG_DEFAULT_MAX_BYTES = 32 * 1024 * 1024
+/** The most of an oversized log `<log>.1` keeps, so a rotation costs the same however large the log grew. */
+const LOG_ROTATED_MAX_BYTES = 32 * 1024 * 1024
 
 /** Python `webui_log_paths`: an absolute `HERMES_WEBUI_LOG_FILE` wins, else the launcher's `bootstrap-<port>.log`. */
 export function webuiLogPaths(env: Record<string, string | undefined>, stateDir: string, port: number): string[] {
@@ -29,37 +32,47 @@ export function webuiLogMaxBytes(env: Record<string, string | undefined>): numbe
   return Number.isFinite(n) ? n : LOG_DEFAULT_MAX_BYTES
 }
 
-/** Python `_rotate_one`: copy the oversized sink into `<log>.1` and truncate the same descriptor in place. */
-export function rotateOne(target: string, limit: number, log: (line: string) => void): boolean {
-  let fd: number
-  try { fd = openSync(target, 'r+') } catch { return false }
+/**
+ * Python `_rotate_one`: copy the newest part of the oversized sink into `<log>.1` and truncate the same descriptor in
+ * place. The copy awaits every chunk so the event loop keeps serving; what landed during it is drained and truncated
+ * in one synchronous step, so no line this process writes falls between the two.
+ */
+export async function rotateOne(target: string, limit: number, log: (line: string) => void): Promise<boolean> {
+  let source: FileHandle
+  try { source = await open(target, 'r+') } catch { return false }
   try {
-    const size = fstatSync(fd).size
+    const { size } = await source.stat()
     if (size <= limit) return false
     const previous = `${target}.1`
-    const out = openSync(previous, 'w')
+    const out = await open(previous, 'w')
     try {
-      const buf = Buffer.alloc(1 << 16)
-      let offset = 0
+      const buf = Buffer.allocUnsafe(1 << 16)
+      let offset = Math.max(0, size - LOG_ROTATED_MAX_BYTES)
+      while (offset < size) {
+        const { bytesRead } = await source.read(buf, 0, Math.min(buf.length, size - offset), offset)
+        if (bytesRead <= 0) break
+        await writeFullyAsync(out, buf.subarray(0, bytesRead))
+        offset += bytesRead
+      }
       for (;;) {
-        const n = readSync(fd, buf, 0, buf.length, offset)
+        const n = readSync(source.fd, buf, 0, buf.length, offset)
         if (n <= 0) break
-        writeFully(out, buf.subarray(0, n))
+        writeFully(out.fd, buf.subarray(0, n))
         offset += n
       }
-    } finally { closeSync(out) }
-    ftruncateSync(fd, 0)
+      ftruncateSync(source.fd, 0)
+    } finally { await out.close() }
     log(`[webui] Rotated the WebUI log at ${target} (${String(size)} bytes) into ${previous}`)
     return true
   } catch (error) {
     log(`[webui] WARNING: Could not rotate the WebUI log at ${target}: ${(error as Error).message}`)
     return false
-  } finally { closeSync(fd) }
+  } finally { await source.close() }
 }
 
-export function rotateWebuiLog(paths: string[], limit: number, log: (line: string) => void): boolean {
+export async function rotateWebuiLog(paths: string[], limit: number, log: (line: string) => void): Promise<boolean> {
   if (limit <= 0) return false
-  return paths.filter(existsSync).map((p) => rotateOne(p, limit, log)).some(Boolean)
+  return (await Promise.all(paths.map((p) => rotateOne(p, limit, log)))).some(Boolean)
 }
 
 /**
@@ -96,6 +109,7 @@ export class HygieneTicker {
   private retention: Promise<void> | null = null
   private readonly sweeps = new Map<() => void | Promise<void>, Promise<void>>()
   private abort = new AbortController()
+  private readonly rotateLogs = async (): Promise<void> => { await rotateWebuiLog(webuiLogPaths(this.deps.env, this.deps.stateDir, this.deps.port()), webuiLogMaxBytes(this.deps.env), this.deps.log) }
   constructor(private readonly deps: HygieneDeps) {}
 
   start(intervalMs = HYGIENE_INTERVAL_MS): void {
@@ -119,9 +133,7 @@ export class HygieneTicker {
    */
   tick(): Promise<void> {
     if (this.abort.signal.aborted) return this.pending()
-    const step = (label: string, run: () => void): void => { try { run() } catch (error) { this.warn(label, error) } }
-    step('WebUI log rotation', () => { rotateWebuiLog(webuiLogPaths(this.deps.env, this.deps.stateDir, this.deps.port()), webuiLogMaxBytes(this.deps.env), this.deps.log) })
-    for (const sweep of this.deps.sweeps ?? []) {
+    for (const sweep of [this.rotateLogs, ...(this.deps.sweeps ?? [])]) {
       if (this.sweeps.has(sweep)) continue
       const pending = Promise.resolve().then(sweep)
         .catch((error: unknown) => { this.warn('hygiene sweep', error) })

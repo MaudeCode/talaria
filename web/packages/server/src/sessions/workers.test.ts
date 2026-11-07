@@ -1260,20 +1260,75 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
 })
 
 describe('hygiene tick', () => {
-  it('copy-truncates oversized logs into <log>.1 and honours the size cap', () => {
+  it('copy-truncates oversized logs into <log>.1 and honours the size cap', async () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-hygiene-${String(process.pid)}-${String(Date.now())}`)
     mkdirSync(dir, { recursive: true })
     const log = join(dir, 'bootstrap-8787.log')
     writeFileSync(log, 'x'.repeat(2048))
     const lines: string[] = []
-    expect(rotateWebuiLog([log], 4096, (l) => lines.push(l))).toBe(false)
-    expect(rotateWebuiLog([log], 1024, (l) => lines.push(l))).toBe(true)
+    expect(await rotateWebuiLog([log], 4096, (l) => lines.push(l))).toBe(false)
+    expect(statSync(log).size).toBe(2048)
+    expect(existsSync(`${log}.1`)).toBe(false)
+    expect(await rotateWebuiLog([log], 1024, (l) => lines.push(l))).toBe(true)
     expect(statSync(log).size).toBe(0)
     expect(readFileSync(`${log}.1`, 'utf8')).toHaveLength(2048)
     expect(lines[0]).toContain('Rotated the WebUI log')
-    expect(rotateWebuiLog([log], 0, () => undefined)).toBe(false)
+    expect(await rotateWebuiLog([log], 0, () => undefined)).toBe(false)
     expect(webuiLogPaths({ HERMES_WEBUI_LOG_FILE: '/var/log/talaria.log' }, dir, 1)).toEqual(['/var/log/talaria.log'])
     expect(webuiLogPaths({ HERMES_WEBUI_LOG_FILE: 'relative.log' }, dir, 8787)).toEqual([log])
+  })
+
+  it('yields the event loop while rotating a far-oversized log and keeps only its newest 32 MiB', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-hygiene-'))
+    try {
+      const log = join(dir, 'bootstrap-8787.log')
+      const mib = 1024 * 1024
+      const fixture = Buffer.alloc(100 * mib)
+      for (let i = 0; i < 100; i += 1) fixture.fill(i, i * mib, (i + 1) * mib)
+      writeFileSync(log, fixture)
+      let turns = 0
+      let rotating = true
+      const spin = (): void => { turns += 1; if (rotating) setImmediate(spin) }
+      setImmediate(spin)
+      const rotated = await rotateWebuiLog([log], 32 * mib, () => undefined)
+      const turnsDuringCopy = turns
+      rotating = false
+      expect(turnsDuringCopy, 'the copy must not block the event loop').toBeGreaterThan(10)
+      expect(rotated).toBe(true)
+      expect(statSync(log).size).toBe(0)
+      expect(readFileSync(`${log}.1`).equals(fixture.subarray(-32 * mib))).toBe(true)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('keeps every line written while the log rotates', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-hygiene-'))
+    try {
+      const log = join(dir, 'bootstrap-8787.log')
+      writeFileSync(log, 'x'.repeat(2048) + '\n')
+      let written = 0
+      let rotating = true
+      const write = (): void => { written += 1; appendFileSync(log, `line ${String(written)}\n`); if (rotating) setImmediate(write) }
+      setImmediate(write)
+      await rotateWebuiLog([log], 1024, () => undefined)
+      rotating = false
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      const kept = `${readFileSync(`${log}.1`, 'utf8')}${readFileSync(log, 'utf8')}`.split('\n').filter((line) => line.startsWith('line '))
+      expect(written).toBeGreaterThan(0)
+      expect(kept).toEqual(Array.from({ length: written }, (_, i) => `line ${String(i + 1)}`))
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('starts one log rotation at a time across overlapping ticks', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-hygiene-'))
+    try {
+      writeFileSync(join(dir, 'bootstrap-0.log'), 'x'.repeat(2048))
+      const log: string[] = []
+      const ticker = new HygieneTicker({ env: { HERMES_WEBUI_LOG_MAX_BYTES: '1024' }, stateDir: dir, port: () => 0, journal: new JsonJournal(dir), now: () => 1000, log: (line) => { log.push(line) } })
+      await Promise.all([ticker.tick(), ticker.tick()])
+      await ticker.stop()
+      expect(log.filter((line) => line.includes('Rotated the WebUI log'))).toHaveLength(1)
+      expect(statSync(join(dir, 'bootstrap-0.log.1')).size).toBe(2048)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
   it('prunes settled run journals past retention while keeping the newest three and live writers', async () => {
@@ -1416,10 +1471,10 @@ describe('run-journal retention sweep', () => {
     journal.pruneSettled = async (opts) => { calls += 1; return (await prune({ ...opts, pause: () => gate })) }
     clock.now += 6 * 3600
     const first = t.tick()
-    expect(t.tick()).toBe(first)
+    const overlapping = t.tick()
     expect(calls).toBe(2)
     release()
-    await first
+    await Promise.all([first, overlapping])
     expect(log.at(-1)).toMatch(/^\[webui\] run-journal retention archived 2 journals/)
     // Stop aborts the in-flight sweep at its next yield and prevents later sweeps.
     for (let r = 5; r < 8; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
@@ -1429,9 +1484,12 @@ describe('run-journal retention sweep', () => {
     const before = tree(journal.sessionDir)
     // stop() hands back the in-flight sweep so shutdown can wait for it.
     const stopping = t.stop()
-    expect(stopping).toBe(stopped)
+    let drained = false
+    void stopping.then(() => { drained = true })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(drained, 'shutdown must wait for the in-flight sweep').toBe(false)
     release()
-    await stopping
+    await Promise.all([stopped, stopping])
     expect(tree(journal.sessionDir)).toEqual(before)
     clock.now += 6 * 3600
     await t.tick()
