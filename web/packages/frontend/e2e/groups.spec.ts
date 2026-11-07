@@ -6,7 +6,7 @@ import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { groupFixture } from '../../server/dist/test/group-fixture.js'
 import { SpaShell } from '../../server/dist/spa.js'
 
-test.use({ serviceWorkers: 'block', video: process.env.TALARIA_GROUP_ROUTING_EVIDENCE ? 'on' : 'off' })
+test.use({ serviceWorkers: 'block', video: process.env.TALARIA_GROUP_ROUTING_EVIDENCE || process.env.TALARIA_GROUP_REPLY_EVIDENCE ? 'on' : 'off' })
 
 test('live discussion activity shows tools, elapsed time, stalled members and the owning round', async ({ page }, info) => {
   const { fixture, server } = await discussionServer()
@@ -63,6 +63,122 @@ async function discussionServer() {
   } })
   return { sidecar, fixture, server }
 }
+
+test('replies in a chosen thread, retaining a refused draft and clearing a confirmed reply', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  fixture.append('message.user', 'Legacy message')
+  fixture.discussion('Review this proposal', 'proposal-thread')
+  const answer = fixture.append('message.member', 'Use the shared boundary', fixture.members[1])
+  Object.assign(answer.payload, { thread_id: 'proposal-thread' })
+  const native = sidecar.responderFor('gateway.groups')!
+  let refuse = true
+  let unknown = false, commit: (() => unknown) | undefined
+  sidecar.respond('gateway.groups', (params, emit, options) => {
+    if (params.operation.action !== 'send') return native(params, emit, options)
+    if (refuse) return { state: 'refused', reason: 'refused', value: null }
+    if (unknown) { commit = () => native(params, emit, options); return { state: 'unknown', reason: 'unknown', value: null } }
+    return native(params, emit, options)
+  })
+  const evidence = process.env.TALARIA_GROUP_REPLY_EVIDENCE
+  if (evidence) mkdirSync(evidence, { recursive: true })
+  const shot = async (name: string) => { if (evidence) await page.screenshot({ path: `${evidence}/${name}-${info.project.name}.png` }) }
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    const legacy = page.locator('.msg-row').filter({ hasText: 'Legacy message' })
+    const source = page.locator('.msg-row').filter({ hasText: 'Review this proposal' })
+    const member = page.locator('.msg-row').filter({ hasText: 'Use the shared boundary' })
+    const chip = page.locator('[data-notice="group-reply"]')
+    await expect(member).toBeVisible()
+    await shot('before')
+    await expect(legacy.getByRole('button', { name: 'Reply in thread', exact: true })).toHaveCount(0)
+    await expect(source.getByRole('button', { name: 'Reply in thread', exact: true })).toBeVisible()
+    await member.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Reply in thread', exact: true }).click()
+    await expect(chip).toContainText('Replying in thread')
+    await page.locator('#msg').fill('Keep the same context')
+    await shot('reply')
+    if (info.project.name === 'desktop') {
+      for (const [name, width, height] of [['outer-portrait', 382, 580], ['outer-landscape', 594, 368], ['inner-split', 385, 571], ['inner-portrait', 669, 867], ['inner-landscape', 951, 585]] as const) {
+        await page.setViewportSize({ width, height })
+        await expect(chip).toBeInViewport()
+        await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeInViewport()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        await shot(name)
+      }
+      await page.setViewportSize({ width: 1280, height: 800 })
+    }
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    await expect(page.getByText('The Agent refused this discussion action.', { exact: true })).toBeVisible()
+    await expect(page.locator('#msg')).toHaveValue('Keep the same context')
+    await expect(chip).toContainText('Replying in thread')
+    await shot('refused')
+    refuse = false
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    await expect(chip).toHaveCount(0)
+    await expect(page.locator('#msg')).toHaveValue('')
+    await expect(page.getByText('Keep the same context', { exact: true })).toBeVisible()
+    const sends = sidecar.calls.flatMap((call) => call.method === 'gateway.groups' && (call.params as { operation: { action: string } }).operation.action === 'send' ? [call.params] : [])
+    expect(sends).toHaveLength(2)
+    for (const send of sends) expect(send).toMatchObject({ operation: { payload: { thread_id: 'proposal-thread' } } })
+    await shot('confirmed')
+    await member.getByRole('button', { name: 'Reply in thread', exact: true }).click()
+    await chip.getByRole('button', { name: 'Dismiss', exact: true }).click()
+    await expect(chip).toHaveCount(0)
+    unknown = true
+    // A held pointer press must survive the empty phone composer's focus change.
+    await source.getByRole('button', { name: 'Reply in thread', exact: true }).click({ delay: 75 })
+    await expect(chip).toContainText('Replying in thread')
+    await page.locator('#msg').fill('Wait for confirmation')
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    await expect(page.getByText('Execution could not be confirmed. Refresh to reconcile.', { exact: true })).toBeVisible()
+    await expect(chip).toContainText('Replying in thread')
+    await commit!()
+    await expect(chip).toHaveCount(0)
+    fixture.state.driver_status.running = false
+    await expect(source.getByRole('button', { name: 'Reply in thread', exact: true })).toHaveCount(0)
+  } finally { await page.goto('about:blank'); await server.close() }
+})
+
+test('receipt refresh clears its submitted reply before the view or stream confirms it', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  fixture.discussion('Review this proposal', 'proposal-thread')
+  const native = sidecar.responderFor('gateway.groups')!
+  const viewRequested = Promise.withResolvers<undefined>(), releaseView = Promise.withResolvers<undefined>()
+  let commit: (() => unknown) | undefined
+  sidecar.respond('gateway.groups', (params, emit, options) => {
+    if (params.operation.action !== 'send') return native(params, emit, options)
+    commit = () => native(params, emit, options)
+    return { state: 'unknown', reason: 'unknown', value: null }
+  })
+  await page.route('**/api/groups/stream?**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 1000\n\n' }))
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    await page.getByRole('button', { name: 'Reply in thread', exact: true }).click()
+    const chip = page.locator('[data-notice="group-reply"]'), unknown = page.locator('[data-notice="unknown"]')
+    await expect(chip).toContainText('Replying in thread')
+    await page.locator('#msg').fill('Receipt-confirmed reply')
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    await expect(unknown).toBeVisible()
+    await page.screenshot({ path: info.outputPath('receipt-unknown.png') })
+    await commit!()
+    await page.route('**/api/groups/view?**', async (route) => {
+      const response = await route.fetch()
+      viewRequested.resolve(undefined)
+      await releaseView.promise
+      await route.fulfill({ response })
+    })
+    await unknown.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await viewRequested.promise
+    await expect(unknown).toHaveCount(0)
+    await expect(chip).toHaveCount(0)
+    await page.screenshot({ path: info.outputPath('receipt-confirmed.png') })
+  } finally {
+    releaseView.resolve(undefined)
+    await page.unrouteAll({ behavior: 'wait' })
+    await page.goto('about:blank')
+    await server.close()
+  }
+})
 
 test('the discussion list is the page, a primary nav entry, and a room opens with a way back', async ({ page }, info) => {
   const { fixture, server } = await discussionServer()

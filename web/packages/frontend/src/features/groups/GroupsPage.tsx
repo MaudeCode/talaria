@@ -100,7 +100,8 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   const [before, setBefore] = useState<number | undefined>()
   const key = ['groups', bootstrap.profile?.name, roomId, before]
   const view = useQuery({ queryKey: key, queryFn: ({ signal }) => api.fetchGroup(roomId, before, signal), enabled: provisionalName === undefined })
-  const [intent, setIntent] = useState<{ identity: string; text: string; id: string; eventId: string | null; unknown: boolean; files: PendingFile[] } | null>(null)
+  const [replyDraft, setReplyDraft] = useState<{ identity: string; threadId: string } | null>(null)
+  const [intent, setIntent] = useState<{ identity: string; text: string; id: string; eventId: string | null; unknown: boolean; files: PendingFile[]; reply: typeof replyDraft } | null>(null)
   const [renameDraft, setRenameDraft] = useState<{ identity: string; value: string } | null>(null)
   const [renameIntent, setRenameIntent] = useState<{ identity: string; value: string; id: string; revision: number; unknown: boolean } | null>(null)
   const [contextDraft, setContextDraft] = useState<{ identity: string; value: RoomContext } | null>(null)
@@ -120,9 +121,12 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   // Keep draft/file custody through a read gap; current server fields still authorize every write.
   if (room && room !== composerRoom) setComposerRoom(room)
   const retainedRoom = room ?? composerRoom
-  const committedIntent = intent?.identity === room?.identity && intent?.eventId !== null && data?.rows.some((row) => row.message.message_id === intent?.eventId)
+  const currentReply = replyDraft?.identity === retainedRoom?.identity ? replyDraft : null
+  // A newer selection belongs to the next draft, even if the previous send confirms later.
+  const confirmReply = (reply: typeof replyDraft) => setReplyDraft((current) => current === reply ? null : current)
+  const committedIntent = intent !== null && intent.identity === room?.identity && intent.eventId !== null && data?.rows.some((row) => row.message.message_id === intent.eventId)
   const currentIntent = intent?.identity === room?.identity && !committedIntent ? intent : null
-  if (committedIntent) setIntent(null)
+  if (committedIntent) { confirmReply(intent.reply); setIntent(null) }
   const settledRename = room && renameIntent?.identity === room.identity && (room.name === renameIntent.value || room.revision > renameIntent.revision)
   const currentRename = renameIntent?.identity === room?.identity && !settledRename ? renameIntent : null
   if (settledRename) setRenameIntent(null)
@@ -142,7 +146,8 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   }
   const send = async (text: string, files: PendingFile[]) => {
     const id = randomUuid(), identity = room?.identity ?? ''
-    setIntent({ identity, text, id, eventId: null, unknown: false, files })
+    const reply = currentReply
+    setIntent({ identity, text, id, eventId: null, unknown: false, files, reply })
     const clear = () => setIntent((current) => current?.id === id ? null : current)
     const refuse = (error: unknown) => { clear(); showErrorToast(error); return false }
     const reconcile = async () => {
@@ -155,13 +160,13 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
     catch (error) { return refuse(error) } // No write has been attempted.
     setIntent((current) => current?.id === id ? { ...current, eventId } : current)
     try {
-      const result = await api.writeGroup(room?.identity ?? null, { action: 'send', room_id: roomId, event_id: id, payload: { text, attachments: files.flatMap((f) => f.groupAttachment ? [f.groupAttachment] : []) } })
+      const result = await api.writeGroup(room?.identity ?? null, { action: 'send', room_id: roomId, event_id: id, payload: { text, ...(reply ? { thread_id: reply.threadId } : {}), attachments: files.flatMap((f) => f.groupAttachment ? [f.groupAttachment] : []) } })
       if (result.outcome === 'refused') return refuse(new Error(m.group_write_refused()))
-      if (result.outcome === 'confirmed') { void refresh().then(clear, clear); return true }
-      if (await reconcile()) { clear(); return true }
+      if (result.outcome === 'confirmed') { confirmReply(reply); void refresh().then(clear, clear); return true }
+      if (await reconcile()) { confirmReply(reply); clear(); return true }
     } catch (error) {
       if (isDefiniteRefusal(error)) return refuse(error)
-      if (await reconcile().catch(() => false)) { clear(); return true }
+      if (await reconcile().catch(() => false)) { confirmReply(reply); clear(); return true }
     }
     setIntent((current) => current?.id === id ? { ...current, unknown: true } : current)
     return true
@@ -220,7 +225,9 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
     {view.isError && <ErrorState error={view.error} onRetry={() => { void view.refetch() }} />}
     {data && !data.available && <p role="status" className="p-4 text-sm text-muted">{m.group_unavailable()}</p>}
     {room?.disbanded && <p role="status" className="p-4 text-sm text-muted">{m.group_disbanded()}</p>}
-    <Transcript rows={rows} live={null} assistantName="" mode="transparent_stream" renderUserMarkdown={false} autoFollow sessionId={undefined} actions={{}} tts={false}
+    <Transcript rows={rows} live={null} assistantName="" mode="transparent_stream" renderUserMarkdown={false} autoFollow sessionId={undefined} actions={room?.actions.includes('send') ? { onReply: (row) => {
+      if (row.thread_id) { setReplyDraft({ identity: room.identity, threadId: row.thread_id }); focus.current?.querySelector<HTMLTextAreaElement>('#msg')?.focus() }
+    } } : {}} tts={false}
       truncated={data?.has_more ?? false} loadedFrom={data?.rows[0]?.index ?? 0} onLoadOlder={() => { if (data?.next_before_seq) setBefore(data.next_before_seq) }} loadingOlder={view.isFetching} emptyState={null}
       pendingUserText={currentIntent?.text} pendingAttachments={currentIntent?.files.flatMap((file) => file.groupAttachment ? [{ name: file.groupAttachment.name, mime: file.groupAttachment.mime, size: file.groupAttachment.size, is_image: file.groupAttachment.kind === 'image' }] : [])} showJumpButtons={false} virtualizeLongTranscripts={false} disclosureScope={room?.identity} />
     <div className="px-3">
@@ -234,11 +241,11 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
         actionLabel={m.group_continue()} disabled={pause.continue_state === 'stop_pending' || stopping === room.identity}
         send={() => write({ action: 'continue', room_id: roomId, discussion_event_id: pause.discussion_event_id })}
         waiting={async () => { const next = await api.fetchGroup(roomId); return next.room?.identity === room.identity && next.paused.some((current) => current.event_id === pause.event_id) }} />)}
-      {currentIntent?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const id = currentIntent.id; void api.fetchGroupReceipt(roomId, id).then((receipt) => { void refresh(); if (receipt.outcome === 'confirmed') setIntent((current) => current?.id === id ? null : current) }).catch(showErrorToast) } } }]} />}
+      {currentIntent?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const submitted = currentIntent; void api.fetchGroupReceipt(roomId, submitted.id).then((receipt) => { void refresh(); if (receipt.outcome === 'confirmed') { confirmReply(submitted.reply); setIntent((current) => current?.id === submitted.id ? null : current) } }).catch(showErrorToast) } } }]} />}
       {currentRename?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'rename-unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const pending = currentRename; void api.fetchGroup(roomId).then((next) => { if (next.room?.identity !== pending.identity) return; qc.setQueryData(key, next) }).catch(showErrorToast) } } }]} />}
       {currentContext?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'context-unknown', tone: 'error', content: m.group_context_unknown(), action: { label: m.retry(), run: () => retryContext(currentContext) } }]} />}
     </div>
-    {retainedRoom && !retainedRoom.disbanded && <Composer key={retainedRoom.identity} settings={settings.data} room={{ identity: retainedRoom.identity, maxUploadBytes: retainedRoom.max_upload_bytes, maxAttachments: retainedRoom.attachment_limit, canSend: !!data?.available && !view.isError && !!room?.actions.includes('send') && !currentIntent && before === undefined,
+    {retainedRoom && !retainedRoom.disbanded && <Composer key={retainedRoom.identity} settings={settings.data} notices={currentReply ? [{ id: 'group-reply', content: m.group_replying(), onDismiss: () => setReplyDraft(null) }] : []} room={{ identity: retainedRoom.identity, maxUploadBytes: retainedRoom.max_upload_bytes, maxAttachments: retainedRoom.attachment_limit, canSend: !!data?.available && !view.isError && !!room?.actions.includes('send') && !currentIntent && before === undefined,
       onSend: send, onUpload: async (file) => { if (!data?.available || view.isError || !room) throw new Error(m.group_unavailable()); const result = await api.uploadGroupFile(roomId, room.identity, file); if (!result.attachment || result.outcome !== 'confirmed') throw new Error(m.group_write_refused()); return result.attachment } }} />}
     <Dialog open={currentDraft !== null} onOpenChange={(open) => { if (!open) setRenameDraft(null) }} title={m.rename()}><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); renameRoom() }}><TextInput value={currentDraft?.value ?? ''} aria-label={m.group_name()} onChange={(e) => setRenameDraft((current) => current ? { ...current, value: e.target.value } : current)} required maxLength={GROUP_ROOM_NAME_LIMIT} /><Button type="submit">{m.save()}</Button></form></Dialog>
     {room && <GroupSettingsDialog room={room} value={currentContextDraft?.value ?? null} onChange={(value) => setContextDraft({ identity: room.identity, value })} onClose={() => setContextDraft(null)} onSave={(value) => saveContext(room.identity, randomUuid(), value)} />}

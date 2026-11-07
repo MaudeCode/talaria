@@ -2991,6 +2991,8 @@
 	"group_unknown_phase": "Unknown",
 	"group_disbanded": "This discussion has been disbanded.",
 	"group_scheduled": "Scheduled",
+	"group_reply": "Reply in thread",
+	"group_replying": "Replying in thread",
 	"group_settings": "Discussion settings",
 	"group_context_unknown": "This save could not be confirmed.",
 	"group_purpose": "Purpose",

@@ -217,7 +217,7 @@ export class Groups {
   private rows(scope: GroupScope, state: State, events: NativeEvent[], paused: GroupPaused[]): GroupView['rows'] {
     return events.flatMap((event): GroupView['rows'] => {
       const member = state.room.members.find((m) => m.member_id === event.actor.id && m.member_id === event.payload.member_id && m.profile === event.actor.profile)
-      const notice = (fields: Partial<GroupView['rows'][number]['message']>): GroupView['rows'] => [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', scheduled: false, attachments: [],
+      const notice = (fields: Partial<GroupView['rows'][number]['message']>): GroupView['rows'] => [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', thread_id: null, scheduled: false, attachments: [],
         message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, ...fields } }]
       if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) return notice({ content: redactString(event.payload.error), _notice_kind: 'wake_failed' })
       if (['room.assignment', 'room.routed'].includes(event.kind) && event.actor.kind === 'gateway') {
@@ -239,7 +239,7 @@ export class Groups {
       const scheduled = user && SCHEDULED_ACTOR.test(event.actor.id)
       const author = scheduled ? event.actor.display_name?.trim() || event.actor.id.replace(SCHEDULED_ACTOR, '') : user ? '' : member?.display_name || member?.profile || ''
       const attachments = (event.payload.attachments ?? []).map((a) => ({ ...a, event_id: event.event_id, download_url: `/api/groups/file?${new URLSearchParams({ room_id: state.room.room_id, event_id: event.event_id, attachment_id: a.attachment_id, identity: this.identity(scope, state.room) }).toString()}` }))
-      return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: redactString(author), scheduled,
+      return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: redactString(author), thread_id: event.payload.thread_id || null, scheduled,
         message: { role: user && !scheduled ? 'user' as const : 'assistant' as const, content: redactString(event.payload.text ?? ''), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, attachments: attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, is_image: a.kind === 'image', download_url: a.download_url })) }, attachments }]
     })
   }
@@ -313,6 +313,11 @@ export class Groups {
       if (!identity || identity !== this.identity(scope, current.room)) throw new HttpFailure(409, 'Discussion identity changed')
       const room = this.project(scope, current, caps)
       if ((ROOM_ACTIONS as readonly string[]).includes(operation.action) && !room.actions.includes(operation.action as typeof ROOM_ACTIONS[number])) return { ...result, reason: 'refused' }
+      if (operation.action === 'send' && operation.payload.thread_id !== undefined) {
+        const thread = operation.payload.thread_id
+        const source = await this.findInLog(scope, current.room, caps, (event) => event.payload.thread_id === thread && (event.kind === 'message.user' || event.kind === 'message.member'))
+        if (!source) return { ...result, reason: 'refused' }
+      }
       if (operation.action === 'context' && !room.routing_modes.includes(operation.routing) && operation.routing !== current.context?.routing) return { ...result, reason: 'unsupported' }
       if (operation.action === 'context' && operation.routing === 'lead' && !current.room.members.some((m) => m.member_id === operation.lead_member_id)) throw new HttpFailure(400, 'Ineligible discussion lead')
       // The Agent requires both texts on every save and clients only ever see them masked, so text still equal to its mask is unchanged.
@@ -393,8 +398,12 @@ export class Groups {
     const { caps } = await this.supported(scope)
     if (!caps) return null
     const { room } = await this.state(scope, roomId, caps)
+    return this.findInLog(scope, room, caps, (event) => event.event_id === eventId && event.kind === kind && event.actor.kind === (kind === CONTEXT_EVENT ? 'system' : 'user'))
+  }
+
+  /** Shared authority-fenced scan for receipts and reply targets, including history before the display window. */
+  private async findInLog(scope: GroupScope, room: State['room'], caps: Capabilities, match: (event: NativeEvent) => boolean): Promise<NativeEvent | null> {
     const tail = Math.max(0, (room.latest_seq ?? 0) - 100)
-    const match = (events: NativeEvent[]) => events.find((e) => e.event_id === eventId && e.kind === kind && e.actor.kind === (kind === CONTEXT_EVENT ? 'system' : 'user')) ?? null
     // A bounded search may remain unknown; it never grants a resend.
     let remaining = 100
     for (const [start, end] of [[tail, room.latest_seq ?? 0], [0, tail]] as const) {
@@ -402,7 +411,7 @@ export class Groups {
       while (remaining-- > 0 && cursor < end) {
         const log = await this.log(scope, room, cursor, Math.min(caps.max_log_limit, 100))
         if (!log || log.cursor <= cursor) break
-        const event = match(log.events)
+        const event = log.events.find(match)
         if (event) return event
         cursor = log.cursor
       }

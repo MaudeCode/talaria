@@ -22,6 +22,7 @@ export { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 export interface VisibleMessage {
   author?: string
   scheduled?: boolean
+  thread_id?: string | null
   index: number
   message: Message
   key: string

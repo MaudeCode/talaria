@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Reply within a discussion thread from a message's actions.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

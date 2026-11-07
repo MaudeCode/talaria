@@ -49,7 +49,7 @@ export function groupFixture(sidecar: FakeSidecar) {
     state.events.push(event); room.latest_seq = seq
     return event
   }
-  /** A user's message opening its own discussion thread, as every Web send does. */
+  /** A user's message opening a discussion thread. */
   function discussion(text: string, threadId: string) {
     const event = append('message.user', text)
     Object.assign(event.payload, { thread_id: threadId })
@@ -77,7 +77,7 @@ export function groupFixture(sidecar: FakeSidecar) {
         const eventId = `user:${createHash('sha256').update(operation.event_id).digest('hex')}`
         const event = append('message.user', operation.payload.text, room.members[0], eventId)
         Object.assign(event.payload, { attachments: operation.payload.attachments ?? [] })
-        append('message.member', 'First member reply', room.members[0]); append('message.member', 'Second member reply', room.members[1])
+        for (const reply of [event, append('message.member', 'First member reply', room.members[0]), append('message.member', 'Second member reply', room.members[1])]) Object.assign(reply.payload, { thread_id: operation.payload.thread_id ?? operation.event_id })
         value = { accepted: true, client_event_id: operation.event_id, event, driver_started: true }
         if (state.lostSend) throw new SidecarError('response lost', { condition: 'sidecar_timeout' })
         break

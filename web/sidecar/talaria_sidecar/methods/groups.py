@@ -63,7 +63,7 @@ async def _run(home, subject, operation, discovery, expected_room=None):
                         or room.get("authority_epoch") != expected_room["authority_epoch"]):
                     return _result("refused", "refused")
             if action == "send":
-                operation = {**operation, "payload": {**operation["payload"], "thread_id": operation["event_id"]}}
+                operation = {**operation, "payload": {**operation["payload"], "thread_id": operation["payload"].get("thread_id", operation["event_id"])}}
             dispatched = True
             value = await client.rpc(method, **{k: v for k, v in operation.items() if k != "action"}, _timeout=25)
             if not isinstance(value, dict) or len(json.dumps(value).encode()) > 24 * 1024 * 1024:

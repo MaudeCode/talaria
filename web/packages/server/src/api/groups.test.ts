@@ -26,15 +26,35 @@ async function setup(now?: () => number) {
 const post = (identity: string | null, operation: unknown) => server!.get('/api/groups/action', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identity, operation }) })
 const read = async () => await (await server!.get('/api/groups/view?room_id=discussion')).json() as GroupView
 
+it('refuses replies outside the room log before writing and accepts threads beyond the display page', async () => {
+  const { state, append, members, sidecar } = await setup()
+  append('message.user', 'Legacy message')
+  const source = append('message.member', 'Earlier thread', members[1])
+  Object.assign(source.payload, { thread_id: 'earlier-thread' })
+  // Thread validation must reach beyond the display page.
+  for (let n = 0; n < 110; n++) append('message.user', `Later ${n}`)
+  const identity = (await read()).room!.identity
+  const sends = () => sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send')
+  const before = state.events.length
+  expect(await (await post(identity, { action: 'send', room_id: 'discussion', event_id: 'invalid-target', payload: { text: 'Follow-up', thread_id: 'missing-thread' } })).json()).toMatchObject({ outcome: 'refused' })
+  expect(sends()).toHaveLength(0)
+  expect(state.events).toHaveLength(before)
+  expect(await (await post(identity, { action: 'send', room_id: 'discussion', event_id: 'reply', payload: { text: 'Follow-up', thread_id: 'earlier-thread' } })).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(sends()).toHaveLength(1)
+  expect(sends()[0]?.params).toMatchObject({ operation: { payload: { thread_id: 'earlier-thread' } } })
+})
+
 it('projects ordered attributed replies, current member phases and native task fences', async () => {
   const { state, append, members } = await setup()
   append('message.user', 'Review this')
-  append('message.member', 'One', members[0]); append('message.member', 'Two', members[1])
+  const reply = append('message.member', 'One', members[0]); append('message.member', 'Two', members[1])
+  Object.assign(reply.payload, { thread_id: 'existing-thread' })
   state.driver_status.working = true
   state.driver_status.member_activity = [{ member_id: 'one', status: 'queued' }, { member_id: 'two', status: 'running' }]
   state.driver_status.pending_actions = [{ kind: 'approval', member_id: 'two', task_id: 'task', execution_generation: 3, request_id: 'approval', approval: { command: 'synthetic-command', choices: ['once', 'deny'] } }]
   const view = await read()
   expect(view.rows.map((r) => [r.index, r.author, r.message.content])).toEqual([[1, '', 'Review this'], [2, 'Writer', 'One'], [3, 'Reviewer', 'Two']])
+  expect(view.rows).toMatchObject([{ thread_id: null }, { thread_id: 'existing-thread' }, { thread_id: null }])
   expect(view.room?.members.map((m) => m.phase)).toEqual(['queued', 'approval'])
   expect(view.room).toMatchObject({ round: null, members: [{ tool: null, started_at: null, stalled: false }, { tool: null, started_at: null, stalled: false }] })
   const stale = await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 2, request_id: 'approval', choice: 'once' })

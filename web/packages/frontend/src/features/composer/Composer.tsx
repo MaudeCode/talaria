@@ -82,6 +82,7 @@ export interface ComposerProps {
 
 interface RoomComposerProps {
   settings: Settings | undefined
+  notices?: ComposerProps['notices']
   room: {
     identity: string
     maxUploadBytes: number

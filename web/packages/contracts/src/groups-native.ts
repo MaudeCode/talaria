@@ -41,7 +41,7 @@ export const GroupOperationSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('rename'), room_id: Id, event_id: Id, name: z.string().trim().min(1).max(GROUP_ROOM_NAME_LIMIT) }),
   z.object({ action: z.literal('context'), room_id: Id, event_id: Id, purpose: z.string().trim().refine((value) => Array.from(value).length <= GROUP_ROOM_PURPOSE_LIMIT), notes: z.string().trim().refine((value) => new TextEncoder().encode(value).length <= GROUP_ROOM_NOTES_BYTES), routing: NativeGroupContextSchema.shape.routing, lead_member_id: Id.optional() }),
   z.object({ action: z.literal('disband'), room_id: Id, cancel_id: Id }),
-  z.object({ action: z.literal('send'), room_id: Id, event_id: Id, payload: z.object({ text: z.string().max(64 * 1024), attachments: z.array(GroupAttachmentSchema).max(GROUP_ATTACHMENT_LIMIT).optional() }) }),
+  z.object({ action: z.literal('send'), room_id: Id, event_id: Id, payload: z.object({ text: z.string().max(64 * 1024), thread_id: z.string().min(1).optional(), attachments: z.array(GroupAttachmentSchema).max(GROUP_ATTACHMENT_LIMIT).optional() }) }),
   z.object({ action: z.literal('stop'), room_id: Id, cancel_id: Id }),
   z.object({ action: z.literal('continue'), room_id: Id, discussion_event_id: Id }),
   Task.extend({ action: z.literal('retry'), room_id: Id }),
