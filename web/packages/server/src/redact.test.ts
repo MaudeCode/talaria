@@ -611,34 +611,52 @@ describe('redactSensitive cost', () => {
   })
 
   it('stays linear on long runs of scheme and identifier characters', () => {
-    // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
-    // Unquoted runs, and many credential keys inside one long quoted argument.
-    // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07', '\x1b[1;31mAPI_KEY\x1b[m=abcdefghij\x1b[m ', '\x1b[1;34m"password"\x1b[0m: "x" ', 'Bear\x1b[1mer $$$$ ', 'Bear\x1b[1mer ****** '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
-      ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
-      // Overlapping parameter heads inside a masked word, and flags swallowed by repeated enclosing-quote values.
-      `"${'password=x '.repeat(20_000)}"}--password finalSecret987`,
-      ...['{"password":" x password=foo"}--password finalSecret987 ', '{"pass\x1b[31mword":" x password=foo"}--password finalSecret987 '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
-      'Authorization: "--password foo "--password finalSecret987 '.repeat(4_000),
-      // One huge identifier that does name a credential, and many long ones that are followed by a separator.
-      `--${'aB'.repeat(100_000)}Password=x`, `${'2'.repeat(200_000)}:`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
-      // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`),
-      // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
-      ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
-      `A=x; ${'$A ${A} '.repeat(30_000)}`, Array.from({ length: 20_000 }, (_, i) => `A=${i}; $A `).join(''), `${'A=$(x); '.repeat(20_000)}${'A=1; $A '.repeat(20_000)}`,
-      Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=${'x'.repeat(10_000)}; ${'B=$A; '.repeat(30_000)}`, `A=x; ${'A=$A$A; '.repeat(25_000)}curl -u bob:$A`,
-      `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `A=1; ${'A+=1; '.repeat(30_000)}$A`, `x # '\n`.repeat(40_000), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`,
-      // Command-specific short flags: many commands in one command, quoted ones, and unterminated quotes.
-      ...['mysql ', 'mysql -p', 'docker login -p x ', `sh -c 'mysql `, `mysql '`, `'mysql', `, `"mysql -p" `, 'sshpass -f ', 'mysql docker sshpass redis-cli smbclient helm -x ', `d'o"c\\k'e"r `, 'docker login docker ', 'mysql -p"\n', 'docker $A -p x ', 'mysql -p$(', 'mysql -p$(a ', '$A login -p x ', 'x; `a` -p ', 'mysql -pa,b ', `${'$AAAAAAAA'.repeat(20)}= `, 'A=x A=x $A ', `${'A=x '.repeat(50_000)}$B -p x`, `${'a'.repeat(200_000)}$b`, 'env sudo $(x) ', 'docker 2>', 'sshpass <x ', '$(a $(b ', `x; ${'a$b'.repeat(50_000)}=`, `sh -c "mysql -p'a `].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length)))]) {
-      const started = performance.now()
+    // Four times the input takes about 4x as long when linear and about 16x when quadratic, on a runner of any speed.
+    // `scale` multiplies each input's repeat counts, so 1/4 builds the same input at a quarter of its length.
+    const inputs = (scale: number): string[] => {
+      const fill = (seg: string): string => seg.repeat(Math.ceil(200_000 * scale / seg.length))
+      return [
+        ...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07', '\x1b[1;31mAPI_KEY\x1b[m=abcdefghij\x1b[m ', '\x1b[1;34m"password"\x1b[0m: "x" ', 'Bear\x1b[1mer $$$$ ', 'Bear\x1b[1mer ****** '].map(fill),
+        ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${fill(seg)}"`),
+        // Overlapping parameter heads inside a masked word, and flags swallowed by repeated enclosing-quote values.
+        `"${'password=x '.repeat(20_000 * scale)}"}--password finalSecret987`,
+        ...['{"password":" x password=foo"}--password finalSecret987 ', '{"pass\x1b[31mword":" x password=foo"}--password finalSecret987 '].map(fill),
+        'Authorization: "--password foo "--password finalSecret987 '.repeat(4_000 * scale),
+        // One huge identifier that does name a credential, and many long ones that are followed by a separator.
+        `--${'aB'.repeat(100_000 * scale)}Password=x`, `${'2'.repeat(200_000 * scale)}:`, `ghp_a\x1b${'\x00'.repeat(200_000 * scale)}`, `${'a'.repeat(1_000)}= `.repeat(200 * scale), `${'a'.repeat(1_000)}://x:`.repeat(200 * scale),
+        // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
+        ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${fill(seg)}`),
+        // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
+        ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map(fill),
+        `A=x; ${'$A ${A} '.repeat(30_000 * scale)}`, Array.from({ length: 20_000 * scale }, (_, i) => `A=${i}; $A `).join(''), `${'A=$(x); '.repeat(20_000 * scale)}${'A=1; $A '.repeat(20_000 * scale)}`,
+        Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000 * scale), `A=${'x'.repeat(10_000 * scale)}; ${'B=$A; '.repeat(30_000 * scale)}`, `A=x; ${'A=$A$A; '.repeat(25_000 * scale)}curl -u bob:$A`,
+        `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000 * scale)}`, `export ${'"A=1" '.repeat(40_000 * scale)}`, `A=1; ${'A+=1; '.repeat(30_000 * scale)}$A`, `x # '\n`.repeat(40_000 * scale), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000 * scale)}`, `export ${'"A=$(x" '.repeat(30_000 * scale)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000 * scale)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000 * scale)}`, `A=${'x'.repeat(10_000 * scale)}; ${'$A'.repeat(50_000 * scale)}`,
+        // Command-specific short flags: many commands in one command, quoted ones, and unterminated quotes.
+        ...['mysql ', 'mysql -p', 'docker login -p x ', `sh -c 'mysql `, `mysql '`, `'mysql', `, `"mysql -p" `, 'sshpass -f ', 'mysql docker sshpass redis-cli smbclient helm -x ', `d'o"c\\k'e"r `, 'docker login docker ', 'mysql -p"\n', 'docker $A -p x ', 'mysql -p$(', 'mysql -p$(a ', '$A login -p x ', 'x; `a` -p ', 'mysql -pa,b ', `${'$AAAAAAAA'.repeat(20)}= `, 'A=x A=x $A ', `${'A=x '.repeat(50_000 * scale)}$B -p x`, `${'a'.repeat(200_000 * scale)}$b`, 'env sudo $(x) ', 'docker 2>', 'sshpass <x ', '$(a $(b ', `x; ${'a$b'.repeat(50_000 * scale)}=`, `sh -c "mysql -p'a `].map(fill)
+      ]
+    }
+    // This thread's CPU time in milliseconds: wall clock charges a short run less than a long one on a preempted runner.
+    const cost = (text: string): number => {
+      const started = process.threadCpuUsage()
       mightContainSensitiveText(text)
       redactSensitive(text)
-      // Above a busy hosted runner's worst linear input, which reaches a second.
-      expect(performance.now() - started, JSON.stringify(text.slice(0, 60))).toBeLessThan(2500)
+      const { user, system } = process.threadCpuUsage(started)
+      return (user + system) / 1000
     }
-    // Each input is held to its budget; the whole run gets room for many of them on a loaded machine.
-  }, 30_000)
+    const quarters = inputs(1 / 4)
+    inputs(1).forEach((text, i) => {
+      const label = JSON.stringify(text.slice(0, 60))
+      const quarter = quarters[i]!
+      // An input whose quarter build keeps its length would compare against itself and never fail.
+      expect(text.length / quarter.length, label).toBeGreaterThan(3)
+      const quarterCost = cost(quarter)
+      const fullCost = cost(text)
+      expect(fullCost, label).toBeLessThan(8 * quarterCost + 100)
+      // A hang guard, far above any runner's linear cost.
+      expect(fullCost, label).toBeLessThan(10_000)
+    })
+    // The per-input checks above decide; this only has to outlast all of them on a loaded runner.
+  }, 300_000)
 })
 
 describe('publicToolFrame', () => {
