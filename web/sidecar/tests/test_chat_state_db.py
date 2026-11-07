@@ -147,7 +147,9 @@ def test_an_agent_rebuilt_after_restart_runs_on_the_compression_tip(home) -> Non
         history = [{"role": "user", "content": "[summary] ping/pong"}, {"role": "assistant", "content": "ok"}, {"role": "user", "content": "web-only context"}, {"role": "assistant", "content": "noted"}]
         result = _turn(proc, home, "web-2", "after restart", history)
         assert result["agent_session_id"] == "web-2-tip"
-        assert [m["content"] for m in result["messages"]][:4] == ["[summary] ping/pong", "ok", "web-only context", "noted"]
+        # The turn ran on that history: the Agent's transcript starts with all of it, so the reply does not repeat it.
+        assert result["history_prefix_len"] == len(history)
+        assert [m["content"] for m in result["messages"]] == ["after restart", "pong"]
         # Only the turn's own rows land, on the tip; the closed Web id is untouched.
         assert _rows(home, "web-2-tip") == [("user", "[summary] ping/pong"), ("user", "after restart"), ("assistant", "pong")]
         assert _rows(home, "web-2") == [("user", "ping"), ("assistant", "pong")]

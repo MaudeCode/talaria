@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Finishing a turn in a long chat no longer briefly pauses replies streaming in your other chats.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

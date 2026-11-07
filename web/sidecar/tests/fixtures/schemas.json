@@ -13005,6 +13005,11 @@
           "additionalProperties": {}
         }
       },
+      "history_prefix_len": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
       "context_messages": {
         "anyOf": [
           {

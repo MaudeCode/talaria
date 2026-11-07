@@ -597,6 +597,8 @@ export const ChatUsageSchema = z.object({ plan_gauge: PlanGaugeSchema.nullable()
  * (`tool_limit_reached`); the server drops that trailing row of an exhausted turn from the transcript and the model context (TAL-537).
  * A completed `compressed` turn also carries `context_messages`, its `messages` with tool output pruned and capped for the model (row for row),
  * and `post_compression_context_tokens_estimate`, the next request's estimated size (TAL-539); both are null otherwise.
+ * TAL-1690: `history_prefix_len` is how many leading rows of the transcript are byte-identical to the request's `conversation_history`, apart from the Agent's own `_db_persisted` flush marker; `messages` then
+ * holds only the rows after them. It is absent, and `messages` whole, on a `compressed` turn or when the transcript does not start with that history.
  */
 /**
  * The turn agent's context figures (`context_length`, `threshold_tokens`, `last_prompt_tokens`, `compression_count`). TAL-1005:
@@ -606,7 +608,7 @@ export const ChatUsageSchema = z.object({ plan_gauge: PlanGaugeSchema.nullable()
  */
 const ChatContextSchema = z.looseObject({ next_turn_threshold_tokens: z.number().int().positive().optional(), context_window_source: ContextWindowSourceSchema.nullable().optional() })
 export const ChatStartResultSchema = z.object({
-  status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), context_messages: z.array(Loose).nullable().optional(), post_compression_context_tokens_estimate: z.number().int().nullable().optional(), final_response: z.string(), error: z.string().nullable(),
+  status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), history_prefix_len: z.number().int().nonnegative().optional(), context_messages: z.array(Loose).nullable().optional(), post_compression_context_tokens_estimate: z.number().int().nullable().optional(), final_response: z.string(), error: z.string().nullable(),
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),
   tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema,
   /** TAL-1076: the turn agent's counters when this turn bound it, the baseline of the turn's own usage; absent when no agent was bound. */
