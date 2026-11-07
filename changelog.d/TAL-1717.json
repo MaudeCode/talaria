@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web saves its reload snapshot during idle moments and skips the save when nothing changed, so finishing a turn stays smooth.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

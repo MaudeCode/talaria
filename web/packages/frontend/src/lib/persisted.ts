@@ -27,16 +27,19 @@ export function readPersisted(key: string): string | null {
   }
 }
 
-export function writePersisted(key: string, value: string): void {
+/** Returns whether the value reached storage. */
+export function writePersisted(key: string, value: string): boolean {
   memory.set(key, value)
   const s = storage()
-  if (!s) return
+  if (!s) return false
   try {
     s.setItem(key, value)
     unsaved.delete(key)
+    return true
   } catch {
     /* quota or disabled storage: keep the in-memory copy, which reads now prefer */
     unsaved.add(key)
+    return false
   }
 }
 

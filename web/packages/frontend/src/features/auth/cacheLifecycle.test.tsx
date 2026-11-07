@@ -92,7 +92,7 @@ describe('identity-owned boot snapshots', () => {
     await pending
     // A stale stream callback can still reach the retired client.
     qc.setQueryData(projectKey, projects('Late cache write'))
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1_000)
     expect(readPersisted(snapshotKey)).toBeNull()
   })
 
@@ -105,7 +105,7 @@ describe('identity-owned boot snapshots', () => {
     await logout()
     const next = client()
     next.setQueryData(projectKey, projects('New identity'))
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1_000)
     const saved = readPersisted(snapshotKey)
     expect(saved).toContain('New identity')
     if (typeof oldPagehide === 'function') oldPagehide(new Event('pagehide'))
