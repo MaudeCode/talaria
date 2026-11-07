@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { AgentConfig, Config, Dict } from './config/agent-config.js'
-import { canonicaliseProviderId, dict, isDict, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
+import { canonicaliseProviderId, dict, isDict, isReference, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
 import { EnvWriteError, loadEnvFile } from './providers/env-file.js'
 import { PROVIDER_CATEGORIES, PROVIDER_DISPLAY, SUPPORTED_PROVIDER_SETUPS, UNSUPPORTED_PROVIDER_NOTE } from './providers/tables.js'
 import type { ModelsCatalog } from './providers/catalog.js'
@@ -44,6 +44,8 @@ const currentProvider = (cfg: Config): string => str(modelSection(cfg).provider)
 const currentModel = (cfg: Config): string => (typeof cfg.model === 'string' ? cfg.model.trim() : str(modelSection(cfg).default).trim())
 const normalizeBaseUrl = (v: unknown): string => str(v).trim().replace(/\/+$/, '')
 const currentBaseUrl = (cfg: Config): string => normalizeBaseUrl(modelSection(cfg).base_url)
+/** TAL-1958: the Agent expands `${VAR}` when it loads config.yaml, so a caller's endpoint must not name a secret to send out. */
+const REFERENCE_REFUSED = 'base_url cannot contain a ${...} reference'
 
 /** A picked `/api/models` id (`@provider:model`) is saved as its bare model, like `setDefaultModel`; one qualified for another provider is refused. */
 function normalizeModelForProvider(provider: string, model: string): string {
@@ -235,6 +237,8 @@ export class Onboarding {
     }
     const envPath = join(home, '.env')
     const cfg = await this.deps.config.read(home)
+    // The wizard fills its form from the saved value, so a reference already in the file comes back unchanged.
+    if (isReference(baseUrl) && baseUrl !== currentBaseUrl(cfg)) throw new OnboardingError(REFERENCE_REFUSED)
     const oauthReady = Boolean(meta.oauth_provider) && providerOauthAuthenticated(meta.oauth_provider ?? '', home)
     if (meta.oauth_flow) {
       if (!oauthReady) throw new OnboardingError(`Sign in to ${meta.oauth_label ?? meta.label} before continuing.`)
@@ -276,6 +280,7 @@ export class Onboarding {
     const activate = body.activate === undefined || body.activate === null || Boolean(body.activate)
     if (provider !== 'ollama' && provider !== 'lmstudio') throw new OnboardingError(`unsupported self-hosted provider: ${provider}`)
     if (!model) throw new OnboardingError('model is required')
+    if (isReference(baseUrl)) throw new OnboardingError(REFERENCE_REFUSED)
     const meta = SUPPORTED_PROVIDER_SETUPS[provider]
     if (meta?.requires_base_url) {
       if (!baseUrl) throw new OnboardingError('base_url is required for this provider')

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Model and provider writes now refuse a `${VAR}` reference in a caller-supplied base URL, API key or `extra_body`, so a saved value can no longer make the Agent send a secret to another endpoint. References you write in config.yaml keep working.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

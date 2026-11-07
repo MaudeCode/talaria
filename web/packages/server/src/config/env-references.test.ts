@@ -1,5 +1,6 @@
 /** TAL-1833: `${VAR}` references stay raw on disk; model and workspace readers use the Agent's resolution of them. */
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { createServer as createHttpServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -132,6 +133,65 @@ describe('config.yaml env references', () => {
     const { server, saved } = await boot(raw, raw)
     expect((await post(server, '/api/default-model', body)).status).toBe(400)
     expect(saved()).toEqual(raw)
+  })
+
+  const main = { default: 'claude-sonnet-4-6', provider: 'anthropic' }
+  it.each([
+    ['base_url', { base_url: 'https://llm.example/${SYNTH_KEY}' }],
+    ['api_key', { api_key: '${SYNTH_KEY}' }],
+    ['nested extra_body string', { extra_body: { metadata: { tags: ['${SYNTH_KEY}'] } } }],
+    ['extra_body JSON string', { extra_body: '{"metadata":{"user":"${SYNTH_KEY}"}}' }],
+  ])('advanced options refuse a reference in %s on the default-model and auxiliary writes (TAL-1958)', async (_name, advanced) => {
+    const raw = { model: main }
+    const { server, saved } = await boot(raw, raw)
+    for (const res of [
+      await post(server, '/api/default-model', { model: 'claude-opus-4-6', provider: 'anthropic', advanced }),
+      await post(server, '/api/model/set', { scope: 'main', model: 'claude-opus-4-6', provider: 'anthropic', advanced }),
+      await post(server, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'custom', model: 'synth-vision', advanced }),
+    ]) {
+      expect(res.status).toBe(400)
+      expect((await json(res)).error).toMatch(/reference/)
+    }
+    expect(saved()).toEqual(raw)
+  })
+
+  it('literal advanced options still save (TAL-1958)', async () => {
+    const raw = { model: main }
+    const { server, saved } = await boot(raw, raw)
+    const advanced = { base_url: 'https://llm.example/v1/', extra_body: '{"metadata":{"user":"$HOME {x}"}}' }
+    expect((await post(server, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'custom', model: 'synth-vision', advanced })).status).toBe(200)
+    expect((saved().auxiliary as Json).vision).toMatchObject({ base_url: 'https://llm.example/v1', extra_body: { metadata: { user: '$HOME {x}' } } })
+    expect((await post(server, '/api/default-model', { model: 'claude-opus-4-6', provider: 'anthropic', advanced })).status).toBe(200)
+    expect(saved().model).toEqual({ default: 'claude-opus-4-6', provider: 'anthropic', base_url: 'https://llm.example/v1', extra_body: { metadata: { user: '$HOME {x}' } } })
+  })
+
+  it('onboarding setup refuses a new base_url reference and keeps accepting the one already saved (TAL-1958)', async () => {
+    const raw = { model: { default: 'synth-model', provider: 'custom', base_url: 'https://${SYNTH_HOST}/v1' } }
+    const { server, saved } = await boot(raw, raw)
+    const setup = (base_url: string): Promise<Response> => post(server, '/api/onboarding/setup', { provider: 'custom', model: 'synth-model', base_url, confirm_overwrite: true })
+    const refused = await setup('https://llm.example/${SYNTH_KEY}')
+    expect(refused.status).toBe(400)
+    expect((await json(refused)).error).toMatch(/reference/)
+    expect(saved()).toEqual(raw)
+    // The wizard fills its form from the saved value, so adding a key sends that value back.
+    expect((await setup('https://${SYNTH_HOST}/v1')).status).toBe(200)
+    expect((saved().model as Json).base_url).toBe('https://${SYNTH_HOST}/v1')
+  })
+
+  it('the self-hosted provider route refuses a base_url reference even when the endpoint answers (TAL-1958)', async () => {
+    const raw = { model: main }
+    const { server, saved } = await boot(raw, raw)
+    const endpoint = createHttpServer((_req, res) => { res.setHeader('content-type', 'application/json'); res.end('{"data":[{"id":"qwen3"}]}') })
+    await new Promise<void>((resolve) => { endpoint.listen(0, '127.0.0.1', resolve) })
+    try {
+      const port = String((endpoint.address() as { port: number }).port)
+      const res = await post(server, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: `http://127.0.0.1:${port}/\${SYNTH_KEY}` })
+      expect(res.status).toBe(400)
+      expect((await json(res)).error).toMatch(/reference/)
+      expect(saved()).toEqual(raw)
+    } finally {
+      endpoint.close()
+    }
   })
 
   it('the shared write path refuses a new reference in a workspace field but keeps an existing one', async () => {
