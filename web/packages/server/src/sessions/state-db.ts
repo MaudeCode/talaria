@@ -15,7 +15,7 @@ import { settledFileStatKey } from '../fs/stat.js'
 import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
-import { MESSAGING_SOURCES } from './source-kind.js'
+import { INTERACTIVE_SOURCES, MESSAGING_SOURCES } from './source-kind.js'
 import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 
 export type Dict = Record<string, unknown>
@@ -41,7 +41,7 @@ export function normalizeAgentSessionSource(rawSource: unknown): { raw_source: s
   const raw = lower(rawSource) || 'unknown'
   let sessionSource: string
   if (raw === 'webui') sessionSource = 'webui'
-  else if (['acp', 'cli', 'tui'].includes(raw)) sessionSource = 'cli'
+  else if (INTERACTIVE_SOURCES.has(raw)) sessionSource = 'cli'
   else if (MESSAGING_SOURCES.has(raw)) sessionSource = 'messaging'
   else if (raw === 'cron') sessionSource = 'cron'
   else if (raw === 'webhook') sessionSource = 'webhook'
@@ -81,8 +81,7 @@ export function isCliSessionRow(row: Dict): boolean {
   if (source === 'messaging') return false
   if (source === 'cli') return true
   if (source === 'external_agent' || source === 'external-agent') return true
-  const interactive = new Set(['acp', 'cli', 'tui'])
-  if ([sourceTag, rawSource, sourceName, sourceLabel].some((v) => interactive.has(v))) return true
+  if ([sourceTag, rawSource, sourceName, sourceLabel].some((v) => INTERACTIVE_SOURCES.has(v))) return true
   return Boolean(row.is_cli_session) && ![source, sourceTag, rawSource, sourceName].some((v) => MESSAGING_SOURCES.has(v)) && looksLikeDefaultCliTitle(row)
 }
 
@@ -96,7 +95,7 @@ export function isCliSessionRowVisible(row: Dict): boolean {
   if (actual > 0 && countUserTurns(row) > 0 && (row.ended_at === null || row.ended_at === undefined) && !row.end_reason) return true
   const interactive = new Set([row.source, row.source_tag, row.raw_source, row.source_label].map(normalizeSourceName))
   if (interactive.has('tui')) return true
-  if (interactive.has('acp')) return countUserTurns(row) > 0
+  if (interactive.has('acp') || interactive.has('desktop')) return countUserTurns(row) > 0
   if (hasCliLineage(row)) return true
   if (!looksLikeDefaultCliTitle(row)) return true
   return countUserTurns(row) >= CLI_MIN_UNTITLED_USER_MESSAGE_COUNT
@@ -568,6 +567,8 @@ export function readImportableAgentSessionRowBatches(dbPath: string, queries: Re
       userCountExpr = 's.message_count'
       baseLastActivityExpr = 'NULL'
     }
+    // Roles that are all NULL carry no evidence of who spoke, so a legacy Desktop history stays listed by its message count.
+    if (messagesHasSessionId && messageCols.has('role')) userCountExpr = `CASE WHEN LOWER(s.source) = 'desktop' AND NOT EXISTS(SELECT 1 FROM messages rm WHERE rm.session_id = s.id AND rm.role IS NOT NULL) THEN ${actualCountExpr} ELSE ${userCountExpr} END`
     const candidates = (opts: ReadRowsOptions): Dict[] => {
       const limit = opts.limit === undefined ? 200 : opts.limit
       const exclude = opts.excludeSources === undefined ? ['cron', 'webui'] : opts.excludeSources

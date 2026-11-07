@@ -12,7 +12,7 @@ import { CONTEXT_USAGE_FIELDS, Session, contextUsage, sharePath, stripSidebarHea
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { AGENT_STORAGE_OK, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource, type StateDbSessionSource } from './state-db.js'
-import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
+import { INTERACTIVE_SOURCES, MESSAGING_SOURCES, sourceKind } from './source-kind.js'
 import { type AgentStorage, type SidebarGroup, type SidebarGroupKind } from '@maudecode/talaria-web-contracts'
 
 export type Row = Record<string, unknown>
@@ -341,8 +341,7 @@ export function isCliSessionRow(row: Row): boolean {
   for (const v of all) if (v && nonCli.has(v)) return false
   if (source === 'cli') return true
   if (source === 'external_agent' || source === 'external-agent') return true
-  const interactive = new Set(['acp', 'cli', 'tui'])
-  return [sourceTag, rawSource, sourceName, sourceLabel].some((v) => interactive.has(v))
+  return [sourceTag, rawSource, sourceName, sourceLabel].some((v) => INTERACTIVE_SOURCES.has(v))
 }
 
 function isCliSessionForSettings(row: Row): boolean {
@@ -785,7 +784,13 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     })
     webuiSessions = webuiSessions.map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
     if (!params.showCliSessions) webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
-    webuiSessions = webuiSessions.filter(isCliSessionRowVisible)
+    // A copy with messages is never judged stricter than its own state.db row: dropping a legacy Desktop history's copy,
+    // which counts no user turns, would let the bare row stand in without its project.
+    const ownRowVisible = (s: Row): boolean => {
+      const own = cliById.get(str(s.session_id))
+      return own !== undefined && isCliSessionRowVisible(own) && params.profilesMatch(str(own.profile) || null, str(s.profile) || null) && num(s.message_count) > 0
+    }
+    webuiSessions = webuiSessions.filter((s) => isCliSessionRowVisible(s) || ownRowVisible(s))
     const represented = new Set<string>()
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
     dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides, webCreated: params.webDiagnosticIds })

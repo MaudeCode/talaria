@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Hermes Desktop chats now appear with CLI sessions, and Desktop connection records with no user message stay out of the session list.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
