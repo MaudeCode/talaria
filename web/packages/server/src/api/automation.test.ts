@@ -592,6 +592,34 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(sidecar.calls.filter((c) => c.method === 'kanban.board').at(-1)?.params).toMatchObject({ only_mine: false, assignee: 'reviewer' })
   })
 
+  it('TAL-1851: round-trips ordered board pins per profile and filters archived or missing boards', async () => {
+    const fixture = new FakeSidecar()
+    const server = await bootTestServer({ sidecar: fixture })
+    const work = join(server.state, 'profiles', 'work')
+    mkdirSync(work, { recursive: true })
+    fixture.respond('profiles.list', () => ({ profiles: [
+      { name: 'default', path: server.state, is_default: true }, { name: 'work', path: work, is_default: false },
+    ].map(p => ({ ...p, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })) }))
+    let archived = false
+    fixture.respond('kanban.boards', () => ({ current: 'default', read_only: false, boards: [
+      { slug: 'default', name: 'Default' }, { slug: 'ops', name: 'Operations', archived }, { slug: 'old', name: 'Old', archived: true },
+    ].map(b => ({ ...b, is_current: b.slug === 'default', counts: {}, total: 0 })) }))
+    try {
+      expect((await post(server, '/api/settings', { kanban_pinned_boards: ['ops', 'missing', 'old', 'default', 'ops'] })).status).toBe(200)
+      expect((await json(await server.get('/api/kanban/boards?include_archived=1'))).pinned).toEqual(['ops', 'default'])
+      const switched = await post(server, '/api/profile/switch', { name: 'work' })
+      expect(switched.status).toBe(200)
+      const headers = { cookie: (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? '' }
+      expect((await json(await server.get('/api/kanban/boards', { headers }))).pinned).toEqual([])
+      expect((await post(server, '/api/settings', { kanban_pinned_boards: ['default', 'ops'] }, 'POST', headers)).status).toBe(200)
+      expect((await json(await server.get('/api/kanban/boards', { headers }))).pinned).toEqual(['default', 'ops'])
+      expect((await json(await server.get('/api/kanban/boards'))).pinned).toEqual(['ops', 'default'])
+      archived = true
+      expect((await json(await server.get('/api/kanban/boards?include_archived=1'))).pinned).toEqual(['default'])
+      expect(await json(await server.get('/api/settings', { headers }))).not.toHaveProperty('kanban_pinned_boards_by_profile')
+    } finally { await server.close() }
+  })
+
   it('extension status, registry, install, static serving, consent, proxy, and uninstall', async () => {
     let res = await s.get('/api/extensions/status')
     let body = await json(res)

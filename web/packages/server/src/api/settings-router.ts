@@ -23,7 +23,7 @@ import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
 import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
-import { displayBotName, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection } from '../settings.js'
+import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
 import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plugin-oauth.js'
@@ -142,6 +142,8 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.update_channel = str(into.update_channel) || 'stable'
   into.update_channels = [...WEB_UPDATE_CHANNELS]
   into.update_channel_version = deps.version
+  Reflect.deleteProperty(into, KANBAN_PINS_BY_PROFILE_KEY)
+  into.kanban_pinned_boards = await deps.settings.kanbanPins(activeProfileName(ctx))
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))

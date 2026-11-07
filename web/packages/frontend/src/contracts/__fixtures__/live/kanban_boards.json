@@ -19,7 +19,8 @@
       }
     ],
     "current": "default",
-    "read_only": false
+    "read_only": false,
+    "pinned": []
   },
   "method": "GET",
   "path": "/api/kanban/boards",

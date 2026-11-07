@@ -6,6 +6,7 @@ import type { AgentConfig, Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { str } from '../util.js'
+import type { SettingsStore } from '../settings.js'
 
 export const truthyQuery = (v: unknown): boolean => ['1', 'true', 'yes', 'on'].includes(str(v).trim().toLowerCase())
 
@@ -205,12 +206,19 @@ export function boardSlug(name: string): string {
 }
 
 export class KanbanService {
-  constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig }) {}
+  constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig; settings: SettingsStore }) {}
 
   sidecar(): SidecarLike {
     const s = this.deps.sidecar()
     if (!s) throw new HttpFailure(503, 'kanban unavailable: Hermes Agent sidecar is not running')
     return s
+  }
+
+  async boards(home: string, profile: string, includeArchived: boolean): Promise<Dict> {
+    const result = await this.sidecar().call('kanban.boards', { profile_home: home, include_archived: includeArchived }).catch(kanbanFailure)
+    const active = new Set(result.boards.filter(b => !b.archived).map(b => b.slug))
+    const pinned = (await this.deps.settings.kanbanPins(profile)).filter(slug => active.has(slug))
+    return { ...result, boards: result.boards.map(b => ({ ...b, removable: b.slug !== 'default' && !b.archived })), pinned }
   }
 
   async inspection(home: string, q: { board?: string | undefined; search?: string | undefined; assignee?: string | undefined; tenant?: string | undefined; only_mine?: string | undefined; include_archived?: string | undefined; running_only?: string | undefined }, activeProfile: string): Promise<Dict> {
