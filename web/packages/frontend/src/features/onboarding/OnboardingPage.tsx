@@ -191,7 +191,7 @@ export function OnboardingPage() {
     <main className="onboarding-overlay flex min-h-full items-start justify-center overflow-y-auto bg-bg p-4 text-text md:items-center" id="onboardingOverlay">
       <div className="onboarding-card grid w-[min(1040px,100%)] gap-6 rounded-2xl border border-border bg-surface p-6 shadow-md md:grid-cols-[260px_1fr]">
         <aside>
-          <div className="inline-flex rounded-full border border-border2 bg-surface-subtle px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted">{m.onboarding_badge()}</div>
+          <div className="inline-flex rounded-full border border-border2 bg-surface-subtle px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.onboarding_badge()}</div>
           <h1 className="mt-3 text-xl font-semibold text-strong" id="onboardingTitle">{m.onboarding_title()}</h1>
           <p className="mt-2 text-sm text-muted" id="onboardingLead">{m.onboarding_lead()}</p>
           <ol className="mt-5 flex flex-col gap-2" id="onboardingSteps">

@@ -212,7 +212,7 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
   return (
     <Menu label={m.composer_control_workspace()} side="top" className="min-w-64" trigger={<Chip id={row ? undefined : "composerWorkspaceChip"} icon={<FolderOpen size={13} aria-hidden="true" />} label={label} title={m.composer_control_workspace()} row={row} size="xs" className="composer-workspace-chip" disabled={list.length === 0} />}>
       <MenuRadioGroup value={value ?? ''} onValueChange={(v: string) => onChange(v)}>
-        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={MENU_CHOICE}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-[10px] text-muted">{w.path}</span></span></MenuRadioItem>)}
+        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={MENU_CHOICE}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-xs text-muted">{w.path}</span></span></MenuRadioItem>)}
       </MenuRadioGroup>
       {(onNewWorktree ?? onRemoveWorktree) && <MenuSeparator />}
       {onNewWorktree && (

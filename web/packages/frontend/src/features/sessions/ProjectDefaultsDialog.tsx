@@ -52,7 +52,7 @@ function ProjectDefaultsDialog({ project, initial, onCancel, onSave }: { project
               <ul className="flex flex-col">
                 {draft.workspaces.map((path) => (
                   <li key={path} className="flex min-w-0 items-center gap-2 py-0.5">
-                    <span className="flex min-w-0 flex-1 flex-col" title={path}><span className="truncate text-sm">{nameOf(path)}</span><span className="truncate font-mono text-[10px] text-muted">{path}</span></span>
+                    <span className="flex min-w-0 flex-1 flex-col" title={path}><span className="truncate text-sm">{nameOf(path)}</span><span className="truncate font-mono text-xs text-muted">{path}</span></span>
                     <button type="button" className="icon-btn h-8 w-8 shrink-0" aria-label={m.project_workspace_remove({ name: nameOf(path) })} title={m.remove()} onClick={() => remove(path)}><X size={14} aria-hidden="true" /></button>
                   </li>
                 ))}

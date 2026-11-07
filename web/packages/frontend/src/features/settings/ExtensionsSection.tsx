@@ -97,7 +97,7 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
     <li className={cn('py-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-text">{ext.name}{ext.version ? <span className="ml-1 text-[11px] text-muted">v{ext.version}</span> : null} <span className="ml-1 whitespace-nowrap rounded-full border border-border px-1.5 text-[10px] uppercase tracking-wider text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</span></div>
+          <div className="font-medium text-text">{ext.name}{ext.version ? <span className="ml-1 text-[11px] text-muted">v{ext.version}</span> : null} <span className="ml-1 whitespace-nowrap rounded-full border border-border px-1.5 text-xs uppercase tracking-wider text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</span></div>
           <div className="text-[11px] text-muted">{ext.display_id ?? ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
         </div>
         {(ext.panel || ext.native_view) && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
@@ -106,7 +106,7 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
         )}
         {canManage && ext.source === 'gallery' && <Button variant="ghost" className="text-error" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
       </div>
-      <div className="mt-2 flex flex-wrap gap-1 text-[10px] uppercase tracking-wider text-muted">
+      <div className="mt-2 flex flex-wrap gap-1 text-xs uppercase tracking-wider text-muted">
         {ext.capabilities.map((c) => <span key={c} className="rounded-full border border-border px-1.5">{c}</span>)}
         {perms.map((p) => <span key={p} className="rounded-full border border-warning px-1.5 text-warning">{p}</span>)}
       </div>
