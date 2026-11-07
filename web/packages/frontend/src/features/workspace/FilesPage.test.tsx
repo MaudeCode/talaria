@@ -13,7 +13,7 @@ vi.mock('../toast/toast', () => ({ showToast: toast }))
 import * as api from '../../api/endpoints'
 import { FilesPage } from './FilesPage'
 
-const tree = { entries: [{ name: 'docs', path: 'docs', is_dir: true }, { name: 'a.txt', path: 'a.txt', is_dir: false, size: 3 }, { name: 'b.txt', path: 'b.txt', is_dir: false, size: 3 }] }
+const tree = { entries: [{ name: 'docs', path: 'docs', is_dir: true, workspace_sort_rank: 1 }, { name: 'a.txt', path: 'a.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }, { name: 'b.txt', path: 'b.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] }
 const held = () => new Promise<never>(() => undefined)
 /** A row's accessible name starts with its file name; kind and size follow (TAL-1606). */
 const row = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(,|$)`)
@@ -76,6 +76,23 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
     expect(names()).toEqual(['docs', 'a.txt', 'aa.txt'])
   })
 
+  it('reads a preview opened on a renamed row only after the rename and the listing have answered (TAL-1935)', async () => {
+    let finish!: (value: never) => void
+    vi.mocked(api.renameEntry).mockReturnValue(new Promise((resolve) => { finish = resolve }) as never)
+    renderFiles()
+    await menu('b.txt', 'Rename')
+    const input = screen.getByRole('textbox', { name: 'New name:' })
+    await userEvent.clear(input)
+    await userEvent.type(input, 'aa.txt{Enter}')
+    await userEvent.click(screen.getByRole('treeitem', { name: row('aa.txt') }))
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument()
+    expect(api.readFile).not.toHaveBeenCalled()
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [tree.entries[0]!, tree.entries[1]!, { name: 'aa.txt', path: 'aa.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] })
+    finish({ ok: true } as never)
+    await waitFor(() => expect(api.readFile).toHaveBeenCalledWith('s1', 'aa.txt'))
+    expect(await screen.findByRole('textbox', { name: 'Preview' })).toBeInTheDocument()
+  })
+
   it('shows a new file at once', async () => {
     vi.mocked(api.createFile).mockReturnValue(held())
     renderFiles()
@@ -121,6 +138,21 @@ describe('file tree writes roll back only themselves on refusal (TAL-1384)', () 
     await userEvent.type(screen.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }), 'notes.md{Enter}')
     await waitFor(() => expect(names()).toEqual(['docs', 'a.txt', 'b.txt']))
     expect(screen.getByRole('alert')).toHaveTextContent('File already exists')
+  })
+
+  it('returns from a preview opened on a new file the server refuses, with the error inline (TAL-1935)', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.createFile).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    renderFiles()
+    await screen.findByRole('treeitem', { name: row('a.txt') })
+    await userEvent.click(screen.getByRole('button', { name: 'New File' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }), 'notes.md{Enter}')
+    await userEvent.click(screen.getByRole('treeitem', { name: row('notes.md') }))
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument()
+    refuse(refusal('Name is not allowed'))
+    await waitFor(() => expect(names()).toEqual(['docs', 'a.txt', 'b.txt']))
+    expect(screen.getByRole('alert')).toHaveTextContent('Name is not allowed')
+    expect(api.readFile).not.toHaveBeenCalled()
   })
 
   it('puts a refused move back with the error inline', async () => {

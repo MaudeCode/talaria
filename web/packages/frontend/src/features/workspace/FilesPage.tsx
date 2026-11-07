@@ -26,6 +26,11 @@ function parentOf(path: string): string {
   return parts.length ? parts.join('/') : '.'
 }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+/** The server's listing order (`listAnchored`): its rank, then the lowercase name. */
+function inListingOrder(a: { name: string; workspace_sort_rank?: number | undefined }, b: { name: string; workspace_sort_rank?: number | undefined }): number {
+  const [nameA, nameB] = [a.name.toLowerCase(), b.name.toLowerCase()]
+  return (a.workspace_sort_rank ?? 0) - (b.workspace_sort_rank ?? 0) || (nameA < nameB ? -1 : nameA > nameB ? 1 : 0)
+}
 /** Drag payload for moving an entry onto a folder row or the Up button. */
 const DRAG_TYPE = 'application/x-talaria-workspace-path'
 
@@ -105,8 +110,19 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const focusedRow = useRef<HTMLElement | null>(null)
   const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
-  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active, staleTime: 5_000 })
   const effects = useResourceEffects()
+  // The server orders the listing (symlinks, folders, files); rows render in that order. While the user's own write
+  // shows a row the server has not listed, that row holds its place in the order and is one row, so the listing's
+  // arrival never moves a row out from under a press.
+  const listed = listing.data?.entries ?? []
+  const pathOf = (e: { name: string; path?: string | undefined }) => e.path ?? joinPath(dir, e.name)
+  const shown = withCreated(withEffects(listed, (e) => entryResource(workspace, pathOf(e)), effects), createKind(workspace, dir), effects)
+  const rows = shown.filter((e, i) => shown.findIndex((other) => pathOf(other) === pathOf(e)) === i)
+  const writing = rows.filter((e) => !listed.includes(e))
+  const entries = writing.length ? [...rows].sort(inListingOrder) : rows
+  // A row shown ahead of the server may not exist there yet, so its preview reads once the write and the listing have answered.
+  const opening = writing.some((e) => pathOf(e) === file)
+  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active && !opening, staleTime: 5_000 })
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
     resource: ({ path }: { path: string; text: string }) => contentResource(workspace, path),
@@ -129,10 +145,12 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // A rename owns its old and new paths, so an action on the renamed row waits for it instead of racing it.
   const treeWrite = { queryKey: keys.files.lists(workspace), onError: (e: unknown) => setNotice(errorText(e)), onSuccess: () => { void refresh() } }
   const folders = (...paths: string[]) => paths.map((path) => keys.files.dir(workspace, path))
+  // A failed create or rename takes back the path a preview may already be open on; the tree shows why.
+  const leavePreview = (path: string) => () => setFile((open) => (open === path ? null : open))
   const remove = useResourceMutation({ ...treeWrite, onSuccess: (_, { path, to }) => { relocateDrafts(path, to === undefined ? null : joinPath(to, path.split('/').pop() ?? '')); void refresh() }, resource: ({ path }: { path: string; to?: string; call: () => Promise<unknown> }) => entryResource(workspace, path), readKeys: ({ path, to }) => folders(parentOf(path), ...(to === undefined ? [] : [to])), effect: () => ({ remove: true }), mutationFn: ({ call }) => call() })
   const rename = useResourceMutation({ ...treeWrite, onSuccess: (_, { path, name }) => { relocateDrafts(path, joinPath(parentOf(path), name)); void refresh() }, resource: ({ path, name }: { path: string; name: string }) => [entryResource(workspace, path), entryResource(workspace, joinPath(parentOf(path), name))], readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
-  const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file' } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
-  const submitName = (kind: 'file' | 'dir', name: string) => { setNotice(null); create.mutate({ resource: newResource(createKind(workspace, dir)), path: joinPath(dir, name), name, isDir: kind === 'dir' }) }
+  const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file', workspace_sort_rank: isDir ? 1 : 2 } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
+  const submitName = (kind: 'file' | 'dir', name: string) => { setNotice(null); const path = joinPath(dir, name); void create.mutateAsync({ resource: newResource(createKind(workspace, dir)), path, name, isDir: kind === 'dir' }).catch(leavePreview(path)) }
   const go = (path: string) => { setNotice(null); setCursor({ dir: path, path: dir, index: 0 }); setDir(path) }
   const dropProps = (dest: string) => ({
     onDragOver: (ev: DragEvent) => {
@@ -150,9 +168,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
       if (src !== dest) { setNotice(null); remove.mutate({ path: src, to: dest, call: () => api.moveEntry(sessionId, src, dest) }) }
     },
   })
-  // The server orders the listing (symlinks, folders, files); rows render in that order.
-  const entries = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
-  const paths = entries.map((e) => e.path ?? joinPath(dir, e.name))
+  const paths = entries.map(pathOf)
   const kept = cursor.dir === dir ? paths.indexOf(cursor.path) : -1
   // A refresh that moves the focused row moves the index its removal would fall back to.
   if (kept >= 0 && kept !== cursor.index) setCursor({ ...cursor, index: kept })
@@ -297,7 +313,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
       )}
       {pending?.kind === 'new-file' && <NameDialog title={m.new_file()} label={m.new_file_prompt()} confirmLabel={m.create()} onClose={() => setPending(null)} onSubmit={(name) => submitName('file', name)} />}
       {pending?.kind === 'new-folder' && <NameDialog title={m.new_folder()} label={m.new_folder_prompt()} confirmLabel={m.create()} onClose={() => setPending(null)} onSubmit={(name) => submitName('dir', name)} />}
-      {pending?.kind === 'rename' && <NameDialog title={m.rename_title()} label={m.rename_prompt()} initial={pending.entry.name} confirmLabel={m.save()} onClose={() => setPending(null)} onSubmit={(name) => { setNotice(null); rename.mutate({ path: pending.entry.path, name }) }} />}
+      {pending?.kind === 'rename' && <NameDialog title={m.rename_title()} label={m.rename_prompt()} initial={pending.entry.name} confirmLabel={m.save()} onClose={() => setPending(null)} onSubmit={(name) => { setNotice(null); const { path } = pending.entry; void rename.mutateAsync({ path, name }).catch(leavePreview(joinPath(parentOf(path), name))) }} />}
       <ConfirmDialog
         open={pending?.kind === 'delete'}
         onOpenChange={(o) => { if (!o) setPending(null) }}
