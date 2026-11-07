@@ -30,11 +30,19 @@ function extraSources(raw: string | undefined, re: RegExp, warn: () => void): st
 
 export interface CspExtras { connect: string; frame: string }
 
+const validatedExtras = new WeakMap<Env, CspExtras>()
+
+/** Validated once per env object; the env does not change after startup, and every request's context asks for these. */
 export function cspExtras(env: Env, warn: (line: string) => void = () => undefined): CspExtras {
-  return {
-    connect: extraSources(env.HERMES_WEBUI_CSP_CONNECT_EXTRA, EXTRA_CONNECT_RE, () => { warn('Ignoring invalid HERMES_WEBUI_CSP_CONNECT_EXTRA value') }),
-    frame: extraSources(env.HERMES_WEBUI_CSP_FRAME_EXTRA, EXTRA_FRAME_RE, () => { warn('Ignoring invalid HERMES_WEBUI_CSP_FRAME_EXTRA value') }),
+  let extras = validatedExtras.get(env)
+  if (!extras) {
+    extras = {
+      connect: extraSources(env.HERMES_WEBUI_CSP_CONNECT_EXTRA, EXTRA_CONNECT_RE, () => { warn('Ignoring invalid HERMES_WEBUI_CSP_CONNECT_EXTRA value') }),
+      frame: extraSources(env.HERMES_WEBUI_CSP_FRAME_EXTRA, EXTRA_FRAME_RE, () => { warn('Ignoring invalid HERMES_WEBUI_CSP_FRAME_EXTRA value') }),
+    }
+    validatedExtras.set(env, extras)
   }
+  return extras
 }
 
 /** `frameAncestors: "'self'"` is only for a sandboxed document the app frames itself (an extension or plugin panel). */

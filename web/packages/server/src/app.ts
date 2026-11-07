@@ -6,8 +6,6 @@
 import { ServerResponse, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders } from 'node:http'
 import type { Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { ORPCError, Procedure, type Router } from '@orpc/server'
 import { z } from 'zod'
 import type { AnyContractRouter } from '@orpc/contract'
@@ -95,7 +93,7 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
   const { spa, version } = ctx.deps
   const path = ctx.path
   if (path === '/sw.js') {
-    const sw = spa.serviceWorker(version)
+    const sw = await spa.serviceWorker(version)
     if (sw) (await sendBytes(ctx, sw, 'application/javascript; charset=utf-8', { cacheControl: 'no-store', headers: { 'Service-Worker-Allowed': '/' } }))
     else (await notFound(ctx))
     return true
@@ -150,12 +148,9 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
 }
 
 async function serveFavicon(ctx: RequestContext): Promise<void> {
-  try {
-    const data = readFileSync(resolve(ctx.deps.config.staticRoot, 'brand', 'favicon.ico'))
-    await ctx.send({ status: 200, headers: { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' }, body: data })
-  } catch {
-    await notFound(ctx)
-  }
+  const asset = await ctx.deps.staticFiles.get('brand/favicon.ico').catch(() => null)
+  if (asset) await sendAsset(ctx, asset, 'public, max-age=86400')
+  else await notFound(ctx)
 }
 
 async function preflight(ctx: RequestContext): Promise<void> {
@@ -460,7 +455,12 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       }
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
-      if (path.startsWith('/api/')) await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
+      if (path.startsWith('/api/')) {
+        await Promise.resolve().then(() => {
+          const home = deps.profileHome(deps.activeProfile())
+          return deps.agentConfig.peek(home, { refresh: false }) ?? deps.agentConfig.read(home)
+        }).catch(() => undefined)
+      }
       if (ctx.method === 'GET' || ctx.method === 'HEAD') {
         if ((await handleSpa(ctx))) return
         if (path.startsWith('/extensions/')) {

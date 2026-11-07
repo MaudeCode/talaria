@@ -68,6 +68,23 @@ describe('shell rendering', () => {
     }
   })
 
+  it('renders the service worker once per dist signature and version', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-spa-'))
+    try {
+      const dist = new SpaShell(root)
+      expect(await dist.serviceWorker('web v1')).toBeNull()
+      writeFileSync(join(root, 'sw.js'), 'const CACHE = "__WEBUI_VERSION__"')
+      const first = await dist.serviceWorker('web v1')
+      expect(first?.toString()).toBe('const CACHE = "web%20v1"')
+      expect(await dist.serviceWorker('web v1')).toBe(first)
+      expect((await dist.serviceWorker('web-v2'))?.toString()).toBe('const CACHE = "web-v2"')
+      writeFileSync(join(root, 'sw.js'), 'const REBUILT = "__WEBUI_VERSION__"')
+      expect((await dist.serviceWorker('web-v2'))?.toString()).toBe('const REBUILT = "web-v2"')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('refuses paths that escape the dist root', async () => {
     expect(await shell.asset('../server.py')).toBeNull()
     expect(await shell.asset('/etc/passwd')).toBeNull()
