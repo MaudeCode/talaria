@@ -1,10 +1,22 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { JsonDocuments } from '../sessions/storage/json-documents.js'
-import { WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
+import { isBlockedSystemPath, isBlockedWorkspacePath, WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
+
+const realpathProbes = vi.hoisted(() => [] as string[])
+
+// Both entry points: `resolvePathLikePython` walks with `.native`, other callers use the plain call.
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  const record = (fn: (path: string) => string) => (path: string): string => {
+    realpathProbes.push(path)
+    return fn(path)
+  }
+  return { ...fs, realpathSync: Object.assign(record(fs.realpathSync as (path: string) => string), { native: record(fs.realpathSync.native as (path: string) => string) }) }
+})
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -28,6 +40,69 @@ function fixture(profile = 'default') {
   const registry = new WorkspaceRegistry({ documents, defaultWorkspace: () => home, profileHome, activeProfile: () => profile, isRootProfileHome: (path) => path === home, profileConfig, home })
   return { registry, documents, profileConfig, file, bytes, entries, home }
 }
+
+describe('blocked system paths (TAL-1725)', () => {
+  const symlinkedEtc = join(realpathSync('/etc'), 'talaria-missing')
+
+  it.each<[string, string | null, boolean]>([
+    ['/', null, true],
+    ['/etc', null, true],
+    ['/etc/nginx', null, true],
+    [symlinkedEtc, null, true],
+    [symlinkedEtc, '/etc/talaria-missing', true],
+    ['/private/etc/hosts', null, true],
+    ['/private/var', null, true],
+    ['/private/var/db', null, true],
+    ['/private/var/folders/ab/project', null, false],
+    ['/private/var/tmp/project', null, false],
+    ['/var/folders/ab/project', '/var/folders/ab/project', false],
+    ['/var/tmp/project', null, false],
+    ['/usr/local/bin', null, true],
+    ['/opt/homebrew/bin', null, true],
+    ['/System/Library', null, true],
+    ['/Library/Caches', null, true],
+    ['/opt/talaria', null, false],
+    ['/srv/talaria/project', '/srv/talaria/project', false],
+    ['/srv/talaria/project', '/etc/project', true],
+  ])('isBlockedWorkspacePath(%s, %s) is %s', (candidate, raw, blocked) => {
+    expect(isBlockedWorkspacePath(candidate, raw)).toBe(blocked)
+  })
+
+  it.each<[string, boolean]>([
+    ['/etc/hosts', true],
+    [symlinkedEtc, true],
+    ['/usr/share', true],
+    ['/var/folders/ab/project', false],
+    ['/private/var/tmp/project', false],
+    ['/srv/talaria/project', false],
+  ])('isBlockedSystemPath(%s) is %s', (candidate, blocked) => {
+    expect(isBlockedSystemPath(candidate)).toBe(blocked)
+  })
+
+  it('resolves the system paths once, on the first check', async () => {
+    vi.resetModules()
+    const fresh = await import('./workspaces.js')
+    realpathProbes.length = 0
+    expect(fresh.isBlockedWorkspacePath('/srv/talaria/project', '/srv/talaria/project')).toBe(false)
+    expect(realpathProbes.length).toBeGreaterThan(0)
+    expect(realpathProbes.length).toBeLessThanOrEqual(20)
+    realpathProbes.length = 0
+    for (let i = 0; i < 999; i += 1) fresh.isBlockedWorkspacePath('/srv/talaria/project', '/srv/talaria/project')
+    expect(realpathProbes).toEqual([])
+  })
+
+  it('lists 500 blocked symlinks without re-resolving the system paths per entry', async () => {
+    const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-blocked-links-')))
+    roots.push(workspace)
+    for (let i = 0; i < 500; i += 1) symlinkSync('/usr/share', join(workspace, `link-${i}`))
+    vi.resetModules()
+    const { listDir } = await import('./fs.js')
+    realpathProbes.length = 0
+    expect(listDir(workspace)).toEqual([])
+    const systemProbes = realpathProbes.filter((path) => path !== '/usr/share' && !path.startsWith(workspace))
+    expect(systemProbes.length).toBeLessThanOrEqual(20)
+  })
+})
 
 describe('workspace registry config availability (TAL-730)', () => {
   it.each(['default', 'work'])('preserves %s registry bytes on unresolved reads and restores names after recovery', async (profile) => {
