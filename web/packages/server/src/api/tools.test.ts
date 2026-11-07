@@ -291,11 +291,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(String((await json(unreadable)).error)).toContain('MEMORY.md is not readable')
     expect(readFileSync(file, 'utf8')).toBe(reordered)
     // Redaction switched off between the page load and the save still restores the masks the page showed (fails closed).
-    s.deps.settings.save({ api_redact_enabled: false })
+    await s.deps.settings.save({ api_redact_enabled: false })
     try {
       expect((await save(s, { section: 'memory', content: moved })).status).toBe(200)
     } finally {
-      s.deps.settings.save({ api_redact_enabled: true })
+      await s.deps.settings.save({ api_redact_enabled: true })
     }
     expect(readFileSync(file, 'utf8')).toBe(reordered)
     // SOUL.md keeps its secrets too.

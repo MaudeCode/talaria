@@ -202,7 +202,7 @@ describe('session lifecycle over HTTP', () => {
     expect((list.sessions as Json[]).some((r) => r.session_id === sid && r.archived === true)).toBe(true)
     await post(s, '/api/session/archive', { session_id: sid, archived: false })
 
-    s.deps.settings.save({ pinned_sessions_limit: 1 })
+    await s.deps.settings.save({ pinned_sessions_limit: 1 })
     expect((await post(s, '/api/session/pin', { session_id: sid, pinned: true })).status).toBe(200)
     const b = await newSession(s)
     res = await post(s, '/api/session/pin', { session_id: b.session_id, pinned: true })
@@ -2004,7 +2004,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       insert(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
       const shown = (((await json(await fresh.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
       expect(shown).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
-    } finally { fresh.close() }
+    } finally { await fresh.close() }
   })
 
   it('falls back to the timestamp rules when a recreated state.db reuses the marker row\'s role and timestamp', async () => {
@@ -2029,7 +2029,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       renameSync(`${path}.new`, path)
       const shown = (((await json(await fresh.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
       expect(shown).toEqual(['u1', 'a1', 'u2', 'a2', 'r1', 'r2', 'r3'])
-    } finally { fresh.close() }
+    } finally { await fresh.close() }
   })
 
   it('keeps the timestamp rules for a state.db without message ids', async () => {
@@ -2048,7 +2048,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       insert([['user', 'late CLI', 100.5]])
       expect((((await json(await legacy.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)).toEqual(['u1', 'a1'])
       expect((await legacy.deps.sessionStore.get(sid)).state_db_seen_id).toBeNull()
-    } finally { legacy.close() }
+    } finally { await legacy.close() }
   })
 })
 

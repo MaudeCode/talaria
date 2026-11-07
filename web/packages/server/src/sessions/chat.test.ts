@@ -801,7 +801,7 @@ describe('chat turns through the sidecar', () => {
     expect(sceneTool).toMatchObject({ kind: 'shell', target })
 
     // With redaction off, live frames match session detail: both show the command as written.
-    s.deps.settings.save({ api_redact_enabled: false })
+    await s.deps.settings.save({ api_redact_enabled: false })
     let offStream = ''
     let offSid = ''
     try {
@@ -811,7 +811,7 @@ describe('chat turns through the sidecar', () => {
       expect(off.frames.map((f) => (f.data as Json).target)).toEqual([command, command].map((c) => c.slice(0, 200)))
       expect((off.detail.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target: command.slice(0, 200) })
     } finally {
-      s.deps.settings.save({ api_redact_enabled: true })
+      await s.deps.settings.save({ api_redact_enabled: true })
     }
     // Frames journaled while redaction was off are redacted when replayed after it is turned back on.
     const reopened = (await s.sse(`/api/chat/stream?stream_id=${offStream}&after_event_id=${offStream}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
@@ -827,7 +827,7 @@ describe('chat turns through the sidecar', () => {
     const bufferedSid = await newSession(s)
     let release: () => void = () => undefined
     let bufferedStream = ''
-    s.deps.settings.save({ api_redact_enabled: false })
+    await s.deps.settings.save({ api_redact_enabled: false })
     try {
       sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
         emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } })
@@ -839,7 +839,7 @@ describe('chat turns through the sidecar', () => {
       const deadline = Date.now() + 3000
       while (!(existsSync(bufferedJournal) && readFileSync(bufferedJournal, 'utf8').includes('"tool_complete"')) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
     } finally {
-      s.deps.settings.save({ api_redact_enabled: true })
+      await s.deps.settings.save({ api_redact_enabled: true })
     }
     try {
       const delivered = (await s.sse(`/api/chat/stream?stream_id=${bufferedStream}`, (f) => f.event === 'tool_complete')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
@@ -898,12 +898,12 @@ describe('chat turns through the sidecar', () => {
       expect(shown.map((call) => call.edit_diff)).toEqual([live, undefined])
     }
     // With redaction off the diff shows as written, like the rest of the call.
-    s.deps.settings.save({ api_redact_enabled: false })
+    await s.deps.settings.save({ api_redact_enabled: false })
     try {
       const off = await run()
       for (const shown of [off.frames, off.calls, off.scene]) expect(String(shown[0]?.edit_diff && (shown[0].edit_diff as Json).diff)).toContain(secret)
     } finally {
-      s.deps.settings.save({ api_redact_enabled: true })
+      await s.deps.settings.save({ api_redact_enabled: true })
     }
   })
 
