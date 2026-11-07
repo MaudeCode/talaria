@@ -2351,9 +2351,18 @@ def test_runtime_fence_failure_never_authorizes_source_change(gateway_successor,
             calls.append(('disarm', e['pid']))
             raise RuntimeError('synthetic disarm failure')
         pause._disarm = disarm
-    stopped = threading.Event()
+    # Virtual time: only the worker's own waits spend the drain budget, so a loaded runner cannot expire it.
+    now = [0.0]
+    monkeypatch.setattr(services.time, 'monotonic', lambda: now[0])
+    class VirtualStop(threading.Event):
+        def wait(self, timeout=None):
+            now[0] += timeout
+            return super().wait(0)
+    stopped = VirtualStop()
     if failure == 'cancelled': stopped.set()
-    with pytest.raises(RuntimeError):
+    expected = {'pending-starter': 'gateway startup contenders remain', 'replaced-inode': 'gateway runtime fence changed',
+                'disarm': 'synthetic disarm failure', 'cancelled': 'gateway drain remains owed; retry'}[failure]
+    with pytest.raises(RuntimeError, match=expected):
         recovery.settle_gateway(entry, stopped)
     assert calls == ([('disarm', 41001)] if failure == 'disarm' else [])
     assert recovery.path.exists()
