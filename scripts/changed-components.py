@@ -24,7 +24,7 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
 # Web and TalariaKit's package tests read every root fixture; the App's hosted tests and Relay read only these
 # (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them.
 FIXTURE_READERS = {
-    "app": {"execution-modes.json", "speech-prepare.json", "vault-prompts.json"},
+    "app": {"connectors.json", "execution-modes.json", "speech-prepare.json", "vault-prompts.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json", "relay-snapshot.json"},
 }

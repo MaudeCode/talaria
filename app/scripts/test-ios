@@ -107,9 +107,15 @@ fi
 
 # On the iOS 27.1 Duo simulator, a test host launched while SpringBoard still settles the displays can wait forever
 # for testmanagerd's availability notice. xcodebuild relaunches it after about 30 s, sometimes into a scene that
-# never reaches the foreground, and reports a hang only after minutes. A runner that has not reported its first
-# test suite in its result stream by then is stopped, and the simulator rebooted for one more launch (TAL-1547).
+# never reaches the foreground, and reports a hang only after minutes. Stop a host that never connects and reboot
+# once (TAL-1547). A connected host can warm its bundle before the first suite, so use Xcode's acknowledgement too.
 connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30}
+runner_connected() {
+    grep -q testSuiteStarted "$result_stream" && return 0
+    local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log(N))
+    (( ${#session_logs} )) || return 1
+    grep -Fq 'Test runner started executing tests.' "${session_logs[@]}"
+}
 attempt=1
 while true; do
     simulator_name=$(xcrun simctl list devices available --json |
@@ -132,12 +138,12 @@ while true; do
         "${filters[@]}" &
     xcodebuild_pid=$!
     connect_started=$SECONDS
-    while kill -0 "$xcodebuild_pid" 2>/dev/null && ! grep -q testSuiteStarted "$result_stream"; do
+    while kill -0 "$xcodebuild_pid" 2>/dev/null && ! runner_connected; do
         (( SECONDS - connect_started < connect_timeout )) || break
         sleep 1
     done
-    if ! kill -0 "$xcodebuild_pid" 2>/dev/null || grep -q testSuiteStarted "$result_stream"; then
-        ! grep -q testSuiteStarted "$result_stream" || print "The test runner connected after $(( SECONDS - connect_started ))s."
+    if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
+        ! runner_connected || print "The test runner connected after $(( SECONDS - connect_started ))s."
         wait "$xcodebuild_pid" || exit $?
         xcodebuild_pid=""
         exit 0

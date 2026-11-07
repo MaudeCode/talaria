@@ -1,0 +1,3 @@
+{
+  "skip": "Corrects local test-runner connection detection; no shipped App behavior changes."
+}
