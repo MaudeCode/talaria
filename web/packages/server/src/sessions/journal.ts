@@ -195,6 +195,8 @@ export const SESSION_REPLAY_MAX_ROWS = 4096
 export const LIVE_SNAPSHOT_MAX_BYTES = 1024 * 1024
 export const LIVE_SNAPSHOT_MAX_ROWS = 512
 export const RUN_SUMMARY_MAX_BYTES = 4 * 1024 * 1024
+/** The first read of a run summary lookup; `RUN_SUMMARY_MAX_BYTES` backs it when this tail cannot answer. */
+export const RUN_SUMMARY_TAIL_BYTES = 64 * 1024
 export const RUN_SUMMARY_MAX_ROWS = 512
 
 /** Rows that ask the user something; a replay withholds one once its own run proves it settled (TAL-1561). */

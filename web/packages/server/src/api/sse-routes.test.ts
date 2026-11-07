@@ -9,13 +9,20 @@ import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
 
 useJsonStorage()
 
-const io = vi.hoisted(() => ({ full: [] as string[], asyncFull: [] as string[], tails: [] as { path: string; position: number }[] }))
+const io = vi.hoisted(() => ({ full: [] as string[], asyncFull: [] as string[], tails: [] as { path: string; position: number }[], syncJournal: [] as string[] }))
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
+  const syncJournalFds = new Set<number>()
+  const noteSync = (name: string, path: unknown): void => { if (String(path).includes('_run_journal')) io.syncJournal.push(`${name} ${String(path)}`) }
   return { ...real, readdirSync: vi.fn(real.readdirSync), readFileSync: vi.fn((...args: Parameters<typeof fs.readFileSync>) => {
     if (String(args[0]).endsWith('.jsonl')) io.full.push(String(args[0]))
+    noteSync('readFileSync', args[0])
     return real.readFileSync(...args)
-  }) }
+  }), lstatSync: ((...args: Parameters<typeof fs.lstatSync>) => { noteSync('lstatSync', args[0]); return real.lstatSync(...args) }) as typeof fs.lstatSync, openSync: (...args: Parameters<typeof fs.openSync>) => {
+    const fd = real.openSync(...args)
+    if (String(args[0]).includes('_run_journal') && !(Number(args[1]) & real.constants.O_WRONLY)) { syncJournalFds.add(fd); noteSync('openSync', args[0]) }
+    return fd
+  }, readSync: ((...args: Parameters<typeof fs.readSync>) => { if (syncJournalFds.has(args[0])) noteSync('readSync', args[0]); return real.readSync(...args) }) as typeof fs.readSync }
 })
 vi.mock('node:fs/promises', async (original) => {
   const real = await original<typeof fsp>()
@@ -151,6 +158,34 @@ function liveRun(s: TestServer, sid: string, streamId: string): StreamChannel {
   s.deps.registry.registerActiveRun({ stream_id: streamId, session_id: sid, started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
   return channel
 }
+
+it('a detail read and a stream attach read run journals only through async I/O, live or archived', async () => {
+  const s = server = await bootTestServer()
+  const session = await s.deps.sessionStore.newSession()
+  const sid = session.session_id
+  const journal = s.deps.journal as JsonJournal
+  const archived = await journal.writer(sid, 'archived')
+  await archived.appendSseEvent('token', { text: 'past' })
+  await archived.appendSseEvent('done', {})
+  await archived.close()
+  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
+  const active = await journal.writer(sid, 'active')
+  await active.appendSseEvent('token', { text: 'streaming' })
+  const started = Date.now() / 1000
+  session.active_stream_id = 'active'
+  session.pending_started_at = started
+  await s.deps.sessionStore.save(session)
+  liveRun(s, sid, 'active')
+  io.syncJournal.length = 0
+  const detail = await (await s.get(`/api/session?session_id=${sid}&messages=1`)).json() as { session: { transcript_seq: unknown } }
+  expect(detail.session.transcript_seq, 'the detail resolved the journaled active turn').toEqual({ stream_id: 'active', seq: 0 })
+  for (const [stream, last] of [['archived', 'archived:2'], ['active', 'active:1']] as const) {
+    const frames = await s.sse(`/api/chat/stream?stream_id=${stream}&after_seq=0`, (f) => f.id === last, { timeoutMs: 2000 })
+    expect(frames.map((f) => f.id)).toContain(last)
+  }
+  expect(io.syncJournal).toEqual([])
+  await active.close()
+})
 
 it.each(['done', 'cancel', 'apperror'])('chat replay of a run that ended with %s omits its settled approval and clarify', async (terminal) => {
   const s = server = await bootTestServer()

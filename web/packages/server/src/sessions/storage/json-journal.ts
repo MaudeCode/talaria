@@ -7,7 +7,7 @@ import { atomicWriteTextAsync, writeFully, writeFullyAsync } from '../../fs/atom
 import { dirname, join } from 'node:path'
 
 
-import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, summaryFromTail, archivedSummary, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
+import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, RUN_SUMMARY_TAIL_BYTES, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, summaryFromTail, archivedSummary, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, SessionJournalReplay } from './backend.js'
 import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, JournalReadLimit, NOFOLLOW, StagedFile, fsyncDir, logicalBytes, runLines, stageArchive } from './json-journal-archive.js'
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
@@ -79,7 +79,7 @@ export class JsonJournal implements JournalBackend {
   private async openArchive(sessionId: string, runId: string): Promise<FileHandle | null> {
     const path = this.archivePathFor(sessionId, runId)
     try {
-      if (!lstatSync(dirname(path)).isDirectory()) throw new JournalArchiveError('The run-journal archive directory is not a directory')
+      if (!(await lstat(dirname(path))).isDirectory()) throw new JournalArchiveError('The run-journal archive directory is not a directory')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error instanceof JournalArchiveError ? error : new JournalArchiveError('The run-journal archive directory is unreadable', { cause: error })
@@ -278,13 +278,22 @@ export class JsonJournal implements JournalBackend {
   static readonly selectAuthoritativeTerminalEvent = selectAuthoritativeTerminalEvent
   static readonly summaryFromEvents = summaryFromEvents
 
-  private loadPrunedSummary(path: string): RunSummary | null {
+  private static parsePrunedSummary(text: string): RunSummary | null {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX), 'utf8'))
+      const parsed: unknown = JSON.parse(text)
       return parsed && typeof parsed === 'object' ? (parsed as RunSummary) : null
     } catch {
       return null
     }
+  }
+
+  /** Synchronous for `trimArchives`, whose checks and unlink share no await; lookups use `readPrunedSummary`. */
+  private loadPrunedSummary(path: string): RunSummary | null {
+    try { return JsonJournal.parsePrunedSummary(readFileSync(path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX), 'utf8')) } catch { return null }
+  }
+
+  private async readPrunedSummary(path: string): Promise<RunSummary | null> {
+    try { return JsonJournal.parsePrunedSummary(await readFile(path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX), 'utf8')) } catch { return null }
   }
 
   /**
@@ -298,13 +307,38 @@ export class JsonJournal implements JournalBackend {
     try {
       if (!files.live) {
         const path = this.pathFor(sessionId, runId)
-        if (!files.archive) return this.loadPrunedSummary(path)
-        const persisted = archivedSummary(this.loadPrunedSummary(path), sessionId, runId)
+        if (!files.archive) return await this.readPrunedSummary(path)
+        const persisted = archivedSummary(await this.readPrunedSummary(path), sessionId, runId)
         if (persisted) return persisted
       }
-      tail = await JsonJournal.tailOf(files, sessionId, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS)
+      tail = await this.summaryTail(files, sessionId, runId)
     } finally { await files.close() }
     return summaryFromTail(sessionId, runId, tail)
+  }
+
+  /**
+   * The tail a run's summary reads: the same answer as `RUN_SUMMARY_MAX_BYTES`, from `RUN_SUMMARY_TAIL_BYTES` when that
+   * proves it. An authoritative terminal row is the last one anywhere. A tail without one proves the run unsettled only
+   * while this process's writer says so: a `done` row carries a transcript window, so the rows after it can leave it
+   * cut off. `stream_end` alone may follow such a row, and a tail with no complete row has no sequence, so both widen.
+   * An archived run streams its prefix whichever window it keeps, so it reads the full window once.
+   */
+  private async summaryTail(files: RunFiles, sessionId: string, runId: string): Promise<{ events: JournalEvent[]; truncated: boolean }> {
+    const size = Number(files.liveStat?.size ?? 0)
+    if (!files.archive && size > RUN_SUMMARY_TAIL_BYTES) {
+      const tail = await JsonJournal.tailOf(files, sessionId, runId, RUN_SUMMARY_TAIL_BYTES, RUN_SUMMARY_MAX_ROWS)
+      const lastSeq = tail.events.at(-1)?.seq
+      const terminal = selectAuthoritativeTerminalEvent(tail.events)
+      if (lastSeq && (terminal ? terminal.event !== 'stream_end' : this.writerProvesUnsettled(sessionId, runId))) {
+        return { events: tail.events, truncated: size > RUN_SUMMARY_MAX_BYTES || lastSeq > RUN_SUMMARY_MAX_ROWS }
+      }
+    }
+    return JsonJournal.tailOf(files, sessionId, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS)
+  }
+
+  private writerProvesUnsettled(sessionId: string, runId: string): boolean {
+    const path = this.pathFor(sessionId, runId)
+    return [...this.writers].some((writer) => writer.path === path && writer.unsettled)
   }
 
   /**
@@ -730,11 +764,14 @@ export class JsonJournalWriter {
   private seq: number
   private closed = false
   readonly path: string
+  /** This writer wrote every row of the run, none of them terminal. */
+  unsettled: boolean
 
   /** `seq` is the run's last journaled seq, which `JsonJournal.open` resolves (never nonzero in practice; ids are fresh). */
   constructor(private readonly journal: JsonJournal, readonly sessionId: string, readonly runId: string, private readonly fsyncMode: 'eager' | 'terminal-only', private readonly now: () => number = () => Date.now() / 1000, seq = 0) {
     this.path = journal.pathFor(sessionId, runId)
     this.seq = seq
+    this.unsettled = seq === 0
     journal.register(this)
   }
 
@@ -756,6 +793,7 @@ export class JsonJournalWriter {
       this.fd = openSync(this.path, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600)
     }
     const fd = this.fd
+    if (event.terminal) this.unsettled = false
     writeFully(fd, `${JSON.stringify(event)}\n`)
     // Best effort, as before: a failed fsync never fails the append.
     if (this.fsyncMode === 'eager' || event.terminal) this.syncs = this.syncs.then(() => new Promise((resolve) => { fsync(fd, () => { resolve() }) }))
