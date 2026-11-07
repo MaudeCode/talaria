@@ -171,6 +171,8 @@ export interface AppDeps {
   promptQueues: PromptQueues
   groups: Groups
   streamSlots: StreamSlots
+  /** How long a feed with no natural end runs before it ends cleanly (`SSE_STREAM_LEASE_MS`). */
+  streamLeaseMs: number
   commandSlots: StreamSlots
   // ── settings, profiles, providers, onboarding (checkpoint 7a) ──
   /** Home directory for a logical profile name (root aliases and invalid names clamp to the base home). */

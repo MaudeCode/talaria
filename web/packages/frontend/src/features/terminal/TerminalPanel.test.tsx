@@ -67,6 +67,23 @@ describe('TerminalPanel', () => {
     expect(opened).toEqual([])
   })
 
+  it('shows nothing when the output stream ends cleanly and the browser reconnects', async () => {
+    const sources: (EventTarget & { readyState: number })[] = []
+    vi.stubGlobal('EventSource', class extends EventTarget {
+      readyState = 1
+      close = noop
+      constructor() { super(); sources.push(this) }
+    })
+    vi.mocked(post).mockResolvedValue(webStart)
+    const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    const panel = view.container.querySelector('#composerTerminalPanel')!
+    expect(panel.getAttribute('data-status')).toBe('running')
+    const source = sources[0]!
+    await act(async () => { source.readyState = 0; source.dispatchEvent(new Event('error')); source.readyState = 1; await Promise.resolve() })
+    expect(panel.getAttribute('data-status')).toBe('running')
+  })
+
   it('opens the terminal stream once start succeeds', async () => {
     vi.mocked(post).mockResolvedValue(webStart)
     render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)

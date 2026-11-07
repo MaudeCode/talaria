@@ -3,6 +3,7 @@
  * `ACTIVE_RUNS`, `STREAM_SESSION_OWNERS`) and the per-session channel used by
  * `/api/session/stream` (`api/background_process.py::SessionChannel`).
  */
+import { randomBytes } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { TurnOrigin } from './background-updates.js'
 
@@ -231,49 +232,94 @@ export class StreamRegistry {
   }
 }
 
-export interface SessionChannelSubscriber { queue: [string, unknown][]; wake: (() => void) | null; closed: boolean; channelKey: string }
+/** A channel frame; `cursor` is its SSE `id:`, which also names its replay position. */
+export type SessionChannelItem = [event: string, data: unknown, cursor: string]
 
-/** Long-lived per-session channel that survives across turns. */
+export interface SessionChannelSubscriber {
+  queue: SessionChannelItem[]
+  wake: (() => void) | null
+  closed: boolean
+  channelKey: string
+  /** The `initial` frame's cursor: the resume position when replay frames follow it, else the channel's head. */
+  initialCursor: string
+}
+
+interface SessionChannel {
+  /** Names this incarnation, so a cursor from an earlier one (or an earlier server) cannot match. */
+  token: string
+  seq: number
+  /** The newest frames, with consecutive sequences ending at `seq`. */
+  history: SessionChannelItem[]
+  subscribers: Set<SessionChannelSubscriber>
+  reap: NodeJS.Timeout | null
+}
+
+const SESSION_CHANNEL_HISTORY_MAX = 32
+const SESSION_CHANNEL_QUEUE_MAX = 64
+const SESSION_CHANNEL_GRACE_MS = 60_000
+const SESSION_CHANNEL_CURSOR = /^session-channel:([0-9a-f]+)@(\d+)$/
+
+const cursorAt = (channel: SessionChannel, seq: number): string => `session-channel:${channel.token}@${String(seq)}`
+
+/** The sequence `cursor` resumes after, or null for a malformed, foreign, future or evicted one, which replays nothing. */
+function resumeSeq(channel: SessionChannel, cursor: string | null | undefined): number | null {
+  const match = SESSION_CHANNEL_CURSOR.exec((cursor ?? '').trim())
+  if (match?.[1] !== channel.token) return null
+  const seq = Number(match[2])
+  return Number.isSafeInteger(seq) && seq <= channel.seq && seq >= channel.seq - channel.history.length ? seq : null
+}
+
+/** Long-lived per-session channel that survives across turns, and across a client's reconnect for a bounded grace. */
 export class SessionChannels {
-  private readonly channels = new Map<string, Set<SessionChannelSubscriber>>()
+  private readonly channels = new Map<string, SessionChannel>()
 
   constructor(private readonly activeProfile: () => string = () => 'default', private readonly profileIdentity: (profile: string) => string = (profile) => profile) {}
 
   private key(sessionId: string, profile = this.activeProfile()): string { return JSON.stringify([this.profileIdentity(profile), sessionId]) }
 
-  subscribe(sessionId: string, profile = this.activeProfile()): SessionChannelSubscriber {
+  subscribe(sessionId: string, profile = this.activeProfile(), lastEventId?: string | null): SessionChannelSubscriber {
     const channelKey = this.key(sessionId, profile)
-    const sub: SessionChannelSubscriber = { queue: [], wake: null, closed: false, channelKey }
-    let set = this.channels.get(channelKey)
-    if (!set) {
-      set = new Set()
-      this.channels.set(channelKey, set)
+    let channel = this.channels.get(channelKey)
+    if (!channel) {
+      channel = { token: randomBytes(8).toString('hex'), seq: 0, history: [], subscribers: new Set(), reap: null }
+      this.channels.set(channelKey, channel)
     }
-    set.add(sub)
+    if (channel.reap) { clearTimeout(channel.reap); channel.reap = null }
+    const resumed = resumeSeq(channel, lastEventId)
+    const queue = resumed === null ? [] : channel.history.slice(channel.history.length - (channel.seq - resumed))
+    const sub: SessionChannelSubscriber = { queue, wake: null, closed: false, channelKey, initialCursor: cursorAt(channel, resumed ?? channel.seq) }
+    channel.subscribers.add(sub)
     return sub
   }
 
   unsubscribe(sessionId: string, sub: SessionChannelSubscriber): void {
     sub.closed = true
-    const set = this.channels.get(sub.channelKey)
+    const channel = this.channels.get(sub.channelKey)
     sub.wake?.()
-    if (!set) return
-    set.delete(sub)
-    if (!set.size) this.channels.delete(sub.channelKey)
+    if (!channel) return
+    channel.subscribers.delete(sub)
+    if (channel.subscribers.size || channel.reap) return
+    channel.reap = setTimeout(() => { this.channels.delete(sub.channelKey) }, SESSION_CHANNEL_GRACE_MS)
+    channel.reap.unref()
   }
 
+  /** History append and subscriber enqueue are one synchronous step, so delivery order cannot differ from history order. */
   emit(sessionId: string, event: string, data: unknown, profile = this.activeProfile()): number {
-    const set = this.channels.get(this.key(sessionId, profile))
-    if (!set) return 0
+    const channel = this.channels.get(this.key(sessionId, profile))
+    if (!channel) return 0
+    channel.seq += 1
+    const item: SessionChannelItem = [event, data, cursorAt(channel, channel.seq)]
+    channel.history.push(item)
+    if (channel.history.length > SESSION_CHANNEL_HISTORY_MAX) channel.history.shift()
     let delivered = 0
-    for (const sub of set) {
+    for (const sub of channel.subscribers) {
       // These are refetch signals for server records: a stalled subscriber keeps the newest 64, never refusing the latest.
       const newest = sub.queue.at(-1)
       if (event === 'session-updated' && newest?.[0] === event && isDeepStrictEqual(newest[1], data)) {
-        sub.queue[sub.queue.length - 1] = [event, data]
+        sub.queue[sub.queue.length - 1] = item
       } else {
-        if (sub.queue.length >= 64) sub.queue.shift()
-        sub.queue.push([event, data])
+        if (sub.queue.length >= SESSION_CHANNEL_QUEUE_MAX) sub.queue.shift()
+        sub.queue.push(item)
       }
       sub.wake?.()
       delivered += 1
@@ -282,11 +328,11 @@ export class SessionChannels {
   }
 
   subscriberCount(sessionId: string): number {
-    return this.channels.get(this.key(sessionId))?.size ?? 0
+    return this.channels.get(this.key(sessionId))?.subscribers.size ?? 0
   }
 }
 
-export function nextSessionItem(sub: SessionChannelSubscriber, timeoutMs: number): Promise<[string, unknown] | null> {
+export function nextSessionItem(sub: SessionChannelSubscriber, timeoutMs: number): Promise<SessionChannelItem | null> {
   const ready = sub.queue.shift()
   if (ready) return Promise.resolve(ready)
   return new Promise((resolve) => {

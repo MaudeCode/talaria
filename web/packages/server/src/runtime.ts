@@ -67,7 +67,7 @@ import type { SidecarLike } from './sidecar/client.js'
 import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
-import { StreamSlots } from './api/sse-routes.js'
+import { SSE_STREAM_LEASE_MS, StreamSlots } from './api/sse-routes.js'
 import { AgentConfig, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
@@ -864,6 +864,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     connectorOffers: new ConnectorOffers(storage.documents),
     groups: new Groups(() => deps),
     streamSlots,
+    streamLeaseMs: SSE_STREAM_LEASE_MS,
     commandSlots: new StreamSlots(() => 2),
     profileHome,
     agentConfig,

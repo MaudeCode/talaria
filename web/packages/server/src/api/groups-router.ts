@@ -48,7 +48,7 @@ export async function handleGroupStream(ctx: RequestContext): Promise<void> {
     writer.start()
     writer.event('snapshot', initial, initial.room ? `${initial.room.identity}:${initial.cursor}` : null)
     while (await writer.ready()) {
-      const item = await nextItem(watch.subscriber, 5000)
+      const item = await nextItem(watch.subscriber, writer.waitMs())
       if (writer.isClosed) break
       if (item) writer.event(item[0], item[1], item[2])
       else writer.comment('keepalive')

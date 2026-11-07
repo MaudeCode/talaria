@@ -68,7 +68,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
       if (sse.isClosed) return
       if (events.length) { sse.event('events', { events: events.map((e) => projectRunnerEventPayload(e)), cursor }, String(cursor)); lastWrite = Date.now() }
       else if (Date.now() - lastWrite >= KANBAN_HEARTBEAT_MS) { sse.comment('keepalive'); lastWrite = Date.now() }
-      await sleep(KANBAN_POLL_MS, abort.signal)
+      await sleep(sse.waitMs(KANBAN_POLL_MS), abort.signal)
     }
   } finally {
     sse.end()
@@ -117,7 +117,7 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
       await new Promise<void>((resolve) => {
         const onAbort = (): void => { clearTimeout(t); finish() }
         const finish = (): void => { abort.signal.removeEventListener('abort', onAbort); resolve() }
-        const t = setTimeout(finish, remaining)
+        const t = setTimeout(finish, sse.waitMs(remaining))
         wake = () => { clearTimeout(t); finish() }
         abort.signal.addEventListener('abort', onAbort, { once: true })
       })
