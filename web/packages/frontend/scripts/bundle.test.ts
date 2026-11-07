@@ -53,6 +53,15 @@ it('counts shared static imports and styles once, follows cycles, and excludes d
   expect(() => layoutFiles({ 'src/routes/_app.tsx?tsr-split=component': { file: 'layout.js', imports: ['missing'] } })).toThrow('manifest import missing')
 })
 
+it('the Markdown renderer chunk loads no Oniguruma WebAssembly', () => {
+  // TAL-1706: Shiki's root entry pulls the engine in although Talaria passes the JavaScript regex engine.
+  const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
+  const dynamicImports: string[] = manifest['src/features/chat/render/MarkdownRenderer.tsx'].dynamicImports
+  expect(dynamicImports.filter((key) => key.endsWith('/shiki/dist/wasm.mjs'))).toEqual([])
+  // The `wasm` language grammar is a different chunk and stays; it also fails this test if the manifest keys change.
+  expect(dynamicImports.filter((key) => key.endsWith('/@shikijs/langs/dist/wasm.mjs'))).toHaveLength(1)
+})
+
 it('SessionListPanel ships React Compiler output', () => {
   const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
   // The panel shares the shell's chunk; its list's element id survives minification.
