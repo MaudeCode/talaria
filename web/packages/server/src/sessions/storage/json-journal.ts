@@ -216,14 +216,15 @@ export class JsonJournal implements JournalBackend {
     const path = join(this.root(), sid)
     const dir = await statSignature(path)
     if (dir === null) { this.newestRuns.delete(sid); return '0:0:0' }
-    let cached = this.newestRuns.get(sid)
-    if (cached?.dir !== dir) {
-      cached = { dir, name: await JsonJournal.newestRunFile(path) }
-      this.newestRuns.delete(sid)
-      this.newestRuns.set(sid, cached)
-      if (this.newestRuns.size > RUN_OWNER_CACHE_MAX) this.newestRuns.delete(this.newestRuns.keys().next().value!)
+    const seen = this.newestRuns.get(sid)
+    let newest = seen
+    if (seen?.dir !== dir) {
+      newest = { dir, name: await JsonJournal.newestRunFile(path) }
+      // An append during the scan may have moved the newest run, so the next fingerprint scans again.
+      if (this.newestRuns.get(sid) === seen) this.rememberNewestRun(sid, newest)
     }
-    return `${dir}|${cached.name}:${(cached.name && await statSignature(join(path, cached.name))) ?? ''}`
+    const name = newest?.name ?? ''
+    return `${dir}|${name}:${(name && await statSignature(join(path, name))) ?? ''}`
   }
   private static async newestRunFile(dir: string): Promise<string> {
     let newest = ''
@@ -238,8 +239,13 @@ export class JsonJournal implements JournalBackend {
     }
     return newest
   }
-  /** A writer's run may not be the file the next fingerprint would stat, so that fingerprint looks again. */
-  noteAppend(sessionId: string): void { this.newestRuns.delete(sessionId) }
+  /** A writer's run may not be the file the next fingerprint would stat. This entry matches no directory, so it looks again. */
+  noteAppend(sessionId: string): void { this.rememberNewestRun(sessionId, { dir: '', name: '' }) }
+  private rememberNewestRun(sessionId: string, newest: { dir: string; name: string }): void {
+    this.newestRuns.delete(sessionId)
+    this.newestRuns.set(sessionId, newest)
+    if (this.newestRuns.size > RUN_OWNER_CACHE_MAX) this.newestRuns.delete(this.newestRuns.keys().next().value!)
+  }
   async sessionIds(): Promise<string[]> {
     try { return readdirSync(this.root(), { withFileTypes: true }).filter((entry) => entry.isDirectory() && SAFE_ID_RE.test(entry.name)).map((entry) => entry.name).sort() } catch { return [] }
   }

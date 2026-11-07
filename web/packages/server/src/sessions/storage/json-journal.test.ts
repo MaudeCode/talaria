@@ -116,6 +116,29 @@ it('sees a writer append to a run that is not the newest', async () => {
   await older.close()
 })
 
+it('sees a writer append that lands while the fingerprint scans for the newest run', async () => {
+  const journal = fixture()
+  const older = await journal.writer('session', 'a-older')
+  await older.appendSseEvent('token', { text: 'first' })
+  await writeRun(journal, 'session', 'b-newest')
+  fs.utimesSync(journal.pathFor('session', 'a-older'), 1000, 1000)
+  fs.utimesSync(journal.pathFor('session', 'b-newest'), 2000, 2000)
+  const { stat: realStat } = await vi.importActual<typeof fsp>('node:fs/promises')
+  let appended = false
+  vi.mocked(fsp.stat).mockImplementation(async (path: fs.PathLike) => {
+    if (!appended && String(path).endsWith('b-newest.jsonl')) { appended = true; await older.appendSseEvent('token', { text: 'second' }) }
+    return realStat(path, { bigint: true })
+  })
+  try {
+    const during = await journal.sessionJournalFingerprint('session')
+    expect(appended).toBe(true)
+    expect(await journal.sessionJournalFingerprint('session')).not.toBe(during)
+  } finally {
+    vi.mocked(fsp.stat).mockImplementation(realStat)
+    await older.close()
+  }
+})
+
 it('reads fresh event and terminal metadata after appends and same-path replacement', async () => {
   const journal = fixture()
   const writer = await journal.writer('session', 'run')
