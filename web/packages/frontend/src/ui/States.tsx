@@ -18,14 +18,21 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted">{children}</div>
 }
 
-/** Typed error surface: never a blank pane. Malformed payloads and HTTP errors both land here with a retry. */
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+/**
+ * Typed error surface: never a blank pane. Malformed payloads and HTTP errors both land here with a retry.
+ * An alert with its own wording and actions passes them as `children` in place of `error`.
+ */
+export function ErrorState({ error, onRetry, children }: { error?: unknown; onRetry?: () => void; children?: ReactNode }) {
   const detail = isApiError(error) ? error.message : error instanceof Error ? error.message : String(error)
   const kind = isApiError(error) ? error.kind : 'unknown'
   return (
     <div role="alert" className="flex flex-col gap-2 rounded-lg border border-error/40 bg-surface p-3 text-sm">
-      <div className="font-medium text-text">{m.error_generic()}</div>
-      <div className="break-words text-xs text-muted" data-error-kind={kind}>{detail}</div>
+      {children ?? (
+        <>
+          <div className="font-medium text-text">{m.error_generic()}</div>
+          <div className="break-words text-xs text-muted" data-error-kind={kind}>{detail}</div>
+        </>
+      )}
       {onRetry && <div><Button onClick={onRetry}>{m.retry()}</Button></div>}
     </div>
   )
