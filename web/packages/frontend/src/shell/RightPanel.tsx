@@ -77,7 +77,7 @@ export function RightPanel({ open, onToggle, onClose, title, subtitle, actions, 
         <div className="flex min-h-12 items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-text">{title}</div>
-            {subtitle && <div className="truncate font-mono text-[10px] text-muted">{subtitle}</div>}
+            {subtitle && <div className="truncate font-mono text-xs text-muted">{subtitle}</div>}
           </div>
           <div className="flex items-center gap-0.5">
             {actions}

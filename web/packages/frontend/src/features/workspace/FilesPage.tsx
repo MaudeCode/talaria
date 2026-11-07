@@ -213,7 +213,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
     <>
       <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
         {sourceControl}
-        <span data-files-workspace={managed ? undefined : ''} className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted" title={managed ? undefined : workspace}>{managed ? '' : `${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
+        <span data-files-workspace={managed ? undefined : ''} className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={managed ? undefined : workspace}>{managed ? '' : `${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
         {!managed && <IconButton label={m.ws_panel_hidden()} active={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>}
         <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); if (!managed) void git.refetch(); if (file) void content.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
       </div>
@@ -298,7 +298,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
                   >
                     {isDir ? <Folder size={14} className="shrink-0 text-accent-text" aria-hidden="true" /> : <FileIcon size={14} className="shrink-0 text-muted" aria-hidden="true" />}
                     <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                    {size && <span className="text-[10px] text-muted">{size}</span>}
+                    {size && <span className="text-xs text-muted">{size}</span>}
                   </button>
                   {!managed && <Menu
                     label={m.more_actions()}

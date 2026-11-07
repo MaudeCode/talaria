@@ -69,7 +69,7 @@ export function OpenRouterCost() {
             return (
               <div key={s.date} role="listitem" className="flex h-full min-w-0 flex-1 flex-col items-center gap-0.5" title={tip} aria-label={tip}>
                 <div className="flex w-full flex-1 items-end"><div className="w-full rounded-sm bg-accent opacity-85" style={{ height: `${String(s.bar_percent)}%` }} /></div>
-                <span className="text-[10px] text-muted">{s.date.slice(5)}</span>
+                <span className="text-xs text-muted">{s.date.slice(5)}</span>
               </div>
             )
           })}

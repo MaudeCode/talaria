@@ -96,7 +96,7 @@ export function PluginsSection() {
         {list.map((p) => (
           <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
               {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
-              {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
+              {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-xs uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
               <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
             </>} actions={[
               ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => requestUpdate(p.key), disabled: updateBusy, busy: update.isPending && update.variables.key === p.key }] : []),

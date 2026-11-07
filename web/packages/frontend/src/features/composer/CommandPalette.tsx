@@ -40,7 +40,7 @@ export function CommandPaletteList({ items, active, listId, onPick, onHover }: {
           <span className="font-mono text-text">/{s.name}</span>
           {s.args && <span className="font-mono text-[11px] text-muted">{s.args}</span>}
           <span className="min-w-0 flex-1 truncate text-xs text-muted">{s.desc}</span>
-          {s.category && <span className="text-[10px] uppercase tracking-wider text-muted">{s.category}</span>}
+          {s.category && <span className="text-xs uppercase tracking-wider text-muted">{s.category}</span>}
         </li>
       ))}
     </ul>

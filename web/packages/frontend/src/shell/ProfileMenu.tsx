@@ -31,7 +31,7 @@ export function ProfileMenu({ row }: { row?: boolean } = {}) {
         {list.map((p) => (
           <MenuRadioItem key={p.name} value={p.name} className={MENU_ROW}>
             <span className="flex-1 truncate">{p.name}{p.is_default ? ` ${m.profile_default_label()}` : ''}</span>
-            {p.name === active && <span className="text-[10px] font-semibold text-accent-text">{m.profile_active()}</span>}
+            {p.name === active && <span className="text-xs font-semibold text-accent-text">{m.profile_active()}</span>}
           </MenuRadioItem>
         ))}
       </MenuRadioGroup>

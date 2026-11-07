@@ -51,6 +51,7 @@ test('Insights opens on Quotas with every window, pace and forecast; Usage holds
   await expect(page.getByTestId('insights-stats')).toHaveCount(0)
 
   const paced = page.locator('[data-quota-source="qsrc_paced"]')
+  await expect(paced.getByText('Max', { exact: true })).toHaveCSS('font-size', '11px') // Badge sits at the type floor (DESIGN.md)
   await expect(paced.getByRole('meter')).toHaveCount(2)
   const session = paced.locator('[data-quota-window="Session"]')
   await expect(session).toHaveAttribute('data-level', 'healthy')
