@@ -1,7 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test as base } from './fixtures'
+import { expect, expectPromptReachable, test as base } from './fixtures'
 
 const test = base.extend<{ approval: { send: (event: string, data: unknown) => void; responses: { choice: string }[] } }>({
   approval: async ({ page }, runFixture) => {
@@ -161,4 +161,51 @@ test('an approval offering no choice shows no answer and ignores Enter', async (
   await expect(card).toContainText("This approval can't be answered here.")
   await page.locator('body').press('Enter')
   expect(responses).toEqual([])
+})
+
+/** TAL-1943: the composer leaves a prompt card about 50 px at the iPhone Duo's outer landscape size. */
+test.describe('at 594×368', () => {
+  test.use({ viewport: { width: 594, height: 368 } })
+
+  test('an approval card keeps its heading, command and every answer in reach', async ({ page, approval: { send } }, info) => {
+    const card = page.getByRole('alertdialog')
+    send('approval', { approval_id: 'short', command: 'rm -rf build', can_deny_with_instruction: true })
+    await expect(card).toContainText('rm -rf build')
+    // A wider window keeps the desktop card rules, which have no scrolling of their own.
+    for (const viewport of [{ width: 594, height: 368 }, { width: 951, height: 400 }]) {
+      await page.setViewportSize(viewport)
+      await page.screenshot({ path: info.outputPath(`approval-${String(viewport.width)}x${String(viewport.height)}.png`) })
+      await expectPromptReachable(page, card, [card.getByText('Approval required'), card.getByText('rm -rf build'), ...['Allow once', 'Deny', 'No, and tell Hermes instead', 'More options'].map((name) => card.getByRole('button', { name, exact: name === 'Deny' }))])
+    }
+    await page.setViewportSize({ width: 594, height: 368 })
+    await card.getByRole('button', { name: 'More options' }).click()
+    await expect(page.getByRole('menuitem', { name: 'Allow session', exact: true })).toBeInViewport({ ratio: 1 })
+    await page.keyboard.press('Escape')
+    await card.getByRole('button', { name: 'No, and tell Hermes instead' }).click()
+    await expectPromptReachable(page, card, [card.getByRole('textbox', { name: 'What should Hermes do instead?' }), card.getByRole('button', { name: 'Deny and send' })])
+  })
+
+  test('a Clarify card keeps its choices in reach and collapses to reach the composer', async ({ page, approval: _approval }, info) => {
+    const pending = { clarify_id: 'short', question: 'Which environment?', steps: [{ qid: 'environment', question: 'Which environment?', choices: ['Staging', 'Test', 'Production', 'Canary', 'Sandbox', 'Preview', 'Demo'], multi_select: false }] }
+    await page.route('**/api/clarify/pending?**', (route) => route.fulfill({ json: { pending, pending_count: 1 } }))
+    await page.reload()
+    const card = page.getByRole('dialog', { name: 'Clarification needed' })
+    await expect(card).toBeVisible()
+    await page.screenshot({ path: info.outputPath('clarify-short.png') })
+    await expectPromptReachable(page, card, [card.locator('#clarifyHeading'), card.locator('#clarifyQuestion'), ...pending.steps[0]!.choices.map((name) => card.getByRole('button', { name }))])
+    await card.getByRole('button', { name: 'Collapse approval' }).click()
+    await expectPromptReachable(page, card, [card.locator('#clarifyHeading'), card.getByRole('button', { name: 'Expand approval' }), page.locator('#msg'), page.locator('#btnClarifySend')])
+    await page.screenshot({ path: info.outputPath('clarify-short-collapsed.png') })
+  })
+})
+
+test('an approval card stays above the composer at heights over 480 px', async ({ page, approval: { send } }, info) => {
+  send('approval', { approval_id: 'tall', command: 'rm -rf build' })
+  const card = page.getByRole('alertdialog')
+  await expect(card).toContainText('rm -rf build')
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 382, height: 580 }, { width: 669, height: 867 }, { width: 951, height: 585 }, { width: 385, height: 571 }, { width: 594, height: 481 }]) {
+    await page.setViewportSize(viewport)
+    await page.screenshot({ path: info.outputPath(`approval-${String(viewport.width)}x${String(viewport.height)}.png`) })
+    await expect.poll(async () => { const box = (await card.boundingBox())!; return box.y + box.height }, JSON.stringify(viewport)).toBeLessThanOrEqual((await page.locator('.composer-box').boundingBox())!.y)
+  }
 })

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createServer, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { expect, test } from './fixtures'
+import { expect, expectPromptReachable, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 
@@ -43,6 +43,9 @@ test(`${kind} takes a masked answer and sends it only to the respond route`, asy
     const password = prompt.getByLabel(kind === 'unlock' ? 'Master password' : 'EXAMPLE_API_KEY')
     await expect(password).toHaveAttribute('type', 'password')
     await page.screenshot({ path: testInfo.outputPath('prompt-empty.png'), fullPage: true })
+    await page.setViewportSize({ width: 594, height: 368 })
+    await expectPromptReachable(page, prompt, [prompt.getByText(kind === 'unlock' ? 'Unlock Bitwarden' : 'Set up example'), password, prompt.getByRole('button', { name: kind === 'unlock' ? 'Unlock' : 'Save', exact: true }), prompt.getByRole('button', { name: 'Skip', exact: true })])
+    await page.screenshot({ path: testInfo.outputPath('prompt-short.png') })
     await password.fill('correct horse battery')
     await page.screenshot({ path: testInfo.outputPath('prompt-masked.png'), fullPage: true })
     await prompt.getByRole('button', { name: kind === 'unlock' ? 'Unlock' : 'Save', exact: true }).click()

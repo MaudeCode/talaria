@@ -1,4 +1,4 @@
-import { test as base, expect, type ConsoleMessage, type Page } from '@playwright/test'
+import { test as base, expect, type ConsoleMessage, type Locator, type Page } from '@playwright/test'
 
 /** Console errors and page exceptions fail the test; the allowlist is deliberately tiny. */
 const BENIGN = [
@@ -74,4 +74,20 @@ export async function hideClipboardApi(page: Page): Promise<() => Promise<string
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
   })
   return () => page.evaluate(() => (window as unknown as { realClipboard: Clipboard }).realClipboard.readText())
+}
+
+/** TAL-1943: the prompt card starts below the chat header, each control is on screen and uncovered once scrolled to, and the page has no sideways scroll. */
+export async function expectPromptReachable(page: Page, card: Locator, controls: Locator[]): Promise<void> {
+  // --composer-h is a whole pixel, so the card's edge can land a fraction of one past the stage's.
+  await expect.poll(async () => (await card.boundingBox())!.y + 1).toBeGreaterThanOrEqual((await page.locator('.chat-stage').boundingBox())!.y)
+  for (const control of controls) {
+    await control.scrollIntoViewIfNeeded()
+    await expect(control).toBeInViewport({ ratio: 1 })
+    await expect.poll(() => control.evaluate((el) => {
+      const box = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return !!hit && el.contains(hit)
+    })).toBe(true)
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 }

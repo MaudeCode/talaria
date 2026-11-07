@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Approval, clarification, vault and connect cards in Talaria Web now stay fully reachable on short screens, such as iPhone Duo's outer display in landscape.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
