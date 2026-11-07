@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A /background task shows its final result as soon as it ends, instead of briefly still reading as running.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

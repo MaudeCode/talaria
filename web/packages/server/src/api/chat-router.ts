@@ -272,7 +272,8 @@ export const chatRouter = os.router({
         msg: prompt, attachments: [], workspace: parent.workspace, model, modelProvider, activityParentSessionId: parent.session_id, source: 'webui',
         // Python: the last non-error assistant reply with content, else "(no answer produced)".
         onDone: async (answer) => { (await ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer || '(no answer produced)')); (await cleanup()) },
-        onFailed: async () => { (await ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)')); (await cleanup()) },
+        onFailing: () => ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'),
+        onFailed: cleanup,
       }))
       if (started._status !== undefined && started._status >= 400) {
         // Admission refused (profile deleting, session busy…): nothing runs, so the tracked task and hidden
