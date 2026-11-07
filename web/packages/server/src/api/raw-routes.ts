@@ -212,16 +212,10 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
   const rawPath = (ctx.query.get('path') ?? '').trim()
   if (!rawPath) throw new HttpError(400, 'path parameter required')
   const sessionId = ctx.query.get('session_id') ?? ''
-  let mediaSession: Session | null = null
-  let localAllowed: boolean
-  if (sessionId) {
-    try {
-      mediaSession = (await deps.sessionStore.get(sessionId))
-    } catch {
-      throw new HttpError(404, 'Session not found')
-    }
-    localAllowed = deps.workspaces.profileSupportsLocalIo(mediaSession.profile)
-  } else localAllowed = deps.workspaces.profileSupportsLocalIo(null)
+  const readSession = async (opts?: { metadataOnly: boolean }): Promise<Session> => {
+    try { return await deps.sessionStore.get(sessionId, opts) } catch { throw new HttpError(404, 'Session not found') }
+  }
+  const localAllowed = deps.workspaces.profileSupportsLocalIo(sessionId ? (await readSession({ metadataOnly: true })).profile : null)
   if (!localAllowed) {
     await ctx.json({ error: REMOTE_WORKSPACE_UNSUPPORTED_CODE, message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE }, { status: 400 })
     return
@@ -232,7 +226,13 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
   } catch {
     throw new HttpError(400, 'Invalid path')
   }
-  const anchorRoot = (await mediaAnchorRoot(target, mediaSession, deps.mediaAccess))
+  // The transcript is read only when nothing but its `MEDIA:` references can authorize the path. Its full read also
+  // settles the profile: a legacy document keeps it past the transcript, where the metadata read above stops.
+  const fullSession = async (): Promise<Session | null> => {
+    const session = await readSession()
+    return deps.workspaces.profileSupportsLocalIo(session.profile) ? session : null
+  }
+  const anchorRoot = (await mediaAnchorRoot(target, sessionId ? fullSession : null, deps.mediaAccess))
   if (!anchorRoot) throw new HttpError(403, 'Path not in allowed location')
   // An authorized attachment path whose bytes live in a remote store is downloaded before the anchored open.
   try { await materializeAttachment(deps.blobs, target) } catch (error) { deps.log(`[webui] could not load attachment ${basename(target)}: ${(error as Error).message}`) }

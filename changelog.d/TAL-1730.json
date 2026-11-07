@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web loads images in long chats faster because it reads the chat's full history only when an image can't be approved any other way, and then only once.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

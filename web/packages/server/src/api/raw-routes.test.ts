@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { appendFileSync, closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
 type Json = Record<string, unknown>
@@ -386,6 +386,77 @@ describe('raw byte routes', () => {
     expect((await s.get(`/api/media?path=${encodeURIComponent('~/photo.png')}`)).status).not.toBe(200)
     expect((await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'page.html'))}`)).headers.get('content-disposition')).toContain('attachment')
     expect((await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'page.html'))}&inline=1`)).headers.get('content-security-policy')).toBe('sandbox allow-scripts')
+  })
+
+  describe('/api/media session reads (TAL-1730)', () => {
+    afterEach(() => { vi.restoreAllMocks() })
+    const store = () => s.deps.sessionStore
+    const backend = () => store().deps.storage.sessions
+    const media = (id: string, path: string): Promise<Response> => s.get(`/api/media?session_id=${id}&path=${encodeURIComponent(path)}`)
+
+    /** A saved session that is not resident, so the next request has to read it from storage. */
+    async function coldSession(content: string): Promise<string> {
+      const id = await newSession(s, ws)
+      const session = await store().get(id)
+      session.messages = [{ role: 'assistant', content }]
+      await store().save(session)
+      store().sessions.delete(id)
+      return id
+    }
+    function outsideFiles(...names: string[]): string[] {
+      mkdirSync(join(homedir(), '.cache'), { recursive: true })
+      const dir = mkdtempSync(join(homedir(), '.cache', 'talaria-media-test-'))
+      outsideDirs.push(dir)
+      return names.map((name) => { writeFileSync(join(dir, name), 'png'); return join(dir, name) })
+    }
+    /** Whether each storage read of `id` from here on was metadata-only. */
+    function storageReads(id: string): () => boolean[] {
+      const spy = vi.spyOn(backend(), 'readDocument')
+      return () => spy.mock.calls.filter(([sid]) => sid === id).map(([, opts]) => opts?.metadataOnly ?? false)
+    }
+
+    it('authorizes a path under a root from the session metadata alone', async () => {
+      const id = await coldSession('no references')
+      const get = vi.spyOn(store(), 'get')
+      const reads = storageReads(id)
+      expect((await media(id, join(ws, 'photo.png'))).status).toBe(200)
+      expect(get.mock.calls.filter(([sid]) => sid === id).map(([, opts]) => opts)).toEqual([{ metadataOnly: true }])
+      expect(reads()).not.toContain(false)
+    })
+
+    it('reads the transcript once for two paths only its MEDIA references authorize', async () => {
+      const [first, second] = outsideFiles('first.png', 'second.png') as [string, string]
+      const id = await coldSession(`MEDIA:${first} MEDIA:${second}`)
+      const reads = storageReads(id)
+      expect((await media(id, first)).status).toBe(200)
+      expect((await media(id, second)).status).toBe(200)
+      expect(reads().filter((metadataOnly) => !metadataOnly)).toHaveLength(1)
+    })
+
+    it('refuses a denied path or a type no reference can grant without reading the transcript', async () => {
+      writeFileSync(join(s.state, 'settings.json'), '{}')
+      const [notes] = outsideFiles('notes.txt') as [string]
+      const id = await coldSession(`MEDIA:${notes}`)
+      const reads = storageReads(id)
+      expect((await media(id, join(s.state, 'settings.json'))).status).toBe(403)
+      expect((await media(id, notes)).status).toBe(403)
+      expect(reads()).not.toContain(false)
+    })
+
+    it('gives no grant from a transcript whose full read shows a profile without local IO', async () => {
+      const [shot] = outsideFiles('shot.png') as [string]
+      const id = await coldSession(`MEDIA:${shot}`)
+      const read = backend().readDocument.bind(backend())
+      // A legacy document keeps its profile past the transcript, where a metadata read stops.
+      vi.spyOn(backend(), 'readDocument').mockImplementation(async (sid, opts) => {
+        const stored = await read(sid)
+        if (!stored || !opts?.metadataOnly) return stored
+        const { profile: _late, ...doc } = stored.doc
+        return { ...stored, doc, messages: [], metadataOnly: true }
+      })
+      vi.spyOn(s.deps.workspaces, 'profileSupportsLocalIo').mockImplementation((profile) => profile !== 'default')
+      expect((await media(id, shot)).status).toBe(403)
+    })
   })
 
   it('reports worktree status for a worktree-backed session', async () => {
