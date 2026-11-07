@@ -417,7 +417,10 @@ Recovery admission checks fixed markers and discovered receipt presence on every
 call. Each runtime caches only the native-claim and pending-autostash directory
 listings and packed-ref inspection for at most one monotonic second. File and
 directory metadata invalidate discovery immediately; missing paths watch their
-nearest existing ancestor. Recovery probes and repair operations scan uncached.
+nearest existing ancestor. A retained update-history file is parsed once per
+file identity (device, inode, mode, mtime, ctime and size) and an unreadable or
+malformed read is never remembered. Recovery probes and repair operations scan
+uncached.
 This does not add detection of dirty tracked files to the revision-drift guard.
 
 One sidecar per server. Each admitted RPC runs on a worker thread, bounded by

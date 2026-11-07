@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import hashlib
+import json
 import pytest
 
 from conftest import AGENT_DIR, SidecarProcess, assert_matches, requires_agent
@@ -62,6 +63,99 @@ def test_ensure_current_caches_expensive_receipt_discovery(receipt_runtime, monk
     clock.now += .001
     runtime.ensure_current()
     assert calls == {'directory': 4, 'packed': 2}
+
+
+def _retained_history(runtime, **extra):
+    from talaria_sidecar.agent_services import recovery_path
+
+    path = recovery_path(runtime.agent_dir, runtime.hermes_home)
+    path.parent.mkdir(exist_ok=True)
+    operation = {'operation_id': '-'.join('a' * size for size in (8, 4, 4, 4, 12)), 'baseline_revision': 'a' * 40,
+                 'target_revision': 'b' * 40, 'stage': 'agent_ready', 'recovered_revision': 'b' * 40}
+    path.write_text(json.dumps({'schema': 1, 'root': str(runtime.agent_dir), 'entries': [], 'tree': {}, 'sync_failed': False,
+                                'update_operation': operation, **extra}))
+    return path
+
+
+def test_retained_update_history_is_parsed_once_and_adds_no_stats(receipt_runtime, monkeypatch):
+    import os
+    from pathlib import Path
+
+    runtime, clock = receipt_runtime
+    runtime.ensure_current()
+    counts = {'stats': 0, 'reads': 0}
+    real_stat, real_lstat, real_read = os.stat, os.lstat, Path.read_text
+
+    def counted(real):
+        def stat(*args, **kwargs):
+            counts['stats'] += 1
+            return real(*args, **kwargs)
+        return stat
+
+    def counted_read(path, *args, **kwargs):
+        counts['reads'] += path == history
+        return real_read(path, *args, **kwargs)
+
+    def stats_over_100_calls():
+        counts['stats'] = 0
+        for _ in range(100):
+            runtime.ensure_current()
+        return counts['stats']
+
+    history = Path('/nonexistent')
+    monkeypatch.setattr(os, 'stat', counted(real_stat))
+    monkeypatch.setattr(os, 'lstat', counted(real_lstat))
+    monkeypatch.setattr(Path, 'read_text', counted_read)
+    without_history = stats_over_100_calls()
+    history = _retained_history(runtime)
+    runtime.ensure_current()
+    assert stats_over_100_calls() == without_history
+    clock.now += 1
+    runtime.ensure_current()
+    assert counts['reads'] == 1
+
+
+@pytest.mark.parametrize('change', ['debt', 'malformed', 'symlink-target'])
+def test_retained_history_memo_observes_changed_evidence_on_the_next_call(receipt_runtime, tmp_path, change):
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    runtime, _ = receipt_runtime
+    history = _retained_history(runtime)
+    settled = history.read_text()
+    changed = json.dumps({**json.loads(settled), 'sync_failed': True}) if change == 'debt' else '{'
+    target = history
+    if change == 'symlink-target':
+        target = tmp_path / 'retained.json'
+        target.write_text(settled)
+        history.unlink()
+        history.symlink_to(target)
+    runtime.ensure_current()
+    runtime.ensure_current()
+    target.write_text(changed)
+    with pytest.raises(AgentRuntimeStale):
+        runtime.ensure_current()
+    target.write_text(settled)
+    runtime.ensure_current()
+
+
+def test_unreadable_retained_history_fails_closed_and_is_retried(receipt_runtime, monkeypatch):
+    from pathlib import Path
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    runtime, _ = receipt_runtime
+    history = _retained_history(runtime)
+    original = Path.read_text
+
+    def unreadable(path, *args, **kwargs):
+        if path == history:
+            raise PermissionError('synthetic unreadable evidence')
+        return original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'read_text', unreadable)
+        with pytest.raises(AgentRuntimeStale):
+            runtime.ensure_current()
+    runtime.ensure_current()
 
 
 @pytest.mark.parametrize('obligation', ['fixed', 'dependency', 'service', 'claim', 'loose', 'missing-directory', 'packed', 'missing-packed'])
