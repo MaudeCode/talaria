@@ -49,10 +49,10 @@ export function TextInput({ className, retainDraft = false, value, onChange, onB
   }} onBlur={(e) => { revision.current++; setDraft(null); onBlur?.(e) }} className={cn('h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-text placeholder:text-muted focus:border-accent', className)} />
 }
 
-/** Boolean setting control (legacy `.plugin-toggle-switch` geometry: 32x18 track, 12px thumb). Renders a `role="switch"` button. */
+/** Boolean setting control (legacy `.plugin-toggle-switch` geometry: 32x18 track, 12px thumb). Renders a `role="switch"` span, which `:disabled` never matches. */
 export function Switch({ className, ...props }: Omit<BaseSwitch.Root.Props, 'className'> & { className?: string }) {
   return (
-    <BaseSwitch.Root {...props} className={cn('relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full border-0 bg-border2 p-0 transition-colors duration-200 data-checked:bg-accent disabled:cursor-not-allowed disabled:opacity-50', className)}>
+    <BaseSwitch.Root {...props} className={cn('relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full border-0 bg-border2 p-0 transition-colors duration-200 data-checked:bg-accent data-disabled:cursor-not-allowed data-disabled:opacity-50', className)}>
       <BaseSwitch.Thumb className="block size-3 translate-x-[3px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.45)] transition-transform duration-200 data-checked:translate-x-[17px]" />
     </BaseSwitch.Root>
   )

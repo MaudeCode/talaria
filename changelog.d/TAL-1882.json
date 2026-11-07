@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Disabled switches in Talaria Web settings now look dimmed and show a not-allowed cursor.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
