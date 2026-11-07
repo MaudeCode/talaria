@@ -64,6 +64,8 @@ export interface AuthStoreOptions {
   oidcProbe?: () => Promise<unknown>
   /** `webui_passkey_enabled` from the base-home config.yaml (last known), consulted when the env flag is unset. */
   passkeyConfigFlag?: () => unknown
+  /** The current request's signature results by cookie value, so one request computes a session's HMAC once. */
+  sessionSignatures?: () => Map<string, boolean> | undefined
   /** Writes one serialized table; tests inject a slow or failing writer. */
   persistWrite?: (file: string, text: string) => Promise<void>
 }
@@ -126,6 +128,8 @@ export class AuthStore {
   oidcAvailable: () => boolean
   private readonly oidcProbe: () => Promise<unknown>
   passkeyConfigFlag: () => unknown
+  private readonly sessionSignatures: () => Map<string, boolean> | undefined
+  private lastPrunedAt = Number.NEGATIVE_INFINITY
   persistWrite: (file: string, text: string) => Promise<void>
   // The in-memory tables are authoritative; disk is a write-behind copy so a slow fsync never blocks a request.
   private readonly sessionsWriter = new WriteBehind(() => this.persistWrite(this.sessionsFile, JSON.stringify(this.sessions)).catch((error: unknown) => {
@@ -146,6 +150,7 @@ export class AuthStore {
     this.oidcAvailable = opts.oidcAvailable ?? (() => false)
     this.oidcProbe = opts.oidcProbe ?? (() => Promise.resolve())
     this.passkeyConfigFlag = opts.passkeyConfigFlag ?? (() => undefined)
+    this.sessionSignatures = opts.sessionSignatures ?? (() => undefined)
     this.persistWrite = opts.persistWrite ?? (async (key, text) => { await this.persistDocument(key, JSON.parse(text) as unknown); })
   }
 
@@ -303,7 +308,7 @@ export class AuthStore {
    * the flag unknown (sidecar down, config changed underneath), the gate stays closed rather than opening the API.
    */
   async passkeysAvailable(): Promise<boolean> {
-    return await this.passkeysEnabled() && this.passkeyFeatureFlagState() !== false
+    return this.passkeyFeatureFlagState() !== false && await this.passkeysEnabled()
   }
 
   isTrustedAuthEnabled(): boolean {
@@ -448,6 +453,7 @@ export class AuthStore {
 
   private pruneExpiredSessions(): void {
     const now = this.now()
+    this.lastPrunedAt = now
     let changed = false
     for (const [token, record] of Object.entries(this.sessions)) {
       const expiry = sessionExpiry(record)
@@ -469,11 +475,11 @@ export class AuthStore {
     if (!cookieValue) return false
     const parts = splitSigned(cookieValue)
     if (!parts) return false
-    this.pruneExpiredSessions()
+    // Housekeeping only: the expiry check below decides this cookie. `abs` so a clock stepped back cannot stop pruning.
+    if (Math.abs(this.now() - this.lastPrunedAt) >= 1) this.pruneExpiredSessions()
     const [token, sig] = parts
-    const full = this.signToken(token)
-    const valid = safeEqual(sig, full) || (sig.length === 32 && safeEqual(sig, full.slice(0, 32)))
-    if (!valid) return false
+    if (!this.signatureValid(cookieValue, token, sig)) return false
+    // Stays live within a request: a signature cannot change, but the session can be revoked mid-request.
     const expiry = sessionExpiry(this.sessions[token])
     if (expiry === null || this.now() > expiry) {
       Reflect.deleteProperty(this.sessions, token)
@@ -481,6 +487,16 @@ export class AuthStore {
       return false
     }
     return true
+  }
+
+  private signatureValid(cookieValue: string, token: string, sig: string): boolean {
+    const memo = this.sessionSignatures()
+    const known = memo?.get(cookieValue)
+    if (known !== undefined) return known
+    const full = this.signToken(token)
+    const valid = safeEqual(sig, full) || (sig.length === 32 && safeEqual(sig, full.slice(0, 32)))
+    memo?.set(cookieValue, valid)
+    return valid
   }
 
   static tokenFromCookieValue(cookieValue: string | null | undefined): string | null {
@@ -526,20 +542,21 @@ export class AuthStore {
     await this.sessionsWriter.flush()
   }
 
-  /**
-   * Sliding renewal: extend a live session when its remaining lifetime has
-   * dropped below TTL minus min(TTL/10, 1h). Returns true when extended.
-   */
-  extendSession(cookieValue: string, ttl: number): boolean {
+  /** A live session whose remaining lifetime has dropped below TTL minus min(TTL/10, 1h). */
+  sessionNeedsExtension(cookieValue: string, ttl: number): boolean {
     const token = AuthStore.tokenFromCookieValue(cookieValue)
     if (!token) return false
-    const record = this.sessions[token]
-    const expiry = sessionExpiry(record)
+    const expiry = sessionExpiry(this.sessions[token])
     const now = this.now()
-    if (expiry === null || now >= expiry || expiry - now >= ttl - Math.min(ttl / 10, 3600)) return false
-    const updated: SessionRecord = record && typeof record === 'object' ? { ...record } : { expiry }
-    updated.expiry = now + ttl
-    this.sessions[token] = updated
+    return expiry !== null && now < expiry && expiry - now < ttl - Math.min(ttl / 10, 3600)
+  }
+
+  /** Sliding renewal: extend a session that needs it. Returns true when extended. */
+  extendSession(cookieValue: string, ttl: number): boolean {
+    const token = AuthStore.tokenFromCookieValue(cookieValue)
+    if (!token || !this.sessionNeedsExtension(cookieValue, ttl)) return false
+    const record = this.sessions[token]
+    this.sessions[token] = { ...(typeof record === 'object' ? record : {}), expiry: this.now() + ttl }
     this.persistSessions()
     return true
   }

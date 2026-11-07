@@ -2,7 +2,7 @@ import { JsonDocuments } from '../test/storage.js'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsStore } from '../settings.js'
 import { AuthStore, SESSION_TTL } from './store.js'
 import { canonicalJson } from './oidc.js'
@@ -29,9 +29,9 @@ const clock = () => now
 
 let stores: AuthStore[] = []
 
-async function makeStore(env: Record<string, string> = {}, opts: { keys?: boolean; persistWrite?: AuthStore['persistWrite']; log?: (line: string) => void } = {}): Promise<AuthStore> {
+async function makeStore(env: Record<string, string> = {}, opts: { keys?: boolean; persistWrite?: AuthStore['persistWrite']; log?: (line: string) => void; sessionSignatures?: Map<string, boolean> } = {}): Promise<AuthStore> {
   const settings = new SettingsStore({ documents: new JsonDocuments(dir), env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
-  const store = new AuthStore({ documents: new JsonDocuments(dir), env, settings, now: clock, log: opts.log ?? (() => undefined), ...(opts.persistWrite ? { persistWrite: (key: string, text: string) => opts.persistWrite!(join(dir, key === 'sessions' ? '.sessions.json' : '.login_attempts.json'), text) } : {}) })
+  const store = new AuthStore({ documents: new JsonDocuments(dir), env, settings, now: clock, log: opts.log ?? (() => undefined), ...(opts.sessionSignatures ? { sessionSignatures: () => opts.sessionSignatures } : {}), ...(opts.persistWrite ? { persistWrite: (key: string, text: string) => opts.persistWrite!(join(dir, key === 'sessions' ? '.sessions.json' : '.login_attempts.json'), text) } : {}) })
   settings.hooks = { hashPassword: async (pw) => (await store.hashPassword(pw)), onPasswordChanged: () => { store.invalidatePasswordHashCache() } }
   if (opts.keys ?? true) store.setKeysForTest(PBKDF2_KEY, SIGNING_KEY)
   await settings.load()
@@ -209,6 +209,29 @@ describe('TTL, cookie name, and sliding policy', () => {
     expect((await (await makeStore({ HERMES_WEBUI_SESSION_SLIDING: 'yes' })).resolveSessionSliding())).toBe(true)
     writeFileSync(join(dir, 'settings.json'), '{broken')
     expect((await (await makeStore()).resolveSessionSliding())).toBe(false)
+  })
+
+  it('rejects an expired session and lists only live sessions between table prunes', async () => {
+    const store = (await makeStore())
+    const [live, expiring, listed] = [store.createSession(), store.createSession(), store.createSession()]
+    now += 1
+    expect(store.verifySession(live)).toBe(true)
+    for (const cookie of [expiring, listed]) store.sessionTable[AuthStore.tokenFromCookieValue(cookie)!] = now + 0.25
+    now += 0.5
+    expect(store.verifySession(expiring)).toBe(false)
+    expect(store.liveSessions().map((info) => info.token)).toEqual([AuthStore.tokenFromCookieValue(live)])
+  })
+
+  it('a remembered signature cannot vouch for another signature or outlive a revocation', async () => {
+    const store = (await makeStore({}, { sessionSignatures: new Map() }))
+    const cookie = store.createSession({ authType: 'password' })
+    const sign = vi.spyOn(store, 'signToken')
+    expect(store.verifySession(cookie)).toBe(true)
+    expect(store.verifySession(cookie)).toBe(true)
+    expect(sign).toHaveBeenCalledTimes(1)
+    expect(store.verifySession(`${AuthStore.tokenFromCookieValue(cookie)}.${'0'.repeat(64)}`)).toBe(false)
+    store.invalidateSession(cookie)
+    expect(store.verifySession(cookie)).toBe(false)
   })
 
   it('extends only inside the renewal window and keeps typed records', async () => {

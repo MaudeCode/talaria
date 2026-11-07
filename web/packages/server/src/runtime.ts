@@ -137,8 +137,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // Resolved below once the sidecar-backed config store exists; the auth store reads it lazily.
   let oidc: OidcService | null = null
   let operatorConfigPeek: () => Record<string, unknown> | null = () => null
+  const requestScope = new AsyncLocalStorage<RequestScope>()
   const auth = new AuthStore({
     documents: storage.documents, env, settings, log, now,
+    sessionSignatures: () => requestScope.getStore()?.sessionSignatures,
     passkeysEnabled: async () => (await passkeys.available()),
     oidcEnabled: () => oidc?.enabledSync() ?? false,
     oidcAvailable: () => oidc?.availableSync() ?? false,
@@ -166,7 +168,6 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
   // the process default; a request's profile cookie or bound session overrides it for that request only, and
   // `activeProfile()` reads the request scope so every domain (sessions, workspaces, drains) sees the same answer.
-  const requestScope = new AsyncLocalStorage<RequestScope>()
   // Python `_is_isolated_profile_mode`: the explicit startup opt-in AND a `.../profiles/<name>` shaped HERMES_HOME pin
   // the process to that one profile (no switching, listing, creating, deleting, or cross-profile reads).
   const isolatedProfile = truthy(env.HERMES_WEBUI_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null

@@ -98,6 +98,8 @@ export interface RequestScope {
   requestProfile: string | null; notificationOwner?: string; personAccess?: PersonAccess
   /** The HTTP auth gate's existing reconciled identity; absent for callers without a login. */
   trusted?: { reconciled?: SessionInfo | null }
+  /** Session cookie signature results for this request (`AuthStore.verifySession`). */
+  sessionSignatures?: Map<string, boolean>
 }
 
 export interface AppDeps {
@@ -296,6 +298,7 @@ export class RequestContext {
   /** Set by a procedure whose ETag matched `If-None-Match`; the root interceptor turns the response into a bodiless 304. */
   notModified = false
   trusted: { reconciled?: SessionInfo | null; info?: SessionInfo | null; cookieValue?: string | null; rejected?: boolean } = {}
+  readonly sessionSignatures = new Map<string, boolean>()
   readonly cspExtras: CspExtras
   private cookieMap: Map<string, string> | null = null
   private finished = false
@@ -374,7 +377,8 @@ export class RequestContext {
     this.authRefreshCookie = null
     if (!cookieValue || status < 200 || status >= 400) return
     const auth = this.deps.auth
-    if (!(await auth.resolveSessionSliding())) return
+    if (!auth.sessionNeedsExtension(cookieValue, auth.resolveSessionTtl()) || !(await auth.resolveSessionSliding())) return
+    // The sliding read refreshed the settings snapshot: renew with the TTL it holds.
     const ttl = auth.resolveSessionTtl()
     if (auth.extendSession(cookieValue, ttl)) this.queueCookie(this.authCookieHeader(cookieValue, ttl))
   }
