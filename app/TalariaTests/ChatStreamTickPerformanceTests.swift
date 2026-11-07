@@ -180,7 +180,7 @@ private struct ChatStreamTickHarness {
         var counted = recorder.counts.values.reduce(0, +)
         var unchanged = 0
         for _ in 0..<50 where unchanged < quietHops {
-            RunLoop.current.run(until: Date())
+            Self.runLoopPass()
             await Task.yield()
             window.layoutIfNeeded()
             let now = recorder.counts.values.reduce(0, +)
@@ -188,6 +188,11 @@ private struct ChatStreamTickHarness {
             counted = now
         }
         XCTAssertGreaterThanOrEqual(unchanged, quietHops, "The chat's main-actor work never went quiet after a turn")
+    }
+
+    /// One run-loop pass, which commits SwiftUI's pending transaction. Async code cannot run the loop directly.
+    private static func runLoopPass() {
+        RunLoop.current.run(until: Date())
     }
 
     func tearDown() {
