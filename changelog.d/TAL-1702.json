@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web settings pages open faster because each page now downloads only its own code.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

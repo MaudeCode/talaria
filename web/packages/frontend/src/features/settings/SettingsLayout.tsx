@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { webPushSupported } from '../../app/pwa'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { MAIN_VIEW } from '../../shell/AppShell'
@@ -10,7 +11,6 @@ import { cn } from '../../ui/cn'
 import { SettingsSectionSchema, type SettingsSection as Section } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import { webPushSupported } from './NotificationsSection'
 import { MessageSquare, AudioLines, Bell, SunMedium, SlidersHorizontal, Key, Cpu, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
 
 const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, notifications: Bell, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, auxiliary: Cpu, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }

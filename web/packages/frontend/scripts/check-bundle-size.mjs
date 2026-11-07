@@ -25,10 +25,15 @@ export function layoutFiles(manifest, layout = Object.keys(manifest).find((key) 
   return [...files].sort()
 }
 
+/** @param {string[]} files */
+export function totalBytes(files) {
+  return files.reduce((sum, file) => sum + statSync(resolve(clientDir, file)).size, 0)
+}
+
 export function readLayout() {
   const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
   const files = layoutFiles(manifest)
-  return { files, bytes: files.reduce((sum, file) => sum + statSync(resolve(clientDir, file)).size, 0) }
+  return { files, bytes: totalBytes(files) }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
