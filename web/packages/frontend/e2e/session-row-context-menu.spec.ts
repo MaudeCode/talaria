@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, longPress, settle, test, watchNativeMenu } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -33,33 +33,6 @@ async function boot(page: Page): Promise<{ item: Locator; writes: Record<string,
   const item = page.locator('#sessionList .session-item[data-sid="row-menu"]')
   await expect(item).toBeVisible()
   return { item, writes }
-}
-
-/** Records whether the page cancelled each contextmenu event, which is what suppresses the browser's own menu. */
-async function watchNativeMenu(page: Page): Promise<() => Promise<boolean[]>> {
-  await page.evaluate(() => {
-    const seen: boolean[] = []
-    ;(window as unknown as { nativeMenus: boolean[] }).nativeMenus = seen
-    window.addEventListener('contextmenu', (event) => { setTimeout(() => seen.push(!event.defaultPrevented)) }, true)
-  })
-  return () => page.evaluate(() => (window as unknown as { nativeMenus: boolean[] }).nativeMenus)
-}
-
-/**
- * Holds one touch point past Base UI's 500 ms long-press, as a finger would. A raw CDP touch skips Playwright's
- * actionability checks, and the closed phone drawer still counts as visible while translated off-screen, so the row
- * must sit fully on screen before its box is read; otherwise the touch lands off-viewport (TAL-1676).
- */
-async function longPress(page: Page, target: Locator): Promise<void> {
-  await expect(target).toBeInViewport({ ratio: 1 })
-  const box = await target.boundingBox()
-  if (!box) throw new Error('long-press target is not visible')
-  const point = { x: box.x + box.width / 3, y: box.y + box.height / 2 }
-  const cdp = await page.context().newCDPSession(page)
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
-  await page.waitForTimeout(800)
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-  await cdp.detach()
 }
 
 const labels = (menu: Locator) => menu.getByRole('menuitem').allTextContents()
@@ -129,7 +102,10 @@ test('long-press on a row opens its actions, and Rename works from there', async
   const { item, writes } = await boot(page)
   // Touch layouts hide the kebab, so the long-press is the only route to the row's actions.
   await expect(item.locator('.session-actions')).toBeHidden()
-  await longPress(page, item)
+  // A raw CDP touch skips Playwright's actionability checks, and the closed phone drawer still counts as visible while
+  // translated off-screen, so the row must sit fully on screen first; otherwise the touch lands off-viewport (TAL-1676).
+  await expect(item).toBeInViewport({ ratio: 1 })
+  await longPress(page, item, 1 / 3)
   const menu = page.getByRole('menu', { name: 'Conversation actions' })
   await expect(menu).toBeVisible()
   await page.screenshot({ path: info.outputPath('row-context-menu-mobile.png') })

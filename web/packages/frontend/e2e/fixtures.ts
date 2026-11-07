@@ -61,22 +61,32 @@ export async function openProjectActions(page: Page) {
   return menu
 }
 
-/** Holds one touch point past Base UI's 500 ms long-press, as a finger would. */
-export async function longPress(page: Page, target: Locator): Promise<void> {
+export async function settle(page: Page): Promise<void> {
+  await page.waitForLoadState('networkidle')
+  // Wait for the router to render the shell (the titlebar is hidden in desktop browsers, so wait for the layout or a full-page route).
+  await expect(page.locator('#app :visible').first()).toBeVisible()
+}
+
+/** Records whether the page cancelled each contextmenu event, which is what suppresses the browser's own menu. */
+export async function watchNativeMenu(page: Page): Promise<() => Promise<boolean[]>> {
+  await page.evaluate(() => {
+    const seen: boolean[] = []
+    ;(window as unknown as { nativeMenus: boolean[] }).nativeMenus = seen
+    window.addEventListener('contextmenu', (event) => { setTimeout(() => seen.push(!event.defaultPrevented)) }, true)
+  })
+  return () => page.evaluate(() => (window as unknown as { nativeMenus: boolean[] }).nativeMenus)
+}
+
+/** Holds one touch point past Base UI's 500 ms long-press, as a finger would, `across` the way over the target's width. */
+export async function longPress(page: Page, target: Locator, across = 1 / 2): Promise<void> {
   const box = await target.boundingBox()
   if (!box) throw new Error('long-press target is not visible')
-  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  const point = { x: box.x + box.width * across, y: box.y + box.height / 2 }
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
   await page.waitForTimeout(800)
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await cdp.detach()
-}
-
-export async function settle(page: Page): Promise<void> {
-  await page.waitForLoadState('networkidle')
-  // Wait for the router to render the shell (the titlebar is hidden in desktop browsers, so wait for the layout or a full-page route).
-  await expect(page.locator('#app :visible').first()).toBeVisible()
 }
 
 /** 127.0.0.1 is a secure context, so hide the API the way http://<lan-ip> does. The returned reader keeps a private handle on the real clipboard. */

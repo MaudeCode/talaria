@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react'
-import { ArrowUp, GripVertical, Pencil, X } from 'lucide-react'
+import { useRef, useState, type ReactElement, type ReactNode, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react'
+import { ArrowUp, GripVertical, Pencil, X, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { QueuedTurn } from './queue'
@@ -7,6 +7,7 @@ import type { OwnerActionRequest, OwnerAttachment } from '@maudecode/talaria-web
 import { isImeEnter } from '../../lib/isImeEnter'
 import { randomHex } from '../../lib/randomHex'
 import { Button } from '../../ui/Button'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 
 /** `list` with the item at `from` moved to `to`. */
 function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
@@ -18,10 +19,21 @@ function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
 // The handle and Remove keep the composer's focus.
 const keepFocus = (e: PointerEvent) => { e.preventDefault() }
 
-/** Extracted from QueueCard's local cancel control so owner rows use the same icon and wording. */
-function QueueCancelButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
-  return <button type="button" disabled={disabled} className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.queued_cancel()} title={m.queued_cancel()} onPointerDown={keepFocus} onClick={onClick}><X size={14} aria-hidden="true" /></button>
+/** One row action, defined once and rendered as both the row's button and its context menu item (TAL-1155). */
+interface RowAction { label: string; run: () => void; Icon?: LucideIcon; help?: string | undefined; disabled?: boolean; busy?: boolean; keepsFocus?: boolean }
+
+function RowActionButton({ action: { label, run, Icon, help, disabled = false, busy, keepsFocus } }: { action: RowAction }) {
+  if (!Icon) return <Button variant="ghost" className="min-h-11 min-w-11 shrink-0" title={help} disabled={disabled} aria-busy={busy || undefined} onClick={run}>{label}</Button>
+  return <button type="button" disabled={disabled} className="steer-action min-h-11 min-w-11 shrink-0" aria-label={label} title={label} onPointerDown={keepsFocus ? keepFocus : undefined} onClick={run}><Icon size={14} aria-hidden="true" /></button>
 }
+
+/** `row` with its actions on right-click and long-press; a row with none keeps the browser's menu. */
+function QueueRow({ label, actions, row }: { label: string; actions: readonly RowAction[]; row: ReactElement }) {
+  if (actions.length === 0) return row
+  return <ContextMenu label={label} trigger={row}>{actions.map((action) => <MenuItem key={action.label} disabled={action.disabled ?? false} onClick={action.run}>{action.label}</MenuItem>)}</ContextMenu>
+}
+
+const cancelAction = (disabled: boolean, run: () => void): RowAction => ({ label: m.queued_cancel(), Icon: X, keepsFocus: true, disabled, run })
 
 /**
  * TAL-562: the queued messages behind the composer's queue chip (TAL-1078), sent top to bottom when the turn ends. A row is edited in place,
@@ -63,15 +75,16 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
     } else if (!native) onChange(queued.map((q) => (q.id === id && (text || q.attachments.length) ? { ...q, text } : q)))
     setEditing((current) => current === id ? null : current)
   }
+  const editActions = (id: string, disabled: boolean, canEdit: boolean): RowAction[] => canEdit && editing !== id ? [{ label: m.queued_edit(), Icon: Pencil, disabled, run: () => { setEditing(id) } }] : []
   // Native and local rows share their editor, icon, focus behavior and accessible wording.
-  const editableText = (id: string, text: string, disabled: boolean, native = false, canEdit = true, suffix = '') => <>
+  const editableText = (id: string, text: string, disabled: boolean, native: boolean, edit: readonly RowAction[], suffix = '') => <>
     <div className={rowLabel ? 'flex min-w-0 flex-1 flex-col gap-0.5' : 'contents'}>
     {rowLabel?.(id)}
     {editing === id && !readOnly
       ? <input className="queue-card-input" disabled={disabled} aria-label={m.queued_edit()} defaultValue={text} autoFocus onBlur={(e) => { finishEdit(id, e, native) }} onKeyDown={onEditKey} />
       : <span className="queue-card-text truncate" title={text}>{text}{suffix}</span>}
     </div>
-    {canEdit && editing !== id && <button type="button" disabled={disabled} className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.queued_edit()} title={m.queued_edit()} onClick={() => { setEditing(id) }}><Pencil size={14} aria-hidden="true" /></button>}
+    {edit.map((action) => <RowActionButton key={action.label} action={action} />)}
   </>
   // A removed message's files are discarded on the server too, like a file taken off the composer.
   const remove = (q: QueuedTurn) => {
@@ -102,37 +115,55 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
   return (
     <div className="queue-card flex min-w-0 flex-1 flex-col gap-0.5" role="region" aria-label={label}>
       <ol className="queue-card-list flex flex-col">
-        {admissions.map((q) => (
-          <li key={q.admission_id} className="queue-card-row">
-            {editableText(q.admission_id, q.text ?? '', false, true, q.actions.includes('edit'))}
-            {q.status === 'unknown' && <span className="text-muted text-xs">{m.owner_outcome_unknown()}</span>}
-            {q.actions.includes('steer') && <button type="button" className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.composer_steer()} title={m.composer_steer()} onClick={() => { void runAdmission({ session_id: sessionId, action: 'steer_queued', admission_id: q.admission_id }) }}><ArrowUp size={14} aria-hidden="true" /></button>}
-            {q.actions.includes('cancel') && <QueueCancelButton disabled={false} onClick={() => { void runAdmission({ session_id: sessionId, action: 'cancel', admission_id: q.admission_id }) }} />}
-            {q.actions.map((action) => action === 'edit' || action === 'steer' || action === 'cancel' ? null : <Button key={action} variant="ghost" className="min-h-11 min-w-11 shrink-0" title={action === 'retry' ? m.owner_retry_help() : undefined} disabled={action === 'retry' && retrying.has(q.admission_id)} aria-busy={action === 'retry' && retrying.has(q.admission_id) || undefined} onClick={() => {
-              if (q.execution_generation === null) return
-              const request = { session_id: sessionId, action, admission_id: q.admission_id, execution_generation: q.execution_generation }
-              if (action !== 'retry') { void runAdmission(request); return }
-              const id = q.admission_id
-              setRetrying((ids) => new Set(ids).add(id))
-              void runAdmission(request).finally(() => { setRetrying((ids) => { const next = new Set(ids); next.delete(id); return next }) })
-            }}>{action === 'retry' ? m.retry() : m.discard()}</Button>)}
-          </li>
-        ))}
-        {queued.map((q, i) => (
-          <li key={q.id} className="queue-card-row" data-queue-index={i}>
-            {!readOnly && <button
-              type="button" disabled={q.id === pendingId} className="steer-action queue-card-handle min-h-11 min-w-11 shrink-0" aria-label={m.queued_reorder()} title={m.queued_reorder()}
-              onPointerDown={(e) => { keepFocus(e); e.currentTarget.setPointerCapture(e.pointerId); dragging.current = q.id }}
-              onPointerMove={(e) => { onHandleMove(q.id, e) }}
-              onPointerUp={() => { dragging.current = null }}
-              onPointerCancel={() => { dragging.current = null }}
-              onKeyDown={(e) => { onHandleKey(q.id, i, e) }}
-            ><GripVertical size={14} aria-hidden="true" /></button>}
-            {editableText(q.id, q.text, q.id === pendingId, false, !readOnly, q.attachments.length ? ` (+${String(q.attachments.length)})` : '')}
-            {rowStatus?.(q.id)}
-            {!readOnly && <QueueCancelButton disabled={q.id === pendingId} onClick={() => { remove(q) }} />}
-          </li>
-        ))}
+        {admissions.map((q) => {
+          const edit = editActions(q.admission_id, false, q.actions.includes('edit'))
+          // Steer and Cancel keep their place, then any recovery actions in the server's order.
+          const rest: RowAction[] = [
+            ...(q.actions.includes('steer') ? [{ label: m.composer_steer(), Icon: ArrowUp, run: () => { void runAdmission({ session_id: sessionId, action: 'steer_queued', admission_id: q.admission_id }) } }] : []),
+            ...(q.actions.includes('cancel') ? [cancelAction(false, () => { void runAdmission({ session_id: sessionId, action: 'cancel', admission_id: q.admission_id }) })] : []),
+            ...q.actions.flatMap((action): RowAction[] => {
+              if (action === 'edit' || action === 'steer' || action === 'cancel') return []
+              const pending = action === 'retry' && retrying.has(q.admission_id)
+              return [{ label: action === 'retry' ? m.retry() : m.discard(), help: action === 'retry' ? m.owner_retry_help() : undefined, disabled: pending, busy: pending, run: () => {
+                if (q.execution_generation === null) return
+                const request = { session_id: sessionId, action, admission_id: q.admission_id, execution_generation: q.execution_generation }
+                if (action !== 'retry') { void runAdmission(request); return }
+                const id = q.admission_id
+                setRetrying((ids) => new Set(ids).add(id))
+                void runAdmission(request).finally(() => { setRetrying((ids) => { const next = new Set(ids); next.delete(id); return next }) })
+              } }]
+            }),
+          ]
+          return <QueueRow key={q.admission_id} label={q.text || label} actions={[...edit, ...rest]} row={
+            <li className="queue-card-row">
+              {editableText(q.admission_id, q.text ?? '', false, true, edit)}
+              {q.status === 'unknown' && <span className="text-muted text-xs">{m.owner_outcome_unknown()}</span>}
+              {rest.map((action) => <RowActionButton key={action.label} action={action} />)}
+            </li>
+          } />
+        })}
+        {queued.map((q, i) => {
+          const pending = q.id === pendingId
+          const edit = editActions(q.id, pending, !readOnly)
+          const rest = readOnly ? [] : [cancelAction(pending, () => { remove(q) })]
+          return <QueueRow key={q.id} label={q.text || label} actions={[...edit, ...rest]} row={
+            <li className="queue-card-row" data-queue-index={i}>
+              {!readOnly && <button
+                type="button" disabled={pending} className="steer-action queue-card-handle min-h-11 min-w-11 shrink-0" aria-label={m.queued_reorder()} title={m.queued_reorder()}
+                onPointerDown={(e) => { keepFocus(e); e.currentTarget.setPointerCapture(e.pointerId); dragging.current = q.id }}
+                onPointerMove={(e) => { onHandleMove(q.id, e) }}
+                onPointerUp={() => { dragging.current = null }}
+                onPointerCancel={() => { dragging.current = null }}
+                // Holding the handle is the start of a drag, never the row's long-press.
+                onTouchStart={(e) => { e.stopPropagation() }}
+                onKeyDown={(e) => { onHandleKey(q.id, i, e) }}
+              ><GripVertical size={14} aria-hidden="true" /></button>}
+              {editableText(q.id, q.text, pending, false, edit, q.attachments.length ? ` (+${String(q.attachments.length)})` : '')}
+              {rowStatus?.(q.id)}
+              {rest.map((action) => <RowActionButton key={action.label} action={action} />)}
+            </li>
+          } />
+        })}
       </ol>
     </div>
   )
