@@ -90,15 +90,19 @@ test('a deny carries an instruction, Esc goes back, and a refusal brings the tex
   await page.unroute('**/api/approval/respond')
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
+  const submitted = Promise.withResolvers<undefined>()
   const told: unknown[] = []
   await page.route('**/api/approval/respond', async (route) => {
     told.push(route.request().postDataJSON())
+    submitted.resolve(undefined)
     await held
     await route.fulfill({ status: 400, json: { error: 'The Agent refused this answer' } })
   })
   await box.press('Enter')
   await expect(card).toHaveCount(0)
   await shot('left')
+  // Optimistic dismissal can precede request dispatch.
+  await submitted.promise
   expect(told).toEqual([expect.objectContaining({ choice: 'deny', approval_id: 'told', instruction: 'Use INSERT OR REPLACE instead' })])
   release()
   await expect(box).toHaveValue('Use INSERT OR REPLACE instead')
