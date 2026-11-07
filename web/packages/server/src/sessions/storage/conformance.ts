@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { Message } from '../session.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Session, type Message } from '../session.js'
+import { ShareStore } from '../shares.js'
 import { RevisionConflict, type StorageBackend } from './backend.js'
 import { sessionSearchMatches, sessionSearchMessageText, sessionSearchTerms } from './search-text.js'
 
@@ -36,6 +37,20 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
       expect(await sessions.exists('session')).toBe(false)
       expect(await sessions.revision('session')).toBeNull()
       expect(await sessions.tombstones.has('session')).toBe(false)
+    })
+
+    it('serves a public share only while its owner exists, without loading or rewriting the session', async () => {
+      const { sessions, documents } = fixture.storage
+      const shares = new ShareStore(documents, () => 100, sessions)
+      const revision = await write([{ role: 'user', content: 'synthetic' }])
+      const owner = new Session({ session_id: 'session' }, { workspace: '', model: null, modelProvider: null })
+      const { share_token: token } = await shares.createOrRefresh(owner, { title: 'Shared', messages: [{ role: 'user', content: 'synthetic' }], message_count: 1 })
+      const loads = [vi.spyOn(sessions, 'readDocument'), vi.spyOn(sessions, 'readMessages')]
+      expect(await shares.load(token)).toMatchObject({ title: 'Shared' })
+      for (const load of loads) expect(load).not.toHaveBeenCalled()
+      expect(await sessions.revision('session')).toBe(revision)
+      await sessions.delete('session', { tombstone: false })
+      expect(await shares.load(token)).toBeNull()
     })
 
     it('applies append, splice, replace and metadata-only writes with revision checks', async () => {

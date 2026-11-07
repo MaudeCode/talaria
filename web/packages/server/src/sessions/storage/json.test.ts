@@ -23,7 +23,7 @@ vi.mock('node:fs/promises', async (original) => {
 runSessionBackendConformance('JSON', () => {
   const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-conformance-'))
   return {
-    storage: new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 }),
+    storage: new JsonStorage({ directory, stateDir: directory, now: () => Date.now() / 1000, stampingSince: () => 0 }),
     failNextWrite: () => { vi.mocked(fs.renameSync).mockImplementationOnce(() => { throw new Error('injected publication failure') }) },
     cleanup: () => { fs.rmSync(directory, { recursive: true, force: true }) },
   }

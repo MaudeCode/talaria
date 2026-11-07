@@ -9,12 +9,12 @@ import { str } from '../util.js'
 import { closeSync, fstatSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { basename, extname, isAbsolute, resolve } from 'node:path'
-import type { DocumentBackend } from './storage/backend.js'
+import type { DocumentBackend, SessionBackend } from './storage/backend.js'
 import { readDocument } from './storage/document.js'
 import { redactSensitive } from '../redact.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { openAnchoredFd, readFdUpTo } from '../workspace/fs.js'
-import type { Session } from './session.js'
+import { isSafeSessionId, type Session } from './session.js'
 import { normalizeAssistantDisplay } from './merge.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -251,7 +251,7 @@ export function buildShareSnapshot(session: Session, messages: unknown[], opts: 
 export interface ShareMeta { share_token: string; share_title: string; share_message_count: number; share_created_at: number; share_updated_at: number }
 
 export class ShareStore {
-  constructor(private readonly documents: DocumentBackend, private readonly now: () => number) {}
+  constructor(private readonly documents: DocumentBackend, private readonly now: () => number, private readonly owners: Pick<SessionBackend, 'exists'>) {}
 
   private validate(token: string): string {
     const t = token.trim()
@@ -282,11 +282,15 @@ export class ShareStore {
     return meta
   }
 
-  /** The public payload, or null when missing/revoked. */
+  /** The public payload, or null when missing, revoked, or its persisted source conversation cannot be confirmed. */
   async load(token: string): Promise<Record<string, unknown> | null> {
-    let payload: unknown
-    try { payload = (await this.documents.get('shares', this.validate(token)))?.value } catch { return null }
-    if (!isDict(payload) || payload.revoked_at) return null
+    let payload: Record<string, unknown>
+    try {
+      const stored = (await this.documents.get('shares', this.validate(token)))?.value
+      if (!isDict(stored) || stored.revoked_at || !isSafeSessionId(stored.source_session_id)) return null
+      if (!(await this.owners.exists(stored.source_session_id))) return null
+      payload = stored
+    } catch { return null }
     // A snapshot taken before TAL-302 may still carry inline thinking; it leaves as prose only, like a new one.
     const messages = (Array.isArray(payload.messages) ? payload.messages : []).map((m: unknown) => {
       if (!isDict(m) || m.role !== 'assistant') return m

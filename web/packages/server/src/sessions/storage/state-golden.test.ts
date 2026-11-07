@@ -34,7 +34,7 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     const drafts = new DraftStore(testSessionDocuments(sessions))
     await drafts.write('session', { text: 'draft', files: ['image.png'] }, '1000')
     await expect(Promise.resolve().then(async () => (await drafts.write('session', { text: 'stale', files: [] }, '999')))).rejects.toBeInstanceOf(DraftVersionConflict)
-    const shares = new ShareStore(new JsonDocuments(dirname(join(state, 'shares'))), () => 1000)
+    const shares = new ShareStore(new JsonDocuments(dirname(join(state, 'shares'))), () => 1000, { exists: () => Promise.resolve(true) })
     const session = new Session({ session_id: 'session' }, { workspace, model: null, modelProvider: null })
     const meta = await shares.createOrRefresh(session, { title: 'Shared', messages: [{ role: 'user', content: 'hello' }], message_count: 1 })
     session.share_token = meta.share_token

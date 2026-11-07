@@ -62,7 +62,7 @@ async function fixture() {
   vi.spyOn(store, 'pruneFromIndex').mockResolvedValue()
   vi.spyOn(store, 'readIndexEntries').mockResolvedValue([])
   vi.spyOn(store, 'writeIndex').mockResolvedValue()
-  const shares = new ShareStore(documents, () => now)
+  const shares = new ShareStore(documents, () => now, store)
   const service = new SessionService({
     store, shares, now: () => now, home: '/synthetic', hermesHome: '/synthetic/agent', shareAttachmentRoot: '/synthetic/attachments',
     profileHome: () => '/synthetic/agent', attachmentDir: () => '', blobs: new LocalBlobStore(() => '/synthetic/attachments'), activeProfile: () => 'default', isolatedProfileMode: () => false,
@@ -278,5 +278,49 @@ describe('share lifecycle', () => {
     await expect(f.service.revokeShare('session')).rejects.toMatchObject({ status: 404 })
     expect(f.records.size).toBe(0)
     expect(await f.shares.load('../invalid')).toBeNull()
+  })
+
+  it('answers like an unknown token once the persisted owner is gone, despite a stale resident object', async () => {
+    const f = await fixture()
+    await f.service.createShare('session')
+    const token = f.session.share_token!
+    expect(await f.service.loadShare(token)).toMatchObject({ share: { messages: [{ content: 'synthetic example' }] } })
+    f.sessions.delete('session')
+    expect(f.store.sessions.has('session')).toBe(true)
+    const unknown = await f.service.loadShare('unknown-token').catch((error: unknown) => error)
+    await expect(f.service.loadShare(token)).rejects.toEqual(unknown)
+  })
+
+  it.each([['missing', undefined], ['empty', ''], ['traversal', '../session'], ['padded', 'session '], ['non-string', 7]])('fails closed without a storage lookup when the owner is %s', async (_name, owner) => {
+    const f = await fixture()
+    await f.service.createShare('session')
+    const token = f.session.share_token!
+    const exists = vi.spyOn(f.backend, 'exists')
+    ;(f.records.get(token)!.value as Record<string, unknown>).source_session_id = owner
+    await expect(f.service.loadShare(token)).rejects.toMatchObject({ status: 404 })
+    expect(exists).not.toHaveBeenCalled()
+  })
+
+  it('answers 404 while the owner check fails, without revoking the snapshot', async () => {
+    const f = await fixture()
+    await f.service.createShare('session')
+    const token = f.session.share_token!
+    vi.spyOn(f.backend, 'exists').mockRejectedValueOnce(new Error('storage unavailable'))
+    await expect(f.service.loadShare(token)).rejects.toMatchObject({ status: 404 })
+    expect(await f.shares.load(token)).toMatchObject({ messages: [{ content: 'synthetic example' }] })
+  })
+
+  it('serves a snapshot whose existing owner lost and recovers its token, until explicit revoke', async () => {
+    const f = await fixture()
+    await f.service.createShare('session')
+    const token = f.session.share_token!
+    f.session.share_token = null
+    await f.store.save(f.session)
+    expect(await f.shares.load(token)).toMatchObject({ messages: [{ content: 'synthetic example' }] })
+    f.session.share_token = token
+    await f.store.save(f.session)
+    expect(await f.shares.load(token)).toMatchObject({ messages: [{ content: 'synthetic example' }] })
+    await f.service.revokeShare('session')
+    expect(await f.shares.load(token)).toBeNull()
   })
 })
