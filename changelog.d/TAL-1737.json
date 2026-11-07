@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer freezes open chats while it rotates an oversized server log, and the rotated copy now keeps the newest 32 MiB.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
