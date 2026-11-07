@@ -4491,10 +4491,11 @@ describe('live tool outcomes (TAL-313)', () => {
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual(expected)
   })
 
-  it('ships each result view live, on replay and after reload, keeping stderr and the exit code (TAL-315)', async () => {
+  it('ships each result view live, on replay and after reload, keeping stderr, the exit code (TAL-315) and the masked approval note (TAL-1910)', async () => {
     const sid = await newSession(s)
     const bearer = 'synthetic-bearer-0123456789abcdef'
-    const raw = { output: 'built\\nok', stderr: `warning: deprecated\nAuthorization: Bearer ${bearer}`, exit_code: 2, error: null }
+    const approval = 'Command was flagged (recursive delete) and auto-approved by the command_allowlist entry'
+    const raw = { output: 'built\\nok', stderr: `warning: deprecated\nAuthorization: Bearer ${bearer}`, exit_code: 2, error: null, approval: `${approval} Authorization: Bearer ${bearer}` }
     sidecar.respond('chat.start', (params, emit) => {
       emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: { command: 'make' }, tid: 'call-make' } })
       // The sidecar's flat preview keeps only the output.
@@ -4513,7 +4514,7 @@ describe('live tool outcomes (TAL-313)', () => {
     expect(start.stream_id).toBeTypeOf('string')
     const streamId = String(start.stream_id)
     // Redacted like every string that leaves the server.
-    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2 }
+    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2, approval_note: `${approval} Authorization: Bearer synthe...cdef` }
     const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => (f.data as Json).result_view)
     const live = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
     expect(completes(live)).toEqual([view])

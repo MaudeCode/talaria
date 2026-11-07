@@ -114,6 +114,11 @@ describe('toolOutcome (TAL-313)', () => {
       [{ output: 'a\\nb', stderr: 'warn', exit_code: 1, error: 'boom' }, { stdout: 'a\nb', stderr: 'warn', error: 'boom', exit_code: 1 }],
       [{ stdout: 'x', exitCode: '3' }, { stdout: 'x', exit_code: 3 }],
       [{ output: '', exit_code: 0 }, { exit_code: 0 }],
+      // TAL-1910: the Agent's approval note is its own section; it alone is enough to show, and only a real note counts.
+      [{ output: 'x', exit_code: 1, error: null, approval: 'auto-approved' }, { stdout: 'x', exit_code: 1, approval_note: 'auto-approved' }],
+      [{ output: '', exit_code: 0, approval: 'auto-approved' }, { approval_note: 'auto-approved' }],
+      [{ output: 'x', approval: true }, { stdout: 'x' }],
+      [{ output: 'x', approval: '  ' }, { stdout: 'x' }],
       ['{"output":"done\\n","exit_code":1e300,"error":null}', { stdout: 'done' }],
       [{ exit_code: 'abc', error: 'denied' }, { error: 'denied' }],
       ['{\\"output\\":\\"pwd\\n\\",\\"exit_code\\":0,\\"error\\":null}', { stdout: 'pwd' }],

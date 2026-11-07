@@ -3156,7 +3156,8 @@
       "call-make": {
         "stdout": "built\nok",
         "stderr": "warning: deprecated",
-        "exit_code": 2
+        "exit_code": 2,
+        "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
       },
       "call-nested": {
         "text": "line one\nline two"
@@ -3194,11 +3195,12 @@
               "id": "call-make",
               "done": true,
               "is_error": true,
-              "result": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
+              "result": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null, \"approval\": \"Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.\"}",
               "result_view": {
                 "stdout": "built\nok",
                 "stderr": "warning: deprecated",
-                "exit_code": 2
+                "exit_code": 2,
+                "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
               },
               "duration": null,
               "type": "function"
@@ -3261,7 +3263,7 @@
         },
         {
           "role": "tool",
-          "content": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
+          "content": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null, \"approval\": \"Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.\"}",
           "timestamp": 3002,
           "tool_call_id": "call-make",
           "_turn_id": "view-run",
@@ -3313,11 +3315,12 @@
                     "command": "make"
                   },
                   "preview": null,
-                  "result": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
+                  "result": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null, \"approval\": \"Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.\"}",
                   "result_view": {
                     "stdout": "built\nok",
                     "stderr": "warning: deprecated",
-                    "exit_code": 2
+                    "exit_code": 2,
+                    "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
                   },
                   "done": true,
                   "is_error": true,

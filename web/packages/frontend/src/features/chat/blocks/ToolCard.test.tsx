@@ -23,6 +23,7 @@ describe('ToolCard result (TAL-315)', () => {
     expect(await shownResult({ exit_code: 0 })).toBe('Exit code: 0')
     expect(await shownResult({ error: 'denied' })).toBe('Error: denied')
     expect(await shownResult({ text: '{\n  "a": 1\n}' })).toBe('{\n  "a": 1\n}')
+    expect(await shownResult({ stdout: 'out', exit_code: 1, approval_note: 'Command was auto-approved.' })).toBe('out\nExit code: 1\nCommand was auto-approved.')
   })
 
   it('shows the preview only when the server sent no result view, and nothing for an empty one', async () => {

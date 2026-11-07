@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Terminal tool cards note when an earlier approval or allowlist entry let a flagged command run.",
+      "components": [
+        "web"
+      ],
+      "highlight": false
+    }
+  ]
+}

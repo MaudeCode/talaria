@@ -505,7 +505,7 @@ function presentError(v: unknown): boolean {
 }
 
 /** A tool result's display sections (TAL-315); clients label and render the fields present, in this order. */
-export interface ToolResultView { outbound_draft?: import('@maudecode/talaria-web-contracts').OutboundDraftRef; text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number }
+export interface ToolResultView { outbound_draft?: import('@maudecode/talaria-web-contracts').OutboundDraftRef; text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number; approval_note?: string }
 
 const RESULT_TEXT_KEYS = ['result', 'results', 'preview', 'content', 'text', 'message', 'summary', 'data', 'items']
 const RESULT_VIEW_MAX_DEPTH = 8
@@ -540,7 +540,7 @@ function exitCodeOf(value: unknown): number | undefined {
   return Number.isSafeInteger(n) ? n : undefined
 }
 
-/** A terminal result's sections; the exit code only when it is non-zero or nothing else would show. */
+/** A terminal result's sections, with the Agent's approval note; the exit code only when it is non-zero or nothing else would show. */
 function terminalView(data: Record<string, unknown>): ToolResultView {
   const view: ToolResultView = {}
   const stdout = sectionText(data.output) ?? sectionText(data.stdout)
@@ -549,6 +549,8 @@ function terminalView(data: Record<string, unknown>): ToolResultView {
   if (stdout) view.stdout = stdout
   if (stderr) view.stderr = stderr
   if (error) view.error = error
+  const approval = typeof data.approval === 'string' ? sectionText(data.approval) : undefined
+  if (approval) view.approval_note = approval
   const exit = exitCodeOf(data.exit_code ?? data.exitCode)
   if (exit !== undefined && (exit !== 0 || !Object.keys(view).length)) view.exit_code = exit
   return view
@@ -611,7 +613,7 @@ export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX): T
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
 export function decidedResultView(value: Record<string, unknown>): ToolResultView {
   const view: ToolResultView = {}
-  for (const key of ['text', 'stdout', 'stderr', 'error'] as const) {
+  for (const key of ['text', 'stdout', 'stderr', 'error', 'approval_note'] as const) {
     const field = value[key]
     if (typeof field === 'string' && field) view[key] = toolResultSnippet(field)
   }

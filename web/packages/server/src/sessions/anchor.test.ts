@@ -178,6 +178,9 @@ describe('buildTurnScene', () => {
     expect(anchorActivitySceneTransportPreview(scene).activity_rows).toMatchObject([{ tool: { id: 'p1', result_view: { text: 'C:\\new\\table' } } }])
     const stored = normalizeSceneRows([{ role: 'tool', tool: { id: 's1', name: 'terminal', result: '{"output": "a\\\\nb", "exit_code": 3}' } }])
     expect(stored[0]?.tool?.result_view).toEqual({ stdout: 'a\nb', exit_code: 3 })
+    // TAL-1910: a view a failed turn's snapshot already decided keeps its approval note.
+    const decided = normalizeSceneRows([{ role: 'tool', tool: { id: 's2', name: 'terminal', result_view: { stdout: 'a', approval_note: 'auto-approved' } } }])
+    expect(decided[0]?.tool?.result_view).toEqual({ stdout: 'a', approval_note: 'auto-approved' })
   })
 
   it('orders each step as reasoning, prose, tools and keeps the one final answer out of the rows', () => {
