@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
-import { ContextMenu, MenuItem } from '../../ui/Menu'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
@@ -116,7 +116,7 @@ export function PluginsSection() {
   )
 }
 
-interface PluginRowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; expanded?: boolean }
+interface PluginRowAction extends RowAction { expanded?: boolean }
 
 /** Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu. */
 function PluginRow({ title, description, status, actions, children }: { title: ReactNode; description: string; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
@@ -125,10 +125,7 @@ function PluginRow({ title, description, status, actions, children }: { title: R
     {status}
     {actions.map((action) => <Button key={action.label} variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={action.disabled === true} aria-busy={action.busy === true} aria-expanded={action.expanded} onClick={action.run}>{action.label}</Button>)}
   </div>{children}</li>
-  if (actions.length === 0) return row
-  return <ContextMenu label={m.plugins_row_menu()} trigger={row}>
-    {actions.map((action) => <MenuItem key={action.label} disabled={action.disabled === true} onClick={action.run}>{action.label}</MenuItem>)}
-  </ContextMenu>
+  return <RowContextMenu label={m.plugins_row_menu()} actions={actions} trigger={row} />
 }
 
 const AUTO_UPDATE_RESOURCE = 'plugin-auto-update'

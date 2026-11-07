@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -9,6 +9,7 @@ import { PanelHeadButton } from '../../shell/PanelHead'
 import { Button, IconButton } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
@@ -30,7 +31,6 @@ export function WorkspacesPage() {
   const order = effects['workspace-order']?.value
   const shown = withCreated(withEffects(ws.data?.workspaces ?? [], (w) => `workspace:${w.path}`, effects), 'workspace', effects)
   const list = order ? [...shown].sort((a, b) => rank(order, a.path) - rank(order, b.path)) : shown
-  // A space still being added has no server entry to move, rename or remove yet.
   const confirmed = new Set((ws.data?.workspaces ?? []).map((w) => w.path))
   const move = (index: number, delta: number) => {
     const next = [...list]
@@ -49,20 +49,23 @@ export function WorkspacesPage() {
       {ws.isError && <ErrorState error={ws.error} onRetry={() => { void ws.refetch() }} />}
       {ws.isSuccess && list.length === 0 && <EmptyState>{m.workspace_no_workspaces()}</EmptyState>}
       <ul className="flex flex-col gap-2" id="workspacesPanel">
-        {list.map((w, i) => (
-          <li key={w.path} className={cn('flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2', ws.data?.last === w.path && 'border-accent-bg-strong')}>
+        {list.map((w, i) => {
+          // A space still being added has no server entry to move, rename or remove yet.
+          const actions: (RowAction & { Icon: LucideIcon })[] = confirmed.has(w.path) ? [
+            { label: m.workspace_move_up(), Icon: ArrowUp, run: () => move(i, -1), disabled: i === 0 },
+            { label: m.workspace_move_down(), Icon: ArrowDown, run: () => move(i, 1), disabled: i === list.length - 1 },
+            { label: m.rename(), Icon: Pencil, run: () => setRenaming({ path: w.path, name: w.name }) },
+            { label: m.remove(), Icon: Trash2, run: () => setRemoving(w.path), danger: true },
+          ] : []
+          return <RowContextMenu key={w.path} label={m.workspace_row_menu()} actions={actions} trigger={
+          <li className={cn('flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2', ws.data?.last === w.path && 'border-accent-bg-strong')}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-sm font-medium text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.workspace_current()}</span>}</div>
               <div className="truncate font-mono text-[11px] text-muted">{w.path}</div>
             </div>
-            {confirmed.has(w.path) && <>
-              <IconButton label={m.workspace_move_up()} onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp size={14} aria-hidden="true" /></IconButton>
-              <IconButton label={m.workspace_move_down()} onClick={() => move(i, 1)} disabled={i === list.length - 1}><ArrowDown size={14} aria-hidden="true" /></IconButton>
-              <IconButton label={m.rename()} onClick={() => setRenaming({ path: w.path, name: w.name })}><Pencil size={14} aria-hidden="true" /></IconButton>
-              <IconButton label={m.remove()} onClick={() => setRemoving(w.path)}><Trash2 size={14} aria-hidden="true" /></IconButton>
-            </>}
-          </li>
-        ))}
+            {actions.map(({ label, Icon, run, disabled }) => <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>)}
+          </li>} />
+        })}
       </ul>
       {adding && <WorkspaceDialog onClose={() => setAdding(false)} onSubmit={(path, name) => { setAdding(false); add.mutate({ resource: newResource('workspace'), path, name }) }} />}
       <ConfirmDialog open={removing !== null} onOpenChange={(o) => { if (!o) setRemoving(null) }} title={m.workspace_remove_confirm()} confirmLabel={m.remove()} cancelLabel={m.cancel()} danger onConfirm={() => { if (removing) remove.mutate(removing) }} />

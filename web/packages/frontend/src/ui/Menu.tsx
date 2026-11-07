@@ -186,6 +186,19 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
   )
 }
 
+/** One action of a row: the row shows it as its own control, and `RowContextMenu` offers it as a menu item. */
+export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean }
+
+/** A row's right-click and long-press menu, with the same actions as its visible controls; a row with none keeps the browser's menu. */
+export function RowContextMenu({ label, actions, trigger }: { label: string; actions: RowAction[]; trigger: ReactElement }) {
+  if (actions.length === 0) return trigger
+  return (
+    <ContextMenu label={label} trigger={trigger}>
+      {actions.map(({ label: name, run, disabled, busy, danger }) => <MenuItem key={name} disabled={disabled === true || busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{name}</MenuItem>)}
+    </ContextMenu>
+  )
+}
+
 /** One row look for action and choice items: compact under a mouse, a 44 px target under a coarse pointer (TAL-1626). */
 export const MENU_ROW = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover pointer-coarse:min-h-11'
 

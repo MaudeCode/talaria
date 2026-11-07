@@ -9,6 +9,7 @@ import { isApiError } from '../../contracts'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
+import { RowContextMenu } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
@@ -138,13 +139,14 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
       {operation && <PageConnect initial={operation} name={connector.name} onDone={() => { setOperation(null); void qc.invalidateQueries({ queryKey: keys.connectors.page }) }} />}
       {accounts.length > 0 && (
         <ul className="flex flex-col gap-1 pl-9" aria-label={m.connectors_accounts_aria({ name: connector.name })}>
-          {accounts.map((account) => (
-            <li key={account.connection_id} className="flex items-center gap-2 text-xs">
+          {accounts.map((account) => {
+            const disconnect = { label: m.connectors_disconnect(), run: () => setRemoving({ id: account.connection_id, name: account.name }), danger: true }
+            return <RowContextMenu key={account.connection_id} label={m.connectors_account_row_menu()} actions={[disconnect]} trigger={<li className="flex items-center gap-2 text-xs">
               <span className="min-w-0 flex-1 truncate text-text">{account.name}</span>
               {account.problem && <span className="text-muted" title={account.status_reason ?? undefined}>{PROBLEM[account.problem]()}</span>}
-              <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setRemoving({ id: account.connection_id, name: account.name })}>{m.connectors_disconnect()}</Button>
-            </li>
-          ))}
+              <Button variant="ghost" className="px-2 py-1 text-xs" onClick={disconnect.run}>{disconnect.label}</Button>
+            </li>} />
+          })}
         </ul>
       )}
       {connector.connected && (

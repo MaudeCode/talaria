@@ -10,7 +10,7 @@ import { useDefaultModelChoice, useSetDefaultModel } from '../../app/queries'
 import { post } from '../../api/client'
 import { OkSchema } from '../../contracts'
 import { Button, IconButton } from '../../ui/Button'
-import { ContextMenu, MenuItem } from '../../ui/Menu'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -25,7 +25,6 @@ import { usePluginInstall } from './usePluginInstall'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
-interface ProviderAction { label: string; run: () => void; busy?: boolean; danger?: boolean }
 
 export function ProvidersSection() {
   const qc = useQueryClient()
@@ -71,15 +70,15 @@ export function ProvidersSection() {
           const isEditing = editing === p.id
           const hint = p.install_hint
           // One list for the visible controls and the right-click and long-press menu.
-          const refresh: ProviderAction = { label: m.providers_refresh_models(), run: () => refreshModels.mutate(p.id), busy: refreshModels.isPending }
-          const actions: ProviderAction[] = [
+          const refresh: RowAction = { label: m.providers_refresh_models(), run: () => refreshModels.mutate(p.id), busy: refreshModels.isPending }
+          const actions: RowAction[] = [
             ...(hint ? [{ label: m.providers_install_plugin(), run: () => install.request(hint), busy: install.isInstalling(hint) }] : []),
             ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => setEditing(isEditing ? null : p.id) }]
               : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => setEditing(isEditing ? null : p.id) }] : []),
             ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => saveKey.mutate({ id: p.id, key: null }), danger: true }] : []),
           ]
           return (
-            <ContextMenu key={p.id} label={m.providers_row_menu()} trigger={<li className={cn('border-t border-border py-4 first:border-t-0', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
+            <RowContextMenu key={p.id} label={m.providers_row_menu()} actions={[refresh, ...actions]} trigger={<li className={cn('border-t border-border py-4 first:border-t-0', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="text-sm font-medium text-text">{p.display_name ?? p.id}</div>
@@ -115,9 +114,7 @@ export function ProvidersSection() {
                   </ul>
                 </details>
               )}
-            </li>}>
-              {[refresh, ...actions].map(({ label, run, busy, danger }) => <MenuItem key={label} disabled={busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)}
-            </ContextMenu>
+            </li>} />
           )
         })}
       </ul>
