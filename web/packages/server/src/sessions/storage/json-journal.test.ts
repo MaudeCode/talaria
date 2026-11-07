@@ -2,7 +2,8 @@ import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, summaryFromTail } from '../journal.js'
 import { JsonJournal } from './json-journal.js'
 
 vi.mock('node:fs', async (original) => {
@@ -329,4 +330,86 @@ it('keeps a settled run replayable after retention archives it', async () => {
   expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
   expect(fs.existsSync(journal.pathFor('session', 'run')), 'the live journal is reclaimed').toBe(false)
   expect(await journal.readRunEvents('session', 'run'), 'retention keeps every replayable event').toEqual(before)
+})
+
+describe('run summary reads', () => {
+  const KIB = 1024
+  const pad = (bytes: number): { text: string } => ({ text: 'x'.repeat(bytes) })
+  /** `rows` tokens of about `bytes` each, then `tail` in order. */
+  async function writeLong(journal: JsonJournal, rows: number, bytes: number, tail: [string, unknown][], close = true): Promise<Awaited<ReturnType<JsonJournal['writer']>>> {
+    const writer = await journal.writer('session', 'run')
+    for (let i = 0; i < rows; i++) await writer.appendSseEvent('token', pad(bytes))
+    for (const [event, payload] of tail) await writer.appendSseEvent(event, payload)
+    if (close) await writer.close()
+    return writer
+  }
+  /** The summary and the bytes its read requested from the journal's file handles. */
+  async function measured(journal: JsonJournal): Promise<{ summary: Awaited<ReturnType<JsonJournal['latestRunSummary']>>; requested: number }> {
+    const probe = await fsp.open(journal.pathFor('session', 'run'), 'r')
+    const read = vi.spyOn(Object.getPrototypeOf(probe) as { read: (...args: unknown[]) => unknown }, 'read')
+    await probe.close()
+    try {
+      const summary = await journal.latestRunSummary('session', 'run')
+      return { summary, requested: read.mock.calls.reduce((total, call) => total + Number(call[2]), 0) }
+    } finally { read.mockRestore() }
+  }
+  const fullRead = async (journal: JsonJournal): Promise<ReturnType<typeof summaryFromTail>> =>
+    summaryFromTail('session', 'run', await journal.readRunEventTail('session', 'run', RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS))
+
+  it.each([
+    ['3 MiB of few rows', 30, 100 * KIB, false],
+    ['3 MiB past the row cap', 600, 5 * KIB, true],
+    ['past the byte cap', 50, 100 * KIB, true],
+  ] as const)('reads at most 64 KiB when the tail holds the terminal row, and summarizes like a full read: %s', async (_name, rows, bytes, truncated) => {
+    const journal = fixture()
+    await writeLong(journal, rows, bytes, [['token', pad(9 * KIB)], ['done', { terminal_state: 'no_response' }], ['stream_end', {}]])
+    const { summary, requested } = await measured(journal)
+    expect(requested).toBeLessThanOrEqual(64 * KIB)
+    expect(summary).toEqual(await fullRead(journal))
+    expect(summary).toMatchObject({ terminal: true, terminal_state: 'errored', last_event: 'stream_end', last_seq: rows + 3, journal_truncated: truncated })
+  })
+
+  it.each([
+    ['stream_end is the only terminal row', [['stream_end', {}]], 'completed'],
+    ['the authoritative row sits past the first read', [['done', { terminal_state: 'no_response' }], ['token', pad(70 * KIB)], ['stream_end', {}]], 'errored'],
+  ] as const)('widens when %s', async (_name, tail, state) => {
+    const journal = fixture()
+    await writeLong(journal, 30, 100 * KIB, [...tail] as [string, unknown][])
+    const { summary, requested } = await measured(journal)
+    expect(requested).toBeGreaterThan(64 * KIB)
+    expect(summary).toEqual(await fullRead(journal))
+    expect(summary).toMatchObject({ terminal: true, terminal_state: state, last_event: 'stream_end' })
+  })
+
+  it('widens when no row fits the first read', async () => {
+    const journal = fixture()
+    const writer = await writeLong(journal, 30, 100 * KIB, [['token', pad(70 * KIB)]], false)
+    const { summary } = await measured(journal)
+    expect(summary).toEqual(await fullRead(journal))
+    expect(summary).toMatchObject({ terminal: false, last_seq: 31, event_count: 31 })
+    await writer.close()
+  })
+
+  it('reads at most 64 KiB for a run its open writer has not settled', async () => {
+    const journal = fixture()
+    const writer = await writeLong(journal, 30, 100 * KIB, [['token', pad(1 * KIB)]], false)
+    const { summary, requested } = await measured(journal)
+    expect(requested).toBeLessThanOrEqual(64 * KIB)
+    expect(summary).toEqual(await fullRead(journal))
+    expect(summary).toMatchObject({ terminal: false, terminal_state: 'running', last_seq: 31 })
+    await writer.close()
+  })
+
+  // A `done` row carries a transcript window, so title frames can follow one the first read cuts in half.
+  it.each([
+    ['a worker that died before stream_end', true],
+    ['a worker still writing title frames', false],
+  ] as const)('keeps the terminal state of a done row past the first read with %s', async (_name, close) => {
+    const journal = fixture()
+    const writer = await writeLong(journal, 30, 100 * KIB, [['done', { terminal_state: 'no_response', session: pad(100 * KIB) }], ['title', { title: 'Named' }]], close)
+    const { summary } = await measured(journal)
+    expect(summary).toEqual(await fullRead(journal))
+    expect(summary).toMatchObject({ terminal: true, terminal_state: 'errored', last_event: 'title' })
+    await writer.close()
+  })
 })
