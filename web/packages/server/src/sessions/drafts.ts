@@ -3,7 +3,7 @@
  * under `sessions/_drafts/<sid>.json` with a monotonic decimal revision.
  */
 import { RevisionConflict, type DocumentBackend } from './storage/backend.js'
-import { readDocument } from './storage/document.js'
+import { readDocument, updateDocument } from './storage/document.js'
 import { isSafeSessionId } from './session.js'
 
 export interface Draft { text: string; files: unknown[]; [key: string]: unknown }
@@ -63,27 +63,28 @@ export class DraftStore {
     const normalized = normalizeDraft(draft)
     const normalizedVersion = normalizeDraftVersion(version)
     this.validate(sid)
-    const current = await readDocument(this.documents, 'drafts', sid, { replaceInvalid: true })
-    let state: [Draft, string | null]
-    try { state = this.recordState(current?.value) } catch { state = [normalizeDraft(null), null] }
-    const [currentDraft, currentVersion] = state
-    if (currentVersion !== null) {
-      if (normalizedVersion === null || cmp(normalizedVersion, currentVersion) < 0) throw new DraftVersionConflict(currentDraft, currentVersion)
-      if (cmp(normalizedVersion, currentVersion) === 0) {
-        if (!sameDraft(normalized, currentDraft)) throw new DraftVersionConflict(currentDraft, currentVersion)
-        return currentDraft
-      }
-    }
-    const record: Record<string, unknown> = { ...normalized }
-    if (normalizedVersion !== null) record[DRAFT_VERSION_KEY] = normalizedVersion
-    try { await this.documents.put('drafts', sid, record, current?.revision ?? null) }
-    catch (error) {
+    try {
+      return await updateDocument(this.documents, 'drafts', sid, (raw) => {
+        let state: [Draft, string | null]
+        try { state = this.recordState(raw) } catch { state = [normalizeDraft(null), null] }
+        const [currentDraft, currentVersion] = state
+        if (currentVersion !== null) {
+          if (normalizedVersion === null || cmp(normalizedVersion, currentVersion) < 0) throw new DraftVersionConflict(currentDraft, currentVersion)
+          if (cmp(normalizedVersion, currentVersion) === 0) {
+            if (!sameDraft(normalized, currentDraft)) throw new DraftVersionConflict(currentDraft, currentVersion)
+            return { value: raw, result: currentDraft, skip: true }
+          }
+        }
+        const record: Record<string, unknown> = { ...normalized }
+        if (normalizedVersion !== null) record[DRAFT_VERSION_KEY] = normalizedVersion
+        return { value: record, result: normalized }
+      }, { replaceInvalid: true })
+    } catch (error) {
       if (!(error instanceof RevisionConflict)) throw error
       const winner = await this.documents.get('drafts', sid)
       const [latest, latestVersion] = this.recordState(winner?.value)
       throw new DraftVersionConflict(latest, latestVersion)
     }
-    return normalized
   }
 
   /** Session IDs that have a stored draft. */
