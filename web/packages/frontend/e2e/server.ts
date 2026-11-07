@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -31,9 +32,23 @@ const STATE_ROOT = existsSync('/dev/shm') ? '/dev/shm' : tmpdir()
 
 export interface ServerHandle { pid: number; state: string; log: string }
 
+/** A listener on the port would answer the `/health` wait below for a server that could not bind. Only a refused connection proves the port free. */
+function assertPortFree(url: URL): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: url.hostname, port: Number(url.port) })
+    socket.once('connect', () => {
+      socket.destroy()
+      reject(new Error(`e2e port ${url.port} is already in use, likely by another run. Set HERMES_E2E_PORT to a free port; the run also uses the next port.`))
+    })
+    socket.once('error', (err: NodeJS.ErrnoException) => { if (err.code === 'ECONNREFUSED') resolve(); else reject(err) })
+  })
+}
+
 /** Boot one isolated Talaria Web server (the Node bin) and wait for `/health`. */
 export async function bootServer(baseUrl: string, extraEnv: Record<string, string> = {}): Promise<ServerHandle> {
-  const port = new URL(baseUrl).port
+  const url = new URL(baseUrl)
+  await assertPortFree(url)
+  const port = url.port
   const state = mkdtempSync(join(STATE_ROOT, 'hermes-e2e-'))
   mkdirSync(join(state, 'workspace'))
   mkdirSync(join(state, 'claude-projects'))
@@ -93,12 +108,16 @@ export function openServerState(): string { return serverState('open') }
 /** A spec's own handle on a server's Agent state.db. The server reads the same file while it runs, so writes wait out its lock instead of failing with "database is locked". */
 export function openStateDb(state: string): DatabaseSync { return new DatabaseSync(join(state, 'state.db'), { timeout: 5000 }) }
 
-export function stopServers(): void {
-  let handles: ServerHandle[] = []
-  try { handles = JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[] } catch { return }
+export function stopHandles(handles: ServerHandle[]): void {
   for (const h of handles) {
     try { process.kill(h.pid, 'SIGTERM') } catch { /* already gone */ }
     if (!process.env.HERMES_E2E_KEEP_STATE) rmSync(h.state, { recursive: true, force: true })
   }
+}
+
+export function stopServers(): void {
+  let handles: ServerHandle[] = []
+  try { handles = JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[] } catch { return }
+  stopHandles(handles)
   rmSync(STATE_FILE, { force: true })
 }

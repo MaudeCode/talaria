@@ -175,7 +175,8 @@ terminal input, resize requests, and closing on desktop and mobile.
 run Playwright against the built assets and the Node server started by `e2e/server.ts`
 (`HERMES_E2E_PORT`, `HERMES_WEBUI_AGENT_DIR`, `HERMES_WEBUI_SIDECAR_COMMAND` are honoured; without an Agent dir or
 sidecar command it uses the fixture replay sidecar). See
-`docs/architecture/frontend-migration.md` for the layout.
+`docs/architecture/frontend-migration.md` for the layout. An occupied e2e port (`HERMES_E2E_PORT`, default 8797, or
+the next port) fails the run; set `HERMES_E2E_PORT` to a free port. The run never reuses a running server.
 
 `src/reactCompilerCoverage.test.ts` compiles every shipped frontend source with React Compiler and fails on any
 function the compiler skips; a skipped function still builds, unmemoized. Lint misses some skips, notably `try` with
