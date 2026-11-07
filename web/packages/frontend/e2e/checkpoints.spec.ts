@@ -44,8 +44,21 @@ test('the Checkpoints page lists, diffs and restores a workspace checkpoint', as
   await diff.getByRole('button', { name: 'Close' }).click()
   await expect(diff).toHaveCount(0)
 
-  await entry.getByRole('button', { name: 'Restore' }).click()
+  // TAL-1156: the row's menu has the same two actions as its buttons, and Restore still asks.
+  const menu = page.getByRole('menu')
+  await entry.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['View diff', 'Restore'])
+  await menu.getByRole('menuitem', { name: 'View diff' }).click()
+  await expect(diff.getByRole('list', { name: '1 file changed' })).toContainText('notes.txt')
+  await diff.getByRole('button', { name: 'Close' }).click()
+  await entry.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Restore' }).click()
   const confirm = page.getByRole('alertdialog', { name: 'Restore checkpoint?' })
+  await expect(confirm).toContainText('before write_file')
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirm).toHaveCount(0)
+
+  await entry.getByRole('button', { name: 'Restore' }).click()
   await expect(confirm).toContainText('before write_file')
   await expect(confirm.getByRole('button', { name: 'Restore everything' })).toBeVisible()
   if (process.env.TAL571_SHOTS) await page.screenshot({ path: `${process.env.TAL571_SHOTS}/confirm-${testInfo.project.name}.png` })

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "In the workspace panel, right-click or long-press a file or checkpoint to open its actions where you pressed; right-click the empty file tree to create a file or folder.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

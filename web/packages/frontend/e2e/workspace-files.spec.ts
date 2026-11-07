@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import type { Locator, Page } from '@playwright/test'
+import { expect, longPress, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -117,35 +117,36 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   errors.splice(0, errors.length, ...errors.filter((e) => !/400 POST .*\/api\/file\/(create|delete)$|status of 400/.test(e)))
 })
 
+/** A synthetic workspace (the `docs` folder, `plan.txt`, `seed.txt`) open on the Files page. */
+const start = async (page: Page, projectName: string) => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal1935-')))
+  mkdirSync(join(workspace, 'docs'))
+  writeFileSync(join(workspace, 'plan.txt'), 'plan')
+  writeFileSync(join(workspace, 'seed.txt'), 'seed')
+  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
+  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
+  await page.goto(`/session/${created.session.session_id}`)
+  if (projectName === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
+  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
+  await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
+  const tree = page.getByRole('tree', { name: 'Files' })
+  const item = (name: string) => tree.getByRole('treeitem', { name: row(name) })
+  await expect(item('seed.txt')).toBeVisible()
+  const newFile = async () => {
+    await page.getByRole('button', { name: 'New File' }).click()
+    await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await expect(item('notes.txt')).toBeVisible()
+  }
+  const finish = async () => {
+    await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
+    rmSync(workspace, { recursive: true, force: true })
+  }
+  return { workspace, tree, item, newFile, finish }
+}
+
 /** TAL-1935: a new file's row can be opened at once, however late the server answers the create and the reread after it. */
 test.describe('a just-created file', () => {
-  const start = async (page: Page, projectName: string) => {
-    const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal1935-')))
-    mkdirSync(join(workspace, 'docs'))
-    writeFileSync(join(workspace, 'plan.txt'), 'plan')
-    writeFileSync(join(workspace, 'seed.txt'), 'seed')
-    expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
-    const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
-    await page.goto(`/session/${created.session.session_id}`)
-    if (projectName === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
-    else await page.getByRole('button', { name: 'Show workspace panel' }).click()
-    await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
-    const tree = page.getByRole('tree', { name: 'Files' })
-    const item = (name: string) => tree.getByRole('treeitem', { name: row(name) })
-    await expect(item('seed.txt')).toBeVisible()
-    const newFile = async () => {
-      await page.getByRole('button', { name: 'New File' }).click()
-      await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
-      await page.getByRole('button', { name: 'Create' }).click()
-      await expect(item('notes.txt')).toBeVisible()
-    }
-    const finish = async () => {
-      await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
-      rmSync(workspace, { recursive: true, force: true })
-    }
-    return { tree, item, newFile, finish }
-  }
-
   test('opens its preview when opened before the server has created it', async ({ page }, testInfo) => {
     const { item, newFile, finish } = await start(page, testInfo.project.name)
     const create = Promise.withResolvers<undefined>()
@@ -192,6 +193,67 @@ test.describe('a just-created file', () => {
     await expect(item('notes.txt')).toHaveAccessibleName('notes.txt, file, 0 B')
     await page.mouse.up()
     await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('')
+    await finish()
+  })
+})
+
+/** TAL-1156: a row's menu has the kebab's items and opens at the pointer; the tree's empty area creates in the current folder. */
+test.describe('the Files tree context menus', () => {
+  const ROW_ITEMS = ['Rename', 'Reveal in file manager', 'Open in VS Code', 'Delete']
+
+  /** Right-clicks `target` at `at` and checks that a corner of the menu is there; the menu flips when it lacks room. */
+  const rightClick = async (page: Page, target: Locator, at: (box: { width: number; height: number }) => { x: number; y: number }) => {
+    const box = await target.boundingBox()
+    if (!box) throw new Error('right-click target is not visible')
+    const position = at(box)
+    await target.click({ button: 'right', position })
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    const opened = await menu.boundingBox()
+    if (!opened) throw new Error('the menu is not visible')
+    const fromEdge = (pointer: number, start: number, size: number) => Math.min(Math.abs(pointer - start), Math.abs(pointer - start - size))
+    expect(fromEdge(box.x + position.x, opened.x, opened.width)).toBeLessThan(8)
+    expect(fromEdge(box.y + position.y, opened.y, opened.height)).toBeLessThan(8)
+    return menu
+  }
+
+  test('a right-click on a row opens its menu at the pointer, the same list as its kebab', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'right-click is the desktop route')
+    const { tree, item, finish } = await start(page, testInfo.project.name)
+    const menu = await rightClick(page, item('seed.txt'), () => ({ x: 30, y: 8 }))
+    await expect(menu.getByRole('menuitem')).toHaveText(ROW_ITEMS)
+    await menu.getByRole('menuitem', { name: 'Rename' }).click()
+    await page.getByRole('textbox', { name: 'New name:' }).fill('renamed.txt')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(item('renamed.txt')).toBeVisible()
+
+    await item('plan.txt').hover()
+    await tree.locator('.group').filter({ has: page.getByRole('treeitem', { name: row('plan.txt') }) }).getByRole('button', { name: 'More actions' }).click()
+    await expect(menu.getByRole('menuitem')).toHaveText(ROW_ITEMS)
+    await finish()
+  })
+
+  test('a right-click on the empty area creates in the current folder', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'right-click is the desktop route')
+    const { workspace, tree, item, finish } = await start(page, testInfo.project.name)
+    await item('docs').click()
+    await expect(tree.getByRole('status')).toBeVisible()
+    const menu = await rightClick(page, tree, ({ width, height }) => ({ x: width / 2, y: height / 2 }))
+    await expect(menu.getByRole('menuitem')).toHaveText(['New File', 'New Folder'])
+    await menu.getByRole('menuitem', { name: 'New Folder' }).click()
+    await page.getByRole('textbox', { name: 'New folder name:' }).fill('made')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await expect(item('made')).toBeVisible()
+    await expect.poll(() => existsSync(join(workspace, 'docs', 'made'))).toBe(true)
+    await finish()
+  })
+
+  test('a long-press opens the row menu alone, without opening the row', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'long-press is the touch route')
+    const { item, finish } = await start(page, testInfo.project.name)
+    await longPress(page, item('seed.txt'))
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(ROW_ITEMS)
+    await expect(page.getByRole('button', { name: 'Back' })).toHaveCount(0)
     await finish()
   })
 })

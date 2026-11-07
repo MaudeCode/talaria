@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type DragEvent, type KeyboardEvent, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type DragEvent, type KeyboardEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -9,7 +9,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Select } from '../../ui/Select'
 import { HelpTip, TextInput } from '../../ui/Field'
-import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
+import { ContextMenu, Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -99,7 +99,6 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
     return to === null ? [] : [[keyOf(to + path.slice(from.length)), text]]
   })))
   const [pending, setPending] = useState<Pending>(null)
-  const [menuFor, setMenuFor] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   // TAL-1606: the tree has one tab stop, the row last focused in this folder. A refresh keeps it on that row; a removed
@@ -199,6 +198,17 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
   const text = draft ?? (typeof saving === 'string' ? saving : content.data?.content ?? '')
   const rawUrl = (inline?: boolean) => appUrl(api.rawFileUrl(sessionId, file ?? '', inline)).href
+  // One list for a row's kebab and its right-click and long-press menu.
+  const entryItems = (entry: Entry) => <>
+    <MenuItem onClick={() => setPending({ kind: 'rename', entry })}>{m.rename_title()}</MenuItem>
+    <MenuItem onClick={() => op.mutate(() => api.revealEntry(sessionId, entry.path))}>{m.ws_panel_reveal()}</MenuItem>
+    <MenuItem onClick={() => op.mutate(() => api.openInVsCode(sessionId, entry.path))}>{m.ws_panel_open_vscode()}</MenuItem>
+    <MenuSeparator />
+    <MenuItem className="text-error" onClick={() => setPending({ kind: 'delete', entry })}>{m.delete()}</MenuItem>
+  </>
+  // One list for the toolbar's buttons and the empty area's menu; the managed source has neither.
+  const newEntries = [{ kind: 'new-file', label: m.new_file(), Icon: FilePlus }, { kind: 'new-folder', label: m.new_folder(), Icon: FolderPlus }] as const
+  const withTreeMenu = (tree: ReactElement) => managed ? tree : <ContextMenu label={m.ws_panel_files()} trigger={tree}>{newEntries.map(({ kind, label }) => <MenuItem key={kind} onClick={() => setPending({ kind })}>{label}</MenuItem>)}</ContextMenu>
   return (
     <>
       <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
@@ -252,8 +262,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
           {!managed && <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
             <IconButton label={m.ws_panel_up()} className={cn('h-7 w-7', dropTarget === parentOf(dir) && dir !== '.' && 'bg-accent-bg')} disabled={dir === '.'} onClick={() => go(parentOf(dir))} {...(dir !== '.' ? dropProps(parentOf(dir)) : {})}><ArrowUp size={14} aria-hidden="true" /></IconButton>
             <span className="min-w-0 flex-1 truncate font-mono text-muted">{dir}</span>
-            <IconButton label={m.new_file()} className="h-7 w-7" onClick={() => setPending({ kind: 'new-file' })}><FilePlus size={14} aria-hidden="true" /></IconButton>
-            <IconButton label={m.new_folder()} className="h-7 w-7" onClick={() => setPending({ kind: 'new-folder' })}><FolderPlus size={14} aria-hidden="true" /></IconButton>
+            {newEntries.map(({ kind, label, Icon }) => <IconButton key={kind} label={label} className="h-7 w-7" onClick={() => setPending({ kind })}><Icon size={14} aria-hidden="true" /></IconButton>)}
             <a className="text-muted hover:text-text" href={appUrl(api.folderDownloadUrl(sessionId, dir)).href} aria-label={m.ws_panel_download()}><Download size={14} aria-hidden="true" /></a>
           </div>}
           {notice && (
@@ -262,7 +271,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               <IconButton label={m.close()} className="h-5 w-5" onClick={() => setNotice(null)}><X size={12} aria-hidden="true" /></IconButton>
             </div>
           )}
-          <div ref={treeRef} className="file-tree min-h-0 flex-1 overflow-y-auto p-1" role="tree" aria-label={m.ws_panel_files()} onKeyDown={onTreeKey} onBlur={(ev) => { if (ev.relatedTarget && !ev.currentTarget.contains(ev.relatedTarget)) focusedRow.current = null }}>
+          {withTreeMenu(<div ref={treeRef} className="file-tree min-h-0 flex-1 overflow-y-auto p-1" role="tree" aria-label={m.ws_panel_files()} onKeyDown={onTreeKey} onBlur={(ev) => { if (ev.relatedTarget && !ev.currentTarget.contains(ev.relatedTarget)) focusedRow.current = null }}>
             {listing.isPending && <LoadingState />}
             {listing.isError && <ErrorState error={listing.error} onRetry={() => { void listing.refetch() }} />}
             {listing.isSuccess && entries.length === 0 && <div role="status" className="p-3 text-xs text-muted">{listing.data.unavailable ? m.ws_panel_managed_unavailable() : m.ws_panel_empty()}</div>}
@@ -272,7 +281,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               const entry: Entry = { path, name: e.name, isDir }
               const size = !isDir && e.size !== undefined && e.size !== null ? formatBytes(e.size) : ''
               const tabIndex = i === activeIndex ? 0 : -1
-              return (
+              const row = (
                 <div key={path} role="none" className={cn('group flex items-center rounded-md hover:bg-hover', e.hidden && 'opacity-60', dropTarget === path && 'bg-accent-bg')} {...(isDir ? dropProps(path) : {})}>
                   <button
                     type="button"
@@ -283,7 +292,6 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
                     draggable={!managed}
                     onDragStart={(ev) => { ev.dataTransfer.setData(DRAG_TYPE, path); ev.dataTransfer.effectAllowed = 'move' }}
                     onDragEnd={() => setDropTarget(null)}
-                    onContextMenu={(ev) => { if (!managed) { ev.preventDefault(); setMenuFor(path) } }}
                     onClick={() => (isDir ? go(path) : setFile(path))}
                     className="file-item flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[12.5px] text-text"
                     title={path}
@@ -295,20 +303,15 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
                   {!managed && <Menu
                     label={m.more_actions()}
                     align="end"
-                    open={menuFor === path}
-                    onOpenChange={(o) => setMenuFor(o ? path : null)}
                     trigger={<IconButton label={m.more_actions()} tabIndex={tabIndex} className="h-6 w-6 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}
                   >
-                    <MenuItem onClick={() => setPending({ kind: 'rename', entry })}>{m.rename_title()}</MenuItem>
-                    <MenuItem onClick={() => op.mutate(() => api.revealEntry(sessionId, path))}>{m.ws_panel_reveal()}</MenuItem>
-                    <MenuItem onClick={() => op.mutate(() => api.openInVsCode(sessionId, path))}>{m.ws_panel_open_vscode()}</MenuItem>
-                    <MenuSeparator />
-                    <MenuItem className="text-error" onClick={() => setPending({ kind: 'delete', entry })}>{m.delete()}</MenuItem>
+                    {entryItems(entry)}
                   </Menu>}
                 </div>
               )
+              return managed ? row : <ContextMenu key={path} label={e.name} trigger={row}>{entryItems(entry)}</ContextMenu>
             })}
-          </div>
+          </div>)}
         </div>
       )}
       {pending?.kind === 'new-file' && <NameDialog title={m.new_file()} label={m.new_file_prompt()} confirmLabel={m.create()} onClose={() => setPending(null)} onSubmit={(name) => submitName('file', name)} />}
