@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats with many images open and load faster in Talaria Web.",
+      "components": [
+        "web"
+      ],
+      "highlight": false
+    }
+  ]
+}

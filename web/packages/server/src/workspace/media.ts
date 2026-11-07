@@ -2,11 +2,12 @@
  * Byte-serving helpers and the `/api/media` allow/deny model (Python
  * `_serve_file_bytes`, `_media_deny_reason`, and `_session_media_token_allows_path`).
  */
-import { closeSync, createReadStream, fstatSync, openSync, readdirSync, read, realpathSync, statSync } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, lstatSync, openSync, readdirSync, read, realpathSync, statSync } from 'node:fs'
 import { constants as fsConstants, type BigIntStats } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
 import { createHash } from 'node:crypto'
+import { settledFileStatKey } from '../fs/stat.js'
 import type { RequestContext } from '../http/context.js'
 import { NotFoundError, openAnchoredFd } from './fs.js'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -288,12 +289,9 @@ export function mediaRefPath(ref: string): string {
   return resolvePathLikePython(ref.replace(/^~(?=$|\/)/, process.env.HOME ?? ''))
 }
 
-/** Allow exact safe `MEDIA:` paths the assistant/tool emitted in the requested session. */
-export function sessionMediaTokenAllowsPath(session: Session | null, target: string, allowedMimes: Set<string>): boolean {
-  if (!session) return false
-  if (!allowedMimes.has(mimeFor(target))) return false
-  let targetResolved: string
-  try { targetResolved = realpathSync(target) } catch { targetResolved = resolvePathLikePython(target) }
+/** The `MEDIA:` references the assistant and tools wrote in a session, as written. */
+function sessionMediaRefs(session: Session): Set<string> {
+  const refs = new Set<string>()
   for (const message of session.messages) {
     if (!message || typeof message !== 'object') continue
     const role = str((message as { role?: unknown }).role).trim().toLowerCase()
@@ -302,16 +300,26 @@ export function sessionMediaTokenAllowsPath(session: Session | null, target: str
     if (!text.includes('MEDIA:')) continue
     for (const m of text.matchAll(MEDIA_TOKEN_RE)) {
       const ref = m[1] ?? ''
-      if (ref.includes('://')) continue
-      try {
-        const expanded = mediaRefPath(ref)
-        let resolved = expanded
-        try { resolved = realpathSync(expanded) } catch { /* keep */ }
-        if (resolved === targetResolved) return true
-      } catch { /* skip */ }
+      if (!ref.includes('://')) refs.add(ref)
     }
   }
-  return false
+  return refs
+}
+
+/**
+ * Allow exact safe `MEDIA:` paths the assistant/tool emitted in the requested session. The transcript is read at most
+ * once per grant, and its references resolved at most once: a reference written as the target's own path needs neither.
+ */
+function sessionMediaGrant(session: Session | null): (target: string, real: string) => boolean {
+  let refs: Set<string> | null = null
+  let resolved: Set<string> | null = null
+  return (target, real) => {
+    if (!session || !SESSION_MEDIA_TOKEN_TYPES.has(mimeFor(target))) return false
+    refs ??= sessionMediaRefs(session)
+    if (refs.has(target)) return true
+    resolved ??= new Set(Array.from(refs, (ref) => mediaRefPath(ref)))
+    return resolved.has(real)
+  }
 }
 
 export function safePlatformTempRoot(protectedRoots: string[]): string | null {
@@ -356,59 +364,101 @@ const DENY_FILENAMES = new Set(['settings.json', 'state.db', 'state.db-wal', 'st
 const DENY_SUBDIRS = ['sessions', 'memories', 'cron', 'logs', 'checkpoints', 'backups', 'media_snapshots', 'credentials', 'pairing', 'mcp-tokens', 'webapp', 'browser-profile']
 const DENY_TMP_SUFFIXES = ['.sessions.tmp', '.login_attempts.tmp', '.passkeys.tmp', '.passkey_challenges.tmp']
 
-function norm(p: string): string {
-  let resolved = p
-  try { resolved = realpathSync(p) } catch { resolved = resolvePathLikePython(p) }
-  return resolved.toLowerCase()
+/** `p` with its symlinks resolved and a missing tail kept lexically. */
+function realOrResolved(p: string): string {
+  try { return realpathSync(p) } catch { return resolvePathLikePython(p) }
 }
-const withinCi = (child: string, root: string): boolean => { const c = norm(child); const r = norm(root); return c === r || isWithin(c, r) }
-const equalCi = (a: string, b: string): boolean => norm(a) === norm(b)
+const norm = (p: string): string => realOrResolved(p).toLowerCase()
+
+/** The normalized comparison lists of one set of homes, and every directory whose entries could change them. */
+interface MediaPolicyScope { roots: string[]; denyDirs: string[]; watched: string[] }
+
+function buildMediaPolicyScope(deps: Pick<MediaPolicyDeps, 'home' | 'hermesHome' | 'stateDir'>): MediaPolicyScope {
+  const baseRoots = [deps.hermesHome, join(deps.home, '.hermes'), deps.stateDir]
+  const watched = new Set(baseRoots)
+  /** A child of a real directory is real unless it is itself a symlink, the one case that needs a resolve (and a watch: a retarget further along the chain leaves its parent untouched). */
+  const realChild = (parent: string, name: string): string => {
+    const child = join(parent, name)
+    try { if (!lstatSync(child).isSymbolicLink()) return child } catch { return child }
+    watched.add(child)
+    return realOrResolved(child)
+  }
+  const roots = new Map<string, string>()
+  const addRoot = (real: string): void => { if (!roots.has(real.toLowerCase())) roots.set(real.toLowerCase(), real) }
+  for (const root of baseRoots) addRoot(realOrResolved(root))
+  for (const root of [...roots.values()]) {
+    watched.add(join(root, 'profiles'))
+    const profilesDir = realChild(root, 'profiles')
+    try {
+      for (const child of readdirSync(profilesDir, { withFileTypes: true })) if (child.isDirectory()) addRoot(join(profilesDir, child.name))
+    } catch { /* no profiles dir */ }
+  }
+  const denyDirs: string[] = []
+  for (const root of roots.values()) {
+    watched.add(root).add(join(root, 'webui_state'))
+    const state = realChild(root, 'webui_state')
+    for (const sub of DENY_SUBDIRS) denyDirs.push(realChild(root, sub).toLowerCase(), realChild(state, sub).toLowerCase())
+  }
+  return { roots: [...roots.keys()], denyDirs, watched: [...watched] }
+}
+
+/** The stat identity of every watched directory; null while any changed too recently for a signature to be trusted. */
+function watchedSignature(watched: string[]): string | null {
+  const keys: string[] = []
+  for (const path of watched) {
+    let st
+    try { st = statSync(path, { bigint: true }) } catch { keys.push('missing'); continue }
+    const key = settledFileStatKey(path, st)
+    if (key === null) return null
+    keys.push(key)
+  }
+  return keys.join('|')
+}
+
+// One server has one set of homes. Holds paths only, and every decision revalidates the signature.
+let cachedPolicyScope: { key: string; signature: string | null; scope: MediaPolicyScope } | null = null
+
+function mediaPolicyScope(deps: Pick<MediaPolicyDeps, 'home' | 'hermesHome' | 'stateDir'>): MediaPolicyScope {
+  const key = JSON.stringify([deps.hermesHome, deps.home, deps.stateDir])
+  const cached = cachedPolicyScope
+  if (cached?.key === key && cached.signature !== null && watchedSignature(cached.scope.watched) === cached.signature) return cached.scope
+  const scope = buildMediaPolicyScope(deps)
+  cachedPolicyScope = { key, signature: watchedSignature(scope.watched), scope }
+  return scope
+}
+
+/** Python `_media_deny_reason` with its roots and workspace resolved once: `real` is the target's resolved path. */
+function mediaPolicyDecider(deps: MediaPolicyDeps<string | null>): (target: string, real: string) => string | null {
+  const { roots, denyDirs } = mediaPolicyScope(deps)
+  const legacySnapshotDir = deps.legacySnapshotDir ? norm(deps.legacySnapshotDir) : null
+  const safeWorkspace = (ws: string | null): string | null => {
+    if (!ws) return null
+    const normalized = norm(ws)
+    if (normalized === norm(deps.home)) return null
+    if (roots.some((root) => isWithin(root, normalized))) return null
+    if (basename(ws) === 'profiles' || basename(resolve(ws, '..')) === 'profiles') return null
+    if (DENY_SUBDIRS.includes(basename(ws))) return null
+    return normalized
+  }
+  const workspace = safeWorkspace(deps.activeWorkspace())
+  return (target, real) => {
+    try {
+      const st = statSync(target)
+      if (st.isFile() && st.nlink > 1) return 'media file has multiple hard links'
+    } catch { /* a missing path is not a hard link */ }
+    const normalized = real.toLowerCase()
+    if (legacySnapshotDir && isWithin(normalized, legacySnapshotDir)) return 'legacy media snapshot store is internal'
+    if (denyDirs.some((dir) => isWithin(normalized, dir))) return 'denied state subdir'
+    if (workspace && isWithin(normalized, workspace)) return null
+    const name = basename(target).toLowerCase()
+    if (roots.some((root) => isWithin(normalized, root)) && (DENY_FILENAMES.has(name) || DENY_TMP_SUFFIXES.some((s) => name.endsWith(s)))) return 'denied state filename'
+    return null
+  }
+}
 
 /** Python `_media_deny_reason`: hard-deny Hermes's own state and secret files. */
 export function mediaDenyReasonResolved(target: string, deps: MediaPolicyDeps<string | null>): string | null {
-  try {
-    const st = statSync(target)
-    if (st.isFile() && st.nlink > 1) return 'media file has multiple hard links'
-  } catch { /* a missing path is not a hard link */ }
-  const roots: string[] = []
-  for (const r of [deps.hermesHome, join(deps.home, '.hermes'), deps.stateDir]) {
-    const resolved = norm(r)
-    if (!roots.some((x) => norm(x) === resolved)) roots.push(r)
-  }
-  const profileRoots: string[] = []
-  for (const root of [...roots]) {
-    const profilesDir = join(root, 'profiles')
-    try {
-      for (const child of readdirSync(profilesDir, { withFileTypes: true })) {
-        if (!child.isDirectory()) continue
-        const pr = join(profilesDir, child.name)
-        if (!roots.some((x) => equalCi(x, pr)) && !profileRoots.some((x) => equalCi(x, pr))) profileRoots.push(pr)
-      }
-    } catch { /* no profiles dir */ }
-  }
-  roots.push(...profileRoots)
-  const denyDirs: string[] = []
-  for (const root of roots) {
-    for (const sub of DENY_SUBDIRS) denyDirs.push(join(root, sub), join(root, 'webui_state', sub))
-  }
-  if (deps.legacySnapshotDir && withinCi(target, deps.legacySnapshotDir)) return 'legacy media snapshot store is internal'
-  const activeWorkspace = deps.activeWorkspace()
-  const safeCarveout = (ws: string | null): boolean => {
-    if (!ws) return false
-    if (equalCi(ws, deps.home)) return false
-    for (const root of roots) if (equalCi(ws, root) || withinCi(root, ws)) return false
-    if (basename(ws) === 'profiles' || basename(resolve(ws, '..')) === 'profiles') return false
-    if (DENY_SUBDIRS.includes(basename(ws))) return false
-    return true
-  }
-  const inActiveWorkspace = activeWorkspace !== null && safeCarveout(activeWorkspace) && withinCi(target, activeWorkspace)
-  if (denyDirs.some((d) => withinCi(target, d))) return 'denied state subdir'
-  if (!inActiveWorkspace) {
-    const underRoot = roots.some((root) => withinCi(target, root))
-    const name = basename(target).toLowerCase()
-    if (underRoot && (DENY_FILENAMES.has(name) || DENY_TMP_SUFFIXES.some((s) => name.endsWith(s)))) return 'denied state filename'
-  }
-  return null
+  return mediaPolicyDecider(deps)(target, realOrResolved(target))
 }
 
 /** What `/api/media` authorizes against, besides the session: the homes, the safe temp roots, the active workspace and `MEDIA_ALLOWED_ROOTS`. */
@@ -428,12 +478,19 @@ export function mediaTarget(rawPath: string): string {
   try { return realpathSync(target) } catch { return target } // a missing path keeps its lexical resolution
 }
 
+/** The file a `MEDIA:` reference names, resolved once: `mediaRefPath` already yields what `mediaTarget` would. Throws on an invalid path. */
+export function mediaRefTarget(ref: string): string {
+  if (ref.includes('\0')) throw new Error('embedded null byte')
+  return mediaRefPath(ref)
+}
+
 /**
- * The `/api/media` decision for a resolved target: the root that authorizes it (which also anchors the open, so a
+ * The `/api/media` decision for resolved targets: the root that authorizes one (which also anchors the open, so a
  * component replaced by a symlink after the check fails the descriptor walk), the file's own directory for a
- * session-token grant, or null when the path is denied.
+ * session-token grant, or null when the path is denied. Everything but the target is resolved once, so one session's
+ * references share it; `real` defaults to the target for a caller holding `mediaRefTarget`'s result.
  */
-export function mediaAnchorRootResolved(target: string, session: Session | null, deps: MediaAccessDeps<string | null>): string | null {
+export function mediaAccessResolver(session: Session | null, deps: MediaAccessDeps<string | null>): (target: string, real?: string) => string | null {
   const baseHermes = join(deps.home, '.hermes')
   const allowedRoots: string[] = [deps.hermesHome, baseHermes]
   const legacyTmp = safeLegacyTmpRoot([deps.home, deps.hermesHome, baseHermes])
@@ -450,15 +507,23 @@ export function mediaAnchorRootResolved(target: string, session: Session | null,
       if (statSync(rp).isDirectory()) allowedRoots.push(rp)
     } catch { /* skip */ }
   }
-  if (mediaDenyReasonResolved(target, deps.policy)) return null
+  const resolvedRoots: string[] = []
   for (const root of allowedRoots) {
-    let resolvedRoot: string
-    try { resolvedRoot = realpathSync(root) } catch { continue }
-    if (target === resolvedRoot || isWithin(target, resolvedRoot)) return resolvedRoot
+    try { resolvedRoots.push(realpathSync(root)) } catch { /* a missing root authorizes nothing */ }
   }
-  return sessionMediaTokenAllowsPath(session, target, SESSION_MEDIA_TOKEN_TYPES) ? dirname(target) : null
+  const denyReason = mediaPolicyDecider(deps.policy)
+  const sessionGrants = sessionMediaGrant(session)
+  return (target, real = target) => {
+    if (denyReason(target, real)) return null
+    for (const root of resolvedRoots) if (isWithin(target, root)) return root
+    return sessionGrants(target, real) ? dirname(target) : null
+  }
 }
 
+/** One `/api/media` decision: see `mediaAccessResolver`. */
+export function mediaAnchorRootResolved(target: string, session: Session | null, deps: MediaAccessDeps<string | null>): string | null {
+  return mediaAccessResolver(session, deps)(target, realOrResolved(target))
+}
 
 export async function resolveMediaAccess(deps: MediaAccessDeps): Promise<MediaAccessDeps<string | null>> {
   const [workspace, policyWorkspace] = await Promise.all([deps.activeWorkspace(), deps.policy.activeWorkspace()])
