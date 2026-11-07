@@ -389,8 +389,8 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
   rules in `shell.css` draw the frame (sidebar column and main card). The query
   client hydrates a `dehydrate()` snapshot of the shell queries from
   `hermes-boot:queries` (validated with the contract schemas on the way in,
-  stale on arrival, written 500 ms after each successful fetch and on
-  `pagehide`). Logout, completed password/passkey login and expired-auth redirects
+  stale on arrival, written in idle time after a 500 ms debounce and
+  synchronously on `pagehide`, skipped when no kept query's data changed). Logout, completed password/passkey login and expired-auth redirects
   share `resetIdentityCache()`. It retires query-cache persistence subscriptions,
   cancels their timers and queries, clears their caches, and removes the
   `hermes-boot:` and last-session keys. A separate browser-storage generation

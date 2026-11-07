@@ -60,12 +60,27 @@ function restoreSnapshot(qc: QueryClient, generation: string | null): void {
   hydrate(qc, { queries, mutations: [] } as unknown as DehydratedState)
 }
 
-function persistSnapshot(qc: QueryClient, generation: string | null): void {
+type KeptQueries = DehydratedState['queries']
+
+/**
+ * Comparing the JSON would never match: every success moves `dataUpdatedAt` and `dataUpdateCount`, and `dehydrate`
+ * stamps `dehydratedAt`. Structural sharing keeps a query's `data` reference while its content is unchanged. A skip
+ * leaves older timestamps in storage, which only makes the restored entry refetch sooner.
+ */
+function sameContent(a: KeptQueries, b: KeptQueries): boolean {
+  return a.length === b.length && a.every((q, i) => q.queryHash === b[i]?.queryHash && q.state.data === b[i]?.state.data)
+}
+
+/** Returns the queries storage now holds, for the next call to compare against. */
+function persistSnapshot(qc: QueryClient, generation: string | null, written: KeptQueries | null): KeptQueries | null {
   const keep = (q: Query) => q.state.status === 'success' && snapshotSchema(q.queryKey) !== null
-  let json = JSON.stringify({ ...dehydrate(qc, { shouldDehydrateQuery: keep }), generation })
+  const dehydrated = dehydrate(qc, { shouldDehydrateQuery: keep })
+  if (written && sameContent(written, dehydrated.queries)) return written
+  let json = JSON.stringify({ ...dehydrated, generation })
   // Over budget: the transcript is the only entry that grows; drop it and keep the shell queries.
-  if (json.length > SNAPSHOT_LIMIT) json = JSON.stringify({ ...dehydrate(qc, { shouldDehydrateQuery: (q) => keep(q) && q.queryKey[1] !== 'detail' }), generation })
-  if (json.length <= SNAPSHOT_LIMIT && readPersisted(GENERATION_KEY) === generation) writePersisted(SNAPSHOT_KEY, json)
+  if (json.length > SNAPSHOT_LIMIT) json = JSON.stringify({ ...dehydrated, queries: dehydrated.queries.filter((q) => q.queryKey[1] !== 'detail'), generation })
+  if (json.length > SNAPSHOT_LIMIT || readPersisted(GENERATION_KEY) !== generation) return written
+  return writePersisted(SNAPSHOT_KEY, json) ? dehydrated.queries : written
 }
 
 export function createQueryClient(): QueryClient {
@@ -89,6 +104,8 @@ export function createQueryClient(): QueryClient {
     const generation = readPersisted(GENERATION_KEY)
     restoreSnapshot(qc, generation)
     let timer: number | undefined
+    let idlePending = false
+    let written: KeptQueries | null = null
     let retired = false
     const retire = () => {
       retired = true
@@ -107,7 +124,15 @@ export function createQueryClient(): QueryClient {
       }
       return !retired
     }
-    const persist = () => { if (isCurrent()) persistSnapshot(qc, generation) }
+    const persist = () => { if (isCurrent()) written = persistSnapshot(qc, generation, written) }
+    // A callback already queued reads the latest cache when it runs, so a later success need not queue another.
+    const persistWhenIdle = () => {
+      if (idlePending) return
+      idlePending = true
+      const run = () => { idlePending = false; persist() }
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2_000 })
+      else window.setTimeout(run, 0)
+    }
     const onStorage = (ev: StorageEvent) => {
       if (ev.key === GENERATION_KEY || ev.key === null) isCurrent()
     }
@@ -117,7 +142,7 @@ export function createQueryClient(): QueryClient {
       // Polled queries outside the snapshot succeed every few seconds; only a kept query can change what gets written.
       if (snapshotSchema((ev.query as Query).queryKey) === null) return
       window.clearTimeout(timer)
-      timer = window.setTimeout(persist, 500)
+      timer = window.setTimeout(persistWhenIdle, 500)
     })
     retireClients.add(retire)
     window.addEventListener('pagehide', persist)
