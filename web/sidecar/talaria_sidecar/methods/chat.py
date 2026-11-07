@@ -2334,6 +2334,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         watcher = threading.Thread(target=_watch_cancel, daemon=True, name=f"chat-cancel-{stream_id[:8]}")
         watcher.start()
+        sent_rows = [_row_bytes(row) for row in history]
         run_kwargs: dict = {"user_message": user_message, "conversation_history": history, "task_id": session_id}
         run_params = _run_conversation_parameters(type(agent))
         if system_message and ("system_message" in run_params or not run_params):
@@ -2405,7 +2406,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         context_messages, context_estimate = _post_compression_context(agent, messages, system_message) if compressed and messages and status == "completed" else (None, None)
         return {
             "status": status,
-            "messages": messages,
+            **({"messages": messages} if compressed else _after_history(messages, sent_rows)),
             "context_messages": context_messages,
             "post_compression_context_tokens_estimate": context_estimate,
             "final_response": str(result.get("final_response") or ""),
@@ -2451,6 +2452,22 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             _release_if_dropped_locked(run.agent, home)
             # Its transcript grew during the turn, and the agents it protected from eviction are idle now.
             _evict_idle_agents_locked()
+
+
+def _row_bytes(row: object) -> str:
+    """A row as the server sent it: ``_db_persisted`` is the Agent's flush bookkeeping, stamped on every history row, and nothing outside it reads the key."""
+    return json.dumps({k: v for k, v in row.items() if k != "_db_persisted"} if isinstance(row, dict) else row)
+
+
+def _after_history(messages: list, sent: list[str]) -> dict:
+    """TAL-1690: the reply's transcript without the leading rows that repeat the request's history, which the server already
+    holds. The Agent shares the request's row objects and may edit them, so only each row's bytes from before the turn can
+    prove it unchanged. Any other transcript goes back whole. Encoding row by row lets the GIL reach other turns' streams."""
+    try:
+        unchanged = len(messages) >= len(sent) and all(_row_bytes(row) == before for row, before in zip(messages, sent))
+    except (TypeError, ValueError):  # An Agent's row JSON cannot hold differs from anything the request carried.
+        unchanged = False
+    return {"messages": messages[len(sent):], "history_prefix_len": len(sent)} if unchanged else {"messages": messages}
 
 
 def _checkpoint_required() -> bool:

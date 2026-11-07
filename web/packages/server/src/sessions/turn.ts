@@ -1180,6 +1180,8 @@ export class TurnRunner {
       await streamWrites
       if (streamWriteError !== undefined) throw streamWriteError
       settledAt.value = true
+      // TAL-1690: the sidecar does not repeat the leading rows the Agent handed back unchanged.
+      if (result.history_prefix_len !== undefined) result.messages = [...conversationHistory.slice(0, result.history_prefix_len), ...result.messages]
       // TAL-545: every transcript the Agent hands back settles with the history's images, not the request's projection.
       const withImages = <T extends Record<string, unknown>>(rows: T[]): T[] => withNativeImagesRestored(rows, conversationHistory, apiHistory)
       result.messages = withImages(result.messages)

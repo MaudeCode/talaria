@@ -72,6 +72,27 @@ describe('chat turns through the sidecar', () => {
     expect(histories[1]?.every((m) => !('display_metadata' in m))).toBe(true)
   })
 
+  it('settles a reply of only the new rows exactly like the whole transcript (TAL-1690)', async () => {
+    const settle = async (shape: 'whole' | 'new rows'): Promise<unknown> => {
+      const sid = await newSession(s)
+      const tool = [{ role: 'assistant', content: '', tool_calls: [{ id: 'read', type: 'function', function: { name: 'read', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 'read', content: 'body' }]
+      sidecar.respond('chat.start', (params) => {
+        const fresh = [{ role: 'user', content: str(params.user_message) }, ...tool, { role: 'assistant', content: `answer to ${str(params.user_message)}` }]
+        return shape === 'whole' ? completed([...params.conversation_history, ...fresh]) : completed(fresh, { history_prefix_len: params.conversation_history.length })
+      })
+      for (const message of ['first', 'second']) {
+        const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+        await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      }
+      const { messages, context_messages } = await s.deps.sessionStore.get(sid)
+      // Each turn stamps its own stream id and clock on the rows it settled.
+      return JSON.parse(JSON.stringify({ messages, context_messages }, (key, value: unknown) => (['_turn_id', 'timestamp', '_turnDuration', '_turnTps'].includes(key) ? undefined : value))) as unknown
+    }
+    const whole = await settle('whole') as { messages: Json[] }
+    expect(whole.messages.map((m) => m.content).filter(Boolean)).toEqual(['first', 'body', 'answer to first', 'second', 'body', 'answer to second'])
+    expect(await settle('new rows')).toEqual(whole)
+  })
+
   it.each(['complete', 'cancel', 'error'] as const)('keeps MCP progress live across reload and clears it on %s (TAL-1268)', async (ending) => {
     const sid = await newSession(s)
     let emitLive!: (frame: { event: string; data: Json }) => void

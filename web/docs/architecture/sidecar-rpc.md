@@ -1,5 +1,15 @@
 # Sidecar RPC (TAL-245)
 
+RPC v81 adds `history_prefix_len` to the `chat.start` result (TAL-1690): `messages`
+holds only the rows after that many leading rows, which repeat the request's
+`conversation_history` byte for byte. The server rebuilds the transcript from the
+history it sent before anything reads it. The sidecar encodes each history row
+before the turn, because the Agent shares those row objects and may edit them. The
+comparison skips `_db_persisted`, the flush marker the Agent stamps on every history
+row, so rebuilt rows do not carry it; nothing in Talaria reads that key. A compressed
+turn, or a transcript that does not start with the history, returns whole without the
+field. `context_messages` exists only on compressed turns, so it is always whole.
+
 RPC v78 adds `redaction.policy` (TAL-1919): a fingerprint and the process-wide
 plugin registry as `{ pattern, literal_prefix }` entries. It reads only the
 already imported Agent registry; an Agent without that registry returns an empty

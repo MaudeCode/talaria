@@ -424,7 +424,12 @@ describe('image attachments in user messages (review round 14)', () => {
     sidecar.respond('text.image_mode', (params) => { lookups.push(params); return { mode, reason: 'test', supports_vision: mode === 'native' } })
     let status: 'completed' | 'cancelled' = 'completed'
     // The Agent hands back the history it was sent, as the real one does, ahead of this turn's rows.
-    sidecar.respond('chat.start', (params) => { history = params.conversation_history; return { ...agentAnswer(params), status, messages: [...history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }] } })
+    let newRowsOnly = false
+    sidecar.respond('chat.start', (params) => {
+      history = params.conversation_history
+      const fresh = [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }]
+      return { ...agentAnswer(params), status, ...(newRowsOnly ? { messages: fresh, history_prefix_len: history.length } : { messages: [...history, ...fresh] }) }
+    })
     const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }
     const turnAfter = async (messages: Json[]): Promise<string> => {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
@@ -446,6 +451,10 @@ describe('image attachments in user messages (review round 14)', () => {
       expect(String(lookups.at(-1)!.profile_home)).not.toBe('')
       // The image-free history is that request's projection only: the settled model context keeps the images.
       expect((await s.deps.sessionStore.get(sid)).context_messages.slice(0, 4).map((m) => m.content)).toEqual([[{ type: 'text', text: 'what is this' }, image], 'a cat', [image], 'a dog'])
+      // TAL-1690: a reply of only the new rows restores the same images.
+      newRowsOnly = true
+      expect((await s.deps.sessionStore.get(await turnAfter(imageTurns))).context_messages[0]!.content).toEqual([{ type: 'text', text: 'what is this' }, image])
+      newRowsOnly = false
       status = 'cancelled'
       const stopped = await turnAfter(imageTurns)
       expect(JSON.stringify(history)).not.toContain('image_url')

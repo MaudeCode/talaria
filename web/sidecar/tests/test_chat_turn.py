@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -12,6 +13,7 @@ import types
 
 import pytest
 
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 from talaria_sidecar.methods import chat, commands
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.rpc import CallContext, RpcServer
@@ -118,6 +120,109 @@ def test_a_finished_turn_never_interrupts_the_cached_agent(monkeypatch) -> None:
     assert FakeAgent.instances == [agent]
     assert agent.interrupts == []
     assert agent.cleared == 2
+
+
+FRESH_ROWS = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}]
+
+
+def _reply_to_history(monkeypatch, transcript) -> tuple[list, list, dict]:
+    """One turn over a two-row history; the stand-in Agent builds its transcript from the rows it received."""
+    _patch(monkeypatch)
+    returned = []
+
+    class TranscriptAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            returned.extend(transcript(self, kwargs["conversation_history"]))
+            return {"final_response": "ok", "messages": returned}
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: TranscriptAgent)
+    monkeypatch.setattr(chat, "_post_compression_context", lambda agent, messages, system: (None, None))
+    history = [{"role": "user", "content": "earlier", "timestamp": 1.5}, {"role": "assistant", "content": "before"}]
+    return history, returned, chat.start(Ctx(), {**_params("st-prefix"), "conversation_history": history})
+
+
+def test_an_uncompressed_turn_returns_only_the_rows_after_the_history(monkeypatch) -> None:
+    history, _, reply = _reply_to_history(monkeypatch, lambda agent, rows: [*rows, *FRESH_ROWS])
+    assert reply["messages"] == FRESH_ROWS
+    assert reply["history_prefix_len"] == len(history)
+
+
+def _compressed(agent, rows):
+    agent.context_compressor = types.SimpleNamespace(compression_count=1)
+    return [*rows, *FRESH_ROWS]
+
+
+def _edited_in_place(agent, rows):
+    rows[0]["content"] = "rewritten"  # The Agent shares the request's row objects, so identity cannot see this.
+    return [*rows, *FRESH_ROWS]
+
+
+def _replaced(agent, rows):
+    return [{"role": "user", "content": "summary"}, *FRESH_ROWS]
+
+
+def _empty(agent, rows):
+    return []
+
+
+@pytest.mark.parametrize("transcript", [_compressed, _edited_in_place, _replaced, _empty])
+def test_a_transcript_that_is_not_the_history_plus_new_rows_returns_whole(monkeypatch, transcript) -> None:
+    _, returned, reply = _reply_to_history(monkeypatch, transcript)
+    assert reply["messages"] == returned
+    assert "history_prefix_len" not in reply
+
+
+# The pinned Agent's own turn over server-shaped history rows, with only the provider call stubbed.
+REAL_AGENT_PROBE = r'''
+import json, os, sys
+from types import SimpleNamespace as NS
+sys.path.append(sys.argv[1])
+from run_agent import AIAgent
+from talaria_sidecar.methods import chat
+
+def response():
+    message = NS(role="assistant", content="fresh answer", tool_calls=None, reasoning=None, reasoning_content=None, reasoning_details=None, refusal=None)
+    usage = NS(prompt_tokens=1, completion_tokens=1, total_tokens=2, prompt_tokens_details=None, completion_tokens_details=None)
+    return NS(id="r", model="m", choices=[NS(index=0, message=message, finish_reason="stop")], usage=usage)
+
+class StubbedProvider(AIAgent):
+    def _interruptible_api_call(self, kwargs):
+        return response()
+    def _interruptible_streaming_api_call(self, kwargs, **_):
+        return response()
+
+class Ctx:
+    cancelled = False
+    def emit(self, event, data=None):
+        pass
+
+chat._agent_class = lambda: StubbedProvider
+chat._resolve_runtime = lambda provider, model: {"model": "fixture-model", "provider": "openrouter", "api_key": "synthetic_key", "base_url": "http://127.0.0.1:9/v1"}
+chat._discover_mcp_tools = lambda run: None
+history = json.loads(sys.argv[2])
+print(json.dumps(chat.start(Ctx(), {"profile_home": os.environ["HERMES_HOME"], "session_id": "s-prefix", "stream_id": "st-prefix", "user_message": "next",
+                                    "model": "fixture-model", "model_provider": "openrouter", "enabled_toolsets": [], "conversation_history": history})))
+'''
+
+
+@requires_agent
+def test_the_real_agent_keeps_the_sent_history_as_its_transcript_prefix(tmp_path) -> None:
+    home = tmp_path / "hermes"
+    home.mkdir()
+    history = [
+        {"role": "user", "content": "hello", "timestamp": 1730000000.5},
+        {"role": "assistant", "content": "", "timestamp": 1730000001, "reasoning": "think", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "file body", "timestamp": 1730000002, "data_use": ["no_training"]},
+        {"role": "assistant", "content": [{"type": "text", "text": "done"}], "timestamp": 1730000003},
+        {"role": "user", "content": "again", "timestamp": 1730000004, "api_content": "again with workspace"},
+        {"role": "assistant", "content": "ok", "timestamp": 1730000005},
+    ]
+    run = subprocess.run([AGENT_PYTHON, "-c", REAL_AGENT_PROBE, str(AGENT_DIR), json.dumps(history)], env=isolated_env(home), capture_output=True, text=True, timeout=90)
+    assert run.returncode == 0, run.stderr[-4000:]
+    reply = json.loads(run.stdout.strip().splitlines()[-1])
+    assert reply["status"] == "completed", reply["error"]
+    assert reply["history_prefix_len"] == len(history)
+    assert [(row["role"], row["content"]) for row in reply["messages"]] == [("user", "next"), ("assistant", "fresh answer")]
 
 
 def test_a_cached_agent_turn_never_probes_the_agent_signature(monkeypatch) -> None:
