@@ -37,6 +37,9 @@ struct ChatTranscriptMessageRow: View {
     @State private var linkRegions = ChatMessageLinkRegionStore()
 
     var body: some View {
+#if DEBUG
+        let _ = isStreaming ? () : ChatBodyEvaluationRecorder.record("settledRow")
+#endif
         // Rows the server marked as compaction markers render as collapsible
         // lines (as on Web), never as user bubbles — and without bubble actions,
         // which don't apply to system-emitted markers.

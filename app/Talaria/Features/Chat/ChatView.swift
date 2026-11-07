@@ -6,24 +6,6 @@ import UniformTypeIdentifiers
 import TalariaKit
 
 #if DEBUG
-/// A non-observable reference keeps measuring a body from invalidating that body's
-/// environment. Like the message-menu registry, its identity survives environment updates.
-@MainActor
-final class ChatBodyEvaluationRecorder {
-    private(set) var counts: [String: Int] = [:]
-    private(set) var transcriptFrame: CGRect = .null
-
-    func recordTranscriptFrame(_ frame: CGRect) { transcriptFrame = frame }
-
-    func callAsFunction(_ body: String) {
-        counts[body, default: 0] += 1
-    }
-
-    func reset() {
-        counts.removeAll(keepingCapacity: true)
-    }
-}
-
 private struct ChatBodyEvaluationKey: EnvironmentKey {
     static let defaultValue: ChatBodyEvaluationRecorder? = nil
 }

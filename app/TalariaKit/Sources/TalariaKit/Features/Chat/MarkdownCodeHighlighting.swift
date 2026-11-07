@@ -536,6 +536,9 @@ public enum MarkdownCodeHighlightResult {
 public enum MarkdownCodeHighlighter: Sendable {
     @MainActor
     public static func highlightedCode(for request: MarkdownCodeHighlightRequest) -> MarkdownCodeHighlightResult {
+#if DEBUG
+        ChatBodyEvaluationRecorder.record("highlight")
+#endif
         let decision = MarkdownHighlightPolicy.decision(
             for: request.code,
             language: request.language,
