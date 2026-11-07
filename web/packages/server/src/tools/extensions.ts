@@ -265,6 +265,7 @@ export class ExtensionService {
   /** Static bytes by file, least recently served first. A request always reopens the file; a stale signature never hits. */
   private readonly statics = new Map<string, { signature: string; body: Buffer }>()
   private staticBytes = 0
+  private readonly staticLoads = new Map<string, { signature: string; load: Promise<Buffer> }>()
 
   constructor(private readonly deps: ExtensionDeps) {}
 
@@ -836,6 +837,7 @@ export class ExtensionService {
     }
   }
 
+  /** Concurrent requests for one file version share a single read. The caller holds `fd` open until this settles. */
   private async staticBody(fd: number, file: string, signature: string, size: number): Promise<Buffer> {
     const cached = this.statics.get(file)
     if (cached) {
@@ -843,12 +845,18 @@ export class ExtensionService {
       if (cached.signature === signature) { this.statics.set(file, cached); return cached.body }
       this.staticBytes -= cached.body.length
     }
-    const body = await readAll(fd, size)
-    // A file that changed during the read is served as read but never kept.
-    if (signatureOf(file, fstatSync(fd, { bigint: true })) !== signature || body.length > MAX_STATIC_CACHE_BYTES) return body
-    const raced = this.statics.get(file)
-    if (raced) this.staticBytes -= raced.body.length
-    this.statics.delete(file)
+    const pending = this.staticLoads.get(file)
+    if (pending?.signature === signature) return pending.load
+    const load: Promise<Buffer> = readAll(fd, size).then((body) => {
+      // Only the newest load may publish. A file that changed during the read is served as read but never kept.
+      if (this.staticLoads.get(file)?.load === load && body.length <= MAX_STATIC_CACHE_BYTES && signatureOf(file, fstatSync(fd, { bigint: true })) === signature) this.keepStatic(file, signature, body)
+      return body
+    }).finally(() => { if (this.staticLoads.get(file)?.load === load) this.staticLoads.delete(file) })
+    this.staticLoads.set(file, { signature, load })
+    return load
+  }
+
+  private keepStatic(file: string, signature: string, body: Buffer): void {
     this.statics.set(file, { signature, body })
     this.staticBytes += body.length
     for (const [key, entry] of this.statics) {
@@ -856,7 +864,6 @@ export class ExtensionService {
       this.statics.delete(key)
       this.staticBytes -= entry.body.length
     }
-    return body
   }
 
   /** Python `api/extension_manifests.build_manifests` extension entries (the manifests route appends dashboard plugins). */

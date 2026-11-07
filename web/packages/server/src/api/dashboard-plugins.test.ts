@@ -8,16 +8,22 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 
 useJsonStorage()
 
-/** Counts descriptor reads that return bytes holding `marker`, whichever sync or async API serves them. */
-const io = vi.hoisted(() => ({ marker: '', reads: 0 }))
+/**
+ * Counts descriptor reads that return bytes holding `marker`, whichever sync or async API serves them. `gate` holds
+ * async reads back, and `opened` counts fstats of a file of `openedSize` bytes, so a test knows every request arrived.
+ */
+const io = vi.hoisted(() => ({ marker: '', reads: 0, gate: null as Promise<void> | null, openedSize: -1, opened: 0 }))
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
   const note = (bytes: unknown): void => { if (io.marker && Buffer.isBuffer(bytes) && bytes.includes(io.marker)) io.reads += 1 }
   return {
     ...real,
     readFileSync: ((...args: Parameters<typeof fs.readFileSync>) => { const out = real.readFileSync(...args); note(out); return out }) as typeof fs.readFileSync,
+    fstatSync: ((...args: Parameters<typeof fs.fstatSync>) => { const out = real.fstatSync(...args); if (Number(out.size) === io.openedSize) io.opened += 1; return out }) as typeof fs.fstatSync,
     read: ((fd: number, buffer: Buffer, offset: number, length: number, position: number | null, done: (error: NodeJS.ErrnoException | null, bytes: number, buffer: Buffer) => void) => {
-      real.read(fd, buffer, offset, length, position, (error, bytes, out) => { if (!error) note(out.subarray(offset, offset + bytes)); done(error, bytes, out) })
+      const run = (): void => { real.read(fd, buffer, offset, length, position, (error, bytes, out) => { if (!error) note(out.subarray(offset, offset + bytes)); done(error, bytes, out) }) }
+      if (io.gate) void io.gate.then(run)
+      else run()
     }) as typeof fs.read,
   }
 })
@@ -208,6 +214,21 @@ describe('dashboard plugin routes', () => {
     symlinkSync(join(s.state, 'plugins', 'outside.js'), file)
     expect((await s.get('/extensions/demo/cached.html')).status).toBe(404)
     unlinkSync(file)
+  })
+
+  it('shares one read among concurrent cold requests for an extension static (TAL-1733)', async () => {
+    const file = join(extensionDir, 'demo', 'concurrent.js')
+    const body = 'TAL1733-concurrent'.padEnd(54321, ' ')
+    writeFileSync(file, body)
+    let release = (): void => undefined
+    Object.assign(io, { marker: 'TAL1733-concurrent', reads: 0, gate: new Promise<void>((resolve) => { release = resolve }), openedSize: body.length, opened: 0 })
+    onTestFinished(() => { release(); Object.assign(io, { marker: '', reads: 0, gate: null, openedSize: -1, opened: 0 }); unlinkSync(file) })
+    const responses = Array.from({ length: 8 }, () => s.get('/extensions/demo/concurrent.js'))
+    await vi.waitFor(() => { expect(io.opened).toBe(8) })
+    io.gate = null
+    release()
+    for (const res of await Promise.all(responses)) expect(await res.text()).toBe(body)
+    expect(io.reads).toBe(1)
   })
 
   it('sends new bytes when an extension static is replaced at the same size and mtime (TAL-1733)', async () => {
