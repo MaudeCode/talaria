@@ -85,6 +85,7 @@ and the per-session relay. The chat-turn events:
 | `token` | Assistant text delta |
 | `reasoning` | Model reasoning / thinking delta; `disclosure_key` names its segment, the same key the settled scene's reasoning row carries |
 | `tool` | Tool call started; required `id` names the call |
+| `tool_approval` | `{id, outcome: 'allowed' \| 'denied'}`: the server took an answer to the approval holding this call. The approval frame names the call in `tool_call_id` when the Agent's context does; without one no frame follows. |
 | `tool_progress` | Ephemeral `{id, progress: {percent, message}}` for a running MCP call; percentages are server-normalized and messages redacted. Not journaled; an active-stream attach includes the latest in-memory value after replay. |
 | `tool_complete` | Tool call finished; carries the same `id` as its `tool` frame, the server's `is_error`, `duration` (seconds between the server receiving the call's start and its completion), and `result_view` (TAL-315, below) |
 | `interim_assistant` | Mid-turn assistant prose (pre-final) |

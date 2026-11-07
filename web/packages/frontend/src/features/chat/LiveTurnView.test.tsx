@@ -43,6 +43,28 @@ function View({ run, mode = 'compact_worklog' }: { run: ReturnType<typeof liveRu
   return <Transcript rows={[]} live={run.turn} assistantName="Assistant" mode={mode} renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />
 }
 
+it('lights only the tool row the approval held when the server reports its answer (TAL-1783)', () => {
+  const run = liveRun()
+  run.emit({ event: 'tool', data: { id: 'read', name: 'read_file', kind: 'read', target: 'CHANGELOG.md' } })
+  run.emit({ event: 'tool', data: { id: 'push', name: 'terminal', kind: 'shell', target: 'git push' } })
+  const view = render(<View run={run} mode="transparent_stream" />)
+  const header = (id: string) => view.container.querySelector(`[data-tool-id="${id}"] .tool-card-header`)!
+  run.emit({ event: 'tool_approval', data: { id: 'push', outcome: 'allowed' } })
+  view.rerender(<View run={run} mode="transparent_stream" />)
+  expect(header('push')).toHaveClass('tool-flash-allowed')
+  expect(header('read').className).not.toContain('tool-flash')
+})
+
+it('lights the group folding that row, which is all the reader can see of it (TAL-1783)', () => {
+  const run = liveRun()
+  run.emit({ event: 'tool', data: { id: 'read', name: 'read_file', kind: 'read', target: 'CHANGELOG.md' } })
+  run.emit({ event: 'tool', data: { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset' } })
+  const view = render(<View run={run} />)
+  run.emit({ event: 'tool_approval', data: { id: 'reset', outcome: 'denied' } })
+  view.rerender(<View run={run} />)
+  expect(view.container.querySelector('.tool-worklog-summary')).toHaveClass('tool-flash-denied')
+})
+
 it('measures live height at segment and status boundaries rather than each token (TAL-1203)', () => {
   const run = liveRun()
   run.emit({ event: 'token', data: { text: 'First line' } })

@@ -1,9 +1,9 @@
 import { OutboundDraftResult } from './OutboundDraftResult'
-import { useDisclosure } from './Worklog'
+import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { BackgroundLink, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -32,6 +32,8 @@ export interface ToolCardData {
   background?: BackgroundLink
   /** TAL-331: the server clipped or capped this result; the whole result is one request away. */
   resultTruncated?: boolean
+  /** TAL-1783: the answer to the approval that held this call; the row lights once as it arrives. */
+  approvalOutcome?: ToolApprovalOutcome | undefined
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
@@ -76,9 +78,10 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
   const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
   const result = call.resultView ? resultText(call.resultView) : call.preview ?? ''
+  const flash = useApprovalFlash([call])
   return (
     <div ref={arrival} className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
-      <button type="button" className="tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>
+      <button type="button" className={cn('tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text', flash)} aria-expanded={open} onClick={toggle}>
         <ChevronRight size={14} className={cn('tool-card-toggle shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
         <span className="tool-card-icon"><ToolKindIcon kind={kind} /></span>
         <span className="tool-card-name min-w-0 flex-1 truncate"><SwapText className="tool-card-name-label" text={label} /></span>

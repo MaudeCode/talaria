@@ -6,6 +6,8 @@
 .approval-card.visible{pointer-events:auto;z-index:3}
 .approval-inner{background:var(--surface);backdrop-filter:blur(8px);border:1px solid var(--accent-bg-strong);border-radius:14px;padding:16px 18px 40px;transform:translateY(100%);opacity:0;transition:transform .4s cubic-bezier(.32,.72,.16,1),opacity .25s ease}
 .approval-card.visible .approval-inner{transform:translateY(0);opacity:1}
+.approval-card.leaving{overflow:hidden;background:transparent;border-color:transparent;box-shadow:none}
+.approval-card.leaving .approval-inner{transition:transform .32s cubic-bezier(.45,0,.55,1),opacity .22s ease .08s}
 .approval-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--error)}
 .approval-card.collapsed{max-height:56px;bottom:8px}
 .approval-card.collapsed .approval-inner{max-height:48px;overflow:hidden;padding:10px 14px}

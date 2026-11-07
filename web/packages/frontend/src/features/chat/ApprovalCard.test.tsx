@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { act, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react'
 import { deferred, queryWrapper } from '../../test/fixtures'
@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event'
 vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })), fetchApprovalPending: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
-import { ApprovalCard } from './ApprovalCard'
+import { ApprovalCard, ApprovalCards } from './ApprovalCard'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts/common'
@@ -65,11 +65,14 @@ describe('ApprovalCard', () => {
   it('leaves as soon as it is answered and comes back when the answer is refused (TAL-1384)', async () => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.respondApproval).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a5', command: 'rm -rf build' }} onResolved={() => undefined} />)
+    const onResolved = vi.fn()
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a5', command: 'rm -rf build' }} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
     await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/approval/respond', message: 'Approval expired' })); await Promise.resolve() })
-    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(await screen.findByRole('alertdialog')).toHaveClass('visible')
+    expect(screen.getByRole('alertdialog')).not.toHaveClass('leaving')
+    expect(onResolved).not.toHaveBeenCalled()
     expect(showToast).toHaveBeenLastCalledWith('Approval expired', 4000, 'error')
     expect(api.fetchApprovalPending).not.toHaveBeenCalled()
   })
@@ -125,6 +128,86 @@ describe('ApprovalCard', () => {
   })
 })
 
+describe('ApprovalCard exit (TAL-1783)', () => {
+  const pending = { approval_id: 'exit', command: 'git push' }
+  const shell = () => document.querySelector('.approval-card')
+  /** jsdom has no TransitionEvent: the bare event carries the property React reads. */
+  const transitionEnd = (el: Element, propertyName: string) => { act(() => { el.dispatchEvent(Object.assign(new Event('transitionend', { bubbles: true }), { propertyName })) }) }
+  const finishExit = () => { transitionEnd(shell()!.querySelector('.approval-inner')!, 'transform') }
+  beforeEach(() => { vi.mocked(api.respondApproval).mockReset().mockResolvedValue({ ok: true }) })
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it.each([
+    ['Allow once', 'once', async () => { await userEvent.click(screen.getByRole('button', { name: /allow once/i })) }],
+    ['Deny', 'deny', async () => { await userEvent.click(screen.getByRole('button', { name: /^deny$/i })) }],
+    ['Allow session', 'session', async () => { await userEvent.click(screen.getByRole('button', { name: 'More options' })); await userEvent.click(await screen.findByRole('menuitem', { name: /session/i })) }],
+    ['Always allow', 'always', async () => { await userEvent.click(screen.getByRole('button', { name: 'More options' })); await userEvent.click(await screen.findByRole('menuitem', { name: 'Always allow' })) }],
+  ])('%s keeps the card mounted for its exit, then resolves it', async (_, choice, answer) => {
+    const onResolved = vi.fn()
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={onResolved} />)
+    await answer()
+    await waitFor(() => { expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice })) })
+    expect(shell()).toHaveClass('leaving')
+    expect(shell()).not.toHaveClass('visible')
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(onResolved).not.toHaveBeenCalled()
+    // A button's own hover transition ending is not the card's exit.
+    transitionEnd(screen.getByText('git push'), 'transform')
+    expect(shell()).toBeInTheDocument()
+    finishExit()
+    expect(shell()).toBeNull()
+    await waitFor(() => { expect(onResolved).toHaveBeenCalledTimes(1) })
+  })
+
+  it('leaves on the fallback when no transition reports its end', async () => {
+    vi.useFakeTimers()
+    const onResolved = vi.fn()
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={onResolved} />)
+    fireEvent.click(screen.getByRole('button', { name: /^deny$/i }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(shell()).toHaveClass('leaving')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(shell()).toBeNull()
+    expect(onResolved).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves only once the server confirms a card that has already left', async () => {
+    const response = deferred<{ ok: boolean }>()
+    vi.mocked(api.respondApproval).mockReturnValueOnce(response.promise)
+    const onResolved = vi.fn()
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={onResolved} />)
+    await userEvent.click(screen.getByRole('button', { name: /^deny$/i }))
+    finishExit()
+    expect(shell()).toBeNull()
+    expect(onResolved).not.toHaveBeenCalled()
+    await act(async () => { response.resolve({ ok: true }); await Promise.resolve() })
+    await waitFor(() => { expect(onResolved).toHaveBeenCalledTimes(1) })
+    expect(shell()).toBeNull()
+  })
+
+  it('unmounts at once under reduced motion', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    const onResolved = vi.fn()
+    render(<ApprovalCard sessionId="s1" pending={pending} onResolved={onResolved} />)
+    await userEvent.click(screen.getByRole('button', { name: /^deny$/i }))
+    expect(shell()).toBeNull()
+    await waitFor(() => { expect(onResolved).toHaveBeenCalledTimes(1) })
+  })
+
+  it('finishes the exit after the stream clears the card, beside the approval queued behind it', async () => {
+    const onResolved = vi.fn()
+    const view = render(<ApprovalCards sessionId="s1" pending={pending} onResolved={onResolved} />)
+    await userEvent.click(screen.getByRole('button', { name: /^deny$/i }))
+    view.rerender(<ApprovalCards sessionId="s1" pending={{ approval_id: 'next', command: 'git tag' }} onResolved={onResolved} />)
+    expect(document.querySelectorAll('.approval-card')).toHaveLength(2)
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('git tag')
+    view.rerender(<ApprovalCards sessionId="s1" pending={null} onResolved={onResolved} />)
+    expect(shell()).toHaveClass('leaving')
+    finishExit()
+    await waitFor(() => { expect(onResolved).toHaveBeenCalledWith('exit') })
+    expect(shell()).toBeNull()
+  })
+})
 
 describe('ApprovalCard deny with an instruction (TAL-1912)', () => {
   const tellRow = { name: 'No, and tell Hermes instead' }

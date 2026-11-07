@@ -4,7 +4,8 @@
 @keyframes session-menu-in{from{opacity:0;transform:translate3d(0,-4px,0) scale(.985);}to{opacity:1;transform:translate3d(0,0,0) scale(1);}}
 @keyframes session-long-press{from{filter:brightness(1);}to{filter:brightness(1.08);}}
 @keyframes sessionSwipeReturn{0%{opacity:.62;transform:translate3d(var(--session-swipe-return-offset,32px),var(--session-reflow-offset,0),0) scale(.985);}100%{opacity:1;transform:translate3d(0,var(--session-reflow-offset,0),0) scale(1);}}
-@keyframes newflash{0%{background:var(--accent-bg-strong);color:var(--accent);}100%{background:transparent;color:var(--muted);}}
+@keyframes newflash{0%{background:var(--accent-bg-strong);}100%{background:transparent;}}
+@keyframes newflash-error{0%{background:color-mix(in srgb,var(--error) 18%,transparent);}100%{background:transparent;}}
 @keyframes sessionListFlipIn{0%{opacity:0;transform:perspective(700px) rotateX(-8deg) translateY(10px) scale(.985);}100%{opacity:1;transform:perspective(700px) rotateX(0) translateY(0) scale(1);}}
 @keyframes sessionAttentionPulse{0%,100%{filter:saturate(1);box-shadow:0 0 0 1px color-mix(in srgb,var(--error) 42%,transparent),0 0 0 0 color-mix(in srgb,var(--error) 18%,transparent);}50%{filter:saturate(1.12);box-shadow:0 0 0 1px color-mix(in srgb,var(--error) 55%,transparent),0 0 0 4px color-mix(in srgb,var(--error) 10%,transparent);}}
 @keyframes spin{to{transform:rotate(360deg);}}

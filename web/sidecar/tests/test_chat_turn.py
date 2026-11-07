@@ -436,6 +436,22 @@ def test_an_approval_offers_only_the_scopes_the_agent_allows(flags, offered, can
     assert [(event, data.get("allowed_choices"), data.get("can_enable_yolo")) for event, data in frames] == [("approval", offered, can_skip)]
 
 
+def test_an_approval_names_the_tool_call_the_agent_is_holding(monkeypatch) -> None:
+    """TAL-1783: the Agent parks on the tool's own thread, so its context still names the call that will be unlocked."""
+    import contextvars, sys, types
+    held = contextvars.ContextVar("approval_tool_call_id", default="")
+    context = types.ModuleType("tools.approval_context")
+    context._approval_tool_call_id = held
+    monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
+    monkeypatch.setitem(sys.modules, "tools.approval_context", context)
+    frames: list[tuple[str, dict]] = []
+    notify = chat._approval_notifier("s1", lambda event, data: frames.append((event, data)))
+    notify({"command": "outside any call"})
+    held.set("call-push")
+    notify({"command": "git push"})
+    assert [data.get("tool_call_id") for _, data in frames] == [None, "call-push"]
+
+
 def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
     """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
     _patch(monkeypatch)

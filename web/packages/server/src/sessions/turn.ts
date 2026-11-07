@@ -2597,8 +2597,10 @@ export class TurnRunner {
         this.deps.log(`[webui] approval relay failed for ${sessionId}: ${(error as Error).message}`)
         return relayFailure(str((error as Error).message))
       }
-      if (resolved) this.deps.pending.resolveApproval(sessionId, str(entry.approval_id))
-      else {
+      if (resolved) {
+        this.deps.pending.resolveApproval(sessionId, str(entry.approval_id))
+        if (str(entry.tool_call_id)) await this.emitToSession(sessionId, 'tool_approval', { id: str(entry.tool_call_id), outcome: choice === 'deny' ? 'denied' : 'allowed' })
+      } else {
         // TAL-514: a rejected answer can mean the Agent already stopped waiting on this card; drop what it no longer holds.
         await this.reconcileApprovals(sessionId, sidecar)
         withdrawn = !this.deps.pending.hasApprovalId(sessionId, str(entry.approval_id))

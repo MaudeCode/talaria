@@ -78002,6 +78002,10 @@
                               "type": "boolean",
                               "description": "This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no."
                             },
+                            "tool_call_id": {
+                              "type": "string",
+                              "description": "The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none."
+                            },
                             "approval_id": {
                               "type": "string"
                             },

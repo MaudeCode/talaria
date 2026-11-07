@@ -5,6 +5,8 @@
 .tool-card-running-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:1;flex-shrink:0;vertical-align:middle;position:relative}
 .tool-card-running-dot::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--accent-bg-strong);pointer-events:none;animation:wlpulse 1.3s ease-in-out infinite}
 .tool-card-row{margin:0;padding:1px 0}
+.tool-flash-allowed{animation:newflash 1.6s ease-out}
+.tool-flash-denied{animation:newflash-error 1.6s ease-out}
 .tool-call-group-summary{width:100%;display:flex;align-items:center;gap:7px;padding:3px 8px;margin-left:-8px;border:0;background:transparent;color:var(--muted);cursor:pointer;text-align:left;font:inherit;font-size:13px;line-height:1.45;border-radius:7px}
 .tool-call-group-summary:hover{background:var(--hover-bg);color:var(--text)}
 .tool-call-group-duration{margin-left:auto;opacity:.62;font-variant-numeric:tabular-nums;white-space:nowrap}

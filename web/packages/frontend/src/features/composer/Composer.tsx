@@ -78,6 +78,8 @@ export interface ComposerProps {
   clarify?: Clarify | null | undefined
   /** Status chips from outside the composer (connection and runtime state); they follow the running turn's chip. */
   notices?: ComposerNotice[] | undefined
+  /** An approval card holds the chip's place above the composer (TAL-1783). */
+  liveStatusHidden?: boolean | undefined
 }
 
 interface RoomComposerProps {
@@ -164,7 +166,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     terminalOpen: false, onToggleTerminal: unusedChatControl, onModelChange: unusedChatControl, onWorkspaceChange: unusedChatControl, onToolsetsChange: unusedChatControl,
     onReasoningChange: unusedChatControl, reasoning: null, yolo: false, onToggleYolo: unusedChatControl, queued: [], onQueue: unusedChatControl, onQueueChange: unusedChatControl,
     locked: !input.room.canSend }
-  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
+  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES, liveStatusHidden = false } = props
   const bootstrap = useBootstrap()
   const launchBackground = useStartBackground()
   const room = props.room
@@ -805,7 +807,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const pinnedCount = backgroundTasks.filter((t) => t.pinned).length
   // The chips over the card: the running turn first, then runtime notices and this message's state.
   const chipNotices: ComposerNotice[] = [
-    ...(busy ? [{ id: 'live', content: <LiveStatusPill sessionId={sessionId} background={session?.active_turn_origin === 'background' && session.active_stream_id === streamId} /> }] : []),
+    ...(busy && !liveStatusHidden ? [{ id: 'live', content: <LiveStatusPill sessionId={sessionId} background={session?.active_turn_origin === 'background' && session.active_stream_id === streamId} /> }] : []),
     ...notices,
     ...(intent.send ? [{ id: 'send', tone: intent.send.error ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.send.uncertain ? m.composer_send_uncertain() : intent.send.error ?? m.composer_sending()}</span>, ...(intent.send.error && !intent.send.uncertain && !intent.send.files && sessionId ? { action: { label: m.retry(), run: () => { void retryPendingTurn(sessionId)?.catch(() => undefined) } } } : {}) }] : []),
     ...(intent.stop ? [{ id: 'stop', tone: intent.stop.failed ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.stop.failed ? m.composer_stop_failed() : m.composer_stopping()}</span> }] : []),

@@ -1822,11 +1822,19 @@ def _approval_notifier(session_id: str, emit):
         from tools.approval import register_gateway_settle
     except Exception:  # noqa: BLE001
         register_gateway_settle = None
+    try:
+        from tools.approval_context import _approval_tool_call_id
+    except Exception:  # noqa: BLE001
+        _approval_tool_call_id = None
 
     def notify(data):
         payload = dict(data or {})
         payload.setdefault("session_id", session_id)
         payload.setdefault("approval_id", str(payload.get("request_id") or uuid.uuid4().hex))
+        # TAL-1783: the Agent parks on the tool's own thread, so its context names the call this approval holds.
+        tool_call_id = _approval_tool_call_id.get() if _approval_tool_call_id is not None else ""
+        if tool_call_id:
+            payload["tool_call_id"] = tool_call_id
         _offer_allowed_scopes(payload)
         emit("approval", payload)
         request_id = str(payload.get("request_id") or "")

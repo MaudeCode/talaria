@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ToolResultView } from '@maudecode/talaria-web-contracts'
@@ -14,6 +14,31 @@ async function shownResult(resultView: ToolResultView | null): Promise<string | 
   unmount()
   return text
 }
+
+describe('ToolCard unlocked by an approval (TAL-1783)', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+  const running = { ...call, done: false }
+  const header = () => screen.getByRole('button')
+
+  it.each([['allowed', 'tool-flash-allowed'], ['denied', 'tool-flash-denied']] as const)('lights its header once the answer arrives: %s', (approvalOutcome, flash) => {
+    const view = render(<ToolCard call={running} />)
+    expect(header().className).not.toContain('tool-flash')
+    view.rerender(<ToolCard call={{ ...running, approvalOutcome }} />)
+    expect(header()).toHaveClass(flash)
+  })
+
+  it('stays dark when it mounts already answered, as a row folding into a group or a reload does', () => {
+    render(<ToolCard call={{ ...running, approvalOutcome: 'allowed' }} />)
+    expect(header().className).not.toContain('tool-flash')
+  })
+
+  it('stays dark under reduced motion', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    const view = render(<ToolCard call={running} />)
+    view.rerender(<ToolCard call={{ ...running, approvalOutcome: 'allowed' }} />)
+    expect(header().className).not.toContain('tool-flash')
+  })
+})
 
 describe('ToolCard result (TAL-315)', () => {
   it('renders the server result view sections in order, with localized error and exit code labels', async () => {

@@ -570,10 +570,14 @@ export const ApprovalPendingSchema = z.looseObject({
   can_enable_yolo: z.boolean().optional(),
   can_deny_with_instruction: z.boolean().optional()
     .describe('This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no.'),
+  tool_call_id: z.string().optional()
+    .describe('The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
 export type ApprovalPending = z.infer<typeof ApprovalPendingSchema>
+export const ToolApprovalOutcomeSchema = z.enum(['allowed', 'denied'])
+export type ToolApprovalOutcome = z.infer<typeof ToolApprovalOutcomeSchema>
 export const ApprovalPendingEnvelopeSchema = z.looseObject({ pending: ApprovalPendingSchema.nullable(), pending_count: z.number().int() })
 export const ApprovalChoiceSchema = z.enum(['once', 'session', 'always', 'deny'])
 export const ApprovalRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, choice: ApprovalChoiceSchema, approval_id: z.string().optional(), instruction: z.string().optional(), command: z.string().optional(), yolo: z.boolean().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
