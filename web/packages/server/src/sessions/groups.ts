@@ -19,7 +19,8 @@ const nativeEventId = (requestId: string) => `user:${createHash('sha256').update
 type State = z.infer<typeof NativeGroupStateSchema>
 type NativeEvent = z.infer<typeof NativeGroupLogSchema>['events'][number]
 type Capabilities = z.infer<typeof NativeGroupCapabilitiesSchema>
-interface Observation { identity: string; cursor: number; events: NativeEvent[] }
+/** `capabilities` serves only this watch, so one-shot reads and writes keep fencing on the current authority. */
+interface Observation { identity: string; cursor: number; events: NativeEvent[]; capabilities: { caps: Capabilities; at: number } | null }
 const empty = (reason: GroupView['reason']): GroupView => ({ available: false, reason, room: null, rows: [], paused: [], cursor: 0, has_more: false, next_before_seq: null })
 const reasons = new Set(['unsupported', 'stopped', 'refused', 'unavailable', 'unknown', 'driver_inactive'])
 const safeReason = (reason: string | null): GroupView['reason'] => reasons.has(reason ?? '') ? reason as GroupView['reason'] : 'unavailable'
@@ -80,8 +81,7 @@ class PauseLedger {
 
 export class Groups {
   private readonly ledgers = new Map<string, PauseLedger>()
-  private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void>; sent: GroupView | null }>()
-  private readonly watchCapabilities = new Map<string, { caps: Capabilities; at: number }>()
+  private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void>; sent: GroupView | null; observation: Observation }>()
   private droppedAction = false
   constructor(private readonly deps: () => AppDeps, private readonly pollMs = 1000) {}
 
@@ -106,12 +106,6 @@ export class Groups {
     if (!parsed.success) return { caps: null, reason: 'unsupported' as const }
     if (!parsed.data.driver) return { caps: null, reason: 'driver_inactive' as const }
     return { caps: parsed.data, reason: null }
-  }
-
-  /** One-shot reads and writes never use this: they stay on `supported` so their fences see the current authority. */
-  private cachedCapabilities(scope: GroupScope) {
-    const entry = this.watchCapabilities.get(hash(scope))
-    return entry && this.deps().nowSeconds() - entry.at < WATCH_CAPABILITIES_SECONDS ? entry.caps : null
   }
 
   private async profiles(scope: GroupScope) {
@@ -271,7 +265,8 @@ export class Groups {
   }
 
   async view(scope: GroupScope, roomId: string, before?: number, signal?: AbortSignal, observation?: Observation): Promise<GroupView> {
-    const cached = observation ? this.cachedCapabilities(scope) : null
+    const now = this.deps().nowSeconds()
+    const cached = observation?.capabilities && now - observation.capabilities.at < WATCH_CAPABILITIES_SECONDS ? observation.capabilities.caps : null
     const { caps, reason } = cached ? { caps: cached, reason: null } : await this.supported(scope, signal)
     if (!caps) return empty(reason)
     const limit = Math.min(caps.max_log_limit, 100)
@@ -285,11 +280,10 @@ export class Groups {
     ])
     if (!state) {
       // The cached capabilities may be what went stale: a restart changes the authority and a stop has a reason of its own.
-      this.watchCapabilities.delete(hash(scope))
-      observation!.identity = ''
+      Object.assign(observation!, { identity: '', capabilities: null })
       return this.view(scope, roomId, before, signal)
     }
-    if (observation && !cached) this.watchCapabilities.set(hash(scope), { caps, at: this.deps().nowSeconds() })
+    if (observation && !cached) observation.capabilities = { caps, at: now }
     if (state.room.disbanded_at !== undefined) return { available: true, reason: null, room: this.project(scope, state, caps), rows: [], paused: [], cursor: state.room.latest_seq ?? 0, has_more: false, next_before_seq: null }
     const latest = state.room.latest_seq ?? 0
     const end = Math.min(before === undefined ? latest : before - 1, latest)
@@ -477,10 +471,10 @@ export class Groups {
     let watcher = this.watchers.get(key)
     if (!watcher) {
       const channel = new StreamChannel(), controller = new AbortController()
-      const started = watcher = { channel, controller, done: Promise.resolve(), sent: null as GroupView | null }
+      const observation: Observation = { identity: '', cursor: 0, events: [], capabilities: null }
+      const started = watcher = { channel, controller, done: Promise.resolve(), sent: null as GroupView | null, observation }
       this.watchers.set(key, watcher)
       const run = async () => {
-        const observation: Observation = { identity: '', cursor: 0, events: [] }
         while (!controller.signal.aborted) {
           const view = await this.view(scope, roomId, undefined, controller.signal, observation).catch(() => empty('unavailable'))
           if (controller.signal.aborted) break
@@ -498,8 +492,9 @@ export class Groups {
       }
       watcher.done = run()
     } else {
-      // A joining viewer's route-read snapshot can predate the last frame, so the next tick resends even if nothing changes.
+      // A joining viewer's route-read snapshot can predate the last frame, so the next tick reads capabilities afresh and resends.
       watcher.sent = null
+      watcher.observation.capabilities = null
     }
     const [subscriber] = watcher.channel.subscribeWithSnapshot()
     const current = watcher

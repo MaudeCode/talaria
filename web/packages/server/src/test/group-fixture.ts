@@ -62,6 +62,8 @@ export function groupFixture(sidecar: FakeSidecar) {
   const continued = (discussionId: string, threadId: string) => gateway('room.continued', { discussion_event_id: discussionId, thread_id: threadId, grant: 1 })
   sidecar.respond('gateway.groups', ({ operation }: SidecarParams<'gateway.groups'>) => {
     if (!state.available) return { state: 'unavailable', reason: 'unsupported', value: null }
+    // The sidecar checks the driver before every operation, not only `capabilities`.
+    if (!state.driver) return { state: 'unavailable', reason: 'driver_inactive', value: null }
     let value: Record<string, unknown>
     switch (operation.action) {
       case 'capabilities': value = { driver: state.driver, authority_gateway_id: room.authority_gateway_id, methods: ['capabilities', 'list', 'state', 'log', 'create', 'rename', 'disband', 'send', 'stop', ...(state.continueMethod ? ['continue'] : []), 'approve', 'retry', 'discard', 'attachment.upload', 'attachment.download', ...(state.contextOffered ? ['context'] : [])].map((s) => `groups.${s}`), seatable_profiles: ['default', 'helper'], max_log_limit: 100 }; break

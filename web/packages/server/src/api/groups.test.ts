@@ -542,9 +542,9 @@ it('keeps a watch truthful when cached capabilities go stale: a restart or stop 
     const before = frames[0]!.room!.identity
     state.room.authority_gateway_id = 'restarted'
     await vi.waitFor(() => { expect(frames.at(-1)?.room?.identity).not.toBe(before) })
-    state.available = false
-    await vi.waitFor(() => { expect(frames.at(-1)?.reason).toBe('unsupported') })
-    expect(frames.map((f) => f.reason)).toEqual([null, null, 'unsupported'])
+    state.driver = false
+    await vi.waitFor(() => { expect(frames.at(-1)?.reason).toBe('driver_inactive') })
+    expect(frames.map((f) => f.reason)).toEqual([null, null, 'driver_inactive'])
   })
 })
 
@@ -562,12 +562,14 @@ it('reads state and log concurrently once a watch has a cursor', async () => {
   })
 })
 
-it('sends a viewer joining a quiet watch the current snapshot on the next tick', async () => {
-  const { scope } = await setup()
+it('sends a viewer joining a quiet watch a snapshot from fresh capabilities on the next tick', async () => {
+  const { scope, sidecar } = await setup()
   await watching(scope, async ({ groups, frames }) => {
     await vi.waitFor(() => { expect(frames).toHaveLength(1) })
+    const capabilities = rpcs(sidecar, 'capabilities')
     const joiner = groups.watch(scope, 'discussion')
     await vi.waitFor(() => { expect(joiner.subscriber.queue).toHaveLength(1) })
+    expect(rpcs(sidecar, 'capabilities')).toBe(capabilities + 1)
     joiner.release()
   })
 })
