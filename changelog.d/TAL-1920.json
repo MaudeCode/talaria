@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Samsung and multi-picture JPEG photos no longer slow down chat loading, and they always display exactly as sent.",
+      "components": [
+        "web"
+      ],
+      "highlight": false
+    }
+  ]
+}

@@ -1,11 +1,20 @@
 import { crc32 } from 'node:zlib'
 import { subscribe, unsubscribe } from 'node:diagnostics_channel'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { isRasterDataUri } from './raster-image.js'
 import { mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
 import { toolEditDiff } from './sessions/tool-display.js'
+
+/** A base64 run shaped like an AWS key: text redaction rewrites any image payload that carries it. */
+const AWS = 'AKIAIOSFODNN7EXAMPLE'
+const u16le = (n: number): Buffer => { const b = Buffer.alloc(2); b.writeUInt16LE(n); return b }
+const u32le = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b }
+const jpeg = (scan: Buffer): Buffer => Buffer.concat([Buffer.from('ffd8ffc0000b080001000101011100ffda000801010000003f00', 'hex'), scan, Buffer.from('ffd9', 'hex')])
+const dataUri = (mime: string, bytes: Buffer): string => `data:${mime};base64,${bytes.toString('base64')}`
+const imageUrl = (url: string, role = 'user'): unknown => (((redactSessionData({ messages: [{ role, content: [{ type: 'text', text: 'look' }, { type: 'image_url', image_url: { url, detail: 'auto' } }] }] }, true).messages as Record<string, unknown>[])[0]!.content as Record<string, unknown>[])[1]!.image_url as Record<string, unknown>).url
 
 describe('redactSensitive', () => {
   it('gives no object a way out of redaction by its shape (TAL-1317)', () => {
@@ -852,14 +861,12 @@ describe('redactSessionData', () => {
 
   it('returns a user image part carrying a complete raster data URI byte-identical without scanning it (TAL-583)', () => {
     // Structurally complete images whose bytes carry an AWS-key-shaped base64 run: text redaction would rewrite them.
-    const AWS = 'AKIAIOSFODNN7EXAMPLE'
     const u32be = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b }
-    const u32le = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b }
     const pngChunk = (type: string, data: Buffer): Buffer => Buffer.concat([u32be(data.length), Buffer.from(type, 'latin1'), data, u32be(crc32(Buffer.concat([Buffer.from(type, 'latin1'), data])))])
     const riff = (type: string, data: Buffer): Buffer => Buffer.concat([Buffer.from(type, 'latin1'), u32le(data.length), data, Buffer.alloc(data.length & 1)])
     const formats: Record<string, (body: Buffer) => Buffer> = {
       'image/png': (body) => Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', Buffer.from('00000001000000010800000000', 'hex')), pngChunk('IDAT', body), pngChunk('IEND', Buffer.alloc(0))]),
-      'image/jpeg': (body) => Buffer.concat([Buffer.from('ffd8ffc0000b080001000101011100ffda000801010000003f00', 'hex'), body, Buffer.from('ffd9', 'hex')]),
+      'image/jpeg': jpeg,
       'image/gif': (body) => Buffer.concat([Buffer.from('GIF89a', 'latin1'), Buffer.from('01000100000000', 'hex'), Buffer.from('2c000000000100010000', 'hex'), Buffer.from([2, body.length]), body, Buffer.from('003b', 'hex')]),
       'image/webp': (body) => { const chunks = riff('VP8L', Buffer.concat([Buffer.from('2f00000000', 'hex'), body])); return Buffer.concat([Buffer.from('RIFF', 'latin1'), u32le(chunks.length + 4), Buffer.from('WEBP', 'latin1'), chunks]) },
       'image/bmp': (body) => { const dib = Buffer.concat([u32le(40), u32le(1), u32le(1), Buffer.from('01001800', 'hex'), Buffer.alloc(24)]); return Buffer.concat([Buffer.from('BM', 'latin1'), u32le(14 + dib.length + body.length), u32le(0), u32le(14 + dib.length), dib, body]) },
@@ -873,8 +880,6 @@ describe('redactSessionData', () => {
       }
       throw new Error(mime)
     }
-    const dataUri = (mime: string, bytes: Buffer): string => `data:${mime};base64,${bytes.toString('base64')}`
-    const imageUrl = (url: string, role = 'user'): unknown => (((redactSessionData({ messages: [{ role, content: [{ type: 'text', text: 'look' }, { type: 'image_url', image_url: { url, detail: 'auto' } }] }] }, true).messages as Record<string, unknown>[])[0]!.content as Record<string, unknown>[])[1]!.image_url as Record<string, unknown>).url
 
     // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner.
     const url = dataUri('image/png', image('image/png', 4 * 1024 * 1024))
@@ -899,6 +904,115 @@ describe('redactSessionData', () => {
     const meta = redactSessionData({ messages: [{ role: 'user', content: 'x', meta: { image_url: { url: smallUrl } } }] }, true)
     expect(JSON.stringify(meta).includes(AWS), 'image-shaped metadata').toBe(false)
   }, 30_000)
+})
+
+describe('JPEG trailers in a raster data URI (TAL-1920)', () => {
+  type SefEntry = [kind: number, offset: number, size: number]
+  const sefBlock = (kind: number, name: string, payload = Buffer.alloc(0), declaredNameLength = name.length): Buffer => Buffer.concat([u16le(0), u16le(kind), u32le(declaredNameLength), Buffer.from(name, 'latin1'), payload])
+  /** `SEFH`, version, count, entries, directory length, `SEFT`. */
+  const sefDirectory = (entries: SefEntry[], count = entries.length): Buffer => Buffer.concat([
+    Buffer.from('SEFH', 'latin1'), u32le(106), u32le(count),
+    ...entries.flatMap(([kind, offset, size]) => [u16le(0), u16le(kind), u32le(offset), u32le(size)]),
+    u32le(12 + 12 * entries.length), Buffer.from('SEFT', 'latin1'),
+  ])
+  /** The directory entries that tile `blocks` exactly, each offset counted back from `SEFH`. */
+  const tiledEntries = (blocks: [kind: number, block: Buffer][]): SefEntry[] => {
+    let offset = blocks.reduce((total, [, block]) => total + block.length, 0)
+    return blocks.map(([kind, block]) => { const entry: SefEntry = [kind, offset, block.length]; offset -= block.length; return entry })
+  }
+  const first = sefBlock(0x0a01, 'Image_UTC_Data', Buffer.from('1700000000000'))
+  const second = sefBlock(0x0ba1, 'MotionPhoto_Data', Buffer.from('motion'))
+  const blocks: [number, Buffer][] = [[0x0a01, first], [0x0ba1, second]]
+  const sef = Buffer.concat([first, second, sefDirectory(tiledEntries(blocks))])
+
+  /** A picture directory (`II*\0` or `MM\0*` TIFF) in APP2, offsets relative to its header, which starts 10 bytes in. */
+  const mpf = (scan: Buffer, subPictures: Buffer[], { trailer = Buffer.alloc(0), extraSize = 0, primaryExtra = 0, gap = 0, big = false } = {}): Buffer => {
+    const u16 = (n: number): Buffer => { const b = Buffer.alloc(2); if (big) b.writeUInt16BE(n); else b.writeUInt16LE(n); return b }
+    const u32 = (n: number): Buffer => { const b = Buffer.alloc(4); if (big) b.writeUInt32BE(n); else b.writeUInt32LE(n); return b }
+    const images = 1 + subPictures.length
+    const directoryOffset = 8 + 2 + 2 * 12 + 4
+    const app2Length = 2 + 4 + directoryOffset + 16 * images
+    const picture = jpeg(scan).subarray(2)
+    const primarySize = 2 + 2 + app2Length + picture.length
+    let relative = primarySize + gap - 10
+    const entries = [Buffer.concat([u32(0), u32(primarySize + primaryExtra), u32(0), Buffer.alloc(4)]), ...subPictures.map((sub, index) => {
+      const size = sub.length + (index === subPictures.length - 1 ? extraSize : 0)
+      const entry = Buffer.concat([u32(0), u32(size), u32(relative), Buffer.alloc(4)])
+      relative += sub.length
+      return entry
+    })]
+    const tiff = Buffer.concat([
+      Buffer.from(big ? '4d4d002a' : '49492a00', 'hex'), u32(8), u16(2),
+      u16(0xb001), u16(4), u32(1), u32(images),
+      u16(0xb002), u16(7), u32(16 * images), u32(directoryOffset),
+      u32(0), ...entries,
+    ])
+    const app2Size = Buffer.alloc(2)
+    app2Size.writeUInt16BE(app2Length)
+    return Buffer.concat([Buffer.from('ffd8ffe2', 'hex'), app2Size, Buffer.from('MPF\0', 'latin1'), tiff, picture, Buffer.alloc(gap), ...subPictures, trailer])
+  }
+
+  /** Align the token-shaped run in the scan data so it survives base64 encoding of the whole file. */
+  const withRun = (build: (scan: Buffer) => Buffer): Buffer => {
+    for (let pad = 0; pad < 3; pad++) {
+      const bytes = build(Buffer.concat([Buffer.alloc(pad), Buffer.from(AWS, 'base64')]))
+      if (bytes.toString('base64').includes(AWS)) return bytes
+    }
+    throw new Error('no alignment carries the run')
+  }
+  const plain = jpeg(Buffer.from([1, 2, 3]))
+
+  it.each<[string, (scan: Buffer) => Buffer]>([
+    ['one SEF trailer', (scan) => Buffer.concat([jpeg(scan), sef])],
+    ['a little-endian MPF directory with complete sub-pictures', (scan) => mpf(scan, [plain, plain])],
+    ['a big-endian MPF directory', (scan) => mpf(scan, [plain], { big: true })],
+    ['an MPF directory followed by one SEF trailer', (scan) => mpf(scan, [plain], { trailer: sef })],
+  ])('returns a JPEG with %s byte-identical through session redaction', (_name, build) => {
+    const url = dataUri('image/jpeg', withRun(build))
+    expect(redactSensitive(url) === url, 'the fixture carries the run').toBe(false)
+    expect(imageUrl(url) === url).toBe(true)
+  })
+
+  it.each<[string, (scan: Buffer) => Buffer]>([
+    ['bytes after SEFT', (scan) => Buffer.concat([jpeg(scan), sef, Buffer.from('x')])],
+    ['a gap before the first block', (scan) => Buffer.concat([jpeg(scan), Buffer.alloc(4), first, second, sefDirectory(tiledEntries(blocks))])],
+    ['a gap between blocks', (scan) => Buffer.concat([jpeg(scan), first, Buffer.alloc(4), second, sefDirectory([[0x0a01, first.length + 4 + second.length, first.length], [0x0ba1, second.length, second.length]])])],
+    ['a gap after the last block', (scan) => Buffer.concat([jpeg(scan), first, second, Buffer.alloc(4), sefDirectory([[0x0a01, first.length + second.length + 4, first.length], [0x0ba1, second.length + 4, second.length]])])],
+    ['overlapping blocks', (scan) => Buffer.concat([jpeg(scan), first, second, sefDirectory([[0x0a01, first.length + second.length, first.length], [0x0a01, first.length + second.length, first.length + second.length]])])],
+    ['a block header disagreeing with its directory entry', (scan) => Buffer.concat([jpeg(scan), first, second, sefDirectory(tiledEntries([[0x0a01, first], [0x0ba2, second]]))])],
+    ['a block name outside printable ASCII', (scan) => { const block = sefBlock(1, 'a b'); return Buffer.concat([jpeg(scan), block, sefDirectory(tiledEntries([[1, block]]))]) }],
+    ['a directory declaring more entries than it holds', (scan) => Buffer.concat([jpeg(scan), first, second, sefDirectory(tiledEntries(blocks), 3)])],
+    ['a directory cut short of its declared length', (scan) => { const directory = sefDirectory(tiledEntries(blocks)); return Buffer.concat([jpeg(scan), first, second, directory.subarray(0, 12 + 12), directory.subarray(-8)]) }],
+    ['SEF inside an MPF sub-picture', (scan) => mpf(scan, [Buffer.concat([plain, sef])])],
+    ['an MPF primary range that does not end at its end marker', (scan) => mpf(scan, [plain], { primaryExtra: 1 })],
+    ['a gap between MPF pictures', (scan) => mpf(scan, [plain], { gap: 4 })],
+    ['an MPF range past the end', (scan) => mpf(scan, [plain], { extraSize: 1 })],
+    ['an incomplete MPF sub-picture', (scan) => mpf(scan, [plain.subarray(0, -2)])],
+    ['bytes after the last MPF range', (scan) => mpf(scan, [plain], { trailer: Buffer.from('x') })],
+  ])('keeps a JPEG with %s on the text redaction path', (_name, build) => {
+    const url = dataUri('image/jpeg', withRun(build))
+    expect(isRasterDataUri(url)).toBe(false)
+    expect(imageUrl(url) === url, 'redaction rewrites the run').toBe(false)
+  })
+
+  it('proves the SEF directory before reading any block name, so a malformed trailer costs linear time', () => {
+    const size = 1024 * 1024
+    const huge = sefBlock(1, 'n'.repeat(size))
+    const nameBytesRead = (trailer: Buffer): number => {
+      const toString = vi.spyOn(Buffer.prototype, 'toString')
+      try {
+        isRasterDataUri(dataUri('image/jpeg', Buffer.concat([plain, trailer])))
+        return (toString.mock.calls as unknown as [encoding?: string, start?: number, end?: number][]).reduce((total, [encoding, start = 0, end = 0]) => total + (encoding === 'latin1' ? end - start : 0), 0)
+      } finally {
+        toString.mockRestore()
+      }
+    }
+    expect(nameBytesRead(Buffer.concat([huge, sefDirectory(tiledEntries([[1, huge]]))])), 'a well-formed trailer reads its name once').toBe(size)
+    const repeated = Array.from({ length: 64 }, (): SefEntry => [1, huge.length, huge.length])
+    expect(nameBytesRead(Buffer.concat([huge, sefDirectory(repeated)])), 'entries overlapping one block read no name').toBe(0)
+    const oversized = sefBlock(1, 'n', Buffer.alloc(0), size)
+    expect(nameBytesRead(Buffer.concat([oversized, sefDirectory(tiledEntries([[1, oversized]]))])), 'a name longer than its block is not read').toBe(0)
+  })
 })
 
 /**
