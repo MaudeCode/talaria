@@ -51,6 +51,15 @@ stream's health:
   subscribe.
 - A hidden tab issues no polls at all; one catch-up poll runs when it is shown.
 
+The clarify read goes further, because the server backfills frames a slow
+consumer dropped and replays missed ones on attach, and a command's prompt
+reaches the chat stream of any turn running beside it. On a healthy stream it
+runs on every `clarify` frame and has no timer, unless a prompt is showing or the
+last read failed: a head that clears (another tab, expiry) may send no frame, and
+a failed read has no frame left to retry it, so both keep the 15 s cadence. While
+the stream reconnects it reads every 15 s, and until the stream first opens every
+1500 ms.
+
 Dedicated plugin commands can ask without a chat turn. While a session-bound
 command request is in flight, Web reads the same clarification queue at the
 existing recovery cadence. App opens its existing prompt monitors for that

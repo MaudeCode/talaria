@@ -619,6 +619,7 @@ export const toolsRouter = os.router({
             if (frame.event === 'clarify') {
               prompts.add(id)
               ctx.deps.pending.submitClarify(sessionId, data, 'command')
+              void ctx.deps.turns.announceClarifyHead(sessionId).catch((error: unknown) => { ctx.deps.log(`[commands] clarify announce failed: ${str((error as Error).message)}`) })
             } else if (frame.event === 'clarify_resolved' && prompts.delete(id)) ctx.deps.pending.resolveClarify(sessionId, id)
           },
         })).output

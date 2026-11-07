@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web checks for clarification questions less often during a turn, reducing server load while chats stream or reconnect.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

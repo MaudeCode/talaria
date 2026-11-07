@@ -35,7 +35,14 @@ export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) 
     queryKey: keys.clarify(sessionId ?? ''),
     queryFn: () => api.fetchClarifyPending(sessionId ?? ''),
     enabled: running,
-    refetchInterval: live?.status === 'streaming' ? 15_000 : 1_500,
+    refetchInterval: ({ state }) => {
+      const status = live?.status
+      // A command may have no stream to announce its prompt, and no frame arrives before the stream opens.
+      if (commands > 0 || status === 'starting' || status === 'connecting') return 1_500
+      if (status === 'reconnecting') return 15_000
+      // Frames announce every new head, but a head that clears (another tab, expiry) may send none, and a failed read has no frame left to retry it.
+      return state.data?.pending || state.error ? 15_000 : false
+    },
   })
   return { running, query }
 }
@@ -43,7 +50,7 @@ export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) 
 /**
  * While the session's turn or command runs, reads the canonical queue head
  * from `/api/clarify/pending` (docs/sse-streams.md: re-read on every chat-stream `clarify` frame and (re)attach,
- * 1.5 s polls while the stream is unhealthy, a 15 s safety poll otherwise), so a refresh, cold attach, reconnect, or
+ * timer reads only where a frame cannot do the job), so a refresh, cold attach, reconnect, or
  * expiry converges on the server's queue. It walks the head's server-ordered steps. Answers stay local until the last step, then go
  * to `/api/clarify/respond` keyed by step id; a failed relay keeps them for retry. A new queue head starts over.
  */
