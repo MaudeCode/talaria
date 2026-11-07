@@ -1,6 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
-import type { CronRecentCompletion, CronContextSources, CronDerivedState, CronJob, CronStoreHealth, GroupCatalog } from '@maudecode/talaria-web-contracts'
+import type { CronRecentCompletion, CronContextSources, CronDerivedState, CronJob, CronStoreHealth, GroupCatalog, SidecarMethodName, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { parseProviderQualifiedModel, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -38,6 +38,11 @@ interface StoredJob { home: string; profile: string; job: Dict; managed: boolean
 /** What a probing list collects from each store: failing writes (TAL-810) and whether the Agent takes a per-job schedule policy (TAL-1820). */
 interface StoreProbe { unwritable: CronStoreHealth[]; schedulePolicy: boolean }
 const isContextSource = (job: Dict): boolean => job.recovery_only !== true
+/** TAL-1716: how long a store's listing answers repeat reads. A write through this service ends it sooner; one from outside shows after this. */
+const LISTING_TTL_MS = 2_000
+/** TAL-1716: the store probe takes the store's lock and writes across processes, so a repaired store can read unwritable for this long. */
+const STORE_PROBE_TTL_MS = 5 * 60_000
+interface StoreListing { at: number; listed: Promise<SidecarResult<'cron.list'>> }
 
 /** TAL-301: a picked catalog id (`@provider:model`) names its own provider, exactly as a chat request does; a bare id keeps the explicit one. */
 function modelSelection(model: unknown, provider: unknown): [string | null, string | null] {
@@ -264,12 +269,39 @@ export function completionOutcome(status: unknown): CronRecentCompletion['outcom
 }
 
 export class CronService {
+  /** Store home → its newest listing, in flight or settled. */
+  private readonly listings = new Map<string, StoreListing>()
+  /** Store home → the newest listing that carried the store probe. */
+  private readonly probes = new Map<string, StoreListing>()
+
   constructor(private readonly deps: CronDeps) {}
 
   private sidecar(): SidecarLike {
     const s = this.deps.sidecar()
     if (!s) throw new HttpFailure(503, 'Hermes Agent sidecar is not running; cron jobs are unavailable')
     return s
+  }
+
+  /** One store's `cron.list`, shared while it is fresh. `probe` also makes sure `probes` holds a current probe of the store. */
+  private listStore(home: string, probe = false): StoreListing['listed'] {
+    const now = Date.now()
+    const probed = this.probes.get(home)
+    const needsProbe = probe && (!probed || now - probed.at >= STORE_PROBE_TTL_MS)
+    const fresh = this.listings.get(home)
+    if (fresh && now - fresh.at < LISTING_TTL_MS && !needsProbe) return fresh.listed
+    const listing = { at: now, listed: this.sidecar().call('cron.list', needsProbe ? { profile_home: home, probe_store: true } : { profile_home: home }) }
+    this.listings.set(home, listing)
+    if (needsProbe) this.probes.set(home, listing)
+    listing.listed.catch(() => {
+      if (this.listings.get(home) === listing) this.listings.delete(home)
+      if (this.probes.get(home) === listing) this.probes.delete(home)
+    })
+    return listing.listed
+  }
+
+  /** Every call that changes a store goes through here, so the next read sees it. A refused or lost call may still have landed. */
+  private async write<M extends SidecarMethodName>(method: M, params: SidecarParams<M>): Promise<SidecarResult<M>> {
+    try { return await this.sidecar().call(method, params) } finally { this.listings.clear() }
   }
 
   async blueprints(home: string) {
@@ -321,8 +353,7 @@ export class CronService {
    * Passing `probe` also probes each listed store (TAL-810, TAL-1820) and collects the results.
    */
   private async storedJobs(active: string, probe?: StoreProbe): Promise<StoredJob[]> {
-    // ponytail: scan visible stores per request; add an index only if profile/job counts make this expensive.
-    const rows: StoredJob[] = []
+    const stores: { profile: string; home: string; local: boolean }[] = []
     const seen = new Set<string>()
     for (const profile of await this.profileNames(active)) {
       const local = this.deps.profilesMatch(profile, active)
@@ -330,17 +361,23 @@ export class CronService {
       try { home = this.deps.profileHome(profile) } catch (error) { if (local) throw error; continue }
       if (seen.has(home)) continue
       seen.add(home)
-      let jobs: Dict[]
+      stores.push({ profile, home, local })
+    }
+    const listed = await Promise.all(stores.map(async (store) => {
       try {
-        const listed = await this.sidecar().call('cron.list', probe ? { profile_home: home, probe_store: true } : { profile_home: home })
-        jobs = listed.jobs
-        const health = listed.store_health
-        if (probe && health) probe.unwritable.push({ profile, store: health.store, error: health.error, fix: health.fix, since: completedAtSeconds(health.since) })
-        if (probe && listed.schedule_policy) probe.schedulePolicy = true
-      } catch (error) { if (local) throw error; continue }
-      for (const job of jobs) {
+        const { jobs } = await this.listStore(store.home, probe !== undefined)
+        return { ...store, jobs, probed: probe ? await this.probes.get(store.home)?.listed : undefined }
+      } catch (error) { if (store.local) throw error; return null }
+    }))
+    const rows: StoredJob[] = []
+    for (const store of listed) {
+      if (!store) continue
+      const health = store.probed?.store_health
+      if (probe && health) probe.unwritable.push({ profile: store.profile, store: health.store, error: health.error, fix: health.fix, since: completedAtSeconds(health.since) })
+      if (probe && store.probed?.schedule_policy) probe.schedulePolicy = true
+      for (const job of store.jobs) {
         const creator = str(job.owner_profile).trim()
-        rows.push({ home, profile, job, managed: local || Boolean(creator && this.deps.profilesMatch(creator, active)) })
+        rows.push({ home: store.home, profile: store.profile, job, managed: store.local || Boolean(creator && this.deps.profilesMatch(creator, active)) })
       }
     }
     return rows
@@ -384,7 +421,7 @@ export class CronService {
   private async validateContext(home: string, fields: Dict): Promise<void> {
     const refs = continuityRefs(fields.context_from, false)
     if (!refs.length) return
-    const ids = new Set((await this.sidecar().call('cron.list', { profile_home: home })).jobs.filter(isContextSource).map((job) => job.id))
+    const ids = new Set((await this.listStore(home)).jobs.filter(isContextSource).map((job) => job.id))
     if (refs.some((ref) => !ids.has(str(ref)))) throw new HttpFailure(400, 'Context jobs must belong to the execution profile')
   }
 
@@ -399,6 +436,17 @@ export class CronService {
     const match = matches[0]!
     if (allRows.filter((row) => row.home === match.home && row.job.id === match.job.id).length !== 1) throw new HttpFailure(409, 'Ambiguous cron job reference')
     return match
+  }
+
+  /**
+   * TAL-1716: for reads and for the reversible pause and resume, an id the active store holds once settles it without
+   * listing the others. An id a cloned profile also holds then means the active store's copy here; `resolveStore` keeps
+   * refusing it for the writes that cannot be undone.
+   */
+  private async resolveActiveFirst(home: string, ref: string): Promise<StoredJob> {
+    const active = await this.profileForHome(home)
+    const exact = (await this.listStore(home)).jobs.filter((job) => job.id === ref)
+    return exact.length === 1 ? { home, profile: active, job: exact[0]!, managed: true } : this.resolveStore(home, ref)
   }
 
   async contextSources(home: string, input: { profile?: string | undefined; editing_job_id?: string | undefined; exclude_job_id?: string | undefined; selected_refs?: string[] | undefined }): Promise<CronContextSources> {
@@ -506,7 +554,7 @@ export class CronService {
     await this.requireRoomDeliveryAuthority(job)
     await this.validateContext(executionHome, job)
     try {
-      const result = await this.sidecar().call('cron.create', { profile_home: executionHome, job, execution_home: profile ? executionHome : null })
+      const result = await this.write('cron.create', { profile_home: executionHome, job, execution_home: profile ? executionHome : null })
       return { ok: true, job: await this.view({ home: executionHome, profile: profile ?? active, job: result.job, managed: true }, home) }
     } catch (error) {
       throw new HttpFailure(400, str((error as Error).message))
@@ -544,7 +592,7 @@ export class CronService {
     await this.requireRoomDeliveryAuthority(store.job, { ...store.job, ...updates })
     await this.validateContext(home, updates)
     try {
-      const result = await this.sidecar().call('cron.update', { profile_home: home, job_id: storedId, updates })
+      const result = await this.write('cron.update', { profile_home: home, job_id: storedId, updates })
       return { ok: true, job: await this.view({ ...store, job: result.job }, pickerHome) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
@@ -554,13 +602,13 @@ export class CronService {
 
   private async simple(method: 'cron.pause' | 'cron.resume' | 'cron.delete' | 'cron.cancel', home: string, jobId: string, extra: Dict = {}): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, method === 'cron.delete' ? 'Missing required field(s): job_id' : 'job_id required')
-    const store = await this.resolveStore(home, jobId)
+    const store = method === 'cron.pause' || method === 'cron.resume' ? await this.resolveActiveFirst(home, jobId) : await this.resolveStore(home, jobId)
     if (method === 'cron.resume') {
       this.requireExecutionStore(store)
       await this.requireRoomDeliveryAuthority(store.job)
     }
     try {
-      const result = await this.sidecar().call(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
+      const result = await this.write(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
       // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
       return 'job' in result ? { ok: true, job: await this.view({ ...store, job: result.job }, home) } : { ok: true, job_id: jobId, ...('status' in result ? { status: result.status } : {}) }
     } catch (error) {
@@ -607,7 +655,7 @@ export class CronService {
       // Python `_event_profile_for_cron_job`: browsers refresh the job's profile when it is a known one.
       const eventProfile = profile && known ? profile : null
       let started = false
-      const done = (): void => { running?.delete(jobId); if (started) this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
+      const done = (): void => { this.listings.clear(); running?.delete(jobId); if (started) this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
       return await new Promise((resolve, reject) => {
         let answered = false
         const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
@@ -641,7 +689,7 @@ export class CronService {
     const o = pyInt(offset, 0)
     const l = pyInt(limit, 50)
     if (!Number.isFinite(o) || !Number.isFinite(l)) throw new HttpFailure(400, 'offset and limit must be integers')
-    home = (await this.resolveStore(home, jobId)).home
+    home = (await this.resolveActiveFirst(home, jobId)).home
     return this.sidecar().call('cron.history', { profile_home: home, job_id: jobId, offset: Math.max(0, o), limit: Math.max(1, Math.min(500, l)) })
   }
 
@@ -649,7 +697,7 @@ export class CronService {
     if (!jobId || !filename) throw new HttpFailure(400, 'job_id and filename required')
     if (!validJobId(jobId)) throw new HttpFailure(400, 'invalid job_id')
     if (filename.includes('/') || filename.includes('\\') || filename === '..') throw new HttpFailure(400, 'invalid filename')
-    home = (await this.resolveStore(home, jobId)).home
+    home = (await this.resolveActiveFirst(home, jobId)).home
     try {
       const detail = await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
       // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302); the response is
@@ -666,7 +714,7 @@ export class CronService {
     if (!jobId) throw new HttpFailure(400, 'job_id required')
     if (!JOB_ID_RE.test(jobId)) throw new HttpFailure(400, 'invalid job_id')
     const l = Number.parseInt(limit ?? '5', 10)
-    home = (await this.resolveStore(home, jobId)).home
+    home = (await this.resolveActiveFirst(home, jobId)).home
     return this.sidecar().call('cron.output', { profile_home: home, job_id: jobId, limit: Number.isFinite(l) ? Math.max(1, Math.min(500, l)) : 5 })
   }
 
