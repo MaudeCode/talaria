@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A profile that selects a plugin provider by one of its aliases, such as github-copilot for GitHub Copilot, now shows that provider as active with one model picker group.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

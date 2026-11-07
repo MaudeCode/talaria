@@ -22,18 +22,18 @@ PROFILE = textwrap.dedent(
 
     {var} = ProviderProfile(
         name={name!r}, display_name={display!r}, auth_type="external_process", base_url="acp://{name}",
-        process_command={command!r}, fallback_models={models!r},
+        process_command={command!r}, fallback_models={models!r}, aliases={aliases!r},
     )
     register_provider({var})
     """
 )
 
 
-def _plugin(root: pathlib.Path, directory: str, manifest_name: str, *, name: str, display: str, command: str, models: tuple) -> None:
+def _plugin(root: pathlib.Path, directory: str, manifest_name: str, *, name: str, display: str, command: str, models: tuple, aliases: tuple = ()) -> None:
     path = root / directory
     path.mkdir(parents=True)
     (path / "plugin.yaml").write_text(f"name: {manifest_name}\nkind: model-provider\nversion: 0.0.1\n")
-    (path / "__init__.py").write_text(PROFILE.format(var=name.replace("-", "_"), name=name, display=display, command=command, models=models))
+    (path / "__init__.py").write_text(PROFILE.format(var=name.replace("-", "_"), name=name, display=display, command=command, models=models, aliases=aliases))
 
 
 @requires_agent
@@ -90,7 +90,7 @@ def test_provider_device_login_hooks_save_only_in_the_starting_profile(tmp_path:
 def _seed(home: pathlib.Path, cli: pathlib.Path, isolation: str) -> None:
     plugins = home / "plugins"
     # `hermes plugins install` layout: flat, one directory per plugin.
-    _plugin(plugins, "fake-sub", "fake-sub-provider", name="fake-sub", display="Fake Subscription", command=str(cli), models=("fake-opus", "claude-sonnet-4-6"))
+    _plugin(plugins, "fake-sub", "fake-sub-provider", name="fake-sub", display="Fake Subscription", command=str(cli), models=("fake-opus", "claude-sonnet-4-6"), aliases=("Fake-Alias", "fake-other-alias"))
     # Hand-installed layout: under plugins/model-providers/.
     _plugin(plugins / "model-providers", "fake-missing", "fake-missing-provider", name="fake-missing", display="Fake Missing CLI",
             command="talaria-test-cli-that-does-not-exist", models=("fake-missing-1",))
@@ -128,6 +128,7 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         assert rows["fake-sub"]["display_name"] == "Fake Subscription"
         assert rows["fake-sub"]["auth_type"] == "external_process"
         assert rows["fake-sub"]["setup"] == "ready"
+        assert rows["fake-sub"].get("aliases") == ["fake-alias", "fake-other-alias"]
         assert rows["fake-missing"]["setup"] == "missing_cli"
         # Sanitized: no command paths or home paths reach the server.
         assert str(tmp_path) not in json.dumps(result)

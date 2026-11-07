@@ -161,7 +161,7 @@ describe('installed model-provider plugins in the provider catalog', () => {
 describe('a provider that left the Agent core', () => {
   let s: TestServer
   let config: Json
-  let rows: { name: string; display_name: string; auth_type: string; setup: 'ready' | 'missing_cli' | 'not_installed'; install_hint?: string }[]
+  let rows: { name: string; display_name: string; auth_type: string; setup: 'ready' | 'missing_cli' | 'not_installed'; install_hint?: string; aliases?: string[] }[]
   const providers = async (): Promise<{ active_provider: string; providers: Row[] }> => {
     writeFileSync(join(s.state, 'config.yaml'), `# ${JSON.stringify(config)}\n`)
     s.deps.catalog.invalidate()
@@ -207,5 +207,47 @@ describe('a provider that left the Agent core', () => {
     expect(answer.providers.map((p) => p.id)).not.toContain('copilot')
     expect(answer.active_provider).toBe('custom:github')
     expect(answer.providers.find((p) => p.id === 'custom:github')).toMatchObject({ is_custom: true, is_active: true, base_url: 'https://git.invalid/v1' })
+  })
+
+  describe('declared plugin aliases (TAL-1940)', () => {
+    const copilot = { name: 'copilot', display_name: 'GitHub Copilot', auth_type: 'copilot', setup: 'ready' as const, aliases: ['github-copilot', 'github-models', 'github', 'claude'] }
+    const models = async (): Promise<{ active_provider: string; groups: Group[]; configured_model_badges: Record<string, { provider: string }> }> => (await json(await s.get('/api/models'))) as never
+
+    it('reads the selected alias as the plugin on its card, in the picker and in the settings and fallbacks that name it', async () => {
+      rows = [copilot]
+      config = { model: { default: 'gpt-5.5', provider: 'github-copilot' }, providers: { 'github-models': { models: ['pinned-1'] } }, fallback_providers: [{ provider: 'github', model: 'gpt-5.5-mini' }] }
+      const answer = await providers()
+      expect(answer.active_provider).toBe('copilot')
+      expect(answer.providers.filter((p) => p.is_active).map((p) => p.id)).toEqual(['copilot'])
+      expect(answer.providers.map((p) => p.id).filter((id) => id.startsWith('github'))).toEqual([])
+
+      const catalog = await models()
+      expect(catalog.active_provider).toBe('copilot')
+      expect(catalog.groups.map((g) => g.provider_id)).toEqual(['copilot'])
+      expect(catalog.groups[0]?.provider).toBe('GitHub Copilot')
+      expect(catalog.groups[0]?.models.map((m) => m.id)).toContain('pinned-1')
+      expect(catalog.configured_model_badges['@copilot:gpt-5.5-mini']).toMatchObject({ provider: 'copilot' })
+      expect(await json(await s.get('/api/provider/quota'))).toMatchObject({ provider: 'copilot' })
+    })
+
+    it.each<[string, Json, string]>([
+      ['a native providers.<key> endpoint', { providers: { github: { api: 'https://git.invalid/v1', api_key: 'sk-test', default_model: 'm' } } }, 'custom:github'],
+      ['a legacy custom provider', { custom_providers: [{ name: 'github', base_url: 'https://git.invalid/v1', api_key: 'sk-test', model: 'm' }] }, 'custom:github'],
+    ])('leaves %s named after an alias as itself', async (_name, endpoint, id) => {
+      rows = [copilot]
+      config = { model: { default: 'm', provider: 'github' }, ...endpoint }
+      const answer = await providers()
+      expect(answer.active_provider).toBe(id)
+      expect(answer.providers.find((p) => p.id === id)).toMatchObject({ is_custom: true, is_active: true })
+      expect(answer.providers.find((p) => p.id === 'copilot')).toMatchObject({ is_active: false })
+      expect((await models()).active_provider).toBe(id)
+    })
+
+    it('never lets an alias stand in for a built-in provider', async () => {
+      rows = [copilot]
+      config = { model: { default: 'claude-sonnet-4-6', provider: 'claude' } }
+      expect((await providers()).active_provider).toBe('anthropic')
+      expect((await models()).active_provider).toBe('anthropic')
+    })
   })
 })

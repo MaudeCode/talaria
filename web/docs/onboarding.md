@@ -137,7 +137,8 @@ GitHub Copilot is one of these since Agent v0.22.6: it has no built-in card. A
 profile that still selects `copilot` shows a card with **Install plugin**, which
 runs the reviewed catalog install for `github-copilot` (operator sessions only).
 Once the plugin is enabled, sign in from its provider row, or use
-`hermes auth add copilot` and refresh WebUI.
+`hermes auth add copilot` and refresh WebUI. A profile that selects one of the
+plugin's declared aliases, such as `github-copilot`, reads as that provider.
 
 - A plugin listed in `plugins.disabled` does not appear.
 - A plugin that is not ready shows why on its provider card and offers no

@@ -459,8 +459,27 @@ export function modelSection(config: Config): Dict {
   return dict(config.model)
 }
 
+const customEntryNamed = (entry: Dict, provider: string): boolean => customProviderSlug(entry.name) === customProviderSlug(provider) || str(entry.name).trim().toLowerCase() === provider
+
+/**
+ * TAL-1940: each name a plugin declares for itself → that plugin's id. A built-in (id or alias), another plugin's id and
+ * a custom endpoint keep a name they share with an alias; two plugins declaring one alias resolve as the Agent's registry
+ * does, to the later one.
+ */
+export function pluginAliasTargets(config: Config, plugins: readonly { name: string; aliases?: string[] | undefined }[]): ReadonlyMap<string, string> {
+  const ids = new Set(plugins.map((p) => p.name))
+  const custom = customProviderEntries(config, ids)
+  const targets = new Map<string, string>()
+  for (const plugin of plugins) {
+    for (const alias of plugin.aliases ?? []) {
+      if (!isReservedProviderId(alias, ids) && !custom.some((e) => customEntryNamed(e, alias))) targets.set(alias, plugin.name)
+    }
+  }
+  return targets
+}
+
 /** Python `_resolve_configured_provider_id` (simplified): heal `local`, keep custom slugs, alias the rest. */
-export function activeProviderFromConfig(config: Config, plugins?: ReadonlySet<string>): string | null {
+export function activeProviderFromConfig(config: Config, plugins?: ReadonlySet<string>, pluginAliases?: ReadonlyMap<string, string>): string | null {
   const model = modelSection(config)
   let provider = str(model.provider).trim().toLowerCase()
   if (!provider) return null
@@ -468,9 +487,9 @@ export function activeProviderFromConfig(config: Config, plugins?: ReadonlySet<s
   if (provider.startsWith('custom:')) return provider
   // Only a legacy name can claim a bare built-in or plugin selector; native records need their explicit custom id.
   const entries = isReservedProviderId(provider, plugins) ? legacyCustomEntries(config) : customProviderEntries(config, plugins)
-  const named = entries.find((e) => customProviderSlug(e.name) === customProviderSlug(provider) || str(e.name).trim().toLowerCase() === provider)
+  const named = entries.find((e) => customEntryNamed(e, provider))
   if (named) return customProviderSlug(named.name) || 'custom'
-  return canonicaliseProviderId(provider) || provider
+  return pluginAliases?.get(provider) ?? (canonicaliseProviderId(provider) || provider)
 }
 
 // ── max_tokens ────────────────────────────────────────────────────────
