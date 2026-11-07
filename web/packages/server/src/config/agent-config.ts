@@ -27,7 +27,8 @@ export const dict = (v: unknown): Dict => (isDict(v) ? v : {})
 
 /** The Agent's `${VAR}` / `${env:VAR}` reference syntax (`hermes_cli.config._ENV_REF_RE`). */
 const ENV_REFERENCE = /\$\{[^}]+\}/
-const isReference = (v: unknown): boolean => typeof v === 'string' && ENV_REFERENCE.test(v)
+export const isReference = (v: unknown): boolean => typeof v === 'string' && ENV_REFERENCE.test(v)
+const hasReference = (v: unknown): boolean => isReference(v) || (Array.isArray(v) ? v.some(hasReference) : isDict(v) && Object.values(v).some(hasReference))
 /** A reference left after resolution means unset: it never reaches a turn, a session or a path. */
 function withoutReferences<T>(value: T): T {
   if (Array.isArray(value)) return value.filter((item) => !isReference(item)).map(withoutReferences) as T
@@ -754,11 +755,17 @@ function coerceOptionalPositiveInt(value: unknown, field: string): number | '' |
   return n
 }
 
+/** TAL-1958: the Agent expands `${VAR}` when it loads config.yaml, so a caller's value here must not name a secret to send out. */
+function refuseReference(field: string, value: unknown): void {
+  if (hasReference(value)) throw new Error(`${field} cannot contain a \${...} reference`)
+}
+
 /** Python `_apply_advanced_model_options` (in place). */
 export function applyAdvancedModelOptions(target: Dict, advanced: unknown): void {
   if (advanced === null || advanced === undefined) return
   if (!isDict(advanced)) throw new Error('advanced model options must be an object')
   if ('base_url' in advanced) {
+    refuseReference('base_url', advanced.base_url)
     const base = str(advanced.base_url).trim().replace(/\/+$/, '')
     if (base) target.base_url = base
     else Reflect.deleteProperty(target, 'base_url')
@@ -775,6 +782,7 @@ export function applyAdvancedModelOptions(target: Dict, advanced: unknown): void
       const text = extra.trim()
       try { extra = text ? JSON.parse(text) : {} } catch { throw new Error('extra_body must be valid JSON') }
     }
+    refuseReference('extra_body', extra)
     if (extra === null || extra === undefined || extra === '') Reflect.deleteProperty(target, 'extra_body')
     else if (isDict(extra)) {
       if (Object.keys(extra).length) target.extra_body = extra
@@ -788,6 +796,7 @@ export function applyAdvancedModelOptions(target: Dict, advanced: unknown): void
     else throw new Error('service_tier must be one of: default, priority, ultrafast')
   }
   if (advanced.api_key_clear) Reflect.deleteProperty(target, 'api_key')
+  refuseReference('api_key', advanced.api_key)
   const apiKey = str(advanced.api_key).trim()
   if (apiKey) target.api_key = apiKey
 }
