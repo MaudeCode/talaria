@@ -66,4 +66,14 @@
 @media (max-width: 640px){.clarify-inner{padding:12px 12px 36px;min-width:min(100%,280px)}}
 .approval-btn:focus{outline:2px solid var(--blue);outline-offset:2px}
 .approval-card,.clarify-card{bottom:8px}
+/* TAL-1943: at short heights the dock leaves a prompt card no room above it, so the open card covers the dock and scrolls
+   within the chat stage, the height between the header and the bottom navigation (--chat-stage-h, measured by ChatView).
+   Collapsed, a card stays above the dock, which is how a typed Clarify answer reaches the composer. */
+@media (max-height:480px){
+.composer-flyout:has(.approval-card:not(.collapsed),.clarify-card:not(.collapsed),.connect-card,.vault-card){z-index:3}
+.composer-dock--hero:has(.approval-card,.clarify-card,.connect-card,.vault-card){bottom:0}
+.approval-card:not(.collapsed),.clarify-card:not(.collapsed),.connect-card,.vault-card{display:flex;flex-direction:column;bottom:calc(-1 * var(--composer-h,0px));margin-bottom:0;max-height:var(--chat-stage-h,100dvh)}
+.approval-card.collapsed,.clarify-card.collapsed{bottom:0;margin-bottom:0}
+.approval-inner,.clarify-card .clarify-inner,.connect-inner,.vault-inner{min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box}
+}
 }

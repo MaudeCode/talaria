@@ -476,6 +476,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     const measure = () => {
       const height = `${dockEl.offsetHeight}px`
       if (stageEl.style.getPropertyValue('--composer-h') !== height) { stageEl.style.setProperty('--composer-h', height); requestScroll('follow') }
+      stageEl.style.setProperty('--chat-stage-h', `${stageEl.offsetHeight}px`)
       // The hero centres the card, not the dock: the strip under it and the wrap's padding would lift it off centre.
       const box = dockEl.classList.contains('composer-dock--hero') ? dockEl.querySelector('.composer-box') : null
       if (box) {

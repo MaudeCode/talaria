@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createServer, type ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import type { ConnectorOperationView, ConnectorsPage, ConnectorToolsView } from '@maudecode/talaria-web-contracts'
-import { expect, settle, test } from './fixtures'
+import { expect, expectPromptReachable, settle, test } from './fixtures'
 
 // Service-worker requests bypass page routing; these fixtures own every response.
 test.use({ serviceWorkers: 'block' })
@@ -153,6 +153,9 @@ test('the Connectors entry follows the server flag (TAL-818)', async ({ page }, 
       // The card widens nothing (the chat page's own right-panel handle may already overhang by a few pixels).
       expect(await pageWidth()).toBe(before)
       await page.screenshot({ path: testInfo.outputPath(`connect-card-${shot}.png`) })
+      await page.setViewportSize({ width: 594, height: 368 })
+      await expectPromptReachable(page, card, [card.getByText('Connect apps'), card.getByRole('link', { name: 'Authorize' }), card.getByRole('button', { name: 'Continue' })])
+      await page.screenshot({ path: testInfo.outputPath(`connect-card-short-${shot}.png`) })
       await card.getByRole('button', { name: 'Continue' }).click()
       await expect(card).toHaveCount(0)
       await expect.poll(() => moves).toEqual([{ action: 'continue' }])
