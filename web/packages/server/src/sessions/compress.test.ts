@@ -11,6 +11,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { mergeSessionMessagesAppendOnly } from './merge.js'
 import { COMPRESSION_JOB_TTL_SECONDS, CompressionJobs, type CompressionJob } from './compress.js'
+import { Session } from './session.js'
 
 useJsonStorage()
 
@@ -507,12 +508,34 @@ describe('manual session compression', () => {
       expect((await detail(await anchored({ messages: [] }))).messages as Json[]).toHaveLength(0)
     })
 
+    it("adds the row past a marker from another compaction", async () => {
+      const older = { role: 'user', content: '[CONTEXT COMPACTION] An older summary.', timestamp: 0.5 }
+      expect(contents(await detail(await anchored({ messages: [older, ...structuredClone(TRANSCRIPT)] })))).toContain(ROW)
+    })
+
     it('ends with the row once a truncate cuts it, so no later load restores it', async () => {
       const sid = await anchored()
       expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
       expect(contents(await detail(sid))).toEqual(['one', '', 'schema.sql', 'two'])
       expect((await s.deps.sessionStore.get(sid)).compression_anchor_summary).toBeNull()
     })
+  })
+})
+
+describe('legacy compaction row scan (TAL-1742)', () => {
+  // Every marker check reads this field first, so the getter counts the checks a load makes on a row.
+  const marker = { role: 'user', content: '[CONTEXT COMPACTION] Earlier turns summarized.', timestamp: 1 }
+  const load = (first: Json, summary: string | null): number => {
+    let checks = 0
+    const rows = [first, ...ORIGINAL].map((row) => Object.defineProperty({ ...row }, '_context_compression_marker', { get: () => { checks += 1; return undefined } }))
+    new Session({ messages: rows, compression_anchor_summary: summary }, { workspace: '/tmp', model: null })
+    return checks
+  }
+
+  it('checks no row without a summary, and stops at the row that shows the summary', () => {
+    expect(load(marker, null)).toBe(0)
+    expect(load(marker, 'Earlier turns summarized.')).toBe(1)
+    expect(load(ORIGINAL[0]!, 'Earlier turns summarized.')).toBeGreaterThan(ORIGINAL.length)
   })
 })
 

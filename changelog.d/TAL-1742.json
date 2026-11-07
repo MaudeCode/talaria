@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Long chats in Talaria Web load with less server work, because each saved message is compared once when the chat is read.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
