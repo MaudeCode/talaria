@@ -50,16 +50,40 @@ cat > "$fake_bin/xcodebuild" <<'EOF'
 set -euo pipefail
 
 state=${TALARIA_TEST_STATE:?}
-[[ "$1" == test-without-building ]] || exit 0  # build-for-testing has nothing to fake
+if [[ "$1" == build-for-testing ]]; then
+    typeset -a build_args=("$@")
+    derived=""
+    for (( index = 1; index <= ${#build_args}; index++ )); do
+        if [[ "${build_args[index]}" == -derivedDataPath ]]; then
+            (( index++ )); derived=${build_args[index]}
+        fi
+    done
+    mkdir -p "$derived/Build/Products"
+    [[ "${TALARIA_FAKE_BUILD_RECEIPTS:-single}" != none ]] || exit 0
+    print -r -- 'build-produced fixture receipt' > "$derived/Build/Products/Talaria_Fixture.xctestrun"
+    if [[ "${TALARIA_FAKE_BUILD_RECEIPTS:-single}" == multiple ]]; then
+        print -r -- 'other fixture receipt' > "$derived/Build/Products/Other.xctestrun"
+    fi
+    exit 0
+fi
+[[ "$1" == test-without-building ]] || exit 1
 destination=""
 result_bundle=""
 result_stream=""
 parallel=""
+receipt=""
 exit_status=0
 typeset -a selectors=()
 typeset -a args=("$@")
 for (( index = 1; index <= ${#args}; index++ )); do
     case "${args[index]}" in
+        -project|-scheme)
+            print -u2 'Test launch reopened the project instead of consuming the build receipt.'
+            exit 96
+            ;;
+        -xctestrun)
+            (( index++ )); receipt=${args[index]}
+            ;;
         -destination)
             (( index++ ))
             destination="${args[index]}"
@@ -82,6 +106,10 @@ for (( index = 1; index <= ${#args}; index++ )); do
             ;;
     esac
 done
+[[ -f "$receipt" && "$(<"$receipt")" == 'build-produced fixture receipt' ]] || {
+    print -u2 'Test launch did not consume the receipt produced by build-for-testing.'
+    exit 96
+}
 
 # Synthetic runners that never connect: ConnectsOnRelaunch connects on its second launch.
 previous_runs=$(grep -c -- "${selectors[1]:-}" "$state/runs" || true)
@@ -169,6 +197,22 @@ read -r maximum < "$state/maximum"
 [[ $(wc -l < "$state/runs" | tr -d ' ') == $(( rounds * 2 )) ]]
 [[ $(sed -n 's/^[^|]*|\([^|]*\)|.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == $(( rounds * 2 )) ]]
 grep -Eq "Waiting for this worktree's XCTest run: owner PID [0-9]+, elapsed [0-9]+s" "$state"/second-*.log
+
+# A successful build without one unambiguous test receipt cannot start tests or retain admission.
+manifest_repo="$test_root/manifest-repo"
+git -C "$repo" worktree add -qb manifest "$manifest_repo"
+before_manifest_checks=$(wc -l < "$state/runs" | tr -d ' ')
+for mode expected in none 0 multiple 2; do
+    if TALARIA_FAKE_BUILD_RECEIPTS=$mode "$manifest_repo/scripts/test-ios" TalariaTests/InvalidReceipt > "$state/receipt-$mode.log" 2>&1; then
+        print -u2 "Expected the $mode build receipt to fail before test launch."
+        exit 1
+    else
+        [[ $? == 65 ]]
+    fi
+    grep -q "Expected one build-produced .xctestrun.*found $expected" "$state/receipt-$mode.log"
+    [[ ! -e "$manifest_repo/.codex-tmp/xctest/runner.lock.owner" ]]
+done
+[[ $(wc -l < "$state/runs" | tr -d ' ') == $before_manifest_checks ]]
 
 # Different worktrees never wait on each other; each leases its own pool device.
 export TALARIA_FAKE_XCODEBUILD_SECONDS=3

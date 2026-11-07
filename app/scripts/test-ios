@@ -98,6 +98,13 @@ xcodebuild_pid=$!
 wait "$xcodebuild_pid" || exit $?
 xcodebuild_pid=""
 
+# CI consumes the build receipt too: reopening the project here repeats workspace resolution inside the launch guard.
+typeset -a test_runs=("$runtime_dir"/derived-data/Build/Products/*.xctestrun(N))
+if (( ${#test_runs} != 1 )); then
+    print -u2 "Expected one build-produced .xctestrun in $runtime_dir/derived-data/Build/Products; found ${#test_runs}."
+    exit 65
+fi
+
 # On the iOS 27.1 Duo simulator, a test host launched while SpringBoard still settles the displays can wait forever
 # for testmanagerd's availability notice. xcodebuild relaunches it after about 30 s, sometimes into a scene that
 # never reaches the foreground, and reports a hang only after minutes. A runner that has not reported its first
@@ -113,7 +120,8 @@ while true; do
     : > "$result_stream"
     print "Simulator: $simulator_name, $destination"
     print "Result bundle: $result_bundle"
-    xcodebuild test-without-building -quiet "${project[@]}" \
+    xcodebuild test-without-building -quiet -xctestrun "${test_runs[1]}" \
+        -enableCodeCoverage NO \
         -destination "$destination" \
         -testLanguage en \
         -testRegion US \

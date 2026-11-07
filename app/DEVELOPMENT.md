@@ -3,6 +3,8 @@
 Run commands in this document from `app/`. Workflows live in `../.github/`.
 Release and TestFlight operations are in [`TESTFLIGHT.md`](TESTFLIGHT.md).
 
+`scripts/test-ios` builds once and launches the generated `.xctestrun`, as hosted CI does. The test phase retains its runner-connection guard without reopening the project or resolving its workspace again. A missing or ambiguous build receipt stops before test launch.
+
 ## Server
 
 Develop against a [Talaria Web](../web/README.md) server. Your own server behind
