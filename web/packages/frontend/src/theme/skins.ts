@@ -2041,8 +2041,6 @@ export const SKINS = [
 ] as const satisfies readonly SkinSpec[]
 
 export type SkinKey = (typeof SKINS)[number]['key']
-export const SKIN_KEYS = SKINS.map((s) => s.key) as [SkinKey, ...SkinKey[]]
-export const skinByKey = (key: string): SkinSpec | undefined => SKINS.find((s) => s.key === key)
 
 const block = (selector: string, tokens: TokenMap): string => {
   const entries = Object.entries(tokens)

@@ -8,7 +8,7 @@
  */
 import { readPersisted, writePersisted } from '../lib/persisted'
 import { ThemeSchema, SkinSchema, FontSizeSchema, ChatWidthSchema, type ChatWidth, type Theme, type Skin } from '../contracts/persisted'
-import { skinByKey } from './skins'
+import { SKIN_TRAITS } from 'virtual:hermes-skin-meta'
 const LEGACY_THEME_ALIASES: Record<string, [Theme, Skin]> = {
   slate: ['dark', 'slate'],
   solarized: ['dark', 'poseidon'],
@@ -41,7 +41,7 @@ export function applyAppearance(a: ResolvedAppearance, root: HTMLElement = docum
   root.classList.toggle('dark', a.effectiveDark)
   if (a.skin !== 'default') root.dataset.skin = a.skin
   else delete root.dataset.skin
-  const traits = skinByKey(a.skin)?.traits
+  const traits = SKIN_TRAITS[a.skin]
   if (traits?.length) root.dataset.skinTraits = traits.join(' ')
   else delete root.dataset.skinTraits
   root.style.colorScheme = a.effectiveDark ? 'dark' : 'light'

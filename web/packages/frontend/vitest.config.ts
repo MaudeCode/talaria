@@ -2,9 +2,10 @@ import { defineConfig } from 'vitest/config'
 import viteReact from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { paraglideLocaleSplit } from './src/i18n/localeSplit'
+import { hermesTheme } from './src/theme/themePlugin'
 
 export default defineConfig({
-  plugins: [viteReact({ compiler: true }), paraglideLocaleSplit('./src/paraglide')],
+  plugins: [viteReact({ compiler: true }), paraglideLocaleSplit('./src/paraglide'), hermesTheme()],
   resolve: { alias: { '~': fileURLToPath(new URL('./src', import.meta.url)) } },
   test: {
     environment: 'jsdom',

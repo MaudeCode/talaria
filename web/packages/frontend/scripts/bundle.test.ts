@@ -32,6 +32,16 @@ it('the app layout static dependency graph carries only base-locale messages', (
   for (const file of readLayout().files) expect(/===`(?:ja|de|ru)`/.exec(readFileSync(resolve(clientDir, file), 'utf8')), file).toBeNull()
 })
 
+it('the app layout static dependency graph excludes the skin token tables', () => {
+  // TAL-1700: Verdigris's dark `--code-text`, a literal only skins.ts holds. The stylesheet needs it, so only scripts count.
+  const SKIN_TABLE = '#D6AE74'
+  const script = (file: string) => (file.endsWith('.js') ? readFileSync(resolve(clientDir, file), 'utf8') : '')
+  for (const file of readLayout().files) expect(script(file).includes(SKIN_TABLE), file).toBe(false)
+  // The Appearance picker still loads the table lazily; this also fails if the signature goes stale.
+  const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
+  expect(Object.values<{ file: string }>(manifest).some(({ file }) => script(file).includes(SKIN_TABLE))).toBe(true)
+})
+
 it('counts shared static imports and styles once, follows cycles, and excludes dynamic imports', () => {
   expect(layoutFiles({
     'src/routes/_app.tsx?tsr-split=component': { file: 'layout.js', imports: ['shared', 'child'], css: ['layout.css'], dynamicImports: ['lazy'] },

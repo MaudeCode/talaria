@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web loads faster because skin color tables now download only when you open Appearance settings.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

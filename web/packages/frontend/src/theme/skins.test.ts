@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { SKIN_KEYS, SKIN_TRAITS as TRAITS_BY_KEY } from 'virtual:hermes-skin-meta'
+import { SkinSchema } from '../contracts/persisted'
 import { BASE, SKINS, SKIN_TRAITS, TOKEN_NAMES, renderThemeCss, type SkinSpec } from './skins'
 
 const skins: readonly SkinSpec[] = SKINS
@@ -19,6 +21,15 @@ describe('theme system', () => {
       expect(s.colors.length, `${s.key} swatch`).toBeGreaterThan(0)
     }
     expect(new Set(SKINS.map((s) => s.key)).size).toBe(SKINS.length)
+  })
+
+  it('the boot path reads keys and traits generated from SKINS, and the persisted schema accepts only those keys', () => {
+    expect(SKIN_KEYS).toEqual(SKINS.map((s) => s.key))
+    for (const s of skins) {
+      expect(TRAITS_BY_KEY[s.key], s.key).toEqual(s.traits ?? [])
+      expect(SkinSchema.safeParse(s.key).success, s.key).toBe(true)
+    }
+    expect(SkinSchema.safeParse('not-a-skin').success).toBe(false)
   })
 
   it('renders one block per skin and scheme in cascade order', () => {
