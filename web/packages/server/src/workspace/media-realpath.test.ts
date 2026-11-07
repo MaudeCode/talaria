@@ -145,6 +145,17 @@ describe('/api/media realpath cost (TAL-1696)', () => {
     expect(used).toBeLessThanOrEqual(50 + 2 + 2 * 24)
   })
 
+  it('resolves a saved transcript\'s references once across requests (TAL-1730)', async () => {
+    const link = join(base, 'link')
+    symlinkSync(outside, link)
+    const refs = Array.from({ length: 50 }, (_, i) => join(link, `image-${String(i)}.png`))
+    const session = Object.assign(assistantSession(refs), { sidecarLoadedSignature: 'revision' })
+    await mediaAnchorRoot(join(outside, 'image-0.png'), session, access())
+    const before = calls.realpath
+    expect(await mediaAnchorRoot(join(outside, 'image-1.png'), session, access())).toBe(outside)
+    expect(calls.realpath - before).toBeLessThan(refs.length)
+  })
+
   it('grants a reference the assistant wrote through a symlink, and never one a user wrote', async () => {
     const link = join(base, 'link')
     symlinkSync(outside, link)

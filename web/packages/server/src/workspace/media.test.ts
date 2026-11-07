@@ -301,6 +301,29 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     expect(reads()).toBe(1)
   })
 
+  it('scans a saved transcript once until it grows or its revision changes (TAL-1730)', async () => {
+    const outside = join(base, 'outside')
+    const [first, second, third] = ['first.png', 'second.png', 'third.png'].map((name) => join(outside, name)) as [string, string, string]
+    let scans = 0
+    const row = (ref: string): unknown => ({ role: 'assistant', get content() { scans += 1; return `MEDIA:${ref}` } })
+    const session = { sidecarLoadedSignature: 'revision-1', messages: [row(first)] } as unknown as Session
+    const grant = (target: string): Promise<string | null> => mediaAnchorRoot(target, session, deps)
+    expect(await grant(first)).toBe(outside)
+    expect(await grant(first)).toBe(outside)
+    expect(scans).toBe(1)
+    // A row the running turn appended, not saved yet, grants at once.
+    session.messages.push(row(second) as Session['messages'][number])
+    expect(await grant(second)).toBe(outside)
+    // A save that rewrote the row in place stops granting what it dropped.
+    session.messages[0] = row(third) as Session['messages'][number]
+    session.sidecarLoadedSignature = 'revision-2'
+    expect(await grant(first)).toBeNull()
+    expect(await grant(third)).toBe(outside)
+    // A merge swaps the rows without a save.
+    session.messages = [row(first), row(second)] as Session['messages']
+    expect(await grant(first)).toBe(outside)
+  })
+
   it('keeps a legacy custom snapshot store denied under an allowed root (TAL-587)', async () => {
     const store = join(base, 'ws', 'snaps')
     mkdirSync(store)

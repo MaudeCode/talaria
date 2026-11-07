@@ -289,10 +289,10 @@ export function mediaRefPath(ref: string): string {
   return resolvePathLikePython(ref.replace(/^~(?=$|\/)/, process.env.HOME ?? ''))
 }
 
-/** The `MEDIA:` references the assistant and tools wrote in a session, as written. */
-function sessionMediaRefs(session: Session): Set<string> {
+/** The `MEDIA:` references the assistant and tools wrote in these rows, as written. */
+function scanMediaRefs(rows: Session['messages']): Set<string> {
   const refs = new Set<string>()
-  for (const message of session.messages) {
+  for (const message of rows) {
     if (!message || typeof message !== 'object') continue
     const role = str((message as { role?: unknown }).role).trim().toLowerCase()
     if (role === 'user') continue
@@ -306,19 +306,37 @@ function sessionMediaRefs(session: Session): Set<string> {
   return refs
 }
 
+interface SessionMediaRefs { rows: Session['messages']; length: number; revision: string | null; refs: Set<string>; resolved: Set<string> | null }
+
+const scannedMediaRefs = new WeakMap<Session, SessionMediaRefs>()
+
+/**
+ * A session's references, scanned once for its saved revision. A row a running turn appended grows the scan; a session
+ * that has no revision yet is never kept.
+ */
+function sessionMediaRefs(session: Session): SessionMediaRefs {
+  const rows = session.messages
+  const revision = session.sidecarLoadedSignature
+  const scanned = scannedMediaRefs.get(session)
+  if (scanned?.rows === rows && scanned.length === rows.length && scanned.revision === revision) return scanned
+  const fresh: SessionMediaRefs = { rows, length: rows.length, revision, refs: scanMediaRefs(rows), resolved: null }
+  if (revision) scannedMediaRefs.set(session, fresh)
+  return fresh
+}
+
 /**
  * Allow exact safe `MEDIA:` paths the assistant/tool emitted in the requested session. The transcript is read at most
  * once per grant, and its references resolved at most once: a reference written as the target's own path needs neither.
  */
 function sessionMediaGrant(session: Session | null): (target: string, real: string) => boolean {
-  let refs: Set<string> | null = null
-  let resolved: Set<string> | null = null
+  let scanned: SessionMediaRefs | null = null
   return (target, real) => {
-    if (!session || !SESSION_MEDIA_TOKEN_TYPES.has(mimeFor(target))) return false
-    refs ??= sessionMediaRefs(session)
-    if (refs.has(target)) return true
-    resolved ??= new Set(Array.from(refs, (ref) => mediaRefPath(ref)))
-    return resolved.has(real)
+    if (!session) return false
+    scanned ??= sessionMediaRefs(session)
+    if (scanned.refs.has(target)) return true
+    // ponytail: a symlink retargeted after this resolve keeps its earlier answer until the next save; re-resolve on a miss if that ever bites.
+    scanned.resolved ??= new Set(Array.from(scanned.refs, (ref) => mediaRefPath(ref)))
+    return scanned.resolved.has(real)
   }
 }
 
@@ -485,12 +503,12 @@ export function mediaRefTarget(ref: string): string {
 }
 
 /**
- * The `/api/media` decision for resolved targets: the root that authorizes one (which also anchors the open, so a
- * component replaced by a symlink after the check fails the descriptor walk), the file's own directory for a
- * session-token grant, or null when the path is denied. Everything but the target is resolved once, so one session's
- * references share it; `real` defaults to the target for a caller holding `mediaRefTarget`'s result.
+ * The `/api/media` decision that needs no session, for resolved targets: the root that authorizes one (which also
+ * anchors the open, so a component replaced by a symlink after the check fails the descriptor walk), null when the path
+ * is denied, or undefined when only a session-token grant could still authorize it. Everything but the target is
+ * resolved once, so one session's references share it.
  */
-export function mediaAccessResolver(session: Session | null, deps: MediaAccessDeps<string | null>): (target: string, real?: string) => string | null {
+function mediaRootDecider(deps: MediaAccessDeps<string | null>): (target: string, real: string) => string | null | undefined {
   const baseHermes = join(deps.home, '.hermes')
   const allowedRoots: string[] = [deps.hermesHome, baseHermes]
   const legacyTmp = safeLegacyTmpRoot([deps.home, deps.hermesHome, baseHermes])
@@ -512,17 +530,25 @@ export function mediaAccessResolver(session: Session | null, deps: MediaAccessDe
     try { resolvedRoots.push(realpathSync(root)) } catch { /* a missing root authorizes nothing */ }
   }
   const denyReason = mediaPolicyDecider(deps.policy)
-  const sessionGrants = sessionMediaGrant(session)
-  return (target, real = target) => {
+  return (target, real) => {
     if (denyReason(target, real)) return null
     for (const root of resolvedRoots) if (isWithin(target, root)) return root
-    return sessionGrants(target, real) ? dirname(target) : null
+    return SESSION_MEDIA_TOKEN_TYPES.has(mimeFor(target)) ? undefined : null
   }
 }
 
-/** One `/api/media` decision: see `mediaAccessResolver`. */
-export function mediaAnchorRootResolved(target: string, session: Session | null, deps: MediaAccessDeps<string | null>): string | null {
-  return mediaAccessResolver(session, deps)(target, realOrResolved(target))
+/**
+ * `mediaRootDecider`, then the file's own directory for a session-token grant. `real` defaults to the target for a
+ * caller holding `mediaRefTarget`'s result.
+ */
+export function mediaAccessResolver(session: Session | null, deps: MediaAccessDeps<string | null>): (target: string, real?: string) => string | null {
+  const decide = mediaRootDecider(deps)
+  const sessionGrants = sessionMediaGrant(session)
+  return (target, real = target) => {
+    const root = decide(target, real)
+    if (root !== undefined) return root
+    return sessionGrants(target, real) ? dirname(target) : null
+  }
 }
 
 export async function resolveMediaAccess(deps: MediaAccessDeps): Promise<MediaAccessDeps<string | null>> {
@@ -535,6 +561,10 @@ export async function mediaDenyReason(target: string, deps: MediaPolicyDeps): Pr
   return (mediaDenyReasonResolved(target, { ...deps, activeWorkspace: () => workspace }))
 }
 
-export async function mediaAnchorRoot(target: string, session: Session | null, deps: MediaAccessDeps): Promise<string | null> {
-  return (mediaAnchorRootResolved(target, session, await resolveMediaAccess(deps)))
+/** One `/api/media` decision: see `mediaRootDecider`. A session given as a function is loaded only when its transcript can decide. */
+export async function mediaAnchorRoot(target: string, session: Session | null | (() => Promise<Session | null>), deps: MediaAccessDeps): Promise<string | null> {
+  const real = realOrResolved(target)
+  const root = mediaRootDecider(await resolveMediaAccess(deps))(target, real)
+  if (root !== undefined) return root
+  return sessionMediaGrant(typeof session === 'function' ? await session() : session)(target, real) ? dirname(target) : null
 }
