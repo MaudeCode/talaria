@@ -15,7 +15,7 @@ import { CompletionDrain, formatWakeupPrompt } from './completions.js'
 import { nextSessionItem, StreamRegistry, type SessionChannels } from './streams.js'
 import { HygieneTicker, rotateWebuiLog, webuiLogPaths } from '../tools/hygiene.js'
 import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-health.js'
-import { agentHealth, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
+import { agentHealth, forgetGatewayProbes, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
 import { str } from '../util.js'
 import { withBackgroundUpdates, batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import { HeldWakeups } from './wakeup-pause.js'
@@ -1712,33 +1712,34 @@ describe('agent health', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-gw-${String(process.pid)}-${String(Date.now())}`)
     mkdirSync(dir, { recursive: true })
     const deps = { env: {}, hermesHome: dir, profileHome: () => dir, fetch: () => fetch, now: () => Date.now() / 1000 }
+    const probe = () => { forgetGatewayProbes(); return agentHealth(deps) }
     expect(await agentHealth(deps)).toMatchObject({ alive: null, details: { state: 'unknown', reason: 'gateway_not_configured' } })
     writeFileSync(join(dir, 'gateway.pid'), String(process.pid))
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: new Date().toISOString(), active_agents: 2, platforms: { telegram: { state: 'connected' }, discord: { state: 'connected' } } }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'running', active_agents: 2, platform_count: 2, platform_states: { connected: 2 } } })
+    expect(await probe()).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'running', active_agents: 2, platform_count: 2, platform_states: { connected: 2 } } })
     writeFileSync(join(dir, 'gateway.pid'), '999999999')
-    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { reason: 'cross_container_freshness' } })
+    expect(await probe()).toMatchObject({ alive: true, details: { reason: 'cross_container_freshness' } })
     const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: old }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: null, details: { reason: 'gateway_stale_running_state' } })
+    expect(await probe()).toMatchObject({ alive: null, details: { reason: 'gateway_stale_running_state' } })
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: old }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: null, details: { reason: 'gateway_stale_stopped_state' } })
+    expect(await probe()).toMatchObject({ alive: null, details: { reason: 'gateway_stale_stopped_state' } })
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: new Date().toISOString() }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     // TAL-950: the Agent writes a JSON pid record; a live gateway still starting under a stale `draining` state is alive.
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'draining', updated_at: old }))
     const record = { pid: process.pid, kind: 'hermes-gateway', argv: ['hermes', 'gateway'], start_time: null, hermes_home: dir }
     writeFileSync(join(dir, 'gateway.pid'), JSON.stringify(record))
-    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
+    expect(await probe()).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
     const started = await processStartTime(process.pid)
     expect(started).toEqual(expect.any(Number))
     writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ ...record, start_time: started }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
+    expect(await probe()).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
     // A recorded start time that disagrees with the live process is a reused pid, not the gateway.
     writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ ...record, start_time: 1 }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ pid: 999999999, kind: 'hermes-gateway' }))
-    expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     expect(runtimeStatusIsFresh({ gateway_state: 'running', updated_at: '2026-01-01T00:00:00' }, Date.now() / 1000)).toBe(false)
   })
 })

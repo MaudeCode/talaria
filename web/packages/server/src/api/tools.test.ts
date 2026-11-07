@@ -8,7 +8,7 @@ import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { sanitizeClientEvent, WindowLimiter } from './tools-router.js'
 import type { SessionInfo } from '../auth/store.js'
-import { gatewayStatus } from '../tools/health.js'
+import { forgetGatewayProbes, gatewayStatus } from '../tools/health.js'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { buildInsights } from '../tools/insights.js'
 import { CLIENT_COMMANDS } from '../tools/commands.js'
@@ -1353,11 +1353,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(body).toMatchObject({ running: true, configured: true, platforms: [{ name: 'discord', label: 'Discord' }, { name: 'telegram', label: 'Telegram' }], session_count: 3 })
       expect(Date.parse(String(body.last_active))).toBeGreaterThan(0)
       writeFileSync(join(s.state, 'gateway.pid'), String(process.pid))
+      forgetGatewayProbes()
       expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, configured: true, health: { state: 'alive' } })
     } finally {
       sidecar.respond('gateway.mode', undefined)
       rmSync(join(s.state, 'sessions'), { recursive: true, force: true })
       rmSync(join(s.state, 'gateway.pid'), { force: true })
+      forgetGatewayProbes()
     }
   })
 
@@ -1367,6 +1369,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     const modes: Json[] = []
     mkdirSync(work, { recursive: true })
     writeFileSync(join(s.state, 'gateway.pid'), String(process.pid))
+    forgetGatewayProbes()
     sidecar.respond('profiles.list', () => ({ profiles: [row('default', s.state), row('work', work)] as never[] }))
     sidecar.respond('gateway.mode', (params) => { modes.push(params); return { gateway_mode: params.profile_home === work ? 'parked' : 'own' } })
     sidecar.respond('gateway.control', () => ({ status: 'completed', message: 'Gateway service stopped successfully' }))
@@ -1387,6 +1390,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     } finally {
       for (const method of ['profiles.list', 'gateway.mode', 'gateway.control'] as const) sidecar.respond(method, undefined)
       rmSync(join(s.state, 'gateway.pid'), { force: true })
+      forgetGatewayProbes()
       rmSync(join(s.state, 'profiles'), { recursive: true, force: true })
     }
   })
@@ -1781,7 +1785,9 @@ describe('agent health chat readiness', () => {
   it('ships chat availability from the sidecar status, independent of the gateway', async () => {
     const sidecar = new FakeSidecar()
     let current: FakeSidecar | null = sidecar
-    const s = await bootTestServer({ sidecar, deps: (deps) => { deps.sidecar = () => current } })
+    // Each probe runs its own check rather than the one a ready sidecar's last probe ran.
+    let clock = 1000
+    const s = await bootTestServer({ sidecar, deps: (deps) => { deps.sidecar = () => current; deps.nowSeconds = () => (clock += 5) } })
     try {
       const chat = async (): Promise<Json> => {
         const body = await json(await s.get('/api/health/agent'))
@@ -1815,6 +1821,49 @@ describe('agent health chat readiness', () => {
       expect(checkTimeout).toBeLessThanOrEqual(5_000)
       current = null
       expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('checks a ready sidecar once per 5 s and per handshake, and never answers another state from that check (TAL-1707)', async () => {
+    const sidecar = new FakeSidecar()
+    let clock = 1000
+    const s = await bootTestServer({ sidecar, deps: (deps) => { deps.nowSeconds = () => clock } })
+    try {
+      const chat = async (): Promise<Json> => (await json(await s.get('/api/health/agent'))).chat as Json
+      const checks = () => sidecar.calls.filter((call) => call.method === 'runtime.ensure_current').length
+      const ready = { available: true, condition: null }
+      expect(await Promise.all([chat(), chat(), chat()])).toEqual([ready, ready, ready])
+      expect(await chat()).toEqual(ready)
+      expect(checks()).toBe(1)
+      clock += 4.9
+      await chat()
+      expect(checks()).toBe(1)
+      clock += 0.1
+      await chat()
+      expect(checks()).toBe(2)
+      // A failed check answers the same window, so it is not forgotten for a sidecar that keeps failing.
+      clock += 5
+      sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('Hermes Agent was updated', { condition: 'agent_runtime_stale' }) })
+      const stale = { available: false, condition: 'agent_runtime_stale', agent_runtime_reason: 'unknown', retryable: true, restart_scheduled: false }
+      expect(await chat()).toEqual(stale)
+      expect(await chat()).toEqual(stale)
+      expect(checks()).toBe(3)
+      // Restarting never reads a remembered verdict, and the handshake that follows checks at once.
+      sidecar.status = 'restarting'
+      expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
+      sidecar.respond('runtime.ensure_current', undefined)
+      sidecar.status = 'ready'
+      sidecar.describe = { ...sidecar.describe! }
+      expect(await chat()).toEqual(ready)
+      expect(checks()).toBe(4)
+      // A source-stale sidecar is what recovery watches: every poll asks whether the guard cleared.
+      sidecar.status = 'incompatible'
+      sidecar.describe = { ...sidecar.describe, stale: true }
+      await chat()
+      await chat()
+      expect(checks()).toBe(6)
     } finally {
       await s.close()
     }

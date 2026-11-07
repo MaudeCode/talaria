@@ -1,7 +1,7 @@
 import { reasoningProjection } from './reasoning-display.js'
 import { validReasoningEffort } from '../config/agent-config.js'
 import { AGENT_SESSION_LIST_LIMIT, SESSION_WAIT_MESSAGE_LIMIT, MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
-import { filterAsync } from '../util.js'
+import { filterAsync, singleFlightRead, type SingleFlightEntry } from '../util.js'
 import { statSignature } from '../fs/stat.js'
 import { SessionPrefixIndex } from './prefix-index.js'
 /**
@@ -9,7 +9,7 @@ import { SessionPrefixIndex } from './prefix-index.js'
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult, SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, RuntimeDescribe, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult, SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
@@ -82,14 +82,24 @@ const isDelegatedChildRow = (row: Row | null | undefined): boolean => Boolean(ro
 /** TAL-1254: how soon a worktree lock the sidecar could not confirm is tried again. */
 export const WORKTREE_RETAIN_RETRY_MS = 60_000
 
+/** TAL-1707: how long a ready sidecar's check answers every tab's probe. Turn admission still runs its own check. */
+const CHAT_READINESS_CHECK_TTL_S = 5
+/** Keyed by handshake: a restarted sidecar's first probe checks at once. */
+const chatReadinessChecks = new WeakMap<RuntimeDescribe, SingleFlightEntry<ChatReadiness>>()
+
 /**
  * TAL-951: whether a chat turn would be admitted now. Ready and source-stale incompatible sidecars both run turn
- * admission's live check: recovery state can change after the handshake. A check
- * that cannot answer fails closed as `sidecar_unavailable`.
+ * admission's live check: recovery state can change after the handshake. A check that cannot answer fails closed as
+ * `sidecar_unavailable`. TAL-1707: a ready sidecar's verdict answers for 5 s; every other state answers live.
  */
-export async function currentChatReadiness(sidecar: SidecarLike | null): Promise<ChatReadiness> {
+export function currentChatReadiness(sidecar: SidecarLike | null, now: () => number): Promise<ChatReadiness> {
   const readiness = chatReadiness(sidecar)
-  if (!sidecar || (!readiness.available && readiness.condition !== 'agent_runtime_stale')) return readiness
+  if (!sidecar || (!readiness.available && readiness.condition !== 'agent_runtime_stale')) return Promise.resolve(readiness)
+  const check = () => liveChatReadiness(sidecar, readiness)
+  return sidecar.status === 'ready' && sidecar.describe ? singleFlightRead(chatReadinessChecks, sidecar.describe, CHAT_READINESS_CHECK_TTL_S, now, check) : check()
+}
+
+async function liveChatReadiness(sidecar: SidecarLike, readiness: ChatReadiness): Promise<ChatReadiness> {
   try {
     await sidecar.call('runtime.ensure_current', {}, { timeoutMs: CHAT_READINESS_CHECK_TIMEOUT_MS })
   } catch (error) {

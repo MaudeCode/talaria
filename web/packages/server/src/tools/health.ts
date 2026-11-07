@@ -9,8 +9,9 @@ import type { GatewayLifecycle, GatewayMode, GatewayStatus } from '@maudecode/ta
 import type { Config, Dict } from '../config/agent-config.js'
 import type { RestartBlockers } from './updates.js'
 import { dict } from '../config/agent-config.js'
+import { statSignature } from '../fs/stat.js'
 import { HttpFailure } from '../sessions/service.js'
-import { str } from '../util.js'
+import { singleFlightRead, str, type SingleFlightEntry } from '../util.js'
 
 const LOG_FILES: Record<string, string> = { agent: 'agent.log', errors: 'errors.log', gateway: 'gateway.log' }
 const LOG_TAILS = new Set([100, 200, 500, 1000])
@@ -116,7 +117,9 @@ export function systemHealth(home: string, runtime: Dict): Dict {
 }
 
 const REMOTE_PROBE_TIMEOUT_MS = 2000
-const REMOTE_PROBE_CACHE_TTL_S = 5
+const GATEWAY_PROBE_CACHE_TTL_S = 5
+/** How long a memoized start time survives no probe: a pid watched less often than this could have died and been reused unseen. */
+const START_TIME_MEMO_GAP_S = 60
 const REMOTE_PROBE_PATHS = ['/health/detailed', '/health', '/v1/health']
 const REMOTE_PROBE_BODY_LIMIT_BYTES = 64 * 1024
 const DASHBOARD_PROBE_BODY_LIMIT_BYTES = 64 * 1024
@@ -184,10 +187,11 @@ function pidAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
 }
 
-const remoteCache = new Map<string, { until: number; result: Dict; inflight: Promise<Dict> | null }>()
+/** Remote probes by base URL and local ones by gateway dir. */
+const gatewayProbes = new Map<string, SingleFlightEntry<Dict>>()
 
 /** TAL-1627: after a lifecycle action, the next probe reads the Gateway afresh rather than its state before the action. */
-export function forgetRemoteProbes(): void { for (const [base, entry] of remoteCache) if (!entry.inflight) remoteCache.delete(base) }
+export function forgetGatewayProbes(): void { gatewayProbes.clear() }
 
 async function runRemoteProbe(base: string, env: Record<string, string | undefined>, fetchImpl: typeof fetch): Promise<Dict> {
   const apiKey = (env.HERMES_WEBUI_GATEWAY_API_KEY ?? env.API_SERVER_KEY ?? '').trim()
@@ -238,11 +242,32 @@ export async function processStartTime(pid: number): Promise<number | null> {
   })
 }
 
+const startTimes = new Map<string, { pid: number; signature: string; startTime: number; seenAt: number }>()
+
+/**
+ * TAL-1707: `processStartTime` for the pid a record at `pidPath` names, `ps` running once per record. A live process never
+ * changes its start time and a new gateway rewrites the record, but a dead gateway's pid can be reused under an unchanged
+ * record: the memo holds only while probes keep seeing the pid alive (`gatewayHealthAt` drops it when they do not).
+ */
+async function recordedProcessStartTime(pidPath: string, pid: number, now: number): Promise<number | null> {
+  const signature = statSignature(pidPath)
+  const memo = startTimes.get(pidPath)
+  if (signature !== null && memo?.pid === pid && memo.signature === signature && now - memo.seenAt <= START_TIME_MEMO_GAP_S) {
+    memo.seenAt = now
+    return memo.startTime
+  }
+  const startTime = await processStartTime(pid)
+  if (startTime === null || signature === null) startTimes.delete(pidPath)
+  else startTimes.set(pidPath, { pid, signature, startTime, seenAt: now })
+  return startTime
+}
+
 /** The local gateway's liveness from its pid record and runtime status (root-level files first, then the profile's). */
-async function localGatewayHealth(hermesHome: string, profileHome: string, now: number): Promise<Dict> {
+function localGatewayHealth(hermesHome: string, profileHome: string, now: () => number): Promise<Dict> {
   const rootPid = join(hermesHome, 'gateway.pid')
   const pidPath = existsSync(rootPid) ? rootPid : existsSync(join(profileHome, 'gateway.pid')) ? join(profileHome, 'gateway.pid') : rootPid
-  return (await gatewayHealthAt(dirname(pidPath), now)).health
+  const dir = dirname(pidPath)
+  return singleFlightRead(gatewayProbes, dir, GATEWAY_PROBE_CACHE_TTL_S, now, async () => (await gatewayHealthAt(dir, now())).health)
 }
 
 /** One gateway's liveness from the pid record and runtime status in `dir`, with the raw status it read and the live process its pid record names. */
@@ -253,10 +278,13 @@ async function gatewayHealthAt(dir: string, now: number): Promise<{ health: Dict
   let running: { pid: number; startTime: number | null } | null = null
   const result = (alive: boolean | null, details: Dict) => ({ health: { alive, checked_at: checked, details }, status: runtimeStatus, process: running })
   try {
-    const { pid, startTime } = gatewayPid(readFileSync(join(dir, 'gateway.pid'), 'utf8'))
+    const pidPath = join(dir, 'gateway.pid')
+    const { pid, startTime } = gatewayPid(readFileSync(pidPath, 'utf8'))
     // Agent `_live_pid_from_record`: a start time known on both sides that disagrees means the pid was reused.
-    const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await processStartTime(pid); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
-    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) running = { pid, startTime }
+    const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await recordedProcessStartTime(pidPath, pid, now); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
+    const alive = Number.isInteger(pid) && pid > 0 && pidAlive(pid)
+    if (!alive) startTimes.delete(pidPath)
+    if (alive && !(await reused())) running = { pid, startTime }
   } catch { running = null }
   if (running !== null) return result(true, { state: 'alive', ...safe })
   if (runtimeStatusIsFresh(runtimeStatus, now)) return result(true, { state: 'alive', reason: 'cross_container_freshness', ...safe })
@@ -310,24 +338,16 @@ export function gatewayRecordedAt(dir: string): number | null {
   try { return statSync(join(dir, 'gateway.pid')).mtimeMs } catch { return null }
 }
 
-/** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */
+/** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe else local pid/state files, each behind a 5 s single-flight cache. */
 export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const { env } = deps
   const mode = (env.HERMES_WEBUI_CHAT_BACKEND ?? '').trim().toLowerCase() === 'gateway' ? 'gateway' : 'local'
   const gatewayChat = { enabled: mode === 'gateway', backend: mode, base_url_configured: Boolean((env.HERMES_WEBUI_GATEWAY_BASE_URL ?? '').trim()), api_key_configured: Boolean((env.HERMES_WEBUI_GATEWAY_API_KEY ?? '').trim()) }
   const remote = remoteGatewayBaseUrl(env)
-  if (remote !== null) {
-    const now = deps.now()
-    let entry = remoteCache.get(remote)
-    if (entry && entry.until > now && !entry.inflight) return { ...entry.result, checked_at: checkedAt(), gateway_chat: gatewayChat }
-    if (!entry?.inflight) {
-      const inflight = runRemoteProbe(remote, env, deps.fetch()).then((result) => { remoteCache.set(remote, { until: deps.now() + REMOTE_PROBE_CACHE_TTL_S, result, inflight: null }); return result })
-      entry = { until: 0, result: {}, inflight }
-      remoteCache.set(remote, entry)
-    }
-    return { ...(await entry.inflight!), gateway_chat: gatewayChat }
-  }
-  return { ...(await localGatewayHealth(deps.hermesHome, deps.profileHome(), deps.now())), gateway_chat: gatewayChat }
+  const probe = remote !== null
+    ? singleFlightRead(gatewayProbes, remote, GATEWAY_PROBE_CACHE_TTL_S, deps.now, () => runRemoteProbe(remote, env, deps.fetch()))
+    : localGatewayHealth(deps.hermesHome, deps.profileHome(), deps.now)
+  return { ...(await probe), checked_at: checkedAt(), gateway_chat: gatewayChat }
 }
 
 const PLATFORM_LABELS: Record<string, string> = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack', email: 'Email', web: 'Web', api: 'API' }

@@ -21,7 +21,7 @@ import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki
 import { buildInsights } from '../tools/insights.js'
 import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
-import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetRemoteProbes, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
+import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
 import { NOT_CONTROLLED, restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
@@ -227,7 +227,7 @@ async function currentGatewayStatus(ctx: RequestContext): Promise<GatewayStatus>
 
 /**
  * TAL-1627: every lifecycle entry point asks first. A Gateway Web does not control is refused with a typed 409 before any
- * sidecar lock or CLI runs. Each dispatch then clears the remote probe cache, so the status it returns reads the Gateway afresh.
+ * sidecar lock or CLI runs. Each dispatch then clears the probe cache, so the status it returns reads the Gateway afresh.
  */
 async function controlledGateway<T>(ctx: RequestContext, action: 'start' | 'stop' | 'restart', run: () => Promise<T>): Promise<T> {
   const lifecycle: GatewayLifecycle = await ctx.deps.gatewayLifecycle(home(ctx))
@@ -254,7 +254,7 @@ async function runGatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 
   } catch (error) {
     throw new HttpError(500, sanitizeError(error), { ok: false, action })
   } finally {
-    forgetRemoteProbes()
+    forgetGatewayProbes()
   }
   if (outcome.status === 'busy_live_work') throw new HttpError(409, outcome.reason || 'The gateway still has live work.', { ok: false, action })
   if (outcome.status === 'busy') throw new HttpError(409, 'Another gateway action is already in progress; try again shortly.', { ok: false, action })
@@ -705,12 +705,12 @@ export const toolsRouter = os.router({
   })),
   logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail, signal) as Promise<never>)),
   ops: {
-    agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat, lifecycle] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar()), ctx.deps.gatewayLifecycle(home(ctx))]); return { ...gateway, chat, gateway_lifecycle: lifecycle } })),
+    agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat, lifecycle] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar(), ctx.deps.nowSeconds), ctx.deps.gatewayLifecycle(home(ctx))]); return { ...gateway, chat, gateway_lifecycle: lifecycle } })),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(() => controlledGateway(ctx, 'restart', async () => {
       const sidecar = ctx.deps.sidecar()
       if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running')
-      const outcome = await restartGateway(sidecar, home(ctx), true).finally(forgetRemoteProbes)
+      const outcome = await restartGateway(sidecar, home(ctx), true).finally(forgetGatewayProbes)
       if (outcome.status === 'completed') return { ok: true as const, message: 'Gateway service restarted successfully' }
       if (outcome.status === 'busy') throw new HttpError(429, outcome.message || 'Restart already in progress. Please wait a moment and try again.')
       throw new HttpError(500, outcome.message || 'Internal error running restart')
