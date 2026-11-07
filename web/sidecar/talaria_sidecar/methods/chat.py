@@ -32,7 +32,7 @@ from typing import Any, Callable
 from types import SimpleNamespace
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param, scoped_home, session_workspace
+from ..home import _scope_stamp, profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext, WakeEvent
 from .checkpoints import checkpoint_kwargs
 from .providers import context_window_source, require_runtime_ownership, runtime_failure
@@ -920,17 +920,39 @@ def _profile_toolsets(cfg: dict | None = None) -> list[str]:
     return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
 
 
+def _mcp_discovery_settled(done: threading.Event, home: str) -> bool:
+    """A finished discovery covers this turn while it succeeded, the profile's config is unchanged, and the connected
+    servers still match. A connect failure reaches us only through the status read, so a failed server stays unsettled."""
+    from .commands import profile_mcp_connected
+
+    if done.startup_outcome not in ("ok", "noop"):
+        return False
+    stamp = _scope_stamp(Path(home))
+    if stamp is None or stamp != done.config_stamp:
+        return False
+    connected = profile_mcp_connected()
+    return connected is not None and connected == done.connected_servers
+
+
 def _discover_mcp_tools(run: _Run) -> threading.Event | None:
-    """Wait for the profile's first discovery; later turns give a shared background retry at most two seconds."""
-    from .commands import discover_profile_mcp_tools, profile_mcp_tools_discovered
+    """Wait for the profile's first discovery; a later turn reuses it while settled, else gives a shared background
+    retry at most two seconds."""
+    from .commands import discover_profile_mcp_tools, profile_mcp_connected, profile_mcp_tools_discovered
 
     profile_home = run.home
     home = os.path.realpath(profile_home)
     deadline = time.monotonic() + _MCP_REDISCOVERY_WAIT if profile_mcp_tools_discovered(home) else None
+    # The Agent's status read stays outside the process-wide lock below.
+    previous = _MCP_DISCOVERIES.get(home)
+    settled = previous if previous is not None and previous.is_set() and _mcp_discovery_settled(previous, home) else None
 
     def discover() -> None:
         try:
+            # Stamped first: an edit that lands during this discovery still reruns it on the next turn.
+            done.config_stamp = _scope_stamp(Path(home))
             discovered = discover_profile_mcp_tools()
+            # Read before the refresh: a server that connects after this differs next turn, whose refresh publishes it.
+            done.connected_servers = profile_mcp_connected()
             refresh_profile_agents_mcp_tools(profile_home)
             done.startup_outcome = "ok" if discovered else "noop"
         except Exception:  # noqa: BLE001
@@ -947,6 +969,9 @@ def _discover_mcp_tools(run: _Run) -> threading.Event | None:
         if home in _MCP_CLOSING_HOMES:
             raise RpcError("The profile is being deleted.", condition="profile_unavailable")
         done = _MCP_DISCOVERIES.get(home)
+        if done is not None and done is settled:
+            run.mcp_discovery_outcome = "cache_hit"
+            return None
         if done is None or done.is_set():
             done = threading.Event()
             done.startup_outcome = "unknown"

@@ -76,7 +76,7 @@ def _patch(monkeypatch):
     monkeypatch.setattr(chat, "_MCP_DISCOVERIES", {})
     monkeypatch.setattr(commands, "_MCP_DISCOVERED_HOMES", set())
     monkeypatch.setattr(commands, "retire_unscoped_launch_mcp_servers", lambda: set())
-    monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", types.SimpleNamespace(discover_mcp_tools=lambda: []))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", types.SimpleNamespace(discover_mcp_tools=lambda: [], get_mcp_status=lambda: []))
     monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=lambda agent, **kwargs: None))
 
 

@@ -27,14 +27,24 @@ server.run()
 
 # Runs on the Agent interpreter: a fresh process (a restarted sidecar) whose stand-in AIAgent records the tool schemas
 # the real ``model_tools`` resolver would hand it for the turn's toolsets (uncollapsed, as the Agent's tool search reads it).
+# A second chat then starts against the Agent's real status read, which must keep the first discovery settled.
 FIRST_TURN_PROBE = """
 import json, os, sys
 from pathlib import Path
 sys.path.append(sys.argv[1])
+import tools.mcp_tool_discovery as discovery
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
 
 seen = []
+discoveries = []
+real_discover = discovery.discover_mcp_tools
+
+def counted_discover(*args, **kwargs):
+    discoveries.append(1)
+    return real_discover(*args, **kwargs)
+
+discovery.discover_mcp_tools = counted_discover
 
 class FakeAgent:
     def __init__(self, **kwargs):
@@ -58,8 +68,10 @@ home = Path(os.environ["HERMES_HOME"])
 params = {"profile_home": str(home), "session_id": "s", "stream_id": "st", "user_message": "hi", "model": "m", "model_provider": "p"}
 with scoped_home(home):
     result = chat.start(Ctx(), params)
+    later = chat.start(Ctx(), {**params, "session_id": "s2", "stream_id": "st2"})
 assert result["status"] == "completed", result
-print(json.dumps(seen))
+assert later["status"] == "completed", later
+print(json.dumps({"seen": seen, "discoveries": len(discoveries)}))
 """
 
 # A Stop that arrives while discovery is still connecting a server that never answers.
@@ -167,8 +179,10 @@ def _stub_script(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_first_turn_after_a_restart_exposes_the_profiles_mcp_tools(tmp_path) -> None:
     root = tmp_path / ".hermes"
     _configure_stub(root, "stub_a", _stub_script(tmp_path))
-    (tools,) = _probe(tmp_path, root, FIRST_TURN_PROBE)
-    assert "mcp__stub_a__ping" in tools, tools
+    outcome = _probe(tmp_path, root, FIRST_TURN_PROBE)
+    assert len(outcome["seen"]) == 2, outcome
+    assert all("mcp__stub_a__ping" in tools for tools in outcome["seen"]), outcome
+    assert outcome["discoveries"] == 1, outcome
 
 
 @requires_agent
