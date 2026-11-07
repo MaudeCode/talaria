@@ -828,7 +828,7 @@ export class ExtensionService {
       const body = await this.staticBody(fd, file, signatureOf(file, st), Number(st.size))
       const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
       const ct = EXTENSION_MIME[ext] ?? 'text/plain'
-      return { body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html', etag: weakEtag(st) }
+      return { body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html', etag: weakEtag(st.size, st.mtimeNs, st.ctimeNs) }
     } catch {
       return null
     } finally {

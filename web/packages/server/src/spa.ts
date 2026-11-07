@@ -101,7 +101,7 @@ export class AssetCache {
     if (cached?.sig === sig) return cached.asset
     const pending = this.loading.get(file)
     if (pending?.sig === sig) return pending.load
-    const etag = weakEtag(st)
+    const etag = weakEtag(st.size, st.mtimeNs)
     const load: Promise<Asset> = this.load(file, etag).then(
       (asset) => {
         // Only the newest load for this file may publish; a slower load of a replaced version is dropped.

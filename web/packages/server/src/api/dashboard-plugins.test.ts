@@ -1,6 +1,6 @@
 import { useJsonStorage } from '../test/storage.js'
 import type * as fs from 'node:fs'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -179,7 +179,7 @@ describe('dashboard plugin routes', () => {
     expect(io.reads).toBe(1)
 
     const etag = first.headers.get('etag')
-    expect(etag).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/)
+    expect(etag).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+-[0-9a-f]+"$/)
     expect(first.headers.get('cache-control')).toBe('no-cache')
     const revalidated = await s.get('/extensions/demo/cached.html', { headers: { 'if-none-match': etag ?? '' } })
     expect(revalidated.status).toBe(304)
@@ -208,6 +208,19 @@ describe('dashboard plugin routes', () => {
     symlinkSync(join(s.state, 'plugins', 'outside.js'), file)
     expect((await s.get('/extensions/demo/cached.html')).status).toBe(404)
     unlinkSync(file)
+  })
+
+  it('sends new bytes when an extension static is replaced at the same size and mtime (TAL-1733)', async () => {
+    const file = join(extensionDir, 'demo', 'preserved.js')
+    const stamp = new Date('2026-01-02T03:04:05Z')
+    const deploy = (body: string): void => { writeFileSync(file, body); utimesSync(file, stamp, stamp) }
+    onTestFinished(() => { unlinkSync(file) })
+    deploy('old()')
+    const etag = (await s.get('/extensions/demo/preserved.js')).headers.get('etag') ?? ''
+    deploy('new()')
+    const res = await s.get('/extensions/demo/preserved.js', { headers: { 'if-none-match': etag } })
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('new()')
   })
 
   it('serves a tab page whose manifest path has a trailing slash', async () => {
