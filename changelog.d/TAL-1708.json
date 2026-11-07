@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web servers do far less disk work for open chat tabs, however many past runs a chat has.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

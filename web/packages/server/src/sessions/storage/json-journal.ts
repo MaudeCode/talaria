@@ -47,6 +47,16 @@ export function readTurnJournalEvents(sessionDir: string): Map<string, Record<st
   return out
 }
 
+/** A path's identity, size and change times, or null when it cannot be read. */
+async function statSignature(path: string): Promise<string | null> {
+  try {
+    const st = await stat(path, { bigint: true })
+    return `${String(st.ino)}:${String(st.size)}:${String(st.mtimeNs)}:${String(st.ctimeNs)}`
+  } catch {
+    return null
+  }
+}
+
 const sameFile = (a: BigIntStats, b: BigIntStats): boolean => a.isFile() && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs
 
 /** A run's open journal files: its archive and its live journal, either absent. */
@@ -60,6 +70,8 @@ export class JsonJournal implements JournalBackend {
   private readonly runMisses = new Map<string, { signature: string; at: number }>()
   /** Bumped by each session deletion, so archival in flight never publishes into a deleted session. */
   private readonly deletions = new Map<string, number>()
+  /** Each session's newest run file, valid while its directory keeps this signature and no writer appends. */
+  private readonly newestRuns = new Map<string, { dir: string; name: string }>()
   private readonly policy
   constructor(readonly sessionDir: string, private readonly env: Record<string, string | undefined> = {}) { this.policy = retentionPolicy(env) }
 
@@ -193,7 +205,47 @@ export class JsonJournal implements JournalBackend {
     const summary = await this.latestRunSummary(sessionId, runId)
     return summary.event_count || summary.journal_pruned ? summary : null
   }
-  async sessionJournalFingerprint(sessionId: string): Promise<string> { return this.sessionJournalFingerprintNow(sessionId) }
+  /**
+   * Idle subscribers poll this, so it stays two stats however many runs a session keeps: the directory, whose signature
+   * changes when a run file is created, renamed or removed, and the newest run file, whose size also catches an append
+   * within one timestamp tick. A later change to the directory rescans for the newest run.
+   */
+  async sessionJournalFingerprint(sessionId: string): Promise<string> {
+    let sid: string
+    try { sid = validateId(sessionId, 'session_id') } catch { return '0:0:0' }
+    const path = join(this.root(), sid)
+    const dir = await statSignature(path)
+    if (dir === null) { this.newestRuns.delete(sid); return '0:0:0' }
+    const seen = this.newestRuns.get(sid)
+    let newest = seen
+    if (seen?.dir !== dir) {
+      newest = { dir, name: await JsonJournal.newestRunFile(path) }
+      // An append during the scan may have moved the newest run, so the next fingerprint scans again.
+      if (this.newestRuns.get(sid) === seen) this.rememberNewestRun(sid, newest)
+    }
+    const name = newest?.name ?? ''
+    return `${dir}|${name}:${(name && await statSignature(join(path, name))) ?? ''}`
+  }
+  private static async newestRunFile(dir: string): Promise<string> {
+    let newest = ''
+    let newestMtime = -1n
+    let names: string[]
+    try { names = (await readdir(dir)).filter((name) => name.endsWith('.jsonl')).sort() } catch { return newest }
+    for (const name of names) {
+      try {
+        const { mtimeNs } = await stat(join(dir, name), { bigint: true })
+        if (mtimeNs >= newestMtime) { newest = name; newestMtime = mtimeNs }
+      } catch { /* vanished */ }
+    }
+    return newest
+  }
+  /** A writer's run may not be the file the next fingerprint would stat. This entry matches no directory, so it looks again. */
+  noteAppend(sessionId: string): void { this.rememberNewestRun(sessionId, { dir: '', name: '' }) }
+  private rememberNewestRun(sessionId: string, newest: { dir: string; name: string }): void {
+    this.newestRuns.delete(sessionId)
+    this.newestRuns.set(sessionId, newest)
+    if (this.newestRuns.size > RUN_OWNER_CACHE_MAX) this.newestRuns.delete(this.newestRuns.keys().next().value!)
+  }
   async sessionIds(): Promise<string[]> {
     try { return readdirSync(this.root(), { withFileTypes: true }).filter((entry) => entry.isDirectory() && SAFE_ID_RE.test(entry.name)).map((entry) => entry.name).sort() } catch { return [] }
   }
@@ -576,15 +628,8 @@ export class JsonJournal implements JournalBackend {
     return null
   }
 
-  /** The journals root's identity and mtime; a new session directory changes it. */
-  private async rootSignature(): Promise<string> {
-    try {
-      const st = await stat(this.root(), { bigint: true })
-      return `${String(st.ino)}:${String(st.mtimeNs)}`
-    } catch {
-      return 'absent'
-    }
-  }
+  /** A new session directory changes the journals root's signature. */
+  private async rootSignature(): Promise<string> { return (await statSignature(this.root())) ?? 'absent' }
 
   private async resolvedRunSummary(sessionId: string, runId: string, settled: boolean): Promise<RunSummary | null> {
     const journalPath = this.pathFor(sessionId, runId)
@@ -610,31 +655,6 @@ export class JsonJournal implements JournalBackend {
     this.runOwners.delete(runId)
     this.runOwners.set(runId, sessionId)
     if (this.runOwners.size > RUN_OWNER_CACHE_MAX) this.runOwners.delete(this.runOwners.keys().next().value!)
-  }
-
-  sessionJournalFingerprintNow(sessionId: string): string {
-    let sid: string
-    try {
-      sid = validateId(sessionId, 'session_id')
-    } catch {
-      return '0:0:0'
-    }
-    const dir = join(this.root(), sid)
-    let count = 0
-    let maxMtime = 0
-    let total = 0
-    try {
-      for (const name of readdirSync(dir)) {
-        if (!name.endsWith('.jsonl')) continue
-        const st = statSync(join(dir, name))
-        count += 1
-        total += st.size
-        maxMtime = Math.max(maxMtime, st.mtimeMs)
-      }
-    } catch {
-      return '0:0:0'
-    }
-    return `${String(count)}:${String(maxMtime)}:${String(total)}`
   }
 
   /** Python `read_session_run_events`: replay rows after an opaque cursor across a session's runs. */
@@ -795,6 +815,7 @@ export class JsonJournalWriter {
     const fd = this.fd
     if (event.terminal) this.unsettled = false
     writeFully(fd, `${JSON.stringify(event)}\n`)
+    this.journal.noteAppend(this.sessionId)
     // Best effort, as before: a failed fsync never fails the append.
     if (this.fsyncMode === 'eager' || event.terminal) this.syncs = this.syncs.then(() => new Promise((resolve) => { fsync(fd, () => { resolve() }) }))
     // Every frame waits for earlier fsyncs, so appends settle (and callers publish) in append order.

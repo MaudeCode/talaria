@@ -8,11 +8,11 @@ import { JsonJournal } from './json-journal.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
-  return { ...real, readdirSync: vi.fn(real.readdirSync), existsSync: vi.fn(real.existsSync), mkdirSync: vi.fn(real.mkdirSync), fsync: vi.fn(real.fsync), closeSync: vi.fn(real.closeSync) }
+  return { ...real, readdirSync: vi.fn(real.readdirSync), statSync: vi.fn(real.statSync), existsSync: vi.fn(real.existsSync), mkdirSync: vi.fn(real.mkdirSync), fsync: vi.fn(real.fsync), closeSync: vi.fn(real.closeSync) }
 })
 vi.mock('node:fs/promises', async (original) => {
   const real = await original<typeof fsp>()
-  return { ...real, readdir: vi.fn(real.readdir), access: vi.fn(real.access) }
+  return { ...real, readdir: vi.fn(real.readdir), access: vi.fn(real.access), stat: vi.fn(real.stat) }
 })
 
 const journals: JsonJournal[] = []
@@ -47,6 +47,97 @@ it.each([1, 100, 645, 1000])('warm lookup probes only its owner among %i session
   expect(fsp.readdir).not.toHaveBeenCalled()
   expect(vi.mocked(fsp.access).mock.calls.length).toBeLessThanOrEqual(20)
   expect(vi.mocked(fsp.access).mock.calls.every(([path]) => dirname(String(path)) === join(journal.root(), sid))).toBe(true)
+})
+
+/** A session directory with two settled runs whose timestamps cannot tie with a later change. */
+function settledRuns(journal: JsonJournal): { dir: string; older: string; newest: string } {
+  const dir = join(journal.root(), 'session')
+  fs.mkdirSync(dir, { recursive: true })
+  const [older, newest] = [join(dir, 'older.jsonl'), join(dir, 'newest.jsonl')]
+  fs.writeFileSync(older, '{}\n')
+  fs.writeFileSync(newest, '{}\n')
+  fs.utimesSync(older, 1000, 1000)
+  fs.utimesSync(newest, 2000, 2000)
+  fs.utimesSync(dir, 3000, 3000)
+  return { dir, older, newest }
+}
+
+type SettledRuns = ReturnType<typeof settledRuns>
+
+it('fingerprints an idle session of 300 runs in two async stats, and stays equal while nothing changes', async () => {
+  const journal = fixture()
+  const dir = join(journal.root(), 'session')
+  fs.mkdirSync(dir, { recursive: true })
+  for (let i = 0; i < 300; i++) fs.writeFileSync(join(dir, `run${String(i)}.jsonl`), '{}\n')
+  const warm = await journal.sessionJournalFingerprint('session')
+  vi.clearAllMocks()
+  expect(await journal.sessionJournalFingerprint('session')).toBe(warm)
+  expect(fs.readdirSync).not.toHaveBeenCalled()
+  expect(fsp.readdir).not.toHaveBeenCalled()
+  expect(fs.statSync).not.toHaveBeenCalled()
+  expect(vi.mocked(fsp.stat).mock.calls.length).toBeLessThanOrEqual(2)
+})
+
+it.each([
+  ['an append to the newest run', ({ newest }: SettledRuns) => { fs.appendFileSync(newest, '{}\n') }],
+  ['a new run file', ({ dir }: SettledRuns) => { fs.writeFileSync(join(dir, 'created.jsonl'), '{}\n') }],
+  ['pruning an older run', ({ older }: SettledRuns) => { fs.unlinkSync(older) }],
+])('%s changes the fingerprint', async (_name, change) => {
+  const journal = fixture()
+  const runs = settledRuns(journal)
+  const before = await journal.sessionJournalFingerprint('session')
+  change(runs)
+  expect(await journal.sessionJournalFingerprint('session')).not.toBe(before)
+})
+
+it('sees an append within one timestamp tick through the run file size', async () => {
+  const journal = fixture()
+  await writeRun(journal, 'session')
+  const { stat: realStat } = await vi.importActual<typeof fsp>('node:fs/promises')
+  vi.mocked(fsp.stat).mockImplementation(async (path: fs.PathLike) => Object.assign(await realStat(path, { bigint: true }), { mtimeNs: 0n, ctimeNs: 0n }))
+  try {
+    const before = await journal.sessionJournalFingerprint('session')
+    fs.appendFileSync(journal.pathFor('session', 'run'), '{}\n')
+    expect(await journal.sessionJournalFingerprint('session')).not.toBe(before)
+  } finally {
+    vi.mocked(fsp.stat).mockImplementation(realStat)
+  }
+})
+
+it('sees a writer append to a run that is not the newest', async () => {
+  const journal = fixture()
+  const older = await journal.writer('session', 'older')
+  await older.appendSseEvent('token', { text: 'first' })
+  await writeRun(journal, 'session', 'newest')
+  fs.utimesSync(journal.pathFor('session', 'older'), 1000, 1000)
+  fs.utimesSync(journal.pathFor('session', 'newest'), 2000, 2000)
+  const before = await journal.sessionJournalFingerprint('session')
+  await older.appendSseEvent('token', { text: 'second' })
+  expect(await journal.sessionJournalFingerprint('session')).not.toBe(before)
+  await older.close()
+})
+
+it('sees a writer append that lands while the fingerprint scans for the newest run', async () => {
+  const journal = fixture()
+  const older = await journal.writer('session', 'a-older')
+  await older.appendSseEvent('token', { text: 'first' })
+  await writeRun(journal, 'session', 'b-newest')
+  fs.utimesSync(journal.pathFor('session', 'a-older'), 1000, 1000)
+  fs.utimesSync(journal.pathFor('session', 'b-newest'), 2000, 2000)
+  const { stat: realStat } = await vi.importActual<typeof fsp>('node:fs/promises')
+  let appended = false
+  vi.mocked(fsp.stat).mockImplementation(async (path: fs.PathLike) => {
+    if (!appended && String(path).endsWith('b-newest.jsonl')) { appended = true; await older.appendSseEvent('token', { text: 'second' }) }
+    return realStat(path, { bigint: true })
+  })
+  try {
+    const during = await journal.sessionJournalFingerprint('session')
+    expect(appended).toBe(true)
+    expect(await journal.sessionJournalFingerprint('session')).not.toBe(during)
+  } finally {
+    vi.mocked(fsp.stat).mockImplementation(realStat)
+    await older.close()
+  }
 })
 
 it('reads fresh event and terminal metadata after appends and same-path replacement', async () => {
