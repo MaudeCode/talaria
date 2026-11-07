@@ -7,7 +7,15 @@
 .toast.error{background:color-mix(in srgb,var(--error) 14%,var(--surface));border-color:color-mix(in srgb,var(--error) 45%,var(--surface));color:var(--error)}
 .toast.warning{background:color-mix(in srgb,var(--warning) 14%,var(--surface));border-color:color-mix(in srgb,var(--warning) 45%,var(--surface));color:var(--warning)}
 .toast{border-radius:var(--r-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);color:var(--text)}
-.notification-toast{opacity:1;transform:translate3d(0,0,0);transition:transform .32s cubic-bezier(.22,1,.36,1),opacity .2s ease-out;will-change:transform,opacity}
-.notification-toast[data-visible="false"]{opacity:0;transform:translate3d(0,calc(-100% - 32px),0)}
-@media (prefers-reduced-motion:reduce){.notification-toast{transition:none;will-change:auto}}
+/* A toast grows out of a 44px capsule at its centre and pinches back on exit. Only the surface layer animates; the content keeps its final width, so text never reflows. Each room closes its own height and gap, so the toasts below glide. */
+.notification-toast-room{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:1fr;transition:grid-template-rows .34s cubic-bezier(.45,0,.1,1)}
+.notification-toast-room[data-visible="false"]{grid-template-rows:0fr;transition-delay:.12s}
+.notification-toast-slot{min-height:0}
+.notification-toast{position:relative;margin-bottom:8px}
+.notification-toast-room[data-visible="false"] .notification-toast{pointer-events:none}
+.notification-toast-surface{position:absolute;inset:0;transition:scale .3s cubic-bezier(.25,1.3,.5,1),opacity .16s ease,inset-inline .52s cubic-bezier(.2,.9,.1,1) .12s,border-radius .52s cubic-bezier(.2,.9,.1,1) .12s}
+.notification-toast-room[data-visible="false"] .notification-toast-surface{inset-inline:calc(50% - 22px);border-radius:22px;opacity:0;scale:.6;transition:inset-inline .3s cubic-bezier(.55,0,.75,.2),border-radius .3s cubic-bezier(.55,0,.75,.2),scale .22s ease-in .2s,opacity .18s ease .26s}
+.notification-toast-content{position:relative;transition:opacity .24s ease .36s}
+.notification-toast-room[data-visible="false"] .notification-toast-content{opacity:0;transition:opacity .12s ease}
+@media (prefers-reduced-motion:reduce){.notification-toast-room[data-visible],.notification-toast-room[data-visible] .notification-toast-surface,.notification-toast-room[data-visible] .notification-toast-content{transition:none}}
 }

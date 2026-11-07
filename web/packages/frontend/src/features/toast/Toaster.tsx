@@ -6,28 +6,33 @@ import { cn } from '../../ui/cn'
 export function Toaster() {
   const toasts = useToasts()
   return (
-    <div className="pointer-events-none fixed left-1/2 top-[max(18px,env(safe-area-inset-top,0px))] z-[1400] flex w-[min(92vw,460px)] -translate-x-1/2 flex-col items-center gap-2 max-[641px]:top-[calc(60px+env(safe-area-inset-top,0px))]" role="status" aria-live="polite" aria-atomic="false">
+    <div className="pointer-events-none fixed left-1/2 top-[max(18px,env(safe-area-inset-top,0px))] z-[1400] w-[min(92vw,460px)] -translate-x-1/2 max-[641px]:top-[calc(60px+env(safe-area-inset-top,0px))]" role="status" aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={cn(
-            'notification-toast pointer-events-auto w-full rounded-xl border bg-surface px-4 py-3 text-sm text-text shadow-md',
-            t.kind === 'error' ? 'border-error/60' : t.kind === 'warning' ? 'border-warning/60' : 'border-border',
-          )}
-          data-visible={String(t.visible)}
-          role={t.kind === 'error' ? 'alert' : undefined}
-        >
-          <div className="flex items-start gap-3">
-            {t.onBodySelect ? <button type="button" className="min-w-0 flex-1 rounded-md border-0 bg-transparent p-0 text-left transition-transform active:scale-[.995]" aria-label={t.bodyLabel ?? t.title ?? t.text} onClick={() => { void t.onBodySelect?.() }}>
-              {t.title && <p className="font-semibold text-strong">{t.title}</p>}
-              <p className={cn('leading-5 text-text', t.title && 'mt-0.5 text-muted')}>{t.text}</p>
-            </button> : <div className="min-w-0 flex-1">
-              {t.title && <p className="font-semibold text-strong">{t.title}</p>}
-              <p className={cn('leading-5 text-text', t.title && 'mt-0.5 text-muted')}>{t.text}</p>
-            </div>}
-            {t.dismissible && <button type="button" className="-mr-1 -mt-1 flex size-8 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent text-muted hover:bg-hover hover:text-text" aria-label="Dismiss" onClick={() => dismissToast(t.id, 'manual')}><X size={16} aria-hidden="true" /></button>}
+        <div key={t.id} className="notification-toast-room" data-visible={String(t.visible)}>
+          <div className="notification-toast-slot">
+            <div className="notification-toast pointer-events-auto text-sm text-text" role={t.kind === 'error' ? 'alert' : undefined}>
+              <span
+                className={cn(
+                  'notification-toast-surface rounded-xl border bg-surface shadow-md',
+                  t.kind === 'error' ? 'border-error/60' : t.kind === 'warning' ? 'border-warning/60' : 'border-border',
+                )}
+                aria-hidden="true"
+              />
+              <div className="notification-toast-content px-[17px] py-[13px]">
+                <div className="flex items-start gap-3">
+                  {t.onBodySelect ? <button type="button" className="min-w-0 flex-1 rounded-md border-0 bg-transparent p-0 text-left transition-transform active:scale-[.995]" aria-label={t.bodyLabel ?? t.title ?? t.text} onClick={() => { void t.onBodySelect?.() }}>
+                    {t.title && <p className="font-semibold text-strong">{t.title}</p>}
+                    <p className={cn('leading-5 text-text', t.title && 'mt-0.5 text-muted')}>{t.text}</p>
+                  </button> : <div className="min-w-0 flex-1">
+                    {t.title && <p className="font-semibold text-strong">{t.title}</p>}
+                    <p className={cn('leading-5 text-text', t.title && 'mt-0.5 text-muted')}>{t.text}</p>
+                  </div>}
+                  {t.dismissible && <button type="button" className="-mr-1 -mt-1 flex size-8 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent text-muted hover:bg-hover hover:text-text" aria-label="Dismiss" onClick={() => dismissToast(t.id, 'manual')}><X size={16} aria-hidden="true" /></button>}
+                </div>
+                {t.actions.length > 0 && <div className="mt-3 flex justify-end gap-2">{t.actions.map((action) => <ToastActionButton key={action.id} action={action} />)}</div>}
+              </div>
+            </div>
           </div>
-          {t.actions.length > 0 && <div className="mt-3 flex justify-end gap-2">{t.actions.map((action) => <ToastActionButton key={action.id} action={action} />)}</div>}
         </div>
       ))}
     </div>

@@ -16,6 +16,8 @@ export interface Toast {
   onBodySelect?: (() => void | Promise<void>) | undefined
   bodyLabel?: string | undefined
 }
+/** How long a dismissed toast stays mounted: the room's 120 ms delay and 340 ms close (dialogs.css), plus slack. */
+export const TOAST_EXIT_MS = 480
 let toasts: Toast[] = []
 let seq = 0
 const listeners = new Set<() => void>()
@@ -49,7 +51,7 @@ export function dismissToast(id: string, reason: 'programmatic' | 'manual' | 'ti
   removalTimers.set(id, setTimeout(() => {
     const current = toasts.find((item) => item.id === id)
     if (current && !current.visible && current.revision === revision) remove(id)
-  }, 220))
+  }, TOAST_EXIT_MS))
 }
 
 export function showToast(text: string, ttl = 2500, kind: 'info' | 'error' = 'info'): void {
@@ -73,6 +75,8 @@ export function showRichToast(input: Omit<Toast, 'visible'>): void {
   emit()
   const revision = input.revision
   requestAnimationFrame(() => {
+    // Commit the closed style first: on an idle page nothing else computes it before this flip, and a transition needs a style to start from.
+    void document.documentElement.offsetHeight
     toasts = toasts.map((toast) => toast.id === input.id && toast.revision === revision ? { ...toast, visible: true } : toast)
     emit()
   })
