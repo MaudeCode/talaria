@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfig, type Dict } from '../config/agent-config.js'
 import { ProviderCatalog } from '../providers/catalog.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -52,7 +52,7 @@ describe('cron list model options (TAL-1381)', () => {
     service = new CronService(deps)
     await catalog.models(homes.default)
   })
-  afterEach(() => { rmSync(state, { recursive: true, force: true }) })
+  afterEach(() => { vi.useRealTimers(); rmSync(state, { recursive: true, force: true }) })
 
   const addJobs = (home: string, count: number, extra: Dict = {}): void => {
     for (let i = 0; i < count; i += 1) {
@@ -74,9 +74,11 @@ describe('cron list model options (TAL-1381)', () => {
   })
 
   it('prepares no catalog for an empty list or a list of only hidden rows, and still counts hidden rows', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const before = poolReads()
     expect(await service.list('default', false)).toMatchObject({ jobs: [], other_profile_count: 0 })
     addJobs(homes.research, 3, { profile: 'research', owner_profile: 'research' })
+    vi.advanceTimersByTime(2_000)
     expect(await service.list('default', false)).toMatchObject({ jobs: [], other_profile_count: 3 })
     expect(poolReads() - before).toBe(0)
     const all = await service.list('default', true)

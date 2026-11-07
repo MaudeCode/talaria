@@ -10,6 +10,7 @@ stream progress frames to the server.
 from __future__ import annotations
 
 import contextlib
+import heapq
 import importlib
 import inspect
 import logging
@@ -32,6 +33,7 @@ log = logging.getLogger("talaria_sidecar.cron")
 _JOB_ID_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}")
 _OUTPUT_CONTENT_LIMIT = 8000
 _OUTPUT_HEADER_CONTEXT = 200
+_RUN_HEAD_BYTES = 4096
 _PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort", "monitor_script", "monitor_url")
 _SCHEDULE_POLICY_FIELDS = ("timezone", "catch_up", "grace_minutes")
 _RUNNING: dict[str, float] = {}
@@ -329,6 +331,29 @@ def _content_window(text: str, limit: int = _OUTPUT_CONTENT_LIMIT) -> str:
         response = text[idx:].lstrip("\n")
         return (f"{header}\n...\n{response}" if header else response)[:limit]
     return text[-limit:]
+
+
+def _newest_runs(out_dir: Path, count: int) -> tuple[int, list[tuple[str, os.stat_result]]]:
+    """How many runs a job has, and the newest ``count`` as ``(filename, stat)``. A job that never ran has no directory."""
+    runs = []
+    try:
+        with os.scandir(out_dir) as entries:
+            for entry in entries:
+                if entry.name.endswith(".md"):
+                    with contextlib.suppress(OSError):  # removed by retention since the scan listed it
+                        runs.append((entry.name, entry.stat()))
+    except OSError:
+        return 0, []
+    return len(runs), heapq.nlargest(count, runs, key=lambda run: (run[1].st_mtime, run[0]))
+
+
+def _run_head_usage(path: Path) -> dict:
+    """``_usage_metadata`` from the run's opening, where the header lines sit: a run's answer can be many megabytes."""
+    with path.open("rb") as handle:
+        head = handle.read(_RUN_HEAD_BYTES)
+    if len(head) == _RUN_HEAD_BYTES:
+        head = head[: head.rfind(b"\n") + 1]  # a line the limit cuts would parse as a wrong value
+    return _usage_metadata(head.decode("utf-8", errors="replace"))
 
 
 def _usage_metadata(text: str) -> dict:
@@ -959,16 +984,13 @@ def register(registry) -> None:
         limit = max(1, min(500, int(params.get("limit") or 50)))
         with _store(profile_home_param(params)):
             out_dir = _jobs().get_cron_output_dir() / job_id
-        runs, total = [], 0
-        if out_dir.exists():
-            files = sorted(out_dir.glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)
-            total = len(files)
-            for f in files[offset: offset + limit]:
-                try:
-                    st = f.stat()
-                    runs.append({"filename": f.name, "size": st.st_size, "modified": st.st_mtime, "usage": _usage_metadata(f.read_text(encoding="utf-8", errors="replace"))})
-                except OSError:
-                    continue
+        total, newest = _newest_runs(out_dir, offset + limit)
+        runs = []
+        for name, st in newest[offset:]:
+            try:
+                runs.append({"filename": name, "size": st.st_size, "modified": st.st_mtime, "usage": _run_head_usage(out_dir / name)})
+            except OSError:
+                continue
         return {"job_id": job_id, "runs": runs, "total": total, "offset": offset}
 
     @registry.method("cron.run_detail")
@@ -997,12 +1019,11 @@ def register(registry) -> None:
         with _store(profile_home_param(params)):
             out_dir = _jobs().get_cron_output_dir() / job_id
         outputs = []
-        if out_dir.exists():
-            for f in sorted(out_dir.glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)[:limit]:
-                try:
-                    outputs.append({"filename": f.name, "content": _content_window(f.read_text(encoding="utf-8", errors="replace"))})
-                except OSError:
-                    continue
+        for name, _ in _newest_runs(out_dir, limit)[1]:
+            try:
+                outputs.append({"filename": name, "content": _content_window((out_dir / name).read_text(encoding="utf-8", errors="replace"))})
+            except OSError:
+                continue
         return {"job_id": job_id, "outputs": outputs}
 
     @registry.method("cron.delivery_options", requires_agent=False)

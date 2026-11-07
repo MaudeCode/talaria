@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Scheduled tasks and their run history load faster in Talaria Web, especially across several profiles or for jobs with many runs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

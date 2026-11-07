@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,7 +44,126 @@ function setup() {
   return { service: new CronService(deps), sidecar, homes, stores, deps }
 }
 
+describe('cron store read cost (TAL-1716)', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const listCalls = (sidecar: FakeSidecar) => sidecar.calls.filter((call) => call.method === 'cron.list').map((call) => call.params as { profile_home: string; probe_store?: boolean })
+
+  it('lists four visible stores concurrently and probes each at most once per five minutes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const { service, sidecar, deps, homes } = setup()
+    const four = { default: homes.default, research: homes.research, ops: `${homes.default}/profiles/ops`, media: `${homes.default}/profiles/media` }
+    deps.profileNames = () => Promise.resolve(Object.keys(four).map((name) => ({ name, visible: true })))
+    deps.profileHome = (name) => four[name as keyof typeof four]
+    const health = { store: `${homes.default}/cron`, error: 'EROFS', since: 'unknown', fix: 'remount' }
+    const held: (() => void)[] = []
+    sidecar.respond('cron.list', ({ profile_home, probe_store }) => new Promise((resolve) => {
+      held.push(() => { resolve({ jobs: [], ...(probe_store ? { schedule_policy: true, store_health: profile_home === homes.default ? health : null } : {}) }) })
+    }))
+    const release = async (count: number) => { await new Promise(setImmediate); expect(held).toHaveLength(count); for (const run of held.splice(0)) run() }
+    const first = service.list('default', false)
+    await release(4)
+    await expect(first).resolves.toMatchObject({ schedule_policy_available: true, unwritable_stores: [{ profile: 'default', store: health.store }] })
+    expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(4)
+
+    vi.advanceTimersByTime(5 * 60_000 - 1)
+    const memoized = service.list('default', false)
+    await release(4)
+    await expect(memoized).resolves.toMatchObject({ schedule_policy_available: true, unwritable_stores: [{ profile: 'default', store: health.store }] })
+    expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(4)
+
+    vi.advanceTimersByTime(1)
+    const expired = service.list('default', false)
+    await release(4)
+    await expired
+    expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(8)
+  })
+
+  it('shares one probe between concurrent lists of a store', async () => {
+    const { service, sidecar } = setup()
+    await Promise.all([service.list('default', false), service.list('default', true)])
+    const probes = listCalls(sidecar).filter((call) => call.probe_store).map((call) => call.profile_home)
+    expect(probes).toEqual([...new Set(probes)])
+  })
+
+  it('remembers neither a failed listing nor its probe', async () => {
+    const { service, sidecar, homes } = setup()
+    const working = sidecar.responderFor('cron.list')!
+    sidecar.respond('cron.list', () => { throw new SidecarError('store unreadable', { condition: 'internal' }) })
+    await expect(service.list('default', false)).rejects.toThrow('store unreadable')
+    sidecar.respond('cron.list', working)
+    sidecar.calls.length = 0
+    await service.list('default', false)
+    expect(listCalls(sidecar)).toContainEqual({ profile_home: homes.default, probe_store: true })
+  })
+
+  it.each([
+    ['history', (service: CronService, home: string) => service.history(home, 'local-job', undefined, undefined)],
+    ['pause', (service: CronService, home: string) => service.pause(home, 'local-job', null)],
+  ])('%s of a job in the active store lists only that store', async (_, act) => {
+    const { service, sidecar, homes, stores } = setup()
+    stores.get(homes.default)?.push({ id: 'local-job', profile: null, toast_notifications: true, monitor: '', continuity: false })
+    await act(service, homes.default)
+    expect(listCalls(sidecar)).toEqual([{ profile_home: homes.default }])
+  })
+
+  it('answers a repeat read within two seconds from the last listing, then lists again', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const { service, sidecar, homes, stores } = setup()
+    await service.list('default', false)
+    const initial = listCalls(sidecar).length
+    stores.get(homes.default)?.push({ id: 'external', profile: null, toast_notifications: true, monitor: '', continuity: false })
+    vi.advanceTimersByTime(1_999)
+    expect((await service.list('default', false)).jobs).toEqual([])
+    expect(listCalls(sidecar)).toHaveLength(initial)
+    vi.advanceTimersByTime(1)
+    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'external' }])
+  })
+
+  it('shows a write made here on the very next read', async () => {
+    const { service, homes } = setup()
+    await service.list('default', false)
+    await service.create(homes.default, { schedule: 'every 1h', prompt: 'x' })
+    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'new-job' }])
+    await service.update(homes.default, { job_id: 'new-job', name: 'renamed' })
+    expect((await service.list('default', false)).jobs).toMatchObject([{ name: 'renamed' }])
+  })
+
+  it('offers Stop to the refetch that follows a manual run starting', async () => {
+    const { service, sidecar, homes, stores } = setup()
+    const job: Dict = { id: 'manual', profile: null, toast_notifications: true, monitor: '', continuity: false }
+    stores.get(homes.default)?.push(job)
+    sidecar.respond('cron.status', ({ job_id }) => ({ job_id: job_id!, running: false, elapsed: 0 }))
+    sidecar.respond('cron.run', ({ job_id }, emit) => new Promise(() => {
+      job.live_execution = { id: 'exec-1', stopping: false }
+      emit({ event: 'started', data: { job_id } })
+    }))
+    await service.list('default', false)
+    await service.runNow(homes.default, 'manual')
+    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'manual', can_stop: true }])
+  })
+
+  it('shows a manual run\'s result to the refetch its completion event triggers', async () => {
+    const { service, sidecar, homes, stores, deps } = setup()
+    const job: Dict = { id: 'manual', profile: null, toast_notifications: true, monitor: '', continuity: false }
+    stores.get(homes.default)?.push(job)
+    sidecar.respond('cron.status', ({ job_id }) => ({ job_id: job_id!, running: false, elapsed: 0 }))
+    let finish = (): void => undefined
+    sidecar.respond('cron.run', ({ job_id }, emit) => new Promise((resolve) => {
+      emit({ event: 'started', data: { job_id } })
+      finish = () => { job.last_status = 'ok'; resolve({ job_id, status: 'completed', success: true }) }
+    }))
+    const completed = new Promise<void>((resolve) => { deps.publishSessionsChanged = () => { resolve() } })
+    await service.runNow(homes.default, 'manual')
+    await service.list('default', false)
+    finish()
+    await completed
+    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'manual', last_outcome: 'succeeded' }])
+  })
+})
+
 describe('cross-profile cron ownership', () => {
+  afterEach(() => { vi.useRealTimers() })
+
   it('keeps recovery-only rows visible but excludes them from new task context', async () => {
     const { service, homes, stores } = setup()
     stores.get(homes.default)?.push({ id: 'retained', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false, recovery_only: true })
@@ -160,12 +279,14 @@ describe('cross-profile cron ownership', () => {
   })
 
   it('fails closed for duplicate managed ids and legacy execution/store mismatches', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const { service, stores, homes } = setup()
     const job = { id: 'duplicate', profile: 'default', toast_notifications: true, monitor: '', continuity: false }
     stores.get(homes.default)?.push(job)
     stores.get(homes.research)?.push({ ...job, profile: 'research', owner_profile: 'default' })
     await expect(service.delete(homes.default, 'duplicate')).rejects.toMatchObject({ status: 409 })
     stores.get(homes.default)?.push({ ...job, id: 'legacy', profile: 'research' })
+    vi.advanceTimersByTime(2_000)
     await expect(service.runNow(homes.default, 'legacy')).rejects.toMatchObject({ status: 409 })
     await expect(service.resume(homes.default, 'legacy')).rejects.toMatchObject({ status: 409 })
     const jobs = (await service.list('default', false)).jobs as Dict[]

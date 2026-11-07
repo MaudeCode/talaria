@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { completionOutcome, CronService, jobForApi, type CronDeps } from './crons.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
+
+afterEach(() => { vi.useRealTimers() })
 
 // Persisted shape from cron.jobs.create_job; synthetic ids only.
 const recurring: Dict = {
@@ -25,6 +27,7 @@ describe('per-job schedule policy (TAL-1820)', () => {
   })
 
   it('reports whether the Agent takes the fields, and forwards them on create and an explicit clear on update', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const sidecar = new FakeSidecar()
     let schedulePolicy = true
     const home = '/homes/default'
@@ -36,6 +39,7 @@ describe('per-job schedule policy (TAL-1820)', () => {
     const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
     expect(await service.list('default', false)).toMatchObject({ schedule_policy_available: true })
     schedulePolicy = false
+    vi.advanceTimersByTime(5 * 60_000)
     expect(await service.list('default', false)).toMatchObject({ schedule_policy_available: false })
     await service.create(home, { schedule: '0 9 * * *', prompt: 'hi', timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
     expect(calls[0]).toMatchObject({ timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
@@ -165,6 +169,7 @@ describe('cron job payloads carry the derived fields', () => {
   })
 
   it('reads a job another process runs as running, keeps its last failure after a success, and reports unwritable stores (TAL-810)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const { service, jobs, sidecar } = setup()
     const health = { store: '/synthetic/talaria-home/cron', error: 'EROFS: Read-only file system', since: '2026-10-11T12:00:00+00:00', fix: 'free disk space, remount it read-write, or fix permissions on /synthetic/talaria-home/cron' }
     let probed = false
@@ -177,13 +182,16 @@ describe('cron job payloads carry the derived fields', () => {
     expect((listed.jobs as Dict[])[0]).not.toHaveProperty('running_elsewhere')
     Object.assign(jobs[0]!, { running_elsewhere: false, last_failure: null })
     sidecar.respond('cron.list', () => ({ jobs: jobs as never[], store_health: null }))
+    vi.advanceTimersByTime(5 * 60_000)
     expect(await service.list('default', false)).toMatchObject({ unwritable_stores: [], jobs: [{ running: false, last_failure: null }] })
   })
 
   it('offers Stop for a managed live run, then reports it stopping until the run ends (TAL-1819)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const { service, home, jobs, sidecar } = setup()
     expect((await service.list('default', false)).jobs).toMatchObject([{ can_stop: false, stopping: false }])
     Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: false } })
+    vi.advanceTimersByTime(2_000)
     const [live] = (await service.list('default', false)).jobs as Dict[]
     expect(live).toMatchObject({ can_stop: true, stopping: false })
     expect(live).not.toHaveProperty('live_execution')
