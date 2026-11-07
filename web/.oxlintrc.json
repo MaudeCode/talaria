@@ -302,6 +302,14 @@
           {
             "selector": "MemberExpression[property.name=/^use(Memo|Callback)$/]",
             "message": "React Compiler handles memoization; remove the manual hook."
+          },
+          {
+            "selector": "JSXOpeningElement[name.property.name='Popup']:not(:has(JSXAttribute[name.name='className'] Identifier[name=/^(POPUP|POPUP_MOTION|TOOLTIP_MOTION|DIALOG_MOTION)$/]))",
+            "message": "A Base UI popup takes its motion from src/ui/popupMotion.ts."
+          },
+          {
+            "selector": "JSXOpeningElement[name.property.name='Backdrop']:not(:has(JSXAttribute[name.name='className'] Identifier[name=/^(BACKDROP|BACKDROP_MOTION)$/]))",
+            "message": "A Base UI backdrop takes its motion from src/ui/popupMotion.ts."
           }
         ],
         "typescript/no-confusing-void-expression": "off"
