@@ -232,7 +232,7 @@ export function KanbanPage() {
               </Select>
             </label>
           )}
-          {currentBoard && !currentBoard.archived && <Menu label={m.kanban_board_actions()} trigger={<IconButton label={m.kanban_board_actions()} className="pointer-coarse:h-11 pointer-coarse:w-11"><MoreHorizontal size={16} aria-hidden="true" /></IconButton>}>{pinItems(currentBoard.slug)}</Menu>}
+          {currentBoard && !currentBoard.archived && <Menu label={m.kanban_board_actions()} trigger={<IconButton label={m.kanban_board_actions()} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"><MoreHorizontal size={16} aria-hidden="true" /></IconButton>}>{pinItems(currentBoard.slug)}</Menu>}
           {pinned.length > 0 && <div role="tablist" aria-label={m.kanban_pinned_boards()} className="flex min-w-0 max-w-full gap-1 overflow-x-auto">
             {pinned.map((slug, index) => {
               const item = boardList.find(b => b.slug === slug)
@@ -240,7 +240,7 @@ export function KanbanPage() {
               const label = item.name ?? item.slug
               const menuLabel = m.kanban_board_actions_named({ a0: label })
               return <ContextMenu key={slug} label={menuLabel} trigger={<span className="inline-flex shrink-0 items-center">
-                <Button role="tab" id={`${panelId}-${slug}`} aria-selected={current === slug} aria-controls={panelId} variant="ghost" className={cn('max-w-52 truncate pointer-coarse:min-h-11', current === slug && 'bg-accent-bg text-accent-text')} title={label} onClick={() => selectBoard(slug)}
+                <Button role="tab" id={`${panelId}-${slug}`} aria-selected={current === slug} aria-controls={panelId} variant="ghost" className="max-w-52 truncate pointer-coarse:min-h-11 aria-selected:bg-accent-bg aria-selected:text-accent-text" title={label} onClick={() => selectBoard(slug)}
                   draggable onDragStart={e => { e.dataTransfer.setData('application/x-talaria-kanban-pin', slug); e.dataTransfer.effectAllowed = 'move' }}
                   onDragOver={e => { if (e.dataTransfer.types.includes('application/x-talaria-kanban-pin')) e.preventDefault() }}
                   onDrop={e => { const source = e.dataTransfer.getData('application/x-talaria-kanban-pin'); if (pinned.includes(source)) { e.preventDefault(); movePin(source, index) } }}
@@ -254,7 +254,7 @@ export function KanbanPage() {
                       tabs?.[next]?.focus()
                     }
                   }}><span className="truncate">{label}</span></Button>
-                <Menu label={menuLabel} trigger={<IconButton label={menuLabel} className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}>{pinItems(slug)}</Menu>
+                <Menu label={menuLabel} trigger={<IconButton label={menuLabel} className="h-8 w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}>{pinItems(slug)}</Menu>
               </span>}>{pinItems(slug)}</ContextMenu>
             })}
           </div>}
