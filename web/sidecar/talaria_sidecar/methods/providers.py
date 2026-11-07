@@ -329,7 +329,8 @@ def plugin_providers() -> list[dict]:
             rows.append({"name": manifest_name, "display_name": manifest_name, "auth_type": "", "setup": "not_loaded"})
             continue
         name = str(profile.name).strip().lower()
-        rows.append({"name": name, "display_name": str(profile.display_name or name).strip(), "auth_type": str(profile.auth_type), "setup": _setup_state(profile)})
+        aliases = [alias for alias in (str(a).strip().lower() for a in profile.aliases) if alias]
+        rows.append({"name": name, "display_name": str(profile.display_name or name).strip(), "auth_type": str(profile.auth_type), "setup": _setup_state(profile), "aliases": aliases})
         if supports_device_login(profile):
             rows[-1]["device_login"] = True
     return rows + _left_core_rows()

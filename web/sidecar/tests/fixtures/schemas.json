@@ -1421,6 +1421,13 @@
             "device_login": {
               "description": "The installed provider implements all three Agent device-login hooks.",
               "type": "boolean"
+            },
+            "aliases": {
+              "description": "Lowercased names the loaded provider declares for itself.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [

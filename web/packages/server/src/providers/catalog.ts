@@ -25,7 +25,7 @@ import {
 } from './tables.js'
 import {
   activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderOwner, customProviderSlug, dict, isNativeCustomProviderKey, effectiveDefaultModel, isDict,
-  modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
+  modelSection, parseProviderQualifiedModel, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
@@ -594,7 +594,7 @@ export class ProviderCatalog {
   private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string; ttl: number; confirmed: boolean; snapshot?: SidecarResult<'providers.model_ids'> }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   /** `pooled`: the fill's `poolProviders` answer, null when unknown (TAL-638). */
-  private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }>()
+  private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null; pluginAliases: ReadonlyMap<string, string> }>()
   /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
   private readonly lastModels = new Map<string, ModelsCatalog>()
   /** TAL-542: per `lastModels` catalog, the `sourceFingerprint` it was built from, when, and the providers whose group came from a failed live lookup. */
@@ -911,7 +911,7 @@ export class ProviderCatalog {
   }
 
   /** The cached `providers` answer, shared with `quotas`; callers never mutate it. */
-  private async providerRows(profileHome: string, pool?: CatalogLookup<SidecarResult<'usage.pool_providers'>>): Promise<{ payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }> {
+  private async providerRows(profileHome: string, pool?: CatalogLookup<SidecarResult<'usage.pool_providers'>>): Promise<{ payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null; pluginAliases: ReadonlyMap<string, string> }> {
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
     pool ??= await this.poolProviders(profileHome)
@@ -928,14 +928,15 @@ export class ProviderCatalog {
     // does own a `providers.<id>` config entry.
     const plugins = (pluginLookup.value ?? []).filter((p) => !known.has(p.name) && !known.has(providerIdentity(p.name)))
     const pluginIds = new Set(plugins.map((p) => p.name))
-    const active = activeProviderFromConfig(config, pluginIds)
+    const pluginAliases = pluginAliasTargets(config, plugins)
+    const active = activeProviderFromConfig(config, pluginIds, pluginAliases)
     const providersCfg = dict(config.providers)
     for (const key of Object.keys(providersCfg)) {
       const identity = canonicaliseProviderId(key)
       // Named custom cards come from the read view below, never from the raw (maybe disabled or shadowed) record.
       if (identity.startsWith('custom:') || isNativeCustomProviderKey(key, providersCfg[key], pluginIds)) continue
       const id = known.has(identity) ? identity : key
-      if (!pluginIds.has(id)) known.add(id)
+      if (!pluginIds.has(id) && !pluginAliases.has(key.trim().toLowerCase())) known.add(id)
     }
     const probed: { pid: string; probe: KeyProbe; configured: boolean; lookup: boolean }[] = []
     for (const pid of [...known].sort()) {
@@ -1035,7 +1036,7 @@ export class ProviderCatalog {
     }
     authoritative &&= source === this.sourceFingerprint(profileHome)
     const availability = this.availability(source, authoritative, Boolean(pool.value))
-    const entry = { at: this.deps.now(), key: cacheKey, payload: { providers: rows, active_provider: active, availability }, pooled: pooledIds }
+    const entry = { at: this.deps.now(), key: cacheKey, payload: { providers: rows, active_provider: active, availability }, pooled: pooledIds, pluginAliases }
     if (authoritative) this.providersCache.set(profileHome, entry)
     return entry
   }
@@ -1060,7 +1061,8 @@ export class ProviderCatalog {
   }
 
   private async buildModels(profileHome: string, pool: CatalogLookup<SidecarResult<'usage.pool_providers'>>, source: string, generation: number, attempt: number): Promise<ModelsCatalog> {
-    const providerState = (await this.providerRows(profileHome, pool)).payload
+    const { payload: providerState, pluginAliases } = await this.providerRows(profileHome, pool)
+    const pluginNamed = (name: unknown): string | undefined => pluginAliases.get(str(name).trim().toLowerCase())
     const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
@@ -1070,7 +1072,7 @@ export class ProviderCatalog {
     const localLookup = await this.localModels(profileHome)
     const local = localLookup.value?.models.length ? localLookup.value : null
     const pluginIds = new Set(providerState.providers.filter((row) => row.is_plugin_provider === true).map((row) => str(row.id)))
-    const configured = activeProviderFromConfig(config, pluginIds)
+    const configured = activeProviderFromConfig(config, pluginIds, pluginAliases)
     // A `custom` main model at the running local server's endpoint is that server: its Local group owns the selection.
     const atLocalServer = configured === 'custom' && Boolean(cfgBaseUrl) && cfgBaseUrl.replace(/\/+$/, '') === str(local?.current_endpoint).replace(/\/+$/, '')
     const active = local && atLocalServer ? local.provider_id : configured
@@ -1088,7 +1090,7 @@ export class ProviderCatalog {
     const providersCfg = dict(config.providers)
     const rawKeyFor = new Map<string, string>()
     for (const [key, value] of Object.entries(providersCfg)) {
-      const canonical = canonicaliseProviderId(key)
+      const canonical = pluginNamed(key) ?? canonicaliseProviderId(key)
       // Named custom groups come from the read view below.
       if (!canonical || canonical.startsWith('custom:') || isNativeCustomProviderKey(key, value, pluginIds)) continue
       if (!rawKeyFor.has(canonical)) rawKeyFor.set(canonical, key)
@@ -1111,7 +1113,7 @@ export class ProviderCatalog {
       if (row.is_plugin_provider === true) pluginNames.set(str(row.id), str(row.display_name) || str(row.id))
     }
     for (const pid of signedIn) detected.add(pid)
-    const fallbackCfg = Array.isArray(config.fallback_providers) ? config.fallback_providers.filter(isDict) : []
+    const fallbackCfg = (Array.isArray(config.fallback_providers) ? config.fallback_providers.filter(isDict) : []).map((entry): Dict => ({ ...entry, provider: pluginNamed(entry.provider) ?? entry.provider }))
     for (const entry of fallbackCfg) {
       const p = resolveProviderAlias(entry.provider)
       if (p) { detected.add(p); append(p, entry.model) }
@@ -1538,7 +1540,7 @@ export class ProviderCatalog {
     const computed_at = isoAt(at)
     const config = await this.deps.config.read(profileHome)
     const plugins = providerRaw === null ? (await this.pluginProviders(profileHome)).value : null
-    const provider = (providerRaw ?? activeProviderFromConfig(config, new Set(plugins?.map((p) => p.name))) ?? '').trim().toLowerCase()
+    const provider = (providerRaw ?? activeProviderFromConfig(config, new Set(plugins?.map((p) => p.name)), pluginAliasTargets(config, plugins ?? [])) ?? '').trim().toLowerCase()
     if (!provider) return { computed_at, ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
     // A custom identity is named by its own record's label, as on its card (TAL-1654).
     const owner = provider.startsWith('custom:') ? customProviderOwner(config, provider).entry : null
