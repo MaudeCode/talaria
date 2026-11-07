@@ -54,6 +54,27 @@ export function messageKey(message: Message): string | undefined {
 }
 
 
+/** The subscribed window and the rows loaded above it. `epoch` names the scope those rows and their requests belong to. */
+interface OlderPages { sessionId: string | null; streamContext: object; offset: number; tail: Message[] | undefined; epoch: number; items: Message[]; cut: boolean }
+
+/**
+ * A read's effect on the loaded pages. A boundary that only advanced keeps them (TAL-1925): the rows it passed,
+ * taken from the previous window, join the pages, so `base` holds. Any other move retires the pages.
+ */
+function settlePages(pages: OlderPages, sessionId: string | null, streamContext: object, offset: number, tail: Message[] | undefined): OlderPages {
+  const sameSource = pages.sessionId === sessionId && pages.streamContext === streamContext
+  if (sameSource && pages.offset === offset) return pages.tail === tail ? pages : { ...pages, tail, cut: false }
+  const previous = pages.tail ?? []
+  const passed = offset - pages.offset
+  const nextRow = previous[passed]
+  const advanced = sameSource && !pages.cut && passed > 0 && passed <= previous.length && !!tail?.[0] && (!nextRow || messageKey(nextRow) === messageKey(tail[0]))
+  return { sessionId, streamContext, offset, tail, cut: false, epoch: advanced ? pages.epoch : pages.epoch + 1, items: advanced ? [...pages.items, ...previous.slice(0, passed)] : [] }
+}
+
+/** Numbers each mounted reader: the query cache outlives a reader, and its page epochs restart with it. */
+let lastPageReader = 0
+const nextPageReader = () => ++lastPageReader
+
 export function useTranscript(sessionId: string | null, equalLive?: (previous: LiveTurn | null, next: LiveTurn | null) => boolean) {
   const qc = useQueryClient()
   const streamContext = useStreamContext()
@@ -78,13 +99,17 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     refetchInterval: (q) => { const after = q.state.data?.session.refresh_after; return after ? after * 1000 : false },
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
-  // The subscribed window; a moved boundary retires its prefix and pending pages together.
-  const windowOffset = query.data?.session._messages_offset ?? 0
-  const pageScope = ({ sessionId, windowOffset, streamContext })
-  const [olderState, setOlderState] = useState<{ scope: typeof pageScope; items: Message[] }>({ scope: pageScope, items: [] })
-  if (olderState.scope !== pageScope) setOlderState({ scope: pageScope, items: [] })
-  const older = (olderState.scope === pageScope ? olderState.items : [])
-  const setOlder = (update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) }))
+  const session: Session | null = query.data?.session ?? null
+  const windowOffset = session?._messages_offset ?? 0
+  const [pages, setPages] = useState<OlderPages>({ sessionId, streamContext, offset: windowOffset, tail: session?.messages, epoch: 0, items: [], cut: false })
+  const settledPages = settlePages(pages, sessionId, streamContext, windowOffset, session?.messages)
+  if (settledPages !== pages) setPages(settledPages)
+  const { epoch: pageEpoch, items: older } = settledPages
+  const base = Math.max(0, windowOffset - older.length)
+  const [pageReader] = useState(nextPageReader)
+  const pageScope = ({ sessionId, pageEpoch, streamContext })
+  // A replaced history retires its pages, and the window it replaces can't feed the next advance.
+  const retirePages = () => setPages((s) => ({ ...s, epoch: s.epoch + 1, items: [], cut: true }))
   const [pageState, setPageState] = useState({ scope: pageScope, loading: false, error: false })
   if (pageState.scope !== pageScope) setPageState({ scope: pageScope, loading: false, error: false })
   const retiredPages = useRef(new WeakSet<object>())
@@ -97,20 +122,19 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
   const loadingOlder = pageState.scope === pageScope && pageState.loading
   const olderError = pageState.scope === pageScope && pageState.error
   const attachedStream = useRef<string | null>(null)
-  const session: Session | null = query.data?.session ?? null
   // Owners can change row metadata; reasoning visibility changes direct history too. Keep every loaded
-  // page in the tail's invalidation family without dropping scroll history.
+  // page in the tail's invalidation family without dropping scroll history. An advance keeps `base`, so it
+  // rereads nothing: rows it carried over are newer than this read and follow it.
   const olderHistory = useQuery({
-    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', windowOffset, older.length, session?.show_reasoning],
+    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', pageReader, pageEpoch, base, session?.show_reasoning],
     queryFn: async ({ signal }) => {
-      const start = Math.max(0, windowOffset - older.length)
       let before = windowOffset
       const chunks: Message[][] = []
-      while (before > start) {
+      while (before > base) {
         const page = await api.fetchSession(sessionId ?? '', { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false }, signal)
         const offset = page.session._messages_offset
         if (offset === undefined || offset >= before || !page.session.messages?.length) throw new Error('Owner history window changed')
-        chunks.unshift(page.session.messages.slice(Math.max(0, start - offset), before - offset))
+        chunks.unshift(page.session.messages.slice(Math.max(0, base - offset), before - offset))
         before = offset
       }
       const refreshed = chunks.flat()
@@ -178,10 +202,10 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
 
   const messages = (() => {
     const current = session?.messages ?? []
-    return older.length ? [...(olderHistory.data ?? older), ...current] : current
+    const refreshed = olderHistory.data ?? []
+    return older.length ? [...refreshed, ...older.slice(refreshed.length), ...current] : current
   })()
 
-  const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)
   const rows = projectMessages(messages, base)
   const truncated = !!session?._messages_truncated && (session._messages_offset ?? 0) > older.length
   const loadOlder = async (retry = false, beforePrepend?: () => void) => {
@@ -197,14 +221,14 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     request.error = false
     setPageState({ scope: pageScope, loading: true, error: false })
     const scope = getStreamContext()
-    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext() && (qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))?.session._messages_offset ?? 0) === windowOffset
+    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext() && (qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))?.session._messages_offset ?? 0) >= windowOffset
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
       const chunk = res.session.messages ?? []
       if (current() && !chunk.length) request.error = true
       else if (current()) {
         beforePrepend?.()
-        setOlder((prev) => [...chunk, ...prev])
+        setPages((s) => s.epoch === pageEpoch ? { ...s, items: [...chunk, ...s.items] } : s)
       }
     } catch {
       if (current()) request.error = true
@@ -224,14 +248,14 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     if (sessionId && parsed.success && parsed.data.session_id === sessionId && parsed.data.messages) {
       await qc.cancelQueries({ queryKey: keys.sessions.detail(sessionId) })
       if (scope !== getStreamContext()) return
-      setOlder(() => [])
+      retirePages()
       discardSession(sessionId)
       qc.setQueryData(keys.sessions.detail(sessionId), { session: parsed.data })
       void invalidateSessionQueries(qc, sessionId, { detail: false })
       return
     }
     // Older/mutation row-only responses need a fresh authoritative transcript.
-    if (accepted !== undefined || historyCut) setOlder(() => [])
+    if (accepted !== undefined || historyCut) retirePages()
     await qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') })
   }
 

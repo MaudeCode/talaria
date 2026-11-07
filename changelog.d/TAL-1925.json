@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In Talaria Web, older messages you loaded in a chat stay loaded while new messages arrive, including in a running subagent's transcript.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
