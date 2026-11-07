@@ -514,16 +514,10 @@ export function listDir(workspace: string, rel = '.'): DirEntry[] {
 
 function listAnchored(target: string, rel: string, wsResolved: string, child: (name: string) => string): DirEntry[] {
   const entries: DirEntry[] = []
-  const dirents = readdirSync(child('.'), { withFileTypes: true })
-  const sortKey = (d: import('node:fs').Dirent) => [!d.isSymbolicLink(), d.isFile(), d.name.toLowerCase()] as const
-  dirents.sort((a, b) => {
-    const [la, fa, na] = sortKey(a)
-    const [lb, fb, nb] = sortKey(b)
-    if (la !== lb) return la ? 1 : -1
-    if (fa !== fb) return fa ? 1 : -1
-    return na < nb ? -1 : na > nb ? 1 : 0
-  })
-  for (const de of dirents) {
+  // Keys are computed once per entry. The whole directory is sorted because the walk below drops symlinks, so the 200 kept cannot be chosen up front.
+  const ranked = readdirSync(child('.'), { withFileTypes: true }).map((de) => ({ de, rank: de.isSymbolicLink() ? 0 : de.isFile() ? 2 : 1, key: de.name.toLowerCase() }))
+  ranked.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+  for (const { de } of ranked) {
     if (entries.length >= 200) break
     const name = de.name
     const full = child(name)

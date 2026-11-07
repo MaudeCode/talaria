@@ -265,6 +265,36 @@ describe('anchored walk', () => {
     expect(() => listDir(root, 'link-dir')).toThrow(PathTraversalError)
   })
 
+  it('fills the 200-entry cap in reference order past skipped symlinks, lower-casing each of 20,000 names once', () => {
+    const dir = join(root, 'big')
+    mkdirSync(dir)
+    writeFileSync(join(root, 'big-link-target.txt'), 'x')
+    // Broken links sort first and are dropped after sorting, so the cap cannot be chosen before the walk.
+    for (let i = 0; i < 250; i++) symlinkSync('missing', join(dir, `Broken${i}`))
+    for (let i = 0; i < 5; i++) symlinkSync(join(root, 'big-link-target.txt'), join(dir, `Live${i}`))
+    for (let i = 0; i < 20; i++) mkdirSync(join(dir, i % 2 ? `Dir${i}` : `dir${i}`))
+    for (let i = 275; i < 20_000; i++) writeFileSync(join(dir, i % 2 ? `File${i}` : `file${i}`), '')
+
+    const key = (d: { isSymbolicLink(): boolean, isFile(): boolean, name: string }) => [d.isSymbolicLink() ? 0 : d.isFile() ? 2 : 1, d.name.toLowerCase()] as const
+    const expected = readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => {
+        const [ra, na] = key(a)
+        const [rb, nb] = key(b)
+        return ra - rb || (na < nb ? -1 : na > nb ? 1 : 0)
+      })
+      .map((d) => d.name)
+      .filter((name) => !name.startsWith('Broken'))
+      .slice(0, 200)
+
+    const toLowerCase = vi.spyOn(String.prototype, 'toLowerCase')
+    const names = listDir(root, 'big').map((e) => e.name)
+    const conversions = toLowerCase.mock.calls.length
+    toLowerCase.mockRestore()
+
+    expect(names).toEqual(expected)
+    expect(conversions).toBeLessThanOrEqual(20_000)
+  }, 60_000)
+
   it.runIf(process.platform !== 'linux')('a directory swapped for a symlink after its descriptor was opened is still listed from the descriptor', () => {
     mkdirSync(join(root, 'late-ls'), { recursive: true })
     writeFileSync(join(root, 'late-ls', 'inside.txt'), 'in')
