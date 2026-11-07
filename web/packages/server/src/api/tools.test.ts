@@ -16,6 +16,7 @@ import { insightsSessionRows } from '../sessions/state-db.js'
 import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
+import { GitRunner } from '../workspace/git.js'
 import { toggleName, walkSkillFiles } from '../tools/skills.js'
 import { UpdateService, type UpdateServiceDeps } from '../tools/updates.js'
 
@@ -1980,7 +1981,7 @@ describe('tools helpers', () => {
     expect(toggleName(['a'], 'b', false)).toEqual(['a', 'b'])
     expect(maskSecrets({ API_KEY: 'x', nested: { token: 'y', ok: 'z' } })).toEqual({ API_KEY: '••••••', nested: { token: '••••••', ok: 'z' } })
     expect(serverSummary('s', { command: 'run', env: { SECRET: 'x' } }, { connected: true, tools: [1, 2] })).toMatchObject({ transport: 'stdio', active: true, status: 'active', tool_count: 2, env: { SECRET: '••••••' } })
-    expect(readProjectContext(null)).toMatchObject({ content: '', path: '' })
+    expect(await readProjectContext(null, new GitRunner({ env: {} }))).toMatchObject({ content: '', path: '' })
     const now = 1_760_000_000
     const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
     expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 50 })

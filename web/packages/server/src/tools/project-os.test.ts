@@ -1,22 +1,27 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dict } from '../config/agent-config.js'
+import { syncFsCalls } from '../test/sync-fs.js'
 import { projectOsDashboard, type ProjectOsDeps } from './project-os.js'
 
 // Runs once right after `fn` answers for `path`, so a test can swap a directory between a check and its use.
 const afterFs = vi.hoisted(() => ({ fn: '', path: '', run: null as null | (() => void) }))
-vi.mock('node:fs', async (importOriginal) => {
-  const fs = await importOriginal<typeof import('node:fs')>()
-  const hooked = <F extends (...args: never[]) => unknown>(name: string, real: F): F => ((...args: Parameters<F>) => {
-    const out = real(...args)
-    if (afterFs.run && afterFs.fn === name && String(args[0]) === afterFs.path) { const run = afterFs.run; afterFs.run = null; run() }
-    return out
-  }) as F
-  const readdirSync = hooked('readdirSync', fs.readdirSync)
-  const existsSync = hooked('existsSync', fs.existsSync)
-  return { ...fs, default: { ...fs, readdirSync, existsSync }, readdirSync, existsSync }
+vi.mock('node:fs', { spy: true })
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  const hooked = <F extends (...args: never[]) => Promise<unknown>>(name: string, real: F) => vi.fn(async (...args: Parameters<F>) => {
+    try {
+      return await real(...args)
+    } finally {
+      if (afterFs.run && afterFs.fn === name && String(args[0]) === afterFs.path) { const run = afterFs.run; afterFs.run = null; run() }
+    }
+  })
+  const readdir = hooked('readdir', fs.readdir)
+  const access = hooked('access', fs.access)
+  return { ...fs, default: { ...fs, readdir, access }, readdir, access }
 })
 
 const EMPTY = { workspace: null, repo_root: null, git: null, docs: {}, handoff: null, active: null, heartbeat: null, goal_summary: '' }
@@ -77,6 +82,30 @@ describe('project-os dashboard (TAL-266)', () => {
     expect((await projectOsDashboard('other', deps())).repo_root).toBe(root)
   })
 
+  it('looks a board up with no sync fs call, rescanning only after 5 s or when the root changes', async () => {
+    write('apps/web/.ax/handoff/current.json', { board: { id: 'ops' } })
+    vi.clearAllMocks()
+    const first = await projectOsDashboard('ops', deps())
+    expect(first.repo_root).toBe(join(root, 'apps', 'web'))
+    expect(syncFsCalls()).toEqual([])
+    expect(readdir).toHaveBeenCalled()
+
+    vi.clearAllMocks()
+    expect(await projectOsDashboard('ops', deps())).toEqual(first)
+    expect(readdir).not.toHaveBeenCalled()
+
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 5_001)
+    await projectOsDashboard('ops', deps())
+    expect(readdir).toHaveBeenCalled()
+    clock.mockRestore()
+
+    vi.clearAllMocks()
+    utimesSync(root, new Date(), new Date(Date.now() + 5_000))
+    await projectOsDashboard('ops', deps())
+    expect(readdir).toHaveBeenCalled()
+  })
+
   it('never scans into a directory symlink that leaves the workspace', async () => {
     const outside = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-outside-')))
     try {
@@ -97,7 +126,7 @@ describe('project-os dashboard (TAL-266)', () => {
       mkdirSync(join(outside, '.ax', 'status'), { recursive: true })
       writeFileSync(join(outside, '.ax', 'status', 'active.json'), JSON.stringify({ board: 'ops', secret: 'outside truth' }))
       mkdirSync(join(root, 'apps'))
-      Object.assign(afterFs, { fn: 'readdirSync', path: root })
+      Object.assign(afterFs, { fn: 'readdir', path: root })
       afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
       const body = await projectOsDashboard('ops', deps())
       expect(afterFs.run).toBeNull()
@@ -115,7 +144,7 @@ describe('project-os dashboard (TAL-266)', () => {
       mkdirSync(join(outside, '.ax', 'status'), { recursive: true })
       writeFileSync(join(outside, '.ax', 'status', 'active.json'), JSON.stringify({ board: 'ops', secret: 'outside truth' }))
       write('apps/.ax/status/active.json', { board: 'ops', repo_root: join(root, 'apps') })
-      Object.assign(afterFs, { fn: 'existsSync', path: join(root, 'apps') })
+      Object.assign(afterFs, { fn: 'access', path: join(root, 'apps') })
       afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
       const body = await projectOsDashboard('ops', deps())
       expect(afterFs.run).toBeNull()
@@ -131,7 +160,7 @@ describe('project-os dashboard (TAL-266)', () => {
     const outside = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-outside-')))
     try {
       write('apps/.ax/status/active.json', { board: 'ops' })
-      Object.assign(afterFs, { fn: 'existsSync', path: join(root, 'apps', '.git') })
+      Object.assign(afterFs, { fn: 'access', path: join(root, 'apps', '.git') })
       afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
       const badge = { branch: 'outside-branch', dirty: 3, modified: 3, untracked: 0, ahead: 0, behind: 0, is_git: true as const }
       const body = await projectOsDashboard('ops', deps({ git: () => Promise.resolve(badge) }))
@@ -152,6 +181,14 @@ describe('project-os dashboard (TAL-266)', () => {
     expect(body).toMatchObject({ repo_root: join(root, 'real'), active: { phase: 'build' }, docs: { plan: { content: 'plan\n' } } })
     // A failing board lookup is ignored.
     expect((await projectOsDashboard('ops', deps({ lastWorkspace: join(root, 'work'), boards: () => Promise.reject(new Error('down')) }))).repo_root).toBe(join(root, 'real'))
+  })
+
+  it('reads a workspace named through a symlink and keeps showing the path as named', async () => {
+    write('real/docs/project-os/PROJECT.md', 'linked goal\n')
+    write('real/.ax/status/active.json', { repo_root: join(root, 'linked') })
+    symlinkSync(join(root, 'real'), join(root, 'linked'))
+    const body = await projectOsDashboard('', deps({ lastWorkspace: join(root, 'linked') }))
+    expect(body).toMatchObject({ repo_root: join(root, 'linked'), goal_summary: 'linked goal' })
   })
 
   it('uses root-level docs in a non-git onboarding workspace', async () => {

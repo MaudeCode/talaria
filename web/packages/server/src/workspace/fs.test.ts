@@ -10,6 +10,16 @@ const afterLstat = vi.hoisted(() => ({ hook: null as ((path: string) => void) | 
 const afterChmod = vi.hoisted(() => ({ hook: null as (() => void) | null }))
 // One-shot hook run before the next `openSync`, i.e. immediately before an anchored walk acquires its root.
 const beforeOpen = vi.hoisted(() => ({ hook: null as (() => void) | null }))
+// Runs before each promise `open`, so a test can swap a parent at any step of the walk.
+const aroundOpen = vi.hoisted(() => ({ before: null as (() => void) | null }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fsp = await importOriginal<typeof import('node:fs/promises')>()
+  const open = async (...args: Parameters<typeof fsp.open>) => {
+    aroundOpen.before?.()
+    return fsp.open(...args)
+  }
+  return { ...fsp, default: { ...fsp, open }, open }
+})
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
   const lstatSync = ((path: string, opts?: unknown) => {
@@ -26,7 +36,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...fs, default: { ...fs, lstatSync, openSync }, lstatSync, openSync, fchmodSync: (fd: number, mode: number) => { fs.fchmodSync(fd, mode); afterChmod.hook?.() } }
 })
 
-import { dirSignature, directoryOpenPolicy, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, replaceAnchoredFile, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored, withAnchoredDir, withPinnedRoot } from './fs.js'
+import { dirSignature, directoryOpenPolicy, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, readFileContent, readFileContentAsync, renameAnchored, replaceAnchoredFile, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored, withAnchoredDir, withPinnedRoot } from './fs.js'
 
 describe('anchored walk', () => {
   let root = ''
@@ -42,7 +52,85 @@ describe('anchored walk', () => {
     symlinkSync(join(outside, 'secret.txt'), join(root, 'a', 'link-file'))
   })
   afterAll(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }) })
-  afterEach(() => { vi.restoreAllMocks(); afterLstat.hook = null; afterChmod.hook = null })
+  afterEach(() => { vi.restoreAllMocks(); afterLstat.hook = null; afterChmod.hook = null; aroundOpen.before = null })
+
+  describe('readFileContentAsync', () => {
+    const parent = (): string => join(root, 'swap')
+    let swapped = false
+    const flip = (): void => {
+      if (swapped) { unlinkSync(parent()); renameSync(`${parent()}-real`, parent()) } else { renameSync(parent(), `${parent()}-real`); symlinkSync(join(outside, 'swap'), parent()) }
+      swapped = !swapped
+    }
+    const fixture = (): void => {
+      swapped = false
+      rmSync(parent(), { recursive: true, force: true })
+      rmSync(`${parent()}-real`, { recursive: true, force: true })
+      mkdirSync(parent())
+      writeFileSync(join(parent(), 'f.txt'), 'inside')
+    }
+    const outcome = async (): Promise<string> => {
+      try { return String((await readFileContentAsync(root, 'swap/f.txt')).content) } catch (error) {
+        expect(error instanceof NotFoundError || error instanceof PathTraversalError).toBe(true)
+        return 'refused'
+      }
+    }
+    beforeAll(() => {
+      mkdirSync(join(outside, 'swap'))
+      writeFileSync(join(outside, 'swap', 'f.txt'), 'outside')
+    })
+    afterEach(() => { for (const path of [parent(), `${parent()}-real`]) rmSync(path, { recursive: true, force: true }) })
+
+    it('answers what the anchored read answers', async () => {
+      expect(await readFileContentAsync(root, 'a/b/f.txt')).toEqual(readFileContent(root, 'a/b/f.txt'))
+    })
+
+    it('refuses a symlink out of the root and a directory', async () => {
+      await expect(readFileContentAsync(root, 'a/link-file')).rejects.toBeInstanceOf(PathTraversalError)
+      await expect(readFileContentAsync(root, 'link-dir/secret.txt')).rejects.toBeInstanceOf(PathTraversalError)
+      await expect(readFileContentAsync(root, 'a')).rejects.toBeInstanceOf(NotFoundError)
+    })
+
+    it('refuses once the resolved root itself has been swapped for an outside symlink', async () => {
+      const base = realpathSync(mkdtempSync(join(tmpdir(), 'anchored-swap-')))
+      try {
+        const ws = join(base, 'ws')
+        mkdirSync(ws)
+        writeFileSync(join(ws, 'f.txt'), 'inside')
+        writeFileSync(join(outside, 'f.txt'), 'outside')
+        expect((await readFileContentAsync(ws, 'f.txt')).content).toBe('inside')
+        renameSync(ws, `${ws}-real`)
+        symlinkSync(outside, ws)
+        await expect(readFileContentAsync(ws, 'f.txt')).rejects.toBeInstanceOf(PathTraversalError)
+      } finally {
+        rmSync(base, { recursive: true, force: true })
+        rmSync(join(outside, 'f.txt'), { force: true })
+      }
+    })
+
+    it('never answers with the outside file, whichever open a parent is swapped for an outside symlink before', async () => {
+      fixture()
+      let opens = 0
+      aroundOpen.before = () => { opens++ }
+      expect(await outcome()).toBe('inside')
+      const outcomes = new Set<string>()
+      for (let at = 0; at < opens; at++) {
+        fixture()
+        let seen = 0
+        aroundOpen.before = () => { if (seen++ === at) flip() }
+        outcomes.add(await outcome())
+      }
+      expect([...outcomes].sort()).toEqual(['inside', 'refused'])
+    })
+
+    it('never answers with the outside file while the parent flips between every open', async () => {
+      for (const startSwapped of [false, true]) {
+        fixture()
+        if (startSwapped) flip()
+        aroundOpen.before = flip
+        expect(await outcome()).not.toBe('outside')
+      }
+    })
+  })
 
   it('atomic replacement leaves existing readers on the original complete inode and preserves executable mode', () => {
     const target = join(root, 'atomic.txt')

@@ -20,9 +20,10 @@
  * opens read-only.
  */
 import { closeSync, constants, existsSync, fchmodSync, fsyncSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { open, type FileHandle } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { isWithin, resolvePathLikePython } from './paths.js'
+import { isWithin, resolvePathLikePython, resolvePathLikePythonAsync } from './paths.js'
 import { isBlockedSystemPath } from './workspaces.js'
 import { writeFully } from '../fs/atomic.js'
 
@@ -642,13 +643,81 @@ export function readFileContent(workspace: string, rel: string, opts: { statOnly
     if (!fst.isFile()) throw new NotFoundError(`Not a file: ${rel}`)
     if (opts.statOnly) return { path: rel, size: fst.size }
     if (fst.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${fst.size} bytes, max ${MAX_FILE_BYTES})`)
-    const raw = readFdUpTo(fd, MAX_FILE_BYTES + 1)
-    const content = decodeText(raw)
-    if (content === null) return { path: rel, size: raw.length, binary: true }
-    return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
+    return decodedContent(rel, readFdUpTo(fd, MAX_FILE_BYTES + 1))
   } finally {
     closeSync(fd)
   }
+}
+
+function decodedContent(rel: string, raw: Buffer): FileContent {
+  const content = decodeText(raw)
+  if (content === null) return { path: rel, size: raw.length, binary: true }
+  return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
+}
+
+/**
+ * Darwin's `/.vol/<dev>/<ino>/<name>` resolves `name` against a directory's inode whatever its pathname now holds, so it
+ * stands in for a descriptor-relative open where the chdir fallback cannot run: that one needs a synchronous section.
+ */
+const INODE_PATHS = process.platform === 'darwin' && (() => {
+  try { const root = statSync(sep); return statSync(`/.vol/${root.dev}/${root.ino}`).ino === root.ino } catch { return false }
+})()
+
+async function anchoredChild(dir: FileHandle, name: string): Promise<string> {
+  if (DESCRIPTOR_PATHS) return fdPath(dir.fd, name)
+  const { dev, ino } = await dir.stat({ bigint: true })
+  return `/.vol/${dev}/${ino}/${name}`
+}
+
+/** `openAnchoredFd` for a file, off the event loop: the same no-follow walk from `/`, holding each directory it crosses. */
+async function openAnchoredAsync(target: string): Promise<FileHandle> {
+  const parts = target.split(sep).filter(Boolean)
+  const leaf = parts.pop()
+  if (!leaf) throw new NotFoundError(`Not found: ${target}`)
+  let dir = await open(sep, POLICY.traverse)
+  try {
+    for (const part of parts) {
+      const next = await open(await anchoredChild(dir, part), POLICY.traverse)
+      await dir.close()
+      dir = next
+      // `O_PATH | O_NOFOLLOW` can hand back the symlink itself; only a real directory continues the walk.
+      if (!(await dir.stat()).isDirectory()) throw new NotFoundError(`Not found: ${target}`)
+    }
+    return await open(await anchoredChild(dir, leaf), constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+  } finally {
+    await dir.close()
+  }
+}
+
+/**
+ * `readFileContent` off the event loop. `root` is the caller's already resolved root and is never resolved again here, so
+ * an ancestor swapped at any point sends the target outside it or fails the walk. Where no descriptor or inode path exists
+ * to anchor the walk, the synchronous read does it.
+ */
+export async function readFileContentAsync(root: string, rel: string): Promise<FileContent> {
+  const refuse = (): NotFoundError => new NotFoundError(`Not a file: ${rel}`)
+  if (!POLICY.supported) throw refuse()
+  const target = await resolvePathLikePythonAsync(resolve(root, rel))
+  if (!isWithin(target, root)) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
+  if (!DESCRIPTOR_PATHS && !INODE_PATHS) return readFileContent(root, rel)
+  let handle: FileHandle
+  try { handle = await openAnchoredAsync(target) } catch { throw refuse() }
+  try {
+    const opened = await handle.stat()
+    if (!opened.isFile()) throw refuse()
+    if (opened.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${opened.size} bytes, max ${MAX_FILE_BYTES})`)
+    return decodedContent(rel, await readHandleUpTo(handle, MAX_FILE_BYTES + 1))
+  } finally {
+    await handle.close()
+  }
+}
+
+/** `readFdUpTo` for a promise file handle. */
+export async function readHandleUpTo(handle: FileHandle, limit: number): Promise<Buffer> {
+  const buf = Buffer.alloc(limit)
+  let total = 0
+  for (let n = 1; n > 0 && total < limit; total += n) ({ bytesRead: n } = await handle.read(buf, total, limit - total, null))
+  return buf.subarray(0, total)
 }
 
 /** At most `limit` bytes from the descriptor's current offset, whatever its earlier fstat size; fewer only at end of file. */

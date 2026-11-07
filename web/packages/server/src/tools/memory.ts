@@ -1,14 +1,15 @@
 /** Memory panel files and saved prompts (Python `_handle_memory_read`, `_handle_memory_write`, saved prompts helpers). */
-import { closeSync, constants as fsConstants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs'
+import { access, readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { hmacHex, safeEqual, splitSigned } from '../auth/crypto.js'
-import { spawnSync } from 'node:child_process'
 import { dict, isDict, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { redactString } from '../redact.js'
 import { atomicWriteText } from '../fs/atomic.js'
+import type { GitRunner } from '../workspace/git.js'
 import { restoreMasks } from './memory-masks.js'
 import { str } from '../util.js'
 
@@ -18,9 +19,34 @@ const MAX_CONTEXT_BYTES = 20_000
 
 const truthy = (v: unknown): boolean => ['1', 'true', 'yes', 'on'].includes(str(v).trim().toLowerCase())
 
-function gitRoot(cwd: string): string | null {
-  const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 2_000, windowsHide: true })
-  return r.status === 0 && r.stdout.trim() ? resolve(r.stdout.trim()) : null
+/** Workspace path to its repository root, trusted while `.git` still marks that root as the nearest one. */
+const gitRoots = new Map<string, string>()
+const GIT_ROOTS_LIMIT = 256
+
+async function isNearestGitRoot(cwd: string, root: string): Promise<boolean> {
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    try {
+      await access(join(dir, '.git'))
+      return dir === root
+    } catch { /* keep climbing */ }
+    if (dir === root || dirname(dir) === dir) return false
+  }
+}
+
+async function gitRoot(cwd: string, git: GitRunner): Promise<string | null> {
+  const known = gitRoots.get(cwd)
+  if (known !== undefined && await isNearestGitRoot(cwd, known)) return known
+  gitRoots.delete(cwd)
+  try {
+    const { status, stdout } = await git.run(cwd, ['rev-parse', '--show-toplevel'], { timeoutMs: 2_000 })
+    if (status !== 0 || !stdout.trim()) return null
+    const root = resolve(stdout.trim())
+    if (gitRoots.size >= GIT_ROOTS_LIMIT) gitRoots.clear()
+    gitRoots.set(cwd, root)
+    return root
+  } catch {
+    return null
+  }
 }
 
 function stripFrontmatter(content: string): string {
@@ -35,17 +61,17 @@ function stripFrontmatter(content: string): string {
 }
 
 /** Python `_project_context_candidates` + `_read_active_project_context`. */
-export function readProjectContext(workspace: string | null): Dict {
+export async function readProjectContext(workspace: string | null, git: GitRunner): Promise<Dict> {
   const payload: Dict = { content: '', path: '', mtime: null, workspace: workspace ?? '', shadowed: [] }
   if (!workspace) return payload
   let cwd: string
   try {
     cwd = resolve(workspace)
-    if (!statSync(cwd).isDirectory()) return payload
+    if (!(await stat(cwd)).isDirectory()) return payload
   } catch {
     return payload
   }
-  const stopAt = gitRoot(cwd) ?? cwd
+  const stopAt = (await gitRoot(cwd, git)) ?? cwd
   const candidates: string[] = []
   let dir = cwd
   for (;;) {
@@ -56,21 +82,21 @@ export function readProjectContext(workspace: string | null): Dict {
   for (const name of CWD_NAMES) candidates.push(join(cwd, name))
   try {
     const rules = join(cwd, '.cursor', 'rules')
-    candidates.push(...readdirSync(rules).filter((n) => n.endsWith('.mdc')).sort().map((n) => join(rules, n)))
+    candidates.push(...(await readdir(rules)).filter((n) => n.endsWith('.mdc')).sort().map((n) => join(rules, n)))
   } catch { /* none */ }
   const seen = new Set<string>()
   const readable: { name: string; path: string; content: string; mtime: number }[] = []
   for (const candidate of candidates) {
     try {
-      if (!statSync(candidate).isFile()) continue
+      if (!(await stat(candidate)).isFile()) continue
       const real = resolve(candidate)
       const key = real.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
-      let content = stripFrontmatter(readFileSync(real, 'utf8'))
+      let content = stripFrontmatter(await readFile(real, 'utf8'))
       if (content.length > MAX_CONTEXT_BYTES) content = content.slice(0, MAX_CONTEXT_BYTES)
       if (!content.trim()) continue
-      readable.push({ name: real.split('/').pop() ?? real, path: real, content, mtime: statSync(real).mtimeMs / 1000 })
+      readable.push({ name: real.split('/').pop() ?? real, path: real, content, mtime: (await stat(real)).mtimeMs / 1000 })
     } catch { /* skip */ }
   }
   const active = readable[0]
@@ -89,9 +115,9 @@ export function externalNotesEnabled(env: Record<string, string | undefined>, co
 
 const NO_BYTES = Buffer.alloc(0)
 
-function readText(path: string | null): [Buffer, number | null] {
-  if (!path || !existsSync(path)) return [NO_BYTES, null]
-  try { return [readFileSync(path), statSync(path).mtimeMs / 1000] } catch { return [NO_BYTES, null] }
+async function readText(path: string | null): Promise<[Buffer, number | null]> {
+  if (!path) return [NO_BYTES, null]
+  try { return [await readFile(path), (await stat(path)).mtimeMs / 1000] } catch { return [NO_BYTES, null] }
 }
 
 /**
@@ -100,7 +126,7 @@ function readText(path: string | null): [Buffer, number | null] {
  */
 export const memoryRevision = (key: Buffer, raw: Buffer): string => createHmac('sha256', key).update('memory-revision\0').update(raw).digest('hex')
 
-export function readMemory(profileHome: string, config: Config, workspace: string | null, env: Record<string, string | undefined>, redact: boolean, key: Buffer): Dict {
+export async function readMemory(profileHome: string, config: Config, workspace: string | null, env: Record<string, string | undefined>, redact: boolean, key: Buffer, git: GitRunner): Promise<Dict> {
   const mem = dict(config.memory)
   const memoryEnabled = mem.memory_enabled === undefined ? true : truthy(mem.memory_enabled)
   const userEnabled = mem.user_profile_enabled === undefined ? true : truthy(mem.user_profile_enabled)
@@ -108,10 +134,7 @@ export function readMemory(profileHome: string, config: Config, workspace: strin
   const memFile = memoryEnabled ? join(memDir, 'MEMORY.md') : null
   const userFile = userEnabled ? join(memDir, 'USER.md') : null
   const soulFile = join(profileHome, 'SOUL.md')
-  const [memory, memoryMtime] = readText(memFile)
-  const [user, userMtime] = readText(userFile)
-  const [soul, soulMtime] = readText(soulFile)
-  const context = readProjectContext(workspace)
+  const [[memory, memoryMtime], [user, userMtime], [soul, soulMtime], context] = await Promise.all([readText(memFile), readText(userFile), readText(soulFile), readProjectContext(workspace, git)])
   const r = (t: Buffer | string): string => redactString(t.toString(), redact)
   return {
     memory: r(memory), user: r(user), soul: r(soul), project_context: r(str(context.content)),
