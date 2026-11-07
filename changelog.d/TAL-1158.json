@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Scheduled-task rows in Talaria Web now open their actions on right-click or long-press, so you can run, pause, edit, duplicate, or delete a job without opening it first.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
