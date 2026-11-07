@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Menus, dropdowns, popovers and dialogs in Talaria Web now grow in from where they open and fade out quickly, instead of appearing and disappearing in one frame.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

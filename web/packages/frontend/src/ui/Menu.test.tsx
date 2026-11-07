@@ -13,7 +13,7 @@ const IDS = Array.from({ length: 25 }, (_, i) => `row-${String(i + 1)}`)
 
 // jsdom has no layout: rows stack at ROW_HEIGHT inside a VIEW-tall scroller, and the observer runs when the test resizes it.
 let resize: (() => void) | null = null
-function layout() {
+function layout(scale = 1) {
   // Floating UI observes the anchor too; only the menu's scroller drives the reveal under test.
   vi.stubGlobal('ResizeObserver', class {
     constructor(private readonly callback: () => void) {}
@@ -25,10 +25,12 @@ function layout() {
     const index = IDS.indexOf(this.textContent ?? '')
     if (this.getAttribute('role') === 'menuitemradio' && index >= 0) {
       const scroller = this.closest<HTMLElement>('.overflow-y-auto')!
-      const top = VIEW.top + index * ROW_HEIGHT - scroller.scrollTop
-      return { top, bottom: top + ROW_HEIGHT, height: ROW_HEIGHT, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) }
+      const top = VIEW.top + (index * ROW_HEIGHT - scroller.scrollTop) * scale
+      const height = ROW_HEIGHT * scale
+      return { top, bottom: top + height, height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) }
     }
-    return { top: VIEW.top, bottom: VIEW.top + VIEW.height, height: VIEW.height, left: 0, right: 100, width: 100, x: 0, y: VIEW.top, toJSON: () => ({}) }
+    const height = VIEW.height * scale
+    return { top: VIEW.top, bottom: VIEW.top + height, height, left: 0, right: 100, width: 100, x: 0, y: VIEW.top, toJSON: () => ({}) }
   })
 }
 
@@ -50,6 +52,15 @@ describe('Menu', () => {
     expect(screen.getByRole('menu')).toContainElement(screen.getByRole('textbox', { name: 'Filter' }))
     // row-20 starts 380 px into the list; centring it in a 100 px view scrolls to 380 - 40.
     expect(scroller.scrollTop).toBe(340)
+  })
+
+  it('centres the checked row as exactly while the popup is still growing from its starting scale', async () => {
+    layout(0.96)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(VIEW.height)
+    render(<LongMenu value="row-20" header />)
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }))
+    const scroller = (await screen.findByRole('menuitemradio', { name: 'row-20' })).closest<HTMLElement>('.overflow-y-auto')!
+    expect(scroller.scrollTop).toBeCloseTo(340)
   })
 
   it('scrolls a header-less menu itself and keeps the highlighted row in view when it resizes', async () => {

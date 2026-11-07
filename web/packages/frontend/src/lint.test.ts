@@ -21,6 +21,11 @@ const fixtures: Record<string, [source: string, reported: string[]]> = {
   [`${app}/useCallback.ts`]: ["import { useCallback as cached } from 'react'\nexport { cached }", [SYNTAX]],
   [`${app}/reactMember.ts`]: ["import * as React from 'react'\nexport const memo = React.useMemo", [SYNTAX]],
   [`${app}/nonNull.ts`]: ['export const first = (xs: string[]) => xs[0]!', ['typescript(no-non-null-assertion)']],
+  // TAL-1784: every Base UI popup and backdrop shares one motion; the identifiers are `ui/popupMotion.ts`'s and `POPUP`/`BACKDROP`.
+  [`${app}/popup.tsx`]: ["import { Dialog } from '@base-ui/react/dialog'\nexport const Bad = () => <Dialog.Popup className=\"rounded\" />", [SYNTAX]],
+  [`${app}/popupNoClass.tsx`]: ["import { Popover } from '@base-ui/react/popover'\nexport const Bad = () => <Popover.Popup />", [SYNTAX]],
+  [`${app}/backdrop.tsx`]: ["import { Dialog } from '@base-ui/react/dialog'\nexport const Bad = () => <Dialog.Backdrop className=\"fixed\" />", [SYNTAX]],
+  [`${app}/popupMotion.tsx`]: ["import { Dialog } from '@base-ui/react/dialog'\nimport { cn } from '../../ui/cn'\nimport { BACKDROP_MOTION, DIALOG_MOTION } from '../../ui/popupMotion'\nexport const Good = () => <Dialog.Popup className={cn('rounded', DIALOG_MOTION)}><Dialog.Backdrop className={BACKDROP_MOTION} /></Dialog.Popup>", []],
   [`${app}/hooks.ts`]: ["import { memo, useState } from 'react'\nexport { memo, useState }", []],
   // Exemptions: the typed network client, the uncompiled virtualizer (DOM sinks stay forbidden), and test code.
   'packages/frontend/src/api/client.ts': ["export const load = () => fetch('/x')", []],

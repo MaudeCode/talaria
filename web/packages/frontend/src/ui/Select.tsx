@@ -2,6 +2,7 @@ import { Select as BaseSelect } from '@base-ui/react/select'
 import { Check, ChevronDown } from 'lucide-react'
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { cn } from './cn'
+import { POPUP_MOTION } from './popupMotion'
 
 interface Opt { value: string; label: ReactNode; disabled: boolean }
 interface Group { label: ReactNode; options: Opt[] }
@@ -53,7 +54,7 @@ export function Select({ value, onValueChange, children, id, disabled, className
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
         <BaseSelect.Positioner sideOffset={4} alignItemWithTrigger={false} className="z-[1400] outline-none">
-          <BaseSelect.Popup className="max-h-[min(60vh,360px)] min-w-(--anchor-width) overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none">
+          <BaseSelect.Popup className={cn('max-h-[min(60vh,360px)] min-w-(--anchor-width) overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none', POPUP_MOTION)}>
             {entries.map((e, i) => ('options' in e
               ? <BaseSelect.Group key={i}><BaseSelect.GroupLabel className="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{e.label}</BaseSelect.GroupLabel>{e.options.map(item)}</BaseSelect.Group>
               : item(e)))}

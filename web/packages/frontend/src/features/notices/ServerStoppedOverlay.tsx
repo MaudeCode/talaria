@@ -4,6 +4,8 @@ import { AlertDialog } from '@base-ui/react/alert-dialog'
 import { m } from '../../paraglide/messages.js'
 import { getStreamState, subscribe } from '../../stream/store'
 import { Button } from '../../ui/Button'
+import { cn } from '../../ui/cn'
+import { DIALOG_MOTION } from '../../ui/popupMotion'
 import { markServerStopped, recheckServer, RetryCountdown, retryDelay, STOPPED_AFTER, useServerProbe } from './useRuntimeNotices'
 
 /** Tabs of this origin tell each other when the server stops answering and when it answers again. */
@@ -43,11 +45,10 @@ export function ServerStoppedOverlay({ suppressed }: { suppressed: boolean }) {
   const { refetch } = probe
   useEffect(() => { if (reconnecting && online) void refetch() }, [reconnecting, online, refetch])
 
-  if (!stopped || suppressed) return null
   return (
-    <AlertDialog.Root open>
+    <AlertDialog.Root open={stopped && !suppressed}>
       <AlertDialog.Portal>
-        <AlertDialog.Popup className="fixed inset-0 z-[1500] flex flex-col items-center justify-center gap-3 bg-bg p-6 text-center text-text outline-none">
+        <AlertDialog.Popup className={cn('fixed inset-0 z-[1500] flex flex-col items-center justify-center gap-3 bg-bg p-6 text-center text-text outline-none', DIALOG_MOTION)}>
           <AlertDialog.Title className="text-lg font-semibold text-strong">{m.server_stopped_title()}</AlertDialog.Title>
           <AlertDialog.Description className="max-w-sm text-sm text-muted">{m.server_stopped_detail()}</AlertDialog.Description>
           <Button variant="primary" className="mt-2" onClick={retry}>{m.retry()}</Button>

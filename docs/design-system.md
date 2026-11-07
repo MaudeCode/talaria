@@ -196,7 +196,7 @@ ask for an action. No other state wears a frame.
 | Chat transcript (bubbles, tool and thinking rows, worklog) | Keeps its conversation hierarchy | `web/DESIGN.md`, `web/docs/UIUX-GUIDE.md`; the App mirrors Web's transcript |
 | Composer | The one floating card | `web/docs/UIUX-GUIDE.md`, "Composer and controls" |
 | Kanban | Cards stay because it is a board; their chrome (type, chips, spacing, colours) follows this document | TAL-1769 |
-| Dialogs, menus, popovers, sheets | Interaction surfaces, not content containers | Platform defaults |
+| Dialogs, menus, popovers, sheets | Interaction surfaces, not content containers. Web motion comes only from `ui/popupMotion.ts`: every Base UI popup and backdrop uses its shared classes, opens slower than it closes, takes clicks from the first frame, and only fades under reduced motion | Platform defaults |
 | Widgets and Live Activities | System layouts with the shared meter and palette | `app/Talaria/Models/ProviderQuotaWidget*.swift` |
 
 ## 12. Known deviations in the reference

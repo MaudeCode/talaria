@@ -1,7 +1,8 @@
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { AlertDialog as BaseAlertDialog } from '@base-ui/react/alert-dialog'
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { cn } from './cn'
+import { BACKDROP_MOTION, DIALOG_MOTION, playExitOnUnmount } from './popupMotion'
 
 export interface DialogProps {
   open: boolean
@@ -16,16 +17,25 @@ export interface DialogProps {
   finalFocus?: BaseDialog.Popup.Props['finalFocus']
 }
 
+/** A closing dialog keeps what it last showed through its exit: its parent has usually cleared those values already. */
+const HeldWhileClosing = memo(function HeldWhileClosing({ children }: { open: boolean; children: ReactNode }) {
+  return children
+}, (_, next) => !next.open)
+
+const BACKDROP = cn('fixed inset-0 z-[1300] bg-black/50', BACKDROP_MOTION)
+
 /** Modal dialog: focus trap, escape, backdrop click, and aria wiring via Base UI. */
 export function Dialog({ open, onOpenChange, title, description, children, className, titleClassName, finalFocus }: DialogProps) {
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseDialog.Portal>
-        <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/50" />
-        <BaseDialog.Popup finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', className)}>
-          <BaseDialog.Title className={cn('text-strong [overflow-wrap:anywhere]', titleClassName ?? 'text-base font-semibold')}>{title}</BaseDialog.Title>
-          {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}
-          <div className="mt-4">{children}</div>
+        <BaseDialog.Backdrop ref={playExitOnUnmount} className={BACKDROP} />
+        <BaseDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
+          <HeldWhileClosing open={open}>
+            <BaseDialog.Title className={cn('text-strong [overflow-wrap:anywhere]', titleClassName ?? 'text-base font-semibold')}>{title}</BaseDialog.Title>
+            {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}
+            <div className="mt-4">{children}</div>
+          </HeldWhileClosing>
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>
@@ -68,16 +78,18 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
   return (
     <BaseAlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseAlertDialog.Portal>
-        <BaseAlertDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/50" />
-        <BaseAlertDialog.Popup finalFocus={finalFocus} className="fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
-          <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
-          {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
-          {children}
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
-            <BaseAlertDialog.Close className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm hover:bg-hover">{cancelLabel}</BaseAlertDialog.Close>
-            {alternate && action(alternate.label, true, alternate.onConfirm)}
-            {action(confirmLabel, danger, onConfirm)}
-          </div>
+        <BaseAlertDialog.Backdrop ref={playExitOnUnmount} className={BACKDROP} />
+        <BaseAlertDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION)}>
+          <HeldWhileClosing open={open}>
+            <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
+            {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
+            {children}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <BaseAlertDialog.Close className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm hover:bg-hover">{cancelLabel}</BaseAlertDialog.Close>
+              {alternate && action(alternate.label, true, alternate.onConfirm)}
+              {action(confirmLabel, danger, onConfirm)}
+            </div>
+          </HeldWhileClosing>
         </BaseAlertDialog.Popup>
       </BaseAlertDialog.Portal>
     </BaseAlertDialog.Root>
