@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web opens chats with many images faster because it no longer rechecks each image on every read.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -924,6 +924,70 @@ describe('redactSessionData', () => {
   }, 30_000)
 })
 
+describe('raster data URI verdict memo (TAL-1738)', () => {
+  const MEMO_ENTRIES = 256
+  const MEMO_CHARS = 256 * 1024 * 1024
+  const validJpeg = (seed: string): string => dataUri('image/jpeg', jpeg(Buffer.from(seed)))
+  /** Base64 decodes during `run`, one per image that actually had to be verified. */
+  const decodes = (run: () => void): number => {
+    const from = vi.spyOn(Buffer, 'from')
+    try {
+      run()
+      return (from.mock.calls as unknown[][]).filter(([, encoding]) => encoding === 'base64').length
+    } finally {
+      from.mockRestore()
+    }
+  }
+
+  it('verifies each distinct image once across repeated session redaction', () => {
+    const urls = Array.from({ length: 20 }, (_, index) => validJpeg(`session-${index % 5}`))
+    const session = { messages: urls.map((url) => ({ role: 'user', content: [{ type: 'image_url', image_url: { url } }] })) }
+    const shown = (data: Record<string, unknown>): unknown[] => (data.messages as { content: { image_url: { url: string } }[] }[]).map((m) => m.content[0]!.image_url.url)
+    let first: Record<string, unknown> = {}
+    let second: Record<string, unknown> = {}
+    expect(decodes(() => { first = redactSessionData(session, true); second = redactSessionData(session, true) })).toBe(5)
+    expect(shown(first), 'the first pass exempts every image').toEqual(urls)
+    expect(shown(second), 'a memoized verdict still exempts every image').toEqual(urls)
+  })
+
+  it('re-verifies a changed payload and remembers a rejection', () => {
+    const url = validJpeg('changed-payload')
+    expect(isRasterDataUri(url)).toBe(true)
+    const changed = `${url.slice(0, -4)}AAAA`
+    let verdict = true
+    expect(decodes(() => { verdict = isRasterDataUri(changed) }), 'a changed payload is decoded').toBe(1)
+    expect(verdict, 'a changed payload gets its own verdict').toBe(false)
+    expect(decodes(() => { verdict = isRasterDataUri(changed) }), 'a rejection is memoized').toBe(0)
+    expect(verdict, 'a memoized rejection stays rejected').toBe(false)
+    expect(decodes(() => { verdict = isRasterDataUri(url) }), 'the original keeps its verdict').toBe(0)
+    expect(verdict).toBe(true)
+  })
+
+  it('keeps 256 verdicts and evicts the least recently used', () => {
+    const urls = Array.from({ length: MEMO_ENTRIES }, (_, index) => validJpeg(`entry-${index}`))
+    for (const url of urls) isRasterDataUri(url)
+    expect(decodes(() => { for (const url of urls) isRasterDataUri(url) }), 'all 256 fit').toBe(0)
+    // Reading refreshed them in order, so urls[0] is now oldest; touching it makes urls[1] the next eviction.
+    isRasterDataUri(urls[0])
+    expect(decodes(() => { isRasterDataUri(validJpeg('entry-257')) })).toBe(1)
+    expect(decodes(() => { isRasterDataUri(urls[0]) }), 'a read entry survives').toBe(0)
+    expect(decodes(() => { isRasterDataUri(urls[1]) }), 'the 257th verdict evicted the oldest').toBe(1)
+  })
+
+  it('bounds the characters it retains, and never retains one oversized image', () => {
+    const large = (fill: string, chars: number): string => `data:image/png;base64,${fill.repeat(chars)}`
+    const oversized = large('A', MEMO_CHARS)
+    expect(decodes(() => { isRasterDataUri(oversized); isRasterDataUri(oversized) }), 'an oversized image is not retained').toBe(2)
+    const [first, second, third] = ['B', 'C', 'D'].map((fill) => large(fill, MEMO_CHARS / 2 - 64)) as [string, string, string]
+    isRasterDataUri(first)
+    isRasterDataUri(second)
+    expect(decodes(() => { isRasterDataUri(first); isRasterDataUri(second) }), 'both fit the budget').toBe(0)
+    isRasterDataUri(third)
+    expect(decodes(() => { isRasterDataUri(second) }), 'the newer entry survives').toBe(0)
+    expect(decodes(() => { isRasterDataUri(first) }), 'the third image pushed out the oldest').toBe(1)
+  }, 30_000)
+})
+
 describe('JPEG trailers in a raster data URI (TAL-1920)', () => {
   type SefEntry = [kind: number, offset: number, size: number]
   const sefBlock = (kind: number, name: string, payload = Buffer.alloc(0), declaredNameLength = name.length): Buffer => Buffer.concat([u16le(0), u16le(kind), u32le(declaredNameLength), Buffer.from(name, 'latin1'), payload])

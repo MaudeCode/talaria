@@ -6,6 +6,8 @@ import { crc32 } from 'node:zlib'
  * not enough. The whole canonical base64 payload is decoded and the image format must account for every byte, a JPEG's
  * through its declared MPF pictures and one Samsung SEF trailer; any malformed, ambiguous, or trailing content falls
  * through to normal redaction.
+ *
+ * The verdict depends only on the string, so each session read reuses it instead of paying for the decode again.
  */
 export function isRasterDataUri(value: unknown): boolean {
   if (typeof value !== 'string') return false
@@ -14,10 +16,35 @@ export function isRasterDataUri(value: unknown): boolean {
   if (!match) return false
   const payload = value.slice(match[0].length)
   if (!payload) return false
+  const memoized = verdicts.get(value)
+  if (memoized !== undefined) {
+    verdicts.delete(value)
+    verdicts.set(value, memoized)
+    return memoized
+  }
   const raw = Buffer.from(payload, 'base64')
   // `Buffer.from` skips foreign characters and tolerates missing padding; the round trip accepts only canonical base64.
-  if (raw.toString('base64') !== payload) return false
-  return match[1](raw)
+  const verdict = raw.toString('base64') === payload && match[1](raw)
+  rememberVerdict(value, verdict)
+  return verdict
+}
+
+/** Least recently used first. The keys are whole images, so the entry cap alone could pin gigabytes of evicted sessions. */
+const verdicts = new Map<string, boolean>()
+const VERDICTS_MAX = 256
+const VERDICTS_MAX_CHARS = 256 * 1024 * 1024
+let verdictChars = 0
+
+function rememberVerdict(value: string, verdict: boolean): void {
+  if (value.length > VERDICTS_MAX_CHARS) return
+  while (verdicts.size >= VERDICTS_MAX || verdictChars + value.length > VERDICTS_MAX_CHARS) {
+    const oldest = verdicts.keys().next()
+    if (oldest.done) break
+    verdictChars -= oldest.value.length
+    verdicts.delete(oldest.value)
+  }
+  verdicts.set(value, verdict)
+  verdictChars += value.length
 }
 
 function isCompletePng(raw: Buffer): boolean {
