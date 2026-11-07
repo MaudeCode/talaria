@@ -86,7 +86,7 @@ describe('the gateway restart waits (TAL-1707)', () => {
     expect(io.spawns).toBe(2)
   })
 
-  it('re-probe a pid they saw die or stopped watching, so a reused pid is not taken for the gateway', async () => {
+  it('re-probe a pid they saw die, so a reused pid is not taken for the gateway', async () => {
     const dir = home()
     const now = Date.now() / 1000
     writeRecord(dir, STARTED_MS)
@@ -98,9 +98,17 @@ describe('the gateway restart waits (TAL-1707)', () => {
     io.lstart = new Date(OTHER_START_MS).toString()
     expect(await liveGateways(dir, dir, now + 2)).toEqual([])
     expect(io.spawns).toBe(2)
-    // No poll saw the change: a long gap between polls cannot vouch for the pid either.
-    io.lstart = new Date(STARTED_MS).toString()
-    expect(await liveGateways(dir, dir, now + 2 + 61)).toHaveLength(1)
-    expect(io.spawns).toBe(3)
+  })
+
+  it('re-verify a pid every poll keeps seeing alive, so one reused between two polls is caught within a minute', async () => {
+    const dir = home()
+    const now = Date.now() / 1000
+    writeRecord(dir, STARTED_MS)
+    expect(await liveGateways(dir, dir, now)).toHaveLength(1)
+    io.lstart = new Date(OTHER_START_MS).toString()
+    for (const elapsed of [10, 20, 30, 40, 50]) expect(await liveGateways(dir, dir, now + elapsed)).toHaveLength(1)
+    expect(io.spawns).toBe(1)
+    expect(await liveGateways(dir, dir, now + 60)).toEqual([])
+    expect(io.spawns).toBe(2)
   })
 })

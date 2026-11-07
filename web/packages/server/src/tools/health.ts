@@ -118,8 +118,8 @@ export function systemHealth(home: string, runtime: Dict): Dict {
 
 const REMOTE_PROBE_TIMEOUT_MS = 2000
 const GATEWAY_PROBE_CACHE_TTL_S = 5
-/** How long a memoized start time survives no probe: a pid watched less often than this could have died and been reused unseen. */
-const START_TIME_MEMO_GAP_S = 60
+/** How long a memoized start time answers before `ps` checks the pid's identity again; also how long a pid reused between two probes can pass for the gateway. */
+const START_TIME_MEMO_TTL_S = 60
 const REMOTE_PROBE_PATHS = ['/health/detailed', '/health', '/v1/health']
 const REMOTE_PROBE_BODY_LIMIT_BYTES = 64 * 1024
 const DASHBOARD_PROBE_BODY_LIMIT_BYTES = 64 * 1024
@@ -242,23 +242,21 @@ export async function processStartTime(pid: number): Promise<number | null> {
   })
 }
 
-const startTimes = new Map<string, { pid: number; signature: string; startTime: number; seenAt: number }>()
+const startTimes = new Map<string, { pid: number; signature: string; startTime: number; checkedAt: number }>()
 
 /**
- * TAL-1707: `processStartTime` for the pid a record at `pidPath` names, `ps` running once per record. A live process never
- * changes its start time and a new gateway rewrites the record, but a dead gateway's pid can be reused under an unchanged
- * record: the memo holds only while probes keep seeing the pid alive (`gatewayHealthAt` drops it when they do not).
+ * TAL-1707: `processStartTime` for the pid a record at `pidPath` names, `ps` running at most once a minute per record. A
+ * live process never changes its start time and a new gateway rewrites the record, but a dead gateway's pid can be reused
+ * under an unchanged record, even between two probes that each see it alive: the memo expires however often it is read,
+ * and `gatewayHealthAt` drops it when a probe sees the pid dead.
  */
 async function recordedProcessStartTime(pidPath: string, pid: number, now: number): Promise<number | null> {
   const signature = statSignature(pidPath)
   const memo = startTimes.get(pidPath)
-  if (signature !== null && memo?.pid === pid && memo.signature === signature && now - memo.seenAt <= START_TIME_MEMO_GAP_S) {
-    memo.seenAt = now
-    return memo.startTime
-  }
+  if (signature !== null && memo?.pid === pid && memo.signature === signature && now - memo.checkedAt < START_TIME_MEMO_TTL_S) return memo.startTime
   const startTime = await processStartTime(pid)
   if (startTime === null || signature === null) startTimes.delete(pidPath)
-  else startTimes.set(pidPath, { pid, signature, startTime, seenAt: now })
+  else startTimes.set(pidPath, { pid, signature, startTime, checkedAt: now })
   return startTime
 }
 
