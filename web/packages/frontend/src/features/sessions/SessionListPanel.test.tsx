@@ -34,7 +34,7 @@ const row = (session_id: string, title: string, extra: Partial<SessionRow> = {})
 const alpha = row('alpha', 'Alpha zebra', { project_id: 'p1' })
 const delta = row('delta', 'Delta', { project_id: 'p1' })
 const other = row('other', 'Other zebra')
-const cli = row('cli', 'Cli zebra', { project_id: 'p1', is_cli_session: true, source_kind: 'cli' })
+const cli = row('cli', 'Cli zebra', { project_id: 'p1', is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli' })
 const shown = () => [...document.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))
 const openFilters = async () => {
   await userEvent.click(await screen.findByRole('button', { name: /^Chat filters/ }))
@@ -124,8 +124,8 @@ describe('SessionListPanel search (TAL-308)', () => {
 describe('nested subagent rows (TAL-1151)', () => {
   const parent = row('web-parent', 'Plan the release', { project_id: 'p1', sort_ts: now - 100 })
   const child = row('sub-web', 'Subagent Session', { project_id: 'p1', sort_ts: now - 50, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'web-parent' })
-  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sort_ts: now - 200 })
-  const cliChild = row('sub-cli', 'Subagent Session', { sort_ts: now - 20, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'cli-host' })
+  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli', sort_ts: now - 200 })
+  const cliChild = row('sub-cli', 'Subagent Session', { sort_ts: now - 20, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'cli-host', sidebar_source: 'cli' })
   const orphan = row('sub-orphan', 'Subagent Session', { sort_ts: now - 10, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: null })
   const nested = () => [...document.querySelectorAll('.session-item-nested')].map((el) => el.getAttribute('data-sid'))
 
@@ -166,6 +166,39 @@ describe('nested subagent rows (TAL-1151)', () => {
     await userEvent.type(screen.getByRole('searchbox'), 'session')
     await waitFor(() => { expect(shown()).toEqual(['web-parent', 'sub-web', 'sub-orphan']) })
     expect(nested()).toEqual(['sub-web'])
+  })
+})
+
+describe('source tabs read the server verdict (TAL-1863)', () => {
+  const subagent = { source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, is_cli_session: false } as const
+  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli', sort_ts: now - 200 })
+  const nestedChild = row('sub-nested', 'Subagent Session', { ...subagent, sort_ts: now - 20, sidebar_parent_session_id: 'cli-host', sidebar_source: 'cli' })
+  const orphanedChild = row('sub-orphaned', 'Subagent Session', { ...subagent, sort_ts: now - 10, sidebar_parent_session_id: null, sidebar_source: 'cli' })
+  const renderPanel = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+
+  it('files a child of an unlisted CLI parent as a root in the CLI tab, with the count matching the rows', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphanedChild, other], webui_session_count: 1, cli_session_count: 1 } as never)
+    renderPanel()
+    await screen.findByText('Other zebra')
+    expect(shown()).toEqual(['other'])
+    await pick('CLI sessions (1)')
+    expect(shown()).toEqual(['sub-orphaned'])
+    expect(document.querySelector('.session-item-nested')).toBeNull()
+    await pick('WebUI sessions (1)')
+    expect(shown()).toEqual(['other'])
+  })
+
+  it('takes an archived CLI root and its nested row off the CLI count at once, and leaves the child of an unlisted parent', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphanedChild, nestedChild, host, other], webui_session_count: 1, cli_session_count: 3 } as never)
+    vi.mocked(api.archiveSession).mockReturnValue(new Promise(() => undefined) as never)
+    renderPanel()
+    await screen.findByText('Other zebra')
+    await pick('CLI sessions (3)')
+    await userEvent.click(within(document.querySelector<HTMLElement>('[data-sid="cli-host"]')!).getByRole('button', { name: 'Archive' }))
+    expect(shown()).toEqual(['sub-orphaned'])
+    const menu = await openFilters()
+    expect(within(menu).getByRole('menuitemradio', { name: 'CLI sessions (1)' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitemradio', { name: 'WebUI sessions (1)' })).toBeInTheDocument()
   })
 })
 

@@ -1709,6 +1709,87 @@ describe('subagent sessions nest under their parent (TAL-1151)', () => {
   })
 })
 
+describe('a subagent files with its parent when the parent is not listed (TAL-1863)', () => {
+  const boot = async (): Promise<{ s: TestServer; db: DatabaseSync }> => {
+    const s = await bootTestServer()
+    const db = createStateDb(join(s.state, 'state.db'))
+    onTestFinished(async () => { db.close(); await s.close() })
+    await s.deps.settings.save({ show_cli_sessions: true })
+    return { s, db }
+  }
+  const chat = (db: DatabaseSync, id: string, source: string, at: number, parent: string | null = null): void => {
+    insertSession(db, { id, source, started_at: at, title: id, parent, messages: [['user', at + 1], ['assistant', at + 2]] })
+  }
+  const list = async (s: TestServer, query = ''): Promise<{ rows: Record<string, Json>; ids: string[]; cli: unknown; webui: unknown }> => {
+    const body = await json(await s.get(`/api/sessions${query}`))
+    const sessions = body.sessions as Json[]
+    return { rows: Object.fromEntries(sessions.map((r): [string, Json] => [str(r.session_id), r])), ids: sessions.map((r) => str(r.session_id)), cli: body.cli_session_count, webui: body.webui_session_count }
+  }
+
+  it('keeps a child in the CLI tab after its CLI parent is archived', async () => {
+    const { s, db } = await boot()
+    chat(db, 'cli-parent', 'cli', 1000)
+    chat(db, 'sub-child', 'subagent', 1100, 'cli-parent')
+    s.deps.cliSessions.invalidate()
+    const archived = await s.get('/api/session/archive', { method: 'POST', body: JSON.stringify({ session_id: 'cli-parent', archived: true }), headers: { 'content-type': 'application/json' } })
+    expect(archived.status).toBe(200)
+    const shown = await list(s)
+    expect(shown.ids).not.toContain('cli-parent')
+    expect([shown.cli, shown.webui]).toEqual([1, 0])
+    expect(shown.rows['sub-child']).toMatchObject({ sidebar_source: 'cli', sidebar_parent_session_id: null, is_cli_session: false, read_only: true })
+    expect((await list(s, '?sidebar_source=cli')).ids).toEqual(['sub-child'])
+    expect((await list(s, '?sidebar_source=webui')).ids).toEqual([])
+    const withArchived = await list(s, '?include_archived=1')
+    expect(withArchived.rows['sub-child']).toMatchObject({ sidebar_source: 'cli', sidebar_parent_session_id: 'cli-parent' })
+    expect([withArchived.cli, withArchived.webui]).toEqual([2, 0])
+  })
+
+  it('keeps a child in the CLI tab when its parent is past the CLI window', async () => {
+    const { s, db } = await boot()
+    chat(db, 'old-parent', 'cli', 1000)
+    for (let i = 0; i < 25; i += 1) chat(db, `newer-${i}`, 'cli', 2000 + i * 10)
+    chat(db, 'sub-child', 'subagent', 3000, 'old-parent')
+    s.deps.cliSessions.invalidate()
+    const shown = await list(s)
+    expect(shown.ids).not.toContain('old-parent')
+    // The state.db window holds the child and the 19 newest CLI chats.
+    expect([shown.cli, shown.webui]).toEqual([20, 0])
+    expect(shown.rows['sub-child']).toMatchObject({ sidebar_source: 'cli', sidebar_parent_session_id: null, parent_source: 'cli', is_cli_session: false, read_only: true })
+  })
+
+  it('falls back to parent_source through a nested chain and never to a source it cannot resolve', async () => {
+    const { s, db } = await boot()
+    // An untitled single-turn CLI row stays out of the sidebar window, so only the child's `parent_source` names it.
+    insertSession(db, { id: 'cli-unlisted', source: 'cli', started_at: 1000, messages: [['user', 1001]], ended_at: 1002, end_reason: 'cli_close' })
+    chat(db, 'sub-mid', 'subagent', 1100, 'cli-unlisted')
+    chat(db, 'sub-leaf', 'subagent', 1200, 'sub-mid')
+    chat(db, 'sub-orphan', 'subagent', 1300, 'no-such-parent')
+    chat(db, 'sub-rootless', 'subagent', 1400)
+    s.deps.cliSessions.invalidate()
+    const { rows, cli, webui } = await list(s)
+    expect(Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, r.sidebar_source]))).toEqual({ 'sub-mid': 'cli', 'sub-leaf': 'cli', 'sub-orphan': 'webui', 'sub-rootless': 'webui' })
+    expect([cli, webui]).toEqual([2, 2])
+  })
+
+  it('counts a child with its listed parent, through a nested chain, in either source', async () => {
+    const { s, db } = await boot()
+    await s.deps.sessionStore.save(new Session({ session_id: 'web-parent', title: 'Web parent', messages: [{ role: 'user', content: 'go', timestamp: 1001 }, { role: 'assistant', content: 'ok', timestamp: 1002 }] }, { workspace: s.state, model: null }))
+    chat(db, 'web-parent', 'webui', 1000)
+    chat(db, 'sub-web', 'subagent', 1100, 'web-parent')
+    chat(db, 'sub-web-nested', 'subagent', 1200, 'sub-web')
+    chat(db, 'cli-parent', 'cli', 1300)
+    chat(db, 'sub-cli', 'subagent', 1400, 'cli-parent')
+    chat(db, 'sub-cli-nested', 'subagent', 1500, 'sub-cli')
+    s.deps.cliSessions.invalidate()
+    const { rows, cli, webui } = await list(s)
+    expect(Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, [r.sidebar_source, r.sidebar_parent_session_id]]))).toEqual({
+      'web-parent': ['webui', null], 'sub-web': ['webui', 'web-parent'], 'sub-web-nested': ['webui', 'web-parent'],
+      'cli-parent': ['cli', null], 'sub-cli': ['cli', 'cli-parent'], 'sub-cli-nested': ['cli', 'cli-parent'],
+    })
+    expect([cli, webui]).toEqual([3, 3])
+  })
+})
+
 describe('gateway session feeds under person isolation (TAL-48)', () => {
   it('names only sessions the signed-in person may see, initially and live', async () => {
     const issuer = 'https://identity.invalid'

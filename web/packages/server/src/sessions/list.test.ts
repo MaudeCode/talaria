@@ -6,6 +6,7 @@ import * as sessionRows from './storage/row.js'
 import { bootTestServer } from '../test/harness.js'
 import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage } from '../test/storage.js'
 import { Session } from './session.js'
+import { str } from '../util.js'
 
 useJsonStorage()
 
@@ -114,6 +115,33 @@ describe('nested subagent rows (TAL-1151)', () => {
   })
 })
 
+describe('sidebar_source per profile (TAL-1863)', () => {
+  const row = (session_id: string, profile: string, source: string, at: number, parent?: string): Row => ({ session_id, profile, title: session_id, source_tag: source, raw_source: source, session_source: source, message_count: 2, updated_at: at, last_message_at: at, ...(parent ? { parent_session_id: parent } : {}) })
+  // The same parent id is a CLI chat in one profile and a Web chat in the other; another CLI parent exists only in `work`.
+  const rows = [
+    row('shared', 'default', 'cli', 10), row('shared', 'work', 'webui', 11), row('work-only', 'work', 'cli', 12),
+    row('child-default', 'default', 'subagent', 20, 'shared'), row('child-work', 'work', 'subagent', 21, 'shared'), row('child-foreign', 'default', 'subagent', 22, 'work-only'),
+  ]
+  const sources = async (activeProfile: string, allProfiles: boolean) => {
+    const server = await bootTestServer()
+    try {
+      const params: ListParams = {
+        webuiRows: rows, cliRows: [], activeProfile, allProfiles, includeArchived: false, excludeHidden: false, visibleOnly: false, showCliSessions: true, showClaudeCodeSessions: false,
+        showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false, requestVisibilityOverrides: false, sidebarSource: null,
+        archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
+      }
+      const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
+      return Object.fromEntries(sessions.filter((r) => str(r.session_id).startsWith('child-')).map((r): [string, unknown] => [str(r.session_id), r.sidebar_source]))
+    } finally { await server.close() }
+  }
+
+  it('resolves each child only within its own profile, in all-profiles and single-profile lists', async () => {
+    expect(await sources('default', true)).toEqual({ 'child-default': 'cli', 'child-work': 'webui', 'child-foreign': 'webui' })
+    expect(await sources('default', false)).toEqual({ 'child-default': 'cli', 'child-foreign': 'webui' })
+    expect(await sources('work', false)).toEqual({ 'child-work': 'webui' })
+  })
+})
+
 describe('sidebar groups (TAL-1534)', () => {
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
   const body = (stored: Row[]) => sessionListResponse({ sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload, overlay, false, 0, () => null).body
@@ -201,7 +229,7 @@ describe('parent snapshot lookup (TAL-1219)', () => {
         showKanbanSessions: false, requestVisibilityOverrides: true, sidebarSource: null,
         archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
       }
-      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false, sidebar_parent_session_id: null }))
+      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false, sidebar_parent_session_id: null, sidebar_source: 'webui' }))
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
       expect(load).toHaveBeenCalledTimes(indexed && !legacy ? 0 : 1)
       if (!indexed || legacy) expect(load).toHaveBeenCalledWith(legacy ? 'legacy_parent' : 'missing_parent')
