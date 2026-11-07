@@ -1,5 +1,4 @@
 import type { Page } from '@playwright/test'
-import { defaultParseSearch } from '@tanstack/react-router'
 import { ProjectStore } from '../../server/dist/projects.js'
 import { JsonDocuments } from '../../server/dist/sessions/storage/json-documents.js'
 import { openServerState } from './server'
@@ -13,7 +12,7 @@ const serverProject = async (page: Page, id: string) => ((await (await page.requ
 
 test('a project saves chat defaults and its new chat starts on them', async ({ page, errors }, testInfo) => {
   const suffix = testInfo.project.name
-  // Numeric IDs exercise the router's string-preserving URL encoding deterministically.
+  // A generated hex ID can read as a JSON number; these numeric IDs prove the URL still carries it bare.
   const id = suffix === 'mobile' ? '589985371805' : '589985371806'
   const projects = new ProjectStore(new JsonDocuments(openServerState()), () => [])
   await projects.mutate((rows) => {
@@ -81,7 +80,7 @@ test('a project saves chat defaults and its new chat starts on them', async ({ p
 
   // New chat starts in the project on its defaults; only the project goes to the server, which applies them.
   await menuItem('New chat')
-  await expect(page).toHaveURL((url) => (defaultParseSearch(url.search) as Record<string, unknown>).project === id)
+  await expect(page).toHaveURL(new RegExp(`[?&]project=${id}`))
   if (await hamburger.isVisible()) await page.keyboard.press('Escape')
   // A phone shows the composer chips once the prompt has focus.
   await page.locator('#msg').click()

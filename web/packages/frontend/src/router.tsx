@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { routeTree } from './routeTree.gen'
 import { routerBasepath } from './lib/appRoot'
 import type { Bootstrap } from './contracts/bootstrap'
+import { parseAppSearch, stringifyAppSearch } from './contracts/url'
 import type { RouterContext } from './routes/__root'
 import { NotFound, RouteError } from './features/shell/ErrorBoundary'
 
@@ -15,6 +16,8 @@ export interface CreateRouterOptions {
 export function getRouter(opts?: CreateRouterOptions) {
   return createRouter({
     routeTree,
+    parseSearch: parseAppSearch,
+    stringifySearch: stringifyAppSearch,
     basepath: opts?.root ? routerBasepath(opts.root) : '/',
     // The prerender (SSR shell) calls getRouter() without options; the client always passes them.
     context: { queryClient: opts?.queryClient, bootstrap: opts?.bootstrap } as unknown as RouterContext,
