@@ -9,6 +9,7 @@ import type { UpdateNotification, UpdateNotifications } from '../../contracts'
 import { isApiError } from '../../contracts/common'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
+import { BACKDROP_MOTION, DIALOG_MOTION } from '../../ui/popupMotion'
 import { SIDEBAR_ROW } from '../../shell/nav'
 import { SidebarRowContent } from '../../shell/SidebarRowContent'
 import { dismissToast, removeToast, showRichToast, showToast, type ToastAction } from '../toast/toast'
@@ -285,8 +286,8 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     <ServerStoppedOverlay suppressed={dialogTarget !== null || notifications.data?.notifications.some((row) => row.active && row.target === 'webui') === true} />
     <BaseDialog.Root open={open} onOpenChange={setOpen}>
       <BaseDialog.Portal>
-        <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/45" />
-        <BaseDialog.Popup className="fixed right-4 top-4 z-[1301] flex max-h-[calc(100dvh-2rem)] w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-md outline-none max-[641px]:inset-x-2 max-[641px]:top-auto max-[641px]:bottom-[calc(8px+env(safe-area-inset-bottom,0px))] max-[641px]:w-auto max-[641px]:max-h-[78dvh]">
+        <BaseDialog.Backdrop className={cn('fixed inset-0 z-[1300] bg-black/45', BACKDROP_MOTION)} />
+        <BaseDialog.Popup className={cn('fixed right-4 top-4 z-[1301] flex max-h-[calc(100dvh-2rem)] w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-md outline-none max-[641px]:inset-x-2 max-[641px]:top-auto max-[641px]:bottom-[calc(8px+env(safe-area-inset-bottom,0px))] max-[641px]:w-auto max-[641px]:max-h-[78dvh]', DIALOG_MOTION)}>
           <header className="flex items-start gap-3 border-b border-border px-5 py-4">
             <div className="flex-1 min-w-0"><BaseDialog.Title className="text-base font-semibold text-strong">{m.update_notifications()}</BaseDialog.Title><BaseDialog.Description className="mt-0.5 text-sm text-muted">{m.update_notifications_description()}</BaseDialog.Description></div>
             <button type="button" className="min-h-9 rounded-lg border-0 bg-transparent px-2 text-xs font-semibold text-accent-text transition-[transform,opacity] active:scale-[.97] disabled:cursor-default disabled:opacity-40" disabled={notifications.data?.can_clear !== true} onClick={() => clear.mutate(rows.filter((row) => row.can_dismiss).map((row) => row.id))}>{m.update_notifications_clear_all()}</button>

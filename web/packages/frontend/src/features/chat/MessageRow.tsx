@@ -17,6 +17,7 @@ import type { VisibleMessage } from './useTranscript'
 import { Badge } from '../../ui/Badge'
 import { IconButton } from '../../ui/Button'
 import { cn } from '../../ui/cn'
+import { POPUP_MOTION } from '../../ui/popupMotion'
 import { formatDate } from '../../ui/States'
 import { rawFileUrl } from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
@@ -274,7 +275,7 @@ function TurnUsageMeta({ usage }: { usage: TurnUsage }) {
       <Popover.Trigger className="msg-turn-usage rounded-sm font-mono text-[11px] tabular-nums text-muted opacity-75 outline-none hover:opacity-100 focus-visible:ring-2 focus-visible:ring-(--focus-ring)" aria-label={m.turn_usage_label(figures)}>{m.turn_usage_summary(figures)}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="start" sideOffset={6} className="z-[1500]">
-          <Popover.Popup aria-label={m.turn_usage_label(figures)} className="flex max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
+          <Popover.Popup aria-label={m.turn_usage_label(figures)} className={cn('flex max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none', POPUP_MOTION)}>
             {details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
           </Popover.Popup>
         </Popover.Positioner>

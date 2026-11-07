@@ -5,6 +5,7 @@ import { useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEv
 import type { BaseUIEvent } from '@base-ui/react/types'
 import { isImeEnter } from '../lib/isImeEnter'
 import { cn } from './cn'
+import { POPUP_MOTION } from './popupMotion'
 
 export interface MenuProps {
   trigger: ReactElement
@@ -29,14 +30,16 @@ export interface MenuProps {
 /** Menus share the Select popup layer above dialogs (z 1300/1301), so a menu opened inside a dialog takes clicks (TAL-1639). */
 const POSITIONER = 'z-[1400] outline-none'
 // Base UI's available height keeps a long menu inside a short viewport, where it scrolls; a caller lowers it with --menu-max-height.
-const POPUP = 'min-w-44 max-w-[min(92vw,360px)] max-h-[min(var(--menu-max-height,100vh),var(--available-height))] rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none'
+const POPUP = cn('min-w-44 max-w-[min(92vw,360px)] max-h-[min(var(--menu-max-height,100vh),var(--available-height))] rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none', POPUP_MOTION)
 
 /** Scrolls `row` into `scroller` unless it is already fully inside; `center` places it mid-list. */
 function revealRow(scroller: HTMLElement, row: HTMLElement, center: boolean) {
   const box = scroller.getBoundingClientRect()
   const r = row.getBoundingClientRect()
   if (r.top >= box.top && r.bottom <= box.bottom) return
-  scroller.scrollTop += center ? r.top - box.top - (box.height - r.height) / 2 : r.top < box.top ? r.top - box.top : r.bottom - box.bottom
+  // Measured on screen, where an opening popup is still scaled; scrollTop is in layout pixels.
+  const scale = scroller.offsetHeight ? box.height / scroller.offsetHeight : 1
+  scroller.scrollTop += (center ? r.top - box.top - (box.height - r.height) / 2 : r.top < box.top ? r.top - box.top : r.bottom - box.bottom) / scale
 }
 
 /**

@@ -6,6 +6,7 @@ import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { MENU_CHOICE, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
+import { POPUP_MOTION } from '../../ui/popupMotion'
 import { formatUsd } from '../../ui/States'
 import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
@@ -133,7 +134,7 @@ export function ToolsetsChip({ value, onChange, row, sessionId }: { value: strin
   const [open, setOpen] = useState(false)
   return (
     <Menu open={open} onOpenChange={setOpen} label={m.composer_control_toolsets()} side="top" className="min-w-72" trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
-      {open && <ToolsetsPicker value={value} sessionId={sessionId} onChange={(names) => { onChange(names); setOpen(false) }} />}
+      <ToolsetsPicker value={value} sessionId={sessionId} onChange={(names) => { onChange(names); setOpen(false) }} />
     </Menu>
   )
 }
@@ -177,7 +178,7 @@ export function ExecutionModeChip({ value, onChange, row }: { value: ExecutionMo
   if (!onChange) return <Chip {...chip} readOnly />
   return (
     <Menu open={open} onOpenChange={setOpen} label={m.composer_control_execution_mode()} side="top" className="min-w-64" trigger={<Chip {...chip} />}>
-      {open && <ExecutionModePicker value={value} onChange={(mode) => { onChange(mode); setOpen(false) }} />}
+      <ExecutionModePicker value={value} onChange={(mode) => { onChange(mode); setOpen(false) }} />
     </Menu>
   )
 }
@@ -286,11 +287,11 @@ export function ContextRing(figures: ContextFigures) {
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Positioner side="top" align="end" sideOffset={6} className="z-[1500]">
-            <Popover.Popup id="ctxPopup" aria-label={m.composer_context_usage()} className="flex max-h-[min(36rem,70vh)] max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
+            <Popover.Popup id="ctxPopup" aria-label={m.composer_context_usage()} className={cn('flex max-h-[min(36rem,70vh)] max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none', POPUP_MOTION)}>
               <span className="font-medium">{st.usage}</span>
               {st.details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
               <ProviderQuotaPace gauge={figures.planGauge} compact />
-              {open && <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />}
+              <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />
               {figures.onCompress && <Popover.Close className={cn(COMPRESS_CLASS, 'mt-1.5')} id="ctxCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</Popover.Close>}
             </Popover.Popup>
           </Popover.Positioner>

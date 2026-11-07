@@ -4,6 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import { CircleHelp } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
+import { POPUP_MOTION } from './popupMotion'
 
 export function FieldRow({ label, hint, htmlFor, children, inline }: { label: ReactNode; hint?: ReactNode; htmlFor?: string; children: ReactNode; inline?: boolean }) {
   return (
@@ -26,7 +27,7 @@ export function HelpTip({ label, children, className = 'translate-y-[3px] align-
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" sideOffset={6} className="z-[1500]">
-          <Popover.Popup className="max-w-[min(18rem,calc(100vw-2rem))] rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">{children}</Popover.Popup>
+          <Popover.Popup className={cn('max-w-[min(18rem,calc(100vw-2rem))] rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none', POPUP_MOTION)}>{children}</Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
