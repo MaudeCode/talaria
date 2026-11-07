@@ -356,7 +356,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
               <Row label={m.cron_next()}>{nextRun ? formatDate(nextRun) : m.not_available()}</Row>
               <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}{job.last_outcome === 'cancelled' && <span className="text-muted"> · {m.cron_last_stopped()}</span>}</Row>
               {job.last_failure && <Row label={m.cron_last_failure_label()}>{job.last_failure.at !== null && <span className="text-muted">{formatDate(job.last_failure.at)} · </span>}<span className="font-mono text-[12px] text-error">{job.last_failure.detail}</span></Row>}
-              <Row label={m.cron_deliver_label()}>{job.deliver || 'local'}</Row>
+              <Row label={m.cron_deliver_label()}>{job.deliver_label ?? (job.deliver || 'local')}</Row>
               <Row label={m.cron_profile_label()}>{profileLabel}{readOnly && ownerProfile && <span className="text-muted"> · {m.cron_owner_profile_label()}: {ownerProfile}</span>}</Row>
             </dl>
           </section>

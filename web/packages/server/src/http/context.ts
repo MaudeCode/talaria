@@ -94,7 +94,11 @@ export function loggedUrl(url: string | undefined): string {
 }
 
 /** What `requestScope` binds for one request (the request context itself, or a session acting as its caller). */
-export interface RequestScope { requestProfile: string | null; notificationOwner?: string; personAccess?: PersonAccess }
+export interface RequestScope {
+  requestProfile: string | null; notificationOwner?: string; personAccess?: PersonAccess
+  /** The HTTP auth gate's existing reconciled identity; absent for callers without a login. */
+  trusted?: { reconciled?: SessionInfo | null }
+}
 
 export interface AppDeps {
   config: ServerConfig

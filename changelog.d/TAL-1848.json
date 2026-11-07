@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Send scheduled task results to Group Chats selected by name.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

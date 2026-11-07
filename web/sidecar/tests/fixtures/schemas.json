@@ -7797,6 +7797,9 @@
           ],
           "additionalProperties": false
         }
+      },
+      "room_delivery_supported": {
+        "type": "boolean"
       }
     },
     "required": [

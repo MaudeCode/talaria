@@ -111,6 +111,17 @@ Evidence needed before claiming done:
 
 ## Contract changes
 
+Scheduled task delivery choices include manageable Group Chats from the requesting
+profile's existing room catalog, using the caller's native grant. Choices require
+the Agent's room-delivery parser. Named-profile targets carry `@profile`.
+Job responses expose `deliver_label`, the redacted room name when that target is
+known and accessible, otherwise the stored target or `local`. This display field
+does not change persisted delivery targets or start a room service.
+Authenticated callers need the same server-owner authority as the Group Chat
+routes to read room choices or resolved names, create or edit a room-delivering
+task, resume it, or run it manually. This includes mixed/list targets, failure
+delivery and room origins. Ordinary non-room tasks retain their existing access.
+
 A PR that intentionally changes an existing contract includes a
 `Contract Change` section in its body with the previous contract, the new
 contract, the affected docs and tests, and the compatibility or migration

@@ -117,7 +117,7 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
       // Null clears a knob on edit; the server and Agent validate what is set.
       const policy = schedulePolicy ? { timezone: zone, catch_up: v.catch_up === '' ? null : v.catch_up === 'true', grace_minutes: v.grace_minutes === '' ? null : Number(v.grace_minutes) } : {}
       // Shown in the list until the server's reread replaces it.
-      const shown = { ...policy, name: v.name, schedule_input: v.schedule, schedule_display: schedulePolicy && zone ? `${v.schedule} (${zone})` : v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null,
+      const shown = { ...policy, name: v.name, schedule_input: v.schedule, schedule_display: schedulePolicy && zone ? `${v.schedule} (${zone})` : v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from, deliver: v.deliver || 'local', deliver_label: platforms.find((p) => p.value === v.deliver)?.label ?? (v.deliver || 'local'), profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null,
         // A picked catalog entry shows as its bare model, as the server stores it.
         model: untouched ? model : catalogEntryById(models.data, v.model)?.bare_id ?? model, provider, model_option_id: untouched ? job?.model_option_id ?? null : v.model || null }
       if (isEdit && job) {
