@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -233,5 +233,75 @@ describe('clarification through the composer (TAL-362)', () => {
     await screen.findByRole('dialog')
     view.rerender(tree({ status: 'done', clarify: null } as unknown as LiveTurn))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('clarify head reads follow the chat stream (TAL-1719)', () => {
+  const reads = vi.mocked(api.fetchClarifyPending)
+  const turn = (status: LiveTurn['status'] | null) => (status ? { status, clarify: null } as unknown as LiveTurn : null)
+  function Head({ live }: { live: LiveTurn | null }) { return <p>{useClarify('s1', live)?.pending.clarify_id}</p> }
+  const headTree = (live: LiveTurn | null) => <QueryClientProvider client={qc}><Head live={live} /></QueryClientProvider>
+  const pass = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+  /** Mounts past the first read, so `reads` counts only what follows it. */
+  const mount = async (live: LiveTurn | null) => { view = render(headTree(live)); await pass(0); reads.mockClear() }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    head = null
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it.each([
+    { status: 'starting', command: false, interval: 1_500 },
+    { status: 'connecting', command: false, interval: 1_500 },
+    { status: 'reconnecting', command: false, interval: 15_000 },
+    { status: null, command: true, interval: 1_500 },
+    // A command's prompt never reaches the chat stream, so a turn streaming beside it cannot announce it.
+    { status: 'streaming', command: true, interval: 1_500 },
+  ] as const)('reads a $status turn (command: $command) every $interval ms', async ({ status, command, interval }) => {
+    if (command) void qc.getMutationCache().build(qc, { mutationKey: keys.commandExec('s1'), mutationFn: () => new Promise<void>(noop) }).execute(undefined)
+    await mount(turn(status))
+    await pass(interval - 1)
+    expect(reads).not.toHaveBeenCalled()
+    await pass(1)
+    expect(reads).toHaveBeenCalledTimes(1)
+  })
+
+  it('never reads on a timer while a healthy stream has nothing to show', async () => {
+    await mount(turn('streaming'))
+    await pass(60_000)
+    expect(reads).not.toHaveBeenCalled()
+  })
+
+  it('reads at once when a clarify frame arrives while streaming', async () => {
+    await mount(turn('streaming'))
+    head = single
+    view.rerender(headTree({ status: 'streaming', clarify: single } as unknown as LiveTurn))
+    await pass(0)
+    expect(screen.getByText('single-1')).toBeVisible()
+  })
+
+  it('drops a prompt that cleared without a frame, then stops reading', async () => {
+    head = single
+    await mount(turn('streaming'))
+    expect(screen.getByText('single-1')).toBeVisible()
+    head = null
+    await pass(15_100)
+    expect(screen.queryByText('single-1')).toBeNull()
+    reads.mockClear()
+    await pass(60_000)
+    expect(reads).not.toHaveBeenCalled()
+  })
+
+  it('retries a failed read so a prompt behind a frame still appears', async () => {
+    await mount(turn('streaming'))
+    head = single
+    reads.mockRejectedValueOnce(new ApiError({ kind: 'network', path: 'api/clarify/pending', message: 'Network down' }))
+    view.rerender(headTree({ status: 'streaming', clarify: single } as unknown as LiveTurn))
+    await pass(0)
+    expect(screen.queryByText('single-1')).toBeNull()
+    await pass(15_100)
+    expect(screen.getByText('single-1')).toBeVisible()
   })
 })
