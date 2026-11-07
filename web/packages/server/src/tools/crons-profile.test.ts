@@ -137,6 +137,7 @@ describe('cron store read cost (TAL-1716)', () => {
       job.live_execution = { id: 'exec-1', stopping: false }
       emit({ event: 'started', data: { job_id } })
     }))
+    await service.list('default', false)
     await service.runNow(homes.default, 'manual')
     expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'manual', can_stop: true }])
   })
