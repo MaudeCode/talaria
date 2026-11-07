@@ -96,7 +96,7 @@ export const automationRouter = os.router({
   },
   kanban: {
     inspection: os.kanban.inspection.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.inspection(home(ctx), input, activeProfileName(ctx)) as Promise<never>)),
-    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.boards', { profile_home: home(ctx), include_archived: truthyQuery(input.include_archived) }).then((r) => ({ ...r, boards: r.boards.map((b) => ({ ...b, removable: b.slug !== 'default' && !b.archived })) }))))),
+    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.boards(home(ctx), activeProfileName(ctx), truthyQuery(input.include_archived)))),
     board: os.kanban.board.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.board(home(ctx), input, activeProfileName(ctx)) as Promise<never>)),
     config: os.kanban.config.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.config', { profile_home: home(ctx), board: boardOf(input.board) })))),
     updateConfig: os.kanban.updateConfig.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.updateConfig(home(ctx), input))),

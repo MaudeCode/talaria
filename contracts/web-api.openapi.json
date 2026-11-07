@@ -79452,6 +79452,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "kanban_pinned_boards": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "description": "TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent."
+                    },
                     "bot_name": {
                       "type": "string"
                     },
@@ -79781,8 +79790,15 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "propertyNames": {
-                  "type": "string"
+                "properties": {
+                  "kanban_pinned_boards": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                    }
+                  }
                 },
                 "additionalProperties": {}
               }
@@ -79797,6 +79813,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "kanban_pinned_boards": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "description": "TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent."
+                    },
                     "bot_name": {
                       "type": "string"
                     },
@@ -114896,10 +114921,20 @@
                     },
                     "read_only": {
                       "type": "boolean"
+                    },
+                    "pinned": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "description": "TAL-1851: ordered pinned board slugs for this profile, excluding missing and archived boards."
                     }
                   },
                   "required": [
-                    "boards"
+                    "boards",
+                    "pinned"
                   ],
                   "additionalProperties": {}
                 }

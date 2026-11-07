@@ -930,7 +930,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       groupCatalog: (profile, offset) => deps.groups.catalog(deps.groups.scope(profile, requestScope.getStore()?.notificationOwner ?? 'local-owner'), offset),
       roomDeliveryAllowed: () => sessionCanManageServer({ deps }, requestScope.getStore()?.trusted?.reconciled ?? null),
     }),
-    kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
+    kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig, settings }),
     extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
     dashboardPlugins,
     meshy: new MeshyHost({ plugins: dashboardPlugins, fetch: lazyFetch }),

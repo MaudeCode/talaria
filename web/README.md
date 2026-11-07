@@ -180,6 +180,11 @@ Unavailable, retired, deleted, or changed source identities refuse creation so
 you can select again. References inherit source-history privacy requirements.
 References are available for ordinary chats; diagnostic modes refuse them.
 
+In Kanban, use **Board actions → Pin board** to keep a board beside the board
+switcher. Click a pinned tab to switch boards. Drag a tab, press Alt+Left/Right
+while it has focus, or use its menu to reorder pins without switching. Pins are
+saved per profile on the Web server and shared across browsers.
+
 In the Web sidebar, drag a conversation onto **Pinned** to pin it, or from Pinned
 onto an ordinary date group to unpin it. Empty drop targets appear while dragging;
 collapsed groups still accept drops. The conversation menu provides the same actions

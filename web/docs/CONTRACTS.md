@@ -313,6 +313,15 @@ retry. Cleanup continues to belong to the plugin.
 
 ## Kanban inspection
 
+`GET /api/kanban/boards` includes `pinned`, the active profile's ordered board
+slugs with archived and missing boards omitted, even when archived boards are
+requested. `POST /api/settings` with `kanban_pinned_boards` replaces that profile's
+pins, deduplicated in first-occurrence order, with at most 100 valid board slugs.
+Talaria stores them in the additive `kanban_pinned_boards_by_profile` settings
+map. Settings responses expose only the active profile's list. The Agent's
+files are unchanged. Web uses optimistic updates with rollback and reconciles
+unknown outcomes through the board read before settling the display.
+
 `GET /api/kanban/inspection` returns one profile-scoped snapshot for the Kanban
 Timeline and Relationships views. An optional `board` restricts the read to that
 live board; omission inspects the active profile's live boards. It never reads

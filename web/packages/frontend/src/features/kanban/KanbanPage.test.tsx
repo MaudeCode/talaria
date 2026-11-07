@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +10,7 @@ vi.mock('../../shell/AppShell', () => ({ HubPage: ({ title, actions, toolbar, ch
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, openKanbanEventStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })) }))
-vi.mock('../../api/endpoints', () => ({ fetchKanbanInspection: vi.fn(), fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ saveSettings: vi.fn(), fetchKanbanInspection: vi.fn(), fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
 import { KanbanPage } from './KanbanPage'
@@ -39,7 +39,7 @@ async function openTask(id = 'A') {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(openKanbanEventStream).mockReturnValue({ close: vi.fn(), readyState: () => 1 })
-  vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+  vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
   vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot())
   vi.mocked(api.fetchKanbanStats).mockResolvedValue({ total: 2, by_status: { todo: 2 }, status_counts: [{ status: 'todo', count: 2 }] })
   vi.mocked(api.fetchKanbanTaskLog).mockResolvedValue({ log: [] })
@@ -267,7 +267,7 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await choose('Status', 'done')
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
     expect(api.bulkKanbanStatus).toHaveBeenCalledWith('default', ['A'], 'done')
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'other', name: 'Other', removable: true }] })
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', pinned: [], boards: [{ slug: 'other', name: 'Other', removable: true }] })
     await choose('Board', 'Other')
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Select Task A' })).toBeEnabled())
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select Task B' }))
@@ -299,7 +299,7 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await screen.findByRole('button', { name: /^Task A/ })
     await choose('Board', 'Other')
     expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Other')
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', boards: [{ slug: 'default', name: 'Default', removable: false }] })
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }] })
     await act(async () => { switching.reject(refusal('board deleted')); await Promise.resolve() })
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Default'))
     expect(screen.getByRole('button', { name: 'New task' })).toBeEnabled()
@@ -359,7 +359,7 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
 
   it('archives the current board at once, showing the board that cannot be removed', async () => {
     vi.mocked(api.archiveKanbanBoard).mockReturnValue(new Promise(() => undefined))
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
     renderPage()
     await screen.findByRole('button', { name: /^Task A\b/ })
     await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
@@ -463,7 +463,7 @@ describe('inspection optimistic relationships and board removal', () => {
   })
 
   it('hides an archived board from a held all-board snapshot and restores it on refusal', async () => {
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
     vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('other', 'A'), inspectionNode('default', 'D')]))
     const write = deferred<Awaited<ReturnType<typeof api.archiveKanbanBoard>>>()
     vi.mocked(api.archiveKanbanBoard).mockReturnValue(write.promise)
@@ -481,7 +481,7 @@ describe('inspection optimistic relationships and board removal', () => {
   })
 
   it('does not reread a deleted board detail after a confirmed archive', async () => {
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
     vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('other', 'A'), inspectionNode('default', 'D')]))
     const write = deferred<Awaited<ReturnType<typeof api.archiveKanbanBoard>>>()
     vi.mocked(api.archiveKanbanBoard).mockReturnValue(write.promise)
@@ -494,7 +494,7 @@ describe('inspection optimistic relationships and board removal', () => {
     const reads = vi.mocked(api.fetchKanbanTask).mock.calls.length
     await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', boards: [{ slug: 'default', name: 'Default', removable: false }], read_only: false })
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }], read_only: false })
     vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('default', 'D')]))
     await act(async () => { write.resolve({ current: 'default', result: {}, read_only: false }); await Promise.resolve() })
     expect(api.fetchKanbanTask).toHaveBeenCalledTimes(reads)
@@ -502,4 +502,45 @@ describe('inspection optimistic relationships and board removal', () => {
     expect(qc.getQueriesData({ queryKey: ['kanban', 'inspection', 'other'] })).toEqual([])
   })
 
+})
+
+describe('TAL-1851: pinned board tabs', () => {
+  it('pins at once, rolls a refused save back, switches via a tab, and reorders without switching', async () => {
+    const confirmed = { current: 'default', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], pinned: ['other'], read_only: false }
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue(confirmed)
+    const write = deferred<Awaited<ReturnType<typeof api.saveSettings>>>()
+    vi.mocked(api.saveSettings).mockReturnValue(write.promise)
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Board actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Pin board' }))
+    expect(screen.getAllByRole('tab').map(t => t.textContent)).toEqual(['Other', 'Default'])
+    await act(async () => { write.reject(refusal('Pins refused')); await Promise.resolve() })
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Default' })).toBeNull())
+    expect(toast).toHaveBeenCalledWith('Pins refused', 4000, 'error')
+
+    vi.mocked(api.saveSettings).mockImplementation(patch => { confirmed.pinned = patch.kanban_pinned_boards as string[]; return Promise.resolve({}) })
+    await userEvent.click(screen.getByRole('button', { name: 'Board actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Pin board' }))
+    await waitFor(() => expect(confirmed.pinned).toEqual(['other', 'default']))
+    vi.mocked(api.switchKanbanBoard).mockImplementation(slug => { confirmed.current = slug; return Promise.resolve({ current: slug, read_only: false }) })
+    await userEvent.click(screen.getByRole('tab', { name: 'Other' }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Other' })).toHaveAttribute('aria-selected', 'true'))
+    expect(api.switchKanbanBoard).toHaveBeenCalledWith('other')
+    vi.mocked(api.switchKanbanBoard).mockClear()
+    await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}')
+    expect(screen.getAllByRole('tab').map(t => t.textContent)).toEqual(['Default', 'Other'])
+    expect(screen.getByRole('tab', { name: 'Other' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'Other' })).toHaveAttribute('aria-selected', 'true')
+    expect(api.switchKanbanBoard).not.toHaveBeenCalled()
+    await waitFor(() => expect(confirmed.pinned).toEqual(['default', 'other']))
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (key: string, value: string) => data.set(key, value), getData: (key: string) => data.get(key) ?? '' }
+    fireEvent.dragStart(screen.getByRole('tab', { name: 'Other' }), { dataTransfer })
+    fireEvent.drop(screen.getByRole('tab', { name: 'Default' }), { dataTransfer })
+    await waitFor(() => expect(confirmed.pinned).toEqual(['other', 'default']))
+    expect(api.switchKanbanBoard).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Board actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Unpin board' }))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Other' })).toBeNull())
+  })
 })

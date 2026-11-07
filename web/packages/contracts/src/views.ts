@@ -731,7 +731,10 @@ export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message:
 /** TAL-1569: Talaria Web update channels, in display order. Nightly is a daily snapshot of the Experimental artifact. */
 export const WebUpdateChannelSchema = z.enum(['stable', 'nightly', 'experimental'])
 export type WebUpdateChannel = z.infer<typeof WebUpdateChannelSchema>
+/** Ordered board preferences; the server deduplicates and projects only active boards. */
+export const KanbanPinnedBoardsSchema = z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).max(100)
 export const SettingsSchema = z.looseObject({
+  kanban_pinned_boards: KanbanPinnedBoardsSchema.optional().describe('TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent.'),
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional(), hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
@@ -1426,7 +1429,8 @@ export const KanbanBoardViewSchema = z.looseObject({ columns: z.array(KanbanColu
   lanes: z.array(KanbanLaneSchema).optional() })
 export const KanbanBoardsViewSchema = z.looseObject({ boards: z.array(z.looseObject({ slug: z.string(), name: z.string().nullable().optional(), is_current: z.boolean().optional(), total: z.number().optional(), archived: z.boolean().optional(), color: z.string().optional(), icon: z.string().optional(), description: z.string().optional(),
   /** Whether the board can be archived or deleted; the default board (TAL-567) and an archived board (TAL-795) cannot. */
-  removable: z.boolean() })), current: z.string().optional(), read_only: z.boolean().optional() })
+  removable: z.boolean() })), current: z.string().optional(), read_only: z.boolean().optional(),
+  pinned: KanbanPinnedBoardsSchema.describe('TAL-1851: ordered pinned board slugs for this profile, excluding missing and archived boards.') })
 /** Board-wide task counts (TAL-567): `status_counts` in board-column order, unknown statuses after; `total` excludes archived tasks. */
 export const KanbanStatsViewSchema = z.looseObject({ by_status: z.record(z.string(), z.number()), total: z.number().int(), status_counts: z.array(z.object({ status: z.string(), count: z.number().int() })) })
 export const ExtensionStatusSchema = z.looseObject({

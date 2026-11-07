@@ -10,7 +10,7 @@
 import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
-import { WebUpdateChannelSchema } from '@maudecode/talaria-web-contracts'
+import { KanbanPinnedBoardsSchema, WebUpdateChannelSchema } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
 
@@ -245,6 +245,7 @@ const QUOTA_THRESHOLD_RANGES: Record<keyof QuotaThresholds, [number, number]> = 
 }
 /** settings.json key of the per-profile sets; `/api/settings` answers the request profile's set as `provider_quota_thresholds`. */
 export const QUOTA_THRESHOLDS_BY_PROFILE_KEY = 'provider_quota_thresholds_by_profile'
+export const KANBAN_PINS_BY_PROFILE_KEY = 'kanban_pinned_boards_by_profile'
 
 /** `patch`'s in-range integers over `base`; critical never sits below warning (remaining) or under it (burn rate). */
 export function mergeQuotaThresholds(base: QuotaThresholds, patch: unknown): QuotaThresholds {
@@ -260,8 +261,8 @@ export function mergeQuotaThresholds(base: QuotaThresholds, patch: unknown): Quo
   return next
 }
 
-function thresholdsByProfile(settings: Settings): Settings {
-  const stored = settings[QUOTA_THRESHOLDS_BY_PROFILE_KEY]
+function settingsByProfile(settings: Settings, key: string): Settings {
+  const stored = settings[key]
   return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...(stored as Settings) } : {}
 }
 
@@ -310,7 +311,14 @@ export class SettingsStore {
 
   /** The profile's quota thresholds, defaults filled in. */
   async quotaThresholds(profile: string): Promise<QuotaThresholds> {
-    return mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, thresholdsByProfile(await this.readRaw())[profile])
+    return mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, settingsByProfile(await this.readRaw(), QUOTA_THRESHOLDS_BY_PROFILE_KEY)[profile])
+  }
+
+  /** Each request reads its profile's saved order; older Stable versions ignore the additive map. */
+  async kanbanPins(profile: string): Promise<string[]> {
+    const stored = settingsByProfile(await this.readRaw(), KANBAN_PINS_BY_PROFILE_KEY)[profile]
+    const parsed = KanbanPinnedBoardsSchema.safeParse(stored)
+    return parsed.success ? [...new Set(parsed.data)] : []
   }
 
   /** Sync policies use the last loaded server snapshot; request handlers and writes refresh through the async port. */
@@ -452,8 +460,13 @@ export class SettingsStore {
       for (const [k, rawValue] of Object.entries(settings)) {
         let v: unknown = rawValue
         if (['auto_apply_updates', 'summarize_updates_automatically'].includes(k) && typeof v !== 'boolean') continue
+        if (k === 'kanban_pinned_boards' && opts.profile !== undefined) {
+          const parsed = KanbanPinnedBoardsSchema.safeParse(v)
+          if (parsed.success) current[KANBAN_PINS_BY_PROFILE_KEY] = { ...settingsByProfile(current, KANBAN_PINS_BY_PROFILE_KEY), [opts.profile]: [...new Set(parsed.data)] }
+          continue
+        }
         if (k === 'provider_quota_thresholds' && opts.profile !== undefined) {
-          const byProfile = thresholdsByProfile(current)
+          const byProfile = settingsByProfile(current, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
           byProfile[opts.profile] = mergeQuotaThresholds(mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, byProfile[opts.profile]), v)
           current[QUOTA_THRESHOLDS_BY_PROFILE_KEY] = byProfile
           continue

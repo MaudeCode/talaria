@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Pin Kanban boards for quick switching, and reorder pinned boards by dragging or with the keyboard.",
+      "components": [
+        "web"
+      ],
+      "highlight": false
+    }
+  ]
+}

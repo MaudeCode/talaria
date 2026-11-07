@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useId, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Archive, Check, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
+import { Archive, Check, FolderPlus, MoreHorizontal, Plus, RefreshCw, X } from 'lucide-react'
 import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -15,7 +15,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
-import { ContextMenu, MENU_CHOICE, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { ContextMenu, Menu, MENU_CHOICE, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -36,6 +36,7 @@ function useKanbanMutation<V, R, T = unknown>(options: Omit<Parameters<typeof us
 }
 const boardSelection = 'kanban:selection'
 const lanePreference = 'kanban:lanes'
+const pinPreference = 'kanban:pins'
 const linkResource = (board: string | undefined, parent: string, child: string) => JSON.stringify(['kanban-link', board, parent, child])
 const boardResource = (slug: string) => `kanban-board:${slug}`
 /** Overlay only the user's requested link pair; transitive traversal and classification remain server-owned. */
@@ -97,6 +98,7 @@ function useKanbanLiveRefresh(board: string | undefined, latestEventId: number |
 
 export function KanbanPage() {
   const qc = useQueryClient()
+  const panelId = useId()
   const [mode, setMode] = useState('board')
   const [includeArchived, setIncludeArchived] = useState(false)
   const [assignee, setAssignee] = useState('')
@@ -112,9 +114,11 @@ export function KanbanPage() {
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [archivingBoard, setArchivingBoard] = useState(false)
   const boards = useQuery({ queryKey: keys.kanban.boards, queryFn: api.fetchKanbanBoards, staleTime: 30_000 })
-  const effects = useResourceEffects<string | boolean>()
+  const effects = useResourceEffects<string | boolean | string[]>()
   const requestedBoard = effects[boardSelection]
   const requestedView = effects[lanePreference]
+  const requestedPins = effects[pinPreference]?.value
+  const pinned = Array.isArray(requestedPins) ? requestedPins : boards.data?.pinned ?? []
   // Flat columns are already on the page, so turning lanes off shows at once. Lanes group cards by the server's
   // assignee lanes, which only its reread brings, so turning them on keeps the switch busy until then.
   const lanesOff = requestedView?.value === false
@@ -133,6 +137,7 @@ export function KanbanPage() {
   const invalidate = (refetchType: 'active' | 'none' = 'active') => qc.invalidateQueries({ queryKey: ['kanban'], refetchType })
   const toastError = (e: unknown) => showErrorToast(e)
   const switchBoard = useKanbanMutation({ resource: () => boardSelection, effect: (slug: string) => ({ value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
+  const savePins = useKanbanMutation({ resource: () => pinPreference, readKeys: () => [keys.kanban.boards], effect: (pins: string[]) => ({ value: pins }), mutationFn: (pins) => api.saveSettings({ kanban_pinned_boards: pins }), onError: toastError })
   const saveView = useKanbanMutation({ resource: () => lanePreference, readKeys: () => kanbanReads(current), effect: (lanes: boolean) => ({ value: lanes }), mutationFn: api.updateKanbanConfig, onSuccess: () => { void invalidate('none') }, onError: (e) => { void invalidate('none'); showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') } })
   const bulk = useKanbanMutation({
     resource: ({ ids, board }: { ids: string[]; status: string; board: string | undefined }) => ids.map((id) => cardResource(board, id)),
@@ -171,6 +176,27 @@ export function KanbanPage() {
   const stale = board.isPlaceholderData || !board.data
   const readOnly = serverReadOnly || stale
   const currentBoard = boardList.find((b) => b.slug === current)
+  const selectBoard = (slug: string) => {
+    setSelection({ context: getStreamContext(), board: slug, ids: [] })
+    setOpenTaskId(null); setCreating(false); setArchivingBoard(false)
+    switchBoard.mutate(slug)
+  }
+  const movePin = (slug: string, index: number) => {
+    if (!pinned.includes(slug) || index < 0 || index >= pinned.length || pinned.indexOf(slug) === index) return
+    const next = pinned.filter(pin => pin !== slug)
+    next.splice(index, 0, slug)
+    savePins.mutate(next)
+  }
+  const pinItems = (slug: string) => {
+    const index = pinned.indexOf(slug)
+    return <>
+      <MenuItem onClick={() => savePins.mutate(index < 0 ? [...pinned, slug] : pinned.filter(pin => pin !== slug))}>{index < 0 ? m.kanban_pin_board() : m.kanban_unpin_board()}</MenuItem>
+      {index >= 0 && <>
+        <MenuItem disabled={index === 0} onClick={() => movePin(slug, index - 1)}>{m.kanban_move_pin_left()}</MenuItem>
+        <MenuItem disabled={index === pinned.length - 1} onClick={() => movePin(slug, index + 1)}>{m.kanban_move_pin_right()}</MenuItem>
+      </>}
+    </>
+  }
   // The dialog follows the board's current copy of the task, so its actions track every refetch; a pending move
   // shows in it even when the target column is off screen.
   const openTask = (() => {
@@ -199,13 +225,39 @@ export function KanbanPage() {
       toolbar={
         <>
           {boardList.length > 0 && (
-            <label className="flex items-center gap-2 text-xs text-muted">
+            <label className="flex min-w-0 max-w-full items-center gap-2 text-xs text-muted">
               {m.kanban_board_label()}
-              <Select value={current ?? ''} onValueChange={(v) => { setSelection({ context: getStreamContext(), board: v, ids: [] }); setOpenTaskId(null); setCreating(false); setArchivingBoard(false); switchBoard.mutate(v) }} aria-label={m.kanban_board_label()}>
+              <Select value={current ?? ''} onValueChange={selectBoard} className="min-w-0 max-w-56" aria-label={m.kanban_board_label()}>
                 {boardList.map((b) => <option key={b.slug} value={b.slug}>{b.name ?? b.slug}{b.total !== undefined ? ` (${b.total})` : ''}</option>)}
               </Select>
             </label>
           )}
+          {currentBoard && !currentBoard.archived && <Menu label={m.kanban_board_actions()} trigger={<IconButton label={m.kanban_board_actions()} className="pointer-coarse:h-11 pointer-coarse:w-11"><MoreHorizontal size={16} aria-hidden="true" /></IconButton>}>{pinItems(currentBoard.slug)}</Menu>}
+          {pinned.length > 0 && <div role="tablist" aria-label={m.kanban_pinned_boards()} className="flex min-w-0 max-w-full gap-1 overflow-x-auto">
+            {pinned.map((slug, index) => {
+              const item = boardList.find(b => b.slug === slug)
+              if (!item) return null
+              const label = item.name ?? item.slug
+              const menuLabel = m.kanban_board_actions_named({ a0: label })
+              return <ContextMenu key={slug} label={menuLabel} trigger={<span className="inline-flex shrink-0 items-center">
+                <Button role="tab" id={`${panelId}-${slug}`} aria-selected={current === slug} aria-controls={panelId} variant="ghost" className={cn('max-w-52 truncate pointer-coarse:min-h-11', current === slug && 'bg-accent-bg text-accent-text')} title={label} onClick={() => selectBoard(slug)}
+                  draggable onDragStart={e => { e.dataTransfer.setData('application/x-talaria-kanban-pin', slug); e.dataTransfer.effectAllowed = 'move' }}
+                  onDragOver={e => { if (e.dataTransfer.types.includes('application/x-talaria-kanban-pin')) e.preventDefault() }}
+                  onDrop={e => { const source = e.dataTransfer.getData('application/x-talaria-kanban-pin'); if (pinned.includes(source)) { e.preventDefault(); movePin(source, index) } }}
+                  onKeyDown={e => {
+                    const direction = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+                    if (e.altKey && direction) { e.preventDefault(); movePin(slug, index + direction) }
+                    else if (!e.altKey && (direction || e.key === 'Home' || e.key === 'End')) {
+                      e.preventDefault()
+                      const tabs = e.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                      const next = e.key === 'Home' ? 0 : e.key === 'End' ? pinned.length - 1 : (index + direction + pinned.length) % pinned.length
+                      tabs?.[next]?.focus()
+                    }
+                  }}><span className="truncate">{label}</span></Button>
+                <Menu label={menuLabel} trigger={<IconButton label={menuLabel} className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}>{pinItems(slug)}</Menu>
+              </span>}>{pinItems(slug)}</ContextMenu>
+            })}
+          </div>}
           {boards.isSuccess && !serverReadOnly && (
             <div className="flex items-center">
               <IconButton label={m.kanban_new_board()} disabled={readOnly} onClick={() => setCreatingBoard(true)}><FolderPlus size={16} aria-hidden="true" /></IconButton>
@@ -233,6 +285,7 @@ export function KanbanPage() {
         </>
       }
     >
+      <div id={panelId} role={current && pinned.includes(current) ? 'tabpanel' : undefined} aria-labelledby={current && pinned.includes(current) ? `${panelId}-${current}` : undefined}>
       {(boards.isPending || board.isPending) && <LoadingState />}
       {boards.isError && <ErrorState error={boards.error} onRetry={() => { void boards.refetch() }} />}
       {board.isError && <ErrorState error={board.error} onRetry={() => { void board.refetch() }} />}
@@ -273,6 +326,7 @@ export function KanbanPage() {
       {creating && <CreateTaskDialog columns={board.data?.create_statuses ?? []} onClose={() => setCreating(false)} onSubmit={(task) => { setCreating(false); createTask.mutate({ ...task, board: current, resource: newResource(createKind(current)) }) }} />}
       {creatingBoard && <CreateBoardDialog onClose={() => setCreatingBoard(false)} onCreated={() => { setCreatingBoard(false); setSelected([]); void invalidate() }} />}
       <ConfirmDialog open={archivingBoard} onOpenChange={setArchivingBoard} title={m.kanban_archive_board_title()} description={m.kanban_archive_board_body({ a0: currentBoard?.name ?? current ?? '' })} confirmLabel={m.kanban_archive()} cancelLabel={m.cancel()} danger onConfirm={() => { if (current) { setSelected([]); setOpenTaskId(null); archiveBoard.mutate(current) } }} />
+      </div>
     </HubPage>
   )
 }
