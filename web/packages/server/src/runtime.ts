@@ -286,7 +286,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     onDeleted: async (sid) => { (await backgroundStore.delete(sid)) },
   })
   const projects = new ProjectStore(storage.documents, async () => (await store.readIndexEntries()), isRootProfile)
-  const shares = new ShareStore(storage.documents, now)
+  const shares = new ShareStore(storage.documents, now, store)
   const yoloSessions = new Set<string>()
   const attachmentDir = (sid: string): string => join(blobs.attachmentRoot(), attachmentSessionName(sid))
   const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: async (p) => (await workspaces.lastWorkspace(p)), backgroundProjectId: async (kind, p) => (await projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || (await projects.hasUserProjects(p)) })), now, log })

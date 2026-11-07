@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Public share links stop working once the conversation they came from no longer exists.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
