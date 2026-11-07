@@ -139,6 +139,47 @@ test('replies in a chosen thread, retaining a refused draft and clearing a confi
   } finally { await page.goto('about:blank'); await server.close() }
 })
 
+test('receipt refresh clears its submitted reply before the view or stream confirms it', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  fixture.discussion('Review this proposal', 'proposal-thread')
+  const native = sidecar.responderFor('gateway.groups')!
+  const viewRequested = Promise.withResolvers<undefined>(), releaseView = Promise.withResolvers<undefined>()
+  let commit: (() => unknown) | undefined
+  sidecar.respond('gateway.groups', (params, emit, options) => {
+    if (params.operation.action !== 'send') return native(params, emit, options)
+    commit = () => native(params, emit, options)
+    return { state: 'unknown', reason: 'unknown', value: null }
+  })
+  await page.route('**/api/groups/stream?**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 1000\n\n' }))
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    await page.getByRole('button', { name: 'Reply in thread', exact: true }).click()
+    const chip = page.locator('[data-notice="group-reply"]'), unknown = page.locator('[data-notice="unknown"]')
+    await expect(chip).toContainText('Replying in thread')
+    await page.locator('#msg').fill('Receipt-confirmed reply')
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    await expect(unknown).toBeVisible()
+    await page.screenshot({ path: info.outputPath('receipt-unknown.png') })
+    await commit!()
+    await page.route('**/api/groups/view?**', async (route) => {
+      const response = await route.fetch()
+      viewRequested.resolve(undefined)
+      await releaseView.promise
+      await route.fulfill({ response })
+    })
+    await unknown.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await viewRequested.promise
+    await expect(unknown).toHaveCount(0)
+    await expect(chip).toHaveCount(0)
+    await page.screenshot({ path: info.outputPath('receipt-confirmed.png') })
+  } finally {
+    releaseView.resolve(undefined)
+    await page.unrouteAll({ behavior: 'wait' })
+    await page.goto('about:blank')
+    await server.close()
+  }
+})
+
 test('the discussion list is the page, a primary nav entry, and a room opens with a way back', async ({ page }, info) => {
   const { fixture, server } = await discussionServer()
   const desktop = info.project.name === 'desktop'
