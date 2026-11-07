@@ -159,10 +159,14 @@ Both frontend build commands run `npm run check:bundle` after Vite emits
 `packages/frontend/dist/client/.vite/manifest.json`. The check follows the `_app`
 route's static imports and CSS, counts shared files once, and enforces the measured
 1,607,194-byte baseline (main's layout when TAL-1032 rebaselined it) plus 10% headroom. Its build-output Vitest checks keep the
-Markdown renderer, Mermaid runtime, and KaTeX runtime and stylesheet out of that
+Markdown renderer, Pele runtime, and KaTeX runtime and stylesheet out of that
 graph. Dynamic imports are excluded from the layout budget. The Markdown browser
 test holds plugin requests to verify readable fallback code, then releases them
-and checks diagram and formula rendering on desktop and mobile.
+and checks diagram and formula rendering on desktop and mobile. Diagrams use
+Pele behind the Streamdown adapter, with KaTeX MathML labels, live theme tokens,
+and links and images disabled. The diagram browser tests cover invalid-source
+fallback and SVG safety, and attach gzip bytes and Chromium main-thread task
+time for 15 synthetic diagrams.
 The chat route graphs also exclude xterm's runtime and stylesheet. Terminal browser
 tests hold those assets to exercise the closeable loading chrome, then verify
 terminal input, resize requests, and closing on desktop and mobile.

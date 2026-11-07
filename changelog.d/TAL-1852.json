@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat diagrams load faster and follow your theme colors.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

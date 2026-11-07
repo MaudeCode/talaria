@@ -17,6 +17,8 @@
 .file-item.drag-over{background:var(--accent-bg);color:var(--accent-text);outline:1px solid var(--accent-bg-strong);outline-offset:-1px}
 @media (min-width:901px){html[data-workspace-panel="closed"] .rightpanel{width:0 !important;min-width:0 !important;padding-left:0;padding-right:0;border-left-color:transparent;pointer-events:none}}
 @media (min-width:901px){html[data-workspace-panel="closed"] .rightpanel .rightpanel-body{visibility:hidden}}
+/* A closed panel's resize handle and edge tab must stay inside the viewport. */
+@media (min-width:901px){html[data-workspace-panel="closed"] .rightpanel > .resize-handle{display:none}html[data-workspace-panel="closed"] .rightpanel > .workspace-panel-edge-toggle{left:0}}
 @media (min-width:901px){.workspace-panel-edge-toggle{display:inline-flex;opacity:1;pointer-events:auto}}
 @media (min-width:901px){.rightpanel{flex-shrink:1;min-width:180px}}
 @media (max-width:900px){.workspace-panel-edge-toggle{display:none !important}}
