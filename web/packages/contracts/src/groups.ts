@@ -15,6 +15,8 @@ export const GroupRoomSchema = z.object({ id: Id, name: z.string(), identity: z.
   /** The room's own Retry after the Agent stopped waking its members; null when none is offered. Send it back unchanged as a `retry` operation. */
   retry_task: GroupTaskFenceSchema.nullable() })
 export const GroupRowSchema = z.object({ key: z.string(), index: z.number().int(), author: z.string(),
+  /** Native discussion identity, sent back unchanged when replying; null for notices and unthreaded messages. */
+  thread_id: z.string().nullable(),
   /** A scheduled job's post or failure notice: `author` names the job and clients add their localized "Scheduled" label. */
   scheduled: z.boolean(), message: MessageSchema, attachments: z.array(GroupAttachmentSchema.extend({ event_id: Id, download_url: z.string() })) })
 /**

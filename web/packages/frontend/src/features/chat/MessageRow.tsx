@@ -2,7 +2,7 @@ import type { MessageReactionView, TurnUsage } from '@maudecode/talaria-web-cont
 import { Popover } from '@base-ui/react/popover'
 import { ContextMenu, Menu, MenuItem } from '../../ui/Menu'
 import { memo, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, Reply, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -29,6 +29,7 @@ import { formatCompact } from '../../i18n/units'
 import { landSent } from './sendMotion'
 
 export interface RowActions {
+  onReply?: (row: VisibleMessage) => void
   onQuoteSelection?: (text: string) => void
   onReact?: (row: VisibleMessage, action: MessageReactionView['actions'][number]) => void
   onEdit?: (row: VisibleMessage, text: string) => void
@@ -38,6 +39,10 @@ export interface RowActions {
 
 /** One message action. TAL-1154: the hover bar and the right-click and long-press menu render the same list. */
 interface MessageAction { label: string; Icon: LucideIcon; run: () => void; className?: string }
+
+function replyActions(row: VisibleMessage, actions: RowActions): MessageAction[] {
+  return row.thread_id && actions.onReply ? [{ label: m.group_reply(), Icon: Reply, run: () => actions.onReply?.(row) }] : []
+}
 
 function ActionButtons({ items }: { items: readonly MessageAction[] }) {
   return items.map(({ label, Icon, run, className }) => <IconButton key={label} label={label} className={cn('h-6 w-6', className)} onClick={run}><Icon size={12} aria-hidden="true" /></IconButton>)
@@ -104,6 +109,7 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   const rowRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { if (lands && rowRef.current) landSent(rowRef.current, text) }, [lands, text])
   const items: MessageAction[] = pending ? [] : [
+    ...replyActions(row, actions),
     { label: m.copy(), Icon: Copy, run: () => copyWithToast(text) },
     ...(actions.onEdit ? [{ label: m.edit_message(), Icon: Pencil, run: () => actions.onEdit?.(row, text) }] : []),
     ...(actions.onBranch ? [{ label: m.branch_from_here(), Icon: GitBranch, run: () => actions.onBranch?.(row) }] : []),
@@ -290,6 +296,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
     prev?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
   const items: MessageAction[] = [
+    ...replyActions(row, actions),
     { label: m.copy(), Icon: Copy, run: () => copyWithToast(content) },
     ...(tts && content.trim() ? [{ label: m.speak_message(), Icon: Volume2, run: () => { void speak(content) } }] : []),
     ...(actions.onRegenerate && isLast ? [{ label: m.regenerate_response(), Icon: RotateCcw, run: () => actions.onRegenerate?.(row) }] : []),

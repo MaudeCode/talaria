@@ -142,7 +142,8 @@
           "_turn_id": "event-1",
           "attachments": []
         },
-        "attachments": []
+        "attachments": [],
+        "thread_id": "fixture-thread"
       },
       {
         "key": "2:event-2",
@@ -157,7 +158,8 @@
           "_turn_id": "event-2",
           "attachments": []
         },
-        "attachments": []
+        "attachments": [],
+        "thread_id": "fixture-thread"
       },
       {
         "key": "3:event-3",
@@ -172,7 +174,8 @@
           "_turn_id": "event-3",
           "attachments": []
         },
-        "attachments": []
+        "attachments": [],
+        "thread_id": "fixture-thread"
       },
       {
         "key": "4:cron-post:event-4",
@@ -187,7 +190,8 @@
           "_turn_id": "cron-post:event-4",
           "attachments": []
         },
-        "attachments": []
+        "attachments": [],
+        "thread_id": "fixture-thread"
       },
       {
         "key": "5:dassign-fixture",
@@ -207,7 +211,8 @@
               "Reviewer"
             ]
           }
-        }
+        },
+        "thread_id": null
       },
       {
         "key": "6:drouted-fixture",
@@ -227,7 +232,8 @@
               "Reviewer"
             ]
           }
-        }
+        },
+        "thread_id": null
       },
       {
         "key": "7:dactivity:event-1:max_rounds",
@@ -241,7 +247,8 @@
           "_turn_id": "dactivity:event-1:max_rounds",
           "_notice_kind": "paused_max_rounds"
         },
-        "attachments": []
+        "attachments": [],
+        "thread_id": null
       }
     ],
     "paused": [

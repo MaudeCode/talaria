@@ -79,6 +79,23 @@ def test_canceled_room_read_detaches_native_rpc():
     asyncio.run(probe())
 
 
+def _group_rpc(monkeypatch, method, value):
+    from talaria_sidecar.methods import groups as module
+    calls = []
+    class Client:
+        websocket = SimpleNamespace(protocol=SimpleNamespace(max_size=0))
+        async def rpc(self, called_method, **params):
+            calls.append((called_method, params))
+            return {"driver": True, "methods": [method]} if called_method == "groups.capabilities" else value
+    @asynccontextmanager
+    async def connect(*_args, **_kwargs):
+        yield Client(), None
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
+    monkeypatch.setattr(module, "_connect", connect)
+    monkeypatch.setattr(module, "_owner_refusal", lambda *_: None)
+    return module, calls
+
+
 def test_continue_forwards_only_its_declared_fields(monkeypatch, tmp_path):
     from talaria_sidecar.errors import InvalidParams
     from talaria_sidecar.methods import groups as module
@@ -87,18 +104,18 @@ def test_continue_forwards_only_its_declared_fields(monkeypatch, tmp_path):
         module.groups(SimpleNamespace(), {"profile_home": str(tmp_path), "subject": "owner",
                                           "operation": {**operation, "thread_id": "smuggled"}})
 
-    calls = []
-    class Client:
-        websocket = SimpleNamespace(protocol=SimpleNamespace(max_size=0))
-        async def rpc(self, method, **params):
-            calls.append((method, params))
-            return {"driver": True, "methods": ["groups.continue"]} if method == "groups.capabilities" else {"continued": True}
-    @asynccontextmanager
-    async def connect(*_args, **_kwargs):
-        yield Client(), None
-    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
-    monkeypatch.setattr(module, "_connect", connect)
-    monkeypatch.setattr(module, "_owner_refusal", lambda *_: None)
+    module, calls = _group_rpc(monkeypatch, "groups.continue", {"continued": True})
     result = asyncio.run(module._run(tmp_path, "owner", operation, SimpleNamespace(state="ready", endpoint="ws://owner")))
     assert result == {"state": "available", "reason": None, "value": {"continued": True}}
     assert calls[-1] == ("groups.continue", {"room_id": "room", "discussion_event_id": "discussion", "_timeout": 25})
+
+
+@pytest.mark.parametrize("thread_id", [None, "existing-thread"])
+def test_send_preserves_reply_thread_or_opens_its_own(monkeypatch, tmp_path, thread_id):
+    module, calls = _group_rpc(monkeypatch, "groups.send", {"accepted": True})
+    payload = {"text": "Follow-up", **({"thread_id": thread_id} if thread_id else {})}
+    operation = {"action": "send", "room_id": "room", "event_id": "new-event", "payload": payload}
+    result = asyncio.run(module._run(tmp_path, "owner", operation, SimpleNamespace(state="ready", endpoint="ws://owner")))
+    assert result["state"] == "available"
+    assert calls[-1] == ("groups.send", {"room_id": "room", "event_id": "new-event", "payload": {
+        "text": "Follow-up", "thread_id": thread_id or "new-event"}, "_timeout": 25})

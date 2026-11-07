@@ -420,6 +420,16 @@ The optimistic row uses that server-issued identity to converge on a streamed
 persisted row, including while the POST response is delayed. Definite refusals
 restore the draft and files immediately, without reconciliation reads.
 
+Message rows carry the native nullable `thread_id`; notices carry null. Reply is
+offered only for a row with a thread while the room allows sending. The selected
+thread is local composer state, displayed in the existing dismissible notice
+chip. A send can include `payload.thread_id`; the server verifies it against the
+room's authority-fenced log before forwarding it unchanged. Without it, the
+sidecar opens a thread using the send's event id. A confirmed send, including
+confirmation observed in the stream, clears the submitted reply selection. A
+refusal restores the draft and files and keeps the selection. An unknown send
+keeps its selection until reconciliation confirms it, without replaying it.
+
 A room's `context` is its purpose, shared notes and routing (`everyone`, `lead` or `auto`).
 It is null on a gateway without `groups.context` and for a routing this contract
 does not know, so those rooms stay usable and offer no settings to overwrite. The
