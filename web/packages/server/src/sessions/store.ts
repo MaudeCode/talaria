@@ -5,7 +5,7 @@ import type { DraftStore } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { withBackgroundDisplayKinds } from './background-updates.js'
 import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeSessionId, Session, type SessionDefaults, type SessionInit, type Message } from './session.js'
-import { RevisionConflict, type StorageBackend, type StorageIssue, type SessionChange, type MessageMatch } from './storage/backend.js'
+import { RevisionConflict, type StorageBackend, type StorageIssue, type StoredSession, type SessionChange, type MessageMatch } from './storage/backend.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './storage/search-text.js'
 import type { PersonAccess } from '../auth/person.js'
 import { readDocument, updateDocument } from './storage/document.js'
@@ -35,6 +35,9 @@ export interface SessionStoreDeps {
   personAccess?: () => PersonAccess | undefined
 }
 
+
+/** The fields of a session that decide who may reach it, read as `Session` reads them from its document. */
+export interface SessionOwnership { profile: string | null; owner_person_id: string | null }
 
 const UNSAVED_SHELL_GRACE_S = 1800
 export class SessionStore {
@@ -259,6 +262,58 @@ export class SessionStore {
     if (!loaded) throw new SessionNotFound(sid)
     if (opts.cacheOnMiss ?? true) await this.touch(loaded)
     return loaded
+  }
+
+  /**
+   * TAL-1948: whose session `sid` is, so a request can be refused before anything loads it. Reads only: nothing is
+   * repaired, cached, promoted or evicted. It answers for what `get` in the same mode serves. A metadata read of a
+   * resident that lags storage serves the resident, but the full read a handler makes next serves the document, so both
+   * are returned and a request must pass every one. Empty: no readable Web document, which stays the resolver's to report.
+   */
+  async inspectOwnership(sid: string, opts: { metadataOnly?: boolean } = {}): Promise<SessionOwnership[]> {
+    const metadataOnly = opts.metadataOnly ?? false
+    try {
+      return await this.serializeSession(sid, async () => {
+        const { cached, lags, gone } = await this.resident(sid)
+        if (gone) return []
+        if (cached && !lags && (metadataOnly || !cached.loadedMetadataOnly)) return [cached]
+        const stored = await this.storedOwnership(sid).catch((error: unknown) => { if (metadataOnly && cached) return null; throw error })
+        if (!cached) return stored ? [stored] : []
+        if (!stored) return [cached]
+        return metadataOnly ? [cached, stored] : [stored]
+      }, this.resolutions)
+    } catch { return [] }
+  }
+
+  /** The session a full `get` serves, for a decision that needs its transcript, built without repairing or caching it. */
+  inspectFull(sid: string): Promise<Session | null> {
+    return this.serializeSession(sid, async () => {
+      const { cached, lags, gone } = await this.resident(sid)
+      if (gone) return null
+      if (cached && !lags && !cached.loadedMetadataOnly) return cached
+      return (await this.load(sid, { drafts: false, repairDuplicates: false })) ?? cached ?? null
+    }, this.resolutions)
+  }
+
+  /** `getNow`'s view of the resident session, leaving the cache as it found it. */
+  private async resident(sid: string): Promise<{ cached?: Session; lags: boolean; gone: boolean }> {
+    await this.writes.get(sid)?.catch(() => { /* the committed value is read below */ })
+    const cached = this.sessions.get(sid)
+    if (cached?.session_id !== sid) return { lags: false, gone: false }
+    const lags = await this.cachedLagsStorage(cached)
+    return { cached, lags, gone: lags && !await this.exists(sid) }
+  }
+
+  private async storedOwnership(sid: string): Promise<SessionOwnership | null> {
+    if (!isSafeSessionId(sid)) return null
+    let stored: StoredSession | null
+    try { stored = await this.backend.readDocument(sid, { metadataOnly: true }) } catch { stored = await this.backend.readDocument(sid) }
+    // A JSON header stops at the transcript. A legacy document can keep its profile where only the full read after this one sees it.
+    if (stored?.metadataOnly && !('profile' in stored.doc)) stored = await this.backend.readDocument(sid)
+    const data = stored && sanitizeSessionRow(stored.doc, this, sid)
+    if (data?.session_id !== sid) return null
+    const owner = data.owner_person_id
+    return { profile: (data.profile as string | null | undefined) ?? null, owner_person_id: typeof owner === 'string' && owner ? owner : null }
   }
 
   async ensureFull(sid: string, session: Session): Promise<Session> {

@@ -89,6 +89,26 @@ describe('person isolation on', () => {
     expect((await server.get(`/api/session?session_id=${legacy.session_id}`, { headers: owner.headers })).status).toBe(200)
   })
 
+  it('refuses another person\'s stored session without repairing or caching it (TAL-1948)', async () => {
+    const server = await boot(true)
+    const alice = signIn(server, 'alice')
+    const bob = signIn(server, 'bob')
+    const sid = await chat(server, alice)
+    const store = server.deps.sessionStore
+    const session = await store.get(sid)
+    const partial = { role: 'assistant', content: 'unfinished', _partial: true, timestamp: 2 }
+    session.messages.push(partial, { ...partial })
+    await store.save(session)
+    store.sessions.delete(sid)
+    const revision = await store.revision(sid)
+    for (const path of [`/api/session?session_id=${sid}`, `/api/session?session_id=${sid}&messages=0`, `/api/session/draft?session_id=${sid}`]) {
+      expect((await server.get(path, { headers: bob.headers })).status, path).toBe(404)
+    }
+    expect((await post(server, bob, '/api/chat/start', { session_id: sid, message: 'hi' })).status).toBe(404)
+    expect(await store.revision(sid)).toBe(revision)
+    expect(store.sessions.has(sid)).toBe(false)
+  })
+
   it('binds new sessions to the signed-in person, whatever the request claims', async () => {
     const server = await boot(true)
     const alice = signIn(server, 'alice')
