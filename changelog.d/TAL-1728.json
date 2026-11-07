@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web opens folders with very many files, such as build output or photo folders, faster because it sorts them with much less work.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
