@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent recovery checks no longer reread the kept update history on every request.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

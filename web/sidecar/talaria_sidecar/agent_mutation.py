@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import queue
 import re
+from stat import S_ISREG
 import subprocess
 import sys
 import tempfile
@@ -121,6 +122,10 @@ def _native_source_repair(root):
         raise
 
 
+def _file_identity(stat):
+    return stat.st_dev, stat.st_ino, stat.st_mode, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size
+
+
 def _receipt_candidates(path, pattern, cache):
     """Cache discovery, never receipt presence; missing paths watch their nearest existing ancestor."""
     key = (path, pattern)
@@ -134,7 +139,7 @@ def _receipt_candidates(path, pattern, cache):
                 if ancestor == ancestor.parent:
                     raise
                 ancestor = ancestor.parent
-        stamp = (ancestor, stat.st_dev, stat.st_ino, stat.st_mode, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+        stamp = (ancestor, *_file_identity(stat))
         now = time.monotonic()
         previous = cache.get(key)
         if previous is not None and previous[0] == stamp and 0 <= now - previous[1] < 1:
@@ -156,6 +161,27 @@ def _receipt_candidates(path, pattern, cache):
             cache.clear()  # Bound retained paths if an installer repeatedly redirects Git metadata.
         cache[key] = (stamp, now, found)
     return found
+
+
+def _history_only(root, home, path, stat, cache):
+    """Completed correlation is history, not admission debt. Malformed evidence fails closed.
+
+    Only a parsed regular file memoizes, on its own identity: a symlink's target can change under an unchanged lstat,
+    and an unreadable read must be retried.
+    """
+    key = (path, 'history')
+    identity = _file_identity(stat)
+    if cache is not None and key in cache and cache[key][0] == identity:
+        return cache[key][1]
+    try:
+        state = services.ServiceRecovery(root, home, None, None, None).state
+    except RuntimeError:
+        return False
+    history = bool(state.get('update_operation', {}).get('recovered_revision') and not state.get('transaction')
+                   and not state['entries'] and not state.get('sync_failed'))
+    if cache is not None and S_ISREG(stat.st_mode):
+        cache[key] = (identity, history)
+    return history
 
 
 def _process_presence(pid):
@@ -184,7 +210,8 @@ def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
     key = hashlib.sha256(os.path.normcase(str(root)).encode()).hexdigest()[:12]
     native = home / ('.hermes-update-paused-gateways.' + key + '.json')
     gitdir = _git_directory(root)
-    paths = [services.recovery_path(root, home), marker, native,
+    recovery = services.recovery_path(root, home)
+    paths = [recovery, marker, native,
              root / '.update-incomplete', root / '.lazy-refresh-incomplete',
              gitdir / 'hermes-update-pull', root / '.hermes-update-zip-swap']
     paths.extend(_receipt_candidates(home, native.name + '.*.claim', discovery_cache))
@@ -201,15 +228,8 @@ def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
         for path in sorted(set(candidates)):
             try:
                 stat = path.lstat()
-                if path == services.recovery_path(root, home):
-                    # Completed correlation is history, not admission debt. Malformed evidence fails closed.
-                    try:
-                        state = services.ServiceRecovery(root, home, None, None, None).state
-                    except RuntimeError:
-                        state = {}
-                    if (state.get('update_operation', {}).get('recovered_revision') and not state.get('transaction')
-                            and not state['entries'] and not state.get('sync_failed')):
-                        continue
+                if path == recovery and _history_only(root, home, path, stat, discovery_cache):
+                    continue
                 result.append((str(path), stat.st_ino, stat.st_mtime_ns, stat.st_size))
             except FileNotFoundError:
                 pass
@@ -230,7 +250,7 @@ def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
             pass
         lifecycle = []
         try:
-            body = json.loads(services.recovery_path(root, home).read_text())
+            body = json.loads(recovery.read_text())
             for baseline in body.get('tree', {}).get('baselines', []):
                 changed = [*baseline.get('dirty_at_pause', []), *baseline.get('move_paths', [])]
                 changed.extend(path for paths in baseline.get('landed', {}).values() for path in paths)
