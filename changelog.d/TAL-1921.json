@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tabs closed behind a reverse proxy no longer use up the live connection limit until Talaria Web restarts.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

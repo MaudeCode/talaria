@@ -23,7 +23,7 @@ settings write changes redaction immediately without reading the config file.
 | Endpoint | Availability | Purpose |
 |---|---|---|
 | `GET /api/chat/stream?stream_id=<id>` | Always on | Live agent-turn relay (tokens, tool calls, approvals, `done`, `stream_end`). Falls back to run-journal replay when the in-memory stream is gone. Resume cursors: `after_event_id` / `after_seq` query params, with the standard `Last-Event-ID` header as fallback. Journal-backed events carry `id: <stream_id>:<seq>`; opaque runner cursors are emitted in an owner-bound `runner-v1` envelope so automatic reconnect cannot apply one run's cursor to another. An invalid/foreign/ahead-of-stream cursor is honored as replay-from-start rather than silently skipping events. |
-| `GET /api/session/stream?session_id=<id>` | Always on | Persistent per-session channel that survives across agent turns (`initial`, `server_turn_started`, `session-updated`, `bg_task_complete`). This is the stream the WebUI frontend keeps open per session and the stream non-browser clients should prefer for background session updates. |
+| `GET /api/session/stream?session_id=<id>` | Always on | Persistent per-session channel that survives across agent turns (`initial`, `server_turn_started`, `session-updated`, `bg_task_complete`). This is the stream the WebUI frontend keeps open per session and the stream non-browser clients should prefer for background session updates. Reconnects replay what was missed; see [Session stream cursors](#session-stream-cursors). |
 | `GET /api/sessions/events` | Always on | Global session-list invalidation (`initial` on every connection, then `sessions_changed` + keepalives). Both events signal a re-read of `/api/sessions`, not a per-session lifecycle feed. Web polls only while this stream is down and the tab is visible. With `?gateway=1` the same connection also carries the gateway feed — see [Merged sidebar stream](#merged-sidebar-stream). |
 | `GET /api/sessions/{session_id}/events` | Always on | Per-session run-journal relay with `Last-Event-ID` / `after_event_id` resume and snapshot fallback. See `docs/rfcs/session-sse-contract-v1.md` for the contract and its proof gates. |
 | `GET /api/kanban/events/stream?since=<cursor>&board=<slug>` | Always on | Kanban write feed: `hello` with the starting cursor, then `events` batches with `id: <cursor>`. A valid nonnegative integer `Last-Event-ID` header wins over `since`, so an automatic reconnect resumes where it stopped instead of replaying from the page's original snapshot cursor; a missing or malformed header falls back to `since`, then `0`. |
@@ -207,6 +207,58 @@ clients that display CLI/TUI/messaging sessions.
   Tornado-based `jupyter-server-proxy`) can set `HERMES_WEBUI_SSE_CHUNKED=1`
   to frame each event as an HTTP/1.1 chunk. The default wire format is
   unchanged when the flag is unset.
+
+## Stream lease
+
+A reverse proxy can keep acknowledging a stream after the browser behind it has
+gone, so heartbeats keep succeeding and the socket never closes. Every feed with
+no natural end therefore stops after a 300 s lease: `/api/session/stream`,
+`/api/sessions/events`, `/api/sessions/gateway/stream`,
+`/api/sessions/{session_id}/events`, `/api/groups/stream`,
+`/api/kanban/events/stream` and `/api/terminal/output`.
+
+- At the lease the server ends the response with `res.end()`. It adds no
+  `Connection: close` header for this. A live client reconnects, and a dead one
+  releases its stream slot, subscriber and any native observation. The budget of
+  eight streams per identity is unchanged.
+- A reader that has stopped draining cannot receive that end, so its socket is
+  closed instead.
+- `/api/chat/stream`, `/api/approval/stream` and `/api/clarify/stream` end with
+  their run and have no lease.
+
+`SseWriter` owns the deadline: `ready()` turns false at the lease, and `waitMs()`
+cuts each wait short. Clients treat a rotation as an ordinary reconnect and show
+no reconnecting or error state. `/api/sessions/events` and the groups stream send
+a fresh snapshot on connect; the journal, kanban and terminal streams resume from
+`Last-Event-ID`.
+
+## Session stream cursors
+
+`/api/session/stream` resumes from the standard `Last-Event-ID` header. Each frame
+from the session's channel carries its own cursor as its `id:` line:
+
+```
+session-channel:<token>@<seq>
+```
+
+`<token>` names the channel incarnation and `<seq>` is the frame's channel-scoped
+sequence, starting at 1. Payloads are unchanged. The cursor is opaque to clients.
+
+- The channel retains its last 32 frames. Frames emitted between connections are
+  retained too, so nothing in the reconnect gap is lost.
+- The `initial` frame carries a cursor without using a history slot. It names the
+  position the connection resumes from, or the channel's newest frame when
+  nothing is replayed, so a client that sees only `initial` keeps its place.
+- A reconnect replays retained frames strictly after the cursor's sequence, in
+  order, each once. Delivery and history are updated in one synchronous step, so
+  their order cannot differ.
+- A channel survives its last subscriber for 60 s. After that the next subscribe
+  starts a new incarnation.
+- An unknown, malformed, evicted, future or foreign-incarnation cursor replays
+  nothing and falls back to the existing recovery: `server_turn_started` for an
+  active run, otherwise `session-updated` from `known_count`. A connection with no
+  cursor receives no old frames.
+- Recovery frames carry no `id:` line, so they do not move a client's cursor.
 
 ## Live dictation WebSocket
 

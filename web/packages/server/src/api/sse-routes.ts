@@ -20,6 +20,8 @@ import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './
 import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
+/** A proxy can keep acknowledging a stream after its browser left, so a feed with no natural end stops here; a live client reconnects. */
+export const SSE_STREAM_LEASE_MS = 300_000
 const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
 
 /** Shared keyed concurrency budget; SSE uses it for Python `promote_request_to_stream`. */
@@ -63,12 +65,20 @@ export class SseWriter {
   private show = false
   private policyConfig: Config | null = null
   private policyCheckedAt = -Infinity
+  private readonly leaseEndsAt: number
 
-  constructor(private readonly ctx: RequestContext, private readonly release: () => void, private readonly connectionClose: boolean) {
+  /** `leaseMs` null: the stream ends with its run, so it has no lease. */
+  constructor(private readonly ctx: RequestContext, private readonly release: () => void, private readonly connectionClose: boolean, leaseMs: number | null = null) {
+    this.leaseEndsAt = leaseMs === null ? Infinity : performance.now() + leaseMs
     ctx.res.on('close', () => { this.closed = true; release() })
   }
 
   get isClosed(): boolean { return this.closed || this.ctx.res.destroyed }
+
+  private get leaseRemaining(): number { return this.leaseEndsAt - performance.now() }
+
+  /** How long a feed may wait before its next frame or heartbeat: `ms`, cut short at the lease. */
+  waitMs(ms: number = SSE_HEARTBEAT_INTERVAL_MS): number { return Math.max(0, Math.min(ms, this.leaseRemaining)) }
 
   start(): void {
     if (this.open) return
@@ -127,37 +137,43 @@ export class SseWriter {
   }
 
   /**
-   * Resolves once the socket has taken what was written, or the client left: true while it is still connected.
+   * Resolves once the socket has taken what was written, the client left, or the lease ended: true while the stream may
+   * go on, which every feed loop checks before each wait.
    * Replays await it per frame and page the journal (`iterRunEvents`), so a slow reader holds one page plus data near
    * the socket's high-water mark; frames the subscriber's bounded queue drops while this waits are backfilled from the
    * journal (`recoverDropped`).
    */
   async ready(): Promise<boolean> {
     const { res } = this.ctx
-    if (!this.isClosed && res.writableNeedDrain) {
+    const lease = this.leaseRemaining
+    if (!this.isClosed && lease > 0 && res.writableNeedDrain) {
       await new Promise<void>((resolve) => {
-        const done = (): void => { res.off('drain', done); res.off('close', done); resolve() }
+        const done = (): void => { clearTimeout(timer); res.off('drain', done); res.off('close', done); resolve() }
+        const timer = Number.isFinite(lease) ? setTimeout(done, lease) : undefined
         res.on('drain', done)
         res.on('close', done)
       })
     }
-    return !this.isClosed
+    return !this.isClosed && this.leaseRemaining > 0
   }
 
   end(): void {
-    if (!this.isClosed) this.ctx.res.end()
+    const { res } = this.ctx
+    // An undrained reader at the lease could never finish the response, and its open socket would outlive its budget slot.
+    if (!this.isClosed) { if (this.leaseRemaining <= 0 && res.writableNeedDrain) res.destroy(); else res.end() }
     this.closed = true
     this.release()
   }
 }
 
-export async function claimOrReject(ctx: RequestContext, connectionClose: boolean): Promise<SseWriter | null> {
+/** A new feed is leased by default; only a stream that ends with its run passes `leaseMs: null`. */
+export async function claimOrReject(ctx: RequestContext, connectionClose: boolean, leaseMs: number | null = ctx.deps.streamLeaseMs): Promise<SseWriter | null> {
   const release = ctx.deps.streamSlots.claim(clientStreamKey(ctx))
   if (!release) {
     await ctx.json({ error: 'Client SSE stream limit reached', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
     return null
   }
-  const writer = new SseWriter(ctx, release, connectionClose)
+  const writer = new SseWriter(ctx, release, connectionClose, leaseMs)
   await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
   return writer
 }
@@ -363,14 +379,14 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
     if (!summary) { (await ctx.json({ error: 'stream not found' }, { status: 404 })); return }
     let afterSeq = cursor.afterSeq
     if (afterSeq !== null && afterSeq > (summary.last_seq || 0)) afterSeq = 0
-    const sse = (await claimOrReject(ctx, true))
+    const sse = (await claimOrReject(ctx, true, null))
     if (!sse) return
     sse.start()
     try { await replayRunJournal(ctx, sse, streamId, summary, afterSeq) } finally { sse.end() }
     return
   }
   const [sub, snapshot] = channel.subscribeWithSnapshot()
-  const sse = (await claimOrReject(ctx, true))
+  const sse = (await claimOrReject(ctx, true, null))
   if (!sse) { channel.unsubscribe(sub); return }
   sse.start()
   try {
@@ -421,7 +437,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   const sse = (await claimOrReject(ctx, false))
   if (!sse) return
   const profile = ctx.deps.activeProfile()
-  const sub = ctx.deps.channels.subscribe(sid, profile)
+  const sub = ctx.deps.channels.subscribe(sid, profile, ctx.header('last-event-id'))
   const controller = new AbortController()
   const abort = () => { controller.abort(); sub.wake?.() }
   ctx.res.once('close', abort)
@@ -430,7 +446,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   const observationEnded = () => { nativeEnded = true; sub.wake?.() }
   try {
     sse.start()
-    sse.event('initial', { session_id: sid })
+    sse.event('initial', { session_id: sid }, sub.initialCursor)
     // Attachment can wait on a native RPC; the HTTP owner must keep draining and heartbeating meanwhile.
     void ctx.deps.sessions.owner?.observe(sid, profile, controller.signal).then((acquired) => {
       if (controller.signal.aborted) { acquired?.release(); return }
@@ -455,10 +471,10 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
     for (;;) {
       if (!(await sse.ready())) return
       if (nativeEnded) return
-      const item = await nextSessionItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+      const item = await nextSessionItem(sub, sse.waitMs())
       if (sse.isClosed || nativeEnded || controller.signal.aborted) return
       if (!item) { sse.comment('keepalive'); continue }
-      sse.event(item[0], item[1])
+      sse.event(item[0], item[1], item[2])
     }
   } finally {
     ctx.res.removeListener('close', abort)
@@ -542,7 +558,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
           lastWrite = Date.now()
         }
       }
-      const event = await nextWithin((signal) => sub.next(signal), gatewaySub ? MERGED_SIDEBAR_DRAIN_MS : SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
+      const event = await nextWithin((signal) => sub.next(signal), sse.waitMs(gatewaySub ? MERGED_SIDEBAR_DRAIN_MS : SSE_HEARTBEAT_INTERVAL_MS), abort.signal)
       if (sse.isClosed) return
       if (!event) {
         if (Date.now() - lastWrite < SSE_HEARTBEAT_INTERVAL_MS) continue
@@ -588,7 +604,7 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
     sse.event('sessions_changed', { sessions: await initialGatewaySessions(ctx) })
     for (;;) {
       if (!(await sse.ready())) return
-      const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
+      const event = await nextWithin((signal) => sub.next(signal), sse.waitMs(), abort.signal)
       if (sse.isClosed) return
       if (event) { sse.event(event.type, { ...event, sessions: await visibleGatewayRows(ctx, event.sessions) }); continue }
       // The watcher stopped (a profile switch swapped it) or dropped this slow subscriber: end the response so
@@ -661,7 +677,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
         const fp = (await ctx.deps.journal.sessionJournalFingerprint(sessionId))
         if (fp !== idleFingerprint) { idleFingerprint = fp; (await snapshot(attached.streamId)) }
         sse.comment('keepalive')
-        await new Promise((r) => setTimeout(r, SSE_HEARTBEAT_INTERVAL_MS))
+        await new Promise((r) => setTimeout(r, sse.waitMs()))
       }
     }
     const sub = attached.sub
@@ -682,12 +698,14 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     buffered = bufferedPrompts(ctx, sessionId, streamId, sameRunSeq(attached.snapshot.last_event_id, streamId))
     for (;;) {
       if (!(await sse.ready())) return
-      const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+      const item = await nextItem(sub, sse.waitMs())
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
       if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, async (gap) => { await emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null, new PromptReplayFilter((prompt) => ctx.deps.journal.iterRunEvents(sessionId, streamId, { afterSeq: prompt.seq, maxSeq: gap.maxSeq }), streamId)); }))) return
+      // A lease that cut the backfill short must not send this later frame: its id would skip what the backfill left out.
+      if (!(await sse.ready())) return
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
@@ -708,7 +726,7 @@ async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): 
   if (!sid) { (await ctx.json({ error: 'session_id is required' }, { status: 400 })); return }
   const [sub, initial] = kind === 'approval' ? ctx.deps.pending.subscribeApprovals(sid) : ctx.deps.pending.subscribeClarifies(sid)
   const release = (): void => { if (kind === 'approval') ctx.deps.pending.unsubscribeApprovals(sid, sub); else ctx.deps.pending.unsubscribeClarifies(sid, sub) }
-  const sse = (await claimOrReject(ctx, true))
+  const sse = (await claimOrReject(ctx, true, null))
   if (!sse) { release(); return }
   try {
     sse.start()
