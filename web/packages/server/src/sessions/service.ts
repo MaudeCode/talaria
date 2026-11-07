@@ -40,7 +40,7 @@ import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
 import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
-import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
+import { mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessDeps } from '../workspace/media.js'
 import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
@@ -321,13 +321,15 @@ export class SessionService {
     const media = this.deps.media
     const access = media ? await resolveMediaAccess(media.access) : null
     const served = new Map<string, string | null>()
+    let anchor: ReturnType<typeof mediaAccessResolver> | null = null
     const localUrl = (path: string): string | null => {
       if (!media?.localIo(s.profile) || !access) return null
       if (served.has(path)) return served.get(path) ?? null
       let url: string | null = null
       try {
-        const target = mediaTarget(mediaRefPath(path))
-        if (mediaAnchorRootResolved(target, s, access)) url = `./api/media?${new URLSearchParams({ path: target, session_id: s.session_id }).toString()}`
+        const target = mediaRefTarget(path)
+        anchor ??= mediaAccessResolver(s, access)
+        if (anchor(target)) url = `./api/media?${new URLSearchParams({ path: target, session_id: s.session_id }).toString()}`
       } catch { /* an invalid path stays text */ }
       served.set(path, url)
       return url
