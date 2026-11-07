@@ -356,10 +356,10 @@ describe('relay publisher failure handling', () => {
       const outbox = join(s.state, 'talaria-relay-deleted.json')
       if (failure === 'corrupt outbox') writeFileSync(outbox, '{"version":1,"views":[{"sessionId":"pending"}]}')
       else {
-        const write = atomic.atomicWriteText
-        const spy = vi.spyOn(atomic, 'atomicWriteText').mockImplementation((path, text, opts) => {
+        const write = atomic.atomicWriteTextAsync
+        const spy = vi.spyOn(atomic, 'atomicWriteTextAsync').mockImplementation(async (path, text, opts) => {
           if (path === outbox) throw new Error('synthetic disk-full failure')
-          write(path, text, opts)
+          await write(path, text, opts)
         })
         restore = () => { spy.mockRestore() }
       }
@@ -614,13 +614,13 @@ describe('relay publisher failure handling', () => {
     s.deps.fetch = relay.fetch
     let release: () => void = () => undefined
     let failed = false
-    const write = atomic.atomicWriteText
-    const spy = vi.spyOn(atomic, 'atomicWriteText').mockImplementation((path, text, opts) => {
+    const write = atomic.atomicWriteTextAsync
+    const spy = vi.spyOn(atomic, 'atomicWriteTextAsync').mockImplementation(async (path, text, opts) => {
       if (!failed && path.endsWith('talaria-relay-deleted.json') && (JSON.parse(text) as { views: Json[] }).views.length === 1 && text.includes('second-deletion')) {
         failed = true
         throw new Error('synthetic acknowledgement persistence failure')
       }
-      write(path, text, opts)
+      await write(path, text, opts)
     })
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
@@ -1009,6 +1009,13 @@ describe('session-started events under person isolation (TAL-48)', () => {
         s.deps.relay.current()!.changed()
         await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(before) })
       }
+      // Alice's private Web chat delegates the subagent below.
+      const webChat = await s.deps.sessionStore.newSession({ profile: 'default' })
+      webChat.session_id = 'alicewebchat01'
+      webChat.owner_person_id = 'oidc:alice'
+      await s.deps.sessionStore.save(webChat)
+      // Alice starts this diagnostic chat through Web, which records its person before it has any messages.
+      expect(await s.deps.sessionStore.recordForeignOwner('diagnostic_alice_01', 'oidc:alice')).toBe(true)
       const db = openStateDb(join(s.state, 'state.db'))
       db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
         CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL)`)
@@ -1018,13 +1025,6 @@ describe('session-started events under person isolation (TAL-48)', () => {
         db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(id, 'user', 'hi', startedAt)
       }
       db.close()
-      // Alice's private Web chat delegated the subagent above.
-      const webChat = await s.deps.sessionStore.newSession({ profile: 'default' })
-      webChat.session_id = 'alicewebchat01'
-      webChat.owner_person_id = 'oidc:alice'
-      await s.deps.sessionStore.save(webChat)
-      // Alice started this diagnostic chat through Web, so its person is recorded.
-      expect(await s.deps.sessionStore.recordForeignOwner('diagnostic_alice_01', 'oidc:alice')).toBe(true)
       const started = (): string[] => relay.calls.filter((c) => c.url.endsWith('/started')).map((c) => String(c.body.sessionId))
       await vi.waitFor(() => {
         s.deps.relay.current()!.changed()

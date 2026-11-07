@@ -8,6 +8,7 @@
  * reads config.yaml.
  */
 import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
+import { withDocumentQueue } from './sessions/storage/document.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
 import { KanbanPinnedBoardsSchema, WebUpdateChannelSchema } from '@maudecode/talaria-web-contracts'
@@ -416,6 +417,11 @@ export class SettingsStore {
       if (!this.hooks.hashPassword) throw new Error('password hashing is not wired')
       newPasswordHash = await this.hooks.hashPassword(rawPw.trim())
     }
+    // Hash first: a slow password hash holds no other save behind the document queue.
+    return withDocumentQueue(this.documents, 'settings', 'settings', () => this.applySave(settings, clearPw, newPasswordHash, opts))
+  }
+
+  private async applySave(settings: Settings, clearPw: unknown, newPasswordHash: string | null, opts: { profile?: string }): Promise<Settings> {
     for (let attempt = 0; ; attempt += 1) {
       let record
       try { record = await this.documents.get('settings', 'settings') }

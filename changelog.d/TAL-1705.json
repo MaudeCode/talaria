@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving a draft, a queued prompt or other stored data no longer pauses streaming replies for everyone connected to Talaria Web.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

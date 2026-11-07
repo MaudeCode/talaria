@@ -17,7 +17,17 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
 const OWNER: UpdateNotificationScope = { owner: 'local-owner', profile: 'default', serverOwner: true }
 const NOW = Date.parse('2026-10-13T12:00:00Z') / 1000
 const stamp = (offsetS = 0): string => new Date((NOW + offsetS) * 1000).toISOString()
-const flush = async (): Promise<void> => { for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setImmediate(resolve) }) }
+/** Document writes leave the event loop, so settle only after the last one finishes and the queue has run on from it. */
+const writes = new Set<Promise<unknown>>()
+class TrackedDocuments extends JsonDocuments {
+  override put(...args: Parameters<JsonDocuments['put']>): Promise<string> {
+    const write = super.put(...args)
+    const settled = write.catch(() => undefined).finally(() => { writes.delete(settled) })
+    writes.add(settled)
+    return write
+  }
+}
+const flush = async (): Promise<void> => { for (let idle = 0; idle < 10; idle = writes.size ? 0 : idle + 1) await new Promise<void>((resolve) => { setImmediate(resolve) }) }
 
 /** The gateway process a restart replaces, and the one that replaces it: both live, so only identity tells them apart. */
 const OLD_PID = process.pid
@@ -40,7 +50,7 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
   }
   /** `hermes gateway restart` as the Agent runs it: the old process exits and a new one writes its own pid record. */
   const replaced = (): Promise<Dict> => { if (last.pid !== null) gateway({ ...last, pid: (last.pid ?? OLD_PID) === OLD_PID ? NEW_PID : OLD_PID, active_agents: 0 }); return Promise.resolve({ status: 'completed' }) }
-  const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(stateDir))))
+  const store = (await initializeStore(new UpdateNotificationStore(new TrackedDocuments(stateDir))))
   const calls: string[] = []
   const interrupts: boolean[] = []
   const profiles: string[] = []
