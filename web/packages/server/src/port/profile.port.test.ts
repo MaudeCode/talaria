@@ -916,7 +916,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     // ...starts a detached memory commit on its way out, then releases the lease.
     let finishCommit: () => void = () => undefined
     sidecar.respond('chat.commit_memory', () => new Promise((resolve) => { finishCommit = () => { resolve({ committed: true }) } }))
-    s.deps.sessions.deps.commitSessionMemory?.(first)
+    await s.deps.sessions.deps.commitSessionMemory?.(first)
     if (typeof release === 'function') release()
     const refused = await deleting
     expect(refused.status).toBe(409)

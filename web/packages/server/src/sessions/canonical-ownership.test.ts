@@ -495,7 +495,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     if (action === 'title') await s.deps.sessions.deps.syncTitle(session)
     else if (action === 'usage') await s.deps.turns.deps.syncUsage?.(session, 'fixture')
     else if (action === 'delete') await s.deps.sessions.deps.runtime.deleteCliSession('default', sid).catch(() => undefined)
-    else s.deps.sessions.deps.runtime.evictAgent(sid, true)
+    else await s.deps.sessions.deps.runtime.evictAgent(sid, true)
     const methods = ['state_db.sync_title', 'state_db.sync_usage', 'state_db.delete_cli_session', 'chat.evict_agent']
     expect(sidecar.calls.filter((c) => methods.includes(c.method))).toEqual([])
     expect(stored()).toEqual(before)

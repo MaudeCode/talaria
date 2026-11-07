@@ -238,7 +238,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     { kind: 'token', runId: 'run-paged', write: async () => { (await run('run-paged', 6000)) }, readsPerRow: 1 },
     { kind: 'pre-id tool', runId: 'run-legacy', write: async () => { (await legacyRun('run-legacy', 3000)) }, readsPerRow: 2 },
   ])('a $kind replay to a paused reader parses the journal a page at a time rather than whole', async ({ runId, write, readsPerRow }) => {
-    write()
+    await write()
     const parse = vi.spyOn(JSON, 'parse')
     const event = vi.spyOn(SseWriter.prototype, 'event')
     try {

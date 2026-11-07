@@ -101,11 +101,11 @@ describe('retry and undo cut the model context at the selected turn (TAL-1027)',
     { redact: false, preview: 'please use this credential now: ghp_abcd...' },
   ])('cuts the Undo preview at 40 characters after masking a credential that straddles the cut, redaction=$redact (TAL-1884)', async ({ redact, preview }) => {
     const row = { role: 'user', content: 'please use this credential now: ghp_abcdefghij0123456789', timestamp: 1 }
-    s.deps.settings.save({ api_redact_enabled: redact })
+    await s.deps.settings.save({ api_redact_enabled: redact })
     try {
       const undone = await (await post('/api/session/undo', { session_id: await seeded([row], [row]) })).json() as Json
       expect(undone).toMatchObject({ ok: true, removed_preview: preview })
-    } finally { s.deps.settings.save({ api_redact_enabled: true }) }
+    } finally { await s.deps.settings.save({ api_redact_enabled: true }) }
   })
 
   it('removes a turn the server just settled without clearing the earlier context', async () => {

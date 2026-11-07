@@ -211,8 +211,7 @@
         "packages/server/scripts/**"
       ],
       "rules": {
-        "typescript/no-non-null-assertion": "off",
-        "typescript/no-floating-promises": "off"
+        "typescript/no-non-null-assertion": "off"
       }
     },
     {
