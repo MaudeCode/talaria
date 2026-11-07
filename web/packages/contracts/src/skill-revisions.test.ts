@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, it } from 'vitest'
-import { SkillRevisionsInputSchema, SkillRevisionsSchema } from './sidecar/namespaces.js'
+import { SkillRevisionsInputSchema, SkillRevisionsSchema } from './sidecar-shared.js'
 
 it('shares immutable, bounded read-only revision fixtures with consumers', () => {
   const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/skill-revisions.json'), 'utf8')) as Record<string, unknown>

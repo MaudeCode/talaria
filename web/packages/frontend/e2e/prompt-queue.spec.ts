@@ -3,7 +3,7 @@ import { expect, test } from './fixtures'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { SpaShell } from '../../server/dist/spa.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
-import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts'
+import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts/sidecar'
 
 test.use({ serviceWorkers: 'block' })
 const completed = (params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> => ({

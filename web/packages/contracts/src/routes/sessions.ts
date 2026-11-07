@@ -3,7 +3,7 @@ import { SourceReferenceSearchSchema } from '../views.js'
 import { ContextDetailSchema } from '../context-detail.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
+import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar-shared.js'
 import { ExecutionModesSchema } from '../gateway-session.js'
 import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 

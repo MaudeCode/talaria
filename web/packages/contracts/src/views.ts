@@ -12,10 +12,10 @@ import { z } from 'zod'
 import { OutboundDraftRefSchema } from './outbound-drafts.js'
 import { MeshyModelRefSchema } from './meshy.js'
 import { RunStatusSchema } from './run-status.js'
-import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar/runtime.js'
+import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema } from './gateway-session.js'
-import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginDisabledReasonSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
+import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginDisabledReasonSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar-shared.js'
 
 export { SpeedTierSchema } from './speed.js'
 

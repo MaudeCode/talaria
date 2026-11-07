@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's app shell downloads about 30 KB less, because the browser no longer loads schemas only the server uses.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { hermesTheme } from './src/theme/themePlugin'
 
 export default defineConfig({
   plugins: [viteReact({ compiler: true }), paraglideLocaleSplit('./src/paraglide'), hermesTheme()],
-  resolve: { alias: { '~': fileURLToPath(new URL('./src', import.meta.url)) } },
+  resolve: { alias: [{ find: '~', replacement: fileURLToPath(new URL('./src', import.meta.url)) }, { find: /^@maudecode\/talaria-web-contracts$/, replacement: '@maudecode/talaria-web-contracts/browser' }] },
   test: {
     environment: 'jsdom',
     globals: false,
