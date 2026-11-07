@@ -110,10 +110,35 @@ describe('config.yaml env references', () => {
     expect(saved().model).toEqual({ default: 'claude-opus-4-6', provider: '${SYNTH_PROVIDER}', base_url: '${SYNTH_URL}' })
   })
 
+  it('selecting a custom provider keeps its owner-written base_url reference', async () => {
+    const raw = { model: { default: 'old-model', provider: 'anthropic' }, providers: { synth: { base_url: '${SYNTH_URL}' } } }
+    const { server, saved } = await boot(raw, { ...raw, providers: { synth: { base_url: 'https://llm.example/v1' } } })
+    expect((await post(server, '/api/default-model', { model: '@synth:synth-model' })).status).toBe(200)
+    expect(saved().model).toEqual({ default: 'synth-model', provider: 'synth', base_url: '${SYNTH_URL}' })
+  })
+
   it('a provider change still drops an unresolved base_url reference', async () => {
     const { server, saved } = await boot({ model: { default: 'old-model', provider: 'custom', base_url: '${MISSING_URL}' } }, { model: { default: 'old-model', provider: 'custom', base_url: '${MISSING_URL}' } })
     expect((await post(server, '/api/default-model', { model: 'claude-opus-4-6', provider: 'anthropic' })).status).toBe(200)
     expect(saved().model).toEqual({ default: 'claude-opus-4-6', provider: 'anthropic' })
+  })
+
+  it.each([
+    ['model', { model: '${SYNTH_KEY}' }],
+    ['provider-qualified model', { model: '@anthropic:${SYNTH_KEY}' }],
+    ['provider', { model: 'claude-opus-4-6', provider: '${SYNTH_KEY}' }],
+  ])('a write cannot add a reference as the %s, so it cannot read a secret back', async (_name, body) => {
+    const raw = { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } }
+    const { server, saved } = await boot(raw, raw)
+    expect((await post(server, '/api/default-model', body)).status).toBe(400)
+    expect(saved()).toEqual(raw)
+  })
+
+  it('the shared write path refuses a new reference in a workspace field but keeps an existing one', async () => {
+    const { server, saved } = await boot({ workspace: '${SYNTH_DIR}', terminal: { cwd: '/srv/synth' } }, { workspace: '/tmp', terminal: { cwd: '/srv/synth' } })
+    await expect(server.deps.agentConfig.update(server.state, (c) => { c.terminal = { cwd: '${SYNTH_KEY}' } })).rejects.toThrow(/reference/)
+    await server.deps.agentConfig.update(server.state, (c) => { c.max_tokens = 7 })
+    expect(saved()).toEqual({ workspace: '${SYNTH_DIR}', terminal: { cwd: '/srv/synth' }, max_tokens: 7 })
   })
 
   it('a resolved secret never reaches a settings, model, provider or MCP response', async () => {

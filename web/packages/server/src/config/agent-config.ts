@@ -42,6 +42,16 @@ function resolvedView(source: Config): Config {
   return view
 }
 
+/**
+ * The written fields the resolved view can show or send. A Web write may keep a reference already in one but never add
+ * one: its expansion would hand the writer a value from the profile's secret scope, and model writes need no owner session.
+ */
+const resolvedReaderFields = (config: Config): Dict => {
+  const { default: model, provider } = modelFields(config)
+  const { cwd, backend } = dict(config.terminal)
+  return { model, provider, workspace: config.workspace, default_workspace: config.default_workspace, cwd, backend }
+}
+
 export class ConfigUnavailable extends Error {}
 
 /** `profileFile`: address `<home>/config.yaml` itself, ignoring `HERMES_CONFIG_PATH` (Python `_active_profile_config_path` for skills). */
@@ -160,7 +170,11 @@ export class AgentConfig {
     const prev = this.locks.get(file) ?? Promise.resolve()
     const run = prev.catch(() => undefined).then(async () => {
       const config = await this.read(profileHome, opts)
+      const before = resolvedReaderFields(config)
       if (await mutate(config) === false) return config
+      for (const [field, value] of Object.entries(resolvedReaderFields(config))) {
+        if (isReference(value) && value !== before[field]) throw new Error(`${field} cannot contain a \${...} reference`)
+      }
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
       await sidecar.call('config.set', { profile_home: profileHome, config_path: file, config })
