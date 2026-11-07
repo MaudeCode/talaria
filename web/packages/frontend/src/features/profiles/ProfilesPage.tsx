@@ -9,10 +9,12 @@ import { keys } from '../../api/queryKeys'
 import { useProfilesQuery, useSwitchProfile } from '../../app/queries'
 import { HubPage } from '../../shell/AppShell'
 import { PanelHeadButton } from '../../shell/PanelHead'
+import { Badge } from '../../ui/Badge'
 import { Button, IconButton } from '../../ui/Button'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { Row, RowList } from '../../ui/List'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -65,7 +67,7 @@ export function ProfilesPage() {
       {profiles.isPending && <LoadingState />}
       {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
       {profiles.isSuccess && list.length === 0 && <EmptyState>{m.profile_no_configuration()}</EmptyState>}
-      <ul className="flex flex-col gap-2" id="profilesPanel">
+      <RowList id="profilesPanel">
         {list.map((p) => {
           const isActive = p.name === active
           const provisional = !profiles.data?.profiles.some((confirmedProfile) => confirmedProfile.name === p.name)
@@ -76,33 +78,35 @@ export function ProfilesPage() {
             ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), Icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
           ]
           return (
-            <RowContextMenu key={p.name} label={m.profile_row_menu()} actions={actions} trigger={<li className={cn('flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5', isActive && 'border-accent-bg-strong')} data-profile={p.name}>
-              <div className="min-w-0 flex-1 basis-48">
-                <div className="flex items-center gap-2 text-sm font-medium text-text">
-                  {p.display_name && <span className="truncate">{p.display_name}</span>}
-                  <span className={cn('truncate', p.display_name && 'text-xs font-normal text-muted')}>{p.name}</span>
-                  {p.is_default && <span className="text-xs text-muted">{m.profile_default_label()}</span>}
-                  {isActive && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-text">{m.profile_active()}</span>}
+            <RowContextMenu key={p.name} label={m.profile_row_menu()} actions={actions} trigger={<Row data-profile={p.name}>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1 basis-48">
+                  <div className="flex items-baseline gap-2 text-sm font-semibold text-text">
+                    {p.display_name && <span className="truncate">{p.display_name}</span>}
+                    <span className={cn('truncate', p.display_name && 'text-xs font-normal text-muted')}>{p.name}</span>
+                    {p.is_default && <span className="text-xs text-muted">{m.profile_default_label()}</span>}
+                    {isActive && <Badge tone="border-accent text-accent-text">{m.profile_active()}</Badge>}
+                  </div>
+                  {p.description && <div className="mt-0.5 truncate text-xs text-muted" title={p.description}>{p.description}</div>}
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-muted">
+                    {p.model && <span>{p.provider ? `${p.provider} · ` : ''}{p.model}</span>}
+                    {p.has_env ? <span>{m.profile_api_keys_configured()}</span> : <span>{m.profile_no_configuration()}</span>}
+                    {p.gateway_mode ? <span>{GATEWAY_MODE_LABEL[p.gateway_mode]()}</span> : p.gateway_running !== undefined && <span>{p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()}</span>}
+                    {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
+                  </div>
                 </div>
-                {p.description && <div className="mt-0.5 truncate text-xs text-muted" title={p.description}>{p.description}</div>}
-                <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-muted">
-                  {p.model && <span>{p.provider ? `${p.provider} · ` : ''}{p.model}</span>}
-                  {p.has_env ? <span>{m.profile_api_keys_configured()}</span> : <span>{m.profile_no_configuration()}</span>}
-                  {p.gateway_mode ? <span>{GATEWAY_MODE_LABEL[p.gateway_mode]()}</span> : p.gateway_running !== undefined && <span>{p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()}</span>}
-                  {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
-                </div>
+                {actions.length > 0 && (
+                  <div className="ml-auto flex items-center gap-3">
+                    {actions.map(({ label, title, Icon, run, disabled }) => Icon
+                      ? <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>
+                      : <Button key={label} onClick={run} disabled={disabled} title={title}>{label}</Button>)}
+                  </div>
+                )}
               </div>
-              {actions.length > 0 && (
-                <div className="ml-auto flex items-center gap-3">
-                  {actions.map(({ label, title, Icon, run, disabled }) => Icon
-                    ? <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>
-                    : <Button key={label} onClick={run} disabled={disabled} title={title}>{label}</Button>)}
-                </div>
-              )}
-            </li>} />
+            </Row>} />
           )
         })}
-      </ul>
+      </RowList>
       {creating && <CreateProfileDialog existing={list.map((p) => p.name)} onClose={() => setCreating(false)} onSubmit={(body) => { setCreating(false); create.mutate(body) }} />}
       <ConfirmDialog open={deleting !== null} onOpenChange={(o) => { if (!o) setDeleting(null) }} title={m.profile_delete_confirm_title({ name: deleting ?? '' })} description={m.profile_delete_confirm_body()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { if (deleting) del.mutate(deleting) }} />
     </HubPage>

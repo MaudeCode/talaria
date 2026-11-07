@@ -4,6 +4,8 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { appUrl } from '../../lib/appRoot'
 import { copyWithToast } from '../../lib/clipboard'
+import { Button, buttonClass } from '../../ui/Button'
+import { SectionHeader } from '../../ui/List'
 import { Toaster } from '../toast/Toaster'
 import { m } from '../../paraglide/messages.js'
 import { SharedTranscript } from './SharedTranscript'
@@ -25,10 +27,10 @@ export function SharePage({ token }: { token: string }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5 max-[720px]:w-full">
-          <button type="button" onClick={copy} className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-[13px] font-medium hover:bg-accent-bg hover:text-accent-text max-[720px]:flex-1">
+          <Button onClick={copy} className="min-h-11 max-[720px]:flex-1">
             <Copy size={14} aria-hidden="true" /> {m.share_copy_link()}
-          </button>
-          <a href={appUrl('').href} className="inline-flex items-center justify-center rounded-lg border border-border bg-surface px-3.5 py-2.5 text-[13px] font-medium no-underline hover:bg-accent-bg hover:text-accent-text max-[720px]:flex-1">{m.share_open_hermes()}</a>
+          </Button>
+          <a href={appUrl('').href} className={buttonClass('default', 'min-h-11 no-underline max-[720px]:flex-1')}>{m.share_open_hermes()}</a>
         </div>
       </header>
       <main className="share-wrap mx-auto w-[min(920px,calc(100vw-32px))] pb-18 pt-7">
@@ -41,7 +43,8 @@ export function SharePage({ token }: { token: string }) {
             {data && m.share_meta({ n: data.message_count ?? data.messages?.length ?? 0 })}
           </div>
         </section>
-        <section className="share-transcript mt-5 rounded-2xl border border-border bg-surface px-4 pb-2 pt-4" id="shareTranscript">
+        <SectionHeader className="mt-5">{m.transcript()}</SectionHeader>
+        <section className="share-transcript mt-3" id="shareTranscript">
           {share.isPending && <div className="px-4 py-10 text-center text-muted">{m.loading()}</div>}
           {share.isError && (
             <div className="px-4 py-10 text-center text-muted" role="alert">

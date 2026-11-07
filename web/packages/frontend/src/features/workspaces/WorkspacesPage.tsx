@@ -6,13 +6,14 @@ import { keys } from '../../api/queryKeys'
 import { useWorkspacesQuery } from '../../app/queries'
 import { HubPage } from '../../shell/AppShell'
 import { PanelHeadButton } from '../../shell/PanelHead'
+import { Badge } from '../../ui/Badge'
 import { Button, IconButton } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { Row, RowList } from '../../ui/List'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
-import { cn } from '../../ui/cn'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
 export function WorkspacesPage() {
@@ -48,7 +49,7 @@ export function WorkspacesPage() {
       {ws.isPending && <LoadingState />}
       {ws.isError && <ErrorState error={ws.error} onRetry={() => { void ws.refetch() }} />}
       {ws.isSuccess && list.length === 0 && <EmptyState>{m.workspace_no_workspaces()}</EmptyState>}
-      <ul className="flex flex-col gap-2" id="workspacesPanel">
+      <RowList id="workspacesPanel">
         {list.map((w, i) => {
           // A space still being added has no server entry to move, rename or remove yet.
           const actions: (RowAction & { Icon: LucideIcon })[] = confirmed.has(w.path) ? [
@@ -58,15 +59,17 @@ export function WorkspacesPage() {
             { label: m.remove(), Icon: Trash2, run: () => setRemoving(w.path), danger: true },
           ] : []
           return <RowContextMenu key={w.path} label={m.workspace_row_menu()} actions={actions} trigger={
-          <li className={cn('flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2', ws.data?.last === w.path && 'border-accent-bg-strong')}>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 text-sm font-medium text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.workspace_current()}</span>}</div>
-              <div className="truncate font-mono text-[11px] text-muted">{w.path}</div>
-            </div>
-            {actions.map(({ label, Icon, run, disabled }) => <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>)}
-          </li>} />
+            <Row>
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2 text-sm font-semibold text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <Badge tone="border-accent text-accent-text">{m.workspace_current()}</Badge>}</div>
+                  <div className="truncate font-mono text-[11px] text-muted">{w.path}</div>
+                </div>
+                {actions.map(({ label, Icon, run, disabled }) => <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>)}
+              </div>
+            </Row>} />
         })}
-      </ul>
+      </RowList>
       {adding && <WorkspaceDialog onClose={() => setAdding(false)} onSubmit={(path, name) => { setAdding(false); add.mutate({ resource: newResource('workspace'), path, name }) }} />}
       <ConfirmDialog open={removing !== null} onOpenChange={(o) => { if (!o) setRemoving(null) }} title={m.workspace_remove_confirm()} confirmLabel={m.remove()} cancelLabel={m.cancel()} danger onConfirm={() => { if (removing) remove.mutate(removing) }} />
       {renaming && <WorkspaceDialog workspace={renaming} onClose={() => setRenaming(null)} onSubmit={(_path, name) => { rename.mutate({ path: renaming.path, name }); setRenaming(null) }} />}

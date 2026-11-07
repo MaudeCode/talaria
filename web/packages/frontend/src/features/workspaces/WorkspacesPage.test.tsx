@@ -33,6 +33,14 @@ describe('WorkspacesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'About Spaces' }))
     expect(await screen.findByText('Add and switch workspaces for your sessions.')).toBeVisible()
   })
+
+  it('TAL-1791: marks only the last-used space', async () => {
+    vi.mocked(api.fetchWorkspaces).mockResolvedValue({ ...spaces, last: '/srv/beta' })
+    renderPage()
+    await screen.findByText('Beta')
+    expect(within(row('Beta')).getByText('Current')).toBeVisible()
+    expect(within(row('Alpha')).queryByText('Current')).not.toBeInTheDocument()
+  })
 })
 
 describe('space writes show their result while the server is held (TAL-1179)', () => {
