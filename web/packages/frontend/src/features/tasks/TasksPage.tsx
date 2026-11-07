@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
+import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Square, Trash2, type LucideIcon } from 'lucide-react'
 import { copyWithToast } from '../../lib/clipboard'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -21,6 +21,7 @@ import { HelpTip } from '../../ui/Field'
 import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { Row as ListRow, RowList } from '../../ui/List'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -45,6 +46,8 @@ function cronEffect(action: CronWrite): ResourceEffect {
   return { fields: action === 'pause' ? { derived_state: 'paused', resumable: true } : { derived_state: 'active', resumable: false, needs_attention: false, paused_reason: null } }
 }
 interface Editor { mode: EditorMode; job: CronJob | null }
+/** One entry of a job's action list, which its detail toolbar and its row's right-click and long-press menu both render. */
+interface JobAction { label: string; run: () => void; Icon?: LucideIcon; busy?: boolean; danger?: boolean }
 
 
 export { statusLabel } from './automationStatus'
@@ -126,6 +129,19 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   }
   const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id) }
   const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }) }
+  const jobActions = (job: CronJob): JobAction[] => {
+    if (job.read_only) return []
+    const actions: JobAction[] = [{ label: m.cron_run_now(), Icon: Play, busy: starting.has(cronResource(job)), run: () => run('run', job) }]
+    if (job.can_stop) actions.push({ label: m.cron_stop(), Icon: Square, run: () => run('stop', job) })
+    if (job.resumable === true) actions.push({ label: m.cron_resume(), Icon: Play, run: () => run('resume', job) })
+    if (job.resumable === false) actions.push({ label: m.cron_pause(), Icon: Pause, run: () => run('pause', job) })
+    actions.push(
+      { label: m.edit(), run: () => startEditor('edit', job) },
+      { label: m.cron_duplicate(), Icon: Copy, run: () => startEditor('duplicate', job) },
+      { label: m.delete(), Icon: Trash2, danger: true, run: () => setDeletion({ context, job }) },
+    )
+    return actions
+  }
 
   const queues = usePromptQueues(selectedId, select)
   const back = <BackButton onClick={() => select(null)} />
@@ -156,6 +172,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         otherProfileCount={crons.data?.other_profile_count ?? 0}
         allProfiles={allProfiles}
         running={running}
+        jobActions={jobActions}
         unavailable={!!crons.data?.cron_unavailable}
         unwritable={unwritable}
         onSelect={select}
@@ -179,10 +196,8 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         starting={starting.has(cronResource(selected))}
         unwritable={unwritable}
         back={back}
+        jobActions={jobActions}
         onAction={(act) => run(act, selected)}
-        onEdit={() => startEditor('edit', selected)}
-        onDuplicate={() => startEditor('duplicate', selected)}
-        onDelete={() => setDeletion({ context, job: selected })}
       />
     )
   }
@@ -206,15 +221,15 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, running, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
-  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>; unavailable: boolean; unwritable: CronStoreHealth[]
+function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, running, jobActions, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
+  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>; jobActions: (job: CronJob) => JobAction[]; unavailable: boolean; unwritable: CronStoreHealth[]
   onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
 }) {
   const rows = jobs.map((job) => ({ job, id: jobId(job), state: cronState(job, running.has(jobId(job))) }))
   // Paused jobs are folded away so they do not drown the live ones (legacy #4026).
   const live = rows.filter((r) => r.state !== 'paused' && r.state !== 'off')
   const parked = rows.filter((r) => r.state === 'paused' || r.state === 'off')
-  const item = ({ job, id, state }: typeof rows[number]) => <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={statusLabel(state)} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} details={job.schedule_display} />
+  const item = ({ job, id, state }: typeof rows[number]) => <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={statusLabel(state)} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} details={job.schedule_display} actions={jobActions(job)} />
   return (
     <HubPage title={m.tab_tasks()} actions={
       <>
@@ -250,13 +265,20 @@ function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount,
 }
 
 /** One automation row for scheduled jobs and explicit prompt runs. */
-function AutomationListItem({ id, title, state, status, onSelect, disabled = false, readOnly = false, details }: { id: string; title: string; state: string; status: { label: string; tone: string }; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string }) {
-  return <ListRow>
-    {/* -my-4 stretches the button over the row's padding so the whole row is the target. */}
+function AutomationListItem({ id, title, state, status, onSelect, disabled = false, readOnly = false, details, actions = [] }: { id: string; title: string; state: string; status: { label: string; tone: string }; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string; actions?: JobAction[] }) {
+  // -my-4 stretches the button over the row's padding so the whole row is the target.
+  const row = (
     <button type="button" disabled={disabled} onClick={() => onSelect(id)} data-job-id={id} data-state={state} className={cn('-my-4 flex w-full flex-col gap-1.5 border-0 bg-transparent py-4 text-left text-text hover:bg-hover', readOnly && 'opacity-75')}>
       <span className="flex w-full min-w-0 items-baseline gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span><span className={cn('shrink-0 text-xs', status.tone)}>{status.label}</span></span>
       {details && <span className="w-full truncate font-mono text-xs text-muted">{details}</span>}
     </button>
+  )
+  return <ListRow>
+    {disabled || actions.length === 0 ? row : (
+      <ContextMenu label={title} trigger={row}>
+        {actions.map(({ label, run, busy, danger }) => <MenuItem key={label} disabled={busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)}
+      </ContextMenu>
+    )}
   </ListRow>
 }
 
@@ -290,8 +312,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const DL = 'grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]'
 
-function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, onEdit, onDuplicate, onDelete }: {
-  job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; back: ReactNode; onAction: (action: CronAction) => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void
+function TaskDetail({ job, jobs, state, starting, unwritable, back, jobActions, onAction }: {
+  job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; back: ReactNode; jobActions: (job: CronJob) => JobAction[]; onAction: (action: CronAction) => void
   starting: boolean
 }) {
   const id = jobId(job)
@@ -318,13 +340,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
     : (
       <fieldset className="flex flex-wrap gap-2" aria-label={job.name ?? id}>
-        <Button disabled={starting} aria-busy={starting || undefined} onClick={() => onAction('run')}><Play size={12} aria-hidden="true" /> {m.cron_run_now()}</Button>
-        {job.can_stop && <Button onClick={() => onAction('stop')}><Square size={12} aria-hidden="true" /> {m.cron_stop()}</Button>}
-        {job.resumable === true && <Button onClick={() => onAction('resume')}><Play size={12} aria-hidden="true" /> {m.cron_resume()}</Button>}
-        {job.resumable === false && <Button onClick={() => onAction('pause')}><Pause size={12} aria-hidden="true" /> {m.cron_pause()}</Button>}
-        <Button onClick={onEdit}>{m.edit()}</Button>
-        <Button onClick={onDuplicate}><Copy size={12} aria-hidden="true" /> {m.cron_duplicate()}</Button>
-        <Button variant="ghost" className="text-error" onClick={onDelete}><Trash2 size={12} aria-hidden="true" /> {m.delete()}</Button>
+        {jobActions(job).map(({ label, run, Icon, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost' as const, className: 'text-error' } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{Icon && <Icon size={12} aria-hidden="true" />} {label}</Button>)}
       </fieldset>
     )
   return (
