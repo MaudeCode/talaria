@@ -10,6 +10,7 @@ import { PanelHead } from '../../shell/PanelHead'
 import { cn } from '../../ui/cn'
 import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
+import { SectionHeader } from '../../ui/List'
 import { Dialog } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { useProjectsQuery } from '../../app/queries'
@@ -362,12 +363,7 @@ export function SessionListPanel() {
     <SessionActions rows={filtered}>
     <div className={cn('panel-view active', searchOpen && 'search-open')} id="panelChat">
       <PanelHead
-        title={
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h3 className="shrink-0 text-xs font-medium uppercase tracking-wider text-muted">{m.sidebar_chats()}</h3>
-            {filterDetail && <span data-chats-detail className="min-w-0 truncate text-xs font-normal text-muted" title={filterDetail}>{filterDetail}</span>}
-          </div>
-        }
+        title={<SectionHeader detail={filterDetail ? <span data-chats-detail title={filterDetail}>{filterDetail}</span> : null}>{m.sidebar_chats()}</SectionHeader>}
         actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={hasUnprojected} showArchived={showArchived} onShowArchived={setShowArchived} onImport={() => importInput.current?.click()} />}
       />
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />

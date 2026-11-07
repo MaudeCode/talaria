@@ -86,8 +86,8 @@ and a tiled column in landscape. On Web it is `shell/Sidebar.tsx`, on every page
 
 | Rule | App | Web |
 | --- | --- | --- |
-| List | `.listStyle(.plain)`; `SidebarList` (`Features/Shared/SidebarKit.swift`) for section lists that need row-height 0 | `<ul className="flex flex-col">` |
-| Row insets | `.listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))`; compact rows 8/20 | `<li className="flex flex-col gap-4 border-t border-border py-4 first:border-t-0">`; compact rows `border-border-subtle py-2 text-xs` |
+| List | `.listStyle(.plain)`; `SidebarList` (`Features/Shared/SidebarKit.swift`) for section lists that need row-height 0 | `RowList` (`ui/List.tsx`): `<ul className="flex flex-col">` |
+| Row insets | `.listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))`; compact rows 8/20 | `Row` (`ui/List.tsx`): `<li className="flex flex-col gap-4 border-t border-border py-4 first:border-t-0">`; `Row compact`: `border-border-subtle py-2 text-xs` |
 | Separator | The list's own hairline; hidden on non-row content | `border-t border-border` between items, `border-border-subtle` inside an item |
 | Row header line | `HStack(alignment: .firstTextBaseline, spacing: 8)`: icon 20pt, name `.headline`, chips, `Spacer`, progress or chevron `.footnote.weight(.semibold)` tertiary | `flex flex-wrap items-baseline gap-x-2 gap-y-1`: name `text-sm font-semibold text-text`, chips, status text |
 | Row body | `VStack(alignment: .leading, spacing: 12)` of blocks, 14 between repeated items (windows); inside a block `spacing: 6` | `flex flex-col gap-1.5` per block |
@@ -100,7 +100,7 @@ and a tiled column in landscape. On Web it is `shell/Sidebar.tsx`, on every page
 
 | App | Web |
 | --- | --- |
-| `Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)`, optional trailing detail `.footnote` secondary, optional small `ProgressView`; `.padding(.horizontal, 20).padding(.vertical, 6)`, `listRowInsets(EdgeInsets())`, system background (`InsightsView.usageHeader`; TAL-1765 moves it to a shared header and puts it on the detail screen and the "No quota data" section, which still use the default `Section` header) | `<h3 className="text-xs font-medium uppercase tracking-wider text-muted">`; the page section title is `<h2 className="text-base font-semibold text-text">` with the primary action beside it |
+| `Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)`, optional trailing detail `.footnote` secondary, optional small `ProgressView`; `.padding(.horizontal, 20).padding(.vertical, 6)`, `listRowInsets(EdgeInsets())`, system background (`InsightsView.usageHeader`; TAL-1765 moves it to a shared header and puts it on the detail screen and the "No quota data" section, which still use the default `Section` header) | `SectionHeader` (`ui/List.tsx`): `<h3 className="text-xs font-medium uppercase tracking-wider text-muted">`, optional trailing `detail` `text-xs text-muted`, optional `action` at the right; the page section title is `<h2 className="text-base font-semibold text-text">` with the primary action beside it |
 
 The trailing detail is live data (a peak, a count), never an explanation.
 
@@ -109,8 +109,8 @@ The trailing detail is live data (a peak, a count), never an explanation.
 | Element | App | Web |
 | --- | --- | --- |
 | Headline figure | `.font(.title2.weight(.semibold).monospacedDigit())`, mode word `.caption` secondary beside it, `.lastTextBaseline` aligned | `text-lg font-semibold tabular-nums text-strong`, mode word `text-xs text-muted`, `items-baseline` |
-| Stat grid | `InsightsStatGrid`: `.adaptive(minimum: 140)` columns, title `.caption` secondary, value `.title3.weight(.semibold)` | `<dl className="grid grid-cols-2 sm:grid-cols-4">`, `dt text-xs uppercase tracking-wider text-muted`, `dd text-lg font-semibold text-strong` with the exact value in `title` |
-| Metric cell | `ProviderQuotaMetricCell(title:value:)` (`Models/ProviderQuotaForecastView.swift`): title `.caption2` secondary, value `.caption.weight(.semibold).monospacedDigit()`, padding 8/6, `.secondary.opacity(0.1)` fill, radius 9, one accessibility element "title, value" | `MetricCell` in `ProviderQuotaRows.tsx`: `rounded-md bg-hover px-2 py-1.5`, label `text-[11px] text-muted`, value `text-xs font-semibold tabular-nums text-text` |
+| Stat grid | `InsightsStatGrid`: `.adaptive(minimum: 140)` columns, title `.caption` secondary, value `.title3.weight(.semibold)` | `<dl className="grid grid-cols-2 sm:grid-cols-4">`, `StatLabel` (`ui/List.tsx`) `dt text-xs uppercase tracking-wider text-muted`, `dd text-lg font-semibold text-strong` with the exact value in `title` |
+| Metric cell | `ProviderQuotaMetricCell(title:value:)` (`Models/ProviderQuotaForecastView.swift`): title `.caption2` secondary, value `.caption.weight(.semibold).monospacedDigit()`, padding 8/6, `.secondary.opacity(0.1)` fill, radius 9, one accessibility element "title, value" | `MetricCell` (`ui/List.tsx`): `rounded-md bg-hover px-2 py-1.5`, label `text-[11px] text-muted`, value `text-xs font-semibold tabular-nums text-text` |
 | Meter | `ProgressRailView(percent:markerPercent:tint:height:)` (`Models/ProgressRailView.swift`): height 3 default, 8 for a window, 4 for a share; track `.secondary.opacity(0.18)`; marker 1.5pt primary | `QuotaMeter` (`features/insights/QuotaMeter.tsx`): `<div role="meter" aria-valuemin aria-valuemax aria-valuenow aria-label>` `relative h-2 overflow-hidden rounded-full bg-border`, fill `h-full rounded-full` + level class, marker `absolute inset-y-0 w-px bg-text` |
 | Meter tint | The server level through `ProviderQuotaWidgetPalette.arcColor` (healthy accent, warning orange, critical red, user-overridable); stale and unavailable orange | `LEVEL_FILL`: `healthy bg-accent`, `warning bg-warning`, `critical bg-error`, `stale`/`unavailable bg-muted` |
 | Forecast line | Reset label left (`.caption` secondary), forecast `Label` right tinted `ProviderQuotaForecastOutcome.tint` (safe green, warning orange) | Reset left, forecast right, `text-warning` only when warning, `data-forecast` |

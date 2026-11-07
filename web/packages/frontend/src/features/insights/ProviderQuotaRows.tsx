@@ -6,6 +6,7 @@ import { formatBurnRate, formatMinutes, formatPercent, resetTime } from '../../i
 import type { ProviderQuotasSchema } from '../../contracts'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
+import { MetricCell, Row, RowList, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { cn } from '../../ui/cn'
 import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaStatusText, quotaWindowFigures, type QuotaPercentMode, type QuotaSource, type QuotaWindow } from './QuotaMeter'
@@ -35,18 +36,18 @@ export function ProviderQuotaRows({ quotas, mode, onRefresh }: { quotas: UseQuer
         const unavailable = data.sources.filter((s) => !withData.includes(s))
         return (
           <>
-            {withData.length > 0 && <ul className="flex flex-col">{withData.map((s) => <QuotaSourceRow key={s.source_id} source={s} mode={mode} locale={locale} />)}</ul>}
+            {withData.length > 0 && <RowList>{withData.map((s) => <QuotaSourceRow key={s.source_id} source={s} mode={mode} locale={locale} />)}</RowList>}
             {unavailable.length > 0 && (
               <section className="mt-4 flex flex-col gap-1" data-section="insights-quotas-unavailable">
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted">{m.insights_quotas_unavailable()}</h3>
-                <ul className="flex flex-col">
+                <SectionHeader>{m.insights_quotas_unavailable()}</SectionHeader>
+                <RowList>
                   {unavailable.map((s) => (
-                    <li key={s.source_id} className="flex flex-wrap items-baseline gap-x-2 border-t border-border-subtle py-2 text-xs" data-quota-source={s.source_id} data-quota-status={s.status ?? 'unavailable'}>
+                    <Row compact key={s.source_id} data-quota-source={s.source_id} data-quota-status={s.status ?? 'unavailable'}>
                       <span className="font-medium text-text">{quotaSourceName(s)}</span>
                       <span className="text-muted">{quotaStatusText(s)}</span>
-                    </li>
+                    </Row>
                   ))}
-                </ul>
+                </RowList>
               </section>
             )}
           </>
@@ -65,7 +66,7 @@ function QuotaSourceRow({ source: s, mode, locale }: { source: QuotaSource; mode
   const credits = quotaCreditsText(s, locale)
   const detail = Array.isArray(s.details) && typeof s.details[0] === 'string' ? s.details[0] : null
   return (
-    <li className="flex flex-col gap-4 border-t border-border py-4 first:border-t-0" data-quota-source={s.source_id} data-quota-status={status}>
+    <Row data-quota-source={s.source_id} data-quota-status={status}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-sm font-semibold text-text">{name}</span>
         {account && <span className="text-xs text-muted">{account}</span>}
@@ -84,7 +85,7 @@ function QuotaSourceRow({ source: s, mode, locale }: { source: QuotaSource; mode
           {stale && ` · ${m.quota_level_stale()}`}
         </div>
       )}
-    </li>
+    </Row>
   )
 }
 
@@ -124,16 +125,6 @@ function QuotaWindowRow({ window: w, source, mode, locale }: { window: QuotaWind
           {forecast?.budget_percent != null && <MetricCell id="budget" label={m.provider_quota_budget_label()} value={(forecast.budget_unit === 'day' ? m.provider_quota_budget_day_short : m.provider_quota_budget_hour_short)({ percent: formatPercent(locale, forecast.budget_percent) })} />}
         </div>
       )}
-    </div>
-  )
-}
-
-/** One labelled figure, the App's `ProviderQuotaMetricCell`: the label in small muted type above a semibold value. */
-function MetricCell({ id, label, value }: { id: string; label: string; value: string }) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md bg-hover px-2 py-1.5" data-metric={id}>
-      <span className="text-[11px] text-muted">{label}</span>
-      <span className="truncate text-xs font-semibold tabular-nums text-text">{value}</span>
     </div>
   )
 }
