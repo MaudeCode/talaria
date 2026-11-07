@@ -9,6 +9,7 @@ import { useLocale } from '../../i18n/useLocale'
 import { formatCompact, formatPercent } from '../../i18n/units'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { HubPage } from '../../shell/AppShell'
+import { StatLabel } from '../../ui/List'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
 import { BarChart } from './BarChart'
@@ -96,7 +97,7 @@ export function InsightsPage() {
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4" data-testid="insights-stats">
                 {stats.map((s) => (
                   <div key={s.label} className="min-w-0">
-                    <dt className="text-xs uppercase tracking-wider text-muted">{s.label}</dt>
+                    <StatLabel>{s.label}</StatLabel>
                     <dd className="truncate text-lg font-semibold text-strong" title={s.title}>{s.value}</dd>
                   </div>
                 ))}

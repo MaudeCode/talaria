@@ -6,6 +6,7 @@ import { formatPercent } from '../../i18n/units'
 import { useProviderQuotas, useSidebarQuotaPinChoice, useSidebarQuotaPins } from '../../lib/useProviderQuotas'
 import { SIDEBAR_ROW } from '../../shell/nav'
 import { closeMobileSidebar, useIsSidebarRail } from '../../shell/useShellState'
+import { RowList, SectionHeader } from '../../ui/List'
 import { cn } from '../../ui/cn'
 import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaStatusText, quotaWindowFigures, type QuotaSource } from './QuotaMeter'
 
@@ -26,8 +27,8 @@ export function SidebarQuotas() {
   if (sources.length === 0) return null
   return (
     <section className="mt-2 flex flex-none flex-col gap-0.5" data-section="sidebar-quotas">
-      <h3 className="px-2.5 py-1 text-xs font-medium uppercase tracking-wider text-muted">{m.insights_tab_quotas()}</h3>
-      <ul className="flex flex-col gap-0.5">{sources.map((s) => <li key={s.source_id}><SidebarQuotaRow source={s} locale={locale} /></li>)}</ul>
+      <SectionHeader className="px-2.5 py-1">{m.insights_tab_quotas()}</SectionHeader>
+      <RowList className="gap-0.5">{sources.map((s) => <li key={s.source_id}><SidebarQuotaRow source={s} locale={locale} /></li>)}</RowList>
     </section>
   )
 }
