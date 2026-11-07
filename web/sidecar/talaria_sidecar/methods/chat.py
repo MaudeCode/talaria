@@ -50,6 +50,7 @@ _AGENT_RELEASE_TIMEOUT = 4.0
 _PROFILE_RELEASE_TIMEOUT = 60.0
 _SESSION_FINALIZE_TIMEOUT = 10.0
 _TOOL_RESULT_SNIPPET_MAX = 4000
+_STREAM_BATCH_SECONDS = 0.016
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
 _TOOL_ARG_CONTENT_KEYS = frozenset({"command", "cmd", "script", "code", "patch", "diff", "old_string", "new_string", "content", "path", "file_path"})
 
@@ -233,18 +234,31 @@ def command_choices(ctx: CallContext, params: dict):
             _COMMAND_RUNS.pop(run.stream_id, None)
 
 
-def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
+_UNPARSED = object()
+
+
+def _result_object(raw: Any, parsed: Any = _UNPARSED) -> dict | None:
+    """The dict a tool result is or encodes, else None. ``parsed`` is this answer from a caller that already has it, so
+    one completion decodes its result once (TAL-1720)."""
+    if parsed is not _UNPARSED:
+        return parsed
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(str(raw or ""))
+    except Exception:  # noqa: BLE001
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX, parsed: Any = _UNPARSED) -> str:
     """Predecessor ``_tool_result_snippet``: the ``output``/``result``/``error`` of a dict (or JSON) result, hard-cut."""
     if limit <= 0:
         return ""
     text = str(raw or "")
-    try:
-        data = raw if isinstance(raw, dict) else json.loads(text)
-        if isinstance(data, dict):
-            preview = data.get("output") or data.get("result") or data.get("error") or text
-            text = str(preview)
-    except Exception:  # noqa: BLE001
-        pass
+    data = _result_object(raw, parsed)
+    if data is not None:
+        text = str(data.get("output") or data.get("result") or data.get("error") or text)
     return text[:limit]
 
 
@@ -262,13 +276,10 @@ def _without_error(item: Any) -> bool:
     return not (error is True or (isinstance(error, str) and error.strip()) or (isinstance(error, (dict, list)) and error))
 
 
-def _result_diff(raw: Any) -> str | None:
+def _result_diff(raw: Any, parsed: Any = _UNPARSED) -> str | None:
     """A dict (or JSON-object text) result's string ``diff`` field, whole; the server decides what it shows."""
-    try:
-        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
-    except Exception:  # noqa: BLE001
-        return None
-    diff = data.get("diff") if isinstance(data, dict) else None
+    data = _result_object(raw, parsed)
+    diff = data.get("diff") if data is not None else None
     return diff if isinstance(diff, str) else None
 
 
@@ -283,10 +294,10 @@ def _edit_snapshot(name: str, args: Any, task_id: str) -> Any:
         return None
 
 
-def _edit_metadata(name: str, args: Any, result: Any, snapshot: Any) -> dict:
+def _edit_metadata(name: str, args: Any, result: Any, snapshot: Any, parsed: Any = _UNPARSED) -> dict:
     """TAL-909: a tool-result row's ``display_metadata``: an edit's unified ``diff`` from its snapshot, which the server
     turns into ``edit_diff``. Empty when the result carries its own ``diff`` (``patch``), which the server already reads."""
-    if snapshot is None or _result_diff(result) is not None:
+    if snapshot is None or _result_diff(result, parsed) is not None:
         return {}
     try:
         from agent.display import extract_edit_diff
@@ -297,16 +308,13 @@ def _edit_metadata(name: str, args: Any, result: Any, snapshot: Any) -> dict:
     return {"diff": diff} if diff else {}
 
 
-def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX, max_keys: int = _RAW_RESULT_MAX_KEYS, items: bool = True) -> Any:
+def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX, max_keys: int = _RAW_RESULT_MAX_KEYS, items: bool = True, parsed: Any = _UNPARSED) -> Any:
     """The tool result as the server's outcome rule reads it, bounded: a dict (or JSON-object text) keeps its first
     ``max_keys`` top-level fields plus its outcome fields, scalars as they are, text and non-empty nested values as capped
     (JSON) text, except a ``results`` list, whose object items keep the same shape one level down (TAL-1261); anything
     else is the capped text. The sidecar decides nothing; the server does."""
-    try:
-        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
-    except Exception:  # noqa: BLE001
-        data = None
-    if not isinstance(data, dict):
+    data = _result_object(raw, parsed)
+    if data is None:
         return str(raw if raw is not None else "")[:limit]
     out: dict = {}
     # The server's outcome rule reads these, wherever they sit in the result.
@@ -340,15 +348,12 @@ def _is_todo_tool(name: Any) -> bool:
     return bool(is_todo_tool_name(name))
 
 
-def _delegation_cost_usd(name: Any, raw: Any):
+def _delegation_cost_usd(name: Any, raw: Any, parsed: Any = _UNPARSED):
     """Predecessor ``_delegation_cost_usd``: total spend a ``delegate_task`` result reports, or None."""
     if str(name or "") != "delegate_task":
         return None
-    try:
-        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
-    except Exception:  # noqa: BLE001
-        return None
-    if not isinstance(data, dict):
+    data = _result_object(raw, parsed)
+    if data is None:
         return None
     results = data.get("results")
     if not isinstance(results, list):
@@ -1945,8 +1950,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     # TAL-1076: the bound agent's counters when this turn began, the baseline of the turn's own usage.
     usage_start = None
     pending_mcp = False
-    token_parts: list[str] = []
-    last_token_flush: float | None = None
+    # Token and reasoning deltas share one batch, of one event type at a time so frames keep their order (TAL-1720).
+    stream_event: str | None = None
+    stream_parts: list[str] = []
+    stream_buffered_at = 0.0
+    last_stream_flush: float | None = None
     emit_lock = threading.Lock()
 
     def emit_frame(event, data=None):
@@ -1964,23 +1972,40 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 raw_emit("usage", usage)
         raw_emit(event, data)
 
-    def flush_tokens():
-        nonlocal last_token_flush
-        if token_parts:
-            text = "".join(token_parts)
-            token_parts.clear()
-            last_token_flush = time.monotonic()
-            emit_frame("token", {"text": text})
+    def flush_stream():
+        nonlocal last_stream_flush
+        if stream_parts:
+            text = "".join(stream_parts)
+            stream_parts.clear()
+            last_stream_flush = time.monotonic()
+            emit_frame(stream_event, {"text": text})
+
+    def flush_due_stream():
+        """TAL-1720: the watcher's timer, so text reaches the server while the provider is silent. A failure here must
+        not end the watcher, which also delivers Stop."""
+        try:
+            with emit_lock:
+                if stream_parts and time.monotonic() - stream_buffered_at >= _STREAM_BATCH_SECONDS:
+                    flush_stream()
+        except Exception:  # noqa: BLE001
+            log.debug("timed stream flush failed", exc_info=True)
 
     def emit(event, data=None):
+        nonlocal stream_event, stream_buffered_at
         # Batch before snapshots/serialization; the lock keeps tool-worker and watcher frames in order.
         with emit_lock:
-            if event == "token":
-                token_parts.append(data["text"])
-                if last_token_flush is None or time.monotonic() - last_token_flush >= 0.016:
-                    flush_tokens()
+            if event in ("token", "reasoning"):
+                if event != stream_event:
+                    flush_stream()
+                    stream_event = event
+                now = time.monotonic()
+                if not stream_parts:
+                    stream_buffered_at = now
+                stream_parts.append(data["text"])
+                if last_stream_flush is None or now - last_stream_flush >= _STREAM_BATCH_SECONDS:
+                    flush_stream()
             else:
-                flush_tokens()
+                flush_stream()
                 emit_frame(event, data)
 
     timing = getattr(ctx, "timing", None)
@@ -2040,7 +2065,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 return
             if tid:
                 completed_ids.add(tid)
-            snippet = _snippet(function_result)
+            parsed = _result_object(function_result)
+            snippet = _snippet(function_result, parsed=parsed)
             for call in reversed(live_tool_calls):
                 if call.get("done"):
                     continue
@@ -2048,19 +2074,19 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     call["done"] = True
                     call["snippet"] = snippet
                     break
-            payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result)}
+            payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result, parsed=parsed)}
             # TAL-909: the metadata the Agent persisted on the result row, or, from an Agent without the callback, live only.
-            metadata = prepared_metadata.pop(tid) if tid in prepared_metadata else _edit_metadata(name, args, function_result, edit_snapshots.pop(tid, None))
+            metadata = prepared_metadata.pop(tid) if tid in prepared_metadata else _edit_metadata(name, args, function_result, edit_snapshots.pop(tid, None), parsed)
             if metadata:
                 payload["display_metadata"] = metadata
             # TAL-397: ``raw_result`` caps nested values, so the todo tool's list travels whole for the server's ``todo_state``.
             if function_result is not None and _is_todo_tool(name):
                 payload["todo_result"] = function_result if isinstance(function_result, str) else json.dumps(function_result, default=str)
             # TAL-448: likewise a result's unified ``diff``, so the server's ``edit_diff`` counts cover the whole change.
-            diff = _result_diff(function_result)
+            diff = _result_diff(function_result, parsed)
             if diff is not None:
                 payload["result_diff"] = diff
-            cost = _delegation_cost_usd(name, function_result)
+            cost = _delegation_cost_usd(name, function_result, parsed)
             if cost is not None:
                 payload["cost_usd"] = cost
                 for call in reversed(live_tool_calls):
@@ -2307,7 +2333,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         def _watch_cancel():
             nonlocal pending_mcp
-            while not run.cancel.wait(0.25):
+            while not run.cancel.wait(0.05):
+                flush_due_stream()
                 if pending_mcp and mcp_discovery.is_set():
                     # Discovery can finish while this agent is being built, after the worker's cache refresh.
                     try:
@@ -2434,7 +2461,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         }
     finally:
         with emit_lock:
-            flush_tokens()
+            flush_stream()
         with run.lock:
             if pending_mcp:
                 emit("notice_clear", {"key": _MCP_PENDING_KEY})
