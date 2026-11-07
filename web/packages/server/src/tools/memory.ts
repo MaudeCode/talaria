@@ -1,6 +1,6 @@
 /** Memory panel files and saved prompts (Python `_handle_memory_read`, `_handle_memory_write`, saved prompts helpers). */
 import { closeSync, constants as fsConstants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { access, readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { hmacHex, safeEqual, splitSigned } from '../auth/crypto.js'
@@ -19,13 +19,24 @@ const MAX_CONTEXT_BYTES = 20_000
 
 const truthy = (v: unknown): boolean => ['1', 'true', 'yes', 'on'].includes(str(v).trim().toLowerCase())
 
-/** Workspace path to its repository root. A workspace keeps its root, but one outside a repository can gain one, so a miss is asked again. */
+/** Workspace path to its repository root, trusted while `.git` still marks that root as the nearest one. */
 const gitRoots = new Map<string, string>()
 const GIT_ROOTS_LIMIT = 256
 
+async function isNearestGitRoot(cwd: string, root: string): Promise<boolean> {
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    try {
+      await access(join(dir, '.git'))
+      return dir === root
+    } catch { /* keep climbing */ }
+    if (dir === root || dirname(dir) === dir) return false
+  }
+}
+
 async function gitRoot(cwd: string, git: GitRunner): Promise<string | null> {
   const known = gitRoots.get(cwd)
-  if (known !== undefined) return known
+  if (known !== undefined && await isNearestGitRoot(cwd, known)) return known
+  gitRoots.delete(cwd)
   try {
     const { status, stdout } = await git.run(cwd, ['rev-parse', '--show-toplevel'], { timeoutMs: 2_000 })
     if (status !== 0 || !stdout.trim()) return null

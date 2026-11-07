@@ -64,4 +64,17 @@ describe('memory.get', () => {
     gitInit('outer')
     expect((await readProjectContext(workspace, git)).content).toBe('outer context\n')
   })
+
+  it('stops at a nested repository created after the workspace was read, and at the outer one once it is gone', async () => {
+    gitInit('outer')
+    write('outer/HERMES.md', 'outer context\n')
+    mkdirSync(join(root, 'outer', 'ws'))
+    const workspace = join(root, 'outer', 'ws')
+    const git = new GitRunner({ env: process.env })
+    expect((await readProjectContext(workspace, git)).content).toBe('outer context\n')
+    gitInit('outer/ws')
+    expect((await readProjectContext(workspace, git)).content).toBe('')
+    rmSync(join(workspace, '.git'), { recursive: true })
+    expect((await readProjectContext(workspace, git)).content).toBe('outer context\n')
+  })
 })

@@ -20,7 +20,7 @@
  * opens read-only.
  */
 import { closeSync, constants, existsSync, fchmodSync, fsyncSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
-import { open, realpath, stat, type FileHandle } from 'node:fs/promises'
+import { open, type FileHandle } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython, resolvePathLikePythonAsync } from './paths.js'
@@ -662,23 +662,51 @@ function decodedContent(rel: string, raw: Buffer): FileContent {
 }
 
 /**
- * `readFileContent` off the event loop. The anchored walk must stay synchronous (its fallback holds the process cwd), so
- * containment is proven after the open: whatever a swapped component led the open to, the file is only read once the
- * root and target still resolve to themselves and the target is the open file.
+ * Darwin's `/.vol/<dev>/<ino>/<name>` resolves `name` against a directory's inode whatever its pathname now holds, so it
+ * stands in for a descriptor-relative open where the chdir fallback cannot run: that one needs a synchronous section.
  */
+const INODE_PATHS = process.platform === 'darwin' && (() => {
+  try { const root = statSync(sep); return statSync(`/.vol/${root.dev}/${root.ino}`).ino === root.ino } catch { return false }
+})()
+
+async function anchoredChild(dir: FileHandle, name: string): Promise<string> {
+  if (DESCRIPTOR_PATHS) return fdPath(dir.fd, name)
+  const { dev, ino } = await dir.stat({ bigint: true })
+  return `/.vol/${dev}/${ino}/${name}`
+}
+
+/** `openAnchoredFd` for a file, off the event loop: the same no-follow walk from `/`, holding each directory it crosses. */
+async function openAnchoredAsync(target: string): Promise<FileHandle> {
+  const parts = target.split(sep).filter(Boolean)
+  const leaf = parts.pop()
+  if (!leaf) throw new NotFoundError(`Not found: ${target}`)
+  let dir = await open(sep, POLICY.traverse)
+  try {
+    for (const part of parts) {
+      const next = await open(await anchoredChild(dir, part), POLICY.traverse)
+      await dir.close()
+      dir = next
+      // `O_PATH | O_NOFOLLOW` can hand back the symlink itself; only a real directory continues the walk.
+      if (!(await dir.stat()).isDirectory()) throw new NotFoundError(`Not found: ${target}`)
+    }
+    return await open(await anchoredChild(dir, leaf), constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+  } finally {
+    await dir.close()
+  }
+}
+
+/** `readFileContent` off the event loop, or that read itself where no descriptor or inode path exists to anchor the walk. */
 export async function readFileContentAsync(workspace: string, rel: string): Promise<FileContent> {
+  if (!DESCRIPTOR_PATHS && !INODE_PATHS) return readFileContent(workspace, rel)
   const refuse = (): NotFoundError => new NotFoundError(`Not a file: ${rel}`)
   if (!POLICY.supported) throw refuse()
-  const root = await resolvePathLikePythonAsync(workspace)
   const target = await resolvePathLikePythonAsync(resolve(workspace, rel))
-  if (!isWithin(target, root)) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
+  if (!isWithin(target, await resolvePathLikePythonAsync(workspace))) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
   let handle: FileHandle
-  try { handle = await open(target, constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK) } catch { throw refuse() }
+  try { handle = await openAnchoredAsync(target) } catch { throw refuse() }
   try {
     const opened = await handle.stat()
     if (!opened.isFile()) throw refuse()
-    const [rootNow, targetNow, current] = await Promise.all([resolvePathLikePythonAsync(workspace), realpath(target), stat(target)]).catch(() => { throw refuse() })
-    if (rootNow !== root || targetNow !== target || !sameFile(current, opened)) throw refuse()
     if (opened.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${opened.size} bytes, max ${MAX_FILE_BYTES})`)
     return decodedContent(rel, await readHandleUpTo(handle, MAX_FILE_BYTES + 1))
   } finally {
