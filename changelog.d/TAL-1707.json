@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Open Talaria Web tabs use less CPU on the server because the Gateway and chat health checks are shared across tabs instead of repeated for each one.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -3,6 +3,20 @@ import { constants as osConstants } from 'node:os'
 
 const errnoConstants: Record<string, number> = osConstants.errno
 
+export interface SingleFlightEntry<T> { until: number; read: Promise<T> }
+
+/**
+ * `read`'s answer for `ttl` (in `now`'s units) after it settles, and to every caller while it runs. An entry removed from
+ * `cache` during its read stays removed: the read still answers its own callers, and the next one starts afresh.
+ */
+export function singleFlightRead<K, T>(cache: { get: (key: K) => SingleFlightEntry<T> | undefined; set: (key: K, entry: SingleFlightEntry<T>) => unknown }, key: K, ttl: number, now: () => number, read: () => Promise<T>): Promise<T> {
+  const cached = cache.get(key)
+  if (cached && cached.until > now()) return cached.read
+  const entry: SingleFlightEntry<T> = { until: Infinity, read: read().finally(() => { entry.until = now() + ttl }) }
+  cache.set(key, entry)
+  return entry.read
+}
+
 /** `str(v)` for scalars; `null`/`undefined` become `''`, objects go through JSON (never `[object Object]`). */
 export function str(v: unknown): string {
   if (v === null || v === undefined) return ''

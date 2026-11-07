@@ -2,7 +2,7 @@
  * TAL-1627: every Gateway lifecycle entry point reads one server-owned capability. A Gateway Web only monitors is refused
  * with a typed 409 before any sidecar lock or CLI runs; status and health carry the same capability for Settings.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -64,6 +64,23 @@ describe('Gateway lifecycle routes (TAL-1627)', () => {
     expect((await post(s, '/api/gateway/stop')).status).toBe(200)
     expect(sidecar.calls.filter((call) => call.method === 'gateway.control')).toHaveLength(1)
     expect(sidecar.calls.some((call) => call.method === 'gateway.ownership')).toBe(false)
+  })
+
+  it('Stop clears the cached local probe, so the next poll reads the stopped Gateway (TAL-1707)', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    servers.push(s)
+    const stateFile = join(s.state, 'gateway_state.json')
+    writeFileSync(join(s.state, 'gateway.pid'), String(process.pid))
+    writeFileSync(stateFile, JSON.stringify({ gateway_state: 'running', updated_at: new Date().toISOString() }))
+    expect(await json(await s.get('/api/health/agent'))).toMatchObject({ alive: true })
+    sidecar.respond('gateway.control', () => {
+      rmSync(join(s.state, 'gateway.pid'))
+      writeFileSync(stateFile, JSON.stringify({ gateway_state: 'stopped', updated_at: new Date().toISOString() }))
+      return { status: 'completed', message: 'Gateway service stopped' }
+    })
+    expect((await post(s, '/api/gateway/stop')).status).toBe(200)
+    expect(await json(await s.get('/api/health/agent'))).toMatchObject({ alive: false, details: { reason: 'gateway_not_running' } })
   })
 
   it('a proven loopback Gateway stays controllable after Stop and a server restart; a changed endpoint must be proven again', async () => {
