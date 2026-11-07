@@ -155,7 +155,7 @@ that belongs in a figure.
 | Loading | A small `ProgressView` in the section header or toolbar; existing rows stay | `LoadingState` (`compact` when a heading is already on screen); existing rows stay |
 | Refreshing | `ProgressView().controlSize(.small)` in the row header of the item being refreshed | The section's refresh `Button` is disabled and reads "Refreshing…" |
 | Empty | A `ContentUnavailableView` or one caption row with the server's reason | `EmptyState` with the server's reason |
-| Error | `ContentUnavailableView` with the server's message and "Try Again" when nothing loaded; a tinted toolbar button with a popover when rows exist | `ErrorState` with `onRetry`; never a blank pane |
+| Error | `ContentUnavailableView` with the server's message and "Try Again" when nothing loaded; a tinted toolbar button with a popover when rows exist | `ErrorState` with `onRetry`, or with an alert's own wording and actions as `children`; an alert that asks for nothing is plain text with its `role`; never a blank pane |
 | Unavailable items | Grouped below the data rows under a header, one line each: name and reason | The `-unavailable` section with compact rows |
 
 `EmptyState` and `ErrorState` keep their dashed or alert frame because they

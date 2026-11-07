@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Scheduled task alerts that offer an action now stand out in a frame on Web; notices stay plain text.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

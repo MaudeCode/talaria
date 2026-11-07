@@ -20,6 +20,7 @@ import { BackButton, Button } from '../../ui/Button'
 import { HelpTip } from '../../ui/Field'
 import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
+import { Row as ListRow, RowList } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -228,14 +229,14 @@ function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount,
       {error !== null && <ErrorState error={error} onRetry={onRefresh} />}
       {!pending && error === null && jobs.length === 0 && queues.length === 0 && <EmptyState>{otherProfileCount > 0 && !allProfiles ? m.cron_no_jobs_in_profile() : m.cron_no_jobs()}</EmptyState>}
       <section data-section="tasks">
-        <ul className="flex flex-col">
+        <RowList>
           {queues.map((queue) => <AutomationListItem key={queue.id} id={queueSelection(queue.id)} title={queue.title} state={queue.phase} status={statusLabel(queue.phase)} onSelect={onSelect} />)}
           {live.map(item)}
-        </ul>
+        </RowList>
         {parked.length > 0 && (
           <details className="mt-4" data-section="tasks-paused">
             <summary className="cursor-pointer py-2 text-xs font-medium uppercase tracking-wider text-muted">{m.cron_paused_group({ n: parked.length })}</summary>
-            <ul className="flex flex-col">{parked.map(item)}</ul>
+            <RowList>{parked.map(item)}</RowList>
           </details>
         )}
         {(otherProfileCount > 0 || allProfiles) && (
@@ -250,12 +251,13 @@ function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount,
 
 /** One automation row for scheduled jobs and explicit prompt runs. */
 function AutomationListItem({ id, title, state, status, onSelect, disabled = false, readOnly = false, details }: { id: string; title: string; state: string; status: { label: string; tone: string }; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string }) {
-  return <li className="border-t border-border first:border-t-0">
-    <button type="button" disabled={disabled} onClick={() => onSelect(id)} data-job-id={id} data-state={state} className={cn('flex w-full flex-col gap-1.5 border-0 bg-transparent py-4 text-left text-text hover:bg-hover', readOnly && 'opacity-75')}>
+  return <ListRow>
+    {/* -my-4 stretches the button over the row's padding so the whole row is the target. */}
+    <button type="button" disabled={disabled} onClick={() => onSelect(id)} data-job-id={id} data-state={state} className={cn('-my-4 flex w-full flex-col gap-1.5 border-0 bg-transparent py-4 text-left text-text hover:bg-hover', readOnly && 'opacity-75')}>
       <span className="flex w-full min-w-0 items-baseline gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span><span className={cn('shrink-0 text-xs', status.tone)}>{status.label}</span></span>
       {details && <span className="w-full truncate font-mono text-xs text-muted">{details}</span>}
     </button>
-  </li>
+  </ListRow>
 }
 
 // ── Main view ────────────────────────────────────────────────────────────────
@@ -306,6 +308,12 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
   // A row the user just created has no server fields until the reread.
   const unconfirmed = job.delivery_unconfirmed_platforms?.join(', ')
   const copyDiagnostics = () => { copyWithToast(cronDiagnostics(job), m.cron_diagnostics_copied()) }
+  const lastErrors = (job.last_error || job.last_delivery_error) && (
+    <div className="flex flex-col gap-1 text-[13px]">
+      {job.last_error && <div><span className="text-muted">{m.cron_last_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_error}</span></div>}
+      {job.last_delivery_error && <div><span className="text-muted">{m.cron_delivery_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_delivery_error}</span></div>}
+    </div>
+  )
   const toolbar = readOnly
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
     : (
@@ -324,26 +332,22 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, onAction, on
       <div className="mx-auto flex max-w-3xl flex-col gap-6" data-testid="cron-detail" data-state={state}>
         <UnwritableStores stores={unwritable} />
         {!readOnly && attention && (
-          <section role="alert">
-            <div className="text-sm font-medium text-warning">{m.cron_status_needs_attention()}</div>
-            <p className="mt-1 text-[13px] text-text">{m.cron_attention_desc()}</p>
-            {job.attention_hint === 'croniter_missing' && <p className="mt-1 text-[13px] text-text">{m.cron_attention_croniter_hint()}</p>}
-            {job.last_error && <p className="mt-2 font-mono text-[12px] text-error">{job.last_error}</p>}
-            {job.last_delivery_error && <p className="mt-1 font-mono text-[12px] text-error">{job.last_delivery_error}</p>}
-            <fieldset className="mt-3 flex flex-wrap gap-2">
+          <ErrorState>
+            <div className="font-medium text-warning">{m.cron_status_needs_attention()}</div>
+            <p className="text-[13px] text-text">{m.cron_attention_desc()}</p>
+            {job.attention_hint === 'croniter_missing' && <p className="text-[13px] text-text">{m.cron_attention_croniter_hint()}</p>}
+            {job.last_error && <p className="font-mono text-[12px] text-error">{job.last_error}</p>}
+            {job.last_delivery_error && <p className="font-mono text-[12px] text-error">{job.last_delivery_error}</p>}
+            <fieldset className="flex flex-wrap gap-2">
               <Button onClick={() => onAction('resume')}>{m.cron_attention_resume()}</Button>
               <Button disabled={starting} aria-busy={starting || undefined} onClick={() => onAction('run')}>{m.cron_attention_run_once()}</Button>
               <Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button>
             </fieldset>
-          </section>
+          </ErrorState>
         )}
-        {!attention && (job.last_error || job.last_delivery_error) && (
-          <section role="alert">
-            {job.last_error && <div className="text-[13px]"><span className="text-muted">{m.cron_last_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_error}</span></div>}
-            {job.last_delivery_error && <div className="mt-1 text-[13px]"><span className="text-muted">{m.cron_delivery_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_delivery_error}</span></div>}
-            {!readOnly && <div className="mt-2"><Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button></div>}
-          </section>
-        )}
+        {!attention && lastErrors && (readOnly
+          ? <section role="alert">{lastErrors}</section>
+          : <ErrorState>{lastErrors}<div><Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button></div></ErrorState>)}
         {unconfirmed && <p role="status" className="text-xs text-warning">{m.cron_delivery_unconfirmed({ platforms: unconfirmed })}</p>}
         <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
           <section>
