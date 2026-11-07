@@ -169,11 +169,25 @@ private struct ChatStreamTickHarness {
     }
 
     /// Renders the change and runs the main-actor work it queued, without waiting on a clock.
+    ///
+    /// Work a render queues can itself yield before it counts (a code block's highlight task yields once, and the next
+    /// tick would cancel it), so one hop is not enough: the main actor runs until the counted work has stayed unchanged
+    /// for `quietHops` consecutive hops, each of which also lets SwiftUI commit and start the tasks it queued.
     private func turn() async {
         await viewModel.awaitPendingStreamingScrollTriggerForTesting()
         window.layoutIfNeeded()
-        await Task.yield()
-        window.layoutIfNeeded()
+        let quietHops = 3
+        var counted = recorder.counts.values.reduce(0, +)
+        var unchanged = 0
+        for _ in 0..<50 where unchanged < quietHops {
+            RunLoop.current.run(until: Date())
+            await Task.yield()
+            window.layoutIfNeeded()
+            let now = recorder.counts.values.reduce(0, +)
+            unchanged = now == counted ? unchanged + 1 : 0
+            counted = now
+        }
+        XCTAssertGreaterThanOrEqual(unchanged, quietHops, "The chat's main-actor work never went quiet after a turn")
     }
 
     func tearDown() {
