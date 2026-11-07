@@ -3,6 +3,7 @@ import { Socket } from 'node:net'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BootstrapSchema, AuthStatusSchema, HealthSchema } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/harness.js'
@@ -297,6 +298,51 @@ describe('open server (no auth)', () => {
         expect((await synthetic.get('/assets/missing.js')).status).toBe(404)
         expect(await synthetic.rawStatus('/static/dist/../../mark.svg')).toBe(404)
         expect(await synthetic.rawStatus('/assets/%2e%2e/%2e%2e/mark.svg')).toBe(404)
+      } finally {
+        await synthetic.close()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('negotiates brotli, gzip and identity under one ETag, and revalidates any of them', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'talaria-static-encoding-'))
+      mkdirSync(join(root, 'assets'), { recursive: true })
+      const bundle = Buffer.from('console.log("encoded");\n'.repeat(1_000))
+      writeFileSync(join(root, 'assets', 'app-hash.js'), bundle)
+      const synthetic = await bootTestServer({ deps: (deps) => { deps.spa = new SpaShell(root) } })
+      // `fetch` decodes transparently and adds its own Accept-Encoding, so read the bytes the server actually sent.
+      const rawGet = (headers: Record<string, string>) => new Promise<{ status: number; encoding: string | undefined; vary: string | undefined; etag: string | undefined; body: Buffer }>((done, reject) => {
+        const req = request(`${synthetic.base}/assets/app-hash.js`, { headers }, (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (chunk: Buffer) => chunks.push(chunk))
+          res.on('end', () => { done({ status: res.statusCode!, encoding: res.headers['content-encoding'], vary: res.headers.vary, etag: res.headers.etag, body: Buffer.concat(chunks) }) })
+          res.on('error', reject)
+        })
+        req.on('error', reject)
+        req.end()
+      })
+      try {
+        const cases: [accept: string | undefined, encoding: string | undefined, decode: (body: Buffer) => Buffer][] = [
+          ['br, gzip', 'br', brotliDecompressSync],
+          ['gzip, br;q=0.5', 'br', brotliDecompressSync],
+          ['gzip', 'gzip', gunzipSync],
+          ['br;q=0, gzip', 'gzip', gunzipSync],
+          [undefined, undefined, (body) => body],
+        ]
+        const etags = new Set<string | undefined>()
+        for (const [accept, encoding, decode] of cases) {
+          const headers: Record<string, string> = accept ? { 'accept-encoding': accept } : {}
+          const res = await rawGet(headers)
+          expect(res.status, String(accept)).toBe(200)
+          expect(res.encoding, String(accept)).toBe(encoding)
+          expect(res.vary, String(accept)).toBe('Accept-Encoding')
+          expect(decode(res.body).equals(bundle), String(accept)).toBe(true)
+          etags.add(res.etag)
+          const revalidated = await rawGet({ ...headers, 'if-none-match': res.etag! })
+          expect(revalidated.status, String(accept)).toBe(304)
+          expect(revalidated.body.length, String(accept)).toBe(0)
+        }
+        expect(etags.size).toBe(1)
       } finally {
         await synthetic.close()
         rmSync(root, { recursive: true, force: true })
