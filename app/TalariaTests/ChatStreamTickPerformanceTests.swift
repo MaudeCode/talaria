@@ -24,13 +24,12 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
         "reasoningGroups": 400, "markdownSplit": 1_204, "highlight": 100, "messages": 400
     ]
     private static let expectedKeystrokeWork = [
-        "reasoningGroups": 204, "markdownSplit": 2, "messages": 204, "chat": 204, "toolbar.horizontal": 204,
-        "composer": 212
+        "reasoningGroups": 204, "messages": 204, "chat": 204, "toolbar.horizontal": 204, "composer": 212
     ]
 
-    /// Ceiling on the 400 measured operations together. They measure ~12.2 s on a Debug simulator
-    /// (`docs/performance-budgets.md`), so this is ~5x headroom for a loaded host.
-    private static let maximumSeconds = 60.0
+    /// Ceiling on the 400 measured operations together. They measure ~13.5 s on the build VM's Debug simulator and
+    /// ~47-53 s on GitHub's hosted runner (`docs/performance-budgets.md`); this leaves over 3x headroom on the slower.
+    private static let maximumSeconds = 180.0
 
     override func tearDown() {
         MainActor.assumeIsolated { ChatBodyEvaluationRecorder.installed = nil }
@@ -86,6 +85,7 @@ private struct ChatStreamTickHarness {
     let window: UIWindow
     let composer: UITextView
     let recorder: ChatBodyEvaluationRecorder
+    private let test: XCTestCase
 
     private static let transcriptMessageCount = 200
 
@@ -139,9 +139,13 @@ private struct ChatStreamTickHarness {
         self.window = window
         self.composer = composer
         self.recorder = recorder
+        self.test = test
     }
 
-    /// The measured window: `ticks` stream tokens, then `keystrokes` draft edits, each rendered before the next.
+    /// The measured window: `ticks` stream tokens, then the reply ends and `keystrokes` draft edits follow, each
+    /// rendered before the next. Typing waits for the reply to end because a live stream silent for 12 s starts a
+    /// stale-stream check (`ChatStreamCoordinatorTiming.transportFreshInterval`), which would make the keystroke
+    /// counts depend on how fast the host types.
     func run(ticks: Int, keystrokes: Int) async throws -> ChatStreamTickSample {
         recorder.reset()
         var expected = Self.token(0)
@@ -156,6 +160,12 @@ private struct ChatStreamTickHarness {
         XCTAssertEqual(viewModel.messages.last?.content, expected, "A stream tick was dropped")
         let tickWork = recorder.counts
 
+        stream.emit(.done(DoneStreamEvent()))
+        stream.emit(.streamEnd)
+        let ended = await test.awaitCondition { viewModel.activeStreamID == nil }
+        XCTAssertTrue(ended, "The reply never ended")
+        let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
+        XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the reply ends before typing")
         recorder.reset()
         let keystrokeStart = DispatchTime.now().uptimeNanoseconds
         for keystroke in 0..<keystrokes {

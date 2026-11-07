@@ -28,7 +28,9 @@ them.
 - The chat stream tick budget hosts the chat over 100 generated turns (200
   messages; every fifth reply carries reasoning and every fifth, offset by two,
   a fenced code block), streams a reply that opens, fills and closes a Swift
-  code block, then types into the composer.
+  code block, ends the reply, then types into the composer. Typing waits for
+  the reply to end: a live stream silent for 12 s starts a stale-stream check,
+  which would make keystroke counts depend on the host's speed.
 - The replay budget streams generated tokens, replays them over a scripted
   reconnect, and checks the resulting transcript on every run so a broken dedup
   cannot pass as a fast one.
@@ -53,12 +55,13 @@ Medians of three iterations.
 | --- | --- | --- |
 | Replay catch-up, 4,000 tokens (clock) | 0.009 s | 0.000 s |
 | Replay catch-up, 4,000 tokens (peak memory) | 53,447 kB | 16 kB |
-| Chat, 200 stream ticks and 200 keystrokes (clock) | 12.27 s | 0.14 s |
-| Chat, 200 stream ticks and 200 keystrokes (CPU) | 12.05 s | 0.07 s |
+| Chat, 200 stream ticks and 200 keystrokes (clock) | 13.48 s | 0.91 s |
+| Chat, 200 stream ticks and 200 keystrokes (CPU) | 12.78 s | 0.88 s |
 
 The chat budget was measured on an iOS simulator inside the local macOS build VM
-rather than the pool above. Ticks took 8.6 s (~43 ms each) and
-keystrokes 3.8 s (~19 ms each).
+rather than the pool above. Ticks took 8.6-9.4 s (~45 ms each) and
+keystrokes 3.5-3.8 s (~18 ms each). GitHub's hosted runner measures about
+four times slower; the work counts match.
 
 The replay and chat budgets assert thresholds; the others record for comparison.
 
@@ -68,7 +71,8 @@ The replay and chat budgets assert thresholds; the others record for comparison.
   endpoints are compared rather than each step because at these millisecond
   scales one noisy middle sample decides a per-step ratio.
 
-- The chat's 400 operations may not take more than 60 s, ~5x the observed time.
+- The chat's 400 operations may not take more than 180 s: over 3x the 47-53 s
+  GitHub's hosted runner measures, and ~13x the build VM.
   Its work counts below are the real gate: each count's minimum across runs is
   asserted exactly.
 
@@ -76,14 +80,15 @@ The replay and chat budgets assert thresholds; the others record for comparison.
 
 `ChatBodyEvaluationRecorder` (DEBUG builds only) counts the main-thread work
 each operation repeats. Every tick and keystroke is rendered and its queued
-main-actor work run before the next, without waiting on a clock. Work an
+main-actor work run until the counted work stays unchanged for three hops,
+without waiting on a clock. Work an
 operation causes recurs in every run, while an unrelated timer-driven update
 lands in at most one, so the test asserts each count's minimum across runs.
 
 | Work | 200 stream ticks | 200 keystrokes |
 | --- | --- | --- |
 | Reasoning-card derivation | 400 | 204 |
-| Streaming Markdown split | 1,204 | 2 |
+| Streaming Markdown split | 1,204 | 0 |
 | Code highlighting | 100 | 0 |
 | Message list body | 400 | 204 |
 | Settled transcript row body | 0 | 0 |
