@@ -59,6 +59,15 @@ describe('config.yaml env references', () => {
     expect(server.deps.workspaces.profileConfigDefaultWorkspace(null)).not.toContain('${')
   })
 
+  it.each([
+    ['still unresolved after the Agent expanded it', { terminal: { backend: '${MISSING_BACKEND}' } }, false],
+    ['unresolvable because the Agent could not be imported', null, false],
+    ['resolved to the local backend', { terminal: { backend: 'local' } }, true],
+  ])('local I/O for a backend reference %s', async (_name, resolved, local) => {
+    const { server } = await boot({ terminal: { backend: '${MISSING_BACKEND}' } }, resolved)
+    expect(server.deps.workspaces.profileSupportsLocalIo(null)).toBe(local)
+  })
+
   it('workspace resolution follows the resolved paths', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'talaria-env-ref-'))
     const { server } = await boot({ workspace: '${SYNTH_DIR}', terminal: { backend: 'ssh', cwd: '${SYNTH_REMOTE}' } }, { workspace, terminal: { backend: 'ssh', cwd: '/srv/synth' } })

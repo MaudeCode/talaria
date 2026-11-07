@@ -34,6 +34,13 @@ function withoutReferences<T>(value: T): T {
   if (!isDict(value)) return value
   return Object.fromEntries(Object.entries(value).filter(([, item]) => !isReference(item)).map(([key, item]) => [key, withoutReferences(item)])) as T
 }
+/** An unresolved `terminal.backend` stays: an absent backend means local, and this one is unknown, so host-local operations stay refused. */
+function resolvedView(source: Config): Config {
+  const view = withoutReferences(source)
+  const { backend } = dict(source.terminal)
+  if (isReference(backend)) view.terminal = { ...dict(view.terminal), backend }
+  return view
+}
 
 export class ConfigUnavailable extends Error {}
 
@@ -124,7 +131,7 @@ export class AgentConfig {
       if (this.statKey(profileHome, opts) === before) {
         const previous = this.cache.get(file)
         const homes = previous?.key === before ? previous.resolved : new Map<string, { env: string; config: Config }>()
-        const resolved = withoutReferences(isDict(result.resolved) ? result.resolved : config)
+        const resolved = resolvedView(isDict(result.resolved) ? result.resolved : config)
         homes.set(profileHome, { env, config: resolved })
         this.cache.set(file, { key: before, config, resolved: homes })
         return { config, resolved }
