@@ -2,7 +2,7 @@ import { useBootstrap } from '../../app/bootstrap'
 import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -13,6 +13,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -68,8 +69,14 @@ export function ProfilesPage() {
         {list.map((p) => {
           const isActive = p.name === active
           const provisional = !profiles.data?.profiles.some((confirmedProfile) => confirmedProfile.name === p.name)
+          // A profile the server has not created yet has nothing to open, use or delete.
+          const actions: (RowAction & { title?: string; Icon?: LucideIcon })[] = provisional ? [] : [
+            ...(p.canonical_session ? [{ label: m.profile_open_bot_chat(), run: () => openBotChat(p.name), disabled: switchProfile.isPending }] : []),
+            ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } }) }] : []),
+            ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), Icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
+          ]
           return (
-            <li key={p.name} className={cn('flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5', isActive && 'border-accent-bg-strong')} data-profile={p.name}>
+            <RowContextMenu key={p.name} label={m.profile_row_menu()} actions={actions} trigger={<li className={cn('flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5', isActive && 'border-accent-bg-strong')} data-profile={p.name}>
               <div className="min-w-0 flex-1 basis-48">
                 <div className="flex items-center gap-2 text-sm font-medium text-text">
                   {p.display_name && <span className="truncate">{p.display_name}</span>}
@@ -85,15 +92,14 @@ export function ProfilesPage() {
                   {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
                 </div>
               </div>
-              {/* A profile the server has not created yet has nothing to open, use or delete. */}
-              {!provisional && (
+              {actions.length > 0 && (
                 <div className="ml-auto flex items-center gap-3">
-                  {p.canonical_session && <Button onClick={() => openBotChat(p.name)} disabled={switchProfile.isPending}>{m.profile_open_bot_chat()}</Button>}
-                  {!isActive && <Button onClick={() => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } })} title={m.profile_switch_title()}>{m.profile_use()}</Button>}
-                  {!p.is_default && !isActive && <IconButton label={m.profile_delete_title()} onClick={() => setDeleting(p.name)}><Trash2 size={14} aria-hidden="true" /></IconButton>}
+                  {actions.map(({ label, title, Icon, run, disabled }) => Icon
+                    ? <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>
+                    : <Button key={label} onClick={run} disabled={disabled} title={title}>{label}</Button>)}
                 </div>
               )}
-            </li>
+            </li>} />
           )
         })}
       </ul>
