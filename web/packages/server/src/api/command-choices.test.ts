@@ -95,7 +95,8 @@ it('announces a command prompt on the chat stream of a turn running beside it (T
   const turnHeld = new Promise<void>((resolve) => { endTurn = resolve })
   let finishCommand!: () => void
   const commandHeld = new Promise<void>((resolve) => { finishCommand = resolve })
-  sidecar.respond('chat.start', async (params) => {
+  sidecar.respond('chat.start', async (params, emit) => {
+    emit({ event: 'token', data: { text: 'working' } })
     await turnHeld
     return { completed: true, final_response: 'ok', messages: [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }] } as never
   })
@@ -106,11 +107,16 @@ it('announces a command prompt on the chat stream of a turn running beside it (T
   })
   const start = await post('/api/chat/start', { session_id: sid, message: 'hello' })
   const streamId = (await start.json() as { stream_id: string }).stream_id
+  // Read live from the first frame: a replay withholds a prompt once its run has ended.
+  let attached!: () => void
+  const live = new Promise<void>((resolve) => { attached = resolve })
+  const read = s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => { attached(); return f.event === 'done' })
+  await live
   const command = post('/api/commands/exec', { session_id: sid, command: '/probe-choice' })
   try {
     await expect.poll(() => s.deps.pending.clarifyPending(sid).pending_count).toBe(1)
     endTurn()
-    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'done')
+    const frames = await read
     expect(frames.filter((f) => f.event === 'clarify').map((f) => f.data)).toEqual([expect.objectContaining({ clarify_id: 'command-choice', pending_count: 1 })])
   } finally { endTurn(); finishCommand(); await command }
 })
