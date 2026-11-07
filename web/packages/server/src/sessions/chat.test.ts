@@ -2639,6 +2639,59 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/bg-task-complete-ack', { session_id: sid, task_id: 't1' }))).toEqual({ ok: true, session_id: sid, task_id: 't1', noop: true })
   })
 
+  // TAL-1841: the record write outlasts a subscriber's read, so a frame published ahead of it reads a live status.
+  it.each<[string, string, Json, { arrange?: () => void; stop?: boolean }]>([
+    ['a completed turn', 'stream_end', { status: 'completed', result: 'slow store answer' }, {}],
+    ['a failed turn', 'apperror', { status: 'failed', result: '(background task failed)' }, { arrange: () => { sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) }) } }],
+    ['a turn whose goal judge failed', 'stream_end', { status: 'failed', result: '(background task failed)' }, { arrange: () => { vi.spyOn(s.deps.turns as unknown as { continueGoal: () => Promise<void> }, 'continueGoal').mockRejectedValueOnce(new Error('goal judge failed')) } }],
+    ['a stopped turn', 'cancel', { status: 'failed', result: '(background task failed)' }, { stop: true }],
+  ])('settles the /background record before %s publishes %s', async (_name, terminal, expected, { arrange, stop }) => {
+    const sid = await newSession(s)
+    const answer = (params: { user_message: unknown }): ChatResult => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'slow store answer' }])
+    let unwind: (result: ChatResult) => void = () => undefined
+    let reached: () => void = () => undefined
+    const dispatched = new Promise<void>((resolve) => { reached = resolve })
+    sidecar.respond('chat.start', stop ? () => new Promise<ChatResult>((resolve) => { unwind = resolve; reached() }) : answer)
+    arrange?.()
+    const settle = s.deps.background.settleCommand.bind(s.deps.background)
+    vi.spyOn(s.deps.background, 'settleCommand').mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      await settle(...args)
+    })
+    try {
+      const task = await json(await post(s, '/api/background', { session_id: sid, prompt: 'slow store' }))
+      if (stop) {
+        await dispatched
+        await s.get(`/api/chat/cancel?stream_id=${String(task.stream_id)}`)
+      }
+      await s.sse(`/api/chat/stream?stream_id=${String(task.stream_id)}&replay=1`, (f) => f.event === terminal)
+      const { record, result } = await backgroundTask(s, sid, task.task_id)
+      expect({ status: record?.status, result }).toEqual(expected)
+      unwind(completed([], { status: 'cancelled' }))
+      await s.deps.turns.finished(String(task.stream_id))
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('still ends the stream and surfaces the error when a /background settle rejects (TAL-1841)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer' }]))
+    vi.spyOn(s.deps.background, 'settleCommand').mockRejectedValueOnce(new Error('record store down'))
+    try {
+      const task = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed settle' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(task.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+      await s.deps.turns.finished(String(task.stream_id))
+      const journal = await s.deps.journal.readRunEvents(String(task.session_id), String(task.stream_id))
+      const ends = journal.filter((e) => e.event === 'stream_end' || e.event === 'apperror')
+      expect(ends.map((e) => e.event)).toEqual(['stream_end', 'apperror'])
+      expect(JSON.stringify(ends[1])).toContain('record store down')
+      await s.deps.sessionStore.delete(String(task.session_id), { tombstone: false })
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('stops only owned running background work and preserves sidecar outcomes (TAL-1172)', async () => {
     const sid = await newSession(s)
     const other = await newSession(s)

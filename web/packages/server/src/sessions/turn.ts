@@ -168,7 +168,9 @@ export interface StartTurnOptions {
   admissionCheck?: ((session: Session) => void) | undefined
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void | Promise<void>
-  /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
+  /** TAL-1841: the outcome write of a turn that did not complete. It runs once, before the frame announcing that end: `apperror`, `cancel`, or a `stream_end` the title or goal work failed. A rejection is logged and never holds the frame back. */
+  onFailing?: () => void | Promise<void>
+  /** Runs on every other end, after teardown: an error, a cancel, or a writeback another stream took over. */
   onFailed?: (failure: TurnFailure) => void | Promise<void>
 }
 
@@ -404,6 +406,8 @@ export class TurnRunner {
   private readonly shutdownStops = new Set<string>()
   /** Stopped streams whose terminal frame was sent (by the worker or the Stop), so the other sends none. */
   private readonly stopTerminals = new Set<string>()
+  /** A running worker's one-shot `onFailing`, shared with a Stop that publishes `cancel` from outside the worker. */
+  private readonly failureSettlers = new Map<string, () => Promise<void>>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -743,6 +747,12 @@ export class TurnRunner {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
     const failure: TurnFailure = { apperror: null, cancelled: false }
+    let succeeded = false
+    let failing: Promise<void> | null = null
+    const settleFailure = (): Promise<void> => succeeded ? Promise.resolve() : failing ??= (async () => { await opts.onFailing?.() })().catch((error: unknown) => {
+      deps.log(`[webui] ERROR settling failed turn ${streamId}: ${error instanceof Error ? error.message : String(error)}`)
+    })
+    this.failureSettlers.set(streamId, settleFailure)
     let waitDetail: RateLimitWait | null = null
     let providerPhase: ProviderPhase | null = null
     let statusEnded = false
@@ -785,6 +795,7 @@ export class TurnRunner {
       else if (event === 'cancel') failure.cancelled = true
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) (await put(steerEvent[0], steerEvent[1]))
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
+      if (event === 'apperror' || event === 'cancel') await settleFailure()
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one. A stopped
       // run's terminal frame is sent once, by whichever of the worker and the Stop gets there first.
       const stopTerminal = event === 'cancel' || (event === 'apperror' && this.registry.cancelled.has(streamId))
@@ -914,7 +925,6 @@ export class TurnRunner {
     if (stop) stop.prompt = userMessage
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
-    let succeeded = false
     let ownershipRefused = false
     let agentDispatched = false
     let streamWrites: Promise<void> = Promise.resolve()
@@ -1430,10 +1440,18 @@ export class TurnRunner {
       await deps.syncUsage?.(s, usedModel || null)
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
       const work = await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])
-      await put('stream_end', { session_id: sessionId })
-      for (const r of work) if (r.status === 'rejected') throw r.reason
-      succeeded = true
-      await opts.onDone?.(lastAnswer(s.messages))
+      const rejected = work.find((r) => r.status === 'rejected')
+      // TAL-1841: `stream_end` follows the turn's outcome write, and a write that rejects still ends the stream.
+      try {
+        if (rejected) await settleFailure()
+        else {
+          succeeded = true
+          await opts.onDone?.(lastAnswer(s.messages))
+        }
+      } finally {
+        await put('stream_end', { session_id: sessionId })
+      }
+      if (rejected) throw rejected.reason
     } catch (error) {
       timing?.fail(error)
       await streamWrites
@@ -1486,7 +1504,10 @@ export class TurnRunner {
       await this.teardown(sessionId, streamId)
       // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
       // not race the error writeback above (a re-saved session would resurface in the sidebar).
-      if (!succeeded) await opts.onFailed?.(failure)
+      if (!succeeded) {
+        await settleFailure()
+        await opts.onFailed?.(failure)
+      }
       // TAL-1005: a Stop or an error after the turn ran on a compaction's result left that job's estimate under a context
       // its prompt and work may have grown; the idle trigger judges the context measured again.
       if (!succeeded && !ownershipRefused && !opts.ephemeral) void deps.service().remeasureContext(sessionId).then((measured) => { if (measured) void deps.service().ensureCompacted(sessionId) })
@@ -1817,6 +1838,7 @@ export class TurnRunner {
     this.lastCompletedTool.delete(streamId)
     this.settledStreams.delete(streamId)
     this.stopTerminals.delete(streamId)
+    this.failureSettlers.delete(streamId)
     this.shutdownStops.delete(streamId)
     this.registry.retire(streamId, this.deps.now())
     this.registry.forgetOwner(streamId)
@@ -2103,6 +2125,8 @@ export class TurnRunner {
         if (await this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint, str(reply?.max_iterations_summary_request))) this.noteDrainOutcome(streamId, 'saved', false)
       } else if (current) this.noteDrainOutcome(streamId, 'saved', false)
     } else this.noteDrainOutcome(streamId, 'saved', false)
+    // TAL-1841: the cancel frame below follows the turn's outcome write.
+    await this.failureSettlers.get(streamId)?.()
     // The worker may already have written its terminal row while the interrupt was in flight; the stream is then
     // gone from the registry and this path must not add a second one.
     if (channel && this.registry.streams.has(streamId) && !this.stopTerminals.has(streamId)) {
