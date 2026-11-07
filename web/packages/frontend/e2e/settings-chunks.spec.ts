@@ -9,8 +9,9 @@ const chunk = (source: string) => basename(manifest[source]?.file ?? `no chunk f
 test('opening Appearance downloads its section chunk and not the Providers chunk', async ({ page }) => {
   await page.goto('/settings/appearance')
   await settle(page)
-  await expect(page.locator('.settings-section-title')).toHaveText('Appearance')
-  const requested = await page.evaluate(() => performance.getEntriesByType('resource').map(({ name }) => name))
-  expect(requested.filter((url) => url.includes(chunk('src/features/settings/AppearanceSection.tsx')))).not.toEqual([])
-  expect(requested.filter((url) => url.includes(chunk('src/features/settings/ProvidersSection.tsx')))).toEqual([])
+  const requested = () => page.evaluate(() => performance.getEntriesByType('resource').map(({ name }) => name))
+  // The heading renders before the section's chunk arrives, and an entry appears only once its request finishes.
+  await expect.poll(async () => (await requested()).filter((url) => url.includes(chunk('src/features/settings/AppearanceSection.tsx')))).not.toEqual([])
+  await page.waitForLoadState('networkidle')
+  expect((await requested()).filter((url) => url.includes(chunk('src/features/settings/ProvidersSection.tsx')))).toEqual([])
 })
