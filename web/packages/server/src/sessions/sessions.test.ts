@@ -1647,6 +1647,27 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
   })
 
+  it('serialises each row at most once when a full transcript loads, with the same rows kept (TAL-1742)', () => {
+    const parts = (text: string): Json[] => [{ type: 'text', text }]
+    const rows = (): Json[] => Array.from({ length: 400 }, (_, i) => [
+      { role: 'user', content: parts(`u${i}`), timestamp: i },
+      { role: 'user', content: parts(`u${i}`), timestamp: i, _state_db_row_id: i },
+      { role: 'user', content: parts(`edited ${i}`), timestamp: i, _state_db_row_id: i },
+      { role: 'user', content: parts(`u${i}`), timestamp: i, _state_db_row_id: i, _turn_id: 't' },
+    ]).flat()
+    const messages = rows()
+    const context = rows()
+    const contents = new Set([...messages, ...context].map((m) => m.content))
+    const stringify = vi.spyOn(JSON, 'stringify')
+    const session = new Session({ messages, context_messages: context }, { workspace: s.state, model: null })
+    const serialised = stringify.mock.calls.map(([value]) => value as unknown).filter((value) => contents.has(value))
+    stringify.mockRestore()
+    expect(new Set(serialised).size).toBe(serialised.length)
+    const kept = rows().filter((_, i) => i % 4 !== 1)
+    expect(session.messages).toEqual(kept)
+    expect(session.context_messages).toEqual(kept)
+  })
+
   it('a settlement whose state.db read fails keeps the marker', async () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)

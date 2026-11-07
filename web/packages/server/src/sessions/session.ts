@@ -27,9 +27,12 @@ function withoutCompactionCopies(messages: Message[]): Message[] {
   return messages.filter((m) => {
     const key = m && typeof m === 'object' && m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
     if (key === null) return true
-    if (seen.get(key) === sameAs(m) && m._state_db_row_id !== undefined && m._turn_id === undefined) return false
-    if (!seen.has(key)) seen.set(key, sameAs(m))
-    return true
+    const first = seen.get(key)
+    if (first === undefined) {
+      seen.set(key, sameAs(m))
+      return true
+    }
+    return m._state_db_row_id === undefined || m._turn_id !== undefined || first !== sameAs(m)
   })
 }
 
