@@ -206,7 +206,7 @@ export async function ensureTrustedAuthSession(ctx: RequestContext): Promise<Ses
   if ('reconciled' in ctx.trusted) return ctx.trusted.reconciled ?? null
   const auth = ctx.deps.auth
   let cookieValue = ctx.authCookie()
-  const info = cookieValue && auth.verifySession(cookieValue) ? auth.getSessionInfo(cookieValue) : null
+  const info = auth.getSessionInfo(cookieValue)
   if (info?.auth_type !== undefined && info?.auth_type !== 'trusted') {
     if (info.auth_type === 'oidc' && !(await ctx.deps.oidc.sessionBindingIsCurrent(info))) {
       auth.invalidateSession(cookieValue)

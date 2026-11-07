@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web spends less time checking your sign-in on every request, so the server stays more responsive under load.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

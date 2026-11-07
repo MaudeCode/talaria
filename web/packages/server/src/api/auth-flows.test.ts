@@ -1,12 +1,13 @@
-import { useJsonStorage } from '../test/storage.js'
+import { JsonDocuments, useJsonStorage } from '../test/storage.js'
 import { FakeAuthenticator, cborEncode, b64u } from '../test/passkeys.js'
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { cborDecode } from '../auth/passkeys.js'
 import { canonicalJson, OidcService, safeNextPath } from '../auth/oidc.js'
+import { CSRF_HEADER_NAME } from '../auth/store.js'
 import { validatedRequestHost } from './auth-raw.js'
 import { SidecarClient } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -703,6 +704,81 @@ describe('auth gate fails closed on unknown or unreadable auth state', () => {
       }
       // The failure was not cached: once readable the real hash is used again.
       expect(await s.deps.auth.verifyPassword('hunter22')).toBe(true)
+    } finally { await s.close() }
+  })
+})
+
+describe('auth gate per-request cost', () => {
+  let now = 1_800_000_000
+  const documentReads = (): ((namespace: string) => number) => {
+    const get = vi.spyOn(JsonDocuments.prototype, 'get')
+    return (namespace) => get.mock.calls.filter(([read]) => read === namespace).length
+  }
+  /** A server with password auth on and a live login; the password hash is already cached. */
+  const bootWithLogin = async (): Promise<{ s: TestServer; cookie: string; headers: Record<string, string> }> => {
+    const s = await bootTestServer({ now: () => now })
+    await s.deps.settings.save({ _set_password: 'hunter22' })
+    s.deps.auth.invalidatePasswordHashCache()
+    await s.deps.auth.isAuthEnabled()
+    const cookie = s.deps.auth.createSession({ authType: 'password' })
+    return { s, cookie, headers: { cookie: `hermes_session=${cookie}` } }
+  }
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('reads settings for sliding renewal only when the session is inside the extension window', async () => {
+    const { s, cookie, headers } = await bootWithLogin()
+    try {
+      const reads = documentReads()
+      for (let i = 0; i < 100; i += 1) {
+        const res = await s.get('/api/auth/passkeys', { headers })
+        expect(res.status).toBe(200)
+        expect(cookieOf(res, 'hermes_session')).toBeNull()
+      }
+      expect(reads('settings')).toBe(0)
+      now += 3601
+      const renewed = await s.get('/api/auth/passkeys', { headers })
+      expect(reads('settings')).toBe(1)
+      expect(cookieOf(renewed, 'hermes_session')).toBe(cookie)
+      expect(cookieOf(await s.get('/api/auth/passkeys', { headers }), 'hermes_session')).toBeNull()
+      expect(reads('settings')).toBe(1)
+    } finally { await s.close() }
+  })
+
+  it('never touches passkeys.json while passkeys are off and no password is set', async () => {
+    const s = await bootTestServer()
+    try {
+      const reads = documentReads()
+      expect((await s.get('/api/sessions', { headers: { cookie: 'hermes_profile=default' } })).status).toBe(200)
+      expect(reads('passkeys')).toBe(0)
+    } finally { await s.close() }
+  })
+
+  it('verifies the session signature once for a request that checks the session, profile cookie and CSRF token', async () => {
+    const { s, cookie } = await bootWithLogin()
+    try {
+      const profile = s.deps.auth.signProfileCookieValue('default', cookie)
+      const csrf = s.deps.auth.csrfTokenForSession(cookie) ?? ''
+      const sign = vi.spyOn(s.deps.auth, 'signToken')
+      const res = await s.get('/api/auth/passkeys', {
+        method: 'POST',
+        body: '{}',
+        headers: { 'content-type': 'application/json', origin: s.base, cookie: `hermes_session=${cookie}; hermes_profile=${profile}`, [CSRF_HEADER_NAME]: csrf },
+      })
+      expect(res.status).toBe(200)
+      expect(sign).toHaveBeenCalledTimes(1)
+    } finally { await s.close() }
+  })
+
+  it('prunes the session table at most once per second across requests', async () => {
+    const { s, headers } = await bootWithLogin()
+    try {
+      const prune = vi.spyOn(s.deps.auth as unknown as { pruneExpiredSessions: () => void }, 'pruneExpiredSessions')
+      now += 1
+      for (let i = 0; i < 50; i += 1) expect((await s.get('/api/auth/passkeys', { headers })).status).toBe(200)
+      expect(prune).toHaveBeenCalledTimes(1)
+      now += 1
+      expect((await s.get('/api/auth/passkeys', { headers })).status).toBe(200)
+      expect(prune).toHaveBeenCalledTimes(2)
     } finally { await s.close() }
   })
 })
