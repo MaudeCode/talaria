@@ -128,6 +128,19 @@ describe('cron store read cost (TAL-1716)', () => {
     expect((await service.list('default', false)).jobs).toMatchObject([{ name: 'renamed' }])
   })
 
+  it('offers Stop to the refetch that follows a manual run starting', async () => {
+    const { service, sidecar, homes, stores } = setup()
+    const job: Dict = { id: 'manual', profile: null, toast_notifications: true, monitor: '', continuity: false }
+    stores.get(homes.default)?.push(job)
+    sidecar.respond('cron.status', ({ job_id }) => ({ job_id: job_id!, running: false, elapsed: 0 }))
+    sidecar.respond('cron.run', ({ job_id }, emit) => new Promise(() => {
+      job.live_execution = { id: 'exec-1', stopping: false }
+      emit({ event: 'started', data: { job_id } })
+    }))
+    await service.runNow(homes.default, 'manual')
+    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'manual', can_stop: true }])
+  })
+
   it('shows a manual run\'s result to the refetch its completion event triggers', async () => {
     const { service, sidecar, homes, stores, deps } = setup()
     const job: Dict = { id: 'manual', profile: null, toast_notifications: true, monitor: '', continuity: false }

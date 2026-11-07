@@ -659,7 +659,7 @@ export class CronService {
       return await new Promise((resolve, reject) => {
         let answered = false
         const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
-        sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
+        sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { this.listings.clear(); started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
           .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); done() })
           .catch((error: unknown) => {
             this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`)
