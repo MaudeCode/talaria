@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new chat started from a project keeps a clean project link, without quote marks around the ID.",
+      "components": [
+        "web"
+      ],
+      "highlight": false
+    }
+  ]
+}

@@ -1,5 +1,23 @@
+import { defaultParseSearch, defaultStringifySearch } from '@tanstack/react-router'
 import { z } from 'zod'
 import { SessionIdSchema } from './session'
+
+/**
+ * TAL-1898: a project ID is opaque hex, and one like 9235168978e0 reads as a JSON number. The router's defaults would
+ * quote it in the URL and lose it when bare, so `project` stays raw text. A quoted value from an old URL still parses.
+ */
+export function parseAppSearch(search: string) {
+  const parsed: Record<string, unknown> = defaultParseSearch(search)
+  if (parsed.project === undefined || typeof parsed.project === 'string') return parsed
+  return { ...parsed, project: new URLSearchParams(search).get('project') }
+}
+
+export function stringifyAppSearch(search: Record<string, unknown>) {
+  const { project, ...rest } = search
+  if (typeof project !== 'string' || !project) return defaultStringifySearch(search)
+  const others = defaultStringifySearch(rest)
+  return `${others}${others ? '&' : '?'}project=${encodeURIComponent(project)}`
+}
 
 /** Search params accepted on `/`. Legacy launch flows redirect to canonical routes. */
 export const IndexSearchSchema = z.object({
