@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import type { ProviderQuotaSourceSchema, QuotaLevel } from '../../contracts'
 import { cn } from '../../ui/cn'
+import { METER_RAIL } from '../../ui/List'
 
 export type QuotaSource = z.infer<typeof ProviderQuotaSourceSchema>
 export type QuotaWindow = NonNullable<QuotaSource['windows']>[number]
@@ -47,7 +48,7 @@ const clamp = (n: number) => `${String(Math.min(100, Math.max(0, n)))}%`
 /** The quota meter: a server percent, filled by level, with the pace marker. `label` carries the percent and its mode (design system §10). */
 export function QuotaMeter({ level, percent, marker, label }: { level: QuotaLevel; percent: number; marker: number | null; label: string }) {
   return (
-    <div className="relative h-2 overflow-hidden rounded-full bg-border" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label={label}>
+    <div className={METER_RAIL} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label={label}>
       <div className={cn('h-full rounded-full', LEVEL_FILL[level])} style={{ width: clamp(percent) }} />
       {marker !== null && <div aria-hidden="true" className="absolute inset-y-0 w-px bg-text" style={{ left: clamp(marker) }} />}
     </div>

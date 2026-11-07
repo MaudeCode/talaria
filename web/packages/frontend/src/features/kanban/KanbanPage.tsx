@@ -16,6 +16,8 @@ import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ContextMenu, Menu, MENU_CHOICE, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { Badge } from '../../ui/Badge'
+import { METER_RAIL, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -298,7 +300,7 @@ export function KanbanPage() {
         </div>
       )}
       {mode === 'board' && shownSelected.length > 0 && !serverReadOnly && board.data && (
-        <div role="group" aria-label={m.kanban_bulk_action()} className="kanban-bulk-bar mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+        <div role="group" aria-label={m.kanban_bulk_action()} className="kanban-bulk-bar mb-3 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm">
           <span className="text-muted">{m.kanban_selected_count({ a0: shownSelected.length })}</span>
           <Select value={bulkStatus} onValueChange={setBulkStatus} aria-label={m.kanban_status()} placeholder={m.kanban_status()}>
             {board.data.bulk_move_targets.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -335,11 +337,11 @@ export function KanbanPage() {
 /** Shared task identity/metadata presentation; inspection adds timing or relationships beside it. */
 function KanbanTaskButton({ task, onOpen, disabled, selected, row, children }: { task: KanbanTask; onOpen: () => void; disabled?: boolean; selected?: boolean; row?: boolean; children?: ReactNode }) {
   const id = useId()
-  return <button type="button" aria-labelledby={`${id}-title`} aria-describedby={`${id}-metadata`} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card rounded-md border border-border-subtle bg-bg p-2.5 hover:border-accent-bg-strong', selected && 'selected')} data-task-id={String(task.id)}>
+  return <button type="button" aria-labelledby={`${id}-title`} aria-describedby={`${id}-metadata`} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card', selected && 'selected')} data-task-id={String(task.id)}>
     <span id={`${id}-title`} className="block font-medium">{task.title ?? String(task.id)}</span>
-    <span id={`${id}-metadata`} className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
+    <span id={`${id}-metadata`} className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
       {task.assignee && <span>{task.assignee}</span>}
-      {task.priority !== undefined && task.priority !== null && <span>P{String(task.priority)}</span>}
+      {task.priority !== undefined && task.priority !== null && <Badge tone="border-border text-muted">{`P${String(task.priority)}`}</Badge>}
       {task.session_id && <span className="text-accent-text">●</span>}
       {children}
     </span>
@@ -385,7 +387,7 @@ function KanbanInspection({ mode, current, filters, onChanged }: { mode: string;
         return <li key={n.key} data-inspection-key={n.key} className="grid min-w-0 gap-x-6 py-2 sm:grid-cols-[minmax(12rem,1fr)_2fr]">
           <KanbanTaskButton row task={task} disabled={String(task.id).includes(':new:')} onOpen={() => choose(n.key)}><span>{n.board_name}</span><span>{statusLabel(task.status ?? '')}</span>{n.cycle && <span className="text-warning">{m.kanban_cycle()}</span>}</KanbanTaskButton>
           {mode === 'timeline' ? <div className="min-w-0 py-2 text-xs text-muted">
-            {n.timing.offset !== null && n.timing.width !== null && <div className="relative mb-2 h-2 bg-surface" aria-hidden="true"><div className="absolute h-2 min-w-px bg-accent" style={{ left: `${n.timing.offset * 100}%`, width: `${n.timing.width * 100}%` }} /></div>}
+            {n.timing.offset !== null && n.timing.width !== null && <div className={cn(METER_RAIL, 'mb-2')} aria-hidden="true"><div className="absolute inset-y-0 min-w-px rounded-full bg-accent" style={{ left: `${n.timing.offset * 100}%`, width: `${n.timing.width * 100}%` }} /></div>}
             <span>{n.timing.start === null ? m.kanban_timing_unknown() : formatDate(n.timing.start)}</span>
             {n.timing.end !== null && <span> → {formatDate(n.timing.end)}</span>}
             <span className="ml-2">{n.timing.duration_seconds !== null ? m.kanban_duration_seconds({ count: Math.floor(n.timing.duration_seconds).toLocaleString() }) : n.timing.start !== null ? m.kanban_timing_unknown() : null}</span>
@@ -405,14 +407,12 @@ function KanbanInspection({ mode, current, filters, onChanged }: { mode: string;
 
 function KanbanColumns({ board, columns, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; columns: KanbanColumn[]; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void; onChanged: () => void }) {
   return (
-    <div className="kanban-board grid gap-3 md:grid-cols-2 xl:grid-cols-3" id="kanbanList">
+    <div className="kanban-board" id="kanbanList">
       {columns.map((col) => (
-        <section key={col.name} className="kanban-column flex min-h-40 flex-col rounded-lg border border-border bg-surface" aria-label={statusLabel(col.name, col.label)}>
-          <header className="flex items-center justify-between border-b border-border-subtle px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted">
-            <span>{statusLabel(col.name, col.label)}</span><span>{col.tasks.length}</span>
-          </header>
-          <div className="flex flex-col gap-2 p-2">
-            {col.tasks.length === 0 && <div className="px-1 py-2 text-xs text-muted">{m.kanban_no_tasks()}</div>}
+        <section key={col.name} className="kanban-column gap-2" aria-label={statusLabel(col.name, col.label)}>
+          <SectionHeader detail={col.tasks.length}>{statusLabel(col.name, col.label)}</SectionHeader>
+          <div className="flex flex-col gap-2">
+            {col.tasks.length === 0 && <div className="text-xs text-muted">{m.kanban_no_tasks()}</div>}
             {col.tasks.map((task) => {
               const id = String(task.id)
               return <KanbanCard key={id} board={board} task={task} readOnly={readOnly} stale={stale} selected={selected.includes(id)} onToggle={() => onToggle(id)} onOpen={() => onOpen(id)} onChanged={onChanged} />

@@ -3,6 +3,9 @@ import { cn } from './cn'
 
 const LABEL = 'text-xs uppercase tracking-wider text-muted'
 
+/** The meter track (§5), shared by the quota meter and the Kanban timing bar. */
+export const METER_RAIL = 'relative h-2 overflow-hidden rounded-full bg-border'
+
 /** A plain list on the page background (`docs/design-system.md` §3). */
 export function RowList({ className, ...props }: ComponentProps<'ul'>) {
   return <ul {...props} className={cn('flex flex-col', className)} />
