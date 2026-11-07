@@ -12,7 +12,7 @@ from talaria_sidecar.methods import Registry, chat, providers
 
 # Runs on the Agent interpreter with the real resolver and compressor; only its network lookups are stubbed.
 PROBE = """
-import json, os, sys
+import importlib, json, os, sys
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.append(sys.argv[1])
@@ -38,6 +38,7 @@ def route(model, pin=None):
 
 with scoped_home(Path(os.environ["HERMES_HOME"])):
     print(json.dumps({
+        "has_markers": hasattr(importlib.import_module("agent.context_pin"), "agent_context_marker"),
         "live": {"pinned": live(UNKNOWN, 200000), "fallback": live(UNKNOWN), "detected": live(KNOWN)},
         "route": {"pinned": route(UNKNOWN, 200000), "fallback": route(UNKNOWN), "detected": route(KNOWN)},
     }))
@@ -51,8 +52,10 @@ def test_live_agent_and_lookup_report_the_agents_marker(tmp_path) -> None:
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    assert out["live"] == {"pinned": "pinned", "fallback": "fallback", "detected": None}
-    assert out["route"] == {"pinned": "pinned", "fallback": "fallback", "detected": None}
+    # Supported releases before v0.23.0 have no markers, so a real Agent without them shows no label.
+    expected = {"pinned": "pinned", "fallback": "fallback", "detected": None} if out["has_markers"] else {"pinned": None, "fallback": None, "detected": None}
+    assert out["live"] == expected
+    assert out["route"] == expected
 
 
 def test_an_agent_without_the_markers_gives_null_and_does_not_raise(tmp_path, monkeypatch) -> None:
