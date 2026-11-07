@@ -142,11 +142,14 @@ async function tracks(data: Buffer): Promise<{ audio: number; width: number }> {
 
 test('video is re-encoded smaller, without audio, at most 1280 px wide and within maxVideoBytes', async ({ page }) => {
   test.setTimeout(120_000)
-  const maxVideoBytes = 1_500_000
-  const { uploads } = await openDialog(page, { maxVideoBytes })
+  // The clip's size depends on how many frames the runner draws, so the budget comes from the recording.
+  await page.route('**/blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html>' }))
+  await page.goto('/blank')
   const clip = await syntheticClip(page, 3)
   expect(await tracks(clip)).toEqual({ audio: 1, width: 1920 })
+  const maxVideoBytes = Math.floor(clip.length / 2)
   expect(clip.length).toBeGreaterThan(maxVideoBytes)
+  const { uploads } = await openDialog(page, { maxVideoBytes })
 
   await picker(page).setInputFiles({ name: 'screen.webm', mimeType: 'video/webm', buffer: clip })
   await expect.poll(() => uploads.length, { timeout: 60_000 }).toBe(1)
