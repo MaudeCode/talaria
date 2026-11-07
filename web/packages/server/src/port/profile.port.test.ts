@@ -709,8 +709,10 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(cookie).toMatch(/^hermes_profile=doomed/)
     const created = await post(s, '/api/session/new', { profile: 'doomed' }, { cookie })
     const sid = String(((await json(created)).session as Json).session_id)
+    // A latch, not a callback the responder installs: the test can reach its release before the RPC starts.
     let releaseDelete: () => void = () => undefined
-    sidecar.respond('profiles.delete', (params) => new Promise((resolve) => { releaseDelete = () => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); resolve({ ok: true }) } }))
+    const released = new Promise<void>((resolve) => { releaseDelete = resolve })
+    sidecar.respond('profiles.delete', async (params) => { await released; rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }], final_response: 'late', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const deletion = post(s, '/api/profile/delete', { name: 'doomed' }, asWork())
     const until = Date.now() + 5000

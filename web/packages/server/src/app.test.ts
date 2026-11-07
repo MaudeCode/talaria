@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage, request, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
@@ -244,7 +244,7 @@ describe('open server (no auth)', () => {
       expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
       expect(res.headers.get('content-encoding')).toBe('gzip')
       const etag = res.headers.get('etag')
-      expect(etag).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/)
+      expect(String(etag)).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/)
       const cached = await s.get(`/assets/${asset}`, { headers: { 'if-none-match': etag! } })
       expect(cached.status).toBe(304)
       expect((await s.get(`/static/dist/assets/${asset}`)).status).toBe(200)
@@ -747,6 +747,92 @@ describe('pre-auth request hardening', () => {
     } finally {
       delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
       delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+    }
+  })
+})
+
+describe('per-request costs (TAL-1727)', () => {
+  const localConfig = (params: { config_path: string }) => ({ path: params.config_path, exists: true, config: { terminal: { backend: 'local' } } })
+
+  it('an unchanged config costs API requests a peek, never a cloning read', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', localConfig)
+    const s = await bootTestServer({ sidecar })
+    try {
+      writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+      await s.deps.agentConfig.read(s.state)
+      // The auth gate's first request loads the OIDC settings once; that cache has its own owner.
+      await s.get('/api/sessions')
+      const read = vi.spyOn(s.deps.agentConfig, 'read')
+      const peek = vi.spyOn(s.deps.agentConfig, 'peek')
+      for (let n = 0; n < 100; n += 1) expect((await s.get('/api/sessions')).status).toBe(200)
+      expect(read).not.toHaveBeenCalled()
+      expect(peek).toHaveBeenCalled()
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('an edited config settles before the next API request reaches its gates, so that request is served', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', localConfig)
+    const s = await bootTestServer({ sidecar })
+    const post = (path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    try {
+      const config = join(s.state, 'config.yaml')
+      writeFileSync(config, '# seed\n')
+      await s.deps.agentConfig.read(s.state)
+      const { session } = (await (await post('/api/session/new', {})).json()) as { session: { session_id: string } }
+      // A real RPC takes real time; an instant answer would land before the gate even if nothing waited for it.
+      sidecar.respond('config.get', async (params) => { await new Promise((landed) => setTimeout(landed, 50)); return localConfig(params) })
+      writeFileSync(config, '# edited\n')
+      expect((await post('/api/file/path', { session_id: session.session_id, path: '.' })).status).toBe(200)
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('validates the CSP extras once per app and sends the same policy bytes', async () => {
+    const s = await bootTestServer({ env: { HERMES_WEBUI_CSP_CONNECT_EXTRA: 'https://api.example:8443 wss://*.relay.example', HERMES_WEBUI_CSP_FRAME_EXTRA: 'not-a-source' } })
+    try {
+      const responses = [await s.get('/health'), await s.get('/health'), await s.get('/api/sessions')]
+      expect(s.logs.filter((line) => line.includes('Ignoring invalid HERMES_WEBUI_CSP_FRAME_EXTRA'))).toHaveLength(1)
+      const policy = (frameAncestors: string) => `default-src 'self' https://*.cloudflareaccess.com; object-src 'none'; frame-ancestors ${frameAncestors}; script-src 'self' https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* http://ipc.localhost https://127.0.0.1:* https://localhost:* ws://127.0.0.1:* ws://localhost:* blob: https://api.example:8443 wss://*.relay.example; frame-src 'self'; manifest-src 'self' https://*.cloudflareaccess.com; base-uri 'self'; form-action 'self'`
+      for (const res of responses) {
+        expect(res.headers.get('content-security-policy')).toBe(policy("'none'"))
+        expect(res.headers.get('content-security-policy-report-only')).toBe(`${policy("'none'")}; report-uri /api/csp-report; report-to csp-endpoint`)
+      }
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('serves the favicon from the asset cache: one read, then a 304, then 404 once it is gone', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-favicon-'))
+    mkdirSync(join(root, 'brand'))
+    const icon = join(root, 'brand', 'favicon.ico')
+    // A fixed size and mtime keep the file's signature, so only a re-read could serve the replaced bytes.
+    const place = (bytes: string) => { writeFileSync(icon, bytes); utimesSync(icon, 1_700_000_000, 1_700_000_000) }
+    place('icon-a')
+    const s = await bootTestServer({ deps: (deps) => { deps.staticFiles = new AssetCache(root) } })
+    try {
+      const first = await s.get('/favicon.ico')
+      expect(first.status).toBe(200)
+      expect(first.headers.get('content-type')).toBe('image/x-icon')
+      expect(first.headers.get('cache-control')).toBe('public, max-age=86400')
+      const etag = first.headers.get('etag')
+      expect(String(etag)).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/)
+      expect(await first.text()).toBe('icon-a')
+      place('icon-b')
+      expect(await (await s.get('/favicon.ico')).text()).toBe('icon-a')
+      const revalidated = await s.get('/favicon.ico', { headers: { 'if-none-match': etag! } })
+      expect(revalidated.status).toBe(304)
+      expect(revalidated.headers.get('etag')).toBe(etag)
+      rmSync(icon)
+      expect((await s.get('/favicon.ico')).status).toBe(404)
+    } finally {
+      await s.close()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

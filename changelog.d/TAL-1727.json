@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web does less repeated work on every request, and browsers can now revalidate its favicon instead of downloading it again.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

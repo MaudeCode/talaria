@@ -137,6 +137,7 @@ export class SpaShell {
   readonly distRoot: string
   private readonly assets: AssetCache
   private shell: { sig: string; text: string } | null = null
+  private worker: { asset: Asset; version: string; body: Buffer } | null = null
 
   constructor(distRoot: string) {
     this.distRoot = resolve(distRoot)
@@ -184,13 +185,13 @@ export class SpaShell {
     return this.assets.get(rel)
   }
 
-  serviceWorker(version: string): Buffer | null {
-    const file = resolve(this.distRoot, 'sw.js')
-    try {
-      if (!statSync(file).isFile()) return null
-    } catch {
-      return null
+  /** `sw.js` with its version stamped, rendered once per file version (the asset cache's stat signature) and app version. */
+  async serviceWorker(version: string): Promise<Buffer | null> {
+    const asset = await this.assets.get('sw.js')
+    if (!asset) return null
+    if (this.worker?.asset !== asset || this.worker.version !== version) {
+      this.worker = { asset, version, body: Buffer.from(asset.body.toString('utf8').replaceAll('__WEBUI_VERSION__', quoteAll(version)), 'utf8') }
     }
-    return Buffer.from(readFileSync(file, 'utf8').replaceAll('__WEBUI_VERSION__', quoteAll(version)), 'utf8')
+    return this.worker.body
   }
 }
