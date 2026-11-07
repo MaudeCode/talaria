@@ -2128,6 +2128,7 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
       // The account holding the configured key is its only source, and its read records the snapshot.
       pool = [{ ...account, matches_api_key: true }]
       configuredDown = false
+      s.deps.catalog.invalidate(s.state)
       sources = ((await json(await s.get('/api/provider/quotas'))).sources as Json[]).filter((q) => q.provider_id === 'openrouter')
       expect(sources).toEqual([expect.objectContaining({ account_label: 'work@example.test', status: 'available', quota: { usage: 4, limit: 100, limit_remaining: 50 } })])
       expect(stored()).toEqual([{ date: '2026-09-28', used: 4, limit: 100 }])

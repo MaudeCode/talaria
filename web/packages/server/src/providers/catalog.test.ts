@@ -7,7 +7,7 @@ import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
 import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
-import { PROVIDER_MODELS } from './tables.js'
+import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
 
@@ -131,6 +131,81 @@ describe('shared admission catalog discovery (TAL-1196)', () => {
     expect(catalog.sessionModelRepair(home, 'old-model', 'ollama')).toBeNull()
     expect(catalog.sessionModelRepair(home, 'other-model', 'ollama')).toBeNull()
     expect(catalog.sessionModelRepair(other, 'other-model', 'ollama')).toEqual(['other-model', 'deepseek'])
+  })
+
+  describe('read caching (TAL-1715)', () => {
+    const count = (method: string): number => sidecar.calls.filter((c) => c.method === method).length
+
+    it('serves a repeat read within the TTL with no sidecar call, as a copy the caller can mutate', async () => {
+      const first = await catalog.models(home)
+      const before = sidecar.calls.length
+      const second = await catalog.models(home)
+      expect(second).toEqual(first)
+      expect(sidecar.calls).toHaveLength(before)
+      second.groups.length = 0
+      expect(await catalog.models(home)).toEqual(first)
+    })
+
+    it.each<[string, () => void]>([
+      ['a config.yaml change', () => { writeFileSync(join(home, 'config.yaml'), '# synthetic config, edited\n') }],
+      ['the TTL passing', () => { clock += 30 }],
+      ['an explicit refresh', () => { catalog.invalidate(home, undefined, { preserveConfirmed: true }) }],
+    ])('rebuilds after %s', async (_name, change) => {
+      await catalog.models(home)
+      change()
+      await catalog.models(home)
+      expect(count('providers.local_models')).toBe(2)
+    })
+
+    it('does not recompute the source for every live lookup of a build', async () => {
+      const fingerprint = vi.spyOn(AgentConfig.prototype, 'fingerprint')
+      try {
+        await catalog.models(home)
+        expect(fingerprint.mock.calls.length).toBeLessThan(3 * count('providers.model_ids'))
+      } finally { fingerprint.mockRestore() }
+    })
+
+    it('has every OAuth provider probe in flight before any answers', async () => {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => { release = resolve })
+      sidecar.respond('providers.auth_status', async () => { await held; return { status: { logged_in: false } } })
+      const read = catalog.providers(home)
+      try {
+        await vi.waitFor(() => {
+          const probed = sidecar.calls.filter((c) => c.method === 'providers.auth_status').map((c) => (c.params as Json).provider)
+          expect(probed.length).toBeGreaterThanOrEqual(7)
+          expect(probed).toEqual(expect.arrayContaining([...OAUTH_PROVIDERS]))
+        })
+      } finally { release() }
+      await read
+    })
+
+    it('reads each provider pool once per quotas TTL unless refreshed', async () => {
+      sidecar.respond('usage.pool', () => ({ entries: [], has_api_key: false }))
+      await catalog.quotas(home, 'synthetic')
+      const once = count('usage.pool')
+      expect(once).toBeGreaterThan(0)
+      expect(new Set(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => (c.params as Json).provider)).size).toBe(once)
+      await catalog.quotas(home, 'synthetic')
+      expect(count('usage.pool')).toBe(once)
+      expect(count('usage.pool_providers')).toBe(1)
+      await catalog.quotas(home, 'synthetic', { refresh: true })
+      expect(count('usage.pool')).toBe(once * 2)
+      expect(count('usage.pool_providers')).toBe(2)
+      clock += 30
+      await catalog.quotas(home, 'synthetic')
+      expect(count('usage.pool')).toBe(once * 3)
+    })
+
+    it('keeps failed live lookups for the current source only', async () => {
+      const internals = catalog as unknown as { liveFailed: Set<string>; sourceFingerprint: (profileHome: string) => string }
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: ['placeholder'], fallback: true }))
+      for (const change of [1, 2, 3]) {
+        writeFileSync(join(home, 'auth.json'), JSON.stringify({ change }))
+        await catalog.liveModelIds(home, 'deepseek')
+      }
+      expect(internals.liveFailed).toEqual(new Set([`${home}\0deepseek\0${internals.sourceFingerprint(home)}`]))
+    })
   })
 })
 
@@ -285,7 +360,8 @@ describe.each([
       }))
       sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === provider ? liveIds : [] }))
       const config = new AgentConfig({ sidecar: () => sidecar, env: {} })
-      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config, env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      let clock = 1_800_000_000
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config, env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
       expect(await catalog.quota(home, provider)).toMatchObject({ status: 'available' })
       if (provider === 'openrouter') expect(await catalog.costHistory(home, 'openrouter', 30)).toMatchObject({ status: 'available' })
       expect((await catalog.providers(home)).providers.find((p) => p.id === provider)).toMatchObject({ has_key: true, configured: true, is_oauth: false })
@@ -301,6 +377,7 @@ describe.each([
         if (!key.startsWith('sk-')) expect(call.params).not.toHaveProperty('api_key')
       }
       for (const matches of [true, false]) {
+        clock += 30
         sidecar.respond('usage.pool', (p) => ({ has_api_key: p.provider === provider, entries: p.provider === provider ? [{ credential_id: 'work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: matches }] : [] }))
         const sources = (await catalog.quotas(home, 'synthetic')).sources as Json[]
         const providerSources = sources.filter((s) => s.provider_id === provider)

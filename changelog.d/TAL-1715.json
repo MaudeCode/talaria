@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web's model picker, provider settings and usage limits load faster and ask the Agent far less often, by reusing recent answers until your provider configuration changes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
