@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, hideClipboardApi, test } from './fixtures'
+import { expect, hideClipboardApi, longPress, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -32,18 +32,6 @@ async function watchNativeMenu(page: Page): Promise<() => Promise<boolean[]>> {
     window.addEventListener('contextmenu', (event) => { setTimeout(() => seen.push(!event.defaultPrevented)) }, true)
   })
   return () => page.evaluate(() => (window as unknown as { nativeMenus: boolean[] }).nativeMenus)
-}
-
-/** Holds one touch point past Base UI's 500 ms long-press, as a finger would. */
-async function longPress(page: Page, target: Locator): Promise<void> {
-  const box = await target.boundingBox()
-  if (!box) throw new Error('long-press target is not visible')
-  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-  const cdp = await page.context().newCDPSession(page)
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
-  await page.waitForTimeout(800)
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-  await cdp.detach()
 }
 
 const menuLabels = (menu: Locator) => menu.getByRole('menuitem').allTextContents()

@@ -13,6 +13,7 @@ import { m } from '../../paraglide/messages.js'
 import { HelpTip } from '../../ui/Field'
 import { Button, IconButton } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showRichToast, showToast } from '../toast/toast'
 
@@ -66,20 +67,35 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
         <div className="p-3 text-xs text-muted" role="status">{m.checkpoint_empty()}</div>
       ) : (
         <ul className="flex flex-col" aria-label={m.checkpoint_title()}>
-          {checkpoints.map((c) => (
-            <li key={c.id} className="flex min-w-0 items-center gap-1 border-b border-border-subtle py-1 pl-3 pr-1">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] text-text" title={c.message}>{c.message}</div>
-                <div className="flex min-w-0 gap-1 text-[11px] text-muted">
-                  <code className="truncate">{c.id}</code>
-                  {c.date_display && <span className="shrink-0">· {c.date_display}</span>}
-                  <span className="shrink-0">· {m.checkpoint_files()}: {c.files}</span>
-                </div>
-              </div>
-              <IconButton label={m.checkpoint_view_diff()} onClick={() => setViewing({ id: c.id, message: c.message })}><FileDiff size={15} aria-hidden="true" /></IconButton>
-              <IconButton label={m.checkpoint_restore()} disabled={restore.isPending} onClick={() => setRestoring({ id: c.id, message: c.message })}><RotateCcw size={15} aria-hidden="true" /></IconButton>
-            </li>
-          ))}
+          {checkpoints.map((c) => {
+            const picked = { id: c.id, message: c.message }
+            // One list for the row's buttons and its right-click and long-press menu.
+            const actions = [
+              { label: m.checkpoint_view_diff(), Icon: FileDiff, disabled: false, run: () => setViewing(picked) },
+              { label: m.checkpoint_restore(), Icon: RotateCcw, disabled: restore.isPending, run: () => setRestoring(picked) },
+            ]
+            return (
+              <ContextMenu
+                key={c.id}
+                label={c.message}
+                trigger={
+                  <li className="flex min-w-0 items-center gap-1 border-b border-border-subtle py-1 pl-3 pr-1">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] text-text" title={c.message}>{c.message}</div>
+                      <div className="flex min-w-0 gap-1 text-[11px] text-muted">
+                        <code className="truncate">{c.id}</code>
+                        {c.date_display && <span className="shrink-0">· {c.date_display}</span>}
+                        <span className="shrink-0">· {m.checkpoint_files()}: {c.files}</span>
+                      </div>
+                    </div>
+                    {actions.map(({ label, Icon, disabled, run }) => <IconButton key={label} label={label} disabled={disabled} onClick={run}><Icon size={15} aria-hidden="true" /></IconButton>)}
+                  </li>
+                }
+              >
+                {actions.map(({ label, disabled, run }) => <MenuItem key={label} disabled={disabled} onClick={run}>{label}</MenuItem>)}
+              </ContextMenu>
+            )
+          })}
         </ul>
       )}
       {viewing && <CheckpointDiff workspace={workspace} sessionId={sessionId} checkpoint={viewing} onClose={() => setViewing(null)} />}

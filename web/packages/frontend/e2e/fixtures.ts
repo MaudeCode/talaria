@@ -61,6 +61,18 @@ export async function openProjectActions(page: Page) {
   return menu
 }
 
+/** Holds one touch point past Base UI's 500 ms long-press, as a finger would. */
+export async function longPress(page: Page, target: Locator): Promise<void> {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('long-press target is not visible')
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
+  await page.waitForTimeout(800)
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await cdp.detach()
+}
+
 export async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle')
   // Wait for the router to render the shell (the titlebar is hidden in desktop browsers, so wait for the layout or a full-page route).
