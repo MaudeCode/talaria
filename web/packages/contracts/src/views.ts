@@ -463,6 +463,7 @@ export const SessionRowSchema = z.looseObject({
   workspace_name: WorkspaceNameSchema,
   sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it.'),
   sidebar_parent_session_id: NullableString.optional().describe('TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent\'s project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it.'),
+  sidebar_source: z.enum(['webui', 'cli']).optional().describe('TAL-1863: the source tab the row files in, the one verdict `webui_session_count`, `cli_session_count` and the `sidebar_source` request filter read. A subagent row takes its parent\'s tab, listed or not, in its own profile; with no resolvable parent it keeps its own (`webui`). `is_cli_session` stays false for a subagent. `GET /api/sessions` and its sidebar search set it; other routes omit it.'),
   ...ContextUsageFields,
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>

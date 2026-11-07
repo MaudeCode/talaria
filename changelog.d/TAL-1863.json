@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A subagent stays in its CLI parent's sidebar tab when that parent is archived or no longer listed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

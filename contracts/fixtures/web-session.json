@@ -5286,6 +5286,7 @@
         "pinned": false,
         "project_id": "tal1151-project",
         "source_tag": "webui",
+        "sidebar_source": "webui",
         "sidebar_parent_session_id": null
       },
       {
@@ -5301,6 +5302,7 @@
         "session_source": "subagent",
         "source_label": "Subagent",
         "parent_session_id": "tal1151-parent",
+        "sidebar_source": "webui",
         "sidebar_parent_session_id": "tal1151-parent"
       },
       {
@@ -5316,6 +5318,7 @@
         "session_source": "subagent",
         "source_label": "Subagent",
         "parent_session_id": "tal1151-missing",
+        "sidebar_source": "webui",
         "sidebar_parent_session_id": null
       }
     ],
@@ -5340,6 +5343,7 @@
         "read_only": false,
         "session_id": "tal1151-parent",
         "sidebar_group": "recent",
+        "sidebar_source": "webui",
         "sidebar_parent_session_id": null,
         "sort_ts": 1789500100,
         "source_kind": "webui",
@@ -5371,6 +5375,7 @@
         "session_id": "tal1151-child",
         "session_source": "subagent",
         "sidebar_group": "recent",
+        "sidebar_source": "webui",
         "sidebar_parent_session_id": "tal1151-parent",
         "sort_ts": 1789500090,
         "source_kind": "subagent",
@@ -5403,6 +5408,7 @@
         "session_id": "tal1151-orphan",
         "session_source": "subagent",
         "sidebar_group": "recent",
+        "sidebar_source": "webui",
         "sidebar_parent_session_id": null,
         "sort_ts": 1789400090,
         "source_kind": "subagent",

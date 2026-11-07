@@ -210,7 +210,7 @@ export function SessionListPanel() {
   const shownIds = new Set(rows.map((r) => r.session_id))
   const listed = nestSessionRows(data?.sessions ?? [])
   const tabCount = (cli: boolean) => ((cli ? data?.cli_session_count : data?.webui_session_count) ?? 0)
-    - listed.roots.reduce((n, r) => (!!r.is_cli_session === cli && !shownIds.has(r.session_id) ? n + 1 + (listed.children.get(r.session_id)?.length ?? 0) : n), 0)
+    - listed.roots.reduce((n, r) => ((r.sidebar_source === 'cli') === cli && !shownIds.has(r.session_id) ? n + 1 + (listed.children.get(r.session_id)?.length ?? 0) : n), 0)
   const cliCount = tabCount(true)
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = useDebounced(filter.trim(), 200)
@@ -237,7 +237,7 @@ export function SessionListPanel() {
   const { roots: filtered, children } = (() => {
     const term = q.toLowerCase()
     let visible = tree.roots
-    if (cliCount > 0) visible = visible.filter((r) => (source === 'cli' ? !!r.is_cli_session : !r.is_cli_session))
+    if (cliCount > 0) visible = visible.filter((r) => (r.sidebar_source === 'cli') === (source === 'cli'))
     if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
     else if (project) visible = visible.filter((r) => r.project_id === project)
     if (term && q.length >= 2 && search.data) return nestSessionRows(withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived))

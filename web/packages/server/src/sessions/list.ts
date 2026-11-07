@@ -319,7 +319,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
   'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'can_share', 'gateway_routing', 'share_url',
-  'execution_mode', 'sidebar_parent_session_id',
+  'execution_mode', 'sidebar_parent_session_id', 'sidebar_source',
 ])
 
 /** TAL-1151: keeps each row's `sidebar_parent_session_id` only while that parent row is in `rows` too. */
@@ -495,21 +495,21 @@ export function isSubagentRow(row: Row): boolean {
   return str(row.source_tag || row.raw_source || row.session_source || row.source).trim().toLowerCase() === 'subagent'
 }
 
+const isSubagentListRow = (row: Row): boolean => sourceKind(row) === 'subagent' || isSubagentRow(row)
+
 /**
- * TAL-1151: each subagent row's sidebar host among `rows`, by child id: its nearest non-subagent ancestor through
- * `parent_session_id`, where a parent id matches the row whose lineage (`_lineage_ids`, root or tip) contains it, in
- * the child's own profile. A parent segment inside a collapsed compression chain matches by the chain root the
- * projection names (`_parent_lineage_root_id`). A parent missing from `rows` leaves the child without a host.
+ * TAL-1151: where each subagent row's chain ends among `rows`: its nearest non-subagent ancestor through
+ * `parent_session_id`, or the last subagent reached (itself included) when the next parent is missing. A parent id
+ * matches the row whose lineage (`_lineage_ids`, root or tip) contains it, in the child's own profile. A parent segment
+ * inside a collapsed compression chain matches by the chain root the projection names (`_parent_lineage_root_id`).
  */
-export function sidebarHosts(rows: Row[], profilesMatch: ListParams['profilesMatch']): Map<string, Row> {
-  const subagent = (row: Row): boolean => sourceKind(row) === 'subagent' || isSubagentRow(row)
-  const hosts = new Map<string, Row>()
-  if (!rows.some(subagent)) return hosts
+function sidebarChainEnds(rows: Row[], profilesMatch: ListParams['profilesMatch']): Map<Row, Row> {
+  const ends = new Map<Row, Row>()
+  if (!rows.some(isSubagentListRow)) return ends
   const byId = new Map<string, Row[]>()
   for (const row of rows) for (const id of sessionLineageIds(row)) { const listed = byId.get(id); if (listed) listed.push(row); else byId.set(id, [row]) }
   for (const row of rows) {
-    if (!subagent(row)) continue
-    const sid = str(row.session_id)
+    if (!isSubagentListRow(row)) continue
     const profile = str(row.profile) || null
     const seen = new Set([row])
     let current = row
@@ -517,12 +517,34 @@ export function sidebarHosts(rows: Row[], profilesMatch: ListParams['profilesMat
       const parent = [current.parent_session_id, current._parent_lineage_root_id].map((id) => str(id).trim()).filter(Boolean)
         .map((id) => byId.get(id)?.find((r) => profilesMatch(str(r.profile) || null, profile))).find(Boolean)
       if (!parent || seen.has(parent)) break
-      if (!subagent(parent)) { hosts.set(sid, parent); break }
       seen.add(parent)
       current = parent
+      if (!isSubagentListRow(parent)) break
     }
+    ends.set(row, current)
   }
+  return ends
+}
+
+/** TAL-1151: each subagent row's host among `rows`, by child id; a parent missing from `rows` leaves the child without one. */
+export function sidebarHosts(rows: Row[], profilesMatch: ListParams['profilesMatch']): Map<string, Row> {
+  const hosts = new Map<string, Row>()
+  for (const [row, end] of sidebarChainEnds(rows, profilesMatch)) if (!isSubagentListRow(end)) hosts.set(str(row.session_id), end)
   return hosts
+}
+
+/**
+ * TAL-1863: stamps every row's `sidebar_source`, the one verdict the counts, the request filter and the client's tabs
+ * read. `rows` is the whole set before the archive filter and cap, so a subagent files with an archived or capped parent;
+ * a parent outside it answers through the chain end's `parent_source`, and with neither the subagent keeps its own tab.
+ */
+function withSidebarSources(rows: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
+  const ends = sidebarChainEnds(rows, profilesMatch)
+  return rows.map((row) => {
+    const end = ends.get(row) ?? row
+    const decider = isSubagentListRow(end) && end.parent_source ? normalizeAgentSessionSource(end.parent_source) : end
+    return { ...row, sidebar_source: isCliSessionForSettings(decider) ? 'cli' : 'webui' }
+  })
 }
 
 /**
@@ -806,7 +828,7 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   }
   // TAL-48: person isolation drops other people's rows (and, for non-owners, unowned ones) before any count.
   const rowVisible = params.rowVisible ?? (() => true)
-  const merged = [...webuiSessions, ...dedupedCli].filter(rowVisible).sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
+  const merged = withSidebarSources([...webuiSessions, ...dedupedCli].filter(rowVisible).sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a)), params.profilesMatch)
   let scoped: Row[]
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
@@ -844,13 +866,11 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     archivedScoped = archivedScoped.filter((r) => !r.default_hidden)
     visibleScoped = visibleScoped.filter((r) => !r.default_hidden)
   }
-  const archivedWebuiCount = archivedScoped.filter((r) => r.archived && !isCliSessionForSettings(r)).length
-  const archivedCliCount = archivedScoped.filter((r) => r.archived && isCliSessionForSettings(r)).length
-  // TAL-1151: a subagent row is in its host's source tab.
-  const cliTab = (rows: Row[]) => { const hosts = sidebarHosts(rows, params.profilesMatch); return (r: Row) => isCliSessionForSettings(hosts.get(str(r.session_id)) ?? r) }
-  const filterSource = (rows: Row[]) => { if (!params.sidebarSource) return [...rows]; const cli = cliTab(rows); return rows.filter((r) => cli(r) === (params.sidebarSource === 'cli')) }
+  const inCliTab = (r: Row): boolean => r.sidebar_source === 'cli'
+  const archivedWebuiCount = archivedScoped.filter((r) => r.archived && !inCliTab(r)).length
+  const archivedCliCount = archivedScoped.filter((r) => r.archived && inCliTab(r)).length
+  const filterSource = (rows: Row[]) => (params.sidebarSource ? rows.filter((r) => r.sidebar_source === params.sidebarSource) : [...rows])
   const fullScoped = params.includeArchived ? archivedScoped : visibleScoped
-  const inCliTab = cliTab(fullScoped)
   const webuiSessionCount = fullScoped.filter((r) => !inCliTab(r)).length
   const cliSessionCount = fullScoped.filter(inCliTab).length
   const visibleFiltered = filterSource(visibleScoped)
