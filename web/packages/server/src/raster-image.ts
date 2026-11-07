@@ -3,8 +3,9 @@ import { crc32 } from 'node:zlib'
 /**
  * Python `_is_native_raster_data_uri`: whether a value is one complete, canonical raster image data URI. Image bytes are
  * opaque, so text redaction would only corrupt them; but this is a credential boundary, so a header or magic prefix is
- * not enough. The whole canonical base64 payload is decoded and the image format must end exactly at its last byte; any
- * malformed, ambiguous, or trailing content falls through to normal redaction.
+ * not enough. The whole canonical base64 payload is decoded and the image format must account for every byte, a JPEG's
+ * through its declared MPF pictures and one Samsung SEF trailer; any malformed, ambiguous, or trailing content falls
+ * through to normal redaction.
  */
 export function isRasterDataUri(value: unknown): boolean {
   if (typeof value !== 'string') return false
@@ -51,24 +52,111 @@ function isCompletePng(raw: Buffer): boolean {
   return false
 }
 
-function isCompleteJpeg(raw: Buffer): boolean {
+/** The picture extents an MP Index TIFF declares, its offsets relative to `base`; undefined when it is malformed. */
+function mpfImageRanges(tiff: Buffer, base: number): [start: number, end: number][] | undefined {
+  if (tiff.length < 8) return undefined
+  const signature = tiff.readUInt32BE(0)
+  if (signature !== 0x49492a00 && signature !== 0x4d4d002a) return undefined
+  const u16 = (pos: number): number => (signature === 0x49492a00 ? tiff.readUInt16LE(pos) : tiff.readUInt16BE(pos))
+  const u32 = (pos: number): number => (signature === 0x49492a00 ? tiff.readUInt32LE(pos) : tiff.readUInt32BE(pos))
+  const ifd = u32(4)
+  if (ifd < 8 || ifd + 2 > tiff.length) return undefined
+  const tableEnd = ifd + 2 + 12 * u16(ifd)
+  if (tableEnd + 4 > tiff.length) return undefined
+  const tags = new Map<number, { type: number; count: number; value: number }>()
+  for (let pos = ifd + 2; pos < tableEnd; pos += 12) {
+    if (tags.has(u16(pos))) return undefined
+    tags.set(u16(pos), { type: u16(pos + 2), count: u32(pos + 4), value: u32(pos + 8) })
+  }
+  const imageCount = tags.get(0xb001)
+  const directory = tags.get(0xb002)
+  if (imageCount?.type !== 4 || imageCount.count !== 1 || imageCount.value < 2) return undefined
+  const images = imageCount.value
+  if (directory?.type !== 7 || directory.count !== 16 * images) return undefined
+  if (directory.value < tableEnd + 4 || directory.value + 16 * images > tiff.length) return undefined
+  const ranges: [number, number][] = []
+  for (let index = 0; index < images; index += 1) {
+    const pos = directory.value + index * 16
+    const size = u32(pos + 4)
+    const relative = u32(pos + 8)
+    if (u32(pos) & 0x07000000 || size < 4 || (index === 0 && relative !== 0)) return undefined
+    const start = index === 0 ? 0 : base + relative
+    ranges.push([start, start + size])
+  }
+  return ranges
+}
+
+/**
+ * Whether `data` is exactly one Samsung Extended Format trailer: data blocks, an `SEFH` directory, then the directory's
+ * length and `SEFT`. A directory entry is `u16 0, u16 kind, u32 offset back from SEFH, u32 size`; a block starts
+ * `u16 0, u16 kind, u32 name length, name`. The blocks must tile everything before `SEFH`.
+ *
+ * Session reads run this every time, so the tiling is proven from the directory before any block is read: entries that
+ * all point at one huge block are rejected without scanning it, and no block byte is read twice.
+ */
+function isSamsungSefTrailer(data: Buffer): boolean {
+  if (data.length < 20 || data.readUInt32LE(data.length - 4) !== SEFT) return false
+  const directoryLength = data.readUInt32LE(data.length - 8)
+  const directory = data.length - 8 - directoryLength
+  if (directoryLength < 24 || directory <= 0 || data.readUInt32LE(directory) !== SEFH) return false
+  const count = data.readUInt32LE(directory + 8)
+  if (count < 1 || count > SEF_MAX_ENTRIES || directoryLength !== 12 + 12 * count) return false
+  const blocks: { start: number; size: number; kind: number }[] = []
+  for (let index = 0; index < count; index += 1) {
+    const entry = directory + 12 + 12 * index
+    const offset = data.readUInt32LE(entry + 4)
+    const size = data.readUInt32LE(entry + 8)
+    const start = directory - offset
+    if (data.readUInt16LE(entry) !== 0 || offset > directory || size < 8 || start + size > directory) return false
+    blocks.push({ start, size, kind: data.readUInt16LE(entry + 2) })
+  }
+  let end = 0
+  for (const { start, size } of [...blocks].sort((a, b) => a.start - b.start)) {
+    if (start !== end) return false
+    end = start + size
+  }
+  if (end !== directory) return false
+  return blocks.every(({ start, size, kind }) => {
+    if (data.readUInt16LE(start) !== 0 || data.readUInt16LE(start + 2) !== kind) return false
+    const nameEnd = start + 8 + data.readUInt32LE(start + 4)
+    return nameEnd <= start + size && SEF_BLOCK_NAME.test(data.toString('latin1', start + 8, nameEnd))
+  })
+}
+
+function isCompleteJpeg(raw: Buffer, isSubPicture = false): boolean {
   if (raw.length < 4 || raw[0] !== 0xff || raw[1] !== 0xd8) return false
   let pos = 2
   let sawSof = false
   let sawScan = false
+  let mpfRanges: [start: number, end: number][] | undefined
   while (pos < raw.length) {
     if (raw[pos] !== 0xff) return false
     while (pos < raw.length && raw[pos] === 0xff) pos += 1
     if (pos >= raw.length) return false
     const marker = raw[pos]!
     pos += 1
-    if (marker === 0xd9) return sawSof && sawScan && pos === raw.length
+    if (marker === 0xd9) {
+      if (!sawSof || !sawScan) return false
+      if (!mpfRanges) return pos === raw.length || (!isSubPicture && isSamsungSefTrailer(raw.subarray(pos)))
+      if (mpfRanges[0]![1] !== pos) return false
+      // Only the declared extents are trusted: no gaps, overlaps, undeclared pictures or other post-EOI payloads.
+      for (const [start, end] of mpfRanges.slice(1)) {
+        if (start !== pos || end > raw.length || !isCompleteJpeg(raw.subarray(start, end), true)) return false
+        pos = end
+      }
+      return pos === raw.length || isSamsungSefTrailer(raw.subarray(pos))
+    }
     if (marker === 0x00 || marker === 0x01 || marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) return false
     if (pos + 2 > raw.length) return false
     const segmentLength = raw.readUInt16BE(pos)
     if (segmentLength < 2) return false
     const segmentEnd = pos + segmentLength
     if (segmentEnd > raw.length) return false
+    if (!isSubPicture && marker === 0xe2 && segmentLength >= 6 && raw.readUInt32BE(pos + 2) === MPF_SIGNATURE) {
+      if (mpfRanges) return false
+      mpfRanges = mpfImageRanges(raw.subarray(pos + 6, segmentEnd), pos + 6)
+      if (!mpfRanges) return false
+    }
     if (JPEG_SOF_MARKERS.has(marker)) {
       if (segmentLength < 8) return false
       sawSof = true
@@ -200,6 +288,11 @@ function isCompleteBmp(raw: Buffer): boolean {
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const PNG_DEPTHS: Record<number, number[]> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] }
 const JPEG_SOF_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf])
+const MPF_SIGNATURE = 0x4d504600 // `MPF\0`
+const SEFH = 0x48464553 // `SEFH`, little-endian
+const SEFT = 0x54464553 // `SEFT`, little-endian
+const SEF_MAX_ENTRIES = 64
+const SEF_BLOCK_NAME = /^[\x21-\x7e]+$/
 const RASTER_PREFIXES: [string, (raw: Buffer) => boolean][] = [
   ['data:image/png;base64,', isCompletePng],
   ['data:image/jpeg;base64,', isCompleteJpeg],
