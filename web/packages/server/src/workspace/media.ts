@@ -86,7 +86,7 @@ export function ifNoneMatchMatches(header: string | undefined, etag: string): bo
   return header.split(',').map((c) => c.trim()).filter(Boolean).some((c) => strip(c) === current)
 }
 
-async function readAll(fd: number, size: number, start = 0): Promise<Buffer> {
+export async function readAll(fd: number, size: number, start = 0): Promise<Buffer> {
   const chunks: Buffer[] = []
   let remaining = size
   const buf = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, size)))

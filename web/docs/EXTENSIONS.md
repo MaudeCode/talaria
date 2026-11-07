@@ -347,6 +347,9 @@ allow-forms allow-popups allow-downloads allow-modals; frame-ancestors 'self'`
 and `X-Frame-Options: SAMEORIGIN`, so a panel opened directly in a tab runs
 with the same restrictions as inside the WebUI.
 
+Every file carries a weak `ETag` and `Cache-Control: no-cache`, so the browser
+revalidates each load and an edited file appears on the next one.
+
 The static handler is sandboxed:
 
 - path traversal is rejected, including encoded traversal

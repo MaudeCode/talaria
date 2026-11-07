@@ -16,6 +16,11 @@ export function signatureOf(path: string, st: BigIntStats): string {
   return `${path}:${st.mtimeNs}:${st.size}:${st.ctimeNs}`
 }
 
+/** The weak validator static responses share: `size-mtimeNs`, in hex. */
+export function weakEtag(st: BigIntStats): string {
+  return `W/"${st.size.toString(16)}-${st.mtimeNs.toString(16)}"`
+}
+
 export function statSignature(path: string): string | null {
   try {
     return signatureOf(path, statSync(path, { bigint: true }))

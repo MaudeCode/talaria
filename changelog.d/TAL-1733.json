@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web loads dashboard plugin panels and browser extensions faster because it reuses unchanged manifests and lets the browser revalidate extension files instead of downloading them again.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
