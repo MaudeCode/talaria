@@ -21,8 +21,11 @@ export const MESSAGING_SOURCES = new Set([
 export const SOURCE_KINDS = ['webui', 'cli', 'messaging', 'cron', 'webhook', 'subagent', 'claude_code', 'kanban', 'api', 'other'] as const
 export type SourceKind = (typeof SOURCE_KINDS)[number]
 
-/** Interactive Agent front ends and the external-agent bridge (`isCliSessionRow`). */
-const CLI_MARKERS = new Set(['acp', 'cli', 'tui', 'external_agent', 'external-agent'])
+/** Interactive Agent front ends; the only such list in the server. Their rows get the CLI treatment (`isCliSessionRow`). */
+export const INTERACTIVE_SOURCES = new Set(['acp', 'cli', 'desktop', 'tui'])
+
+/** The interactive front ends and the external-agent bridge. */
+const CLI_MARKERS = new Set([...INTERACTIVE_SOURCES, 'external_agent', 'external-agent'])
 
 const lower = (v: unknown): string => str(v).trim().toLowerCase()
 
@@ -35,7 +38,7 @@ const lower = (v: unknown): string => str(v).trim().toLowerCase()
  * 4. `cron` on any marker or a `cron_` session id (a scheduled run stays cron whatever channel it delivers to);
  * 5. `messaging` as `session_source`, or the first present of `raw_source` / `source_tag` is `messaging` or a
  *    messaging platform; then `webhook`, `kanban`, `api` / `api_server` on any marker;
- * 6. `is_cli_session`, or a CLI marker (`acp`, `cli`, `tui`, `external_agent`);
+ * 6. `is_cli_session`, or a CLI marker (`INTERACTIVE_SOURCES`, `external_agent`);
  * 7. no marker at all is a WebUI session; an unrecognised marker is `other`.
  */
 export function sourceKind(row: Row): SourceKind {
@@ -54,12 +57,8 @@ export function sourceKind(row: Row): SourceKind {
   return markers.length ? 'other' : 'webui'
 }
 
-/**
- * The imports an orphan prune may reconcile (TAL-590): CLI and API-server sessions, and (TAL-1562) a Desktop session
- * whose sidecar older materialization cached without `is_cli_session`, which `sourceKind` still files as `other`.
- */
+/** The imports an orphan prune may reconcile (TAL-590): CLI (Desktop included, TAL-1562) and API-server sessions. */
 export function isOrphanPrunableSource(row: Row): boolean {
   const kind = sourceKind(row)
-  if (kind === 'cli' || kind === 'api') return true
-  return kind === 'other' && [row.session_source, row.source_tag, row.raw_source, row.source_label, row.source].map(lower).includes('desktop')
+  return kind === 'cli' || kind === 'api'
 }

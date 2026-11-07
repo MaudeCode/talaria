@@ -39,7 +39,7 @@ function createStateDb(path: string): DatabaseSync {
   return db
 }
 
-function insertSession(db: DatabaseSync, row: { id: string; source: string; started_at: number; title?: string | null; model?: string | null; parent?: string | null; ended_at?: number | null; end_reason?: string | null; messages?: [string, number][]; chat_id?: string | null }): void {
+function insertSession(db: DatabaseSync, row: { id: string; source: string; started_at: number; title?: string | null; model?: string | null; parent?: string | null; ended_at?: number | null; end_reason?: string | null; messages?: [string | null, number][]; chat_id?: string | null }): void {
   const messages = row.messages ?? []
   db.prepare('INSERT INTO sessions (id, source, started_at, title, model, message_count, parent_session_id, ended_at, end_reason, chat_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(row.id, row.source, row.started_at, row.title ?? null, row.model ?? null, messages.length, row.parent ?? null, row.ended_at ?? null, row.end_reason ?? null, row.chat_id ?? null)
@@ -818,6 +818,7 @@ describe('state.db projection', () => {
 
   it('prunes a legacy Desktop sidecar only when its owning profile\'s state.db proves the row gone (TAL-1562)', async () => {
     const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    await s.deps.settings.save({ show_cli_sessions: true })
     // The cached shape older materialization left: Desktop markers, read-only, and no `is_cli_session`.
     const desktop = async (sid: string, extra: Json = {}): Promise<string> => {
       ;(await s.deps.sessionStore.save(new Session({
@@ -835,8 +836,7 @@ describe('state.db projection', () => {
     for (const path of ['/api/sessions', '/api/sessions?all_profiles=1']) {
       const rows = (await json(await s.get(path))).sessions as Json[]
       expect(rows.map((r) => str(r.session_id)), path).not.toContain(gone)
-      // Pruning leaves the Desktop display classification alone.
-      for (const r of rows.filter((r) => kept.includes(str(r.session_id)))) expect(r.source_kind, str(r.session_id)).toBe('other')
+      for (const r of rows.filter((r) => kept.includes(str(r.session_id)))) expect(r.source_kind, str(r.session_id)).toBe('cli')
     }
     expect(existsSync(sessionPath(s.deps.sessionStore, gone))).toBe(false)
     for (const sid of kept) expect(existsSync(sessionPath(s.deps.sessionStore, sid)), sid).toBe(true)
@@ -846,6 +846,7 @@ describe('state.db projection', () => {
     expect(existsSync(sessionPath(s.deps.sessionStore, stale))).toBe(false)
     expect((await post('/api/session/delete', { session_id: live })).status).toBe(400)
     s.deps.registry.liveIds.delete('tal1562-live-run')
+    await s.deps.settings.save({ show_cli_sessions: false })
   })
 
   it('locks a sidecar whose state.db owner cannot be read, and only a missing state.db means no owner (TAL-358)', () => {
@@ -922,17 +923,19 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'stream_end')
   }
 
-  it('keeps the CLI row\'s lineage and channel identity when its first WebUI send claims it', async () => {
-    insertSession(db, { id: 'cli-parent', source: 'cli', started_at: 1000, title: 'Earlier work', ended_at: 1050, end_reason: 'user_exit', messages: [['user', 1001], ['assistant', 1002]] })
-    insertSession(db, { id: 'cli-child', source: 'cli', started_at: 1100, title: 'Child work', parent: 'cli-parent', chat_id: '42', messages: [['user', 1101], ['assistant', 1102]] })
-    sidecar.respond('chat.start', (params) => finished(params, 'cli-child'))
+  it.each(['cli', 'desktop'])('keeps the %s row\'s lineage and channel identity when its first WebUI send claims it', async (source) => {
+    const parent = `${source}-parent`
+    const child = `${source}-child`
+    insertSession(db, { id: parent, source, started_at: 1000, title: 'Earlier work', ended_at: 1050, end_reason: 'user_exit', messages: [['user', 1001], ['assistant', 1002]] })
+    insertSession(db, { id: child, source, started_at: 1100, title: 'Child work', parent, chat_id: '42', messages: [['user', 1101], ['assistant', 1102]] })
+    sidecar.respond('chat.start', (params) => finished(params, child))
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Unused"', usage: null }))
 
-    expect((await json(await s.get('/api/session?session_id=cli-child&messages=0'))).session).toMatchObject({ read_only: false, is_cli_session: true })
-    await send('cli-child')
+    expect((await json(await s.get(`/api/session?session_id=${child}&messages=0`))).session).toMatchObject({ read_only: false, is_cli_session: true })
+    await send(child)
 
-    const claimed = (await s.deps.sessionStore.get('cli-child'))
-    expect(claimed.parent_session_id).toBe('cli-parent')
+    const claimed = (await s.deps.sessionStore.get(child))
+    expect(claimed.parent_session_id).toBe(parent)
     expect(claimed.extra.chat_id).toBe('42')
     // A real CLI title is not a placeholder, so title generation leaves it alone.
     expect(claimed.title).toBe('Child work')
@@ -1638,6 +1641,105 @@ describe.each(['oneshot', 'tool'])('%s Agent runs and the interactive window (TA
     const row = (await listed()).find((r) => r.session_id === oldRun)
     expect(row).toMatchObject({ title: 'Kept run', pinned: true, project_id: project, workspace: expect.any(String) as unknown })
     expect(((await json(await s.get(`/api/session?session_id=${oldRun}`))).session as Json)).toMatchObject({ title: 'Kept run', project_id: project })
+  })
+})
+
+describe('Hermes Desktop chats file with CLI sessions (TAL-1862)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  const list = async (query = ''): Promise<Json> => { s.deps.cliSessions.invalidate(); return json(await s.get(`/api/sessions${query}`)) }
+  const rows = async (query = ''): Promise<Json[]> => (await list(query)).sessions as Json[]
+  const ids = async (query = ''): Promise<string[]> => (await rows(query)).map((r) => str(r.session_id)).sort()
+  const webBorn = async (session_id: string, marker: Json): Promise<void> => {
+    await s.deps.sessionStore.save(new Session({ session_id, title: `Web ${session_id}`, session_source: 'webui', messages: [{ role: 'user', content: 'hi', timestamp: 1 }, { role: 'assistant', content: 'ok', timestamp: 2 }], ...marker }, { workspace: s.state, model: null }))
+  }
+  const CLI_TAB = ['acp-chat', 'cli-chat', 'desktop-claim', 'desktop-ended', 'desktop-foreign', 'desktop-legacy', 'desktop-named', 'desktop-pinned', 'desktop-untitled', 'tui-record']
+  const WEB_TAB = ['web-label', 'web-plain', 'web-tag']
+  let project: string
+
+  beforeAll(async () => {
+    s = await bootTestServer({ sidecar: new FakeSidecar() })
+    db = createStateDb(join(s.state, 'state.db'))
+    // Legacy histories carry NULL roles, which the Agent's current NOT NULL column no longer allows.
+    db.exec('DROP TABLE messages; CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT, content TEXT, timestamp REAL NOT NULL); CREATE INDEX idx_messages_session ON messages(session_id, timestamp)')
+    const chat = (t: number): [string, number][] => [['user', t + 1], ['assistant', t + 2]]
+    const record = (t: number): [string, number][] => [['assistant', t + 1], ['system', t + 2], ['tool', t + 3]]
+    const legacy = (t: number): [null, number][] => [[null, t + 1], [null, t + 2]]
+    insertSession(db, { id: 'desktop-named', source: 'desktop', started_at: 100, title: 'Named Desktop chat', messages: chat(100) })
+    insertSession(db, { id: 'desktop-untitled', source: 'desktop', started_at: 110, messages: chat(110) })
+    insertSession(db, { id: 'desktop-ended', source: 'desktop', started_at: 120, ended_at: 125, end_reason: 'client_disconnect', messages: chat(120) })
+    insertSession(db, { id: 'desktop-record', source: 'desktop', started_at: 130, title: 'Connection', messages: record(130) })
+    insertSession(db, { id: 'desktop-legacy', source: 'desktop', started_at: 140, messages: legacy(140) })
+    insertSession(db, { id: 'desktop-pinned', source: 'desktop', started_at: 150, title: 'Pinned history', messages: legacy(150) })
+    insertSession(db, { id: 'desktop-claim', source: 'desktop', started_at: 160, title: 'Reopened', messages: chat(160) })
+    // Only Desktop gains the NULL-role fallback and the user-turn rule; these keep their own visibility.
+    insertSession(db, { id: 'cli-chat', source: 'cli', started_at: 200, title: 'Named CLI chat', messages: chat(200) })
+    insertSession(db, { id: 'cli-record', source: 'cli', started_at: 210, messages: record(210) })
+    insertSession(db, { id: 'acp-chat', source: 'acp', started_at: 220, messages: chat(220) })
+    insertSession(db, { id: 'acp-record', source: 'acp', started_at: 230, title: 'Connection', messages: record(230) })
+    insertSession(db, { id: 'acp-legacy', source: 'acp', started_at: 240, messages: legacy(240) })
+    insertSession(db, { id: 'tui-record', source: 'tui', started_at: 250, messages: record(250) })
+    insertSession(db, { id: 'desktop-foreign', source: 'desktop', started_at: 170, title: 'Same id elsewhere', messages: legacy(170) })
+    await s.deps.sessionStore.save(new Session({ session_id: 'desktop-foreign', title: 'Foreign copy', profile: 'work', pinned: true, source_tag: 'desktop', raw_source: 'desktop', read_only: true, messages: [{ role: null, content: 'old', timestamp: 171 }] }, { workspace: s.state, model: null }))
+    await webBorn('web-plain', {})
+    await webBorn('web-tag', { source_tag: 'desktop' })
+    await webBorn('web-label', { source_label: 'Desktop' })
+    expect((await post('/api/session/pin', { session_id: 'desktop-pinned', pinned: true })).status).toBe(200)
+    project = str(((await json(await post('/api/projects/create', { name: 'Desktop' }))).project as Json).project_id)
+    expect((await post('/api/session/move', { session_id: 'desktop-pinned', project_id: project })).status).toBe(200)
+    await s.deps.sessionStore.save(new Session({ session_id: 'desktop-record', title: 'Connection', source_tag: 'desktop', raw_source: 'desktop', read_only: true, messages: [{ role: 'assistant', content: 'hello', timestamp: 131 }] }, { workspace: s.state, model: null }))
+  })
+  beforeEach(async () => { await s.deps.settings.save({ show_cli_sessions: true }) })
+  afterAll(async () => { db.close(); await s.close() })
+
+  it('files a named Desktop chat as CLI and counts it there', async () => {
+    const body = await list()
+    expect((body.sessions as Json[]).find((r) => r.session_id === 'desktop-named')).toMatchObject({ source_kind: 'cli', is_cli_session: true, source_label: 'Desktop', raw_source: 'desktop' })
+    expect(body.cli_session_count).toBe(CLI_TAB.length)
+    expect(body.webui_session_count).toBe(WEB_TAB.length)
+  })
+
+  it('lists a Desktop row or its Web copy only with a user turn or unknown roles, and leaves other sources alone', async () => {
+    expect(existsSync(sessionPath(s.deps.sessionStore, 'desktop-record'))).toBe(true)
+    expect(await ids('?sidebar_source=cli')).toEqual(CLI_TAB)
+  })
+
+  it('renders a Web-born session with a Desktop marker in the Web tab only', async () => {
+    expect(await ids('?sidebar_source=webui')).toEqual(WEB_TAB)
+    for (const r of (await rows()).filter((r) => WEB_TAB.includes(str(r.session_id)))) expect(r, str(r.session_id)).toMatchObject({ source_kind: 'webui', is_cli_session: false })
+  })
+
+  it('keeps the pin and project of a legacy Desktop history through its Web copy', async () => {
+    expect(existsSync(sessionPath(s.deps.sessionStore, 'desktop-pinned'))).toBe(true)
+    expect((await rows('?sidebar_source=cli')).filter((r) => r.session_id === 'desktop-pinned')).toMatchObject([{ pinned: true, project_id: project, source_kind: 'cli' }])
+    // Another profile's copy is not this row's: the active profile's own row stands, without the foreign pin.
+    expect((await rows('?all_profiles=1')).filter((r) => r.session_id === 'desktop-foreign')).toMatchObject([{ pinned: false, profile: 'default' }])
+  })
+
+  it('follows show_cli_sessions, while opening and claiming by id still work', async () => {
+    await s.deps.settings.save({ show_cli_sessions: false })
+    expect(await ids()).toEqual(WEB_TAB)
+    expect((await json(await s.get('/api/session?session_id=desktop-claim&messages=0'))).session).toMatchObject({ read_only: false, source_kind: 'cli', is_cli_session: true })
+    expect((await post('/api/session/rename', { session_id: 'desktop-claim', title: 'Claimed' })).status).toBe(200)
+    expect(await s.deps.sessionStore.get('desktop-claim')).toMatchObject({ title: 'Claimed', source_tag: 'desktop', read_only: false })
+    expect(await ids()).toEqual(WEB_TAB)
+  })
+
+  it.each([
+    ['no message index', 'DROP INDEX idx_messages_session'],
+    ['the session index', ''],
+    ['the user-role index', 'CREATE INDEX idx_messages_session_user ON messages(session_id, role)'],
+  ])('gives a Desktop history with unknown roles a turn count with %s', (_plan, index) => {
+    const path = join(s.state, `nullable-roles-${index.length}.db`)
+    const copy = createStateDb(path)
+    try {
+      copy.exec(`DROP TABLE messages; CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT, content TEXT, timestamp REAL NOT NULL); CREATE INDEX idx_messages_session ON messages(session_id, timestamp); ${index}`)
+      insertSession(copy, { id: 'legacy', source: 'desktop', started_at: 1, messages: [[null, 2], [null, 3]] })
+      insertSession(copy, { id: 'mixed', source: 'desktop', started_at: 4, title: 'Mixed', messages: [[null, 5], ['assistant', 6]] })
+      insertSession(copy, { id: 'chat', source: 'desktop', started_at: 7, messages: [['user', 8], ['assistant', 9]] })
+      expect(readImportableAgentSessionRows(path).map((r) => r.id).sort()).toEqual(['chat', 'legacy'])
+    } finally { copy.close() }
   })
 })
 

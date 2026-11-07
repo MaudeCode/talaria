@@ -491,8 +491,8 @@ export class SessionService {
 
   /**
    * TAL-590 (Python #3238): the read-only CLI or API-server imports among `rows` whose active-profile state.db row is
-   * gone, so their source was deleted outside Web and no Web action could remove them. TAL-1562: a legacy Desktop
-   * sidecar too (`isOrphanPrunableSource`). An unreadable or missing state.db proves nothing (`agentSessionRowsExisting`);
+   * gone, so their source was deleted outside Web and no Web action could remove them (`isOrphanPrunableSource`).
+   * An unreadable or missing state.db proves nothing (`agentSessionRowsExisting`);
    * another profile's session, which only its own profile's state.db could prove gone, or one with a run the runtime
    * still holds is never an orphan, while a stream id a crash left behind does not count as one.
    */
