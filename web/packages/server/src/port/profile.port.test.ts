@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, freshCronListingsPerTest, type TestServer } from '../test/harness.js'
 import { loadStartupEnv } from '../cli/dotenv.js'
 import { ProjectStore } from '../projects.js'
 import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
@@ -294,6 +294,7 @@ describe('per-profile system projects', () => {
 })
 
 describe('profiles, crons, workspaces, skills, and sessions across profiles', () => {
+  freshCronListingsPerTest()
   let s: TestServer
   let sidecar: FakeSidecar
   let configs: Map<string, Json>

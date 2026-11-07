@@ -4,6 +4,7 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { createApp } from '../app.js'
 import type { Env } from '../config.js'
 import type { AppDeps } from '../http/context.js'
@@ -145,4 +146,16 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
 
 export function cookieHeader(setCookies: string[], name: string): string | undefined {
   return setCookies.map((c) => c.split(';')[0] ?? '').find((c) => c.startsWith(`${name}=`))
+}
+
+/**
+ * For a suite sharing one server whose tests each set their own cron stores: moves the clock past the store listing the
+ * last test left behind. The returned function does the same mid-test.
+ */
+export function freshCronListingsPerTest(): () => void {
+  let skew = 0
+  const realNow = Date.now.bind(Date)
+  beforeEach(() => { skew += 10_000; vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew) })
+  afterEach(() => { vi.mocked(Date.now).mockRestore() })
+  return () => { skew += 10_000 }
 }

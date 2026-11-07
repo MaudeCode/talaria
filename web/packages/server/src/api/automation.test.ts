@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request } from 'node:http'
 import { deflateRawSync } from 'node:zlib'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../test/harness.js'
+import { bootTestServer, type SseFrame, type TestServer, openStateDb, freshCronListingsPerTest } from '../test/harness.js'
 import { completedAtSeconds, jobForApi, jobFieldUpdates } from '../tools/crons.js'
 import { readZip } from '../workspace/unzip.js'
 import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
@@ -73,11 +73,7 @@ describe('crons, kanban, extensions, terminal', () => {
   let pty: ReturnType<typeof fakePty>
   let zip: Buffer
   let sha: string
-  // The tests share one server and each installs its own `cron.list`: move past the listing the last test left behind.
-  let skew = 0
-  const realNow = Date.now.bind(Date)
-  beforeEach(() => { skew += 10_000; vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew) })
-  afterEach(() => { vi.mocked(Date.now).mockRestore() })
+  const skipCronListing = freshCronListingsPerTest()
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     pty = fakePty()
@@ -299,7 +295,7 @@ describe('crons, kanban, extensions, terminal', () => {
       expect(body.since).toBe(0)
       expect(body.completions).toHaveLength(5)
       sidecar.respond('cron.list', () => { throw new SidecarError('cron unavailable', { condition: 'cron_unavailable' }) })
-      skew += 10_000
+      skipCronListing()
       expect(await json(await s.get('/api/crons/recent?since=5'))).toEqual({ completions: [], since: 5 })
     } finally {
       rmSync(join(home, 'state.db'), { force: true })
