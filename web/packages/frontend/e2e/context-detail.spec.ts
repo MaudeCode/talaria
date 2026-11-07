@@ -7,11 +7,11 @@ const detail = ContextDetailSchema.parse(fixture['chat.context_detail']![0]!.res
 
 test('the existing context inspector renders allocation and safe file metadata on desktop and mobile', async ({ page }, info) => {
   let reads = 0
-  let currentDetail = detail
+  let currentDetail = { ...detail, window_source: 'fallback' as const }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: 'context-detail', title: 'Context inspection', model: 'fixture-model', context_detail_key: 'synthetic-owner-context',
     messages: [{ role: 'user', content: 'Inspect the context allocation.' }, { role: 'assistant', content: 'Context metadata is available from the conversation control.' }],
-    context_used_tokens: 3790, context_window_tokens: 256000, context_usage_percent: 1, can_compress: true,
+    context_used_tokens: 3790, context_window_tokens: 256000, context_window_source: 'fallback', context_usage_percent: 1, can_compress: true,
   } } }))
   await page.route('**/api/session/context-detail?**', (route) => { expect(new URL(route.request().url()).searchParams.get('context_detail_key')).toBe('synthetic-owner-context'); reads += 1; return route.fulfill({ json: currentDetail }) })
   await page.goto('/session/context-detail')
@@ -27,6 +27,11 @@ test('the existing context inspector renders allocation and safe file metadata o
   await expect(inspector).toContainText('4,000 characters · ~1,000 tokens')
   await expect(inspector.getByRole('button', { name: 'Compress now' })).toBeVisible()
   await expect.poll(() => reads).toBe(1)
+  // TAL-1908: both window lines carry the label on one line, down to the phone width.
+  for (const line of [inspector.getByText('3,790 / 256,000 (fallback)', { exact: true }), inspector.getByText(`Occupancy: ${detail.used_tokens!.toLocaleString()} / 256,000 (fallback)`, { exact: true })]) {
+    await expect(line).toBeVisible()
+    expect(await line.evaluate((el) => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).lineHeight) * 1.2)).toBe(true)
+  }
   await page.screenshot({ path: info.outputPath('context-detail-after.png') })
   expect(await inspector.innerText()).not.toContain('/private')
   const bounds = await inspector.boundingBox()
@@ -35,7 +40,7 @@ test('the existing context inspector renders allocation and safe file metadata o
   // Closing releases the query; a maximal manifest still keeps every control reachable.
   if (phone) await page.locator('#composerMobileConfigBtn').click()
   else await page.keyboard.press('Escape')
-  currentDetail = { ...detail, files: Array.from({ length: 64 }, () => detail.files[0]!) }
+  currentDetail = { ...currentDetail, files: Array.from({ length: 64 }, () => detail.files[0]!) }
   if (phone) await page.locator('#composerMobileConfigBtn').click()
   else await page.locator('#ctxIndicator').click()
   await expect(inspector.getByText('AGENTS.md', { exact: true })).toHaveCount(64)

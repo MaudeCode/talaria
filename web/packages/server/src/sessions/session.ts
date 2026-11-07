@@ -1,4 +1,4 @@
-import { PlanGaugeSchema, type PlanGauge } from '@maudecode/talaria-web-contracts'
+import { ContextWindowSourceSchema, PlanGaugeSchema, type ContextWindowSource, type PlanGauge } from '@maudecode/talaria-web-contracts'
 import type { SessionPrefixIndex } from './prefix-index.js'
 /**
  * The persisted WebUI session record (Python `api/models.Session`). The file
@@ -44,7 +44,7 @@ export const METADATA_FIELDS = [
   'compression_anchor_summary', 'pre_compression_snapshot',
   'context_engine', 'compression_anchor_engine', 'compression_anchor_mode',
   'compression_anchor_details', 'context_engine_state',
-  'context_length', 'threshold_tokens', 'last_prompt_tokens', 'next_turn_threshold_tokens',
+  'context_length', 'context_window_source', 'threshold_tokens', 'last_prompt_tokens', 'next_turn_threshold_tokens',
   'post_compression_context_tokens_estimate',
   'compression_recovery', 'recommended_recovery_action',
   'compression_recovery_source_session_id', 'compression_recovery_action',
@@ -184,13 +184,14 @@ export function promptCacheHitPercent(cacheRead: unknown, prompt: unknown): numb
   return Math.min(100, Math.round((read / total) * 100))
 }
 
-export const CONTEXT_USAGE_FIELDS = ['context_used_tokens', 'context_window_tokens', 'context_usage_percent', 'context_threshold_percent'] as const
-export type ContextUsage = Record<(typeof CONTEXT_USAGE_FIELDS)[number], number | null>
+export const CONTEXT_USAGE_FIELDS = ['context_used_tokens', 'context_window_tokens', 'context_usage_percent', 'context_threshold_percent', 'context_window_source'] as const
+export type ContextUsage = Record<Exclude<(typeof CONTEXT_USAGE_FIELDS)[number], 'context_window_source'>, number | null> & { context_window_source: ContextWindowSource | null }
 
 /**
  * TAL-299: the context ring's figures, computed once so every client shows the same value. The used side is the
  * post-compression estimate, else the last prompt; never the cumulative `input_tokens`. The window is the session's
  * `context_length`, else `windowFallback()` (the model catalog); there is no guessed default. Unknown stays null.
+ * TAL-1908: `context_window_source` is the label of whichever of those two supplied the window.
  */
 /**
  * TAL-1005: a model or provider change voids the context figures measured on the old one (its threshold, last prompt,
@@ -206,12 +207,14 @@ export function forgetModelFigures(s: Session): void {
   s.next_turn_threshold_tokens = null
 }
 
-export function contextUsage(fields: { post_compression_context_tokens_estimate?: unknown; last_prompt_tokens?: unknown; context_length?: unknown; threshold_tokens?: unknown }, windowFallback?: () => number | null): ContextUsage {
+export function contextUsage(fields: { post_compression_context_tokens_estimate?: unknown; last_prompt_tokens?: unknown; context_length?: unknown; context_window_source?: unknown; threshold_tokens?: unknown }, windowFallback?: () => number | null, sourceFallback?: () => ContextWindowSource | null): ContextUsage {
   const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
   const used = positive(fields.post_compression_context_tokens_estimate) ?? positive(fields.last_prompt_tokens)
-  const window = positive(fields.context_length) ?? positive(windowFallback?.())
+  const own = positive(fields.context_length)
+  const window = own ?? positive(windowFallback?.())
+  const source = window === null ? null : ContextWindowSourceSchema.safeParse(own !== null ? fields.context_window_source : sourceFallback?.()).data ?? null
   const percent = (n: number | null): number | null => (n === null || window === null ? null : Math.min(100, Math.round((n / window) * 100)))
-  return { context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent(used), context_threshold_percent: percent(positive(fields.threshold_tokens)) }
+  return { context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent(used), context_threshold_percent: percent(positive(fields.threshold_tokens)), context_window_source: source }
 }
 
 /** A share's public app-relative URL (TAL-563); rows ship it so clients never rebuild it from the token. */
@@ -280,6 +283,7 @@ export class Session {
   compression_anchor_details: Record<string, unknown>
   context_engine_state: Record<string, unknown>
   context_length: unknown
+  context_window_source: unknown
   threshold_tokens: unknown
   last_prompt_tokens: unknown
   /** TAL-1005: the compression threshold the next turn runs under (the primary model's, after a fallback turn). */
@@ -416,6 +420,7 @@ export class Session {
     const engineState = take('context_engine_state', null)
     this.context_engine_state = isDict(engineState) ? engineState : {}
     this.context_length = take('context_length', null)
+    this.context_window_source = take('context_window_source', null)
     this.threshold_tokens = take('threshold_tokens', null)
     this.last_prompt_tokens = take('last_prompt_tokens', null)
     this.next_turn_threshold_tokens = take('next_turn_threshold_tokens', null)
@@ -529,7 +534,7 @@ export class Session {
   }
 
   /** Sidebar/index row (Python `Session.compact`). */
-  compact(opts: { transcriptSummary?: { userCount: number; lastTimestamp: number | null }; includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null; modelOptionFor?: ((model: string | null, provider: string | null) => string | null) | undefined } = {}): Record<string, unknown> {
+  compact(opts: { transcriptSummary?: { userCount: number; lastTimestamp: number | null }; includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null; contextWindowSourceFor?: (model: string | null, provider: string | null) => ContextWindowSource | null; modelOptionFor?: ((model: string | null, provider: string | null) => string | null) | undefined } = {}): Record<string, unknown> {
     const activeStreamIds = opts.activeStreamIds ?? new Set<string>()
     const hasPending = this.hasPendingPrompt
     let messageCount = this.metadataMessageCount ?? this.messages.length
@@ -576,7 +581,7 @@ export class Session {
       threshold_tokens: this.threshold_tokens,
       last_prompt_tokens: this.last_prompt_tokens,
       post_compression_context_tokens_estimate: this.post_compression_context_tokens_estimate,
-      ...contextUsage(this, opts.contextLengthFor && (() => opts.contextLengthFor!(this.model, this.model_provider))),
+      ...contextUsage(this, opts.contextLengthFor && (() => opts.contextLengthFor!(this.model, this.model_provider)), opts.contextWindowSourceFor && (() => opts.contextWindowSourceFor!(this.model, this.model_provider))),
       compression_recovery: this.compression_recovery,
       recommended_recovery_action: this.recommended_recovery_action,
       gateway_routing: this.gateway_routing,

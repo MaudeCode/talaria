@@ -4,7 +4,7 @@
  */
 import { applyRedactionPolicy } from './redact.js'
 import { redactFeedbackText } from './feedback.js'
-import { SESSION_WAIT_DEFAULT_S, SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SESSION_WAIT_DEFAULT_S, SIDECAR_METHODS, type ContextWindowSource, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
@@ -292,20 +292,20 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: async (p) => (await workspaces.lastWorkspace(p)), backgroundProjectId: async (kind, p) => (await projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || (await projects.hasUserProjects(p)) })), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, rows: (profile) => cliSessions.read(profile), now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
   const journal = storage.journals
-  const contextLengths = new Map<string, number | null>()
+  const contextLengths = new Map<string, { context_length: number | null; context_window_source: ContextWindowSource | null }>()
   const contextInflight = new Map<string, Promise<number | null>>()
   const contextKey = (model: string | null, provider: string | null, profile: string | null): string | null => (model?.trim() ? `${profileHome(profile ?? activeProfile())}\0${provider?.trim() ?? ''}\0${model.trim()}` : null)
   const resolveContextLength = async (model: string | null, provider: string | null, profile: string | null): Promise<number | null> => {
     const key = contextKey(model, provider, profile)
     if (!key || !sidecar) return null
     const hit = contextLengths.get(key)
-    if (hit !== undefined) return hit
+    if (hit) return hit.context_length
     const pending = contextInflight.get(key)
     if (pending) return pending
     const home = profileHome(profile ?? activeProfile())
     const run = catalog.contextLengthInputs(home, model!.trim(), provider?.trim() || null)
       .then((inputs) => sidecar.call('models.context_length', { profile_home: home, model: model!.trim(), ...(provider?.trim() ? { provider: provider.trim() } : {}), ...inputs }))
-      .then((r) => { contextLengths.set(key, r.context_length); return r.context_length })
+      .then((r) => { contextLengths.set(key, { context_length: r.context_length, context_window_source: r.context_window_source ?? null }); return r.context_length })
       .catch((error: unknown) => { log(`[webui] context length for ${model ?? ''} failed: ${(error as Error).message}`); return null })
       .finally(() => { contextInflight.delete(key) })
     contextInflight.set(key, run)
@@ -450,9 +450,13 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       const key = contextKey(model, provider, null)
       if (!key) return null
       const hit = contextLengths.get(key)
-      if (hit !== undefined) return hit
+      if (hit) return hit.context_length
       void resolveContextLength(model, provider, activeProfile())
       return null
+    },
+    contextWindowSourceFor: (model, provider, profile = null) => {
+      const key = contextKey(model, provider, profile)
+      return (key && contextLengths.get(key)?.context_window_source) || null
     },
     resolveContextLength,
     modelOptionFor: (model, provider) => catalog.modelOptionFor(profileHome(activeProfile()), model, provider),

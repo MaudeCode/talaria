@@ -24,6 +24,7 @@ def test_resident_context_read_uses_existing_agent_without_provider_or_build(tmp
         return dict(raw)
     monkeypatch.setitem(sys.modules, 'agent.context_breakdown', SimpleNamespace(compute_session_context_breakdown=compute))
     monkeypatch.setitem(sys.modules, 'agent.context_file_sources', SimpleNamespace(context_file_sources_for_agent=lambda a: raw['context_files']))
+    monkeypatch.setitem(sys.modules, 'agent.context_pin', SimpleNamespace(agent_context_marker=lambda a: 'fallback'))
     monkeypatch.setattr(chat, '_agent_class', lambda: (_ for _ in ()).throw(AssertionError('must not build')))
     monkeypatch.setattr(chat, '_AGENT_CACHE', {'resident': (agent, 'signature', tmp_path)})
     registry = Registry(None)
@@ -33,6 +34,7 @@ def test_resident_context_read_uses_existing_agent_without_provider_or_build(tmp
     result = read(None, params)
     assert result.get('available') is True, result
     assert result['files'][0]['label'] == 'AGENTS.md'
+    assert result['window_source'] == 'fallback'
     assert calls == ['compute']
     for overrides in ({'profile_home': str(tmp_path / 'foreign')}, {'session_id': 'foreign'}, {'model': 'other'}, {'model_provider': 'other'}):
         assert read(None, {**params, **overrides})['available'] is False
@@ -50,7 +52,7 @@ def test_context_projection_bounds_unknowns_and_never_normalizes_estimates():
     raw['context_files'] = [{'path': '/private/secret-name', 'label': ['unsafe'], 'chars': -4, 'est_tokens': True, 'status': {}}] * 70
     detail = project(raw)
     assert detail['available'] and detail['source'] is None and detail['estimated'] is None
-    assert detail['used_tokens'] is None and detail['window_tokens'] is None
+    assert detail['used_tokens'] is None and detail['window_tokens'] is None and detail['window_source'] is None
     assert detail['categories'][0] == {'id': 'conversation', 'tokens': 0, 'percent': None, 'estimated': True}
     assert len(detail['categories']) == 3 and len(detail['files']) == 64 and detail['truncated']
     assert detail['files'][0] == {'label': 'Context file', 'characters': None, 'tokens': None, 'status': 'unknown', 'loaded': None}

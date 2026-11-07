@@ -1310,7 +1310,10 @@ export class TurnRunner {
       const prevInputTokens = s.input_tokens || 0
       const prevCacheReadTokens = s.cache_read_tokens || 0
       applyAgentUsage(s, usage)
-      if (typeof result.context.context_length === 'number') s.context_length = result.context.context_length
+      if (typeof result.context.context_length === 'number') {
+        s.context_length = result.context.context_length
+        s.context_window_source = result.context.context_window_source ?? null
+      }
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
       s.next_turn_threshold_tokens = result.context.next_turn_threshold_tokens ?? null
@@ -1564,7 +1567,7 @@ export class TurnRunner {
   private compressedFrame(s: Session): Record<string, unknown> {
     const usage = {
       ...meteringUsage(s), context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
-      post_compression_context_tokens_estimate: s.post_compression_context_tokens_estimate, ...contextUsage(s, () => this.deps.service().deps.contextLengthFor(s.model, s.model_provider)),
+      post_compression_context_tokens_estimate: s.post_compression_context_tokens_estimate, ...contextUsage(s, () => this.deps.service().deps.contextLengthFor(s.model, s.model_provider), () => this.deps.service().deps.contextWindowSourceFor(s.model, s.model_provider)),
     }
     const sid = s.session_id
     return { session_id: sid, old_session_id: sid, new_session_id: sid, continuation_session_id: sid, message: 'Compression finished', usage }

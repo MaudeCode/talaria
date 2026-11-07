@@ -10,7 +10,7 @@ import { formatUsd } from '../../ui/States'
 import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { resetTime } from '../../i18n/units'
-import type { ExecutionMode, ExecutionModes, Models } from '@maudecode/talaria-web-contracts'
+import type { ContextWindowSource, ExecutionMode, ExecutionModes, Models } from '@maudecode/talaria-web-contracts'
 
 /**
  * T3 Code's composer control (TAL-429): borderless and muted until hovered, with a faded chevron. `sm` sits in the card's
@@ -227,7 +227,7 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
  */
 export interface ContextFigures {
   sessionId?: string | undefined; detailKey?: string | null | undefined
-  percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; thresholdPercent?: number | null | undefined
+  percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; windowSource?: ContextWindowSource | null | undefined; thresholdPercent?: number | null | undefined
   planGauge?: import('@maudecode/talaria-web-contracts').PlanGauge | null | undefined
   input?: number | undefined; output?: number | undefined; cacheRead?: number | undefined; cacheWrite?: number | undefined; cacheHitPercent?: number | null | undefined; cost?: number | null | undefined
   onCompress?: (() => void) | undefined; compressing?: boolean | undefined
@@ -243,14 +243,20 @@ export function usageDetailLines({ input, output, cacheRead, cacheWrite, cacheHi
   ].filter((d) => d !== null)
 }
 
-function contextStats({ percent, used, window, thresholdPercent, ...usage }: ContextFigures) {
+const WINDOW_SOURCES = { pinned: m.context_window_pinned, fallback: m.context_window_fallback }
+
+/** A window as sent, labelled when the server says it is a pin or a default rather than a detected limit (TAL-1908). */
+const windowText = (tokens: number, source: ContextWindowSource | null | undefined) => source ? `${tokens.toLocaleString()} ${WINDOW_SOURCES[source]()}` : tokens.toLocaleString()
+
+function contextStats({ percent, used, window, windowSource, thresholdPercent, ...usage }: ContextFigures) {
   if (percent == null || used == null || window == null) return null
   const tone = percent >= 90 ? 'high' : percent >= 70 ? 'mid' : 'low'
   const threshold = thresholdPercent != null ? `${m.auto_compress_label()}: ${thresholdPercent}%` : null
-  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${window.toLocaleString()})${threshold ? ` · ${threshold}` : ''}`
+  const total = windowText(window, windowSource)
+  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${total})${threshold ? ` · ${threshold}` : ''}`
   // The popover's and phone row's detail lines, after the headline usage line.
   const details = [
-    `${used.toLocaleString()} / ${window.toLocaleString()}`,
+    `${used.toLocaleString()} / ${total}`,
     threshold,
     ...usageDetailLines(usage),
   ].filter((d) => d !== null)
@@ -329,7 +335,7 @@ function LoadedContextDetail({ sessionId, identity }: { sessionId: string; ident
   const statuses = { loaded: m.context_file_loaded, truncated: m.context_file_truncated, flagged: m.context_file_flagged, shadowed: m.context_file_shadowed, blocked: m.context_file_blocked, empty: m.context_file_empty, unreadable: m.context_file_unreadable, suppressed: m.context_file_suppressed, unknown: m.context_unknown }
   return <div className="mt-2 flex min-w-0 flex-col gap-2 border-t border-border pt-2" data-context-detail>
     {detail.source && <span className="text-muted">{sources[detail.source]()}</span>}
-    {detail.used_tokens != null && detail.window_tokens != null && <span className="tabular-nums">{m.context_detail_occupancy({ used: detail.used_tokens.toLocaleString(), total: detail.window_tokens.toLocaleString() })}</span>}
+    {detail.used_tokens != null && detail.window_tokens != null && <span className="tabular-nums">{m.context_detail_occupancy({ used: detail.used_tokens.toLocaleString(), total: windowText(detail.window_tokens, detail.window_source) })}</span>}
     <span className="font-medium">{m.context_category_estimates()}</span>
     <dl className="flex flex-col gap-1">
       {detail.categories.map((category) => <div key={category.id}>

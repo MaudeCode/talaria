@@ -1988,7 +1988,8 @@
       "context_used_tokens": 64000,
       "context_window_tokens": 128000,
       "context_usage_percent": 50,
-      "context_threshold_percent": 78
+      "context_threshold_percent": 78,
+      "context_window_source": "fallback"
     },
     "unknown_window": {
       "session_id": "contract-context-unknown",
@@ -2015,7 +2016,8 @@
       "context_used_tokens": 64000,
       "context_window_tokens": null,
       "context_usage_percent": null,
-      "context_threshold_percent": null
+      "context_threshold_percent": null,
+      "context_window_source": null
     }
   },
   "inline_thinking_session": {

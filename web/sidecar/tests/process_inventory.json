@@ -636,6 +636,13 @@
         ""
       ]
     },
+    "tests/test_context_window_source.py::test_live_agent_and_lookup_report_the_agents_marker": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the window's pinned or fallback marker on a live compressor and on the no-agent lookup. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_prefill.py::test_turns_send_the_profile_prefill_and_follow_its_edits": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: turns send the profile prefill and follow its edits. Uses the real installed release, not a fabricated API response.",

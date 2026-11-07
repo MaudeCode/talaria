@@ -123,8 +123,8 @@ describe('shared monorepo contracts', () => {
 
   it('carries the server-computed context ring, and null when the window is unknown (TAL-299)', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { context_usage_sessions: Record<string, unknown> }
-    expect(SessionSchema.parse(fixture.context_usage_sessions.populated)).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: 128_000, context_usage_percent: 50, context_threshold_percent: 78 })
-    expect(SessionSchema.parse(fixture.context_usage_sessions.unknown_window)).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: null, context_usage_percent: null, context_threshold_percent: null })
+    expect(SessionSchema.parse(fixture.context_usage_sessions.populated)).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: 128_000, context_usage_percent: 50, context_threshold_percent: 78, context_window_source: 'fallback' })
+    expect(SessionSchema.parse(fixture.context_usage_sessions.unknown_window)).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: null, context_usage_percent: null, context_threshold_percent: null, context_window_source: null })
   })
 
   it('shows each tool call\'s server-resolved outcome in every persisted shape (TAL-313)', () => {

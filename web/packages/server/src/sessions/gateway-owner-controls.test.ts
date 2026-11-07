@@ -498,7 +498,11 @@ describe('canonical owner attachment', () => {
     expect.soft(progress.at(-1)?.data).toMatchObject({ id: 'owner-subagent-detail-child', is_error: false, preview: 'Owner detail complete.' })
     const usage = { input_tokens: 100, output_tokens: 20, cache_read_tokens: 80, cache_write_tokens: 0, context_length: 256000, last_prompt_tokens: 20 }
     expect.soft(frames.findLast((f) => f.event === 'metering')?.data).toMatchObject({ usage, estimated: false })
-    expect.soft(frames.find((f) => f.event === 'done')?.data).toMatchObject({ usage, session: usage })
+    expect.soft(frames.find((f) => f.event === 'done')?.data).toMatchObject({ usage, session: { ...usage, context_window_source: null } })
+    // TAL-1908: the owner reports no label, whatever the Web lookup knows about the route.
+    const source = vi.spyOn(s.deps.sessions.deps, 'contextWindowSourceFor').mockReturnValue('fallback')
+    expect.soft((await (await s.get(`/api/session?session_id=${sid}`)).json() as { session: Record<string, unknown> }).session).toMatchObject({ context_window_source: null })
+    source.mockRestore()
     expect.soft(await s.deps.sessionStore.exists(sid)).toBe(false)
   })
 

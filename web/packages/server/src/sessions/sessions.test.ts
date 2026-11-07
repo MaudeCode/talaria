@@ -97,7 +97,7 @@ describe('malformed session rows (TAL-37)', () => {
 describe('server-computed context ring (TAL-299)', () => {
   it('uses the post-compression estimate, else the last prompt, never the cumulative input, over a known window only', async () => {
     const { contextUsage } = await import('./session.js')
-    const ring = (used: number | null, window: number | null, percent: number | null, threshold: number | null = null) => ({ context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent, context_threshold_percent: threshold })
+    const ring = (used: number | null, window: number | null, percent: number | null, threshold: number | null = null) => ({ context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent, context_threshold_percent: threshold, context_window_source: null })
     expect(contextUsage({ last_prompt_tokens: 64_000, context_length: 128_000 })).toEqual(ring(64_000, 128_000, 50))
     expect(contextUsage({ post_compression_context_tokens_estimate: 10_347, last_prompt_tokens: 120_000, context_length: 128_000 })).toEqual(ring(10_347, 128_000, 8))
     expect(contextUsage({ input_tokens: 900_000, last_prompt_tokens: 0, context_length: 200_000 } as Json)).toEqual(ring(null, 200_000, null))
@@ -105,6 +105,16 @@ describe('server-computed context ring (TAL-299)', () => {
     expect(contextUsage({ last_prompt_tokens: 5_000, context_length: 0 }, () => 20_000)).toEqual(ring(5_000, 20_000, 25))
     expect(contextUsage({ last_prompt_tokens: 300_000, context_length: 200_000, threshold_tokens: 160_000 })).toEqual(ring(300_000, 200_000, 100, 80))
     expect(contextUsage({ last_prompt_tokens: 'junk', context_length: '128000', threshold_tokens: -1 })).toEqual(ring(null, 128_000, null))
+  })
+
+  it('labels the window with the source that supplied it, never a source without a window (TAL-1908)', async () => {
+    const { contextUsage } = await import('./session.js')
+    const source = (...args: Parameters<typeof contextUsage>) => contextUsage(...args).context_window_source
+    expect(source({ context_length: 128_000, context_window_source: 'pinned' }, () => 256_000, () => 'fallback')).toBe('pinned')
+    expect(source({ context_length: 128_000, context_window_source: null }, () => 256_000, () => 'fallback')).toBeNull()
+    expect(source({ context_length: 0, context_window_source: 'pinned' }, () => 256_000, () => 'fallback')).toBe('fallback')
+    expect(source({ context_length: 0, context_window_source: 'pinned' }, () => null, () => 'fallback')).toBeNull()
+    expect(source({ context_length: 128_000, context_window_source: 'guessed' })).toBeNull()
   })
 
   it('fills the ring on index rows written before the fields existed, in the list and in search', async () => {
@@ -142,7 +152,10 @@ describe('server-computed context ring (TAL-299)', () => {
       const detail = async () => (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
       expect(await detail()).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: null, context_usage_percent: null })
       lookup.mockReturnValue(256_000)
-      expect(await detail()).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: 256_000, context_usage_percent: 25 })
+      expect(await detail()).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: 256_000, context_usage_percent: 25, context_window_source: null })
+      const source = vi.spyOn(s.deps.sessions.deps, 'contextWindowSourceFor').mockReturnValue('fallback')
+      expect(await detail()).toMatchObject({ context_window_tokens: 256_000, context_window_source: 'fallback' })
+      source.mockRestore()
       lookup.mockRestore()
     } finally {
       await s.close()

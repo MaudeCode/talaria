@@ -14,12 +14,12 @@ def number(value):
 
 
 def unavailable(reason='unavailable') -> dict:
-    return {'available': False, 'reason': reason, 'used_tokens': None, 'window_tokens': None,
+    return {'available': False, 'reason': reason, 'used_tokens': None, 'window_tokens': None, 'window_source': None,
             'source': None, 'estimated': None, 'estimated_total': None, 'categories': [], 'files': [],
             'truncated': False, 'current_turn_output_tokens': None, 'last_turn_output_tokens': None}
 
 
-def project(payload, *, usage=None, running=False) -> dict:
+def project(payload, *, usage=None, running=False, window_source=None) -> dict:
     if not isinstance(payload, dict):
         return unavailable('unsupported')
     rows = payload.get('categories')
@@ -52,7 +52,7 @@ def project(payload, *, usage=None, running=False) -> dict:
         safe_files.append({'label': label, 'characters': number(row.get('chars')), 'tokens': number(row.get('est_tokens')),
                            'status': status, 'loaded': status in {'loaded', 'truncated', 'flagged'} if status != 'unknown' else None})
     output = number(usage.get('last_turn_tokens')) if isinstance(usage, dict) else None
-    return {'available': True, 'reason': None, 'used_tokens': number(payload.get('context_used')), 'window_tokens': maximum,
+    return {'available': True, 'reason': None, 'used_tokens': number(payload.get('context_used')), 'window_tokens': maximum, 'window_source': window_source,
             'source': source, 'estimated': source != 'provider_usage' if source else None,
             'estimated_total': number(payload.get('estimated_total')), 'categories': categories, 'files': safe_files,
             'truncated': len(rows) > 64 or len(files) > 64,

@@ -2859,6 +2859,8 @@
 	"context_detail_unavailable": "Context details unavailable",
 	"context_detail_not_built": "Context details unavailable before the first turn",
 	"context_detail_occupancy": "Occupancy: {used} / {total}",
+	"context_window_pinned": "(pinned)",
+	"context_window_fallback": "(fallback)",
 	"context_category_estimates": "Estimated tokens by category",
 	"context_category_system": "System prompt",
 	"context_category_tools": "Tools",
