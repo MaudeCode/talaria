@@ -45,7 +45,8 @@ function replyActions(row: VisibleMessage, actions: RowActions): MessageAction[]
 }
 
 function ActionButtons({ items }: { items: readonly MessageAction[] }) {
-  return items.map(({ label, Icon, run, className }) => <IconButton key={label} label={label} className={cn('h-6 w-6', className)} onClick={run}><Icon size={12} aria-hidden="true" /></IconButton>)
+  // Folding the phone composer on pointer focus can move an action before its click.
+  return items.map(({ label, Icon, run, className }) => <IconButton key={label} label={label} className={cn('h-6 w-6', className)} onPointerDown={(event) => event.preventDefault()} onClick={run}><Icon size={12} aria-hidden="true" /></IconButton>)
 }
 
 /** `row` opens `items` on right-click and long-press; links, selections and code-block controls in it keep the browser's menu. */

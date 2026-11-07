@@ -125,7 +125,9 @@ test('replies in a chosen thread, retaining a refused draft and clearing a confi
     await chip.getByRole('button', { name: 'Dismiss', exact: true }).click()
     await expect(chip).toHaveCount(0)
     unknown = true
-    await source.getByRole('button', { name: 'Reply in thread', exact: true }).click()
+    // A held pointer press must survive the empty phone composer's focus change.
+    await source.getByRole('button', { name: 'Reply in thread', exact: true }).click({ delay: 75 })
+    await expect(chip).toContainText('Replying in thread')
     await page.locator('#msg').fill('Wait for confirmation')
     await page.getByRole('button', { name: 'Send message', exact: true }).click()
     await expect(page.getByText('Execution could not be confirmed. Refresh to reconcile.', { exact: true })).toBeVisible()
