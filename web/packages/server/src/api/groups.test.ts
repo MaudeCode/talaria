@@ -1,8 +1,8 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { groupFixture } from '../test/group-fixture.js'
-import { Groups } from '../sessions/groups.js'
+import { Groups, type GroupScope } from '../sessions/groups.js'
 import type { GroupView } from '@maudecode/talaria-web-contracts'
 
 let server: TestServer | undefined
@@ -25,6 +25,13 @@ async function setup(now?: () => number) {
 }
 const post = (identity: string | null, operation: unknown) => server!.get('/api/groups/action', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identity, operation }) })
 const read = async () => await (await server!.get('/api/groups/view?room_id=discussion')).json() as GroupView
+const rpcs = (sidecar: FakeSidecar, action: string) => sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === action).length
+/** Watches on a 1 ms poll; `frames` holds what a subscriber was delivered, pushed synchronously inside each delivery. */
+async function watching(scope: GroupScope, body: (watch: { groups: Groups; frames: GroupView[] }) => Promise<void>) {
+  const groups = new Groups(() => server!.deps, 1), viewer = groups.watch(scope, 'discussion'), frames: GroupView[] = []
+  viewer.subscriber.wake = () => { frames.push(viewer.subscriber.queue.shift()![1] as GroupView) }
+  try { await body({ groups, frames }) } finally { await groups.close(); viewer.release() }
+}
 
 it('refuses replies outside the room log before writing and accepts threads beyond the display page', async () => {
   const { state, append, members, sidecar } = await setup()
@@ -479,8 +486,7 @@ it('reuses one observation while viewers exist and releases it after the last de
   await new Promise<void>((resolve) => { first.subscriber.wake = resolve })
   first.release(); second.release()
   await server!.deps.groups.close()
-  const count = sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'log').length
-  expect(count).toBe(1)
+  expect(rpcs(sidecar, 'log')).toBe(1)
 })
 
 it('bounds room observation catch-up and replaces stalled snapshots', async () => {
@@ -495,9 +501,75 @@ it('bounds room observation catch-up and replaces stalled snapshots', async () =
     const latest = viewer.subscriber.queue[0]![1] as GroupView
     expect(latest.rows).toHaveLength(100)
     expect(latest.rows.at(-1)?.message.content).toBe('Reply 999')
-    // One tail page per snapshot, plus the first pass over the log for pauses older than the tail.
-    expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'log')).toHaveLength(12)
+    // One tail page per snapshot, the first pass over the log for pauses older than the tail, and the concurrent page a gap this long discards.
+    expect(rpcs(sidecar, 'log')).toBe(13)
   } finally { viewer.release(); await groups.close() }
+})
+
+it('delivers one snapshot while a room is unchanged and re-reads capabilities every 30 seconds', async () => {
+  let clock = 1000
+  const { scope, sidecar } = await setup(() => clock)
+  const capabilities = rpcs(sidecar, 'capabilities'), states = rpcs(sidecar, 'state')
+  await watching(scope, async ({ frames }) => {
+    await vi.waitFor(() => { expect(rpcs(sidecar, 'state')).toBeGreaterThanOrEqual(states + 10) })
+    expect(frames).toHaveLength(1)
+    expect(rpcs(sidecar, 'capabilities')).toBe(capabilities + 1)
+    clock += 30
+    await vi.waitFor(() => { expect(rpcs(sidecar, 'capabilities')).toBe(capabilities + 2) })
+    expect(frames).toHaveLength(1)
+  })
+})
+
+it('delivers a new snapshot when the cursor, revision, driver status or a clock-derived field changes', async () => {
+  let clock = 1000
+  const { scope, state, append } = await setup(() => clock)
+  await watching(scope, async ({ frames }) => {
+    append('message.user', 'New')
+    await vi.waitFor(() => { expect(frames.at(-1)?.cursor).toBe(1) })
+    state.room.revision = 2
+    await vi.waitFor(() => { expect(frames.at(-1)?.room?.revision).toBe(2) })
+    state.driver_status.member_activity = [{ member_id: 'one', status: 'running', started_at: 1000 }]
+    await vi.waitFor(() => { expect(frames.at(-1)?.room?.members[0]?.phase).toBe('running') })
+    clock += 120
+    await vi.waitFor(() => { expect(frames.at(-1)?.room?.members[0]?.stalled).toBe(true) })
+  })
+})
+
+it('keeps a watch truthful when cached capabilities go stale: a restart or stop is read fresh in the same tick', async () => {
+  const { scope, state } = await setup()
+  await watching(scope, async ({ frames }) => {
+    await vi.waitFor(() => { expect(frames).toHaveLength(1) })
+    const before = frames[0]!.room!.identity
+    state.room.authority_gateway_id = 'restarted'
+    await vi.waitFor(() => { expect(frames.at(-1)?.room?.identity).not.toBe(before) })
+    state.available = false
+    await vi.waitFor(() => { expect(frames.at(-1)?.reason).toBe('unsupported') })
+    expect(frames.map((f) => f.reason)).toEqual([null, null, 'unsupported'])
+  })
+})
+
+it('reads state and log concurrently once a watch has a cursor', async () => {
+  const { scope, sidecar } = await setup()
+  let release: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => { release = resolve }), inFlight = new Set<string>(), call = sidecar.call.bind(sidecar)
+  await watching(scope, async ({ frames }) => {
+    sidecar.call = async (method: never, params: never, opts: never) => {
+      const action = (params as { operation?: { action?: string } }).operation?.action ?? ''
+      if (frames.length && (action === 'state' || action === 'log')) { inFlight.add(action); await gate }
+      return call(method, params, opts)
+    }
+    try { await vi.waitFor(() => { expect(inFlight).toEqual(new Set(['state', 'log'])) }) } finally { release() }
+  })
+})
+
+it('sends a viewer joining a quiet watch the current snapshot on the next tick', async () => {
+  const { scope } = await setup()
+  await watching(scope, async ({ groups, frames }) => {
+    await vi.waitFor(() => { expect(frames).toHaveLength(1) })
+    const joiner = groups.watch(scope, 'discussion')
+    await vi.waitFor(() => { expect(joiner.subscriber.queue).toHaveLength(1) })
+    joiner.release()
+  })
 })
 
 it('issues the native occurrence identity before dispatch without querying or mutating the owner', async () => {
