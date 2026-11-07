@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web refreshes the sidebar and opens chats faster with Show Claude Code sessions on, because it no longer rescans every Claude Code transcript each time.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

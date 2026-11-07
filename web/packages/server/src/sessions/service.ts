@@ -838,7 +838,7 @@ export class SessionService {
     let existing: Promise<Set<string>> | undefined
     const claudeCode = isClaudeCodeSessionId(sid)
     const read = (): Promise<StateDbRead> => transcript ??= claudeCode
-      ? Promise.resolve({ ...failedStateDbRead(), ok: true, rows: this.deps.claudeCode?.messages(sid) ?? [] })
+      ? (this.deps.claudeCode?.messages(sid) ?? Promise.resolve([])).then((rows) => ({ ...failedStateDbRead(), ok: true, rows }))
       : stateDbSessionReadAsync({ ...failedStateDbRead(), reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionRead', dbPath, sid, { stitch: true, display: true })
     return {
       sid,
@@ -866,7 +866,7 @@ export class SessionService {
    */
   private async lookupCliMeta(sid: string): Promise<Row | null> {
     try {
-      if (isClaudeCodeSessionId(sid)) return (await this.claudeCodeRows()).find((r) => str(r.session_id) === sid) ?? null
+      if (isClaudeCodeSessionId(sid)) return (await this.deps.claudeCode?.row(sid, await this.deps.workspaces.lastWorkspace(this.deps.activeProfile()))) ?? null
       const profile = this.deps.activeProfile()
       return (await this.deps.cliSessions(profile, { sourceFilter: null, sessionIds: [sid], sidebarRows: true })).rows.find((r) => str(r.session_id) === sid)
         ?? (await this.deps.cliSessions(profile, { sourceFilter: null, sessionIds: [sid] })).rows[0] ?? null
@@ -876,7 +876,7 @@ export class SessionService {
   }
 
   private async claudeCodeRows(): Promise<Row[]> {
-    return this.deps.claudeCode?.rows((await this.deps.workspaces.lastWorkspace(this.deps.activeProfile()))) ?? []
+    return (await this.deps.claudeCode?.rows(await this.deps.workspaces.lastWorkspace(this.deps.activeProfile()))) ?? []
   }
 
   /** Python `_session_index_marks_was_webui`: an index row that once owned a WebUI sidecar (self-heal 404). */
