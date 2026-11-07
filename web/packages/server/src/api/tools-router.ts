@@ -812,12 +812,16 @@ export const toolsRouter = os.router({
       const config: Dict = await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({}))
       const selected: Record<string, string> = {}
       for (const [k, v] of Object.entries(config)) if (v && typeof v === 'object' && !Array.isArray(v) && typeof (v as Dict).provider === 'string') selected[k] = str((v as Dict).provider).trim().toLowerCase()
-      const result = await sidecar.call('plugins.list', { profile_home: home(ctx), selected_providers: selected })
-      // A settings failure leaves the list itself readable.
-      const declared = await pluginSettingsList(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] settings fields failed: ${str((error as Error).message)}`); return [] })
+      // Independent reads, and each failure but the list's own leaves the list readable.
+      const [result, declared, oauth, advisory, autoUpdate] = await Promise.all([
+        sidecar.call('plugins.list', { profile_home: home(ctx), selected_providers: selected }),
+        pluginSettingsList(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] settings fields failed: ${str((error as Error).message)}`); return [] }),
+        pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() }),
+        pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false }),
+        // Only hides the switch and Update all.
+        sidecar.call('plugins.auto_update', { profile_home: home(ctx) }).catch((error: unknown) => { ctx.deps.log(`[plugins] auto-update state failed: ${str((error as Error).message)}`); return null }),
+      ])
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
-      // So does an OAuth status failure.
-      const oauth = await pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() })
       const plugins = result.plugins.map(({ update_available, latest_revision, disabled_reason, ...plugin }) => ({
         ...plugin,
         ...(disabled_reason ? { disabled_reason: { ...disabled_reason, reason: pluginDisabledReason(disabled_reason.reason) } } : {}),
@@ -825,10 +829,6 @@ export const toolsRouter = os.router({
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
         ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),
       }))
-      // An advisory failure leaves the list itself readable.
-      const advisory = await pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false })
-      // So does an auto-update failure, which only hides the switch and Update all.
-      const autoUpdate = await sidecar.call('plugins.auto_update', { profile_home: home(ctx) }).catch((error: unknown) => { ctx.deps.log(`[plugins] auto-update state failed: ${str((error as Error).message)}`); return null })
       return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory, ...(autoUpdate?.supported ? { auto_update: await pluginAutoUpdateView(ctx, autoUpdate) } : {}) }
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)

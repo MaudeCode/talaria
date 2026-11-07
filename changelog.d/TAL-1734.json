@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The MCP servers and Plugins settings pages load faster because Web asks the Agent for their independent data at the same time.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -174,13 +174,16 @@ export class McpHealthProber {
   private readonly state = new Map<string, { health: Health; detail: string; checked_at: number }>()
   private readonly inFlight = new Set<string>()
   private readonly startedAt = new Map<string, number>()
+  /** Per profile, the unrendered config of the last read and each row's probe. Keyed fingerprints only, no resolved credential. */
+  private readonly rounds = new Map<string, { raw: string; keys: Map<string, string> }>()
   constructor(private readonly deps: { fetch: () => typeof fetch; now: () => number; log: (line: string) => void }) {}
 
   /**
    * Python `refresh_and_read`: schedule due probes and read back the verdicts for these exact configs, as rendered
    * for `profile`. A verdict belongs to its profile and rendered config, so another profile's or a rotated credential's never shows.
+   * `raw` is the config before rendering, which `runningRound` matches against.
    */
-  refreshAndRead(profile: string, servers: Dict): Record<string, HealthRow> {
+  refreshAndRead(profile: string, servers: Dict, raw: Dict = servers): Record<string, HealthRow> {
     const now = this.deps.now()
     const current = new Map(Object.entries(servers).map(([name, cfg]) => [name, configFingerprint(cfg)]))
     const keyOf = (name: string, fp: string) => JSON.stringify([profile, name, fp])
@@ -191,26 +194,44 @@ export class McpHealthProber {
     const due: [string, unknown, string][] = []
     for (const [name, fp] of current) {
       const key = keyOf(name, fp)
-      if (this.inFlight.has(key)) continue
-      const started = this.startedAt.get(key)
-      if (started !== undefined && now - started < HEALTH_INTERVAL_S) continue
+      if (!this.isDue(key, now)) continue
       if (this.inFlight.size >= MAX_CONCURRENT_PROBES) continue
       this.inFlight.add(key)
       this.startedAt.set(key, now)
       due.push([name, servers[name], key])
     }
-    const readable: Record<string, HealthRow> = {}
-    for (const [name, fp] of current) {
-      const key = keyOf(name, fp)
-      const started = this.startedAt.get(key)
-      readable[name] = { ...(this.state.get(key) ?? {}), pending: this.inFlight.has(key) || started === undefined || now - started >= HEALTH_INTERVAL_S }
-    }
+    const keys = new Map([...current].map(([name, fp]) => [name, keyOf(name, fp)]))
+    this.rounds.set(profile, { raw: configFingerprint(raw), keys })
+    const readable = this.read(keys, now)
     for (const [, cfg, key] of due) {
       void probeServer(cfg, this.deps.fetch()).catch((): [Health, string] => ['unknown', 'health check failed']).then(([health, detail]) => {
         this.state.set(key, { health, detail, checked_at: this.deps.now() })
       }).finally(() => { this.inFlight.delete(key) })
     }
     return readable
+  }
+
+  /**
+   * TAL-1734: the verdicts for an unrendered config without rendering it, while the probes its last read started still
+   * run and so the page keeps polling. Null asks for a render: nothing is running, the config changed, or a row is due.
+   * Only a render can see a rotated credential, so one shows on the first read after the round settles.
+   */
+  runningRound(profile: string, raw: Dict): Record<string, HealthRow> | null {
+    const round = this.rounds.get(profile)
+    if (!round || round.raw !== configFingerprint(raw)) return null
+    const now = this.deps.now()
+    const keys = [...round.keys.values()]
+    return keys.some((key) => this.inFlight.has(key)) && !keys.some((key) => this.isDue(key, now)) ? this.read(round.keys, now) : null
+  }
+
+  private isDue(key: string, now: number): boolean {
+    if (this.inFlight.has(key)) return false
+    const started = this.startedAt.get(key)
+    return started === undefined || now - started >= HEALTH_INTERVAL_S
+  }
+
+  private read(keys: Map<string, string>, now: number): Record<string, HealthRow> {
+    return Object.fromEntries([...keys].map(([name, key]) => [name, { ...(this.state.get(key) ?? {}), pending: this.inFlight.has(key) || this.isDue(key, now) }]))
   }
 
   /** Resolve once every in-flight probe has settled (tests). */

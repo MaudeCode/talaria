@@ -158,10 +158,19 @@ function toolSummary(name: string, toolRaw: unknown, server: Dict): Dict {
   return { name: str(tool.name) || name, server: str(server.name), description: safeText(tool.description, 360), active: Boolean(server.active), enabled: Boolean(server.enabled), status: str(server.status) || 'unknown', schema_summary: schemaSummary(toolSchema(tool)) }
 }
 
+/**
+ * Each cost policy's edit revision: the complete saved config and profile, serialized and hashed once per view (a
+ * config can be large), each copy finished with the policy's name and package declaration. Never exposes any of them.
+ */
+function policyRevisions(profileHome: string, config: Config): (name: string, packageRevision: string) => string {
+  const shared = createHash('sha256').update(JSON.stringify([profileHome, config]).slice(0, -1))
+  return (name, packageRevision) => shared.copy().update(`,${JSON.stringify([name, packageRevision]).slice(1)}`).digest('hex')
+}
+
 export class McpService {
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig; health?: McpHealthProber }) {}
 
-  private async runtime(profileHome: string, servers: Dict): Promise<Map<string, Dict>> {
+  private async status(profileHome: string): Promise<Map<string, Dict>> {
     const byName = new Map<string, Dict>()
     const sidecar = this.deps.sidecar()
     if (sidecar) {
@@ -169,8 +178,13 @@ export class McpService {
         for (const entry of (await sidecar.call('mcp.status', { profile_home: profileHome })).servers) byName.set(entry.name, entry)
       } catch { /* runtime unavailable → configured only */ }
     }
+    return byName
+  }
+
+  private async runtime(profileHome: string, servers: Dict, byName: Map<string, Dict>): Promise<Map<string, Dict>> {
     const unknownServers = Object.fromEntries(Object.entries(servers).filter(([name, cfg]) => isDict(cfg) && parseEnabled(cfg.enabled) && !runtimeHealth(byName.get(name) ?? {})))
-    const verdicts = this.deps.health?.refreshAndRead(profileHome, await this.probeConfigs(profileHome, unknownServers)) ?? {}
+    const health = this.deps.health
+    const verdicts = health?.runningRound(profileHome, unknownServers) ?? health?.refreshAndRead(profileHome, await this.probeConfigs(profileHome, unknownServers), unknownServers) ?? {}
     for (const [name, cfg] of Object.entries(servers)) {
       const entry = { ...(byName.get(name) ?? { name }) }
       const enabled = isDict(cfg) ? parseEnabled(cfg.enabled) : false
@@ -205,10 +219,9 @@ export class McpService {
     catch { return null }
   }
 
-  private policyView(profileHome: string, config: Config, policy: SidecarResult<'mcp.cost_policies'>['policies'][number]): Dict {
+  private policyView(revisionOf: ReturnType<typeof policyRevisions>, policy: SidecarResult<'mcp.cost_policies'>['policies'][number]): Dict {
     const { package_revision, ...view } = policy
-    // Bind the edit to the complete saved config, package declaration and profile, without exposing any of them.
-    const revision = createHash('sha256').update(JSON.stringify([profileHome, config, policy.name, package_revision])).digest('hex')
+    const revision = revisionOf(policy.name, package_revision)
     const overrides = { ...view.overrides }
     if (overrides.tool_costs) overrides.tool_costs = Object.fromEntries(Object.entries(overrides.tool_costs).map(([name, value]) => [
       safeText(name, 200), typeof value === 'object' && !Array.isArray(value)
@@ -229,18 +242,21 @@ export class McpService {
   private async inventory(profileHome: string): Promise<{ servers: Dict; runtime: Map<string, Dict>; summaries: Map<string, Dict> }> {
     const config = await this.deps.config.read(profileHome)
     const servers = dict(config.mcp_servers)
-    const runtime = await this.runtime(profileHome, servers)
-    const [policies, events] = await Promise.all([this.policies(profileHome, config), this.events(profileHome, servers)])
+    const [status, policies, events] = await Promise.all([this.status(profileHome), this.policies(profileHome, config), this.events(profileHome, servers)])
+    const runtime = await this.runtime(profileHome, servers, status)
     const summaries = new Map<string, Dict>(Object.entries(servers).map(([name, cfg]) => {
       const rt = runtime.get(name) ?? null
       const summary = serverSummary(name, cfg, rt)
       return [name, { ...summary, events: eventsView(cfg, summary, rt, events) }]
     }))
-    if (policies?.supported) for (const policy of policies.policies) {
-      const rt = runtime.get(policy.name) ?? null
-      const summary = summaries.get(policy.name) ?? { ...serverSummary(policy.name, { command: '', enabled: rt?.disabled !== true }, rt), transport: str(rt?.transport) || 'package', can_toggle: false }
-      summary.cost_policy = this.policyView(profileHome, config, policy)
-      summaries.set(policy.name, summary)
+    if (policies?.supported) {
+      const revisionOf = policyRevisions(profileHome, config)
+      for (const policy of policies.policies) {
+        const rt = runtime.get(policy.name) ?? null
+        const summary = summaries.get(policy.name) ?? { ...serverSummary(policy.name, { command: '', enabled: rt?.disabled !== true }, rt), transport: str(rt?.transport) || 'package', can_toggle: false }
+        summary.cost_policy = this.policyView(revisionOf, policy)
+        summaries.set(policy.name, summary)
+      }
     }
     return { servers, runtime, summaries }
   }
@@ -315,7 +331,7 @@ export class McpService {
       const result = await this.policies(profileHome, config)
       const policy = result?.supported ? result.policies.find((p) => p.name === name) : null
       if (!policy) throw new HttpFailure(503, 'Declared MCP cost policy is unavailable')
-      const current = this.policyView(profileHome, config, policy)
+      const current = this.policyView(policyRevisions(profileHome, config), policy)
       if (typeof body.config_revision !== 'string' || body.config_revision !== current.revision) throw new HttpFailure(409, 'MCP configuration changed; refresh before editing')
       if (!policy.can_edit) throw new HttpFailure(409, 'Package policy requires a native server override in config.yaml')
       const servers = dict(config.mcp_servers)
@@ -329,7 +345,7 @@ export class McpService {
       const updated = validated?.supported ? validated.policies.find((p) => p.name === name) : null
       if (!updated?.valid) throw new HttpFailure(400, 'Invalid declared cost policy')
       if (updated.package_revision !== policy.package_revision) throw new HttpFailure(409, 'MCP package policy changed; refresh before editing')
-      summary = { ...serverSummary(name, server, null), cost_policy: this.policyView(profileHome, config, updated) }
+      summary = { ...serverSummary(name, server, null), cost_policy: this.policyView(policyRevisions(profileHome, config), updated) }
     })
     return { ok: true, server: summary }
   }

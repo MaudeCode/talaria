@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { McpServerSchema, McpServersSchema } from '@maudecode/talaria-web-contracts'
 import { JoplinError, joplinSearch, McpService, serverSummary } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -196,7 +197,7 @@ describe('MCP health probe credentials (TAL-1565)', () => {
       await health.settle()
       return Object.fromEntries(((await service.servers(profile)).servers as Dict[]).map((r) => [String(r.name), r])) as Record<string, Dict>
     }
-    return { rows, tick: () => { now += 1 } }
+    return { rows, tick: (seconds = 1) => { now += seconds }, service, health, sidecar }
   }
 
   it('probes with the profile\'s resolved Authorization reference, so a working key reads healthy, not Needs sign-in', async () => {
@@ -246,6 +247,60 @@ describe('MCP health probe credentials (TAL-1565)', () => {
     expect(api.seen).toEqual([])
   })
 
+  describe('rendering around a running probe round (TAL-1734)', () => {
+    const held = (inner: typeof fetch) => {
+      let finish!: () => void
+      const gate = new Promise<void>((resolve) => { finish = resolve })
+      return { finish, f: (async (url: string, init: RequestInit) => { await gate; return inner(url, init) }) as typeof fetch }
+    }
+    const renders = (sidecar: FakeSidecar) => sidecar.calls.filter((call) => call.method === 'mcp.probe_targets').length
+
+    it('omits probe targets while the round runs with an identical payload, and the settled read still catches a rotated key', async () => {
+      const api = endpoint(new Set(['Bearer synthetic-a', 'Bearer synthetic-b']))
+      const probe = held(api.f)
+      const env = { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-a' } }
+      const { service, health, sidecar, rows } = setup(probe.f, env)
+      const first = await service.servers('/profiles/a')
+      expect(first.health_pending).toBe(true)
+      expect(renders(sidecar)).toBe(1)
+      env['/profiles/a'].SYNTHETIC_MCP_KEY = 'synthetic-b'
+      expect(await service.servers('/profiles/a')).toEqual(first)
+      expect(renders(sidecar)).toBe(1)
+      probe.finish()
+      await health.settle()
+      expect((await rows('/profiles/a')).kanvil).toMatchObject({ health: 'healthy', health_pending: false })
+      expect(api.seen).toEqual(['Bearer synthetic-a', 'Bearer synthetic-b'])
+    })
+
+    it('renders during a round for an edited config and for another profile', async () => {
+      const probe = held(endpoint(new Set(['Bearer synthetic-a'])).f)
+      const servers: Dict = { kanvil: raw }
+      const { service, sidecar } = setup(probe.f, { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-a' } }, servers)
+      await service.servers('/profiles/a')
+      await service.servers('/profiles/b')
+      expect(renders(sidecar)).toBe(2)
+      servers.kanvil = { ...raw, url: 'https://edited.invalid/mcp' }
+      await service.servers('/profiles/a')
+      expect(renders(sidecar)).toBe(3)
+      probe.finish()
+    })
+
+    it('renders during a round once another server\'s interval lapses', async () => {
+      const api = endpoint(new Set(['']))
+      const probe = held(api.f)
+      const fetchImpl = ((url: string, init: RequestInit) => (url.includes('slow') ? probe.f : api.f)(url, init)) as typeof fetch
+      const { service, sidecar, tick } = setup(fetchImpl, {}, { fast: { url: 'https://fast.invalid/mcp' }, slow: { url: 'https://slow.invalid/mcp' } })
+      const row = async (name: string) => ((await service.servers('/profiles/a')).servers as Dict[]).find((r) => r.name === name)!
+      await service.servers('/profiles/a')
+      await vi.waitFor(async () => { expect((await row('fast')).health).toBe('healthy') })
+      expect(renders(sidecar)).toBe(1)
+      tick(120)
+      await service.servers('/profiles/a')
+      expect(renders(sidecar)).toBe(2)
+      probe.finish()
+    })
+  })
+
   it('never returns a resolved credential in the server rows, even when the transport error quotes it', async () => {
     const failing = (() => Promise.reject(new TypeError('Headers.append: "Bearer synthetic-secret-c" is an invalid header value.'))) as typeof fetch
     const { rows } = setup(failing, { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-secret-c' } })
@@ -280,7 +335,7 @@ describe('MCP runtime state outranks the health probe (TAL-1845)', () => {
     sidecar.respond('mcp.probe_targets', () => ({ targets: [] }))
     sidecar.respond('mcp.cost_policies', () => ({ supported: false, policies: [] }))
     const probed: string[][] = []
-    const health = { refreshAndRead: (_profile: string, servers: Dict) => {
+    const health = { runningRound: () => null, refreshAndRead: (_profile: string, servers: Dict) => {
       probed.push(Object.keys(servers))
       return Object.fromEntries(Object.keys(servers).map((name) => [name, { health: 'needs_auth', detail: 'HTTP 401', checked_at: 1000, pending: false }]))
     } } as unknown as McpHealthProber
@@ -298,6 +353,60 @@ describe('MCP runtime state outranks the health probe (TAL-1845)', () => {
     expect(rows.older).toMatchObject({ status: 'configured', health: 'needs_auth', health_detail: 'HTTP 401', health_checked_at: 1000 })
     expect(JSON.stringify(result)).not.toContain('synthetic-secret-e')
     expect(result.health_pending).toBe(false)
+  })
+})
+
+describe('MCP view round trips (TAL-1734)', () => {
+  const costPolicy = (name: string) => ({ name, source: 'native' as const, valid: true, can_edit: true, error: null, package_revision: `package-${name}`, overrides: { tool_costs: null, spend_limit: null, cost_unit: null }, tool_costs: [], spend_limit: 0, cost_unit: 'credits', budget_enabled: false, field_sources: { tool_costs: 'default' as const, spend_limit: 'default' as const, cost_unit: 'default' as const } })
+  const costPolicies = (servers: Dict) => ({ supported: true, policies: Object.keys(servers).map(costPolicy) })
+  const events = { supported: false, callback: 'ready' as const, servers: [] }
+  const service = (sidecar: FakeSidecar, config: Dict) => new McpService({ sidecar: () => sidecar, config: { read: () => Promise.resolve(config) } as unknown as AgentConfig })
+
+  it('asks for status, cost policies and events at once', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const started: string[] = []
+    const held = async <T>(method: string, value: T) => { started.push(method); await gate; return value }
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => held('mcp.status', { servers: [] }))
+    sidecar.respond('mcp.cost_policies', () => held('mcp.cost_policies', { supported: false, policies: [] }))
+    sidecar.respond('mcp.events', () => held('mcp.events', events))
+    const view = service(sidecar, { mcp_servers: { one: { command: 'one-mcp' } } }).servers('/profiles/a')
+    await vi.waitFor(() => { expect([...started].sort()).toEqual(['mcp.cost_policies', 'mcp.events', 'mcp.status']) })
+    release()
+    expect(((await view).servers as Dict[]).map((row) => row.name)).toEqual(['one'])
+  })
+
+  it('serializes the config once per view however many policies it has', async () => {
+    let serialized = 0
+    const mcp_servers = { one: { command: 'one-mcp' }, two: { command: 'two-mcp' }, three: { command: 'three-mcp' } }
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => ({ servers: [] }))
+    sidecar.respond('mcp.cost_policies', (params) => costPolicies(params.servers))
+    sidecar.respond('mcp.events', () => events)
+    const result = await service(sidecar, { mcp_servers, toJSON: () => { serialized += 1; return { mcp_servers } } }).servers('/profiles/a')
+    expect((result.servers as Dict[]).filter((row) => row.cost_policy)).toHaveLength(3)
+    expect(serialized).toBe(1)
+  })
+
+  it('keeps the payload and every policy revision as before', async () => {
+    const config = { mcp_servers: { one: { command: 'one-mcp', note: 'ünïcode \u{1F680}' }, two: { url: 'https://two.invalid/mcp' } } }
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => ({ servers: [{ name: 'one', status: 'connected', connected: true, tools: 2 }] }))
+    sidecar.respond('mcp.cost_policies', (params) => costPolicies(params.servers))
+    sidecar.respond('mcp.events', () => events)
+    const revision = (name: string) => createHash('sha256').update(JSON.stringify(['/profiles/a', config, name, `package-${name}`])).digest('hex')
+    const { package_revision: _, ...policyFields } = costPolicy('')
+    const policy = (name: string) => ({ ...policyFields, name, revision: revision(name), provenance: 'declared_estimate', reload_required: true, runtime_state: 'unknown' })
+    const noEvents = { supported: false, enabled: false, can_edit: false, state: 'unsupported', detail: '', utilities: 0, counts: [], show_state: false, show_panel: false }
+    const shared = { timeout: 120, connect_timeout: 60, enabled: true, can_toggle: true, health_detail: '', health_checked_at: null, health_pending: false, events: noEvents }
+    expect(await service(sidecar, config).servers('/profiles/a')).toEqual({
+      servers: [
+        { ...shared, name: 'one', transport: 'stdio', command: 'one-mcp', args: [], active: true, status: 'active', tool_count: 2, health: 'healthy', cost_policy: policy('one') },
+        { ...shared, name: 'two', transport: 'http', url: 'https://two.invalid/mcp', active: false, status: 'configured', tool_count: null, health: 'unknown', health_pending: true, cost_policy: policy('two') },
+      ],
+      toggle_supported: true, reload_required: true, health_pending: true,
+    })
   })
 })
 

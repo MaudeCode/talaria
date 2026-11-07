@@ -675,6 +675,38 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
+  it('TAL-1734: /api/plugins asks for its list, settings, OAuth, isolation and auto-update state at once and returns the same body', async () => {
+    const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: true, kind: 'standalone' as const, activation: 'enabled' as const, hooks: [] }
+    const oauthClient = { id: 'google', state: 'logged_out' as const, authorize_host: 'idp.example.test', token_host: 'token.example.test' }
+    const isolationRow = (name: string) => ({ name, isolation: 'in_process' as const, third_party_plugins: 1 })
+    let gate: Promise<void> = Promise.resolve()
+    const started: string[] = []
+    const held = async <T>(method: string, value: T) => { started.push(method); await gate; return value }
+    sidecar.respond('plugins.list', () => held('plugins.list', { plugins: [row], supported_hooks: ['pre_tool_call'] }))
+    sidecar.respond('plugins.settings', () => held('plugins.settings', { supported: true, plugins: [{ key: 'probe', fields: [] }] }))
+    sidecar.respond('plugins.oauth_status', () => held('plugins.oauth_status', { supported: true, plugins: [{ key: 'probe', clients: [oauthClient] }] }))
+    sidecar.respond('plugins.isolation', () => held('plugins.isolation', { profiles: [isolationRow('default'), isolationRow('work')] }))
+    sidecar.respond('plugins.auto_update', () => held('plugins.auto_update', { supported: true, auto_apply: false, check_hours: 24 }))
+    sidecar.respond('gateway.mode', () => ({ gateway_mode: 'stopped' }))
+    try {
+      const expected = {
+        plugins: [{ ...row, settings: [], oauth_clients: [{ ...oauthClient, can_sign_out: false }] }],
+        empty: false, supported_hooks: ['pre_tool_call'], read_only: false, plugin_isolation_advisory: true,
+        auto_update: { auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' },
+      }
+      expect(await json(await s.get('/api/plugins'))).toEqual(expected)
+      let release!: () => void
+      gate = new Promise((resolve) => { release = resolve })
+      started.length = 0
+      const page = s.get('/api/plugins')
+      await vi.waitFor(() => { expect([...started].sort()).toEqual(['plugins.auto_update', 'plugins.isolation', 'plugins.list', 'plugins.oauth_status', 'plugins.settings']) })
+      release()
+      expect(await json(await page)).toEqual(expected)
+    } finally {
+      for (const method of ['plugins.list', 'plugins.settings', 'plugins.oauth_status', 'plugins.isolation', 'plugins.auto_update', 'gateway.mode'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
   it('TAL-820: Settings advises plugins.isolation: host when several profiles have third-party plugins and one runs them in-process', async () => {
     const row = (name: string, isolation: 'in_process' | 'host', plugins: number) => ({ name, isolation, third_party_plugins: plugins })
     const cases: [ReturnType<typeof row>[], boolean][] = [
