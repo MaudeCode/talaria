@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The last words of a streaming reply now appear right away when the provider pauses, instead of waiting for it to resume.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

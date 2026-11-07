@@ -719,6 +719,94 @@ def test_token_batches_flush_at_deadline_and_before_tool_frames(monkeypatch) -> 
     assert [data["text"] for event, data in ctx.frames if event == "token"] == ["a", "bc", "d", "ef"]
 
 
+def test_a_buffered_token_reaches_the_server_during_provider_silence(monkeypatch) -> None:
+    """TAL-1720: a token held by the 16 ms batch goes out on the watcher's timer, with no later callback to carry it."""
+    _patch(monkeypatch)
+    arrived = threading.Event()
+    sent_at = {}
+
+    class Timed(Ctx):
+        def emit(self, event, data=None):
+            super().emit(event, data)
+            if event == "token" and "second" in data["text"]:
+                sent_at["second"] = time.monotonic()
+                arrived.set()
+
+    class PausingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            token = self.kwargs["stream_delta_callback"]
+            token("first")
+            time.sleep(0.005)
+            sent_at["token"] = time.monotonic()
+            token("second")
+            arrived.wait(0.5)
+            sent_at["during_silence"] = arrived.is_set()
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: PausingAgent)
+    assert chat.start(Timed(), _params("st-silence"))["status"] == "completed"
+    assert sent_at["during_silence"]
+    assert sent_at["second"] - sent_at["token"] < 0.1
+
+
+def test_reasoning_deltas_batch_and_keep_their_order_around_tokens(monkeypatch) -> None:
+    """TAL-1720: reasoning shares the 16 ms buffer through both Agent callbacks; a type change flushes the previous type."""
+    _patch(monkeypatch)
+    monkeypatch.setattr(chat, "time", types.SimpleNamespace(monotonic=lambda: 0.0))
+    deltas = [f"r{i} " for i in range(50)]
+    ctx = Ctx()
+
+    class ThinkingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            for delta in deltas:
+                self.kwargs["reasoning_callback"](delta)
+            self.kwargs["tool_progress_callback"]("reasoning.available", None, "summary")
+            self.kwargs["stream_delta_callback"]("answer")
+            self.kwargs["reasoning_callback"]("again")
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: ThinkingAgent)
+    assert chat.start(ctx, _params("st-reasoning"))["status"] == "completed"
+    frames = [(event, data["text"]) for event, data in ctx.frames if event in ("reasoning", "token")]
+    assert frames == [("reasoning", "r0 "), ("reasoning", "".join(deltas[1:]) + "summary"), ("token", "answer"), ("reasoning", "again")]
+
+
+@pytest.mark.parametrize(
+    ("name", "result", "expected"),
+    [
+        ("delegate_task", json.dumps({"output": "x" * 1_000_000, "diff": "d", "results": [{"cost_usd": 0.5}]}),
+         {"preview": "x" * 4000, "result_diff": "d", "cost_usd": 0.5}),
+        ("terminal", json.dumps({"exit_code": 0, "stdout": "y" * 1_000_000}), {}),
+        ("terminal", json.dumps(["z" * 1_000_000]), {}),
+    ],
+    ids=["object", "object-without-preview-field", "array"],
+)
+def test_a_tool_completion_decodes_its_result_once(monkeypatch, name, result, expected) -> None:
+    """TAL-1720: a large result is decoded once for every field of its completion frame, including an edit's metadata."""
+    _patch(monkeypatch)
+    monkeypatch.setattr(chat, "_edit_snapshot", lambda *args: object())
+    monkeypatch.setitem(sys.modules, "agent.display", types.SimpleNamespace(extract_edit_diff=lambda *a, **k: None))
+    decoded = []
+    loads = json.loads
+    monkeypatch.setattr(json, "loads", lambda text, *a, **k: (decoded.append(text) if text == result else None, loads(text, *a, **k))[1])
+    ctx = Ctx()
+
+    class ToolAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            self.kwargs["tool_start_callback"]("t1", name, {})
+            self.kwargs["tool_complete_callback"]("t1", name, {}, result)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: ToolAgent)
+    assert chat.start(ctx, _params("st-parse"))["status"] == "completed"
+    complete = dict(ctx.frames)["tool_complete"]
+    assert len(decoded) == 1
+    # The frame is what each separate decode produced: no output field keeps the raw text, never a repr of the object.
+    assert complete["preview"] == expected.get("preview", result[:4000])
+    assert {key: complete[key] for key in ("result_diff", "cost_usd") if key in complete} == {k: v for k, v in expected.items() if k != "preview"}
+    assert isinstance(complete["raw_result"], dict) == result.startswith("{")
+
+
 @pytest.mark.parametrize("exit_kind", ["completed", "cancelled", "error"])
 def test_pending_tokens_flush_before_the_rpc_terminal_response(monkeypatch, exit_kind) -> None:
     _patch(monkeypatch)

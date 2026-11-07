@@ -353,12 +353,14 @@ redirects both `sys.stdout` and fd 1 to stderr, so Agent code that prints
   The cancelled call still completes with a result whose `status` is
   `"cancelled"`, so the server never waits on a dangling id.
 
-`chat.start` emits its first token immediately, then coalesces consecutive token
-deltas within 16 ms before taking usage/steer snapshots and writing a frame.
-The next token after that interval, any non-token event, or turn exit flushes
-the buffered text in order. There is no timer: a quiet tail waits for the next
-event or turn exit. Each turn owns its buffer; success, cancellation and errors
-flush it before the RPC response. Token frame shapes and final text are unchanged.
+`chat.start` emits its first token or reasoning delta immediately, then coalesces
+consecutive deltas within 16 ms before taking usage/steer snapshots and writing a
+frame. The buffer holds one type at a time, so a switch between tokens and
+reasoning flushes the previous type first. The next delta after that interval,
+any other event, turn exit, or the turn's 50 ms watcher (once the oldest buffered
+delta is 16 ms old) flushes the buffered text in order. Each turn owns its buffer;
+success, cancellation and errors flush it before the RPC response. Frame shapes
+and concatenated text are unchanged; only delta boundaries move.
 
 One line per message; every line is a complete JSON document with no embedded
 newlines. Binary payloads (audio for STT, images) are base64 fields.
