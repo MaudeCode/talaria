@@ -23,3 +23,8 @@ export function cacheLocaleChunk(url: string): void {
   if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
   void navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage({ type: 'CACHE_LOCALE', url }))
 }
+
+/** Browser push needs a service worker and the Push API; without them the section is not offered. */
+export function webPushSupported(): boolean {
+  return typeof window !== 'undefined' && 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator
+}

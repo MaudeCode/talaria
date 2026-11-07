@@ -1,17 +1,13 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WebPushPreferences } from '@maudecode/talaria-web-contracts'
+import { webPushSupported } from '../../app/pwa'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { m } from '../../paraglide/messages.js'
 import { FieldRow, Switch } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
-
-/** Browser push needs a service worker and the Push API; without them the section is not offered. */
-export function webPushSupported(): boolean {
-  return typeof window !== 'undefined' && 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator
-}
 
 const KINDS: { key: keyof WebPushPreferences; label: () => string }[] = [
   { key: 'notify_on_approval', label: () => m.settings_label_notify_approval() },

@@ -1,20 +1,21 @@
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import type { SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
-import { AppearanceSection } from './AppearanceSection'
-import { PreferencesSection } from './PreferencesSection'
-import { ConversationSection } from './ConversationSection'
-import { SpeechSection } from './SpeechSection'
-import { NotificationsSection } from './NotificationsSection'
-import { ProvidersSection } from './ProvidersSection'
-import { AuxiliaryModelsSection } from './AuxiliaryModels'
-import { ConnectorsSection } from '../connectors/ConnectorsSection'
-import { PluginsSection } from './PluginsSection'
-import { ExtensionsSection } from './ExtensionsSection'
-import { SystemSection } from './SystemSection'
-import { HelpSection } from './HelpSection'
+import { LoadingState } from '../../ui/States'
 import { useLocale } from '../../i18n/useLocale'
-import { m } from '../../paraglide/messages.js'
+
+const AppearanceSection = lazy(() => import('./AppearanceSection').then((module) => ({ default: module.AppearanceSection })))
+const PreferencesSection = lazy(() => import('./PreferencesSection').then((module) => ({ default: module.PreferencesSection })))
+const ConversationSection = lazy(() => import('./ConversationSection').then((module) => ({ default: module.ConversationSection })))
+const SpeechSection = lazy(() => import('./SpeechSection').then((module) => ({ default: module.SpeechSection })))
+const NotificationsSection = lazy(() => import('./NotificationsSection').then((module) => ({ default: module.NotificationsSection })))
+const ProvidersSection = lazy(() => import('./ProvidersSection').then((module) => ({ default: module.ProvidersSection })))
+const AuxiliaryModelsSection = lazy(() => import('./AuxiliaryModels').then((module) => ({ default: module.AuxiliaryModelsSection })))
+const ConnectorsSection = lazy(() => import('../connectors/ConnectorsSection').then((module) => ({ default: module.ConnectorsSection })))
+const PluginsSection = lazy(() => import('./PluginsSection').then((module) => ({ default: module.PluginsSection })))
+const ExtensionsSection = lazy(() => import('./ExtensionsSection').then((module) => ({ default: module.ExtensionsSection })))
+const SystemSection = lazy(() => import('./SystemSection').then((module) => ({ default: module.SystemSection })))
+const HelpSection = lazy(() => import('./HelpSection').then((module) => ({ default: module.HelpSection })))
 
 const SECTIONS: Partial<Record<Section, () => ReactNode>> = {
   appearance: () => <AppearanceSection />,
@@ -46,7 +47,7 @@ export function SettingsSection({ section }: { section: Section }) {
             <h1 className="settings-section-title text-[18px] font-semibold tracking-(--heading-tracking) text-text leading-[1.3] mb-1">{SECTION_LABEL[section]()}</h1>
           </div>
         </div>
-        {render ? render() : <p className="text-sm text-muted">{m.loading()}</p>}
+        <Suspense fallback={<LoadingState compact />}>{render ? render() : <LoadingState compact />}</Suspense>
       </div>
     </div>
   )
