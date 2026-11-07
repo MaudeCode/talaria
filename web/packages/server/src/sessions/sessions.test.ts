@@ -3051,7 +3051,7 @@ describe('session detail ships each tool result view (TAL-315)', () => {
     { role: 'assistant', content: '', message_id: 'view-calls', timestamp: 3001, _turn_id: 'view-run', tool_calls: [
       call('call-make', 'terminal', { command: 'make' }), call('call-nested', 'read_file', { path: 'notes.txt' }), call('call-parts', 'web_search', { query: 'hermes' }), call('call-date', 'terminal', { command: 'date' }),
     ] },
-    { role: 'tool', tool_call_id: 'call-make', content: '{"output": "built\\nok", "stderr": "warning: deprecated", "exit_code": 2, "error": null}', timestamp: 3002, _turn_id: 'view-run' },
+    { role: 'tool', tool_call_id: 'call-make', content: '{"output": "built\\nok", "stderr": "warning: deprecated", "exit_code": 2, "error": null, "approval": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."}', timestamp: 3002, _turn_id: 'view-run' },
     { role: 'tool', tool_call_id: 'call-nested', content: JSON.stringify(JSON.stringify({ content: 'line one\nline two' })), timestamp: 3003, _turn_id: 'view-run' },
     { role: 'tool', tool_call_id: 'call-parts', content: '[{"type": "text", "text": "first"}, {"type": "text", "text": "second"}]', timestamp: 3004, _turn_id: 'view-run' },
     { role: 'tool', tool_call_id: 'call-date', content: 'Sat Sep 27', timestamp: 3005, _turn_id: 'view-run' },

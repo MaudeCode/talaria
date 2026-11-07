@@ -199,7 +199,7 @@ back to the session file.
   `null` (history written before the server recorded durations).
 - `result`: the redacted result snippet, else `null`.
 - `result_view` (TAL-315): the result's display sections, else `null`:
-  `{ text?, stdout?, stderr?, error?, exit_code? }`. One server rule decides
+  `{ text?, stdout?, stderr?, error?, exit_code?, approval_note? }`. One server rule decides
   them for live `tool_complete` frames (from the sidecar's raw result, so
   `stderr` and `exit_code` survive), persisted calls, and scene tool rows. A
   JSON result (nested JSON strings unwrapped, escaped line breaks undone) with
@@ -207,7 +207,9 @@ back to the session file.
   shows the first readable `result`, `results`, `preview`, `content`, `text`,
   `message`, `summary`, `data` or `items`, else its `error` and exit code, else
   pretty JSON. `exit_code` is sent only when it is non-zero or nothing else
-  shows. Each string is redacted and capped at 4000 characters. Clients show
+  shows. `approval_note` (TAL-1910) is a terminal result's `approval` text, the
+  Agent's note on why a flagged command ran, and is absent without one; clients
+  show it last. Each string is redacted and capped at 4000 characters. Clients show
   the fields present in that order, with localized `Error:` / `Exit code:`
   labels, and show `preview` only when the field is absent.
 

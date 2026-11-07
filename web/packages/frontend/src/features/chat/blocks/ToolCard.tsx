@@ -48,9 +48,9 @@ function pretty(value: unknown): string {
   }
 }
 
-/** The server's result sections in their order, one after another: text, output, stderr, then the labelled error and exit code. */
+/** The server's result sections in their order, one after another: text, output, stderr, then the labelled error and exit code, then the approval note. */
 function resultText(view: ToolResultView): string {
-  return [view.text, view.stdout, view.stderr, view.error === undefined ? undefined : m.tool_result_error({ error: view.error }), view.exit_code === undefined ? undefined : m.tool_result_exit_code({ code: String(view.exit_code) })]
+  return [view.text, view.stdout, view.stderr, view.error === undefined ? undefined : m.tool_result_error({ error: view.error }), view.exit_code === undefined ? undefined : m.tool_result_exit_code({ code: String(view.exit_code) }), view.approval_note]
     .filter((section) => section !== undefined).join('\n')
 }
 
