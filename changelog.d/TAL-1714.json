@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web loads faster on a first visit and after each update because its scripts and styles now download about 14% smaller.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

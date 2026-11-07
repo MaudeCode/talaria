@@ -1,8 +1,8 @@
 /**
  * The production SPA shell from `static/dist` (Python `api/spa_shell.py`):
- * route allowlist, placeholder substitution, hashed assets with ETag/gzip.
+ * route allowlist, placeholder substitution, hashed assets with ETag and brotli/gzip twins.
  */
-import { gzip } from 'node:zlib'
+import { brotliCompress, constants, gzip } from 'node:zlib'
 import { promisify } from 'node:util'
 import { readFileSync, statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
@@ -41,6 +41,7 @@ const ASSET_MIME: Record<string, string> = {
 }
 const COMPRESSIBLE = new Set(['.js', '.mjs', '.css', '.html', '.json', '.webmanifest', '.svg', '.txt', '.map'])
 const gzipAsync = promisify(gzip)
+const brotliAsync = promisify(brotliCompress)
 
 export function isServerOwned(path: string): boolean {
   return SERVER_OWNED_EXACT.has(path) || SERVER_OWNED_PREFIXES.some((p) => path.startsWith(p))
@@ -62,7 +63,7 @@ export function baseHrefFor(path: string): string {
   return depth ? '../'.repeat(depth) : './'
 }
 
-export interface Asset { body: Buffer; gz: Buffer | null; etag: string; contentType: string }
+export interface Asset { body: Buffer; gz: Buffer | null; br: Buffer | null; etag: string; contentType: string }
 
 /** Percent-encode like Python `urllib.parse.quote(value, safe='')`. */
 export function quoteAll(value: string): string {
@@ -70,7 +71,7 @@ export function quoteAll(value: string): string {
 }
 
 /**
- * Cached files under one root: raw bytes, gzip twin for compressible types over 1 KiB, weak ETag from (size, mtime_ns).
+ * Cached files under one root: raw bytes, gzip and brotli twins for compressible types over 1 KiB, weak ETag from (size, mtime_ns).
  * Cold loads read and compress off the event loop; concurrent requests for one file version share a single load.
  */
 export class AssetCache {
@@ -121,8 +122,14 @@ export class AssetCache {
   private async load(file: string, etag: string): Promise<Asset> {
     const body = await readFile(file)
     const ext = extname(file).toLowerCase()
-    const gz = COMPRESSIBLE.has(ext) && body.length > 1024 ? await gzipAsync(body, { level: 6 }) : null
-    return { body, gz, etag, contentType: ASSET_MIME[ext] ?? 'application/octet-stream' }
+    const [gz, br] = COMPRESSIBLE.has(ext) && body.length > 1024
+      ? await Promise.all([
+        gzipAsync(body, { level: 6 }),
+        // Quality 9, not the default 11: the largest chunks stay under a second of worker time on a cold load.
+        brotliAsync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 9, [constants.BROTLI_PARAM_SIZE_HINT]: body.length } }),
+      ])
+      : [null, null]
+    return { body, gz, br, etag, contentType: ASSET_MIME[ext] ?? 'application/octet-stream' }
   }
 }
 

@@ -29,7 +29,7 @@ import { activeProfileName, checkAuth, checkCsrf, clearProfileCookieHeader, csrf
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
 import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
-import { isSpaPath } from './spa.js'
+import { isSpaPath, type Asset } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
 import { STARTUP_IMMEDIATE_PATHS } from './startup.js'
 import { escapedProfileMessage } from './profiles/profiles.js'
@@ -59,7 +59,7 @@ export interface App {
   upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
 }
 
-async function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts: { cacheControl: string; headers?: HeaderMap; gz?: Buffer | null; etag?: string }): Promise<void> {
+async function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts: { cacheControl: string; headers?: HeaderMap; gz?: Buffer | null; br?: Buffer | null; etag?: string }): Promise<void> {
   if (opts.etag && ctx.header('if-none-match') === opts.etag) {
     await ctx.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': opts.cacheControl } })
     return
@@ -67,11 +67,18 @@ async function sendBytes(ctx: RequestContext, body: Buffer, contentType: string,
   const headers: HeaderMap = { 'Content-Type': contentType, 'Cache-Control': opts.cacheControl, Vary: 'Accept-Encoding', ...opts.headers }
   if (opts.etag) headers.ETag = opts.etag
   let payload = body
-  if (opts.gz && ctx.acceptsGzip()) {
+  if (opts.br && acceptsEncoding(ctx.header('accept-encoding'), 'br')) {
+    headers['Content-Encoding'] = 'br'
+    payload = opts.br
+  } else if (opts.gz && ctx.acceptsGzip()) {
     headers['Content-Encoding'] = 'gzip'
     payload = opts.gz
   }
   await ctx.send({ status: 200, headers, body: payload })
+}
+
+function sendAsset(ctx: RequestContext, asset: Asset, cacheControl: string): Promise<void> {
+  return sendBytes(ctx, asset.body, asset.contentType, { cacheControl, gz: asset.gz, br: asset.br, etag: asset.etag })
 }
 
 async function notFound(ctx: RequestContext): Promise<void> {
@@ -100,7 +107,7 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
       return true
     }
     const cc = cacheControl ?? (rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
-    await sendBytes(ctx, asset.body, asset.contentType, { cacheControl: cc, gz: asset.gz, etag: asset.etag })
+    await sendAsset(ctx, asset, cc)
     return true
   }
   if (['/manifest.json', '/manifest.webmanifest', '/session/manifest.json', '/session/manifest.webmanifest'].includes(path)) return (await distFile('manifest.webmanifest', 'no-cache'))
@@ -119,7 +126,7 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
     const token = ctx.query.get('v') ?? ''
     const fingerprinted = token !== '' && token !== 'unknown' && !token.endsWith('-dirty')
     const cacheControl = ctx.deps.updates.blocksNewWork() ? 'no-cache' : fingerprinted ? 'public, max-age=31536000, immutable' : 'public, max-age=300'
-    await sendBytes(ctx, asset.body, asset.contentType, { cacheControl, gz: asset.gz, etag: asset.etag })
+    await sendAsset(ctx, asset, cacheControl)
     return true
   }
   if (isSpaPath(path)) {
