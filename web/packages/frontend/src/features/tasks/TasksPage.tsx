@@ -340,7 +340,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, jobActions, 
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
     : (
       <fieldset className="flex flex-wrap gap-2" aria-label={job.name ?? id}>
-        {jobActions(job).map(({ label, run, Icon, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost' as const, className: 'text-error' } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{Icon && <Icon size={12} aria-hidden="true" />} {label}</Button>)}
+        {jobActions(job).map(({ label, run, Icon, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{Icon && <Icon size={12} aria-hidden="true" />} {label}</Button>)}
       </fieldset>
     )
   return (

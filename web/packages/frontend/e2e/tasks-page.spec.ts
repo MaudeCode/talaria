@@ -215,6 +215,24 @@ test('right-click on a job row offers its toolbar actions and acts on that job w
   await expect.poll(() => writes).toEqual([{ action: 'delete', id: 'plain' }])
 })
 
+test('the detail toolbar\'s Delete renders in the error colour, not the grey of an ordinary ghost button (TAL-1960)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the colour does not depend on the viewport')
+  await routeTasks(page, jobs)
+  await page.goto('/tasks?job=digest')
+  const remove = page.getByRole('group', { name: 'Morning digest' }).getByRole('button', { name: 'Delete', exact: true })
+  await expect(remove).toBeVisible()
+  const error = await page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement('span'))
+    probe.style.color = 'var(--error)'
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    return color
+  })
+  await page.screenshot({ path: info.outputPath('detail-toolbar.png') })
+  await expect(remove).toHaveCSS('color', error)
+  await expect(page.getByRole('button', { name: 'Back', exact: true })).not.toHaveCSS('color', error)
+})
+
 test('long-press on a job row opens the same actions without opening the job (TAL-1158)', async ({ page }, info) => {
   test.skip(info.project.name !== 'mobile', 'long-press is the touch route')
   const rows = jobs.map((job) => ({ ...job }))

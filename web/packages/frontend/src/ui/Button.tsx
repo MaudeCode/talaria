@@ -3,12 +3,13 @@ import { ChevronLeft } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 
-type Variant = 'default' | 'primary' | 'ghost' | 'danger' | 'link'
+type Variant = 'default' | 'primary' | 'ghost' | 'ghost-danger' | 'danger' | 'link'
 
 const VARIANT: Record<Variant, string> = {
   default: 'border border-border bg-surface text-text hover:bg-hover',
   primary: 'border border-transparent bg-accent text-accent-fg hover:bg-accent-hover',
   ghost: 'border border-transparent bg-transparent text-muted hover:bg-hover hover:text-text',
+  'ghost-danger': 'border border-transparent bg-transparent text-error hover:bg-hover',
   danger: 'border border-transparent bg-error text-white',
   link: 'border-0 bg-transparent p-0 text-accent-text underline',
 }
