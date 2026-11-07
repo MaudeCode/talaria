@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web toasts now grow out of a small capsule at the top centre, pinch back when they leave, and the toasts below glide into place instead of jumping.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -199,6 +199,56 @@ test('server notification interactions preserve canonical read, clear, action, s
   }
 })
 
+test('a closing toast keeps its content width on a 44px capsule while its room closes, instantly under reduced motion (TAL-1797)', async ({ page }) => {
+  await page.clock.install()
+  let records: NotificationRow[] = []
+  await page.route('**/api/update-notifications**', (route) => route.fulfill({ json: { scope_id: 'toast-room-scope', notifications: records, unread_count: records.length, clearable_count: records.length, can_clear: records.length > 0 } }))
+  await page.goto('/')
+  await settle(page)
+  records = [row('00000000-0000-4000-8000-000000000091', { title: 'First toast' }), row('00000000-0000-4000-8000-000000000092', { title: 'Second toast' })]
+  await page.clock.runFor(30_000)
+  const first = page.locator('.notification-toast').filter({ hasText: 'First toast' })
+  await expect(first.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible()
+  await expect(page.locator('.notification-toast').filter({ hasText: 'Second toast' })).toBeVisible()
+
+  const geometry = await first.evaluate(async (toast: HTMLElement) => {
+    const room = toast.closest<HTMLElement>('.notification-toast-room')!
+    const surface = toast.querySelector<HTMLElement>('.notification-toast-surface')!
+    const content = toast.querySelector<HTMLElement>('.notification-toast-content')!
+    const next = room.nextElementSibling!
+    const measure = () => ({ room: room.getBoundingClientRect().height, surface: surface.offsetWidth, content: content.offsetWidth, opacity: getComputedStyle(content).opacity, nextTop: next.getBoundingClientRect().top })
+    const roomTop = room.getBoundingClientRect().top
+    const open = measure()
+    toast.querySelector<HTMLElement>('[aria-label="Dismiss"]')!.click()
+    await Promise.resolve()
+    return { roomTop, toastWidth: toast.offsetWidth, toastHeight: toast.getBoundingClientRect().height, open, closed: measure() }
+  })
+
+  expect(geometry.open.surface).toBe(geometry.toastWidth)
+  expect(geometry.open.content).toBe(geometry.toastWidth)
+  expect(geometry.open.room).toBeCloseTo(geometry.toastHeight + 8)
+  expect(geometry.closed).toEqual({ room: 0, surface: 44, content: geometry.toastWidth, opacity: '0', nextTop: geometry.roomTop })
+  await expect(first).toHaveCount(0)
+})
+
+test('a toast arriving on an idle page runs its entrance from the capsule (TAL-1797)', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  let records: NotificationRow[] = []
+  await page.route('**/api/update-notifications**', (route) => route.fulfill({ json: { scope_id: 'toast-entrance-scope', notifications: records, unread_count: records.length, clearable_count: records.length, can_clear: records.length > 0 } }))
+  await page.goto('/')
+  await settle(page)
+
+  // Real timers and no layout reads: the page must flush the closed style itself, or the flip has nothing to transition from.
+  const entrance = page.evaluate(() => new Promise<string[]>((resolve) => {
+    new MutationObserver((mutations) => {
+      if (mutations.some(({ target }) => target instanceof HTMLElement && target.matches('.notification-toast-room[data-visible="true"]'))) resolve(document.getAnimations().map((animation) => (animation as CSSTransition).transitionProperty))
+    }).observe(document.body, { attributes: true, attributeFilter: ['data-visible'], subtree: true })
+  }))
+  records = [row('00000000-0000-4000-8000-000000000093', { title: 'Idle arrival' })]
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')))
+  expect(await entrance).toEqual(expect.arrayContaining(['grid-template-rows', 'scale']))
+})
+
 test('rail captions fit under their icons; the bell keeps its full accessible name (TAL-1643)', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'The rail is desktop-only')
   await page.route('**/api/update-notifications**', (route) => route.fulfill({ json: { scope_id: 'rail-scope', notifications: [], unread_count: 0, clearable_count: 0, can_clear: false } }))

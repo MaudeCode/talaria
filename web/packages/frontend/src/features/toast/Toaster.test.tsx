@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Toaster } from './Toaster'
-import { dismissToast, showRichToast } from './toast'
+import { dismissToast, removeToast, showRichToast, TOAST_EXIT_MS } from './toast'
 
 describe('notification toasts', () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('notification toasts', () => {
     expect(manual).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(20)
     expect(expired).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(TOAST_EXIT_MS)
   })
 
   it('uses an accessible body control and updates an existing popup without replaying its entrance', async () => {
@@ -51,7 +51,7 @@ describe('notification toasts', () => {
     expect(screen.getByText('Installed')).toBeInTheDocument()
     expect(container.querySelector('[data-visible="true"]')).not.toBeNull()
 
-    await act(() => vi.advanceTimersByTimeAsync(250))
+    await act(() => vi.advanceTimersByTimeAsync(TOAST_EXIT_MS))
     expect(screen.getByText('Installed')).toBeInTheDocument()
     expect(container.querySelector('[data-visible="true"]')).not.toBeNull()
   })
@@ -69,5 +69,38 @@ describe('notification toasts', () => {
     expect(read).not.toHaveBeenCalled()
     act(() => paint?.(20))
     expect(screen.queryByText('Transient')).not.toBeInTheDocument()
+  })
+
+  it.each([['error', 'border-error/60'], ['warning', 'border-warning/60'], ['info', 'border-border']] as const)('renders %s toasts as rooms whose surface layer is apart from their content', (kind, border) => {
+    let paint: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { paint = callback; return 1 })
+    act(() => showRichToast({ id: `room-${kind}`, text: `Room ${kind}`, ttl: 0, kind, dismissible: false, actions: [] }))
+    render(<Toaster />)
+
+    const text = screen.getByText(`Room ${kind}`)
+    const room = text.closest('.notification-toast-room')
+    expect(room).not.toBeNull()
+    expect(room).toHaveAttribute('data-visible', 'false')
+    const surface = room!.querySelector('.notification-toast-surface')
+    expect(surface).toHaveClass(border)
+    expect(surface).not.toContainElement(text)
+    expect(text.closest('.notification-toast-content')).not.toBeNull()
+
+    act(() => paint?.(0))
+    expect(room).toHaveAttribute('data-visible', 'true')
+    act(() => removeToast(`room-${kind}`))
+  })
+
+  it('keeps a dismissed toast mounted and closed for TOAST_EXIT_MS, then removes it', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
+    act(() => showRichToast({ id: 'exit', text: 'Leaving', ttl: 0, kind: 'info', dismissible: true, actions: [] }))
+    render(<Toaster />)
+
+    act(() => dismissToast('exit'))
+    await act(() => vi.advanceTimersByTimeAsync(TOAST_EXIT_MS - 1))
+    expect(screen.getByText('Leaving').closest('[data-visible]')).toHaveAttribute('data-visible', 'false')
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(screen.queryByText('Leaving')).not.toBeInTheDocument()
   })
 })
