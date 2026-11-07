@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats with MCP servers start faster: Talaria now reconnects to them only when the profile's configuration changes, a server drops or comes back, or an earlier connection failed, instead of on every message.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

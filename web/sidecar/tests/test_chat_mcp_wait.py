@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import io
+import json
+import logging
 import sys
 import threading
 import types
+import uuid
 
 import pytest
 
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import Registry, chat, commands, profiles
+from talaria_sidecar.rpc import RpcServer
 
 
 @pytest.fixture
@@ -30,7 +35,7 @@ def discovery(monkeypatch, tmp_path):
         release.wait()
         return ["mcp_stub_ping"]
     monkeypatch.setitem(sys.modules, "hermes_constants", types.SimpleNamespace(get_hermes_home=lambda: home))
-    monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", types.SimpleNamespace(discover_mcp_tools=discover))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", types.SimpleNamespace(discover_mcp_tools=discover, get_mcp_status=lambda: []))
     try:
         yield home, release, entered, calls
     finally:
@@ -359,3 +364,143 @@ def test_fast_turn_refreshes_tools_when_discovery_finishes_during_agent_build(di
     result = chat.start(Ctx(), {**_params("fast-build"), "profile_home": str(home)})
     assert result["status"] == "completed"
     assert chat._AGENT_CACHE["s1"][0].tools == ["old-tool", "connected-tool"], "fast completed turn cached an Agent without the newly connected tools"
+
+
+@pytest.fixture
+def settled(discovery, monkeypatch, caplog):
+    """Discovery finishes at once; each ``turn()`` runs a real ``chat.start`` and returns its ``mcp_discovery`` span outcome."""
+    home, release, entered, calls = discovery
+    release.set()
+    rows = [{"name": "notes", "status": "connected", "connected": True}]
+    refreshed = []
+    outputs = []
+    monkeypatch.setattr(sys.modules["tools.mcp_tool_discovery"], "get_mcp_status", lambda: rows)
+    monkeypatch.setattr(chat, "refresh_profile_agents_mcp_tools", refreshed.append)
+    caplog.set_level(logging.INFO)
+
+    def turn():
+        caplog.clear()
+        outputs.append(io.BytesIO())
+        server = RpcServer({"chat.start": chat.start}, stdout=outputs[-1])
+        request = {"jsonrpc": "2.0", "id": len(outputs), "method": "chat.start", "trace_id": str(uuid.uuid4()),
+                   "params": {**_params(f"turn-{len(outputs)}"), "profile_home": str(home)}}
+        server._dispatch(request, server._register(request))
+        records = [json.loads(r.message) for r in caplog.records if r.message.startswith('{"event":"chat_start_timing"')]
+        return records[-1]["spans"]["mcp_discovery"]["outcome"]
+
+    return types.SimpleNamespace(home=home, release=release, calls=calls, rows=rows, refreshed=refreshed, outputs=outputs, turn=turn)
+
+
+@pytest.mark.parametrize("tools, first", [(["mcp_stub_ping"], "ok"), ([], "noop")])
+def test_later_turn_reuses_a_completed_discovery(settled, monkeypatch, tools, first):
+    def discover():
+        settled.calls.append(1)
+        settled.release.wait()
+        return tools
+
+    monkeypatch.setattr(sys.modules["tools.mcp_tool_discovery"], "discover_mcp_tools", discover)
+    assert settled.turn() == first
+    assert len(settled.calls) == 1
+    assert settled.refreshed == [settled.home]
+
+    started = []
+
+    class RecordingThread(threading.Thread):
+        def start(self):
+            started.append(self.name)
+            super().start()
+
+    monkeypatch.setattr(threading, "Thread", RecordingThread)
+    # A repeat discovery would block here and surface the turn's two-second pending notice.
+    settled.release.clear()
+    assert settled.turn() == "cache_hit"
+    assert len(settled.calls) == 1, "an unchanged profile ran discovery again"
+    assert settled.refreshed == [settled.home], "no discovery ran, so cached agents keep their tool list"
+    assert not [name for name in started if name.startswith("chat-mcp-")]
+    assert b"mcp_discovery_pending" not in settled.outputs[-1].getvalue()
+
+
+def test_config_change_between_turns_runs_discovery_again(settled):
+    config = settled.home / "config.yaml"
+    config.write_text("mcp_servers: {}\n")
+    assert settled.turn() == "ok"
+    config.write_text("mcp_servers: {notes: {command: notes}}\n")
+    assert settled.turn() == "ok"
+    assert len(settled.calls) == 2
+    assert settled.refreshed == [settled.home, settled.home]
+    assert settled.turn() == "cache_hit"
+    assert len(settled.calls) == 2
+
+
+def test_config_edited_during_discovery_runs_it_again_next_turn(settled, monkeypatch):
+    config = settled.home / "config.yaml"
+    config.write_text("mcp_servers: {}\n")
+    discover = sys.modules["tools.mcp_tool_discovery"]
+
+    def edit_while_connecting():
+        settled.calls.append(1)
+        if len(settled.calls) == 1:
+            config.write_text("mcp_servers: {notes: {command: notes}}\n")
+        return ["mcp_stub_ping"]
+
+    monkeypatch.setattr(discover, "discover_mcp_tools", edit_while_connecting)
+    assert settled.turn() == "ok"
+    assert settled.turn() == "ok", "the first discovery may have read the config before this edit"
+    assert settled.turn() == "cache_hit"
+
+
+def test_failed_discovery_is_retried_next_turn(settled, monkeypatch):
+    discover = sys.modules["tools.mcp_tool_discovery"]
+    outcomes = iter([RuntimeError("connection failed"), ["mcp_stub_ping"]])
+
+    def flaky():
+        settled.calls.append(1)
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(discover, "discover_mcp_tools", flaky)
+    assert settled.turn() == "error"
+    assert settled.turn() == "ok"
+    assert len(settled.calls) == 2
+
+
+def test_server_disconnect_and_recovery_each_run_discovery_once(settled):
+    assert settled.turn() == "ok"
+    settled.rows[0].update(status="configured", connected=False)
+    assert settled.turn() == "ok", "discovery signals a reconnect to a server between sessions"
+    assert settled.turn() == "cache_hit", "the server's own reconnect loop owns the outage from here"
+    settled.rows[0].update(status="connected", connected=True)
+    assert settled.turn() == "ok", "cached agents need the tools a recovered server registered"
+    assert settled.turn() == "cache_hit"
+    assert len(settled.calls) == 3
+    assert len(settled.refreshed) == 3
+
+
+@pytest.mark.parametrize("state", ["failed", "unreadable"])
+def test_failed_or_unknown_server_state_keeps_retrying_each_turn(settled, monkeypatch, state):
+    if state == "failed":
+        # discover_mcp_tools reports a per-server connect failure only through this status, and retries it only when called.
+        settled.rows[0].update(status="failed", connected=False)
+    else:
+        def unreadable():
+            raise RuntimeError("status unavailable")
+        monkeypatch.setattr(sys.modules["tools.mcp_tool_discovery"], "get_mcp_status", unreadable)
+    assert settled.turn() == "ok"
+    assert settled.turn() == "ok"
+    assert len(settled.calls) == 2
+
+
+def test_reload_mcp_forces_discovery_when_the_config_is_unchanged(settled, monkeypatch):
+    assert settled.turn() == "ok"
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", types.SimpleNamespace(is_multiplex_active=lambda: False))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool", types.SimpleNamespace(
+        _lock=threading.Lock(), _mcp_tool_server_names={}, _server_visible_in_scope=lambda key, scope: True, _servers={}))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(reprobe_tool_availability=lambda: None))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_lifecycle", types.SimpleNamespace(shutdown_mcp_servers=lambda scope=None: None))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_scope", types.SimpleNamespace(_key_name=lambda key: key))
+    monkeypatch.setitem(sys.modules, "tools.registry", types.SimpleNamespace(registry=None))
+    commands._reload_mcp()
+    assert len(settled.calls) == 2
+    assert settled.refreshed == [settled.home, settled.home]

@@ -233,6 +233,21 @@ def profile_mcp_tools_discovered(home) -> bool:
         return os.path.realpath(home) in _MCP_DISCOVERED_HOMES
 
 
+def profile_mcp_connected() -> frozenset[str] | None:
+    """This profile's connected servers from the Agent's cached state, or None while one is failed or the state is
+    unreadable, since neither may settle a discovery."""
+    try:
+        from tools.mcp_tool_discovery import get_mcp_status
+
+        rows = get_mcp_status()
+        if any(row.get("status") == "failed" for row in rows):
+            return None
+        return frozenset(row["name"] for row in rows if row.get("connected"))
+    except Exception:  # noqa: BLE001
+        log.warning("MCP status read failed", exc_info=True)
+        return None
+
+
 def forget_profile_mcp_tools(home) -> None:
     """A successfully deleted profile must start cold if its path is recreated."""
     with _MCP_DISCOVERED_LOCK:
