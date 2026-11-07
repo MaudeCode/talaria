@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
@@ -114,6 +115,85 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
   rmSync(workspace, { recursive: true, force: true })
   errors.splice(0, errors.length, ...errors.filter((e) => !/400 POST .*\/api\/file\/(create|delete)$|status of 400/.test(e)))
+})
+
+/** TAL-1935: a new file's row can be opened at once, however late the server answers the create and the reread after it. */
+test.describe('a just-created file', () => {
+  const start = async (page: Page, projectName: string) => {
+    const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal1935-')))
+    mkdirSync(join(workspace, 'docs'))
+    writeFileSync(join(workspace, 'plan.txt'), 'plan')
+    writeFileSync(join(workspace, 'seed.txt'), 'seed')
+    expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
+    const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
+    await page.goto(`/session/${created.session.session_id}`)
+    if (projectName === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
+    else await page.getByRole('button', { name: 'Show workspace panel' }).click()
+    await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
+    const tree = page.getByRole('tree', { name: 'Files' })
+    const item = (name: string) => tree.getByRole('treeitem', { name: row(name) })
+    await expect(item('seed.txt')).toBeVisible()
+    const newFile = async () => {
+      await page.getByRole('button', { name: 'New File' }).click()
+      await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
+      await page.getByRole('button', { name: 'Create' }).click()
+      await expect(item('notes.txt')).toBeVisible()
+    }
+    const finish = async () => {
+      await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
+      rmSync(workspace, { recursive: true, force: true })
+    }
+    return { tree, item, newFile, finish }
+  }
+
+  test('opens its preview when opened before the server has created it', async ({ page }, testInfo) => {
+    const { item, newFile, finish } = await start(page, testInfo.project.name)
+    const create = Promise.withResolvers<undefined>()
+    const listed = Promise.withResolvers<undefined>()
+    const reads: string[] = []
+    await page.route('**/api/file/create', async (route) => { await create.promise; await route.continue() })
+    await page.route('**/api/list?**', async (route) => {
+      const answer = await route.fetch()
+      await route.fulfill({ response: answer })
+      if (((await answer.json()) as { entries: { name: string }[] }).entries.some((entry) => entry.name === 'notes.txt')) listed.resolve(undefined)
+    })
+    // A read the server answers before it has created the file finds nothing, and that answer can arrive after the create's.
+    await page.route('**/api/file?**', async (route) => {
+      const answer = await route.fetch()
+      reads.push(String(answer.status()))
+      await listed.promise
+      await route.fulfill({ response: answer }).catch(() => undefined)
+    })
+
+    await newFile()
+    await item('notes.txt').click()
+    await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
+    create.resolve(undefined)
+    await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('')
+    expect(reads).toEqual(['200'])
+    await finish()
+  })
+
+  test('keeps a press on its row when the listing arrives before the release', async ({ page }, testInfo) => {
+    const { tree, item, newFile, finish } = await start(page, testInfo.project.name)
+    const reread = Promise.withResolvers<undefined>()
+    await page.route('**/api/list?**', async (route) => { await reread.promise; await route.continue() })
+    const created = page.waitForResponse('**/api/file/create')
+    await newFile()
+    await created
+
+    const box = await item('notes.txt').boundingBox()
+    if (!box) throw new Error('the new row has no box')
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    reread.resolve(undefined)
+    // The server's listing has arrived and settled: its rows, once each, in its order.
+    await expect.poll(() => tree.getByRole('treeitem').evaluateAll((rows) => rows.map((el) => el.getAttribute('aria-label')?.split(',')[0]))).toEqual(['docs', 'notes.txt', 'plan.txt', 'seed.txt'])
+    await expect(item('notes.txt')).toHaveAccessibleName('notes.txt, file, 0 B')
+    await page.mouse.up()
+    await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('')
+    await finish()
+  })
 })
 
 /** TAL-639: until an existing chat's record loads, the Files page names no workspace, so the session's workspace arriving never remounts it. */

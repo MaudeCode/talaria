@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new or renamed file in the Files panel now opens on the first click, even if the server has not finished the change yet.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
