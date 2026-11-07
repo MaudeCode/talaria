@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SKIN_KEYS } from '../theme/skins'
+import { SKIN_KEYS } from 'virtual:hermes-skin-meta'
 import { UploadResponseSchema } from './chat'
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system'])

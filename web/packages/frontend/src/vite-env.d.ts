@@ -1,7 +1,14 @@
 /// <reference types="vite/client" />
 
-/** Token stylesheet rendered from src/theme/skins.ts (vite.config.ts, hermesTheme plugin). */
+/** Token stylesheet rendered from src/theme/skins.ts (src/theme/themePlugin.ts). */
 declare module 'virtual:hermes-theme.css'
+
+/** Skin keys and traits rendered from src/theme/skins.ts, without the token tables (src/theme/themePlugin.ts, TAL-1700). */
+declare module 'virtual:hermes-skin-meta' {
+  import type { SkinKey, SkinTrait } from '~/theme/skins'
+  export const SKIN_KEYS: readonly [SkinKey, ...SkinKey[]]
+  export const SKIN_TRAITS: Readonly<Record<string, readonly SkinTrait[]>>
+}
 
 /** Per-locale message chunks (src/i18n/localeSplit.ts, TAL-1403). */
 declare module 'virtual:talaria-locales' {

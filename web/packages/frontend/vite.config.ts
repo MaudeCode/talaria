@@ -2,20 +2,9 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
-import { renderThemeCss } from './src/theme/skins'
+import { defineConfig } from 'vite'
+import { hermesTheme } from './src/theme/themePlugin'
 import { paraglideLocaleSplit } from './src/i18n/localeSplit'
-
-/** Serves the token stylesheet rendered from src/theme/skins.ts as `virtual:hermes-theme.css`. */
-function hermesTheme(): Plugin {
-  const id = 'virtual:hermes-theme.css'
-  const resolved = '\0' + id
-  return {
-    name: 'hermes-theme',
-    resolveId: (source) => (source === id ? resolved : undefined),
-    load: (file) => (file === resolved ? renderThemeCss() : undefined),
-  }
-}
 
 // The server serves the built output from ../static/dist, which is not committed (see
 // scripts/finalize-dist.mjs). The service worker is built by scripts/build-sw.mjs

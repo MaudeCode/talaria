@@ -283,8 +283,9 @@ This cache is process-local and does not survive a reload.
 - Theme system: `packages/frontend/src/theme/skins.ts` is the single source of truth
   for tokens and skins (palette, semantic and component tiers; 21 `SkinSpec`
   entries as data; `renderThemeCss`). The `hermesTheme` Vite plugin serves the
-  rendered cascade as `virtual:hermes-theme.css`; `tailwind.css` maps the same
-  names into `@theme` so utilities consume tokens; component sheets under
+  rendered cascade as `virtual:hermes-theme.css` and the skin keys and traits the
+  boot path reads as `virtual:hermes-skin-meta`, so the token tables stay out of
+  the layout; `tailwind.css` maps the same names into `@theme` so utilities consume tokens; component sheets under
   `theme/components/` (in `@layer app`, after utilities) never mention a skin
   or a theme and carry no colour literals (enforced by `skins.test.ts`).
   Structural per-skin variants are one of two traits (`square-controls`,

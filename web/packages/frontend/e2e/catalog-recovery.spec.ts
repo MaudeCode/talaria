@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { ModelsSchema, ProviderQuotasSchema } from '../src/contracts'
+import { ModelsSchema, ProviderQuotasSchema } from '../src/contracts/resources'
 import { expect, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })

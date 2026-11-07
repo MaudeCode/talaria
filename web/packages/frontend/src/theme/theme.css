@@ -1,5 +1,5 @@
 /* Root typography and the user preferences that are not skin tokens. Token values come from
-   `virtual:hermes-theme.css`, rendered from src/theme/skins.ts by the Vite plugin in vite.config.ts. */
+   `virtual:hermes-theme.css`, rendered from src/theme/skins.ts by the Vite plugin in themePlugin.ts. */
 :root {
   font-family: var(--font-ui);
   font-size: var(--root-font-size);
