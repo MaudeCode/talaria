@@ -55,6 +55,23 @@ function renderChip(props: { model: string | null; optionId: string | null }, on
 }
 
 describe('ModelChip', () => {
+  it('keeps its rows through the exit transition (TAL-1784)', async () => {
+    catalog = COLON_CATALOG
+    renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' })
+    await userEvent.click(screen.getByRole('button', { name: /Conversation model/ }))
+    await screen.findByRole('menuitemradio', { name: /Claude Opus 4\.7/ })
+    // A running exit transition: Base UI keeps the popup mounted until this finishes.
+    Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: () => [{ finished: new Promise(() => undefined), pending: true }] })
+    try {
+      await userEvent.keyboard('{Escape}')
+      const closing = await screen.findByRole('menu', { hidden: true })
+      await waitFor(() => { expect(closing).toHaveAttribute('data-ending-style') })
+      expect(closing).toHaveTextContent('Claude Opus 4.7')
+    } finally {
+      delete (HTMLElement.prototype as { getAnimations?: unknown }).getAnimations
+    }
+  })
+
   it.each([
     ['the model that answered after a fallback', 'fallback-model', 'fallback-model', 'Conversation model Claude Opus 4.7, answered by fallback-model after a fallback'],
     ['the configured model when it answered', null, 'Claude Opus 4.7', 'Conversation model'],

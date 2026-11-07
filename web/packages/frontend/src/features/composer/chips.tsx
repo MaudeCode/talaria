@@ -65,14 +65,9 @@ function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; l
  */
 export function ModelChip({ model, optionId, servedModel = null, onChange, row }: { model: string | null; optionId: string | null; servedModel?: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
-  const locale = useLocale()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const groups = (() => {
-    if (!open) return []
-    return (models.data?.groups ?? []).map((g) => ({ ...g, displaySections: catalogModelSections(g, query) })).filter((g) => g.displaySections.some((section) => section.models.length))
-  })()
   const onSelect = (id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null)
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const configured = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
@@ -84,7 +79,18 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
     // TAL-1625: Menu decides when search takes focus, so a touch opening keeps the software keyboard down.
     <Menu open={open} search={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={title} row={row} className="composer-model-chip" />}
       header={<div className="p-1"><input ref={searchInput} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (!SEARCH_LIST_KEYS.has(e.key)) e.stopPropagation() }} /></div>}>
-      <MenuRadioGroup value={selected?.id ?? ''} onValueChange={onSelect}>
+      <ModelMenuRows query={query} selectedId={selected?.id ?? ''} onSelect={onSelect} onCustom={(id) => onChange(id, null)} />
+    </Menu>
+  )
+}
+
+/** Inside the menu's portal: the catalog is filtered only while the menu shows, and its rows last through the exit (TAL-1784). */
+function ModelMenuRows({ query, selectedId, onSelect, onCustom }: { query: string; selectedId: string; onSelect: (id: string) => void; onCustom: (id: string) => void }) {
+  const models = useModelsQuery()
+  const locale = useLocale()
+  const groups = (models.data?.groups ?? []).map((g) => ({ ...g, displaySections: catalogModelSections(g, query) })).filter((g) => g.displaySections.some((section) => section.models.length))
+  return <>
+      <MenuRadioGroup value={selectedId} onValueChange={onSelect}>
         {groups.map((g) => (
           <MenuGroup key={g.provider}>
             <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{catalogGroupLabel(g)}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
@@ -101,11 +107,10 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
       {query.trim() && !groups.some((g) => g.models.some((mm) => mm.id === query.trim())) && (
         <>
           <MenuSeparator />
-          <MenuItem onClick={() => onChange(query.trim(), null)}><span className="font-mono text-xs">{query.trim()}</span> <span className="text-xs text-muted">{m.model_custom_placeholder()}</span></MenuItem>
+          <MenuItem onClick={() => onCustom(query.trim())}><span className="font-mono text-xs">{query.trim()}</span> <span className="text-xs text-muted">{m.model_custom_placeholder()}</span></MenuItem>
         </>
       )}
-    </Menu>
-  )
+  </>
 }
 
 /** Search changes membership; surviving catalog rows keep their rendered label and cooldown. */
