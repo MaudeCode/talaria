@@ -108,14 +108,16 @@ describe('Claude Code sessions (TAL-551)', () => {
 })
 
 describe('Claude Code scan cost (TAL-1735)', () => {
+  let base: string
   let root: string
   let source: ClaudeCodeSessionSource
   const counts = (rows: Json[]): Record<string, unknown> => Object.fromEntries(rows.map((r) => [String(r.title), r.message_count]))
   const sidOf = async (title: string): Promise<string> => String((await source.rows('/ws')).find((r) => r.title === title)?.session_id)
 
   beforeEach(() => {
-    root = realpathSync(mkdtempSync(join(tmpdir(), 'claude-projects-')))
-    mkdirSync(join(root, 'p'))
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'claude-projects-')))
+    root = join(base, 'projects')
+    mkdirSync(join(root, 'p'), { recursive: true })
     writeFileSync(join(root, 'p', 'a.jsonl'), turn('a'))
     writeFileSync(join(root, 'p', 'b.jsonl'), turn('b'))
     source = new ClaudeCodeSessionSource(() => root)
@@ -123,7 +125,7 @@ describe('Claude Code scan cost (TAL-1735)', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(base, { recursive: true, force: true })
   })
 
   it('walks once for concurrent lists, then touches no transcript until a directory changes', async () => {
@@ -190,6 +192,7 @@ describe('Claude Code scan cost (TAL-1735)', () => {
     ['swapped for a symlink', (): void => { rmSync(join(root, 'p', 'a.jsonl')); symlinkSync(join(root, 'p', 'b.jsonl'), join(root, 'p', 'a.jsonl')) }],
     ['oversized', (): void => { writeFileSync(join(root, 'p', 'a.jsonl'), Buffer.alloc(10 * 1024 * 1024 + 1)) }],
     ['behind a project dir swapped for a symlink', (): void => { renameSync(join(root, 'p'), join(root, 'moved')); symlinkSync(join(root, 'moved'), join(root, 'p')) }],
+    ['behind a projects root swapped for a symlink', (): void => { renameSync(root, join(base, 'moved')); symlinkSync(join(base, 'moved'), root) }],
   ])('refuses a known id whose file is %s', async (_name, change) => {
     const sid = await sidOf('a')
     change()

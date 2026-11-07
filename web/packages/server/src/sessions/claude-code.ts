@@ -246,9 +246,10 @@ export class ClaudeCodeSessionSource {
     if (!isClaudeCodeSessionId(sid)) return null
     const known = (await this.scans.get(this.dir())?.read)?.bySid.get(sid) ?? (await this.scan()).bySid.get(sid)
     if (!known) return null
-    // The walk refuses a project directory that is a symlink; the path above it was only checked when it was listed.
-    const parent = await lstat(dirname(known.path)).catch(() => null)
-    const fresh = parent?.isDirectory() ? await transcriptAt(known.path) : null
+    // The walk refuses a symlinked root or project directory, and this path was realpath'd when listed: it resolves to
+    // itself unless an ancestor has since been swapped for a link. `O_NOFOLLOW` covers only the final name.
+    const parent = dirname(known.path)
+    const fresh = await realpath(parent).catch(() => null) === parent ? await transcriptAt(known.path) : null
     return fresh && Object.assign(known, fresh)
   }
 
