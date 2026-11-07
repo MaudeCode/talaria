@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, longPress, test, watchNativeMenu } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -129,6 +129,74 @@ test('a queue restored on a session whose run ended meanwhile drains at once', a
     await page.goto(`/session/${sid}`)
     await expect.poll(() => run.starts).toEqual(['After the run'])
     await expect(chip(page)).toHaveCount(0)
+  } finally {
+    await run.close()
+  }
+})
+
+test('right-click on a queued message offers its buttons, and its edit field keeps the native menu (TAL-1155)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'right-click is the desktop route')
+  const sid = 'queue-menu'
+  const run = await runningSession(page, sid)
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
+    await queue(page, 'First', 1)
+    await queue(page, 'Second', 2)
+    await queue(page, 'Third', 3)
+    await openQueue(page)
+    const menu = page.getByRole('menu')
+    const openOn = async (text: string) => {
+      await row(page, text).locator('.queue-card-text').click({ button: 'right' })
+      await expect(menu).toBeVisible()
+    }
+
+    await openOn('Second')
+    await expect(menu.getByRole('menuitem')).toHaveText(['Edit queued message', 'Cancel queued message'])
+    await menu.getByRole('menuitem', { name: 'Cancel queued message' }).click()
+    await expect(rows(page)).toHaveText(['First', 'Third'])
+    await expect(menu).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    await openOn('Third')
+    await menu.getByRole('menuitem', { name: 'Edit queued message' }).click()
+    await expect(menu).toHaveCount(0)
+    const editor = page.getByRole('textbox', { name: 'Edit queued message' })
+    await expect(editor).toBeFocused()
+
+    // The open editor keeps the browser's menu, and its row offers no second Edit.
+    const nativeMenus = await watchNativeMenu(page)
+    await editor.click({ button: 'right' })
+    await expect.poll(nativeMenus).toEqual([true])
+    await expect(menu).toHaveCount(0)
+    await editor.fill('Third, edited')
+    await editor.press('Enter')
+    await expect(rows(page)).toHaveText(['First', 'Third, edited'])
+  } finally {
+    await run.close()
+  }
+})
+
+test('a long-press on a queued message opens its menu, but holding its drag handle does not (TAL-1155)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'long-press is the touch route')
+  const sid = 'queue-touch'
+  const run = await runningSession(page, sid)
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
+    await queue(page, 'First', 1)
+    await queue(page, 'Second', 2)
+    await openQueue(page)
+    const menu = page.getByRole('menu')
+
+    await longPress(page, row(page, 'Second').getByRole('button', { name: 'Reorder queued message' }))
+    await page.waitForTimeout(100)
+    await expect(menu).toHaveCount(0)
+
+    await longPress(page, row(page, 'Second').locator('.queue-card-text'))
+    await expect(menu).toBeVisible()
+    await menu.getByRole('menuitem', { name: 'Cancel queued message' }).click()
+    await expect(rows(page)).toHaveText(['First'])
   } finally {
     await run.close()
   }

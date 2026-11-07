@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Queued messages and pending image attachments in Web open a custom menu on right-click and long-press, with the same actions as their buttons.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

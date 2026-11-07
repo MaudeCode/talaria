@@ -85,6 +85,34 @@ describe('QueueCard (TAL-562)', () => {
     expect(onChange).not.toHaveBeenCalled()
     expect(api.rollbackUpload).not.toHaveBeenCalled()
     expect(within(row('Waiting')).getByRole('button', { name: 'Cancel queued message' })).toBeEnabled()
+    // Its right-click menu gates the same way (TAL-1155).
+    fireEvent.contextMenu(row('Sending'))
+    for (const item of await screen.findAllByRole('menuitem')) expect(item).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Cancel queued message' }))
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('offers exactly the row\'s buttons on right-click, and nothing on a read-only row (TAL-1155)', async () => {
+    const action = vi.fn().mockResolvedValue(undefined)
+    const base = { sequence: 1, outcome: null, authority_epoch: 2, execution_generation: null }
+    const { rerender } = render(<QueueCard sessionId="native" queued={[]} onChange={() => undefined} onAdmissionAction={action} admissions={[
+      { ...base, admission_id: 'listed', status: 'queued', text: 'Listed', actions: ['cancel', 'edit', 'steer'] },
+      { ...base, admission_id: 'lost', status: 'unknown', execution_generation: 4, text: 'Lost', actions: ['retry', 'discard'] },
+    ]} />)
+    fireEvent.contextMenu(row('Listed'))
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Edit queued message', 'Steer current response', 'Cancel queued message'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Steer current response' }))
+    expect(action).toHaveBeenLastCalledWith({ session_id: 'native', action: 'steer_queued', admission_id: 'listed' })
+    await waitFor(() => { expect(screen.queryByRole('menu')).not.toBeInTheDocument() })
+    fireEvent.contextMenu(row('Lost'))
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Retry', 'Discard'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Discard' }))
+    expect(action).toHaveBeenLastCalledWith({ session_id: 'native', action: 'discard', admission_id: 'lost', execution_generation: 4 })
+    await waitFor(() => { expect(screen.queryByRole('menu')).not.toBeInTheDocument() })
+
+    rerender(<QueueCard sessionId="" queued={[turn('1', 'Read only')]} onChange={() => undefined} readOnly />)
+    expect(fireEvent.contextMenu(row('Read only'))).toBe(true)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('discards a removed message\'s uploaded files on the server', async () => {

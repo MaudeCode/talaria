@@ -332,3 +332,28 @@ test('staged files and their retry stay with their chat when another chat opens 
   // The synthetic offline upload is the only expected failure.
   errors.splice(0, errors.length, ...errors.filter((e) => !/api\/upload|status of 500/.test(e)))
 })
+
+test('right-click on a pending image or file offers its actions: Retry while it failed, then Remove (TAL-1155)', async ({ page, errors }, info) => {
+  test.skip(info.project.name !== 'desktop', 'right-click is the desktop route')
+  await mockSession(page, 'attach-menu')
+  let fail = true
+  await page.route('**/api/upload**', async (route) => { if (fail) await route.fulfill({ status: 500, json: { error: 'synthetic upload failure' } }); else await route.fallback() })
+  await page.goto('/session/attach-menu')
+  await page.locator('#fileInput').setInputFiles([image('shot.png'), { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') }])
+  await expect(chips(page).and(page.locator('[data-status="error"]'))).toHaveCount(2)
+  fail = false
+  const menu = page.getByRole('menu')
+  for (const name of ['shot.png', 'notes.txt']) {
+    const attachment = chips(page).filter({ has: page.getByRole('button', { name: `Remove ${name}` }) })
+    await attachment.click({ button: 'right', position: { x: 4, y: 4 } })
+    await expect(menu.getByRole('menuitem')).toHaveText([`Retry ${name}`, `Remove ${name}`])
+    await menu.getByRole('menuitem', { name: `Retry ${name}` }).click()
+    await expect(attachment).toHaveAttribute('data-status', 'done')
+    await attachment.click({ button: 'right', position: { x: 4, y: 4 } })
+    await expect(menu.getByRole('menuitem')).toHaveText([`Remove ${name}`])
+    await menu.getByRole('menuitem', { name: `Remove ${name}` }).click()
+    await expect(attachment).toHaveCount(0)
+  }
+  // The synthetic 500s are the point of this test.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/api\/upload|status of 500/.test(e)))
+})

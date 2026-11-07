@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { X, FileText, LoaderCircle, Pencil, RotateCw } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { X, FileText, LoaderCircle, Pencil, RotateCw, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
 import type { FeedbackAttachmentStagedSchema, GroupAttachmentSchema } from '@maudecode/talaria-web-contracts'
@@ -64,17 +64,27 @@ export function AttachmentTray({ files, placement, onRemove, onRetry, onEditPast
 /** A 44 px target on a phone or under a coarse pointer. */
 const CHIP_ACTION = 'max-[641px]:h-11 max-[641px]:w-11 pointer-coarse:h-11 pointer-coarse:w-11'
 
+interface FileAction { label: string; Icon: LucideIcon; run: () => void }
+
+const retryActions = (f: PendingFile, onRetry: (key: string) => void): FileAction[] => f.status === 'error' ? [{ label: `${m.retry()} ${f.file.name}`, Icon: RotateCw, run: () => onRetry(f.key) }] : []
+const removeAction = (f: PendingFile, onRemove: (key: string) => void): FileAction => ({ label: `${m.remove()} ${f.file.name}`, Icon: X, run: () => onRemove(f.key) })
+
+/** A pending file's `li`, with the actions its buttons show also on right-click and long-press (TAL-1155). */
+function PendingFileMenu({ file, actions, children }: { file: PendingFile; actions: readonly FileAction[]; children: ReactElement }) {
+  return <ContextMenu label={file.file.name} trigger={children}>{actions.map(({ label, run }) => <MenuItem key={label} onClick={run}>{label}</MenuItem>)}</ContextMenu>
+}
+
 function FileChips({ files, className, onRemove, onRetry, onEditPaste }: { files: PendingFile[]; className: string; onRemove: (key: string) => void; onRetry: (key: string) => void; onEditPaste?: ((key: string) => void) | undefined }) {
   return (
     <ul className={className} aria-label={m.attachments_label()}>
       {files.map((f) => {
         const actions = [
           ...(onEditPaste && pastedText.has(f.file) ? [{ label: `${m.edit()} ${f.file.name}`, Icon: Pencil, run: () => onEditPaste(f.key) }] : []),
-          ...(f.status === 'error' ? [{ label: `${m.retry()} ${f.file.name}`, Icon: RotateCw, run: () => onRetry(f.key) }] : []),
-          { label: `${m.remove()} ${f.file.name}`, Icon: X, run: () => onRemove(f.key) },
+          ...retryActions(f, onRetry),
+          removeAction(f, onRemove),
         ]
         return (
-          <ContextMenu key={f.key} label={f.file.name} trigger={
+          <PendingFileMenu key={f.key} file={f} actions={actions}>
             <li className={`flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs max-[641px]:py-0 pointer-coarse:py-0 ${f.status === 'error' ? 'border-error text-error' : 'border-border text-text'}`} data-status={f.status}>
               <FileText size={12} className="shrink-0" aria-hidden="true" />
               <span className="max-w-48 truncate">{f.file.name}</span>
@@ -82,9 +92,7 @@ function FileChips({ files, className, onRemove, onRetry, onEditPaste }: { files
               {f.status === 'error' && f.error && <span className="sr-only">{f.error}</span>}
               {actions.map(({ label, Icon, run }) => <IconButton key={label} label={label} className={CHIP_ACTION} onClick={run}><Icon size={12} aria-hidden="true" /></IconButton>)}
             </li>
-          }>
-            {actions.map(({ label, run }) => <MenuItem key={label} onClick={run}>{label}</MenuItem>)}
-          </ContextMenu>
+          </PendingFileMenu>
         )
       })}
     </ul>
@@ -103,16 +111,19 @@ function ImageStrip({ images, className, onRemove, onRetry }: { images: PendingF
         {images.map((f) => {
           const src = urls.get(f.file)
           const label = f.status === 'error' ? `${m.retry()} ${f.file.name}` : busy(f) ? `${busyLabel(f)} ${f.file.name}` : m.image_enlarge({ name: f.file.name })
+          const remove = removeAction(f, onRemove)
           return (
-            <li key={f.key} className="attach-thumb" data-status={f.status}>
-              <button type="button" className="attach-thumb-image" aria-label={label} title={f.error ?? label} aria-busy={busy(f) || undefined} disabled={busy(f)}
-                onClick={() => { if (f.status === 'error') onRetry(f.key); else setEnlarged(f.key) }}>
-                {src && <img src={src} alt="" draggable={false} />}
-                {busy(f) && <span className="attach-thumb-overlay"><LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /></span>}
-                {f.status === 'error' && <span className="attach-thumb-overlay"><RotateCw size={16} aria-hidden="true" /></span>}
-              </button>
-              <IconButton label={`${m.remove()} ${f.file.name}`} className="attach-thumb-remove" onClick={() => onRemove(f.key)}><X size={10} strokeWidth={3} aria-hidden="true" /></IconButton>
-            </li>
+            <PendingFileMenu key={f.key} file={f} actions={[...retryActions(f, onRetry), remove]}>
+              <li className="attach-thumb" data-status={f.status}>
+                <button type="button" className="attach-thumb-image" aria-label={label} title={f.error ?? label} aria-busy={busy(f) || undefined} disabled={busy(f)}
+                  onClick={() => { if (f.status === 'error') onRetry(f.key); else setEnlarged(f.key) }}>
+                  {src && <img src={src} alt="" draggable={false} />}
+                  {busy(f) && <span className="attach-thumb-overlay"><LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /></span>}
+                  {f.status === 'error' && <span className="attach-thumb-overlay"><RotateCw size={16} aria-hidden="true" /></span>}
+                </button>
+                <IconButton label={remove.label} className="attach-thumb-remove" onClick={remove.run}><remove.Icon size={10} strokeWidth={3} aria-hidden="true" /></IconButton>
+              </li>
+            </PendingFileMenu>
           )
         })}
       </ul>

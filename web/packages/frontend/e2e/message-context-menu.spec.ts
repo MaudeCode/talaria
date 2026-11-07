@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, hideClipboardApi, longPress, test } from './fixtures'
+import { expect, hideClipboardApi, longPress, test, watchNativeMenu } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -22,16 +22,6 @@ async function boot(page: Page): Promise<{ user: Locator; assistant: Locator; tr
   const assistant = page.locator('#messages .msg-row[data-role="assistant"]')
   await expect(assistant.getByRole('button', { name: 'release notes' })).toBeVisible()
   return { user, assistant, truncates }
-}
-
-/** Records whether the page cancelled each contextmenu event, which is what suppresses the browser's own menu. */
-async function watchNativeMenu(page: Page): Promise<() => Promise<boolean[]>> {
-  await page.evaluate(() => {
-    const seen: boolean[] = []
-    ;(window as unknown as { nativeMenus: boolean[] }).nativeMenus = seen
-    window.addEventListener('contextmenu', (event) => { setTimeout(() => seen.push(!event.defaultPrevented)) }, true)
-  })
-  return () => page.evaluate(() => (window as unknown as { nativeMenus: boolean[] }).nativeMenus)
 }
 
 const menuLabels = (menu: Locator) => menu.getByRole('menuitem').allTextContents()
