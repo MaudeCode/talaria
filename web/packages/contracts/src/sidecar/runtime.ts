@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from '../sidecar-shared.js'
 
 export const RuntimeHandshakeParamsSchema = z.object({
   rpc_version: z.number().int().positive(),
@@ -37,18 +38,6 @@ export const RpcMethodsResultSchema = z.object({ methods: z.array(z.string()) })
 export const RuntimeSyncDependenciesParamsSchema = z.object({ agent_dir: z.string().min(1) })
 export const RuntimeSyncDependenciesResultSchema = z.object({ ok: z.boolean(), skipped: z.boolean(), detail: z.string() })
 
-const AgentUpdateStageSchema = z.enum(['install', 'gateway_restart', 'agent_ready'])
-
-/** Immutable association retained with the existing native transaction, including its recovered outcome. */
-export const AgentUpdateOperationSchema = z.object({
-  operation_id: z.uuid(), baseline_revision: z.string().regex(/^[a-f0-9]{40}$/), target_revision: z.string().regex(/^[a-f0-9]{40}$/),
-  stage: AgentUpdateStageSchema,
-  recovered_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
-  source_moved: z.boolean().optional(),
-  attempt_error: z.string().max(2000).optional(), failed_stage: AgentUpdateStageSchema.optional(),
-})
-export type AgentUpdateOperation = z.infer<typeof AgentUpdateOperationSchema>
-
 /** Continue retained work only; never resolve a release or accept interruption consent. */
 export const RuntimeAgentRecoveryParamsSchema = z.object({ probe: z.boolean().optional(), complete_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() })
 export const RuntimeAgentRecoveryResultSchema = z.object({
@@ -59,9 +48,6 @@ export const RuntimeAgentRecoveryResultSchema = z.object({
   /** An acknowledged native gateway drain is still within its native budget: progress, not a failed attempt. */
   draining: z.boolean().optional(),
 })
-
-/** A single-use interruption consent; the sidecar binds it to the operator intent and attested services. */
-export const AgentRefreshConfirmationSchema = z.object({ token: z.string().regex(/^[a-f0-9]{32}$/), services: z.array(z.string().min(1)).min(1) })
 
 /** A held writer lease spans compatibility inspection, source mutation, repair, and durable resume. */
 export const RuntimeAgentMutationParamsSchema = z.discriminatedUnion('action', [

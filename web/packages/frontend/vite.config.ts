@@ -26,6 +26,8 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '~', replacement: new URL('./src', import.meta.url).pathname },
+      // TAL-1698: the browser never calls the sidecar RPC; the full barrel stays for the server and tooling.
+      { find: /^@maudecode\/talaria-web-contracts$/, replacement: '@maudecode/talaria-web-contracts/browser' },
       // TAL-1514: an inert stand-in for a decoder that compiles WebAssembly on import (see the stub).
       { find: /^three\/examples\/jsm\/libs\/meshopt_decoder\.module\.js$/, replacement: new URL('./src/features/meshy/meshopt-stub.ts', import.meta.url).pathname },
     ],

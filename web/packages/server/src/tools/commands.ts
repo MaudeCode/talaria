@@ -2,7 +2,8 @@
  * The canonical slash-command catalog (TAL-314). Clients hold only handlers and localized wording; which commands exist,
  * their aliases, display order, and which client can run each come from here through `GET /api/commands`.
  */
-import type { Command, CommandClient, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { Command, CommandClient } from '@maudecode/talaria-web-contracts'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts/sidecar'
 
 type AgentCommand = SidecarResult<'commands.registry'>['commands'][number]
 

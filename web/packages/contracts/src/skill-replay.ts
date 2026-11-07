@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SkillReplayCaseResultSchema, SkillReplayCaseSchema, SkillReplayPlanInputSchema, SkillReplayPlanSidecarSchema, SkillReplayRevisionSchema, SkillReplayRouteSchema, SkillRevisionIdSchema } from './sidecar/namespaces.js'
+import { SkillReplayCaseResultSchema, SkillReplayCaseSchema, SkillReplayPlanInputSchema, SkillReplayPlanSidecarSchema, SkillReplayRevisionSchema, SkillReplayRouteSchema, SkillRevisionIdSchema } from './sidecar-shared.js'
 
 /** TAL-1563: the server-reserved finite budget. Every call caps output at `max_output_tokens`, its prompt at the case's
  * `input_tokens_bound`, and its price per million tokens at `max_price_per_million`, which the provider enforces; the

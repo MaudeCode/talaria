@@ -28,6 +28,9 @@
     "paths": {
       "~/*": [
         "./src/*"
+      ],
+      "@maudecode/talaria-web-contracts": [
+        "../contracts/dist/browser.js"
       ]
     },
     "allowJs": true,

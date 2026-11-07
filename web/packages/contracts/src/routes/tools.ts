@@ -1,12 +1,12 @@
 import { McpCostPatchSchema } from '../mcp-cost-policy.js'
 import { MeshyCardQuerySchema, MeshyCardSchema, MeshyDetailsQuerySchema, MeshyDetailsSchema, MeshyOverviewSchema, MeshySaveImagesInputSchema, MeshySaveInputSchema, MeshySaveResultSchema, MeshyTaskQuerySchema, MeshyTaskResultSchema } from '../meshy.js'
 import { oc, type OpenAPI } from '@orpc/contract'
-import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar/namespaces.js'
+import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar-shared.js'
 import { SkillReplayJobSchema, SkillReplayJobsSchema, SkillReplayPlanQuerySchema, SkillReplayPlanSchema, SkillReplayStartSchema } from '../skill-replay.js'
 import { z } from 'zod'
 import { ConnectorSignInOfferSchema, SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, PluginAutoUpdateViewSchema, OnboardingOAuthSchema } from '../views.js'
 import { ConnectorOperationViewSchema } from '../connector-operation.js'
-import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, PluginUpdateAllResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
+import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, PluginUpdateAllResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar-shared.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 

@@ -3,7 +3,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { PromptQueueRunSchema, PromptQueueCardsSchema, PromptQueueActionSchema } from '../prompt-queue.js'
 import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanInspectionSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema } from '../views.js'
-import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar/namespaces.js'
+import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar-shared.js'
 
 /** Crons, kanban, extensions, and the embedded terminal. */
 

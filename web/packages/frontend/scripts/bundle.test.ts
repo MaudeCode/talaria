@@ -42,6 +42,12 @@ it('the app layout static dependency graph excludes the skin token tables', () =
   expect(Object.values<{ file: string }>(manifest).some(({ file }) => script(file).includes(SKIN_TABLE))).toBe(true)
 })
 
+it('the app layout static dependency graph excludes the sidecar RPC schemas', () => {
+  // TAL-1698: unused method tables shake away with their names, but the Zod calls inside them stay, so these
+  // field names (a goal RPC param and the runtime handshake's pin) are what survives of any src/sidecar/ module.
+  for (const file of readLayout().files) expect(/default_max_turns|pinned_revision/.exec(readFileSync(resolve(clientDir, file), 'utf8')), file).toBeNull()
+})
+
 it('counts shared static imports and styles once, follows cycles, and excludes dynamic imports', () => {
   expect(layoutFiles({
     'src/routes/_app.tsx?tsr-split=component': { file: 'layout.js', imports: ['shared', 'child'], css: ['layout.css'], dynamicImports: ['lazy'] },

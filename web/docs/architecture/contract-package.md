@@ -48,13 +48,15 @@ of truth for:
 packages/contracts/
   package.json          @maudecode/talaria-web-contracts
   src/
-    index.ts            public exports
+    index.ts            public exports: browser.ts plus the sidecar RPC and OpenAPI generator
+    browser.ts          the frontend's entry (`./browser`); no module under sidecar/ in its graph
     common.ts           error envelope, ids, timestamps, nullable helpers
     routes/             one file per domain (auth, sessions, chat, ...), each
                         exporting an oRPC contract router segment
     router.ts           the composed route contract
     sse/                one union per stream and the cursor grammar
-    sidecar/            RPC method schemas, stream frames, SIDECAR_RPC_VERSION
+    sidecar/            RPC method schemas, stream frames, SIDECAR_RPC_VERSION (`./sidecar`)
+    sidecar-shared.ts   wire shapes the sidecar RPC shares with routes and views
     openapi.ts          OpenAPI 3.1 generator
   fixtures/             JSON fixtures shared with the sidecar pytest suite
   scripts/
