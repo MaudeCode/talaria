@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Delete, Uninstall, and other destructive actions in Talaria Web show in red instead of grey.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

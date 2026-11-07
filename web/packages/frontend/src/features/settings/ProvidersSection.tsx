@@ -92,7 +92,7 @@ export function ProvidersSection() {
                   <IconButton label={refresh.label} disabled={refresh.busy} onClick={refresh.run}>
                     <RefreshCw size={14} aria-hidden="true" className={cn(refreshModels.isPending && refreshModels.variables === p.id && 'animate-spin')} />
                   </IconButton>
-                  {actions.map(({ label, run, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost' as const, className: 'text-error' } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{label}</Button>)}
+                  {actions.map(({ label, run, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{label}</Button>)}
                 </div>
               </div>
               {hint && install.blocked(hint)}

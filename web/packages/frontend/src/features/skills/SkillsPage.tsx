@@ -107,7 +107,7 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
           </label>
           {content.data.editable !== false && <div className="flex gap-2">
             <Button variant="primary" disabled={draft === null} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>
-            <Button variant="ghost" className="text-error" onClick={() => setConfirm(true)}>{m.delete()}</Button>
+            <Button variant="ghost-danger" onClick={() => setConfirm(true)}>{m.delete()}</Button>
           </div>}
           {linked.length > 0 && (
             <section className="flex flex-col gap-2">

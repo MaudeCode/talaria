@@ -187,7 +187,7 @@ export function SystemSection() {
           <h3 className="mb-1.5 text-sm font-medium text-text">{m.system_passkeys()}</h3>
           <ul className="text-sm">
             {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (
-              <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.label || k.id}</span><Button variant="ghost" className="text-error" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
+              <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.label || k.id}</span><Button variant="ghost-danger" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
             ))}
           </ul>
           {passkeysSupported() && <Button onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}>{m.system_passkey_register()}</Button>}
@@ -198,7 +198,7 @@ export function SystemSection() {
       {canManage && (
         <section aria-labelledby="systemStopHeading" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-error/40 px-4 py-3">
           <h2 id="systemStopHeading" className="text-sm font-semibold text-error">{m.system_shutdown()}<HelpTip label={m.field_help_about({ label: m.system_shutdown() })}>{m.system_shutdown_hint()}</HelpTip></h2>
-          <Button variant="ghost" className="text-error" onClick={() => setConfirmShutdown(true)}>{m.system_shutdown()}</Button>
+          <Button variant="ghost-danger" onClick={() => setConfirmShutdown(true)}>{m.system_shutdown()}</Button>
         </section>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
@@ -220,7 +220,7 @@ function PasswordForm({ passwordAuthEnabled }: { passwordAuthEnabled: boolean })
       <TextInput type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={m.password_placeholder()} aria-label={m.settings_label_password()} />
       <div className="flex gap-2">
         <Button type="submit" variant="primary" disabled={!pw.trim() || setPassword.isPending}>{m.system_password_set()}</Button>
-        {passwordAuthEnabled && <Button variant="ghost" className="text-error" onClick={() => setPassword.mutate({ _clear_password: true, ...(currentPw ? { _current_password: currentPw } : {}) })}>{m.system_password_clear()}</Button>}
+        {passwordAuthEnabled && <Button variant="ghost-danger" onClick={() => setPassword.mutate({ _clear_password: true, ...(currentPw ? { _current_password: currentPw } : {}) })}>{m.system_password_clear()}</Button>}
       </div>
     </form>
   )

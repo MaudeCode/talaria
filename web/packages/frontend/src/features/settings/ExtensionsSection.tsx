@@ -104,7 +104,7 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
         {canManage && ext.can_toggle && (
           <ResourceSwitch effect={effect} checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={ext.name} stateLabel={(enabled) => enabled ? m.plugins_enabled() : m.plugins_disabled()} />
         )}
-        {canManage && ext.source === 'gallery' && <Button variant="ghost" className="text-error" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
+        {canManage && ext.source === 'gallery' && <Button variant="ghost-danger" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
       </div>
       <div className="mt-2 flex flex-wrap gap-1 text-[10px] uppercase tracking-wider text-muted">
         {ext.capabilities.map((c) => <span key={c} className="rounded-full border border-border px-1.5">{c}</span>)}
