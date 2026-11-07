@@ -53,5 +53,5 @@ test('pinned boards persist through the real settings API and fit foldable viewp
         await page.screenshot({ path: info.outputPath(`pins-${name}.png`), fullPage: true })
       }
     }
-  } finally { await server.close() }
+  } finally { await page.goto('about:blank'); await server.close() }
 })
