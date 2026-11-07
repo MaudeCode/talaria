@@ -1,9 +1,15 @@
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import type { Page, Request } from '@playwright/test'
+import type * as Mediabunny from 'mediabunny'
 import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
 import { expect, settle, test } from './fixtures'
 
+/** The script-tag build, which exposes a global `Mediabunny`; the package's exports do not name it, so it is found beside the Node bundle. */
+const MEDIABUNNY_BROWSER_BUNDLE = join(dirname(createRequire(import.meta.url).resolve('mediabunny')), 'mediabunny.min.cjs')
+
 /**
- * TAL-1596: Send feedback compresses in the real browser before it uploads. Synthetic media is generated in the page;
+ * TAL-1596: Send feedback compresses in the real browser before it uploads. Synthetic media is generated in a browser page;
  * the stubbed server receives the multipart upload and the test inspects the exact bytes that would leave the browser.
  */
 const OPTIONS = { enabled: true, videoAllowed: true, maxCount: 5, maxVideoCount: 1, maxImageBytes: 10_000_000, maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: ['image/png', 'image/jpeg', 'image/heic', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'] }
@@ -93,41 +99,63 @@ test('image re-encoding drops EXIF and caps the long edge at 2560 px', async ({ 
   await expect(page.getByRole('button', { name: 'Enlarge photo.jpg' })).toBeVisible()
 })
 
-/** A WebM clip recorded in the page from an animated 1920×1080 canvas plus an oscillator, so it has video and audio. */
+/**
+ * A WebM clip encoded from a fixed count of seeded noise frames at 1920×1080 plus an Opus tone, so its size and validity
+ * do not depend on machine speed. The noise is low-contrast: it fills 12 Mbps here but quantizes away at the re-encode's
+ * bitrate, where full-contrast noise cannot fit maxVideoBytes. Built in its own context: some tests hide VideoEncoder from
+ * the page under test, and the app's service worker would answer a navigation in that context. localhost keeps WebCodecs'
+ * secure context.
+ */
 async function syntheticClip(page: Page, seconds: number): Promise<Buffer> {
-  return Buffer.from(await page.evaluate(async (duration) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 1920
-    canvas.height = 1080
-    const ctx = canvas.getContext('2d')!
-    const audio = new AudioContext()
-    const tone = audio.createOscillator()
-    const sink = audio.createMediaStreamDestination()
-    tone.connect(sink)
-    tone.start()
-    const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...sink.stream.getAudioTracks()])
-    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus', videoBitsPerSecond: 12_000_000 })
-    const chunks: Blob[] = []
-    recorder.ondataavailable = (e) => { chunks.push(e.data) }
-    let frame = 0
-    const draw = () => {
-      frame++
-      for (let i = 0; i < 60; i++) {
-        ctx.fillStyle = `hsl(${String((frame * 7 + i * 37) % 360)} 80% ${String(30 + ((i * 13 + frame) % 40))}%)`
-        ctx.fillRect((i * 211 + frame * 17) % 1920, (i * 97 + frame * 11) % 1080, 160 + (i % 7) * 40, 120 + (i % 5) * 30)
+  const context = await page.context().browser()!.newContext()
+  try {
+    const maker = await context.newPage()
+    await maker.route('http://localhost/synthetic-clip', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html>' }))
+    await maker.goto('http://localhost/synthetic-clip')
+    await maker.addScriptTag({ path: MEDIABUNNY_BROWSER_BUNDLE })
+    return Buffer.from(await maker.evaluate(async (duration) => {
+      const { AudioBufferSource, BufferTarget, CanvasSource, Output, Quality, WebMOutputFormat } = (globalThis as unknown as { Mediabunny: typeof Mediabunny }).Mediabunny
+      const fps = 10
+      const canvas = document.createElement('canvas')
+      canvas.width = 1920
+      canvas.height = 1080
+      const ctx = canvas.getContext('2d')!
+      const output = new Output({ format: new WebMOutputFormat(), target: new BufferTarget() })
+      const video = new CanvasSource(canvas, { codec: 'vp8', quality: new Quality({ bitrate: 12_000_000 }) })
+      const audio = new AudioBufferSource({ codec: 'opus', quality: new Quality({ bitrate: 64_000 }) })
+      output.addVideoTrack(video, { frameRate: fps })
+      output.addAudioTrack(audio)
+      await output.start()
+
+      const addFrames = async () => {
+        const image = ctx.createImageData(canvas.width, canvas.height)
+        const pixels = new Uint32Array(image.data.buffer)
+        let seed = 0x1934
+        for (let frame = 0; frame < duration * fps; frame++) {
+          for (let i = 0; i < pixels.length; i++) {
+            seed ^= seed << 13
+            seed ^= seed >>> 17
+            seed ^= seed << 5
+            pixels[i] = 0xff000000 | ((120 + (seed & 15)) * 0x010101)
+          }
+          ctx.putImageData(image, 0, 0)
+          await video.add(frame / fps, 1 / fps)
+        }
+        video.close()
       }
-    }
-    const timer = setInterval(draw, 1000 / 30)
-    const stopped = new Promise((resolve) => { recorder.onstop = resolve })
-    recorder.start(250)
-    await new Promise((resolve) => setTimeout(resolve, duration * 1000))
-    recorder.stop()
-    await stopped
-    clearInterval(timer)
-    tone.stop()
-    await audio.close()
-    return Array.from(new Uint8Array(await new Blob(chunks).arrayBuffer()))
-  }, seconds))
+      const addTone = async () => {
+        const tone = new AudioBuffer({ length: duration * 48_000, sampleRate: 48_000 })
+        tone.getChannelData(0).forEach((_, i, samples) => { samples[i] = Math.sin(i / 20) / 4 })
+        await audio.add(tone)
+        audio.close()
+      }
+      await Promise.all([addFrames(), addTone()])
+      await output.finalize()
+      return Array.from(new Uint8Array(output.target.buffer!))
+    }, seconds))
+  } finally {
+    await context.close()
+  }
 }
 
 async function tracks(data: Buffer): Promise<{ audio: number; width: number }> {
