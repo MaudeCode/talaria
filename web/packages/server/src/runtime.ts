@@ -230,10 +230,11 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   await skillReplays.initialize()
   const pruneAdvice = new PruneAdvice({ sidecar: () => deps.sidecar(), profiles: agentProfiles, lease: (name) => deps.profiles.beginWrite(name), notifications: updateNotifications, now, log })
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
-  /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
+  sidecar?.onHandshake?.(() => { agentConfig.invalidateResolved() })
+  /** A profile's config.yaml `model` as [model, provider] as the Agent resolves it; '' / null when unset or not yet read. */
   const profileDefaultModel = (profile: string | null): [string, string | null] => {
-    let cfg: ReturnType<typeof agentConfig.peek>
-    try { cfg = agentConfig.peek(profileHome(profile ?? activeProfile())) } catch { return ['', null] }
+    let cfg: ReturnType<typeof agentConfig.peekResolved>
+    try { cfg = agentConfig.peekResolved(profileHome(profile ?? activeProfile())) } catch { return ['', null] }
     if (typeof cfg?.model === 'string') return [cfg.model.trim(), null]
     const { default: d, provider: p } = asDict(cfg?.model)
     return [typeof d === 'string' ? d.trim() : '', typeof p === 'string' && p ? p : null]
@@ -250,7 +251,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     activeProfile,
     isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome),
     profileConfig: (profile) => {
-      const cfg = agentConfig.peek(profileHome(profile ?? activeProfile()))
+      const cfg = agentConfig.peekResolved(profileHome(profile ?? activeProfile()))
       if (!cfg) return null
       const terminal = asDict(cfg.terminal)
       return { terminal: { ...(typeof terminal.backend === 'string' ? { backend: terminal.backend } : {}), ...(typeof terminal.cwd === 'string' ? { cwd: terminal.cwd } : {}) }, ...(typeof cfg.workspace === 'string' ? { workspace: cfg.workspace } : {}), ...(typeof cfg.default_workspace === 'string' ? { default_workspace: cfg.default_workspace } : {}) }
@@ -462,7 +463,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     modelOptionFor: (model, provider) => catalog.modelOptionFor(profileHome(activeProfile()), model, provider),
     warmModelOptions: () => catalog.warmModelOptions(profileHome(activeProfile())),
     freshModelDefaults: async (profile) => {
-      await agentConfig.read(profileHome(profile ?? activeProfile())).catch(() => undefined)
+      await agentConfig.readResolved(profileHome(profile ?? activeProfile())).catch(() => undefined)
       return store.deps.defaults(profile)
     },
     // Python `_session_model_state_from_request`: a provider-qualified id (`@nous:openai/gpt-5.4-mini`) is split so the

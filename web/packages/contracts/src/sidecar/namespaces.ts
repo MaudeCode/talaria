@@ -550,7 +550,8 @@ export const USAGE_METHODS = {
 } as const
 export const CONFIG_METHODS = {
   // `config_path` is the server-resolved file (honouring HERMES_CONFIG_PATH); the sidecar reads and writes exactly that path.
-  'config.get': { params: ProfileHomeParams.extend({ config_path: z.string().min(1) }), result: z.object({ path: z.string(), exists: z.boolean(), config: Loose }) },
+  /** TAL-1833: `config` is the raw document; `resolved` is the Agent's `${VAR}` expansion under the profile's scope, null when the Agent cannot provide it. It can hold secrets, so it stays on the server. */
+  'config.get': { params: ProfileHomeParams.extend({ config_path: z.string().min(1) }), result: z.object({ path: z.string(), exists: z.boolean(), config: Loose, resolved: Loose.nullable().optional() }) },
   'config.set': { params: ProfileHomeParams.extend({ config_path: z.string().min(1), config: Loose }), result: z.object({ ok: z.literal(true), path: z.string() }) },
   /** TAL-1825: whether the installed Agent's default config declares a dotted key, for settings only some supported Agents offer. */
   'config.declares_key': { params: z.object({ key: z.string().min(1) }), result: z.object({ declared: z.boolean() }) },

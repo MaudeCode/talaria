@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A `${VAR}` reference in config.yaml now resolves the way the Agent reads it for the default model and workspace paths. New chats no longer send the literal reference, and saving the displayed model keeps the reference in the file.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -2966,7 +2966,7 @@ describe('workspace routes preserve unresolved config state (TAL-730)', () => {
       const file = join(s.state, 'workspaces.json')
       const bytes = JSON.stringify(entries, null, 4) + '\n'
       writeFileSync(file, bytes)
-      const config = vi.spyOn(s.deps.agentConfig, 'peek').mockReturnValue(null)
+      const config = vi.spyOn(s.deps.agentConfig, 'peekResolved').mockReturnValue(null)
       try {
         const listed = await s.get('/api/workspaces')
         expect(listed.status).toBe(200)
