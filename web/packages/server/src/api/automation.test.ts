@@ -729,6 +729,24 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(existsSync(join(s.state, 'extensions', 'ext-one'))).toBe(false)
   })
 
+  it('parses each gallery manifest once until it changes, and keeps reporting its warnings (TAL-1733)', async () => {
+    expect((await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://hermes-webui.github.io/x/ext-one.zip', sha256: sha })).status).toBe(200)
+    onTestFinished(async () => { await post(s, '/api/extensions/uninstall', { id: 'ext-one' }) })
+    const parses = vi.spyOn(JSON, 'parse')
+    onTestFinished(() => { parses.mockRestore() })
+    const parsed = (needle: string): number => parses.mock.calls.filter(([raw]) => typeof raw === 'string' && raw.includes(needle)).length
+    const status = async (): Promise<Json> => json(await s.get('/api/extensions/status'))
+    const file = join(s.state, 'extensions', 'ext-one', 'manifest.json')
+    await status()
+    await status()
+    expect(parsed('{"version":"1.2.3","name":"Ext One"')).toBe(1)
+    writeFileSync(file, JSON.stringify({ name: 'Ext Renamed', scripts: ['main.js'] }))
+    expect(((await status()).extensions as Json[])[0]).toMatchObject({ id: 'ext-one', name: 'Ext Renamed' })
+    expect(parsed('{"name":"Ext Renamed"')).toBe(1)
+    writeFileSync(file, '{')
+    for (let i = 0; i < 2; i += 1) expect((await status()).warnings).toContainEqual({ code: 'gallery_manifest_malformed', source: 'gallery' })
+  })
+
   it('a shell that exits before the viewer attaches still replays its output and exit code, and the entry is retired later', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     mkdirSync(join(s.state, 'workspace'), { recursive: true })

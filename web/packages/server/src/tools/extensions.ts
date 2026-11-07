@@ -4,10 +4,13 @@ import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd,
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { InvalidDocument, type DocumentBackend } from '../sessions/storage/backend.js'
 import { readDocument } from '../sessions/storage/document.js'
 import { readZip } from '../workspace/unzip.js'
+import { readAll } from '../workspace/media.js'
+import { signatureOf, statSignatureAsync, weakEtag } from '../fs/stat.js'
 import { isDict, type Dict } from '../config/agent-config.js'
 import { str } from '../util.js'
 import { SKIN_TOKEN_NAMES, SKIN_VALUE_RE } from '@maudecode/talaria-web-contracts'
@@ -24,6 +27,9 @@ const SETTING_TYPES = new Set(['boolean', 'string', 'number', 'integer', 'enum']
 const MAX_STATE_ENTRIES = 512
 const MAX_URL_LIST = 32
 const MAX_MANIFEST_BYTES = 64 * 1024
+const GALLERY_MANIFEST_NAMES = ['manifest.json', 'extension.json']
+/** Static bytes kept in memory; one gallery zip alone may unpack to tens of MiB. */
+const MAX_STATIC_CACHE_BYTES = 64 * 1024 * 1024
 const MAX_STATE_BYTES = 32 * 1024
 const MAX_ZIP_BYTES = 32 * 1024 * 1024
 const MAX_INSTALL_MANIFEST_BYTES = 128 * 1024
@@ -81,19 +87,24 @@ function isSafeAssetUrl(value: string): boolean {
 }
 
 /**
- * Read `<root>/<rel>` for a static route: `rel` must be a clean relative path (no dot segments or dotfiles), and the
- * read is an anchored, symlink-free open, so a link inside the root cannot expose its target. Python
+ * Open `<root>/<rel>` for a static route: `rel` must be a clean relative path (no dot segments or dotfiles), and the
+ * open is anchored and symlink-free, so a link inside the root cannot expose its target. Python
  * `(root / rel).resolve()`: a symlinked file is served when its target stays inside the root, never otherwise.
  */
-export function readContainedFile(root: string, rel: string): { body: Buffer; file: string } | null {
+function openContainedFile(root: string, rel: string): { fd: number; file: string } | null {
   if (!isSafeRelativePath(rel)) return null
   const anchor = resolvePathLikePython(root)
   let file = resolve(anchor, rel)
   if (!file.startsWith(anchor + sep)) return null
   const real = resolvePathLikePython(file)
   if (real !== file) { if (!real.startsWith(anchor + sep)) return null; file = real }
-  let fd: number
-  try { fd = openAnchoredFd(anchor, file, { wantDir: false }) } catch { return null }
+  try { return { fd: openAnchoredFd(anchor, file, { wantDir: false }), file } } catch { return null }
+}
+
+export function readContainedFile(root: string, rel: string): { body: Buffer; file: string } | null {
+  const opened = openContainedFile(root, rel)
+  if (!opened) return null
+  const { fd, file } = opened
   try {
     return fstatSync(fd).isFile() ? { body: readFileSync(fd), file } : null
   } catch {
@@ -249,6 +260,12 @@ export class ExtensionService {
   private registryInflight: Promise<unknown[]> | null = null
   /** Read/validate/write of the state file runs one transaction at a time: `setConsent` awaits the sidecar probe mid-transaction. */
   private stateLock: Promise<unknown> = Promise.resolve()
+  /** The gallery as last parsed, keyed by its ids and every candidate manifest's signature. */
+  private gallery: { key: string; manifest: Dict | null; warnings: string[] } | null = null
+  /** Static bytes by file, least recently served first. A request always reopens the file; a stale signature never hits. */
+  private readonly statics = new Map<string, { signature: string; body: Buffer }>()
+  private staticBytes = 0
+  private readonly staticLoads = new Map<string, { signature: string; load: Promise<Buffer> }>()
 
   constructor(private readonly deps: ExtensionDeps) {}
 
@@ -357,19 +374,41 @@ export class ExtensionService {
   }
 
   private async galleryManifest(root: string, d: Diagnostics | null): Promise<Dict | null> {
-    const installed = (await this.loadInstallManifest()).installed
+    const ids = Object.keys((await this.loadInstallManifest()).installed).filter((id) => validId(id)).sort()
+    const signatures = await Promise.all(ids.flatMap((id) => GALLERY_MANIFEST_NAMES.map((name) => statSignatureAsync(join(root, id, name)))))
+    const key = JSON.stringify([ids, signatures])
+    if (this.gallery?.key !== key) {
+      const parsed = await this.parseGallery(root, ids)
+      if (!parsed.settled) { for (const code of parsed.warnings) warn(d, code, 'gallery'); return parsed.manifest }
+      this.gallery = { key, manifest: parsed.manifest, warnings: parsed.warnings }
+    }
+    for (const code of this.gallery.warnings) warn(d, code, 'gallery')
+    return this.gallery.manifest
+  }
+
+  /** `settled` is false when a read failed for a reason a retry could fix; only a settled parse is reused. */
+  private async parseGallery(root: string, ids: string[]): Promise<{ manifest: Dict | null; warnings: string[]; settled: boolean }> {
+    const warnings = new Set<string>()
+    let settled = true
     const entries: Dict[] = []
-    for (const id of Object.keys(installed).sort()) {
-      if (!validId(id)) continue
+    for (const id of ids) {
       // `manifest.json` wins; a gallery zip may ship only `extension.json` (docs/EXTENSIONS.md).
       let manifest: unknown
       try {
-        const file = ['manifest.json', 'extension.json'].map((name) => join(root, id, name)).find((p) => existsSync(p) && statSync(p).isFile())
-        if (!file) { warn(d, 'gallery_manifest_missing', 'gallery'); continue }
-        const raw = readFileSync(file)
-        if (raw.length > MAX_MANIFEST_BYTES) { warn(d, 'gallery_manifest_oversized', 'gallery'); continue }
+        let file: string | undefined
+        for (const name of GALLERY_MANIFEST_NAMES) {
+          const path = join(root, id, name)
+          if (await stat(path).then((st) => st.isFile(), () => false)) { file = path; break }
+        }
+        if (!file) { warnings.add('gallery_manifest_missing'); continue }
+        const raw = await readFile(file)
+        if (raw.length > MAX_MANIFEST_BYTES) { warnings.add('gallery_manifest_oversized'); continue }
         manifest = JSON.parse(raw.toString('utf8'))
-      } catch { warn(d, 'gallery_manifest_malformed', 'gallery'); continue }
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) settled = false
+        warnings.add('gallery_manifest_malformed')
+        continue
+      }
       const withBase = (entry: Dict): Dict => {
         const copy = { ...entry }
         // Paths already rooted at the id (the `extensions.json` shape, as in the shipped example) are not prefixed twice.
@@ -389,7 +428,7 @@ export class ExtensionService {
       }
       for (const entry of manifestEntries(manifest)) { const copy = withBase(entry); if (!validId(copy.id)) copy.id = id; entries.push(copy) }
     }
-    return entries.length ? { extensions: entries } : null
+    return { manifest: entries.length ? { extensions: entries } : null, warnings: [...warnings], settled }
   }
 
   private async loadManifest(root: string, d: Diagnostics | null): Promise<[unknown, Dict]> {
@@ -778,14 +817,53 @@ export class ExtensionService {
     })
   }
 
-  /** Python `serve_extension_static`: bytes, MIME, sandbox CSP for HTML; null means 404. */
-  staticFile(rel: string): { body: Buffer; contentType: string; html: boolean } | null {
+  /** Python `serve_extension_static`: bytes, MIME, weak ETag, sandbox CSP for HTML; null means 404. */
+  async staticFile(rel: string): Promise<{ body: Buffer; contentType: string; html: boolean; etag: string } | null> {
     const root = this.root()
-    const found = root ? readContainedFile(root, rel) : null
-    if (!found) return null
-    const ext = found.file.slice(found.file.lastIndexOf('.') + 1).toLowerCase()
-    const ct = EXTENSION_MIME[ext] ?? 'text/plain'
-    return { body: found.body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html' }
+    const opened = root ? openContainedFile(root, rel) : null
+    if (!opened) return null
+    const { fd, file } = opened
+    try {
+      const st = fstatSync(fd, { bigint: true })
+      if (!st.isFile()) return null
+      const body = await this.staticBody(fd, file, signatureOf(file, st), Number(st.size))
+      const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
+      const ct = EXTENSION_MIME[ext] ?? 'text/plain'
+      return { body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html', etag: weakEtag(st.size, st.mtimeNs, st.ctimeNs) }
+    } catch {
+      return null
+    } finally {
+      closeSync(fd)
+    }
+  }
+
+  /** Concurrent requests for one file version share a single read. The caller holds `fd` open until this settles. */
+  private async staticBody(fd: number, file: string, signature: string, size: number): Promise<Buffer> {
+    const cached = this.statics.get(file)
+    if (cached) {
+      this.statics.delete(file)
+      if (cached.signature === signature) { this.statics.set(file, cached); return cached.body }
+      this.staticBytes -= cached.body.length
+    }
+    const pending = this.staticLoads.get(file)
+    if (pending?.signature === signature) return pending.load
+    const load: Promise<Buffer> = readAll(fd, size).then((body) => {
+      // Only the newest load may publish. A file that changed during the read is served as read but never kept.
+      if (this.staticLoads.get(file)?.load === load && body.length <= MAX_STATIC_CACHE_BYTES && signatureOf(file, fstatSync(fd, { bigint: true })) === signature) this.keepStatic(file, signature, body)
+      return body
+    }).finally(() => { if (this.staticLoads.get(file)?.load === load) this.staticLoads.delete(file) })
+    this.staticLoads.set(file, { signature, load })
+    return load
+  }
+
+  private keepStatic(file: string, signature: string, body: Buffer): void {
+    this.statics.set(file, { signature, body })
+    this.staticBytes += body.length
+    for (const [key, entry] of this.statics) {
+      if (this.staticBytes <= MAX_STATIC_CACHE_BYTES) break
+      this.statics.delete(key)
+      this.staticBytes -= entry.body.length
+    }
   }
 
   /** Python `api/extension_manifests.build_manifests` extension entries (the manifests route appends dashboard plugins). */

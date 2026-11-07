@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { readFileSync, statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, relative, resolve, isAbsolute } from 'node:path'
+import { weakEtag } from './fs/stat.js'
 import { PREVIEW_PREFIX } from './workspace/preview.js'
 
 export const SPA_EXACT_PATHS = new Set([
@@ -100,7 +101,7 @@ export class AssetCache {
     if (cached?.sig === sig) return cached.asset
     const pending = this.loading.get(file)
     if (pending?.sig === sig) return pending.load
-    const etag = `W/"${st.size.toString(16)}-${st.mtimeNs.toString(16)}"`
+    const etag = weakEtag(st.size, st.mtimeNs)
     const load: Promise<Asset> = this.load(file, etag).then(
       (asset) => {
         // Only the newest load for this file may publish; a slower load of a replaced version is dropped.

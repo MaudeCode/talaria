@@ -10,7 +10,8 @@ import type { RequestContext } from '../http/context.js'
 import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
 import { activeProfileName } from '../auth/gate.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdir, readFile } from 'node:fs/promises'
+import { statSignatureAsync } from '../fs/stat.js'
 import { escapeHtml } from '../text/markdown.js'
 import { htmlWithHeadTag } from '../workspace/media.js'
 import { join, resolve } from 'node:path'
@@ -55,6 +56,9 @@ export class DashboardPlugins {
   private readonly assetScopes = new Map<string, { scope: AgentDashboardScope; generation: string }>()
   private readonly grants = new Map<string, { scope: AgentDashboardScope; generation: string; value: unknown }>()
   private readonly owners = new Map<string, { generation: string; pending: Set<AbortController> }>()
+  /** The plugins as last read, valid while the directory and every manifest keep their signatures. */
+  private scanned: { baseSignature: string; entries: string[]; manifests: string; plugins: Plugin[] } | null = null
+  private scanning: Promise<Plugin[]> | null = null
   constructor(private readonly deps: DashboardPluginDeps) {}
 
   private owner(scope: AgentDashboardScope) {
@@ -206,20 +210,32 @@ export class DashboardPlugins {
 
   /**
    * Every valid plugin in name order; the first claimant of a name or tab path wins. A tab path the SPA or a
-   * server-owned prefix answers is refused, so a plugin can never shadow the app or `/api`.
-   * ponytail: rescans per call (a readdir plus small manifest reads); cache by directory mtime if plugin routes get hot.
+   * server-owned prefix answers is refused, so a plugin can never shadow the app or `/api`. Concurrent calls share one scan.
    */
-  list(): Plugin[] {
-    let entries: string[]
-    try { entries = readdirSync(this.base()).sort() } catch { return [] }
+  list(): Promise<Plugin[]> {
+    return this.scanning ??= this.scan().finally(() => { this.scanning = null })
+  }
+
+  private async scan(): Promise<Plugin[]> {
+    const base = this.base()
+    const baseSignature = await statSignatureAsync(base)
+    if (!baseSignature) return []
+    const current = this.scanned?.baseSignature === baseSignature ? this.scanned : null
+    let entries = current?.entries
+    try { entries ??= (await readdir(base)).sort() } catch { return [] }
+    const signatures = await Promise.all(entries.map((entry) => statSignatureAsync(join(base, entry, 'dashboard', 'manifest.json'))))
+    const manifests = JSON.stringify(signatures)
+    if (current?.manifests === manifests) return current.plugins
+    // A failed read of a manifest that exists may succeed next time, so that scan is not reused.
+    let settled = true
     const out: Plugin[] = []
-    for (const entry of entries) {
-      const dir = join(this.base(), entry, 'dashboard')
+    for (const [index, entry] of entries.entries()) {
+      if (!signatures[index]) continue
+      const dir = join(base, entry, 'dashboard')
+      let raw: string
+      try { raw = await readFile(join(dir, 'manifest.json'), 'utf8') } catch { settled = false; continue }
       let manifest: unknown
-      try {
-        if (!statSync(dir).isDirectory()) continue
-        manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'))
-      } catch { continue }
+      try { manifest = JSON.parse(raw) } catch { continue }
       if (!isDict(manifest)) continue
       // Python `manifest.get("name") or entry.name` and `tab.get("path", f"/{name}")`.
       const name: unknown = manifest.name || entry
@@ -232,6 +248,7 @@ export class DashboardPlugins {
       if (out.some((p) => p.name === name || p.tabPath === tabPath)) continue
       out.push({ name, manifest, tabPath, root: dir })
     }
+    if (settled) this.scanned = { baseSignature, entries, manifests, plugins: out }
     return out
   }
 
@@ -253,12 +270,12 @@ export class DashboardPlugins {
 
   private async enabledPlugin(name: string): Promise<Plugin | null> {
     if (!(await this.enabled(name))) return null
-    return this.list().find((p) => p.name === name) ?? null
+    return (await this.list()).find((p) => p.name === name) ?? null
   }
 
   /** Python `_from_dashboard_plugin`: one panel entry per plugin for `/api/extensions/manifests`. */
   async manifests(): Promise<Dict[]> {
-    return Promise.all(this.list().map(async ({ name, manifest }) => {
+    return Promise.all((await this.list()).map(async ({ name, manifest }) => {
       const tab = isDict(manifest.tab) ? manifest.tab : {}
       return {
         id: name, name: text(manifest.label || manifest.name, 80) || name, version: text(manifest.version, 40), description: text(manifest.description, 300),
@@ -322,7 +339,7 @@ export class DashboardPlugins {
 
   /** The tab page at a plugin's `tab.path`: `dist/index.html`, the plugin's `static/index.html`, or an IIFE shell. */
   async tabPage(path: string): Promise<PluginFile | null> {
-    const listed = this.list().find((p) => p.tabPath === path)
+    const listed = (await this.list()).find((p) => p.tabPath === path)
     const plugin = listed && (await this.enabled(listed.name)) ? listed : null
     if (!plugin) return null
     const own = this.builtAsset(plugin, 'dist/index.html')

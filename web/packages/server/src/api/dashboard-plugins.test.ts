@@ -1,11 +1,32 @@
 import { useJsonStorage } from '../test/storage.js'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import type * as fs from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
 useJsonStorage()
+
+/**
+ * Counts descriptor reads that return bytes holding `marker`, whichever sync or async API serves them. `gate` holds
+ * async reads back, and `opened` counts fstats of a file of `openedSize` bytes, so a test knows every request arrived.
+ */
+const io = vi.hoisted(() => ({ marker: '', reads: 0, gate: null as Promise<void> | null, openedSize: -1, opened: 0 }))
+vi.mock('node:fs', async (original) => {
+  const real = await original<typeof fs>()
+  const note = (bytes: unknown): void => { if (io.marker && Buffer.isBuffer(bytes) && bytes.includes(io.marker)) io.reads += 1 }
+  return {
+    ...real,
+    readFileSync: ((...args: Parameters<typeof fs.readFileSync>) => { const out = real.readFileSync(...args); note(out); return out }) as typeof fs.readFileSync,
+    fstatSync: ((...args: Parameters<typeof fs.fstatSync>) => { const out = real.fstatSync(...args); if (Number(out.size) === io.openedSize) io.opened += 1; return out }) as typeof fs.fstatSync,
+    read: ((fd: number, buffer: Buffer, offset: number, length: number, position: number | null, done: (error: NodeJS.ErrnoException | null, bytes: number, buffer: Buffer) => void) => {
+      const run = (): void => { real.read(fd, buffer, offset, length, position, (error, bytes, out) => { if (!error) note(out.subarray(offset, offset + bytes)); done(error, bytes, out) }) }
+      if (io.gate) void io.gate.then(run)
+      else run()
+    }) as typeof fs.read,
+  }
+})
 
 /** TAL-267: WebUI dashboard plugins under `<plugins>/<name>/dashboard/` (Python `api/plugins.py`). */
 describe('dashboard plugin routes', () => {
@@ -131,6 +152,96 @@ describe('dashboard plugin routes', () => {
     expect(res.status).toBe(200)
     expect(sandboxed(res)).toBe(true)
     frameable(res)
+  })
+
+  it('reads each manifest once across 50 asset requests until its signature changes (TAL-1733)', async () => {
+    put('cached/dashboard/manifest.json', JSON.stringify({ label: 'Cached one' }))
+    put('cached/dashboard/dist/app.js', 'cached()')
+    await enable({ cached: true })
+    const parses = vi.spyOn(JSON, 'parse')
+    onTestFinished(() => { parses.mockRestore() })
+    const parsed = (needle: string): number => parses.mock.calls.filter(([raw]) => typeof raw === 'string' && raw.includes(needle)).length
+    const responses = await Promise.all(Array.from({ length: 50 }, () => s.get('/dashboard-plugins/cached/dist/app.js')))
+    expect(responses.map((res) => res.status)).toEqual(Array.from({ length: 50 }, () => 200))
+    expect(parsed('"label":"Cached one"')).toBe(1)
+    expect(parsed('"label":"SPA Plugin"')).toBe(1)
+    put('cached/dashboard/manifest.json', JSON.stringify({ label: 'Cached second' }))
+    expect(await (await s.get('/api/extensions/manifests')).text()).toContain('"name":"Cached second"')
+    expect(parsed('"label":"Cached second"')).toBe(1)
+    // Removing only the manifest leaves the plugins directory's own signature untouched.
+    unlinkSync(join(s.state, 'plugins', 'cached/dashboard/manifest.json'))
+    expect((await s.get('/dashboard-plugins/cached/dist/app.js')).status).toBe(404)
+  })
+
+  it('revalidates an extension static without rereading it, and rechecks containment on every request (TAL-1733)', async () => {
+    const file = join(extensionDir, 'demo', 'cached.html')
+    io.marker = 'TAL1733-static'
+    onTestFinished(() => { io.marker = ''; io.reads = 0 })
+    writeFileSync(file, '<!doctype html><title>TAL1733-static</title>')
+    const first = await s.get('/extensions/demo/cached.html')
+    expect(await first.text()).toContain('TAL1733-static')
+    const second = await s.get('/extensions/demo/cached.html')
+    expect(await second.text()).toContain('TAL1733-static')
+    expect(io.reads).toBe(1)
+
+    const etag = first.headers.get('etag')
+    expect(etag).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+-[0-9a-f]+"$/)
+    expect(first.headers.get('cache-control')).toBe('no-cache')
+    const revalidated = await s.get('/extensions/demo/cached.html', { headers: { 'if-none-match': etag ?? '' } })
+    expect(revalidated.status).toBe(304)
+    expect(await revalidated.text()).toBe('')
+    expect(io.reads).toBe(1)
+    // The sandbox headers match the unchanged plugin panel path, on the 200 and on the 304.
+    await enable({ spa: true })
+    const plugin = await s.get('/dashboard-plugins/spa/dist/app.js')
+    expect(plugin.status).toBe(200)
+    for (const res of [first, revalidated]) {
+      expect(res.headers.get('etag')).toBe(etag)
+      expect(res.headers.get('content-security-policy')).toBe(plugin.headers.get('content-security-policy'))
+      expect(sandboxed(res)).toBe(true)
+      frameable(res)
+    }
+    expect(plugin.headers.get('cache-control')).toBe('no-store')
+
+    writeFileSync(file, '<!doctype html><title>TAL1733-static changed</title>')
+    const changed = await s.get('/extensions/demo/cached.html', { headers: { 'if-none-match': etag ?? '' } })
+    expect(changed.status).toBe(200)
+    expect(await changed.text()).toContain('changed')
+    expect(changed.headers.get('etag')).not.toBe(etag)
+
+    // A cached file swapped for a link out of the root stops serving, whatever the cache holds.
+    unlinkSync(file)
+    symlinkSync(join(s.state, 'plugins', 'outside.js'), file)
+    expect((await s.get('/extensions/demo/cached.html')).status).toBe(404)
+    unlinkSync(file)
+  })
+
+  it('shares one read among concurrent cold requests for an extension static (TAL-1733)', async () => {
+    const file = join(extensionDir, 'demo', 'concurrent.js')
+    const body = 'TAL1733-concurrent'.padEnd(54321, ' ')
+    writeFileSync(file, body)
+    let release = (): void => undefined
+    Object.assign(io, { marker: 'TAL1733-concurrent', reads: 0, gate: new Promise<void>((resolve) => { release = resolve }), openedSize: body.length, opened: 0 })
+    onTestFinished(() => { release(); Object.assign(io, { marker: '', reads: 0, gate: null, openedSize: -1, opened: 0 }); unlinkSync(file) })
+    const responses = Array.from({ length: 8 }, () => s.get('/extensions/demo/concurrent.js'))
+    await vi.waitFor(() => { expect(io.opened).toBe(8) })
+    io.gate = null
+    release()
+    for (const res of await Promise.all(responses)) expect(await res.text()).toBe(body)
+    expect(io.reads).toBe(1)
+  })
+
+  it('sends new bytes when an extension static is replaced at the same size and mtime (TAL-1733)', async () => {
+    const file = join(extensionDir, 'demo', 'preserved.js')
+    const stamp = new Date('2026-01-02T03:04:05Z')
+    const deploy = (body: string): void => { writeFileSync(file, body); utimesSync(file, stamp, stamp) }
+    onTestFinished(() => { unlinkSync(file) })
+    deploy('old()')
+    const etag = (await s.get('/extensions/demo/preserved.js')).headers.get('etag') ?? ''
+    deploy('new()')
+    const res = await s.get('/extensions/demo/preserved.js', { headers: { 'if-none-match': etag } })
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('new()')
   })
 
   it('serves a tab page whose manifest path has a trailing slash', async () => {

@@ -14,6 +14,7 @@ import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
 import { stripPublicInternalFields } from '../redact.js'
 import { TerminalItemQueue } from '../tools/terminal.js'
+import { ifNoneMatchMatches } from '../workspace/media.js'
 
 const KANBAN_POLL_MS = 1_000
 const KANBAN_HEARTBEAT_MS = 15_000
@@ -129,30 +130,32 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
   }
 }
 
-/** `/extensions/*`: always 200 or a bare 404 (Python `serve_extension_static`). */
+/** `/extensions/*`: 200, a 304 to a matching `If-None-Match`, or a bare 404 (Python `serve_extension_static`). */
 export async function handleExtensionStatic(ctx: RequestContext): Promise<void> {
   // Python `unquote` runs once on the request path.
   let rel: string
   try { rel = decodeURIComponent(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length)) } catch { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
-  const file = ctx.deps.extensions.staticFile(rel)
+  const file = await ctx.deps.extensions.staticFile(rel)
   if (!file) { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
   await sendPanelFile(ctx, file, file.html)
 }
 
 /**
  * Extension- or plugin-controlled bytes from the WebUI's own origin: a sandboxed response gets the sandbox CSP (opaque
- * origin, so its HTML or SVG opened directly runs no privileged same-origin script).
+ * origin, so its HTML or SVG opened directly runs no privileged same-origin script). A file with an ETag revalidates;
+ * the 304 carries the same security headers as the 200.
  */
-async function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentType: string }, sandbox: boolean): Promise<void> {
-  const headers: Record<string, string | string[]> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
-  if (!sandbox) { (await ctx.send({ status: 200, headers, body: file.body, security: true })); return }
+async function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentType: string; etag?: string }, sandbox: boolean): Promise<void> {
+  const headers: Record<string, string | string[]> = { 'Content-Type': file.contentType, 'Cache-Control': file.etag ? 'no-cache' : 'no-store', ...(file.etag ? { ETag: file.etag } : {}) }
+  const response = file.etag && ifNoneMatchMatches(ctx.header('if-none-match'), file.etag) ? { status: 304 } : { status: 200, body: file.body }
+  if (!sandbox) { (await ctx.send({ ...response, headers, security: true })); return }
   // HWEB-100: the page policy stays and a second CSP header adds the sandbox, so a panel opened directly is isolated.
   // Both allow framing by the app itself; the report-only twin (`frame-ancestors 'none'`) is left off, or every
   // in-app panel would report a violation.
   const security = ctx.securityHeaders({ frameable: true })
   const page = security['Content-Security-Policy']
   headers['Content-Security-Policy'] = [...(typeof page === 'string' ? [page] : []), EXTENSION_PANEL_SANDBOX_CSP]
-  await ctx.send({ status: 200, headers: { ...security, ...headers }, body: file.body, security: false })
+  await ctx.send({ ...response, headers: { ...security, ...headers }, security: false })
 }
 
 /** One cancellation/error boundary for Agent-owned files and native API requests. */

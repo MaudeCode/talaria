@@ -16,6 +16,11 @@ export function signatureOf(path: string, st: BigIntStats): string {
   return `${path}:${st.mtimeNs}:${st.size}:${st.ctimeNs}`
 }
 
+/** The weak validator static responses share: the given revision parts, in hex. */
+export function weakEtag(...parts: bigint[]): string {
+  return `W/"${parts.map((part) => part.toString(16)).join('-')}"`
+}
+
 export function statSignature(path: string): string | null {
   try {
     return signatureOf(path, statSync(path, { bigint: true }))
