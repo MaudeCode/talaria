@@ -275,7 +275,7 @@ def test_cancel_selected_recovery_stops_dependency_writer_and_retains_debt(tmp_p
     sidecar = SidecarProcess(home, agent_dir=root, python=str(old / 'bin/python'))
     try:
         request = sidecar.request('runtime.agent_recovery', {})
-        wait_for(lambda: (root / 'sync-writer.pid').exists())
+        wait_for(lambda: (root / 'sync-writer.pid').exists() and (root / 'sync-writer.pid').read_text().strip())
         writer = int((root / 'sync-writer.pid').read_text())
         helpers = {pid for pid, _, _, args in process_snapshot()
                    if str(root) in args and ('--recover-current' in args or '--resume-leased' in args)}
