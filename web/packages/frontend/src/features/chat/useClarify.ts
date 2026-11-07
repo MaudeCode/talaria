@@ -37,7 +37,7 @@ export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) 
     enabled: running,
     refetchInterval: ({ state }) => {
       const status = live?.status
-      // A command's prompt never reaches the chat stream, and no frame arrives before the stream opens.
+      // A command may have no stream to announce its prompt, and no frame arrives before the stream opens.
       if (commands > 0 || status === 'starting' || status === 'connecting') return 1_500
       if (status === 'reconnecting') return 15_000
       // Frames announce every new head, but a head that clears (another tab, expiry) may send none, and a failed read has no frame left to retry it.

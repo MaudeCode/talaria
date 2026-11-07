@@ -2674,6 +2674,12 @@ export class TurnRunner {
     })
   }
 
+  /** A prompt queued outside the turn (a command's) re-reads every client on the session's live chat stream, if it has one. */
+  async announceClarifyHead(sessionId: string): Promise<void> {
+    const head = this.deps.pending.clarifyHeadFrame(sessionId)
+    if (head) await this.emitToSession(sessionId, 'clarify', head)
+  }
+
   /**
    * `reply` is the raw Agent reply or keyed step answers the server shapes for the prompt. `stale` when no such
    * prompt is queued; `invalid` when the answers do not fit its steps; `ok:false` without either when the sidecar

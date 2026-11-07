@@ -257,7 +257,7 @@ describe('clarify head reads follow the chat stream (TAL-1719)', () => {
     { status: 'connecting', command: false, interval: 1_500 },
     { status: 'reconnecting', command: false, interval: 15_000 },
     { status: null, command: true, interval: 1_500 },
-    // A command's prompt never reaches the chat stream, so a turn streaming beside it cannot announce it.
+    // The command's own tab keeps its command cadence beside a streaming turn.
     { status: 'streaming', command: true, interval: 1_500 },
   ] as const)('reads a $status turn (command: $command) every $interval ms', async ({ status, command, interval }) => {
     if (command) void qc.getMutationCache().build(qc, { mutationKey: keys.commandExec('s1'), mutationFn: () => new Promise<void>(noop) }).execute(undefined)

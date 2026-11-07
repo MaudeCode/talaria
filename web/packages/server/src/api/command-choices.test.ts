@@ -86,6 +86,35 @@ it('answers a running plugin command through the ordinary clarification stream w
   } finally { release(); await command }
 })
 
+it('announces a command prompt on the chat stream of a turn running beside it (TAL-1719)', async () => {
+  const sidecar = new FakeSidecar()
+  const s = server = await bootTestServer({ sidecar })
+  const sid = (await s.deps.sessions.create({ title: 'Prompt beside a turn' })).session_id
+  const post = (path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  let endTurn!: () => void
+  const turnHeld = new Promise<void>((resolve) => { endTurn = resolve })
+  let finishCommand!: () => void
+  const commandHeld = new Promise<void>((resolve) => { finishCommand = resolve })
+  sidecar.respond('chat.start', async (params) => {
+    await turnHeld
+    return { completed: true, final_response: 'ok', messages: [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }] } as never
+  })
+  sidecar.respond('commands.exec', async (_params, emit) => {
+    emit({ event: 'clarify', data: { session_id: sid, clarify_id: 'command-choice', question: 'Environment?' } })
+    await commandHeld
+    return { output: 'done', source: 'plugin' }
+  })
+  const start = await post('/api/chat/start', { session_id: sid, message: 'hello' })
+  const streamId = (await start.json() as { stream_id: string }).stream_id
+  const command = post('/api/commands/exec', { session_id: sid, command: '/probe-choice' })
+  try {
+    await expect.poll(() => s.deps.pending.clarifyPending(sid).pending_count).toBe(1)
+    endTurn()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'done')
+    expect(frames.filter((f) => f.event === 'clarify').map((f) => f.data)).toEqual([expect.objectContaining({ clarify_id: 'command-choice', pending_count: 1 })])
+  } finally { endTurn(); finishCommand(); await command }
+})
+
 it.each(['error', 'disconnect'] as const)('withdraws only its own prompts on command %s and never replays the handler', async (outcome) => {
   const sidecar = new FakeSidecar()
   const s = server = await bootTestServer({ sidecar })
