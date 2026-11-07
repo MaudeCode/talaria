@@ -1,19 +1,20 @@
 /**
  * Embedded PTY terminals via `node-pty` (Python `api/terminal.py`): `$SHELL -i`,
- * env allowlist, resize clamp 8..80 × 20..240, 2000-line backlog with seq
- * replay, 32-terminal cap, SIGHUP→SIGKILL teardown, 900 s idle reap.
+ * env allowlist, resize clamp 8..80 × 20..240, 2000-item and 2 MiB backlog with
+ * seq replay, 32-terminal cap, SIGHUP→SIGKILL teardown, 900 s idle reap.
  */
 import { accessSync, chmodSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { str } from '../util.js'
 
-export interface TerminalItem { seq: number; event: 'output' | 'terminal_closed' | 'terminal_error'; data: Record<string, unknown> }
+export interface TerminalItem { seq: number; event: 'output' | 'terminal_closed' | 'terminal_error'; data: Record<string, unknown>; /** UTF-8 size of the output text. */ bytes: number }
 
 export interface PtyProcessLike { pid: number; write: (data: string) => void; resize: (cols: number, rows: number) => void; kill: (signal?: string) => void; onData: (cb: (data: string) => void) => void; onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => void; /** node-pty `UnixTerminal.destroy`: closes the pty master. */ destroy?: () => void; /** Signal the shell's whole process group (Python `os.killpg`); absent on test doubles, which get `kill`. */ killGroup?: (signal: NodeJS.Signals) => void }
 export interface PtyModuleLike { spawn: (file: string, args: string[], opts: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> }) => PtyProcessLike }
 
 export const BACKLOG_MAX = 2000
+const BACKLOG_MAX_BYTES = 2 * 1024 * 1024
 const MAX_TERMINALS = 32
 const IDLE_GRACE_MS = 900_000
 /** How long an exited terminal stays attachable so a viewer that connects late still replays its output and exit code. */
@@ -78,6 +79,28 @@ export function shellArgv(shell: string): string[] {
   return ['zsh', 'bash', 'sh'].includes(basename(shell)) ? ['-i'] : []
 }
 
+/** Oldest-first terminal items within the item and byte caps. The oldest go first, and the newest item is always kept whole. */
+export class TerminalItemQueue {
+  private readonly items: TerminalItem[] = []
+  private bytes = 0
+
+  get oldest(): TerminalItem | undefined { return this.items[0] }
+
+  values(): IterableIterator<TerminalItem> { return this.items.values() }
+
+  push(item: TerminalItem): void {
+    this.items.push(item)
+    this.bytes += item.bytes
+    while (this.items.length > 1 && (this.items.length > BACKLOG_MAX || this.bytes > BACKLOG_MAX_BYTES)) this.shift()
+  }
+
+  shift(): TerminalItem | undefined {
+    const item = this.items.shift()
+    if (item) this.bytes -= item.bytes
+    return item
+  }
+}
+
 export class TerminalSession {
   rows = 24
   cols = 80
@@ -90,7 +113,7 @@ export class TerminalSession {
   lastActivity: number
   unwatchedSince: number | null
   private nextSeq = 1
-  private readonly backlog: TerminalItem[] = []
+  private readonly backlog = new TerminalItemQueue()
   private readonly subscribers = new Set<(item: TerminalItem) => void>()
 
   constructor(readonly sessionId: string, readonly workspace: string, readonly proc: PtyProcessLike, private readonly now: () => number) {
@@ -102,15 +125,14 @@ export class TerminalSession {
 
   put(event: TerminalItem['event'], data: Record<string, unknown>): void {
     this.lastActivity = this.now()
-    const item: TerminalItem = { seq: this.nextSeq++, event, data }
+    const item: TerminalItem = { seq: this.nextSeq++, event, data, bytes: Buffer.byteLength(str(data.text)) }
     this.backlog.push(item)
-    if (this.backlog.length > BACKLOG_MAX) this.backlog.shift()
     for (const sub of this.subscribers) sub(item)
   }
 
   /** Attach a viewer: replay the backlog after `afterSeq`, then live items. */
   subscribe(afterSeq: number | null, onItem: (item: TerminalItem) => void): () => void {
-    for (const item of this.backlog) if (afterSeq === null || item.seq > afterSeq) onItem(item)
+    for (const item of this.backlog.values()) if (afterSeq === null || item.seq > afterSeq) onItem(item)
     this.subscribers.add(onItem)
     this.unwatchedSince = null
     return () => {
@@ -120,7 +142,7 @@ export class TerminalSession {
   }
 
   /** The oldest output is gone, so a replay starts mid-screen. */
-  get backlogTrimmed(): boolean { return (this.backlog[0]?.seq ?? 1) > 1 }
+  get backlogTrimmed(): boolean { return (this.backlog.oldest?.seq ?? 1) > 1 }
 
   /** A same-size resize sends no SIGWINCH, so `forceRedraw` passes through one row smaller to make a full-screen program repaint. */
   setSize(rows: unknown, cols: unknown, forceRedraw = false): void {

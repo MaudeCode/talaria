@@ -12,12 +12,15 @@ import { completedAtSeconds, jobForApi, jobFieldUpdates } from '../tools/crons.j
 import { readZip } from '../workspace/unzip.js'
 import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
-import { BACKLOG_MAX, CLOSED_RETENTION_MS, TerminalRegistry } from '../tools/terminal.js'
+import { BACKLOG_MAX, CLOSED_RETENTION_MS, TerminalRegistry, type TerminalItem, type TerminalSession } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
 
 useJsonStorage()
 
 type Json = Record<string, unknown>
+const TERMINAL_BACKLOG_BYTES = 2 * 1024 * 1024
+const utf8Bytes = (texts: unknown[]): number => texts.reduce<number>((sum, text) => sum + Buffer.byteLength(String(text)), 0)
+const terminalReplay = (term: TerminalSession): TerminalItem[] => { const items: TerminalItem[] = []; term.subscribe(null, (item) => items.push(item))(); return items }
 const post = (s: TestServer, path: string, body: unknown, method = 'POST', headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
@@ -768,20 +771,22 @@ describe('crons, kanban, extensions, terminal', () => {
     }
   })
 
-  it('an output viewer that falls behind holds at most the terminal backlog and receives the newest output in order', async () => {
+  it('an output viewer that falls behind holds at most the byte-capped tail and receives the newest output in order', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     mkdirSync(join(s.state, 'workspace'), { recursive: true })
     expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
     const proc = pty.spawned.at(-1)!
-    // 6000 chunks land while the stream waits: its queue keeps the newest, as the 2000-line backlog does for a reconnect.
-    const chunks = 6000
-    setTimeout(() => { for (let i = 1; i <= chunks; i += 1) proc.emit(`${'x'.repeat(4096)}${String(i)}`); proc.exit(0) }, 20)
-    const frames = await s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 20_000 })
-    const outputs = frames.filter((f) => f.event === 'output').map((f) => Number(f.id))
+    const stream = s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 20_000 })
+    const term = (s.deps as { terminals: TerminalRegistry }).terminals.get(sid)!
+    await vi.waitFor(() => { expect(term.unwatchedSince).toBeNull() })
+    // The burst lands in one tick, so everything sits in this viewer's queue before its stream writes a frame.
+    for (let i = 1; i <= 50; i += 1) proc.emit('x'.repeat(100_000))
+    proc.exit(0)
+    const frames = await stream
+    const outputs = frames.filter((f) => f.event === 'output')
     expect(frames.at(-1)?.event).toBe('terminal_closed')
-    expect(outputs.length).toBeLessThanOrEqual(2000)
-    expect(outputs.at(-1)).toBe(chunks)
-    expect(outputs).toEqual(Array.from({ length: outputs.length }, (_, i) => chunks - outputs.length + 1 + i))
+    expect(utf8Bytes(outputs.map((f) => (f.data as Json).text))).toBeLessThanOrEqual(TERMINAL_BACKLOG_BYTES)
+    expect(outputs.map((f) => Number(f.id))).toEqual(Array.from({ length: 20 }, (_, i) => 31 + i))
     await post(s, '/api/terminal/close', { session_id: sid })
   })
 
@@ -969,6 +974,36 @@ describe('automation helpers', () => {
     proc.emit('x')
     reg.start('s1', '/tmp', size)
     expect(proc.resizes).toEqual([{ rows: 29, cols: 100 }, size])
+    reg.closeAll()
+  })
+
+  it('terminal backlog replays at most 2 MiB of UTF-8 payload, with the newest chunk whole, and a reattach redraws (TAL-1736)', () => {
+    const pty = fakePty()
+    const reg = new TerminalRegistry({ env: { PATH: '/bin' }, now: () => 0, log: () => undefined, pty })
+    const size = { rows: 30, cols: 100 }
+    const term = reg.start('s1', '/tmp', size)
+    const proc = pty.spawned[0]!
+    // Two bytes per character: a cap that counted characters would keep twice this payload.
+    const chunk = (i: number): string => `${String(i).padStart(2, '0')}${'é'.repeat(50_000)}`
+    for (let i = 1; i <= 50; i += 1) proc.emit(chunk(i))
+    const replay = terminalReplay(term)
+    expect(utf8Bytes(replay.map((item) => item.data.text))).toBeLessThanOrEqual(TERMINAL_BACKLOG_BYTES)
+    expect(replay.map((item) => item.seq)).toEqual(Array.from({ length: 20 }, (_, i) => 31 + i))
+    expect(replay.at(-1)?.data.text).toBe(chunk(50))
+    proc.resizes.length = 0
+    reg.start('s1', '/tmp', size)
+    expect(proc.resizes).toEqual([{ rows: 29, cols: 100 }, size])
+    reg.closeAll()
+  })
+
+  it('terminal backlog keeps the newest 2000 chunks when they fit the byte cap', () => {
+    const pty = fakePty()
+    const reg = new TerminalRegistry({ env: { PATH: '/bin' }, now: () => 0, log: () => undefined, pty })
+    const term = reg.start('s1', '/tmp')
+    for (let i = 0; i < BACKLOG_MAX + 5; i += 1) pty.spawned[0]!.emit('x')
+    const replay = terminalReplay(term)
+    expect(replay).toHaveLength(BACKLOG_MAX)
+    expect(replay[0]?.seq).toBe(6)
     reg.closeAll()
   })
 })

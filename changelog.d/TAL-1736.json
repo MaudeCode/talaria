@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Terminals with heavy output, such as a large file or a long build log, now use far less server memory in Talaria Web. Reopening one replays its most recent 2 MiB of output.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
