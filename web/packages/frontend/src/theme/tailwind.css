@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Streamdown ships utility classes in its compiled components. */
+@source "../../../../node_modules/streamdown/dist";
 /* `app` holds the component sheets (src/theme/components). It is ordered after utilities so state and
    descendant rules keep winning over the structural utilities in JSX. Token values come from
    `virtual:hermes-theme.css` (src/theme/skins.ts); extension skins set tokens inline on <html>. */
@@ -17,6 +19,9 @@
 }
 
 @theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-muted-foreground: var(--muted);
   --color-bg: var(--bg);
   --color-sidebar: var(--sidebar);
   --color-surface: var(--surface);

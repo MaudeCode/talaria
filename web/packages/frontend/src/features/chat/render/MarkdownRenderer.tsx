@@ -23,7 +23,7 @@ import { m } from '../../../paraglide/messages.js'
 const OWN_RENDERERS = new Set(['json', 'mermaid', 'mmd'])
 const CODE_LANGUAGES = HIGHLIGHTED_LANGUAGES.filter((language) => !OWN_RENDERERS.has(language))
 const PLUGINS = { code, cjk, renderers: [{ language: 'json', component: JsonCodeBlock }, { language: CODE_LANGUAGES, component: CodeBlock }] }
-const loadMermaid = () => import('@streamdown/mermaid').then(({ mermaid }) => mermaid)
+const loadMermaid = () => import('./diagramPlugin').then(({ mermaid }) => mermaid)
 const loadMath = () => Promise.all([import('@streamdown/math'), import('katex/dist/katex.min.css')]).then(([{ math }]) => math)
 
 /** Both optional renderers keep source text readable if loading fails or the view unmounts. */

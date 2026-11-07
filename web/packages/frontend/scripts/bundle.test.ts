@@ -16,14 +16,14 @@ it('chat route static dependency graphs exclude xterm runtime and stylesheet', (
   }
 })
 
-it('the app layout static dependency graph excludes Mermaid and KaTeX runtimes and styles', () => {
+it('the app layout static dependency graph excludes diagram and KaTeX runtimes and styles', () => {
   const { files } = readLayout()
   expect(files.length).toBeGreaterThan(0)
   expect(files.filter((file) => /MarkdownRenderer/.test(file))).toEqual([])
   for (const file of files) {
     const source = readFileSync(resolve(clientDir, file), 'utf8')
     // Runtime signatures survive minification, unlike library/chunk filenames.
-    expect(/KaTeX parse error:|suppressErrorRendering|font-family:KaTeX_/.exec(source), file).toBeNull()
+    expect(/KaTeX parse error:|suppressErrorRendering|unsupported-diagram|font-family:KaTeX_/.exec(source), file).toBeNull()
   }
 })
 

@@ -1,15 +1,147 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { crc32, deflateSync } from 'node:zlib'
+import { crc32, deflateSync, gzipSync } from 'node:zlib'
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { redactSessionData } from '../../server/dist/redact.js'
 
-test.use({ serviceWorkers: 'block' })
+test.use({ serviceWorkers: 'block', video: 'on' })
+const DIAGRAM_SVG = '[role="img"] > svg'
+const MATH_DIAGRAM = 'flowchart LR\n  A[Start] --> B["$$x^2$$"]'
+
+async function mockMarkdown(page: Page, sessionId: string, content: () => string) {
+  await page.route('**/api/session?**', (route) => {
+    const messages = [{ role: 'user', id: 1, content: 'Show the diagrams' }, { role: 'assistant', id: 2, content: content() }]
+    return route.fulfill({ json: { session: { session_id: sessionId, title: 'Diagrams', messages: redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages } } })
+  })
+}
+
+test('diagram cost for 15 test-owned diagrams', async ({ page }, testInfo) => {
+  const requested = new Set<string>()
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname.slice(1)
+    if (path.startsWith('assets/')) requested.add(path)
+  })
+  let content = 'Diagram benchmark'
+  await mockMarkdown(page, 'diagram-cost', () => content)
+  await page.goto('/session/diagram-cost')
+  await expect(page.locator('[data-final-answer="1"]')).toContainText(content)
+  await page.waitForLoadState('networkidle')
+  const initialFiles = new Set(requested)
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Performance.enable')
+  const taskDuration = async () => (await cdp.send('Performance.getMetrics')).metrics.find(({ name }) => name === 'TaskDuration')!.value
+  const before = await taskDuration()
+  content = Array.from({ length: 15 }, (_, i) => `\`\`\`mermaid\n${i % 2 ? `sequenceDiagram\n  Alice->>Bob: Diagram ${i}` : `flowchart LR\n  A[Start ${i}] --> B[Finish ${i}]`}\n\`\`\``).join('\n\n')
+  await page.reload()
+  const diagrams = page.locator('[data-streamdown="mermaid-block"]')
+  await expect(diagrams).toHaveCount(15)
+  for (const diagram of await diagrams.all()) {
+    await diagram.scrollIntoViewIfNeeded()
+    await expect(diagram.locator(DIAGRAM_SVG)).toBeVisible()
+  }
+  const mainThreadMs = ((await taskDuration()) - before) * 1000
+  const files = [...requested].filter((file) => !initialFiles.has(file)).sort()
+  const gzipBytes = files.reduce((sum, file) => sum + gzipSync(readFileSync(join(import.meta.dirname, '../dist/client', file))).byteLength, 0)
+  const costPath = testInfo.outputPath('diagram-cost.json')
+  writeFileSync(costPath, JSON.stringify({ diagrams: 15, mainThreadMs, gzipBytes, files }, null, 2))
+  await testInfo.attach('diagram-cost.json', { path: costPath, contentType: 'application/json' })
+  expect(gzipBytes).toBeGreaterThan(0)
+  // TAL-1852: at most half the 238,811-byte baseline measured at 314092ff0.
+  expect(gzipBytes).toBeLessThanOrEqual(238_811 / 2)
+  await diagrams.first().scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath(`diagram-cost-${testInfo.project.name}.png`) })
+  for (const [pose, width, height] of [
+    ['outer-portrait', 382, 580], ['outer-landscape', 594, 368], ['inner-split', 385, 571],
+    ['inner-portrait', 669, 867], ['inner-landscape', 951, 585],
+  ] as const) {
+    await page.setViewportSize({ width, height })
+    await diagrams.first().evaluate((el) => el.scrollIntoView({ block: 'start' }))
+    await expect(diagrams.first().locator(DIAGRAM_SVG)).toBeVisible()
+    await expect(diagrams.first().getByRole('button', { name: 'Reset zoom and pan' })).toBeInViewport({ ratio: 1 })
+    await diagrams.first().getByRole('button', { name: 'Reset zoom and pan' }).click({ trial: true })
+    await page.screenshot({ path: testInfo.outputPath(`diagrams-${pose}.png`) })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), pose).toBe(false)
+  }
+})
+
+test('diagrams keep math, theme colors, safe SVG and readable invalid source', async ({ page }, testInfo) => {
+  const content = [
+    MATH_DIAGRAM,
+    'sequenceDiagram\n  Alice->>Bob: Hello',
+    'flowchart LR\n  X["<script>alert(1)</script>"] --> Y[Safe]\n  click Y "https://example.com/hostile"',
+    'this is not a diagram',
+    'flowchart LR\n  subgraph Group\n    C[Group start] --> D[Group finish]\n  end',
+  ].map((source) => `\`\`\`mermaid\n${source}\n\`\`\``).join('\n\n')
+  await mockMarkdown(page, 'diagram-contract', () => content)
+  await page.goto('/session/diagram-contract')
+  const diagrams = page.locator('[data-streamdown="mermaid-block"]')
+  await expect(diagrams).toHaveCount(5)
+  const flow = diagrams.nth(0)
+  await flow.scrollIntoViewIfNeeded()
+  await expect(flow.locator(DIAGRAM_SVG)).toBeVisible()
+  await expect(flow.locator('math msup')).toHaveCount(1)
+  for (const [dark, color] of [[false, 'rgb(30, 70, 110)'], [true, 'rgb(210, 230, 250)']] as const) {
+    await page.evaluate(({ dark, color }) => {
+      document.documentElement.classList.toggle('dark', dark)
+      document.documentElement.style.setProperty('--text', color)
+    }, { dark, color })
+    await expect.poll(() => flow.locator(DIAGRAM_SVG).evaluate((svg) => {
+      const label = [...svg.querySelectorAll('text, .nodeLabel')].find((el) => el.textContent === 'Start')!
+      return label instanceof SVGElement ? getComputedStyle(label).fill : getComputedStyle(label).color
+    })).toBe(color)
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await page.screenshot({ path: testInfo.outputPath(`diagram-${dark ? 'dark' : 'light'}-${testInfo.project.name}.png`), animations: 'disabled' })
+  }
+  const inlineSvg = flow.locator(DIAGRAM_SVG)
+  const original = await inlineSvg.boundingBox()
+  await flow.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await expect.poll(async () => (await inlineSvg.boundingBox())!.width).toBeGreaterThan(original!.width)
+  await flow.getByRole('button', { name: 'Reset zoom and pan' }).click()
+  await expect.poll(async () => Math.abs((await inlineSvg.boundingBox())!.width - original!.width)).toBeLessThan(1)
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await flow.getByRole('button', { name: 'Copy Code', exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('A[Start] --> B["$$x^2$$"]')
+  await flow.getByRole('button', { name: 'View fullscreen' }).click()
+  await expect(page.locator('[data-streamdown="mermaid-fullscreen"] math msup')).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  for (const index of [1, 2]) {
+    await diagrams.nth(index).scrollIntoViewIfNeeded()
+    await expect(diagrams.nth(index).locator(DIAGRAM_SVG)).toBeVisible()
+  }
+  const hostile = diagrams.nth(2).locator(DIAGRAM_SVG)
+  await expect(hostile.locator('script, a[href], a[*|href], image')).toHaveCount(0)
+  await expect(hostile).toContainText('Safe')
+  await diagrams.nth(3).scrollIntoViewIfNeeded()
+  await diagrams.nth(3).getByText('Show Code', { exact: true }).click()
+  await expect(diagrams.nth(3).locator('pre')).toContainText('this is not a diagram')
+  await page.evaluate(() => document.documentElement.style.setProperty('--hover-bg', 'rgb(12, 34, 56)'))
+  await diagrams.nth(4).scrollIntoViewIfNeeded()
+  await expect(diagrams.nth(4).locator('.pele-cluster > rect')).toHaveCSS('fill', 'rgb(12, 34, 56)')
+})
+
+test('diagram exports keep SVG, PNG and source usable', async ({ page }, testInfo) => {
+  await mockMarkdown(page, 'diagram-exports', () => `\`\`\`mermaid\n${MATH_DIAGRAM}\n\`\`\``)
+  await page.goto('/session/diagram-exports')
+  const flow = page.locator('[data-streamdown="mermaid-block"]')
+  await expect(flow.locator(DIAGRAM_SVG)).toBeVisible()
+  for (const format of ['SVG', 'PNG', 'MMD']) {
+    await flow.getByRole('button', { name: 'Download diagram', exact: true }).click()
+    const formatButton = flow.getByRole('button', { name: `Download diagram as ${format}`, exact: true })
+    expect((await formatButton.boundingBox())!.width).toBeGreaterThanOrEqual(100)
+    if (format === 'SVG') await page.screenshot({ path: testInfo.outputPath(`diagram-download-menu-${testInfo.project.name}.png`) })
+    const downloading = page.waitForEvent('download')
+    await formatButton.click()
+    const download = await downloading
+    expect(download.suggestedFilename()).toMatch(new RegExp(`\\.${format.toLowerCase()}$`))
+    await download.saveAs(testInfo.outputPath(`diagram.${format.toLowerCase()}`))
+  }
+})
 
 test('Markdown renders diagrams and math after lazy loading', async ({ page }, testInfo) => {
   const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../dist/client/.vite/manifest.json'), 'utf8')) as Record<string, { file: string }>
-  const pluginFiles = Object.entries(manifest).filter(([key]) => /@streamdown\/(?:mermaid|math)\/dist\/index\.js|katex\/dist\/katex\.min\.css/.test(key)).map(([, chunk]) => chunk.file)
+  const pluginFiles = Object.entries(manifest).filter(([key]) => /@streamdown\/math\/dist\/index\.js|src\/features\/chat\/render\/diagramPlugin\.ts|katex\/dist\/katex\.min\.css/.test(key)).map(([, chunk]) => chunk.file)
   expect(pluginFiles).toHaveLength(3)
   const requested: string[] = []
   let holdPlugins = false
@@ -21,12 +153,7 @@ test('Markdown renders diagrams and math after lazy loading', async ({ page }, t
     await route.continue()
   })
   let content = 'Tickets cost $5 and meals cost $10.'
-  await page.route('**/api/session?**', (route) => {
-    const messages = [{ role: 'user', id: 1, content: 'Show a diagram and a formula' }, { role: 'assistant', id: 2, content }]
-    return route.fulfill({ json: { session: {
-      session_id: 'markdown-plugins', title: 'Diagram and formula', messages: redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages,
-    } } })
-  })
+  await mockMarkdown(page, 'markdown-plugins', () => content)
   await page.goto('/session/markdown-plugins')
   const answer = page.locator('[data-final-answer="1"]')
   await expect(answer).toContainText('Tickets cost $5 and meals cost $10.')
