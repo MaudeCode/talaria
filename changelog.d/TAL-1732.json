@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web stays responsive while the Memory, Wiki and Project OS pages load, because they no longer block the server with folder scans and repeat them only when something changed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

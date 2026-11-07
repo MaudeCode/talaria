@@ -540,7 +540,7 @@ export const toolsRouter = os.router({
     })),
     get: os.memory.get.handler(({ input, context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
-      return readMemory(home(ctx), config, (await memoryWorkspace(ctx, str(input.session_id), str(input.workspace))), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey()) as never
+      return readMemory(home(ctx), config, (await memoryWorkspace(ctx, str(input.session_id), str(input.workspace))), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey(), ctx.deps.git) as never
     })),
     write: os.memory.write.handler(({ input, context: { ctx } }) => run(async () => {
       const section = input.section ?? input.target

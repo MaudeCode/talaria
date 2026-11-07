@@ -16,6 +16,7 @@ import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.j
 import { safeLoginRedirectPath } from '../auth/gate.js'
 import { AuthStore } from '../auth/store.js'
 import { readProjectContext } from '../tools/memory.js'
+import { GitRunner } from '../workspace/git.js'
 import { writeEnvFile } from '../test/env-file.js'
 
 useJsonStorage()
@@ -340,20 +341,20 @@ describe('project context walk', () => {
     writeFileSync(join(root, 'both', 'ws', 'HERMES.md'), 'workspace copy\n')
   })
 
-  it('a non-git workspace never surfaces a HERMES.md above it', () => {
-    const ctx = readProjectContext(join(root, 'plain', 'ws'))
+  it('a non-git workspace never surfaces a HERMES.md above it', async () => {
+    const ctx = await readProjectContext(join(root, 'plain', 'ws'), new GitRunner({ env: process.env }))
     expect(ctx.content).toBe('')
     expect(ctx.path).toBe('')
   })
 
-  it('a git workspace still walks up to the repo root', () => {
-    const ctx = readProjectContext(join(root, 'repo', 'apps', 'web'))
+  it('a git workspace still walks up to the repo root', async () => {
+    const ctx = await readProjectContext(join(root, 'repo', 'apps', 'web'), new GitRunner({ env: process.env }))
     expect(ctx.content).toBe('repo root context\n')
     expect(String(ctx.path).endsWith('/repo/HERMES.md')).toBe(true)
   })
 
-  it('the workspace copy wins and the parent copy is neither content nor shadowed', () => {
-    const ctx = readProjectContext(join(root, 'both', 'ws'))
+  it('the workspace copy wins and the parent copy is neither content nor shadowed', async () => {
+    const ctx = await readProjectContext(join(root, 'both', 'ws'), new GitRunner({ env: process.env }))
     expect(ctx.content).toBe('workspace copy\n')
     expect(ctx.shadowed).toEqual([])
   })

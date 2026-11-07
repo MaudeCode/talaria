@@ -20,9 +20,10 @@
  * opens read-only.
  */
 import { closeSync, constants, existsSync, fchmodSync, fsyncSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { open, realpath, stat, type FileHandle } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { isWithin, resolvePathLikePython } from './paths.js'
+import { isWithin, resolvePathLikePython, resolvePathLikePythonAsync } from './paths.js'
 import { isBlockedSystemPath } from './workspaces.js'
 import { writeFully } from '../fs/atomic.js'
 
@@ -648,13 +649,49 @@ export function readFileContent(workspace: string, rel: string, opts: { statOnly
     if (!fst.isFile()) throw new NotFoundError(`Not a file: ${rel}`)
     if (opts.statOnly) return { path: rel, size: fst.size }
     if (fst.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${fst.size} bytes, max ${MAX_FILE_BYTES})`)
-    const raw = readFdUpTo(fd, MAX_FILE_BYTES + 1)
-    const content = decodeText(raw)
-    if (content === null) return { path: rel, size: raw.length, binary: true }
-    return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
+    return decodedContent(rel, readFdUpTo(fd, MAX_FILE_BYTES + 1))
   } finally {
     closeSync(fd)
   }
+}
+
+function decodedContent(rel: string, raw: Buffer): FileContent {
+  const content = decodeText(raw)
+  if (content === null) return { path: rel, size: raw.length, binary: true }
+  return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
+}
+
+/**
+ * `readFileContent` off the event loop. The anchored walk must stay synchronous (its fallback holds the process cwd), so
+ * containment is proven after the open: whatever a swapped component led the open to, the file is only read once the
+ * root and target still resolve to themselves and the target is the open file.
+ */
+export async function readFileContentAsync(workspace: string, rel: string): Promise<FileContent> {
+  const refuse = (): NotFoundError => new NotFoundError(`Not a file: ${rel}`)
+  if (!POLICY.supported) throw refuse()
+  const root = await resolvePathLikePythonAsync(workspace)
+  const target = await resolvePathLikePythonAsync(resolve(workspace, rel))
+  if (!isWithin(target, root)) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
+  let handle: FileHandle
+  try { handle = await open(target, constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK) } catch { throw refuse() }
+  try {
+    const opened = await handle.stat()
+    if (!opened.isFile()) throw refuse()
+    const [rootNow, targetNow, current] = await Promise.all([resolvePathLikePythonAsync(workspace), realpath(target), stat(target)]).catch(() => { throw refuse() })
+    if (rootNow !== root || targetNow !== target || !sameFile(current, opened)) throw refuse()
+    if (opened.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${opened.size} bytes, max ${MAX_FILE_BYTES})`)
+    return decodedContent(rel, await readHandleUpTo(handle, MAX_FILE_BYTES + 1))
+  } finally {
+    await handle.close()
+  }
+}
+
+/** `readFdUpTo` for a promise file handle. */
+export async function readHandleUpTo(handle: FileHandle, limit: number): Promise<Buffer> {
+  const buf = Buffer.alloc(limit)
+  let total = 0
+  for (let n = 1; n > 0 && total < limit; total += n) ({ bytesRead: n } = await handle.read(buf, total, limit - total, null))
+  return buf.subarray(0, total)
 }
 
 /** At most `limit` bytes from the descriptor's current offset, whatever its earlier fstat size; fewer only at end of file. */
