@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { SidecarLike } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { AgentConfig } from './agent-config.js'
@@ -66,6 +67,24 @@ describe('config.yaml env references', () => {
   ])('local I/O for a backend reference %s', async (_name, resolved, local) => {
     const { server } = await boot({ terminal: { backend: '${MISSING_BACKEND}' } }, resolved)
     expect(server.deps.workspaces.profileSupportsLocalIo(null)).toBe(local)
+  })
+
+  it('a sidecar that recovers re-resolves what the broken Agent could not', async () => {
+    let restarted: (() => void) | undefined
+    class RestartingSidecar extends FakeSidecar {
+      onHandshake: NonNullable<SidecarLike['onHandshake']> = (listener) => { restarted = () => { listener(this.describe!) }; return () => undefined }
+    }
+    const sidecar = new RestartingSidecar()
+    let resolved: Json | null = null
+    sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: { model: '${SYNTH_MODEL}' }, resolved }))
+    const server = await bootTestServer({ sidecar })
+    s = server
+    writeFileSync(join(server.state, 'config.yaml'), '# seed\n')
+    await server.deps.agentConfig.read(server.state)
+    expect((await json(await server.get('/api/settings'))).default_model).toBe('')
+    resolved = { model: 'claude-sonnet-4-6' }
+    restarted?.()
+    await vi.waitFor(async () => { expect((await json(await server.get('/api/settings'))).default_model).toBe('claude-sonnet-4-6') })
   })
 
   it('workspace resolution follows the resolved paths', async () => {

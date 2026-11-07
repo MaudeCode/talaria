@@ -71,8 +71,9 @@ def resolved_config(home: Path, config: dict) -> dict | None:
 
     Not ``read_only``: that binding skips the secret scope, so a named profile would read the launch process environment.
     Unresolved references stay verbatim, as the Agent leaves them. The source document stays raw for writes.
-    ponytail: secret-source plugins stay unloaded, so a config read runs no third-party code or network; a reference only a
-    vault supplies stays unresolved until a turn hydrates that home. Add hydration here if such references need to show earlier.
+    ponytail: secret-source plugins stay unloaded, so a config read runs no third-party code or network. A reference only a vault
+    supplies stays unresolved here until a turn hydrates that home and the server re-reads after a config, ``.env`` or sidecar change.
+    Add hydration here if such references need to resolve sooner.
     """
     try:
         expand = importlib.import_module("hermes_cli.config")._expand_env_vars

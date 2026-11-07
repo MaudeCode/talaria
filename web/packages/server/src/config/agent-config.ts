@@ -280,6 +280,11 @@ export class AgentConfig {
     }
   }
 
+  /** A restarted sidecar can resolve what its predecessor could not; the raw documents it read stay valid. */
+  invalidateResolved(): void {
+    for (const entry of this.cache.values()) entry.resolved.clear()
+  }
+
   invalidate(profileHome?: string): void {
     if (profileHome) this.cache.delete(this.path(profileHome))
     else this.cache.clear()

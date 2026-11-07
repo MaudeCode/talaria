@@ -230,6 +230,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   await skillReplays.initialize()
   const pruneAdvice = new PruneAdvice({ sidecar: () => deps.sidecar(), profiles: agentProfiles, lease: (name) => deps.profiles.beginWrite(name), notifications: updateNotifications, now, log })
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
+  sidecar?.onHandshake?.(() => { agentConfig.invalidateResolved() })
   /** A profile's config.yaml `model` as [model, provider] as the Agent resolves it; '' / null when unset or not yet read. */
   const profileDefaultModel = (profile: string | null): [string, string | null] => {
     let cfg: ReturnType<typeof agentConfig.peekResolved>
