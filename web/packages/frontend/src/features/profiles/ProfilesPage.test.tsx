@@ -36,6 +36,13 @@ describe('ProfilesPage', () => {
     expect(screen.getByText(/Project or product folders on disk/)).toBeVisible()
   })
 
+  it('TAL-1791: marks only the active profile', async () => {
+    renderPage()
+    const active = (await screen.findByText('default')).closest('li')!
+    expect(within(active).getByText('ACTIVE')).toBeVisible()
+    expect(within(screen.getByText('scout').closest('li')!).queryByText('ACTIVE')).not.toBeInTheDocument()
+  })
+
   it('TAL-805: labels each profile by the server gateway mode', async () => {
     const modes = ['own', 'served', 'parked', 'standalone', 'stopped'] as const
     vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: modes.map((mode) => ({ name: mode, gateway_mode: mode, gateway_running: mode === 'own' || mode === 'served' })), active: 'own', single_profile_mode: false })
