@@ -145,6 +145,25 @@ test('a new chat hands a pasted image to the session it creates', async ({ page 
   expect(uploads).toEqual(['pasted-new'])
 })
 
+test('a long paste handed to a new chat opens back into its composer through a 44 px action at 390 px (TAL-1915)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockSession(page, 'paste-edit')
+  await page.route('**/api/session/new', (route) => route.fulfill({ json: { session: { session_id: 'paste-edit', title: '', messages: [] } } }))
+  await page.goto('/')
+  await page.locator('#msg').focus()
+  const long = 'long paste '.repeat(800)
+  expect(await paste(page, [], long)).toBe(false)
+  await expect(page).toHaveURL(/\/session\/paste-edit$/)
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
+  const action = chips(page).getByRole('button', { name: /^Edit pasted-\d+\.txt$/ })
+  expect(await action.boundingBox()).toMatchObject({ width: 44, height: 44 })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await action.click()
+  await expect(page.locator('#msg')).toHaveValue(long)
+  await expect(page.locator('#msg')).toBeFocused()
+  await expect(chips(page)).toHaveCount(0)
+})
+
 test('removing a chip while it uploads rolls the late upload back', async ({ page }) => {
   await mockSession(page, 'inflight')
   let release!: () => void

@@ -11,7 +11,7 @@ import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
-import { AttachmentTray, type PendingFile } from './Attachments'
+import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
 import { ContextRing, type ContextFigures } from './chips'
@@ -128,6 +128,11 @@ function draftWraps(el: HTMLTextAreaElement, text: string): boolean {
   ctx.font = style.font
   return ctx.measureText(text).width > el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
 }
+
+interface DraftCursor { start: number; end: number; direction: 'forward' | 'backward' | 'none' }
+/** The draft's cursor: the last one this session's box reported, since a browser selection elsewhere resets an inactive textarea. */
+const draftCursor = (el: HTMLTextAreaElement, last: { sessionId: string | null; cursor: DraftCursor } | null, sessionId: string | null): DraftCursor =>
+  last?.sessionId === sessionId ? last.cursor : { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection }
 
 function fileKey(f: File): string {
   return `${f.name}:${f.size}:${f.lastModified}`
@@ -498,8 +503,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   // Snapshot of what a send would post right now, for the queue.
   const queueEntry = (text: string): QueuedTurn => ({ id: randomHex(), text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } })
 
-  const quoteCursor = useRef<{ start: number; end: number; direction: 'forward' | 'backward' | 'none' } | null>(null)
-  const lastCursor = useRef<{ sessionId: string | null; cursor: NonNullable<typeof quoteCursor.current> } | null>(null)
+  const quoteCursor = useRef<DraftCursor | null>(null)
+  const lastCursor = useRef<{ sessionId: string | null; cursor: DraftCursor } | null>(null)
   useLayoutEffect(() => {
     const cursor = quoteCursor.current
     if (!cursor) return
@@ -518,7 +523,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         if (!el || readOnly || clarify || draftIdentity !== localStateId || scope !== getStreamContext()) return
         dropDictation()
         setDictating(false)
-        quoteCursor.current = lastCursor.current?.sessionId === sessionId ? lastCursor.current.cursor : { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection }
+        quoteCursor.current = draftCursor(el, lastCursor.current, sessionId)
         setText((prev) => `${prev}${prev ? '\n\n' : ''}${returned}`)
       } else {
         setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${returned}` : returned))
@@ -526,6 +531,22 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
       }
     })
   }, [sessionId, readOnly, clarify, draftIdentity, localStateId, dropDictation])
+
+  // TAL-1915: a long paste's chip gives its text back at the cursor; the remove path rolls its upload back.
+  const editPaste = (key: string) => {
+    const f = files.find((p) => p.key === key)
+    const pasted = f && pastedText.get(f.file)
+    const el = textarea.current
+    if (pasted === undefined || !el) return
+    // A dictation still running writes from the draft it started with, which would erase the text.
+    dropDictation()
+    setDictating(false)
+    const { start, end } = draftCursor(el, lastCursor.current, sessionId)
+    const caret = start + pasted.length
+    quoteCursor.current = { start: caret, end: caret, direction: 'none' }
+    setText((current) => `${current.slice(0, start)}${pasted}${current.slice(end)}`)
+    removeFile(key)
+  }
 
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
@@ -678,7 +699,9 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     if (attachmentsSupported && settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
       e.preventDefault()
       const name = `pasted-${Date.now()}.txt`
-      pastedFiles.push(new File([pasted], name, { type: 'text/plain' }))
+      const file = new File([pasted], name, { type: 'text/plain' })
+      pastedText.set(file, pasted)
+      pastedFiles.push(file)
       showToast(m.text_pasted() + name, 2500)
     } else if (pastedFiles.length && !pasted) e.preventDefault()
     addFiles(pastedFiles)
@@ -815,7 +838,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
-        {!clarify && <AttachmentTray files={files} placement="card" onRemove={removeFile} onRetry={retryFile} />}
+        {!clarify && <AttachmentTray files={files} placement="card" onRemove={removeFile} onRetry={retryFile} onEditPaste={editPaste} />}
         <textarea
           ref={textarea}
           id="msg"

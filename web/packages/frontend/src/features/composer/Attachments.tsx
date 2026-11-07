@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, FileText, LoaderCircle, RotateCw } from 'lucide-react'
+import { X, FileText, LoaderCircle, Pencil, RotateCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
 import type { FeedbackAttachmentStagedSchema, GroupAttachmentSchema } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import { IconButton } from '../../ui/Button'
+import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { ImageLightbox } from '../chat/ImageLightbox'
 
 /** `compressing` precedes the upload where the client re-encodes first (Send feedback). Each owner fills its own receipt slot. */
 export interface PendingFile { key: string; file: File; status: 'compressing' | 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; groupAttachment?: z.infer<typeof GroupAttachmentSchema> | undefined; feedback?: z.infer<typeof FeedbackAttachmentStagedSchema> | undefined; error?: string | undefined }
+
+/**
+ * The text of each file the composer made from a long paste (TAL-1915). Keyed by the File, which follows hand-offs,
+ * retries and restored trays; a file the user attached is never here, whatever its name.
+ */
+export const pastedText = new WeakMap<File, string>()
 
 const isImage = (f: PendingFile) => f.file.type.startsWith('image/')
 const busy = (f: PendingFile) => f.status === 'compressing' || f.status === 'uploading'
@@ -36,7 +43,7 @@ function useObjectUrls(files: readonly File[]): ReadonlyMap<File, string> {
  * failed upload, and carries a remove badge. Placement `card`: other files as chips inside the card, above the text.
  * Placement `inline`: both in one wrapping row inside a form (Send feedback, TAL-1596).
  */
-export function AttachmentTray({ files, placement, onRemove, onRetry }: { files: PendingFile[]; placement: 'strip' | 'card' | 'inline'; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+export function AttachmentTray({ files, placement, onRemove, onRetry, onEditPaste }: { files: PendingFile[]; placement: 'strip' | 'card' | 'inline'; onRemove: (key: string) => void; onRetry: (key: string) => void; onEditPaste?: (key: string) => void }) {
   if (placement === 'inline') {
     if (files.length === 0) return null
     const images = files.filter(isImage)
@@ -51,22 +58,35 @@ export function AttachmentTray({ files, placement, onRemove, onRetry }: { files:
   const shown = files.filter((f) => isImage(f) === (placement === 'strip'))
   if (shown.length === 0) return null
   if (placement === 'strip') return <ImageStrip images={shown} className="attach-tray composer-strip composer-strip--top" onRemove={onRemove} onRetry={onRetry} />
-  return <FileChips files={shown} className="attach-tray flex flex-wrap gap-2 px-3 pt-2" onRemove={onRemove} onRetry={onRetry} />
+  return <FileChips files={shown} className="attach-tray flex flex-wrap gap-2 px-3 pt-2" onRemove={onRemove} onRetry={onRetry} onEditPaste={onEditPaste} />
 }
 
-function FileChips({ files, className, onRemove, onRetry }: { files: PendingFile[]; className: string; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+/** A 44 px target on a phone or under a coarse pointer. */
+const CHIP_ACTION = 'max-[641px]:h-11 max-[641px]:w-11 pointer-coarse:h-11 pointer-coarse:w-11'
+
+function FileChips({ files, className, onRemove, onRetry, onEditPaste }: { files: PendingFile[]; className: string; onRemove: (key: string) => void; onRetry: (key: string) => void; onEditPaste?: ((key: string) => void) | undefined }) {
   return (
     <ul className={className} aria-label={m.attachments_label()}>
-      {files.map((f) => (
-        <li key={f.key} className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${f.status === 'error' ? 'border-error text-error' : 'border-border text-text'}`} data-status={f.status}>
-          <FileText size={12} aria-hidden="true" />
-          <span className="max-w-48 truncate">{f.file.name}</span>
-          {busy(f) && <span className="text-muted" role="status" aria-label={`${busyLabel(f)} ${f.file.name}`}>…</span>}
-          {f.status === 'error' && f.error && <span className="sr-only">{f.error}</span>}
-          {f.status === 'error' && <IconButton label={`${m.retry()} ${f.file.name}`} className="h-5 w-5" onClick={() => onRetry(f.key)}><RotateCw size={12} aria-hidden="true" /></IconButton>}
-          <IconButton label={`${m.remove()} ${f.file.name}`} className="h-5 w-5" onClick={() => onRemove(f.key)}><X size={12} aria-hidden="true" /></IconButton>
-        </li>
-      ))}
+      {files.map((f) => {
+        const actions = [
+          ...(onEditPaste && pastedText.has(f.file) ? [{ label: `${m.edit()} ${f.file.name}`, Icon: Pencil, run: () => onEditPaste(f.key) }] : []),
+          ...(f.status === 'error' ? [{ label: `${m.retry()} ${f.file.name}`, Icon: RotateCw, run: () => onRetry(f.key) }] : []),
+          { label: `${m.remove()} ${f.file.name}`, Icon: X, run: () => onRemove(f.key) },
+        ]
+        return (
+          <ContextMenu key={f.key} label={f.file.name} trigger={
+            <li className={`flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs max-[641px]:py-0 pointer-coarse:py-0 ${f.status === 'error' ? 'border-error text-error' : 'border-border text-text'}`} data-status={f.status}>
+              <FileText size={12} className="shrink-0" aria-hidden="true" />
+              <span className="max-w-48 truncate">{f.file.name}</span>
+              {busy(f) && <span className="text-muted" role="status" aria-label={`${busyLabel(f)} ${f.file.name}`}>…</span>}
+              {f.status === 'error' && f.error && <span className="sr-only">{f.error}</span>}
+              {actions.map(({ label, Icon, run }) => <IconButton key={label} label={label} className={CHIP_ACTION} onClick={run}><Icon size={12} aria-hidden="true" /></IconButton>)}
+            </li>
+          }>
+            {actions.map(({ label, run }) => <MenuItem key={label} onClick={run}>{label}</MenuItem>)}
+          </ContextMenu>
+        )
+      })}
     </ul>
   )
 }

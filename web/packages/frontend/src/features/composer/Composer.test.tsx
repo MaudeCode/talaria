@@ -1085,6 +1085,69 @@ describe('Composer', () => {
     expect(api.startChat).not.toHaveBeenCalled()
   })
 
+  describe('a long paste back in the composer (TAL-1915)', () => {
+    const LONG = 'long paste '.repeat(800)
+    const pasteLong = () => fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { items: [], getData: () => LONG } })
+    const edit = () => screen.findByRole('button', { name: /^Edit pasted-\d+\.txt$/ })
+    const idle = { ...writable, is_streaming: false }
+
+    it('offers Edit on the chip a paste made, not on a file that only shares its name', async () => {
+      vi.mocked(api.uploadFile).mockResolvedValue({ filename: 'f.txt', path: '/synthetic/f.txt', size: 1, mime: 'text/plain' })
+      const view = renderComposer(idle)
+      fireEvent.change(view.container.querySelector<HTMLInputElement>('input[type="file"]')!, { target: { files: [new File(['x'], 'pasted-1.txt', { type: 'text/plain' })] } })
+      await screen.findByText('pasted-1.txt')
+      pasteLong()
+      await edit()
+      expect(screen.queryByRole('button', { name: 'Edit pasted-1.txt' })).toBeNull()
+    })
+
+    it('inserts the text at the cursor, rolls its upload back, and sends the edit without the attachment', async () => {
+      vi.mocked(api.uploadFile).mockResolvedValue({ filename: 'f.txt', path: '/synthetic/f.txt', size: 1, mime: 'text/plain', rollback_token: 'paste-receipt' })
+      vi.mocked(api.startChat).mockResolvedValue({ stream_id: 'run', session_id: 's1' })
+      renderComposer(idle)
+      const box = screen.getByRole<HTMLTextAreaElement>('textbox')
+      fireEvent.change(box, { target: { value: 'Before after' } })
+      act(() => { box.focus(); box.setSelectionRange(7, 7) })
+      fireEvent.select(box)
+      pasteLong()
+      await waitFor(() => expect(document.querySelector('.attach-tray li[data-status="done"]')).not.toBeNull())
+      await userEvent.click(await edit())
+      expect(box).toHaveValue(`Before ${LONG}after`)
+      expect(box).toHaveFocus()
+      expect(box.selectionStart).toBe(7 + LONG.length)
+      expect(document.querySelector('.attach-tray')).toBeNull()
+      expect(api.rollbackUpload).toHaveBeenCalledWith('s1', ['paste-receipt'])
+      fireEvent.change(box, { target: { value: `Edited ${LONG}after` } })
+      await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+      await waitFor(() => expect(api.startChat).toHaveBeenCalledOnce())
+      const sent = vi.mocked(api.startChat).mock.calls[0]?.[0]
+      expect(sent?.message).toBe(`Edited ${LONG}after`.trim())
+      expect(sent?.attachments).toBeUndefined()
+    })
+
+    it('keeps the inserted text when a dictation already running reports again', async () => {
+      vi.mocked(api.uploadFile).mockResolvedValue({ filename: 'f.txt', path: '/synthetic/f.txt', size: 1, mime: 'text/plain' })
+      vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
+      let onText: (text: string) => void = noop
+      vi.mocked(dictateLive).mockImplementation((text) => { onText = text; return { stop: vi.fn(), cancel: vi.fn() } })
+      renderComposer(idle)
+      await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+      pasteLong()
+      await userEvent.click(await edit())
+      act(() => { onText('late partial') })
+      expect(screen.getByRole('textbox')).toHaveValue(LONG)
+    })
+
+    it('opens from the chip\'s right-click menu too', async () => {
+      vi.mocked(api.uploadFile).mockResolvedValue({ filename: 'f.txt', path: '/synthetic/f.txt', size: 1, mime: 'text/plain' })
+      renderComposer(idle)
+      pasteLong()
+      fireEvent.contextMenu((await edit()).closest('li')!)
+      await userEvent.click(await screen.findByRole('menuitem', { name: /^Edit pasted-/ }))
+      expect(screen.getByRole('textbox')).toHaveValue(LONG)
+    })
+  })
+
   it('keeps the composer for a writable session', () => {
     renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 })
     expect(screen.getByRole('textbox')).toBeInTheDocument()

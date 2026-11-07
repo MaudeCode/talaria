@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Open a long paste that became an attachment back into the Web composer to read or edit it before sending.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
