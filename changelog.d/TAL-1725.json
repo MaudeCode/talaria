@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web lists folders with many symlinks, such as node_modules/.bin, faster because it checks system paths once instead of on every entry.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

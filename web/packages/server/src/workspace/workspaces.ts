@@ -62,10 +62,20 @@ function posixWithin(path: string, root: string): boolean {
   return path === root || path.startsWith(root === '/' ? '/' : root + '/')
 }
 
-export function blockedRoots(): string[] {
-  const out: string[] = []
-  for (const p of BLOCKED_RAW) for (const form of [p, resolvePathLikePython(p)]) if (!out.includes(form)) out.push(form)
-  return out
+interface BlockedPaths { roots: readonly string[]; exact: ReadonlySet<string>; subtrees: readonly string[] }
+let blockedPathsMemo: BlockedPaths | null = null
+
+/** Resolved once per process: every input is a constant system path, and `listDir` checks once per symlink (TAL-1725). */
+function blockedPaths(): BlockedPaths {
+  if (blockedPathsMemo) return blockedPathsMemo
+  const forms = BLOCKED_RAW.map((p) => [p, resolvePathLikePython(p)] as const)
+  const resolved = forms.map(([, real]) => real)
+  blockedPathsMemo = {
+    roots: [...new Set(forms.flat())],
+    exact: new Set(['/', '/private/var', ...resolved]),
+    subtrees: [...new Set([...resolved, resolvePathLikePython('/private/etc')])],
+  }
+  return blockedPathsMemo
 }
 
 function isBlockedPosixWorkspacePath(raw: string | null | undefined): boolean {
@@ -79,7 +89,7 @@ function isBlockedPosixWorkspacePath(raw: string | null | undefined): boolean {
 /** Blocked system root check with user-tmp carve-outs (Python `_is_blocked_system_path`). */
 export function isBlockedSystemPath(candidate: string): boolean {
   if (USER_TMP_PREFIXES.some((t) => isWithin(candidate, t))) return false
-  return blockedRoots().some((b) => isWithin(candidate, b))
+  return blockedPaths().roots.some((b) => isWithin(candidate, b))
 }
 
 /** Python `_is_blocked_workspace_path`: compares the raw spelling and the resolved path. */
@@ -90,12 +100,11 @@ export function isBlockedWorkspacePath(candidate: string, rawPath?: string | nul
     raw = normalized ?? resolve(expandHome(rawPath))
   }
   if (isBlockedPosixWorkspacePath(rawPath || candidate)) return true
-  const exact = new Set(['/', '/private/var', ...blockedRoots().map((r) => resolvePathLikePython(r))])
-  if (exact.has(candidate) || (raw !== null && blockedRoots().includes(raw))) return true
+  const { roots, exact, subtrees } = blockedPaths()
+  if (exact.has(candidate) || (raw !== null && roots.includes(raw))) return true
   for (const tmp of USER_TMP_PREFIXES) if (isWithin(candidate, tmp) || (raw !== null && isWithin(raw, tmp))) return false
-  if (raw !== null) for (const blocked of blockedRoots()) if (isWithin(raw, blocked)) return true
+  if (raw !== null) for (const blocked of roots) if (isWithin(raw, blocked)) return true
   const allowedPrivateVar = ['/private/var/folders', '/private/var/tmp']
-  const subtrees = [...blockedRoots(), '/private/etc'].map((r) => resolvePathLikePython(r))
   for (const blocked of subtrees) {
     if (blocked === '/private/var') {
       if (candidate === blocked) return true
