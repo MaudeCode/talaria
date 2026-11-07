@@ -19,7 +19,7 @@ import agentSchema from '../test/fixtures/canonical-ownership.json' with { type:
 import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { CLI_VISIBLE_SESSION_LIMIT, type CliSessionRead } from './cli-sessions.js'
-import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
+import { GatewayWatcher, snapshotHash, type GatewaySubscriber } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
 useJsonStorage()
@@ -488,6 +488,40 @@ describe('state.db projection', () => {
       expect(await sub.next()).toBeNull()
       expect(sub.ended).toBe(true)
     } finally { sub.close(); watcher.stop() }
+  })
+
+  it('reads no rows while nobody listens, then gives the next subscriber the current snapshot from one read', async () => {
+    let now = 100
+    const read: CliSessionRead = { rows: [{ session_id: 'shared', message_count: 1 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } }
+    const rows = vi.fn(() => Promise.resolve(read))
+    const watcher = new GatewayWatcher('default', s.state, { rows, now: () => now, log: () => undefined })
+    // A subscriber's first pass reads once and publishes, even when the database and rows match the last delivery.
+    const attach = async (): Promise<GatewaySubscriber> => {
+      const sub = watcher.subscribe()
+      rows.mockClear()
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(rows).toHaveBeenCalledTimes(1)
+      expect((await sub.next(AbortSignal.abort()))?.sessions).toHaveLength(1)
+      return sub
+    }
+    utimesSync(dbPath, 1000, 1000)
+    ;(await attach()).close()
+    rows.mockClear()
+    for (let tick = 1; tick <= 10; tick++) {
+      now += 5
+      utimesSync(dbPath, 1000 + tick, 1000 + tick)
+      expect(await watcher.pollOnce()).toBe(false)
+    }
+    expect(rows).not.toHaveBeenCalled()
+    ;(await attach()).close()
+    // No write since that delivery, so only the idle reset makes the next subscriber's pass read and publish.
+    now += 5
+    expect(await watcher.pollOnce()).toBe(false)
+    const next = await attach()
+    try {
+      expect(await watcher.pollOnce()).toBe(false)
+      expect(rows).toHaveBeenCalledTimes(1)
+    } finally { next.close(); watcher.stop() }
   })
 
   it('compares every public gateway row field in a bounded large list, ignoring order and private metadata', async () => {

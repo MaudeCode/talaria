@@ -142,6 +142,11 @@ An idle tick skips the shared read until the parity pass is due. Failed database
 reads and row-metadata builds leave the last successful fingerprint and snapshot
 unchanged so the next tick retries, including when the failed result is cached.
 
+A watcher keeps ticking after its last subscriber leaves, but a tick with no
+subscribers reads nothing at all: not the signal and not the projection. It also
+forgets its last fingerprint and snapshot hash, which makes the first tick after
+a subscriber attaches project and publish the current snapshot.
+
 Two consequences worth knowing before changing this:
 
 - **The signal is not scoped to sidebar-visible sources.** cron/webui write churn

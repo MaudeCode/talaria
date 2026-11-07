@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web uses less CPU and disk on the server when no browser or app is listening for Agent session updates.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
