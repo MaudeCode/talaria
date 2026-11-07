@@ -4,7 +4,7 @@ import { PlanGaugeSchema, ModelAllowanceSnapshotSchema } from '../plan-usage.js'
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
 import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { McpEventsDataSchema } from '../mcp-events.js'
-import { ContextDetailSchema } from '../context-detail.js'
+import { ContextDetailSchema, ContextWindowSourceSchema } from '../context-detail.js'
 import { z } from 'zod'
 import { AGENT_IMPORT_EXPORT_MAX_CHARS, AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
 import { ProviderPhaseSchema } from '../run-status.js'
@@ -527,7 +527,7 @@ export const PROVIDERS_METHODS = {
   'models.parse_switch_args': { params: z.object({ args: z.string() }), result: z.object({ target: z.string(), provider: z.string().nullable(), reset: z.boolean(), reasoning: z.string().nullable(), errors: z.array(z.string()), unsupported_flags: z.array(z.string()) }) },
   'models.selection_warnings': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), model: z.string().min(1), provider: z.string().nullable(), current_model: z.string().nullable(), current_provider: z.string().nullable(), context_tokens: z.number().int().positive().nullable(), messages: z.array(Loose) }), result: z.object({ warnings: z.array(ModelSelectionWarningSchema), context_tokens: z.number().int().positive().nullable(), provider: z.string(), base_url: z.string() }) },
   'models.speed_tiers': { params: ProfileHomeParams.extend({ routes: z.array(z.object({ model: z.string().min(1), provider: z.string(), base_url: z.string().optional() })) }), result: z.object({ tiers: z.array(z.array(SpeedTierSchema)) }) },
-  'models.context_length': { params: ProfileHomeParams.extend({ model: z.string().min(1), base_url: z.string().optional(), api_key: z.string().optional(), provider: z.string().optional(), config_context_length: z.number().int().nullable().optional() }), result: z.object({ model: z.string(), context_length: z.number().int().nullable() }) },
+  'models.context_length': { params: ProfileHomeParams.extend({ model: z.string().min(1), base_url: z.string().optional(), api_key: z.string().optional(), provider: z.string().optional(), config_context_length: z.number().int().nullable().optional() }), result: z.object({ model: z.string(), context_length: z.number().int().nullable(), context_window_source: ContextWindowSourceSchema.nullable().optional() }) },
   'models.estimate_tokens': { params: z.object({ messages: z.array(Loose) }), result: z.object({ tokens: z.number().int() }) },
   'models.capabilities': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string() }), result: z.object({ capabilities: Loose.nullable() }) },
 } as const
@@ -751,9 +751,10 @@ export const ChatUsageSchema = z.object({ plan_gauge: PlanGaugeSchema.nullable()
 /**
  * The turn agent's context figures (`context_length`, `threshold_tokens`, `last_prompt_tokens`, `compression_count`). TAL-1005:
  * `next_turn_threshold_tokens` is the compression threshold the next turn runs under, the primary runtime's when a fallback ran
- * this one (the Agent restores the primary each turn); absent when the Agent reports none.
+ * this one (the Agent restores the primary each turn); absent when the Agent reports none. TAL-1908: `context_window_source` is
+ * the Agent's label for that `context_length`.
  */
-const ChatContextSchema = z.looseObject({ next_turn_threshold_tokens: z.number().int().positive().optional() })
+const ChatContextSchema = z.looseObject({ next_turn_threshold_tokens: z.number().int().positive().optional(), context_window_source: ContextWindowSourceSchema.nullable().optional() })
 export const ChatStartResultSchema = z.object({
   status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), context_messages: z.array(Loose).nullable().optional(), post_compression_context_tokens_estimate: z.number().int().nullable().optional(), final_response: z.string(), error: z.string().nullable(),
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),

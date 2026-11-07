@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The context details now say when a chat's window is pinned in your config or only a fallback default, so a guess no longer reads as the model's real limit.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

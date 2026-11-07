@@ -719,7 +719,7 @@ describe('chat turns through the sidecar', () => {
     // The provider's cumulative prompt total (900K) is never the ring's numerator.
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Half full' }], {
       usage: { prompt_tokens: 900_000, completion_tokens: 30, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null },
-      context: { context_length: 128_000, last_prompt_tokens: 64_000, threshold_tokens: 100_000 },
+      context: { context_length: 128_000, context_window_source: 'fallback', last_prompt_tokens: 64_000, threshold_tokens: 100_000 },
     }))
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Ring"', usage: null }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'fill the ring' }))
@@ -727,7 +727,7 @@ describe('chat turns through the sidecar', () => {
     const done = frames.find((f) => f.event === 'done')?.data as Json
     // The shared fixture's populated example is this session: every consumer decodes the same figures.
     const example = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { context_usage_sessions: { populated: Json } }).context_usage_sessions.populated
-    const ring = { context_used_tokens: 64_000, context_window_tokens: 128_000, context_usage_percent: 50, context_threshold_percent: 78 }
+    const ring = { context_used_tokens: 64_000, context_window_tokens: 128_000, context_usage_percent: 50, context_threshold_percent: 78, context_window_source: 'fallback' }
     expect(example).toMatchObject({ ...ring, input_tokens: 900_000, context_length: 128_000, last_prompt_tokens: 64_000, threshold_tokens: 100_000 })
     expect(done.usage).toMatchObject(ring)
     expect(done.session).toMatchObject(ring)
@@ -736,6 +736,23 @@ describe('chat turns through the sidecar', () => {
     expect(row).toMatchObject(ring)
     expect(row).not.toHaveProperty('window_usage_percent')
     expect(((await json(await s.get('/api/sessions/search?q=fill'))).sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject(ring)
+  })
+
+  it('takes a switched model\'s window label from its lookup, and carries a chat\'s label to a duplicate (TAL-1908)', async () => {
+    const sid = await newSession(s)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'hi' }]
+    session.context_length = 128_000
+    session.context_window_source = 'pinned'
+    await s.deps.sessionStore.save(session)
+    sidecar.respond('models.selection_warnings', () => ({ warnings: [], context_tokens: null, provider: 'custom', base_url: '' }))
+    sidecar.respond('models.context_length', (params) => ({ model: str(params.model), context_length: 256_000, context_window_source: 'fallback' }))
+    const update = await post(s, '/api/session/update', { session_id: sid, model: 'synthetic-switched-model' })
+    expect(update.status).toBe(200)
+    expect((await json(update)).session).toMatchObject({ context_window_tokens: 256_000, context_window_source: 'fallback' })
+    const copy = await post(s, '/api/session/duplicate', { session_id: sid })
+    expect(copy.status).toBe(200)
+    expect((await json(copy)).session).toMatchObject({ context_window_tokens: 256_000, context_window_source: 'fallback' })
   })
 
   it('redacts live, journaled and replayed tool frames and ships one kind and target live, after replay and after reload', async () => {

@@ -600,7 +600,8 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
     const reasoningControl = await this.reasoningControl(target, result)
-    const fields: Row = { ...base, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: { ...this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), ...(snapshot ? { connection: this.snapshotConnection(target, snapshot) } : {}), ...(reasoningControl ? { reasoning_control: reasoningControl } : {}) }, composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
+    // TAL-1908: the owner's RPC does not report how it got its window, so no route's label applies to it.
+    const fields: Row = { ...base, context_window_source: null, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: { ...this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), ...(snapshot ? { connection: this.snapshotConnection(target, snapshot) } : {}), ...(reasoningControl ? { reasoning_control: reasoningControl } : {}) }, composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })

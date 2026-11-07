@@ -10,6 +10,7 @@ composes: ``hermes_cli.auth``, ``hermes_cli.models``, ``hermes_cli.runtime_provi
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
 import logging
 import sqlite3
@@ -562,6 +563,17 @@ def credential_pool(provider_id: str) -> dict:
     return {"available": True, "strategy": str(strategy() if callable(strategy) else strategy or ""), "entries": entries}
 
 
+def context_window_source(marker: str, *args: Any, **kwargs: Any) -> str | None:
+    """TAL-1908: the Agent's own ``pinned`` or ``fallback`` label for a window from ``agent.context_pin``; None for a
+    detected limit, or an Agent without the marker."""
+    try:
+        value = getattr(importlib.import_module("agent.context_pin"), marker)(*args, **kwargs)
+    except Exception:  # noqa: BLE001 - an Agent without the marker shows no label
+        log.debug("%s unavailable", marker, exc_info=True)
+        return None
+    return value if value in ("pinned", "fallback") else None
+
+
 def context_length(model: str, *, base_url: str, api_key: str, provider: str, config_context_length: int | None) -> int | None:
     try:
         from agent.model_metadata import get_model_context_length
@@ -735,10 +747,11 @@ def register(reg) -> None:
         model = str(params.get("model") or "").strip()
         if not model:
             raise InvalidParams("model is required")
+        base_url, provider, pin = str(params.get("base_url") or ""), str(params.get("provider") or ""), params.get("config_context_length")
         with scoped_home(profile_home_param(params)):
-            value = context_length(model, base_url=str(params.get("base_url") or ""), api_key=str(params.get("api_key") or ""), provider=str(params.get("provider") or ""),
-                                   config_context_length=params.get("config_context_length"))
-        return {"model": model, "context_length": value}
+            value = context_length(model, base_url=base_url, api_key=str(params.get("api_key") or ""), provider=provider, config_context_length=pin)
+            source = context_window_source("context_window_marker", value, pin, model=model, provider=provider, base_url=base_url) if value else None
+        return {"model": model, "context_length": value, "context_window_source": source}
 
     @reg.method("models.estimate_tokens", requires_agent=True)
     def estimate(ctx: CallContext, params: dict) -> dict:

@@ -1,3 +1,4 @@
+import { ContextWindowSourceSchema } from './context-detail.js'
 import { DelegationSettingsSchema } from './delegation.js'
 import { PlanGaugeSchema, PlanUsageSchema, ModelAllowanceSchema, ModelSectionsSchema } from './plan-usage.js'
 import { McpCostPolicySchema } from './mcp-cost-policy.js'
@@ -328,11 +329,13 @@ export type SessionGoal = z.infer<typeof SessionGoalSchema>
 /**
  * TAL-299: the context ring, computed by the server. `context_used_tokens` is the post-compression estimate, else the last
  * prompt (never the cumulative `input_tokens`); `context_window_tokens` is the model's window. The percents are rounded
- * and capped at 100. Each is null when unknown, and clients then show no percentage.
+ * and capped at 100. Each is null when unknown, and clients then show no percentage. TAL-1908: `context_window_source` labels
+ * a window the Agent did not detect; null for a detected limit, an unknown window, and native-owner chats.
  */
 export const ContextUsageFields = {
   context_used_tokens: z.number().int().positive().nullable().optional(), context_window_tokens: z.number().int().positive().nullable().optional(),
   context_usage_percent: z.number().int().min(0).max(100).nullable().optional(), context_threshold_percent: z.number().int().min(0).max(100).nullable().optional(),
+  context_window_source: ContextWindowSourceSchema.nullable().optional(),
 }
 
 // TAL-312: the server validates both flags on every session payload; clients render them and never re-derive them.

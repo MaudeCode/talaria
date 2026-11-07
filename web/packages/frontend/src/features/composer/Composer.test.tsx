@@ -992,6 +992,17 @@ describe('Composer', () => {
     expect(onLocalCommand).toHaveBeenCalledWith('compress', '')
   })
 
+  it('labels the window only when the server says it is a pin or a default (TAL-1908)', async () => {
+    const figures = { ...writable, is_streaming: false, context_used_tokens: 3_790, context_window_tokens: 256_000, context_usage_percent: 1 }
+    for (const [context_window_source, shown] of [['fallback', '3,790 / 256,000 (fallback)'], ['pinned', '3,790 / 256,000 (pinned)'], [null, '3,790 / 256,000']] as const) {
+      const { unmount } = renderComposer({ ...figures, context_window_source })
+      expect(document.getElementById('ctxIndicator')?.getAttribute('aria-label')).toContain(`(${shown})`)
+      await userEvent.click(document.getElementById('ctxIndicator')!)
+      expect(within(await screen.findByRole('dialog')).getByText(shown)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('offers Compress now only when the server says it would start, and shows a zero cost (TAL-614)', async () => {
     renderComposer({ ...writable, is_streaming: false, context_used_tokens: 900, context_window_tokens: 128_000, context_usage_percent: 1, estimated_cost: 0, can_compress: false })
     await userEvent.click(document.getElementById('ctxIndicator')!)

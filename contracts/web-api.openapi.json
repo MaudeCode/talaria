@@ -2501,6 +2501,20 @@
                               }
                             ]
                           },
+                          "context_window_source": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "fallback"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "source_reference": {
                             "type": "object",
                             "properties": {
@@ -3603,6 +3617,20 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "context_window_source": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "fallback"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -4540,6 +4568,20 @@
                                 "type": "integer",
                                 "minimum": 0,
                                 "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_window_source": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "fallback"
+                                ],
+                                "type": "string"
                               },
                               {
                                 "type": "null"
@@ -5783,6 +5825,20 @@
                                 "type": "integer",
                                 "minimum": 0,
                                 "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_window_source": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "fallback"
+                                ],
+                                "type": "string"
                               },
                               {
                                 "type": "null"
@@ -8866,6 +8922,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -10627,6 +10697,20 @@
                         }
                       ]
                     },
+                    "window_source": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "pinned",
+                            "fallback"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "estimated_total": {
                       "anyOf": [
                         {
@@ -10821,6 +10905,7 @@
                     "reason",
                     "used_tokens",
                     "window_tokens",
+                    "window_source",
                     "estimated_total",
                     "source",
                     "estimated",
@@ -13920,6 +14005,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -17764,6 +17863,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -19731,6 +19844,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -20716,6 +20843,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -21713,6 +21854,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -24546,6 +24701,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -26546,6 +26715,20 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "context_window_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "pinned",
+                                    "fallback"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -27561,6 +27744,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -30699,6 +30896,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -32877,6 +33088,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -33860,6 +34085,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -37478,6 +37717,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -41265,6 +41518,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -45120,6 +45387,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -48961,6 +49242,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -53187,6 +53482,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -54169,6 +54478,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -63482,6 +63805,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -67315,6 +67652,20 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
                             },
                             {
                               "type": "null"
@@ -71839,6 +72190,20 @@
                             }
                           ]
                         },
+                        "context_window_source": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "fallback"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "execution_mode": {
                           "enum": [
                             "normal",
@@ -76181,6 +76546,20 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "context_window_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "pinned",
+                                    "fallback"
+                                  ],
+                                  "type": "string"
                                 },
                                 {
                                   "type": "null"

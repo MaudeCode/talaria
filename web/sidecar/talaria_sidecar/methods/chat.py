@@ -35,7 +35,7 @@ from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext, WakeEvent
 from .checkpoints import checkpoint_kwargs
-from .providers import require_runtime_ownership, runtime_failure
+from .providers import context_window_source, require_runtime_ownership, runtime_failure
 from .state_db import release_all, release_home, release_session_db
 from .toolsets import disabled_toolsets
 
@@ -468,6 +468,7 @@ def _context_length(agent: Any) -> dict:
     threshold = _next_turn_threshold(agent, cc)
     if threshold:
         out["next_turn_threshold_tokens"] = threshold
+    out["context_window_source"] = context_window_source("agent_context_marker", agent)
     return out
 
 
@@ -2890,10 +2891,11 @@ def register(registry) -> None:
             with scoped_home(home), session_workspace(params.get("workspace")):
                 payload = compute_session_context_breakdown(agent, list(getattr(agent, "_session_messages", None) or []))
                 payload['context_files'] = context_file_sources_for_agent(agent)
+                window_source = context_window_source("agent_context_marker", agent)
             with _AGENT_CACHE_LOCK:
                 if _AGENT_CACHE.get(sid) is not cached or before != marks():
                     return unavailable("changed")
-            return project(payload)
+            return project(payload, window_source=window_source)
         except ImportError:
             return unavailable("unsupported")
         except Exception:  # never expose Agent diagnostics, prompt contents or paths

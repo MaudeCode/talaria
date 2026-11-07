@@ -8379,6 +8379,20 @@
             "type": "null"
           }
         ]
+      },
+      "context_window_source": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "pinned",
+              "fallback"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
@@ -10637,6 +10651,20 @@
               }
             ]
           },
+          "window_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pinned",
+                  "fallback"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "estimated_total": {
             "anyOf": [
               {
@@ -10826,6 +10854,7 @@
           "reason",
           "used_tokens",
           "window_tokens",
+          "window_source",
           "estimated_total",
           "source",
           "estimated",
@@ -11781,6 +11810,20 @@
               }
             ]
           },
+          "window_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pinned",
+                  "fallback"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "estimated_total": {
             "anyOf": [
               {
@@ -11970,6 +12013,7 @@
           "reason",
           "used_tokens",
           "window_tokens",
+          "window_source",
           "estimated_total",
           "source",
           "estimated",
@@ -13199,6 +13243,20 @@
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
+          },
+          "context_window_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pinned",
+                  "fallback"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": {}
@@ -13494,6 +13552,20 @@
           }
         ]
       },
+      "window_source": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "pinned",
+              "fallback"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "estimated_total": {
         "anyOf": [
           {
@@ -13683,6 +13755,7 @@
       "reason",
       "used_tokens",
       "window_tokens",
+      "window_source",
       "estimated_total",
       "source",
       "estimated",

@@ -14,7 +14,7 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
-import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionSkills } from '@maudecode/talaria-web-contracts'
+import type { ContextWindowSource, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -196,6 +196,8 @@ export interface SessionServiceDeps {
   titleClaimed?: (session: Session) => void
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
+  /** TAL-1908: the label of the window `contextLengthFor` or `resolveContextLength` last read for this route. */
+  contextWindowSourceFor: (model: string | null, provider: string | null, profile?: string | null) => ContextWindowSource | null
   /** TAL-301: the catalog entry id a stored `(model, provider)` pair selects (null when none or not yet known). */
   modelOptionFor?: (model: string | null, provider: string | null) => string | null
   /** Builds the catalog `modelOptionFor` reads, so a first detail load already carries `model_option_id`. */
@@ -1000,7 +1002,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   async wireRow(s: Session): Promise<Record<string, unknown>> {
-    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s), focus_path: sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace) }]))[0]!, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, contextWindowSourceFor: this.deps.contextWindowSourceFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s), focus_path: sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace) }]))[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -1275,7 +1277,7 @@ export class SessionService {
     }
     const activeStreamIds = this.deps.runtime.activeStreamIds
     const raw: Record<string, unknown> = {
-      ...s.compact({ ...(prefix ? { transcriptSummary: prefix.summary() } : {}), includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }),
+      ...s.compact({ ...(prefix ? { transcriptSummary: prefix.summary() } : {}), includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor, contextWindowSourceFor: this.deps.contextWindowSourceFor, modelOptionFor: this.deps.modelOptionFor }),
       messages: truncated,
       message_count: mergedCount,
       tool_calls: toolCalls,
@@ -2289,6 +2291,7 @@ export class SessionService {
         s.model_provider = provider
         if (changed) {
           s.context_length = contextLength
+          s.context_window_source = this.deps.contextWindowSourceFor(nextModel, provider, s.profile)
           forgetModelFigures(s)
         }
       }
@@ -2967,7 +2970,7 @@ export class SessionService {
         title: `${session.title || 'Untitled'} (copy)`, workspace: session.workspace, model: session.model, model_provider: session.model_provider,
         messages: withMirrorSources(copyJson(session.messages), session), tool_calls: copyJson(session.tool_calls), pinned: false, archived: false, project_id: session.project_id, profile: session.profile,
         input_tokens: session.input_tokens, output_tokens: session.output_tokens, estimated_cost: session.estimated_cost, cache_read_tokens: session.cache_read_tokens, cache_write_tokens: session.cache_write_tokens,
-        personality: session.personality, reasoning_effort: session.reasoning_effort, enabled_toolsets: session.enabled_toolsets, context_length: session.context_length, threshold_tokens: session.threshold_tokens,
+        personality: session.personality, reasoning_effort: session.reasoning_effort, enabled_toolsets: session.enabled_toolsets, context_length: session.context_length, context_window_source: session.context_window_source, threshold_tokens: session.threshold_tokens,
         ...watermark, context_messages: copyJson(session.context_messages),
         gateway_routing: copyJson(session.gateway_routing), gateway_routing_history: copyJson(session.gateway_routing_history), llm_title_generated: session.llm_title_generated,
         manual_title: session.manual_title, composer_draft: copyJson(session.composer_draft), context_engine: session.context_engine, context_engine_state: copyJson(session.context_engine_state),
@@ -3010,7 +3013,7 @@ export class SessionService {
       {
         owner_person_id: this.store.newSessionOwner(),
         workspace: source.workspace, model: source.model, model_provider: source.model_provider, profile: source.profile, title, messages: withMirrorSources(forked, source), project_id: source.project_id,
-        personality: source.personality, reasoning_effort: source.reasoning_effort, enabled_toolsets: source.enabled_toolsets, context_length: source.context_length, threshold_tokens: source.threshold_tokens,
+        personality: source.personality, reasoning_effort: source.reasoning_effort, enabled_toolsets: source.enabled_toolsets, context_length: source.context_length, context_window_source: source.context_window_source, threshold_tokens: source.threshold_tokens,
         context_messages: forkedContext, gateway_routing: copyJson(source.gateway_routing), context_engine: source.context_engine, context_engine_state: copyJson(source.context_engine_state),
         parent_session_id: source.session_id, session_source: 'fork',
         // TAL-1649: only a fork of the whole history carries the conversation's skill counts; a partial one cannot tell
@@ -3067,7 +3070,7 @@ export class SessionService {
           owner_person_id: this.store.newSessionOwner(),
           title: base.endsWith(' (focused continuation)') ? base : `${base} (focused continuation)`, workspace: source.workspace, model: source.model, model_provider: source.model_provider,
           project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, reasoning_effort: source.reasoning_effort, enabled_toolsets: copyJson(source.enabled_toolsets),
-          context_length: source.context_length, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
+          context_length: source.context_length, context_window_source: source.context_window_source, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
           parent_session_id: source.session_id, worktree_path: source.worktree_path, worktree_branch: source.worktree_branch, worktree_repo_root: source.worktree_repo_root, worktree_created_at: source.worktree_created_at,
           ...(source.extra[WORKTREE_RETAINED_KEY] === true ? { [WORKTREE_RETAINED_KEY]: true } : {}),
           compression_recovery_source_session_id: sid, compression_recovery_action: action,
