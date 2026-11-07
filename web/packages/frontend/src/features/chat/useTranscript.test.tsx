@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { Session } from '../../contracts'
 import type { ChatEvent } from '../../contracts/sse'
 import { parseChatEvent } from '../../contracts/sse'
 import { keys } from '../../api/queryKeys'
@@ -27,7 +28,7 @@ const api = await import('../../api/endpoints')
 const { useTranscript } = await import('./useTranscript')
 const { liveText } = await import('../../stream/reducer')
 const { resetStreamStoreForTests } = await import('../../stream/store')
-const { resetConnectionsForTests, configureStream, attachToStream, teardown } = await import('../../stream/connection')
+const { resetConnectionsForTests, configureStream, attachToStream, teardown, teardownAll } = await import('../../stream/connection')
 const { useSessionListStream } = await import('../sessions/SessionListPanel')
 
 it.each(['before', 'after'] as const)('keeps the terminal window without a detail fetch when the sidebar arrives %s done', async (order) => {
@@ -77,7 +78,7 @@ it.each(['before', 'after'] as const)('keeps the terminal window without a detai
 })
 
 beforeEach(() => { vi.resetAllMocks(); streams.length = 0; resetStreamStoreForTests() })
-afterEach(() => { cleanup(); resetConnectionsForTests(); focusManager.setFocused(undefined) })
+afterEach(() => { cleanup(); vi.useRealTimers(); resetConnectionsForTests(); focusManager.setFocused(undefined) })
 
 function historyHook(loadOnMount = false) {
   const session = sessionFixture({ session_id: 'history', message_count: 241, messages: [{ id: 241, role: 'user', content: 'latest' }], _messages_offset: 240, _messages_truncated: true })
@@ -118,6 +119,97 @@ it('a terminal snapshot retires loaded and in-flight pages before admitting cont
   await act(async () => { await result.current.loadOlder() })
   expect(api.fetchSession).toHaveBeenLastCalledWith('history', { messages: true, msg_limit: 120, msg_before: 242, resolve_model: false })
   expect(result.current.rows.map((row) => row.index)).toEqual(Array.from({ length: 240 }, (_, i) => i + 122))
+})
+
+const childRows = (from: number, count = 4) => Array.from({ length: count }, (_, i) => ({ id: from + i, role: i % 2 ? 'assistant' : 'user', content: `Row ${from + i}` }))
+const childDetail = (offset: number, messages = childRows(offset), extra: Partial<Session> = {}) => ({ session: sessionFixture({ session_id: 'child', read_only: true, refresh_after: 5, message_count: offset + messages.length, messages, _messages_offset: offset, _messages_truncated: true, ...extra }) })
+
+/** A reader of a running child's window at 100 who already paged in rows 96 to 99. */
+async function childReader(extra: Partial<Session> = {}) {
+  vi.useFakeTimers()
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  qc.setQueryData(keys.sessions.detail('child'), childDetail(100, childRows(100), extra))
+  qc.setQueryData(keys.sessions.detail('other'), { session: sessionFixture({ session_id: 'other', messages: [] }) })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const hook = renderHook(({ sid }) => useTranscript(sid), { initialProps: { sid: 'child' }, wrapper })
+  vi.mocked(api.fetchSession).mockResolvedValueOnce(childDetail(96, childRows(96), extra))
+  await act(async () => { await hook.result.current.loadOlder() })
+  expect(loaded(hook.result.current.rows)).toEqual(indexes(96, 8))
+  return hook
+}
+const indexes = (from: number, count: number) => Array.from({ length: count }, (_, i) => from + i)
+/** The rows' absolute indexes, after proving each one still holds the row at that index. */
+const loaded = (rows: { index: number; message: { content?: unknown } }[]) => {
+  for (const row of rows) expect(row.message.content).toBe(`Row ${row.index}`)
+  return rows.map((row) => row.index)
+}
+/** The next timer-driven reread of the child returns this detail. */
+const reread = async (detail: ReturnType<typeof childDetail>) => {
+  vi.mocked(api.fetchSession).mockResolvedValueOnce(detail)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_010) })
+}
+
+it('keeps a reader\'s loaded rows while a running child\'s window advances, and pages on from them (TAL-1925)', async () => {
+  const { result } = await childReader()
+  await reread(childDetail(102))
+  expect(loaded(result.current.rows)).toEqual(indexes(96, 10))
+  expect(result.current.base).toBe(96)
+  await reread(childDetail(105))
+  expect(loaded(result.current.rows)).toEqual(indexes(96, 13))
+  vi.mocked(api.fetchSession).mockResolvedValueOnce(childDetail(92))
+  await act(async () => { await result.current.loadOlder() })
+  expect(api.fetchSession).toHaveBeenLastCalledWith('child', { messages: true, msg_limit: 120, msg_before: 96, resolve_model: false })
+  expect(loaded(result.current.rows)).toEqual(indexes(92, 17))
+})
+
+it.each<[string, (hook: Awaited<ReturnType<typeof childReader>>) => Promise<void> | void, number[]]>([
+  ['a boundary that moved backward', () => reread(childDetail(100)), indexes(100, 4)],
+  ['a jump past the previous window', () => reread(childDetail(110)), indexes(110, 4)],
+  ['a window whose rows no longer line up with the previous one', () => reread(childDetail(104, [{ id: 900, role: 'user', content: 'Row 104' }])), [104]],
+  ['a session change', ({ rerender }) => { rerender({ sid: 'other' }); rerender({ sid: 'child' }) }, indexes(102, 4)],
+  ['a stream context change', () => act(() => teardownAll()), indexes(102, 4)],
+])('%s retires loaded rows, even after an advance kept them (TAL-1925)', async (_name, move, remaining) => {
+  const hook = await childReader()
+  await reread(childDetail(102))
+  expect(loaded(hook.result.current.rows)).toEqual(indexes(96, 10))
+  vi.mocked(api.fetchSession).mockResolvedValue(childDetail(102))
+  await move(hook)
+  expect(loaded(hook.result.current.rows)).toEqual(remaining)
+})
+
+it('a history cut does not carry its rows across the next advance (TAL-1925)', async () => {
+  const { result } = await childReader()
+  vi.mocked(api.fetchSession).mockResolvedValueOnce(childDetail(102))
+  await act(async () => { await result.current.refresh(undefined, true); await vi.advanceTimersByTimeAsync(10) })
+  expect(loaded(result.current.rows)).toEqual(indexes(102, 4))
+})
+
+it('an older page still loading when the window advances lands in place (TAL-1925)', async () => {
+  const { result } = await childReader()
+  const page = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+  vi.mocked(api.fetchSession).mockReturnValueOnce(page.promise)
+  let loading!: Promise<void>
+  act(() => { loading = result.current.loadOlder() })
+  await reread(childDetail(102))
+  expect(result.current.loadingOlder).toBe(true)
+  await act(async () => { page.resolve(childDetail(92)); await loading })
+  expect(result.current.loadingOlder).toBe(false)
+  expect(loaded(result.current.rows)).toEqual(indexes(92, 14))
+})
+
+it('an advance does not reread owner history, and its refreshed rows stay on top of the carried ones (TAL-1925)', async () => {
+  const refreshed = (row: ReturnType<typeof childRows>[number]) => ({ ...row, reasoning: 'refreshed' })
+  const history = childDetail(96, childRows(96).map(refreshed), { show_reasoning: true })
+  vi.mocked(api.fetchSession).mockResolvedValue(history)
+  const { result } = await childReader({ show_reasoning: true })
+  await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+  expect(result.current.rows[0]?.message.reasoning).toBe('refreshed')
+  vi.mocked(api.fetchSession).mockClear()
+  await reread(childDetail(102, childRows(102), { show_reasoning: true }))
+  expect(api.fetchSession).toHaveBeenCalledTimes(1)
+  expect(loaded(result.current.rows)).toEqual(indexes(96, 10))
+  expect(result.current.rows[0]?.message.reasoning).toBe('refreshed')
+  expect(result.current.rows[4]?.message.reasoning).toBeUndefined()
 })
 
 it('keeps a cached entry page requested during layout when mount effects run', async () => {
