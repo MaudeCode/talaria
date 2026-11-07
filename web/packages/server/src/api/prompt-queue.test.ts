@@ -46,6 +46,13 @@ async function setup() {
   return { sidecar, sessions, run: await response.json() as PromptQueueRun }
 }
 const read = async () => (await server!.deps.promptQueues.list()).runs[0]!
+/** Holds fake turns open so a card stays `running` across the 2 s reconcile timer; returns the release. */
+function holdTurns(sidecar: FakeSidecar) {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  sidecar.respond('chat.start', async (params) => { await gate; return completed(params) })
+  return release
+}
 async function act(run: PromptQueueRun, action: string) {
   const response = await post(`/api/prompt-queues/${run.id}/action`, { revision: run.revision, action })
   expect(response.status).toBe(200)
@@ -215,15 +222,17 @@ it('uses native submission and exact admission receipts, with no direct worker o
 })
 
 it('preserves a Pause committed while an authoritative completion receipt is being read', async () => {
-  const { run } = await setup()
+  const { sidecar, run } = await setup()
+  const releaseTurn = holdTurns(sidecar)
   let current = await act(run, 'start')
-  await server!.deps.turns.finished(current.cards[0]!.stream_id!)
   let release!: () => void
   let entered!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
   const entry = new Promise<void>((resolve) => { entered = resolve })
   const original = server!.deps.journal.summary.bind(server!.deps.journal)
   vi.spyOn(server!.deps.journal, 'summary').mockImplementation(async (...args) => { entered(); await gate; return original(...args) })
+  releaseTurn()
+  await server!.deps.turns.finished(current.cards[0]!.stream_id!)
   server!.deps.promptQueues.wake(run.id)
   await entry
   const response = await post(`/api/prompt-queues/${run.id}/action`, { revision: current.revision, action: 'pause' })
@@ -236,11 +245,13 @@ it('preserves a Pause committed while an authoritative completion receipt is bei
 })
 
 it('recovers persisted direct receipts after a queue-worker restart without admitting a step twice', async () => {
-  const { run } = await setup()
+  const { sidecar, run } = await setup()
+  const releaseTurn = holdTurns(sidecar)
   const dispatch = vi.spyOn(server!.deps.turns, 'start')
   let current = await act(run, 'start')
-  await server!.deps.turns.finished(current.cards[0]!.stream_id!)
   await server!.deps.promptQueues.close()
+  releaseTurn()
+  await server!.deps.turns.finished(current.cards[0]!.stream_id!)
   const documents = new JsonDocuments(server!.state)
   const restarted = new PromptQueues(documents, () => server!.deps)
   server!.deps.promptQueues = restarted
@@ -253,14 +264,18 @@ it('recovers persisted direct receipts after a queue-worker restart without admi
 })
 
 it('accepts immediate Pause from the Start acknowledgement despite receipt-only progress', async () => {
-  const { run } = await setup()
+  const { sidecar, run } = await setup()
+  const releaseTurn = holdTurns(sidecar)
   const response = await post(`/api/prompt-queues/${run.id}/action`, { revision: run.revision, action: 'start' })
   const acknowledged = await response.json() as PromptQueueRun
   await server!.deps.promptQueues.settled()
-  expect((await read()).cards[0]!.status).toBe('running')
+  const running = (await read()).cards[0]!
+  expect(running.status).toBe('running')
   const pause = await post(`/api/prompt-queues/${run.id}/action`, { revision: acknowledged.revision, action: 'pause' })
   expect(pause.status).toBe(200)
   expect((await read()).phase).toBe('paused')
+  releaseTurn()
+  await server!.deps.turns.finished(running.stream_id!)
 })
 
 it('runs a queue with its creator\'s person authority once person isolation is on (TAL-48)', async () => {
