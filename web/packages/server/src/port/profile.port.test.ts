@@ -19,6 +19,15 @@ import { jobForApi } from '../tools/crons.js'
 import { str } from '../util.js'
 import { writeEnvFile } from '../test/env-file.js'
 
+/** Holds a sidecar handler open: `entered` resolves once the RPC is dispatched, and `release` is safe at any time. */
+function parkHandler(): { entered: Promise<void>; park: () => Promise<void>; release: () => void } {
+  let enter!: () => void
+  let release!: () => void
+  const entered = new Promise<void>((resolve) => { enter = resolve })
+  const released = new Promise<void>((resolve) => { release = resolve })
+  return { entered, park: () => { enter(); return released }, release }
+}
+
 useJsonStorage()
 
 type Json = Record<string, unknown>
@@ -683,17 +692,18 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const switched = await post(s, '/api/profile/switch', { name: 'titling' })
     const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
     const sid = String(((await json(await post(s, '/api/session/new', { profile: 'titling' }, { cookie }))).session as Json).session_id)
-    let releaseTitle: () => void = () => undefined
-    sidecar.respond('aux.complete', () => new Promise((resolve) => { releaseTitle = () => { resolve({ model: 'aux', text: 'Titled', usage: null }) } }))
+    const title = parkHandler()
+    sidecar.respond('aux.complete', async () => { await title.park(); return { model: 'aux', text: 'Titled', usage: null } })
     sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }], final_response: 'done', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello there' }, { cookie }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'done', { headers: { cookie } })
     // Admission is released at `done`, but the title prompt is still parked on the profile's aux route.
+    await title.entered
     sidecar.respond('profiles.delete', () => ({ ok: true }))
     const refused = await post(s, '/api/profile/delete', { name: 'titling' }, asWork())
     expect(refused.status).toBe(409)
     expect(String((await json(refused)).error)).toContain('while an agent is running')
-    releaseTitle()
+    title.release()
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end', { headers: { cookie } })
     await new Promise((r) => setTimeout(r, 50))
     expect(await json(await post(s, '/api/profile/delete', { name: 'titling' }, asWork()))).toEqual({ ok: true, name: 'titling' })
@@ -709,14 +719,11 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(cookie).toMatch(/^hermes_profile=doomed/)
     const created = await post(s, '/api/session/new', { profile: 'doomed' }, { cookie })
     const sid = String(((await json(created)).session as Json).session_id)
-    // A latch, not a callback the responder installs: the test can reach its release before the RPC starts.
-    let releaseDelete: () => void = () => undefined
-    const released = new Promise<void>((resolve) => { releaseDelete = resolve })
-    sidecar.respond('profiles.delete', async (params) => { await released; rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const rpc = parkHandler()
+    sidecar.respond('profiles.delete', async (params) => { await rpc.park(); rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }], final_response: 'late', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const deletion = post(s, '/api/profile/delete', { name: 'doomed' }, asWork())
-    const until = Date.now() + 5000
-    while (!s.deps.profiles.isDeleting('doomed') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await rpc.entered
     const refused = await post(s, '/api/chat/start', { session_id: sid, message: 'sneak in' }, { cookie })
     expect(refused.status).toBe(409)
     expect(String((await json(refused)).error)).toContain('being deleted')
@@ -736,7 +743,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const sneak = await post(s, '/api/profile/switch', { name: 'doomed' }, asWork())
     expect(sneak.status).toBe(409)
     expect(sneak.headers.get('set-cookie')).toBeNull()
-    releaseDelete()
+    rpc.release()
     expect(await json(await deletion)).toEqual({ ok: true, name: 'doomed' })
     expect(s.deps.profiles.isDeleting('doomed')).toBe(false)
     // The home is gone: a client still carrying the old cookie cannot write (and so cannot recreate it), but can
@@ -867,14 +874,15 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const switched = await post(s, '/api/profile/switch', { name: 'memo' })
     const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
     const first = String(((await json(await post(s, '/api/session/new', { profile: 'memo' }, { cookie }))).session as Json).session_id)
-    let finishCommit: () => void = () => undefined
-    sidecar.respond('chat.commit_memory', () => new Promise((resolve) => { finishCommit = () => { resolve({ committed: true }) } }))
+    const commit = parkHandler()
+    sidecar.respond('chat.commit_memory', async () => { await commit.park(); return { committed: true } })
     expect((await post(s, '/api/session/new', { profile: 'memo', prev_session_id: first }, { cookie })).status).toBe(200)
+    await commit.entered
     expect(sidecar.calls.filter((c) => c.method === 'chat.commit_memory').at(-1)?.params).toEqual({ profile_home: join(s.state, 'profiles', 'memo'), session_id: first })
     sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     const refused = await post(s, '/api/profile/delete', { name: 'memo' }, asWork())
     expect(refused.status).toBe(409)
-    finishCommit()
+    commit.release()
     await new Promise((r) => setTimeout(r, 50))
     expect(await json(await post(s, '/api/profile/delete', { name: 'memo' }, asWork()))).toEqual({ ok: true, name: 'memo' })
   })
@@ -917,14 +925,15 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     await new Promise((r) => setTimeout(r, 60))
     expect(s.deps.profiles.isDeleting('memo2')).toBe(true)
     // ...starts a detached memory commit on its way out, then releases the lease.
-    let finishCommit: () => void = () => undefined
-    sidecar.respond('chat.commit_memory', () => new Promise((resolve) => { finishCommit = () => { resolve({ committed: true }) } }))
+    const commit = parkHandler()
+    sidecar.respond('chat.commit_memory', async () => { await commit.park(); return { committed: true } })
     await s.deps.sessions.deps.commitSessionMemory?.(first)
+    await commit.entered
     if (typeof release === 'function') release()
     const refused = await deleting
     expect(refused.status).toBe(409)
     expect(existsSync(join(s.state, 'profiles', 'memo2'))).toBe(true)
-    finishCommit()
+    commit.release()
     await new Promise((r) => setTimeout(r, 50))
     expect(await json(await post(s, '/api/profile/delete', { name: 'memo2' }, asWork()))).toEqual({ ok: true, name: 'memo2' })
   })
