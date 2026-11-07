@@ -2,8 +2,9 @@
  * Gateway session watcher (Python `api/gateway_watcher.py`): polls one
  * profile's `state.db` every 5 s, skips the projection while the O(1)
  * fingerprint is unchanged (with a 300 s parity pass), and pushes
- * `sessions_changed` snapshots to bounded subscriber queues. One watcher per
- * profile home, started lazily by the SSE routes.
+ * `sessions_changed` snapshots to bounded subscriber queues. A tick with no
+ * subscribers reads nothing. One watcher per profile home, started lazily by
+ * the SSE routes.
  */
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -157,6 +158,12 @@ export class GatewayWatcher {
   }
 
   private async poll(now: number): Promise<boolean> {
+    if (!this.hasSubscribers()) {
+      // Nobody hears this pass; forget what was published so the next subscriber's first pass projects and publishes.
+      this.lastCheapFp = null
+      this.lastHash = ''
+      return false
+    }
     const exists = existsSync(this.stateDbPath)
     // Never publish an empty first snapshot before the Agent has created state.db.
     if (!exists && this.lastFullProjectionAt === null && !this.lastHash) return false

@@ -586,6 +586,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
 
   it('never stacks gateway polls', async () => {
     const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
+    const sub = watcher.subscribe()
     setStateDbReadDelayForTests(300)
     try {
       const first = watcher.pollOnce()
@@ -593,6 +594,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
       expect(await first).toBe(true)
     } finally {
       setStateDbReadDelayForTests(0)
+      sub.close()
       watcher.stop()
     }
   })
@@ -600,6 +602,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
   it('lets no read interrupted by shutdown restart the worker while it stops', async () => {
     s.deps.cliSessions.invalidate()
     const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
+    const sub = watcher.subscribe()
     setStateDbReadDelayForTests(1500)
     // The fingerprint read is held when the stop lands; its caller then goes on to the projection read.
     const poll = watcher.pollOnce()
@@ -607,6 +610,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
     await stopStateDbWorker()
     expect(await poll).toBe(false)
+    sub.close()
     watcher.stop()
   })
 

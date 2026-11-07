@@ -9,6 +9,7 @@ import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON, type StateDbWorkerRequest } from './state-db.js'
 import { GatewaySessions } from './gateway-sessions.js'
+import type { GatewaySubscriber, GatewayWatcher } from './gateway-watcher.js'
 import { TerminalSession } from '../tools/terminal.js'
 import { admission, attached, bootOwnerAttachment, fixture, nativeNotices, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
 
@@ -30,12 +31,19 @@ describe('gateway sidebar cache', () => {
   })
   afterEach(async () => { db.close(); await s.close() })
 
-  it('shares one listing worker call between a changed gateway poll and the sidebar list once settled', async () => {
+  /** The watcher's start tick had no subscriber, so the first subscribed pass publishes the opening snapshot. */
+  async function subscribedWatcher(): Promise<{ watcher: GatewayWatcher; sub: GatewaySubscriber }> {
     const watcher = s.deps.gatewayWatchers.get('default')
     const sub = watcher.subscribe()
-    expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.some((row) => row.session_id === sid)).toBe(true)
-    // Let the initial poll release its in-flight guard before the explicit changed pass.
+    // Let the start tick release its in-flight guard.
     await Promise.resolve()
+    expect(await watcher.pollOnce()).toBe(true)
+    return { watcher, sub }
+  }
+
+  it('shares one listing worker call between a changed gateway poll and the sidebar list once settled', async () => {
+    const { watcher, sub } = await subscribedWatcher()
+    expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.some((row) => row.session_id === sid)).toBe(true)
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'another turn', 9999)
     db.prepare('UPDATE sessions SET message_count = 3 WHERE id = ?').run(sid)
     settleDatabase()
@@ -58,12 +66,10 @@ describe('gateway sidebar cache', () => {
   })
   it.each(['cli', 'cron'])('retries failed %s row builds without publishing an empty snapshot', async (source) => {
     db.prepare('UPDATE sessions SET source = ? WHERE id = ?').run(source, sid)
-    const watcher = s.deps.gatewayWatchers.get('default')
-    const sub = watcher.subscribe()
+    const { watcher, sub } = await subscribedWatcher()
     const metadata = vi.spyOn(s.deps.sessionStore, 'persistedIds')
     try {
       expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.find((row) => row.session_id === sid)).toMatchObject({ message_count: 2 })
-      await Promise.resolve()
       now += 5
       db.prepare('UPDATE sessions SET message_count = 3 WHERE id = ?').run(sid)
       settleDatabase()
