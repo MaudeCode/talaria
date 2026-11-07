@@ -1726,6 +1726,13 @@
         ""
       ]
     },
+    "tests/test_namespaces.py::test_config_get_resolves_references_under_each_profile_scope": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent secret-scope API: config.get resolves references through the real expander and profile scope, with fail-closed multiplexing that a fabricated Agent cannot prove.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_namespaces.py::test_config_set_writes_through_a_symlinked_config": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: config set writes through a symlinked config. Uses the real installed release, not a fabricated API response.",

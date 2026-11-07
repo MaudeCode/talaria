@@ -66,6 +66,23 @@ def read_config(path: Path) -> dict:
     return {"path": str(path), "exists": True, "config": data if data is not None else {}}
 
 
+def resolved_config(home: Path, config: dict) -> dict | None:
+    """``config`` with the Agent's own ``${VAR}`` expansion under ``home``'s secret scope; ``None`` when the Agent cannot provide it.
+
+    Not ``read_only``: that binding skips the secret scope, so a named profile would read the launch process environment.
+    Unresolved references stay verbatim, as the Agent leaves them. The source document stays raw for writes.
+    ponytail: secret-source plugins stay unloaded, so a config read runs no third-party code or network; a reference only a
+    vault supplies stays unresolved until a turn hydrates that home. Add hydration here if such references need to show earlier.
+    """
+    try:
+        expand = importlib.import_module("hermes_cli.config")._expand_env_vars
+        with scoped_home(home, load_plugins=False, recover_processes=False):
+            return expand(config)
+    except Exception:  # noqa: BLE001 - config.get must survive a broken Agent; readers then treat every reference as unset
+        log.debug("Config reference resolution unavailable for %s", home, exc_info=True)
+        return None
+
+
 def _write_target(path: Path) -> Path:
     """Where the bytes land: a symlinked config.yaml (operator-managed file) is updated through its referent."""
     if not path.is_symlink():
@@ -340,7 +357,8 @@ def register(registry) -> None:
 
     @registry.method("config.get", requires_agent=False)
     def get(ctx: CallContext, params: dict) -> dict:
-        return read_config(config_path_param(params))
+        result = read_config(config_path_param(params))
+        return {**result, "resolved": resolved_config(profile_home_param(params), result["config"])}
 
     @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:

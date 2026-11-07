@@ -1067,12 +1067,13 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
     const model = modelSection(config)
-    const defaultModel = effectiveDefaultModel(config, this.deps.env)
+    const resolved = await this.deps.config.readResolved(profileHome)
+    const defaultModel = effectiveDefaultModel(resolved, this.deps.env)
     const cfgBaseUrl = str(model.base_url).trim()
     const localLookup = await this.localModels(profileHome)
     const local = localLookup.value?.models.length ? localLookup.value : null
     const pluginIds = new Set(providerState.providers.filter((row) => row.is_plugin_provider === true).map((row) => str(row.id)))
-    const configured = activeProviderFromConfig(config, pluginIds, pluginAliases)
+    const configured = activeProviderFromConfig(resolved, pluginIds, pluginAliases)
     // A `custom` main model at the running local server's endpoint is that server: its Local group owns the selection.
     const atLocalServer = configured === 'custom' && Boolean(cfgBaseUrl) && cfgBaseUrl.replace(/\/+$/, '') === str(local?.current_endpoint).replace(/\/+$/, '')
     const active = local && atLocalServer ? local.provider_id : configured

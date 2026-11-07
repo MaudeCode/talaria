@@ -241,6 +241,30 @@ def test_config_rpcs_use_the_server_resolved_path(handshaken: SidecarProcess, he
 
 
 @requires_agent
+def test_config_get_resolves_references_under_each_profile_scope(hermes_home: pathlib.Path) -> None:
+    """``resolved`` is the Agent's expansion under the profile's own scope; ``config`` stays the raw document."""
+    source = "model:\n  default: ${SYNTH_MODEL}\n"
+    (hermes_home / "config.yaml").write_text(source, encoding="utf-8")
+    homes = {name: hermes_home / "profiles" / name for name in ("alpha", "beta")}
+    for home in homes.values():
+        home.mkdir(parents=True)
+        (home / "config.yaml").write_text(source, encoding="utf-8")
+    (homes["alpha"] / ".env").write_text("SYNTH_MODEL=alpha-model\n", encoding="utf-8")
+    proc = SidecarProcess(hermes_home, env={"SYNTH_MODEL": "launch-model"})
+    try:
+        assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
+        read = lambda home: proc.result("config.get", {"profile_home": str(home), "config_path": str(home / "config.yaml")})
+        alpha = read(homes["alpha"])
+        assert alpha["config"]["model"]["default"] == "${SYNTH_MODEL}"
+        assert alpha["resolved"]["model"]["default"] == "alpha-model"
+        # A named profile without the key never falls through to the launch process or another profile.
+        assert read(homes["beta"])["resolved"]["model"]["default"] == "${SYNTH_MODEL}"
+        assert read(hermes_home)["resolved"]["model"]["default"] == "launch-model"
+    finally:
+        proc.close()
+
+
+@requires_agent
 @pytest.mark.parametrize("mode", [0o600, 0o640])
 def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, mode: int) -> None:
     """An operator-managed ``config.yaml`` symlink keeps pointing at its referent; the referent gets the bytes."""

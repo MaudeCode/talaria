@@ -523,12 +523,15 @@ def test_config_reads_survive_agent_import_failure(tmp_path, hermes_home) -> Non
     broken_agent = tmp_path / "broken-agent"
     broken_agent.mkdir()
     (broken_agent / "run_agent.py").write_text("raise ImportError('synthetic broken Agent')\n")
+    (broken_agent / "hermes_cli").mkdir()
+    (broken_agent / "hermes_cli" / "__init__.py").write_text("raise ImportError('synthetic broken Agent')\n")
     config = hermes_home / "config.yaml"
     config.write_text("webui_oidc:\n  issuer: https://idp.example\n")
     proc = SidecarProcess(hermes_home, agent_dir=broken_agent)
     try:
         assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"] is False
-        assert proc.result("config.get", {"profile_home": str(hermes_home)})["config"] == {"webui_oidc": {"issuer": "https://idp.example"}}
+        read = proc.result("config.get", {"profile_home": str(hermes_home)})
+        assert read["config"] == {"webui_oidc": {"issuer": "https://idp.example"}} and read["resolved"] is None
         assert proc.result("config.set", {"profile_home": str(hermes_home), "config": {"webui_oidc": {"issuer": "https://repaired.example"}}})["ok"] is True
         assert proc.result("config.get", {"profile_home": str(hermes_home)})["config"] == {"webui_oidc": {"issuer": "https://repaired.example"}}
         message, _ = proc.call("runtime.ensure_current")

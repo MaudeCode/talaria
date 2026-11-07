@@ -399,7 +399,8 @@ application errors in `-32000..-32099`, one per error condition
    The server warns when the loaded revision differs. Agent calls remain available while the imported runtime
    is current, with individual methods checking their required capabilities and profile credential isolation.
    A failed Agent import blocks Agent methods but allows `config.get` and `config.set` after a valid RPC handshake,
-   so SSO and authorized config repair remain available. A protocol mismatch still blocks all methods.
+   so SSO and authorized config repair remain available. `config.get` then answers `resolved: null`, and the server
+   treats every `${VAR}` reference as unset. A protocol mismatch still blocks all methods.
    A stale loaded runtime blocks Agent methods with `agent_runtime_stale`.
 5. On sidecar exit the server restarts it with exponential backoff (1 s, 2 s,
    4 s, capped at 30 s). Each spawn re-resolves the interpreter, so a replaced PM

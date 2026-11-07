@@ -25,13 +25,24 @@ export type Dict = Record<string, unknown>
 export const isDict = (v: unknown): v is Dict => typeof v === 'object' && v !== null && !Array.isArray(v)
 export const dict = (v: unknown): Dict => (isDict(v) ? v : {})
 
+/** The Agent's `${VAR}` / `${env:VAR}` reference syntax (`hermes_cli.config._ENV_REF_RE`). */
+const ENV_REFERENCE = /\$\{[^}]+\}/
+const isReference = (v: unknown): boolean => typeof v === 'string' && ENV_REFERENCE.test(v)
+/** A reference left after resolution means unset: it never reaches a turn, a session or a path. */
+function withoutReferences<T>(value: T): T {
+  if (Array.isArray(value)) return value.filter((item) => !isReference(item)).map(withoutReferences) as T
+  if (!isDict(value)) return value
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => !isReference(item)).map(([key, item]) => [key, withoutReferences(item)])) as T
+}
+
 export class ConfigUnavailable extends Error {}
 
 /** `profileFile`: address `<home>/config.yaml` itself, ignoring `HERMES_CONFIG_PATH` (Python `_active_profile_config_path` for skills). */
 export interface ConfigFileOptions { profileFile?: boolean }
 
 export class AgentConfig {
-  private readonly cache = new Map<string, { key: string; config: Config }>()
+  /** `resolved` is per home: homes sharing an `HERMES_CONFIG_PATH` override expand it under their own secret scopes, and `.env` is an input. */
+  private readonly cache = new Map<string, { key: string; config: Config; resolved: Map<string, { env: string; config: Config }> }>()
   private readonly locks = new Map<string, Promise<unknown>>()
 
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; env: Record<string, string | undefined> }) {}
@@ -59,24 +70,64 @@ export class AgentConfig {
     try { return this.statKey(profileHome) } catch { return 'unreadable' }
   }
 
+  private envKey(profileHome: string): string {
+    try { return fileStatKey(join(profileHome, '.env')) } catch { return 'unavailable' }
+  }
+
   /** Parsed config.yaml (empty object when the file is missing). */
   async read(profileHome: string, opts: ConfigFileOptions = {}): Promise<Config> {
-    const file = this.path(profileHome, opts)
     const key = this.statKey(profileHome, opts)
-    const hit = this.cache.get(file)
+    const hit = this.cache.get(this.path(profileHome, opts))
     if (hit?.key === key) return structuredClone(hit.config)
     if (key === 'missing') return {}
+    return structuredClone((await this.load(profileHome, opts)).config)
+  }
+
+  /**
+   * TAL-1833: the config as the Agent reads it for this home, for values used as a model, provider or path. A reference
+   * that stays unresolved is absent. It can hold resolved secrets, so it never feeds a client view or a write.
+   */
+  async readResolved(profileHome: string): Promise<Config> {
+    const key = this.statKey(profileHome)
+    if (key === 'missing') return {}
+    return structuredClone(this.cachedResolved(profileHome, key) ?? (await this.load(profileHome)).resolved)
+  }
+
+  /** The resolved view for callers that cannot await; like `peek`, null until a read for the current files lands. */
+  peekResolved(profileHome: string): Config | null {
+    let key: string
+    try { key = this.statKey(profileHome) } catch { return null }
+    if (key === 'missing') return {}
+    const cached = this.cachedResolved(profileHome, key)
+    if (!cached) void this.load(profileHome).catch(() => undefined)
+    return cached
+  }
+
+  private cachedResolved(profileHome: string, key: string): Config | null {
+    const hit = this.cache.get(this.path(profileHome))
+    if (hit?.key !== key) return null
+    const resolved = hit.resolved.get(profileHome)
+    return resolved?.env === this.envKey(profileHome) ? resolved.config : null
+  }
+
+  private async load(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; resolved: Config }> {
+    const file = this.path(profileHome, opts)
     const sidecar = this.deps.sidecar()
     if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml is unavailable')
     // The snapshot is keyed by the fingerprint observed before the read; a file replaced while the RPC was in flight
     // is re-read once and otherwise reported unavailable rather than cached under the new key.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const before = this.statKey(profileHome, opts)
+      const env = this.envKey(profileHome)
       const result = await sidecar.call('config.get', { profile_home: profileHome, config_path: file })
       const config = isDict(result.config) ? result.config : {}
       if (this.statKey(profileHome, opts) === before) {
-        this.cache.set(file, { key: before, config })
-        return structuredClone(config)
+        const previous = this.cache.get(file)
+        const homes = previous?.key === before ? previous.resolved : new Map<string, { env: string; config: Config }>()
+        const resolved = withoutReferences(isDict(result.resolved) ? result.resolved : config)
+        homes.set(profileHome, { env, config: resolved })
+        this.cache.set(file, { key: before, config, resolved: homes })
+        return { config, resolved }
       }
     }
     throw new ConfigUnavailable('config.yaml changed while it was being read; retry')
@@ -458,6 +509,9 @@ export function effectiveDefaultModel(config: Config, env: Record<string, string
 export function modelSection(config: Config): Dict {
   return dict(config.model)
 }
+
+/** The model fields of either config form: the mapping, or a bare `model: <id>`. */
+const modelFields = (config: Config): Dict => (typeof config.model === 'string' ? { default: config.model } : modelSection(config))
 
 const customEntryNamed = (entry: Dict, provider: string): boolean => customProviderSlug(entry.name) === customProviderSlug(provider) || str(entry.name).trim().toLowerCase() === provider
 
@@ -977,7 +1031,9 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
   let persistedProvider = ''
   await store.update(home, async (config) => {
     const modelCfg = modelSection(config)
-    const previousProvider = str(modelCfg.provider).trim()
+    const written = { ...modelFields(config) }
+    const shown = modelFields(await store.readResolved(home))
+    const previousProvider = str(shown.provider).trim()
     const requested = str(providerRaw).trim()
     const parsed = parseProviderQualifiedModel(selected)
     let resolvedModel = selected
@@ -1036,6 +1092,10 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
       else Reflect.deleteProperty(modelCfg, 'base_url')
     }
     applyAdvancedModelOptions(modelCfg, advanced)
+    // TAL-1833: clients show the resolved value, so saving it again leaves the reference in the file.
+    for (const field of ['default', 'provider', 'base_url']) {
+      if (isReference(written[field]) && shown[field] !== undefined && modelCfg[field] === shown[field]) modelCfg[field] = written[field]
+    }
     config.model = modelCfg
     if (modelCfg.service_tier) {
       const [tiers] = await store.speedTiers(home, config, [{ model: persistedModel, provider: persistedProvider }])
