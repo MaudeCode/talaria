@@ -1067,7 +1067,6 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
         await svc.resumeContinuations()
         expect([outcomes, record(stateDir)?.runs.map((run) => run.stream_id)]).toEqual([['refused'], ['r1']])
         await vi.advanceTimersByTimeAsync(15_000)
-        await svc.resumeContinuations()
         expect([outcomes, record(stateDir)]).toEqual([['refused', 'started:chat-r1'], null])
       } finally { vi.useRealTimers() }
     })

@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import { turnTerminalState, withTurnIds } from '../sessions/anchor.js'
 import type { Session } from '../sessions/session.js'
+import type { AdmissionResult } from '../sessions/turn.js'
 import { str } from '../util.js'
 
 export const UPDATE_CONTINUATION_PROMPT = 'Continue where you left off.'
@@ -70,7 +71,7 @@ export interface ContinueChatDeps {
   /** The session, or null when it no longer exists. */
   session: (sessionId: string) => Promise<Session | null>
   readOnlyReason: (session: Session) => Promise<string | null>
-  startTurn: (session: Session) => Promise<{ _status?: number; error?: string; held?: boolean; active_stream_id?: string }>
+  startTurn: (session: Session) => Promise<Pick<AdmissionResult, '_status' | 'error' | 'held' | 'active_stream_id'>>
   log: (line: string) => void
 }
 
