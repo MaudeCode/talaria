@@ -1,7 +1,10 @@
-/** Minimal zip reader (central directory; stored and deflate members) for gallery extension installs. */
-import { crc32, inflateRawSync } from 'node:zlib'
+/** Minimal zip reader (central directory; stored and deflate members) for gallery extension installs and archive extraction; members inflate on the zlib threadpool. */
+import { promisify } from 'node:util'
+import { crc32, inflateRaw } from 'node:zlib'
 
-export interface ZipEntry { name: string; size: number; isDir: boolean; read: () => Buffer }
+const inflateRawAsync = promisify(inflateRaw)
+
+export interface ZipEntry { name: string; size: number; isDir: boolean; read: () => Promise<Buffer> }
 
 export class BadZipError extends Error {}
 
@@ -27,7 +30,7 @@ export function readZip(buf: Buffer): ZipEntry[] {
     offset += 46 + nameLen + extraLen + commentLen
     entries.push({
       name, size, isDir: name.endsWith('/'),
-      read: () => {
+      read: async () => {
         if (localOffset + 30 > buf.length || buf.readUInt32LE(localOffset) !== 0x04034b50) throw new BadZipError('local header corrupt')
         const lnameLen = buf.readUInt16LE(localOffset + 26)
         const lextraLen = buf.readUInt16LE(localOffset + 28)
@@ -37,7 +40,7 @@ export function readZip(buf: Buffer): ZipEntry[] {
         if (method === 0) out = Buffer.from(raw)
         else if (method === 8) {
           // The declared size is the output cap: a crafted member cannot inflate past what the caller already budgeted.
-          try { out = inflateRawSync(raw, { maxOutputLength: Math.max(1, size) }) } catch (error) { throw new BadZipError(`member ${name} inflates past its declared size: ${(error as Error).message}`) }
+          try { out = await inflateRawAsync(raw, { maxOutputLength: Math.max(1, size) }) } catch (error) { throw new BadZipError(`member ${name} inflates past its declared size: ${(error as Error).message}`) }
         } else throw new BadZipError(`unsupported compression method ${String(method)}`)
         if (out.length !== size) throw new BadZipError(`member ${name} is ${String(out.length)} bytes but declares ${String(size)}`)
         if (crc32(out) !== crc) throw new BadZipError(`Bad CRC-32 for file ${name}`)

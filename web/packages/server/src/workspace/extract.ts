@@ -7,15 +7,19 @@
 import { closeSync, lstatSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { basename, join, relative } from 'node:path'
-import { gunzipSync } from 'node:zlib'
-import Bunzip from 'seek-bzip'
+import { setImmediate } from 'node:timers/promises'
+import { promisify } from 'node:util'
+import { Worker } from 'node:worker_threads'
+import { gunzip } from 'node:zlib'
 import xzPkg from 'xz-decompress'
-import { writeFully } from '../fs/atomic.js'
+import { writeFullyAsync } from '../fs/atomic.js'
+import type { BunzipJob, BunzipReply } from './bunzip-worker.js'
 import { makeAnchoredDir, openAnchoredCreateFd, rmtreeAnchored, safeResolve } from './fs.js'
 import { resolvePathLikePython } from './paths.js'
 import { BadZipError, readZip } from './unzip.js'
 
 const { XzReadableStream } = xzPkg
+const gunzipAsync = promisify(gunzip)
 
 export const ARCHIVE_SUFFIXES = ['.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz'] as const
 /** A tiny archive of millions of empty members slips under the byte cap but exhausts inodes. */
@@ -85,11 +89,13 @@ export async function extractArchive(bytes: Buffer, filename: string, root: stri
   })
   makeAnchoredDir(root, dest)
   try {
+    // Inflation and writes run on the threadpool, and each member yields the loop (even an empty one, which writes nothing).
     for (const { target, read } of plan) {
       let data: Buffer
-      try { data = read() } catch (error) { throw error instanceof BadZipError ? new CorruptArchive(error.message) : error }
+      try { data = await read() } catch (error) { throw error instanceof BadZipError ? new CorruptArchive(error.message) : error }
       const fd = openAnchoredCreateFd(root, target)
-      try { writeFully(fd, data) } finally { closeSync(fd) }
+      try { await writeFullyAsync(fd, data) } finally { closeSync(fd) }
+      await setImmediate()
     }
   } catch (error) {
     try { rmtreeAnchored(root, dest) } catch { /* the directory is already gone */ }
@@ -98,7 +104,7 @@ export async function extractArchive(bytes: Buffer, filename: string, root: stri
   return { extracted: plan.length, files: plan.map(({ target }) => relative(parentResolved, target)), dest }
 }
 
-interface Member { name: string; size: number; read: () => Buffer }
+interface Member { name: string; size: number; read: () => Promise<Buffer> }
 
 function zipMembers(bytes: Buffer): Member[] {
   try {
@@ -112,33 +118,16 @@ function zipMembers(bytes: Buffer): Member[] {
 async function decompressTar(bytes: Buffer, limit: number, cap: number): Promise<Buffer> {
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
     try {
-      return gunzipSync(bytes, { maxOutputLength: limit })
+      return await gunzipAsync(bytes, { maxOutputLength: limit })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') throw tooLarge(cap)
       throw new CorruptArchive('Invalid gzip data')
     }
   }
   if (bytes.subarray(0, 3).toString('latin1') === 'BZh') {
-    let out = Buffer.allocUnsafe(64 * 1024)
-    let pos = 0
-    const sink = {
-      writeByte(byte: number): void {
-        if (pos >= limit) throw tooLarge(cap)
-        if (pos === out.length) {
-          const grown = Buffer.allocUnsafe(Math.min(out.length * 2, limit))
-          out.copy(grown)
-          out = grown
-        }
-        out[pos++] = byte
-      },
-    }
-    try {
-      Bunzip.decode(bytes, sink, true)
-    } catch (error) {
-      if (error instanceof ArchiveRejected) throw error
-      throw new CorruptArchive('Invalid bzip2 data')
-    }
-    return out.subarray(0, pos)
+    const reply = await bunzipInWorker({ bytes, limit })
+    if (reply.ok) return Buffer.from(reply.data.buffer, reply.data.byteOffset, reply.data.byteLength)
+    throw reply.reason === 'too_large' ? tooLarge(cap) : new CorruptArchive('Invalid bzip2 data')
   }
   if (bytes.subarray(0, 6).equals(Buffer.from([0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]))) {
     const reader = new XzReadableStream(new Blob([bytes]).stream()).getReader()
@@ -162,6 +151,18 @@ async function decompressTar(bytes: Buffer, limit: number, cap: number): Promise
     return Buffer.concat(chunks, total)
   }
   return bytes
+}
+
+/** The pure-JS bzip2 decode runs in a one-shot worker, so the loop keeps serving while it spends seconds of CPU. */
+function bunzipInWorker(job: BunzipJob): Promise<BunzipReply> {
+  // Source runs (vitest) load the TypeScript worker; the build runs the compiled one beside this module.
+  const ext = import.meta.url.endsWith('.ts') ? 'ts' : 'js'
+  const worker = new Worker(new URL(`./bunzip-worker.${ext}`, import.meta.url), { workerData: job })
+  return new Promise<BunzipReply>((resolve, reject) => {
+    worker.once('message', resolve)
+    worker.once('error', reject)
+    worker.once('exit', (code) => { reject(new CorruptArchive(`bzip2 decoder exited with code ${String(code)}`)) })
+  })
 }
 
 const BLOCK = 512
@@ -261,7 +262,7 @@ function* tarMembers(tar: Buffer): Generator<Member> {
     if (REGULAR_TYPES.has(type)) {
       if (dataStart + size > tar.length) throw new CorruptArchive('Unexpected end of tar data')
       const data = tar.subarray(dataStart, dataStart + size)
-      yield { name, size, read: () => data }
+      yield { name, size, read: () => Promise.resolve(data) }
     }
     offset = dataStart + (DATALESS_TYPES.has(type) ? 0 : padded(size))
   }
