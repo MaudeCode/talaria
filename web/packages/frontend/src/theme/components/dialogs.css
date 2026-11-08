@@ -1,12 +1,6 @@
 /* dialogs: component rules for this feature, in @layer app (after utilities). Colours, radii and
    fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. */
 @layer app{
-.toast{pointer-events:none;position:fixed;top:24px;right:24px;left:auto;bottom:auto;transform:translateY(-6px);display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--accent) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 45%,var(--surface));color:var(--accent-text);font-size:13px;font-weight:500;padding:10px 12px 10px 16px;border-radius:10px;opacity:0;transition:opacity .2s,transform .2s;z-index:1060;box-shadow:0 6px 24px rgba(0,0,0,.12);letter-spacing:.01em;max-width:min(520px,calc(100vw - 48px))}
-.toast.show{opacity:1;transform:translateY(0);pointer-events:auto}
-.toast.success{background:color-mix(in srgb,var(--success) 14%,var(--surface));border-color:color-mix(in srgb,var(--success) 45%,var(--surface));color:var(--success)}
-.toast.error{background:color-mix(in srgb,var(--error) 14%,var(--surface));border-color:color-mix(in srgb,var(--error) 45%,var(--surface));color:var(--error)}
-.toast.warning{background:color-mix(in srgb,var(--warning) 14%,var(--surface));border-color:color-mix(in srgb,var(--warning) 45%,var(--surface));color:var(--warning)}
-.toast{border-radius:var(--r-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);color:var(--text)}
 /* A toast grows out of a 44px capsule at its centre and pinches back on exit. Only the surface layer animates; the content keeps its final width, so text never reflows. Each room closes its own height and gap, so the toasts below glide. */
 .notification-toast-room{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:1fr;transition:grid-template-rows .34s cubic-bezier(.45,0,.1,1)}
 .notification-toast-room[data-visible="false"]{grid-template-rows:0fr;transition-delay:.12s}

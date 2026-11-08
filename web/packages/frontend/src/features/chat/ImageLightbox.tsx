@@ -14,7 +14,7 @@ export function ImageLightbox({ images, index, onIndexChange }: { images: Lightb
   const image = index === null ? undefined : images[index]
   // Base UI dismisses only on a press that starts and ends on the backdrop, so drags and pinches over the image keep it open.
   return (
-    <Dialog open={image !== undefined} onOpenChange={(open) => { if (!open) onIndexChange(null) }} title={image?.name ?? ''} className="w-[min(96vw,1100px)]!">
+    <Dialog open={image !== undefined} onOpenChange={(open) => { if (!open) onIndexChange(null) }} title={image?.name ?? ''} className="w-[min(96%,1100px)]!">
       {image && index !== null && <Suspense fallback={null}><LightboxViewer image={image} images={images} index={index} onIndexChange={onIndexChange} /></Suspense>}
     </Dialog>
   )

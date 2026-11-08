@@ -329,6 +329,10 @@ For UI changes, verify the relevant states:
 Controls should remain usable at touch sizes, and mobile navigation should not
 steal chat height unnecessarily.
 
+Fixed surfaces (dialogs, toasts, the notification centre) size in `%` of their
+containing block, never `vw`: on the iPhone Duo outer display `100vw` is wider than the
+area Safari draws the page in, so a `92vw` dialog spills off both edges.
+
 The transcript and composer default to a compact reading column on desktop:
 one `--msg-max` token, 768px (48rem at the CSS-default root size), used by every
 chat surface. Users who prefer to use the entire center pane can enable **Use

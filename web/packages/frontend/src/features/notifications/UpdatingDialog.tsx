@@ -50,7 +50,7 @@ export function UpdatingDialog({ target, row, message, lost, reconnecting, check
   const failure = row?.detail ?? row?.message ?? null
   const text = row ? (steps.length === 0 ? row.message : null) : message ?? (unverified ? m.update_dialog_unverified() : lost ? m.update_dialog_waiting() : m.update_dialog_starting())
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && (close === 'close' || close === 'restart_later')) onClose() }} title={m.update_dialog_title({ name: NAMES[target] })} className="max-[641px]:w-[calc(100vw-16px)]">
+    <Dialog open onOpenChange={(open) => { if (!open && (close === 'close' || close === 'restart_later')) onClose() }} title={m.update_dialog_title({ name: NAMES[target] })} className="max-[641px]:w-[calc(100%-16px)]">
       <div role="status" className="text-sm leading-5">
         {text !== null && <div className="flex items-start gap-3">
           <div className="mt-0.5 shrink-0">

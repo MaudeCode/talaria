@@ -270,7 +270,7 @@ function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name
   return (
     <>
       <Button onClick={() => setOpen(true)}>{m.system_summarize_with_ai()}</Button>
-      <Dialog open={open} onOpenChange={setOpen} title={m.system_summary_title({ name })} description={summary.data?.current_version && summary.data.target_version ? `${summary.data.current_version} → ${summary.data.target_version}` : undefined} className="w-[min(92vw,600px)]">
+      <Dialog open={open} onOpenChange={setOpen} title={m.system_summary_title({ name })} description={summary.data?.current_version && summary.data.target_version ? `${summary.data.current_version} → ${summary.data.target_version}` : undefined} maxWidth={600}>
         <div className="max-h-[60vh] overflow-y-auto text-sm">
           {summary.isPending ? <p role="status" className="text-muted">{m.system_whats_new_loading()}</p>
             : summary.isError ? (
