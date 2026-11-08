@@ -15,41 +15,53 @@ struct PlainCodeBlockText: View {
     /// Tints each line by its diff prefix, for `diff` and `patch` fences (TAL-447).
     var colorsDiffLines = false
 
-    private var lines: [MarkdownPlainCodeLine] {
-        MarkdownPlainCodeFormatter.lines(in: content)
-    }
-
     var body: some View {
-        let lines = self.lines
-        let kinds = colorsDiffLines
-            ? MarkdownDiffLineKind.kinds(forLines: lines.map { $0.segments.first?.text ?? "" })
-            : []
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(lines) { line in
-                let kind = kinds.isEmpty ? .context : kinds[line.id]
-                Group {
-                    if wraps {
-                        combinedText(for: line)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .multilineTextAlignment(.leading)
-                    } else {
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            ForEach(line.segments) { segment in
-                                Text(verbatim: segment.text)
-                            }
-                        }
-                    }
-                }
-                .modifier(DiffLineStyle(kind: kind, line: line))
+            ForEach(MarkdownCodeLineGroup.groups(in: content, colorsDiffLines: colorsDiffLines)) { group in
+                PlainCodeLineGroup(group: group, wraps: wraps)
+                    .equatable()
             }
         }
         .font(.system(size: 13, weight: .regular, design: .monospaced))
         .foregroundStyle(.primary)
     }
+}
 
-    private func combinedText(for line: MarkdownPlainCodeLine) -> Text {
-        line.segments.reduce(Text(verbatim: "")) { partial, segment in
+/// One group of a block's lines. While a reply streams into the block, only its open last group changes, so the
+/// finished groups before it skip rebuilding their lines (TAL-1396).
+private struct PlainCodeLineGroup: View, Equatable {
+    let group: MarkdownCodeLineGroup
+    let wraps: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(group.lines.indices, id: \.self) { index in
+#if DEBUG
+                let _ = ChatBodyEvaluationRecorder.record("codeLine")
+#endif
+                let text = group.lines[index].text
+                let segments = MarkdownPlainCodeFormatter.segments(in: text)
+                Group {
+                    if wraps {
+                        combinedText(for: segments)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.leading)
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
+                            ForEach(segments) { segment in
+                                Text(verbatim: segment.text)
+                            }
+                        }
+                    }
+                }
+                .modifier(DiffLineStyle(kind: group.diffKinds.isEmpty ? .context : group.diffKinds[index], text: text))
+            }
+        }
+    }
+
+    private func combinedText(for segments: [MarkdownPlainCodeSegment]) -> Text {
+        segments.reduce(Text(verbatim: "")) { partial, segment in
             partial + Text(verbatim: segment.text)
         }
     }
@@ -59,7 +71,7 @@ struct PlainCodeBlockText: View {
 /// recede to the secondary colour. Context lines are left untouched.
 private struct DiffLineStyle: ViewModifier {
     let kind: MarkdownDiffLineKind
-    let line: MarkdownPlainCodeLine
+    let text: String
 
     func body(content: Content) -> some View {
         switch kind {
@@ -74,10 +86,6 @@ private struct DiffLineStyle: ViewModifier {
         case .context:
             content
         }
-    }
-
-    private var text: String {
-        line.segments.map(\.text).joined()
     }
 
     /// The tint bleeds into the block's padding and the line spacing so

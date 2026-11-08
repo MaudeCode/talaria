@@ -523,6 +523,36 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertEqual(lines[0].segments[1].text.count, 12)
     }
 
+    func testCodeLineGroupsRoundTripContentExactly() {
+        let separators = ["\n", "\r\n", "\r", "\u{2028}", "\u{2029}"]
+        let code = (0..<140).map { "line \($0)" + separators[$0 % separators.count] }.joined() + "partial"
+
+        let groups = MarkdownCodeLineGroup.groups(in: code, colorsDiffLines: false)
+
+        XCTAssertEqual(groups.flatMap(\.lines).map { $0.text + $0.separator }.joined(), code)
+        XCTAssertEqual(groups.map(\.lines.count), [64, 64, 13])
+        XCTAssertEqual(groups.map(\.firstLineIndex), [0, 64, 128])
+        XCTAssertEqual(groups[0].lines[1], MarkdownCodeSourceLine(text: "line 1", separator: "\r\n"))
+        XCTAssertEqual(groups[2].lines.last, MarkdownCodeSourceLine(text: "partial", separator: ""))
+        XCTAssertEqual(MarkdownCodeLineGroup.groups(in: "", colorsDiffLines: false).flatMap(\.lines),
+                       [MarkdownCodeSourceLine(text: "", separator: "")])
+        XCTAssertEqual(MarkdownCodeLineGroup.groups(in: "x\r\n", colorsDiffLines: false).flatMap(\.lines),
+                       [MarkdownCodeSourceLine(text: "x", separator: "\r\n"), MarkdownCodeSourceLine(text: "", separator: "")])
+    }
+
+    func testCodeLineGroupsKeepEachLinesDiffKindAcrossGroups() {
+        // A file header split across the first group boundary still needs the next group's `+++ ` line.
+        let lines = (0..<63).map { " context \($0)" } + ["--- a/file", "+++ b/file", "@@ -1 +1 @@", "-old", "+new"]
+
+        let groups = MarkdownCodeLineGroup.groups(in: lines.joined(separator: "\r\n"), colorsDiffLines: true)
+
+        XCTAssertEqual(groups.flatMap(\.diffKinds), MarkdownDiffLineKind.kinds(forLines: lines))
+        XCTAssertEqual(groups[0].diffKinds.last, .fileHeader)
+        XCTAssertEqual(groups[1].diffKinds, [.fileHeader, .hunkHeader, .removed, .added])
+        XCTAssertTrue(MarkdownCodeLineGroup.groups(in: lines.joined(separator: "\n"), colorsDiffLines: false)
+            .allSatisfy(\.diffKinds.isEmpty))
+    }
+
     func testMarkdownAttributedCodeFormatterSegmentsVeryLongHighlightedLines() {
         let longLine = String(repeating: "x", count: MarkdownAttributedCodeFormatter.maxSegmentLength + 12)
         let attributedCode = NSAttributedString(string: "first\n\(longLine)")

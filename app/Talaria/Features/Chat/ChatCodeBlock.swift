@@ -94,8 +94,8 @@ struct ChatCodeBlock: View {
             guard !Task.isCancelled else { return }
             copyConfirmation.expire(at: .now)
         }
-        .task(id: highlightRequest) {
-            await updateHighlightedCode(for: highlightRequest)
+        .task(id: highlightTaskKey) {
+            await updateHighlightedCode()
         }
         // Code (and diff) blocks must never mirror inside an RTL message (#259):
         // the language header, copy/wrap controls, and the source itself stay LTR.
@@ -159,9 +159,30 @@ struct ChatCodeBlock: View {
         )
     }
 
+    /// Fixed while the block streams, so no update restarts the highlight task; a settled block keys on its code's
+    /// hash, so the task runs once when the stream ends and again only if the code changes (TAL-1396).
+    private var highlightTaskKey: HighlightTaskKey {
+        HighlightTaskKey(
+            isStreaming: isStreaming,
+            contentHash: isStreaming ? nil : content.hashValue,
+            language: language,
+            colorScheme: colorScheme
+        )
+    }
+
+    private struct HighlightTaskKey: Equatable {
+        let isStreaming: Bool
+        let contentHash: Int?
+        let language: String?
+        let colorScheme: ColorScheme
+    }
+
     @MainActor
-    private func updateHighlightedCode(for request: MarkdownCodeHighlightRequest) async {
+    private func updateHighlightedCode() async {
         highlightedCode = nil
+        // Streaming code is always drawn plain, so there is nothing to decide or log until the stream ends.
+        guard !isStreaming else { return }
+        let request = highlightRequest
         let result = await MarkdownCodeHighlighter.highlightedCode(for: request)
         guard !Task.isCancelled else { return }
 
@@ -235,6 +256,9 @@ struct ChatCodeBlock: View {
 
     private func logFallback(reason: MarkdownHighlightFallbackReason, normalizedLanguage: String?, code: String) {
         guard reason != .empty else { return }
+#if DEBUG
+        ChatBodyEvaluationRecorder.record("highlightFallback")
+#endif
 
         logger.info(
             "Syntax highlighting fallback reason=\(reason.rawValue, privacy: .public) languageCategory=\(MarkdownHighlightPolicy.languageLogCategory(for: normalizedLanguage), privacy: .public) characters=\(code.count, privacy: .public) lines=\(MarkdownHighlightPolicy.lineCount(in: code), privacy: .public)"

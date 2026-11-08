@@ -24,31 +24,79 @@ public struct MarkdownAttributedCodeSegment: Identifiable {
     public let attributedText: NSAttributedString
 }
 
+/// One line of a code block as written: its text and the separator that ended it.
+public struct MarkdownCodeSourceLine: Equatable, Sendable {
+    public let text: String
+    /// `\n`, `\r\n`, `\r`, U+2028 or U+2029; empty on the last line.
+    public let separator: String
+}
+
+/// A code block's lines in fixed groups of `size`. A streaming block grows only at its end, so every group but the
+/// last stays equal from one update to the next and its view skips re-rendering (TAL-1396).
+public struct MarkdownCodeLineGroup: Equatable, Identifiable, Sendable {
+    public static let size = 64
+
+    public let id: Int
+    public let lines: [MarkdownCodeSourceLine]
+    /// Each line's diff tint; empty unless the block colours diff lines.
+    public let diffKinds: [MarkdownDiffLineKind]
+
+    /// The block's index of this group's first line.
+    public var firstLineIndex: Int { id * Self.size }
+
+    public static func groups(in code: String, colorsDiffLines: Bool) -> [MarkdownCodeLineGroup] {
+        let lines = MarkdownPlainCodeFormatter.sourceLines(in: code)
+        let kinds = colorsDiffLines ? MarkdownDiffLineKind.kinds(forLines: lines.map(\.text)) : []
+        return stride(from: 0, to: lines.count, by: size).map { start in
+            let range = start..<min(start + size, lines.count)
+            return MarkdownCodeLineGroup(
+                id: start / size,
+                lines: Array(lines[range]),
+                diffKinds: kinds.isEmpty ? [] : Array(kinds[range])
+            )
+        }
+    }
+}
+
 public enum MarkdownPlainCodeFormatter {
     static let maxSegmentLength = 500
 
     public static func lines(in code: String) -> [MarkdownPlainCodeLine] {
-        let normalizedCode = code
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .replacingOccurrences(of: "\u{2028}", with: "\n")
-            .replacingOccurrences(of: "\u{2029}", with: "\n")
-
-        let rawLines = normalizedCode
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-
-        let renderedLines = rawLines.isEmpty ? [""] : rawLines
-
-        return renderedLines.enumerated().map { lineIndex, line in
-            MarkdownPlainCodeLine(
-                id: lineIndex,
-                segments: segments(in: line)
-            )
+        sourceLines(in: code).enumerated().map { lineIndex, line in
+            MarkdownPlainCodeLine(id: lineIndex, segments: segments(in: line.text))
         }
     }
 
-    private static func segments(in line: String) -> [MarkdownPlainCodeSegment] {
+    /// Splits `code` at each line separator in one pass. An empty block is one empty line, and a trailing separator
+    /// leaves an empty last line. Each line's text and separator, joined in order, give `code` back exactly.
+    public static func sourceLines(in code: String) -> [MarkdownCodeSourceLine] {
+        let scalars = code.unicodeScalars
+        var lines: [MarkdownCodeSourceLine] = []
+        var lineStart = scalars.startIndex
+        var index = lineStart
+        while index < scalars.endIndex {
+            let scalar = scalars[index]
+            var next = scalars.index(after: index)
+            guard MarkdownHighlightPolicy.isLineSeparator(scalar) else {
+                index = next
+                continue
+            }
+            if scalar == "\r", next < scalars.endIndex, scalars[next] == "\n" {
+                next = scalars.index(after: next)
+            }
+            lines.append(MarkdownCodeSourceLine(
+                text: String(scalars[lineStart..<index]),
+                separator: String(scalars[index..<next])
+            ))
+            lineStart = next
+            index = next
+        }
+        lines.append(MarkdownCodeSourceLine(text: String(scalars[lineStart...]), separator: ""))
+        return lines
+    }
+
+    /// A line's text in segments of at most `maxSegmentLength` characters; an empty line is one space.
+    public static func segments(in line: String) -> [MarkdownPlainCodeSegment] {
         guard !line.isEmpty else {
             return [MarkdownPlainCodeSegment(id: 0, text: " ")]
         }
@@ -505,7 +553,7 @@ public enum MarkdownHighlightPolicy {
         return false
     }
 
-    private static func isLineSeparator(_ scalar: Unicode.Scalar) -> Bool {
+    static func isLineSeparator(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 10, 13, 0x2028, 0x2029:
             return true

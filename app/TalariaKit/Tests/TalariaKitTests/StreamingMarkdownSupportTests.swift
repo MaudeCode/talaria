@@ -90,3 +90,39 @@ final class TableCellWidthCapTests: XCTestCase {
         XCTAssertEqual(width, maxWidth)
     }
 }
+
+/// A streaming reply's open fence is split out exactly as the Markdown renderer would draw it (TAL-1396).
+final class StreamingOpenCodeFenceTests: XCTestCase {
+    private typealias Fence = StreamingOpenCodeFence
+
+    func testSplitsTheFenceAReplyEndsInside() {
+        XCTAssertEqual(Fence.trailing(in: "Intro\n\n```swift\nlet a\nlet b"),
+                       Fence(leadingMarkdown: "Intro\n\n", language: "swift", code: "let a\nlet b"))
+        // The renderer drops only the last newline of a code block's content.
+        XCTAssertEqual(Fence.trailing(in: "```swift\nlet a\n\n")?.code, "let a\n")
+        XCTAssertEqual(Fence.trailing(in: "Text\n```sw"), Fence(leadingMarkdown: "Text\n", language: "sw", code: ""))
+        XCTAssertEqual(Fence.trailing(in: "```\na\n```\n\n~~~ \nb"),
+                       Fence(leadingMarkdown: "```\na\n```\n\n", language: nil, code: "b"))
+        // Only a run of the opening marker at least as long closes the fence.
+        XCTAssertEqual(Fence.trailing(in: "````\ncode\n```\n~~~~\nmore")?.code, "code\n```\n~~~~\nmore")
+    }
+
+    func testLeavesEverythingElseToTheRenderer() {
+        for markdown in [
+            "Plain prose",
+            "```swift\nlet a\n```\nAfter",
+            "```swift\nlet a\n   ```  ",
+            // An indented fence may belong to a list item.
+            "- item\n\n  ```swift\nlet a",
+            // A backtick fence's info string cannot hold a backtick, so this is inline code.
+            "```a`b\nx",
+            // An HTML block runs to the next blank line and swallows the fence.
+            "<div>\n```swift\nlet a",
+            // A fence in a list item or quote is not paired, so its indented closer must not open a fence.
+            "- ```\n  first\n  ```\n\n```\nsecond\n```\n\nFollowing prose",
+            "> ```\n> quoted\n\n```swift\nlet a",
+        ] {
+            XCTAssertNil(Fence.trailing(in: markdown), markdown)
+        }
+    }
+}
