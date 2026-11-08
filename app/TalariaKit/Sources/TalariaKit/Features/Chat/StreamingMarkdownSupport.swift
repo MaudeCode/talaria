@@ -98,7 +98,9 @@ public enum StreamingMarkdownBlockSplitter {
 ///
 /// The Markdown renderer identifies each block by its content, so an open fence it draws becomes a new view on every
 /// update and rebuilds every line. Drawn on its own, the block keeps one identity while it grows. Only a fence at the
-/// left margin is split out; an indented one may belong to a list item, so it stays with the Markdown.
+/// left margin is split out; an indented one may belong to a list item, so it stays with the Markdown. A fence behind a
+/// list or quote marker, or indented four or more spaces, cannot be paired without tracking its container, so any such
+/// line leaves the whole reply to the Markdown.
 public struct StreamingOpenCodeFence: Equatable, Sendable {
     /// The Markdown before the fence's opening line.
     public let leadingMarkdown: String
@@ -116,6 +118,7 @@ public struct StreamingOpenCodeFence: Equatable, Sendable {
             let lineEnd = markdown[lineStart...].firstIndex(of: "\n") ?? markdown.endIndex
             let line = markdown[lineStart..<lineEnd]
             let fence = fenceRun(in: line)
+            if fence == nil, isContainedFence(line) { return nil }
             if let current = open {
                 if let fence, fence.marker == current.marker, fence.length >= current.length,
                    fence.rest.allSatisfy(\.isWhitespace) {
@@ -144,6 +147,28 @@ public struct StreamingOpenCodeFence: Equatable, Sendable {
             language: info.isEmpty ? nil : info,
             code: String(code)
         )
+    }
+
+    /// A fence after a list or quote marker, or after four or more spaces.
+    private static func isContainedFence(_ line: Substring) -> Bool {
+        var rest = line.drop(while: { $0 == " " || $0 == "\t" })
+        var contained = line.count - rest.count >= 4
+        while true {
+            let digits = rest.prefix(while: \.isNumber)
+            if rest.first == ">" {
+                rest = rest.dropFirst()
+            } else if let marker = rest.first, "-*+".contains(marker), rest.dropFirst().first == " " {
+                rest = rest.dropFirst()
+            } else if !digits.isEmpty, let delimiter = rest.dropFirst(digits.count).first,
+                      delimiter == "." || delimiter == ")" {
+                rest = rest.dropFirst(digits.count + 1)
+            } else {
+                break
+            }
+            contained = true
+            rest = rest.drop(while: { $0 == " " || $0 == "\t" })
+        }
+        return contained && (rest.hasPrefix("```") || rest.hasPrefix("~~~"))
     }
 
     /// A line's run of three or more backticks or tildes after at most three spaces, with what follows it.

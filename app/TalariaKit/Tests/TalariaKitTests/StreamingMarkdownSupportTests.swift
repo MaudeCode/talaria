@@ -118,6 +118,9 @@ final class StreamingOpenCodeFenceTests: XCTestCase {
             "```a`b\nx",
             // An HTML block runs to the next blank line and swallows the fence.
             "<div>\n```swift\nlet a",
+            // A fence in a list item or quote is not paired, so its indented closer must not open a fence.
+            "- ```\n  first\n  ```\n\n```\nsecond\n```\n\nFollowing prose",
+            "> ```\n> quoted\n\n```swift\nlet a",
         ] {
             XCTAssertNil(Fence.trailing(in: markdown), markdown)
         }
