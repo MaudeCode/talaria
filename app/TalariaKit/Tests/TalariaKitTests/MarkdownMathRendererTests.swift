@@ -447,6 +447,23 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertTrue(MarkdownCodeHighlighter.cachedHighlightedCode(for: dark) === darkResult)
     }
 
+    /// SwiftUI cancels a block's highlight task when it scrolls away or its request changes; queued work for it must
+    /// not hold the single highlighting thread up.
+    func testMarkdownCodeHighlighterSkipsACancelledRequest() async {
+        let request = Self.uniqueRequest(language: "json", colorScheme: .light)
+
+        let result = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await MarkdownCodeHighlighter.highlightedCode(for: request)
+        }.value
+
+        guard case .plain(let reason, _) = result else {
+            return XCTFail("A cancelled request was highlighted")
+        }
+        XCTAssertEqual(reason, .cancelled)
+        XCTAssertNil(MarkdownCodeHighlighter.cachedHighlightedCode(for: request))
+    }
+
     /// Splash recurses once per character of a token, which overflows a cooperative-pool thread's stack long before
     /// the policy's line limit.
     func testMarkdownCodeHighlighterHighlightsSwiftTokensUpToTheLineLimit() async throws {

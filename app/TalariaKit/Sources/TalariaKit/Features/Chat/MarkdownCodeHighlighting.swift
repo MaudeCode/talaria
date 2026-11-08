@@ -291,6 +291,7 @@ public enum MarkdownHighlightFallbackReason: String, Equatable, Sendable {
     case tooManyLines
     case lineTooLong
     case highlighterUnavailable
+    case cancelled
 }
 
 enum MarkdownHighlightDecision: Equatable {
@@ -650,6 +651,10 @@ private actor CodeHighlighterStore {
         engine: MarkdownHighlightEngine,
         colorScheme: ColorScheme
     ) -> MarkdownCodeHighlightResult {
+        // A block that scrolled away or changed its request cancelled this while it waited for the thread.
+        guard !Task.isCancelled else {
+            return .plain(reason: .cancelled, normalizedLanguage: language)
+        }
 #if DEBUG
         // Counts only main-thread work, so the stream-tick budget (TAL-851) catches highlighting moving back there.
         ChatBodyEvaluationRecorder.record("highlight")
