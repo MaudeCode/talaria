@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "What's New now carries the newest announced changes in every build, so updating past a release no longer loses its announcements.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

@@ -51,9 +51,13 @@ class ReleaseNotesTests(unittest.TestCase):
             {"category": category, "summary": summary, "highlight": highlight}
         ]}))
 
-    def commit(self, message):
+    def commit(self, message, at=None):
+        """Commit everything; `at` (an ISO time) dates the commit instead of the fixed fixture time."""
         self.git("add", ".")
-        self.git("commit", "-m", message)
+        dates = {"GIT_AUTHOR_DATE": at, "GIT_COMMITTER_DATE": at} if at else {}
+        result = subprocess.run(["git", "commit", "-m", message], cwd=self.root, env={**self.env, **dates},
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def cli(self, *args, error=None):
         result = self.run_command(sys.executable, str(SCRIPT), *args)
@@ -570,9 +574,10 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def write_shared_fragments(self):
         self.git("tag", "web-v1.0.0", "v1.0.0")
-        for key, data in WHATS_NEW["fragments"].items():
+        # Rows run newest first, so the fixture's first ticket lands last.
+        for minute, (key, data) in enumerate(reversed(WHATS_NEW["fragments"].items())):
             self.write(f"changelog.d/{key}.json", json.dumps(data))
-        self.commit(f"{', '.join(WHATS_NEW['fragments'])}: shared fixture")
+            self.commit(f"{key}: shared fixture", at=f"2026-01-03T00:{minute:02}:00+00:00")
 
     def test_announcements_are_opt_in_component_scoped_ordered_capped_and_reproducible(self):
         self.write_shared_fragments()
@@ -590,7 +595,6 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertNotIn("announcement", (self.root / "out/release-notes.json").read_text())
 
     def test_releases_without_opted_in_rows_have_no_announcement(self):
-        self.git("tag", "web-v1.0.0", "v1.0.0")
         self.add_fragment(2, "Highlighted but not announced", highlight=True)
         self.write("changelog.d/TAL-3.json", json.dumps({"entries": [
             {"category": "Added", "summary": "Relay only", "highlight": False, "components": ["relay"]}]}))
@@ -599,29 +603,57 @@ class ReleaseNotesTests(unittest.TestCase):
         for component in ("app", "web"):
             with self.subTest(component=component):
                 self.assertFalse(self.announce(component).exists())
-        self.git("tag", "v1.1.0")
         self.write("changelog.d/TAL-5.json", '{"skip": "Repository tooling only"}')
         self.commit("TAL-5: skip only")
         self.assertFalse(self.announce("app", "1.2.0").exists())
 
-    def test_announcement_covers_only_the_installed_release_after_skipped_versions(self):
-        announced = {"title": "Older change", "description": "Shipped in a release this install skipped.", "icon": "sparkles"}
-        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
-            {"category": "Added", "summary": "Older", "highlight": False, "announcement": announced}]}))
-        self.commit("TAL-2: older")
+    def announced(self, number, title, components=("app",), at=None):
+        self.write(f"changelog.d/TAL-{number}.json", json.dumps({"entries": [
+            {"category": "Added", "summary": title, "highlight": False, "components": list(components),
+             "announcement": {"title": title, "description": "Shipped in an earlier release.", "icon": "sparkles"}}]}))
+        if at:
+            self.commit(f"TAL-{number}: {title}", at=at)
+
+    def rows(self, component="app", version="1.2.0"):
+        output = self.announce(component, version)
+        return [row["id"] for row in json.loads(output.read_text())["rows"]] if output.exists() else []
+
+    def test_a_release_right_after_another_still_packages_the_earlier_rows(self):
+        self.announced(2, "Earlier change", at="2026-01-03T00:00:00+00:00")
         self.git("tag", "v1.1.0")
-        self.write("changelog.d/TAL-3.json", json.dumps({"entries": [
-            {"category": "Added", "summary": "Current", "highlight": False,
-             "announcement": {**announced, "title": "Current change"}}]}))
-        self.commit("TAL-3: current")
-        rows = json.loads(self.announce("app", "1.2.0").read_text())["rows"]
-        self.assertEqual([row["id"] for row in rows], ["TAL-3-1"])
-        # An Experimental Web build carries its release version and is ranged from the Stable tag below its core.
-        self.git("tag", "web-v1.1.0", "v1.1.0")
-        self.write("changelog.d/TAL-3.json", json.dumps({"entries": [
-            {"category": "Added", "summary": "Current", "highlight": False, "components": ["web"],
-             "announcement": {**announced, "title": "Current change"}}]}))
-        self.commit("TAL-3: retarget before release")
+        self.write("changelog.d/TAL-3.json", '{"skip": "Repository tooling only"}')
+        self.commit("TAL-3: skip only", at="2026-01-03T00:26:00+00:00")
+        self.git("tag", "v1.1.1")
+        self.assertEqual(self.rows(version="1.1.1"), ["TAL-2-1"])
+        self.assertEqual(self.rows(version="1.1.2"), ["TAL-2-1"])
+
+    def test_announcement_holds_the_newest_four_rows_by_fragment_commit_time(self):
+        self.announced(7, "Oldest", at="2026-01-03T00:00:00+00:00")
+        self.announced(3, "Second", at="2026-01-03T00:01:00+00:00")
+        self.announced(2, "Third with a tie")
+        self.announced(6, "Third", at="2026-01-03T00:02:00+00:00")
+        self.announced(5, "Newest", at="2026-01-03T00:03:00+00:00")
+        self.assertEqual(self.rows(), ["TAL-5-1", "TAL-6-1", "TAL-2-1", "TAL-3-1"])
+        # A fragment's entries keep their authored order.
+        self.write("changelog.d/TAL-8.json", json.dumps({"entries": [
+            {"category": "Added", "summary": title, "highlight": False,
+             "announcement": {"title": title, "description": "Two rows.", "icon": "chat"}} for title in ("First", "Second")]}))
+        self.commit("TAL-8: two rows", at="2026-01-03T00:04:00+00:00")
+        self.assertEqual(self.rows(), ["TAL-8-1", "TAL-8-2", "TAL-5-1", "TAL-6-1"])
+        # No release tag is needed: the rows come from the source alone.
+        self.git("tag", "-d", "v1.0.0")
+        self.assertEqual(self.rows(), ["TAL-8-1", "TAL-8-2", "TAL-5-1", "TAL-6-1"])
+
+    def test_a_fragment_edited_to_announce_counts_as_newer_than_untouched_fragments(self):
+        self.add_fragment(3, "Announced later")
+        self.commit("TAL-3: unannounced", at="2026-01-03T00:00:00+00:00")
+        self.announced(2, "Announced at once", at="2026-01-03T00:01:00+00:00")
+        self.assertEqual(self.rows(), ["TAL-2-1"])
+        self.announced(3, "Announced later", at="2026-01-03T00:02:00+00:00")
+        self.assertEqual(self.rows(), ["TAL-3-1", "TAL-2-1"])
+
+    def test_experimental_web_versions_name_their_source(self):
+        self.announced(3, "Current change", components=("web",), at="2026-01-03T00:00:00+00:00")
         version = f"1.2.0-exp.{self.git('rev-parse', 'HEAD')[:12]}"
         experimental = json.loads(self.announce("web", version).read_text())
         self.assertEqual((experimental["id"], experimental["version"], experimental["rows"][0]["id"]),

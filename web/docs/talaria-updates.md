@@ -307,7 +307,8 @@ shell once the server is reachable; offline it falls back to the cached shell an
 ## What's New after a Web update
 
 A stamped Web release can carry an authored announcement (`_whats_new.json`,
-generated from release fragments; see `app/docs/release-notes.md`). The server
+generated from release fragments; see `app/docs/release-notes.md`): the newest
+four announced rows reachable from the source, whatever release tags exist. The server
 loads it at startup and discards a payload that is malformed or names another
 component, version, or source. `GET /api/whats-new` returns that announcement
 with the decision for one tab. The tab sends its `loaded_build` and the opaque

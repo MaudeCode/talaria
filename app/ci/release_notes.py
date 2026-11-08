@@ -516,29 +516,49 @@ def release_range(previous, target, version, component):
     return previous, target, selected
 
 
-def component_entries(selected, component):
-    """`(id, ticket, entry)` for the component's entries, by numeric ticket and then authored order."""
-    for path in sorted(selected, key=lambda path: int(FILENAME.fullmatch(Path(path).name)[1])):
+def ticket_number(path):
+    return int(FILENAME.fullmatch(Path(path).name)[1])
+
+
+def component_entries(selected, component, key=ticket_number):
+    """`(id, ticket, entry)` for the component's entries, by fragment (numeric ticket by default), then authored order."""
+    for path in sorted(selected, key=key):
         for index, entry in enumerate(selected[path].get("entries", [])):
             if component in entry.get("components", ["app"]):
                 yield f"{Path(path).stem}-{index + 1}", Path(path).stem, entry
 
 
-def announcement(previous, target, version, component):
-    """The installed release's What's New payload as exact JSON text, or None when no entry opted in.
+def touched(target):
+    """Each fragment's newest commit time at or before `target`, from one walk over the fragment directories."""
+    times, time = {}, 0
+    for line in git("log", "--format=@%ct", "--name-only", target, "--", DIRECTORY, "app/" + DIRECTORY).splitlines():
+        if line.startswith("@"):
+            time = int(line[1:])
+        elif line:
+            path = line.removeprefix("app/")
+            times[path] = max(times.get(path, 0), time)
+    return times
 
-    An Experimental Web version (`X.Y.Z-exp.<source>`) is ranged like its `X.Y.Z` core."""
+
+def announcement(target, version, component):
+    """The build's What's New payload as exact JSON text, or None when no fragment at `target` announces anything.
+
+    Rows are the newest announced entries reachable from the source: fragments by their last commit time, newest first,
+    ties by ticket number descending, entries in authored order, capped at the contract's row limit. No release tag is
+    involved, so a build after a skipped or adjacent release still carries the rows the user has not acknowledged."""
     if component not in ANNOUNCED:
         raise ValueError("announcements are generated for app or web")
     match = re.fullmatch(VERSION + r"(-exp\.[a-f0-9]{12})?", version)
     if not match or match[4] and component != "web":
         raise ValueError("version must use X.Y.Z numeric semantic versioning")
-    core = version.split("-", 1)[0]
-    _, target, selected = release_range(previous, target, core, component)
+    target = commit(target)
     if match[4] and match[4] != "-exp." + target[:12]:
         raise ValueError("an Experimental version must name its source")
+    selected = snapshot(target)
+    times = touched(target)
+    newest = lambda path: (-times.get(path, 0), -ticket_number(path))
     rows = [{"id": identifier, **{key: entry["announcement"][key] for key in ("icon", "title", "description")}}
-            for identifier, _, entry in component_entries(selected, component) if "announcement" in entry]
+            for identifier, _, entry in component_entries(selected, component, newest) if "announcement" in entry]
     if not rows:
         return None
     payload = {"schemaVersion": 1, "id": f"{component}-{version}", "component": component, "version": version,
@@ -589,8 +609,7 @@ def main():
     render.add_argument("--target", required=True)
     render.add_argument("--version", required=True)
     render.add_argument("--output", type=Path, required=True)
-    announce = commands.add_parser("announcement", help="write the installed release's What's New payload, if any entry opted in")
-    announce.add_argument("--previous", default="auto", help="previous release tag; default: highest lower reachable component tag")
+    announce = commands.add_parser("announcement", help="write the build's What's New payload: the newest announced rows at --target")
     announce.add_argument("--component", choices=ANNOUNCED, required=True)
     announce.add_argument("--target", required=True)
     announce.add_argument("--version", required=True, help="X.Y.Z, or a Web X.Y.Z-exp.<source> Experimental version")
@@ -610,9 +629,9 @@ def main():
         elif args.command == "previous-published":
             print(previous_published(args.target, args.version, args.repo, args.require_latest))
         elif args.command == "announcement":
-            payload = announcement(args.previous, args.target, args.version, args.component)
+            payload = announcement(args.target, args.version, args.component)
             if payload is None:
-                print(f"No {args.component} announcement: no entry in this release opted in.")
+                print(f"No {args.component} announcement: no fragment at the target announces anything.")
             else:
                 args.output.parent.mkdir(parents=True, exist_ok=True)
                 args.output.write_text(payload, encoding="utf-8")
