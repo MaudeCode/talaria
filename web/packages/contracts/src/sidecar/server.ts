@@ -165,6 +165,7 @@ export const ServerPendingListResultSchema = z.object({
 /**
  * TAL-1168: answer another session's clarify question as `/api/clarify/respond` does. `answer` is the reply text; a
  * multi-question prompt takes `{"answers": {"q0": "…", "q1": ["…"]}}` as JSON. The caller's own question is the user's.
+ * A target with more access than the caller (YOLO, a toolset it lacks, or a native owner's) is refused, as `session_send` refuses it.
  */
 export const ServerClarifyRespondParamsSchema = ServerQueueListParamsSchema.extend({
   clarify_id: z.string().min(1),

@@ -10,7 +10,11 @@ native-owned sessions it watches in the caller's profile; a native-owned session
 with no Web document is in scope when its owner holds it in that profile. `clarify_respond` (`server.clarify_respond`) answers another
 session's question through the service behind `/api/clarify/respond` and returns
 its result. The caller's own question is refused (`self_target`), and an
-answered or expired one with the route's stale message (`stale`). Approvals are
+answered or expired one with the route's stale message (`stale`). An answer
+steers the target's turn, so a target with more access than the caller (YOLO, or
+a toolset the caller lacks) is refused as `session_send` refuses it
+(`exceeds_caller`), and so is a native-owned session with no Web document, whose
+owner's access the server cannot compare. Approvals are
 listed but not answered.
 
 RPC v82 adds the toolset's session management tools (TAL-1166), each a

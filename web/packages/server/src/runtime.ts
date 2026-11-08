@@ -887,10 +887,14 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return { pending: (await Promise.all(sids.map(pendingEntries))).flat() }
     }),
     'server.clarify_respond': ({ caller_session_id, session_id, clarify_id, answer }) => asCaller(caller_session_id, async (caller) => {
-      const target = await promptTarget(caller, session_id)
-      if (target === caller.session_id) throw new SidecarServerError('a session cannot answer its own question; it is addressed to the user', 'self_target')
+      if ((await promptTarget(caller, session_id)) === caller.session_id) throw new SidecarServerError('a session cannot answer its own question; it is addressed to the user', 'self_target')
+      // An answer steers the target's turn, so it never reaches a session with more access than the caller's own. A
+      // native-owned session with no Web document runs with its owner's access, which this server cannot compare.
+      const target = await storedSession(session_id)
+      if (!target) throw new SidecarServerError(`session ${session_id} runs with its native owner's access, which cannot be compared with this one's`, 'exceeds_caller')
+      await assertNoWiderThanCaller(caller, target)
       try {
-        return await clarifyRespond(deps, target, clarify_id, answer)
+        return await clarifyRespond(deps, target.session_id, clarify_id, answer)
       } catch (error) {
         if (error instanceof HttpFailure && error.extra.stale === true) throw new SidecarServerError(error.message, 'stale')
         throw error

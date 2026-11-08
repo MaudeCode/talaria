@@ -208,7 +208,7 @@ CLARIFY_RESPOND_SCHEMA = {
     "description": (
         "Answer another Talaria session's clarify question, from pending_list, as its user would. A question with several "
         "steps takes {\"answers\": {\"q0\": \"...\", \"q1\": [\"...\"]}} as JSON. Your own session's questions are for the user; "
-        "an answered or expired question is refused as stale."
+        "an answered or expired question is refused as stale, and a session with more access than yours as exceeds_caller."
     ),
     "parameters": {
         "type": "object",

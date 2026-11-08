@@ -496,12 +496,30 @@ describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
       expect(await routePending('clarify', 'agentcaller')).toMatchObject({ clarify_id: 'clarify-own' })
       expect(s.deps.pending.clarifyPending('agentforeign').pending).toMatchObject({ clarify_id: 'clarify-foreign' })
       expect(await ask('server.pending_list', {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+
+      // An answer never steers a session with more access than the caller: YOLO, or a toolset the caller lacks.
+      await save('agentyolo', 'default')
+      await s.deps.sessions.setYolo('agentyolo', true)
+      s.deps.pending.submitClarify('agentyolo', { clarify_id: 'clarify-yolo', question: 'Delete it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      await save('agentwider', 'default')
+      const wider = await s.deps.sessionStore.get('agentwider')
+      wider.enabled_toolsets = ['file', 'terminal']
+      await s.deps.sessionStore.save(wider)
+      s.deps.pending.submitClarify('agentwider', { clarify_id: 'clarify-wider', question: 'Run it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null }))
+      const narrow = await s.deps.sessionStore.get('agentcaller')
+      narrow.enabled_toolsets = ['file']
+      await s.deps.sessionStore.save(narrow)
+      expect(await ask('server.clarify_respond', { session_id: 'agentyolo', clarify_id: 'clarify-yolo', answer: 'yes' })).toMatchObject({ error: { message: 'session agentyolo has more access than this one (YOLO is on)', data: { condition: 'exceeds_caller' } } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentwider', clarify_id: 'clarify-wider', answer: 'yes' })).toMatchObject({ error: { message: 'session agentwider has more access than this one (toolsets: terminal)', data: { condition: 'exceeds_caller' } } })
+      expect(relayed).toHaveLength(1)
+      expect(await ask('server.pending_list', { session_id: 'agentyolo' })).toMatchObject({ result: { pending: [{ id: 'clarify-yolo' }] } })
     } finally {
       await s.close()
     }
   })
 
-  it('finds and answers the questions of a session its profile\'s native owner holds', async () => {
+  it('lists the prompts of a session its profile\'s native owner holds and refuses to answer them', async () => {
     const { s, sidecar } = await bootOwnerAttachment()
     try {
       await s.deps.sessionStore.save(new Session({ session_id: 'agentcaller', title: 'agentcaller', profile: 'default', updated_at: 1_792_500_000, messages: [{ role: 'user', content: 'go', timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
@@ -523,9 +541,9 @@ describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
       ] } })
       expect(await ask('server.pending_list', { session_id: ownedSid })).toMatchObject({ result: { pending: [{ session_id: ownedSid, id: 'approval-native' }, { session_id: ownedSid, id: 'clarify-native' }] } })
 
-      // The answer goes to the owner with the prompt's generation.
-      expect(await ask('server.clarify_respond', { session_id: ownedSid, clarify_id: 'clarify-native', answer: 'blue' })).toEqual({ result: { ok: true } })
-      expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).toContainEqual(expect.objectContaining({ action: 'clarify', prompt_id: 'clarify-native', execution_generation: 1, text: 'blue' }))
+      // Its owner's access cannot be compared with the caller's, so an answer, which steers its turn, is refused.
+      expect(await ask('server.clarify_respond', { session_id: ownedSid, clarify_id: 'clarify-native', answer: 'blue' })).toMatchObject({ error: { data: { condition: 'exceeds_caller' } } })
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).not.toContainEqual(expect.objectContaining({ action: 'clarify' }))
       owner.finish()
       await owner.read
     } finally {
