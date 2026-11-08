@@ -43,8 +43,10 @@ export const SESSION_SQL = {
 
 /** A LIKE pattern matching `term` literally anywhere (with `ESCAPE '\'`). */
 const likeContaining = (term: string): string => `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
-/** Postgres text holds no NUL; search text drops it on both sides, and the reference matcher still decides on the original. */
+/** Text as Postgres can store it: no NUL, and a lone surrogate arrives as U+FFFD. */
 const searchable = (text: string): string => text.replaceAll('\0', '')
+/** Whether the stored search text is the text itself, so a match on it is a real match. */
+const exact = (text: string): boolean => !text.includes('\0') && !/\p{Cs}/u.test(text)
 /** Rows as one JSON array, so a whole transcript reads in one statement without parsing each row separately. */
 const parseRows = (text: string): Message[] => JSON.parse(text) as Message[]
 const AGGREGATE_BODIES = (s: string, sid: string) => `(SELECT '[' || coalesce(string_agg(body, ',' ORDER BY idx), '') || ']' FROM ${s}messages WHERE session_id = ${sid})`
@@ -81,10 +83,11 @@ class PostgresSessions implements SessionBackend {
     return (await this.db.rows<{ body: string }>(SESSION_SQL.readMessages(this.s), this.checked(sid), clamp(range.start), clamp(end))).map((r) => JSON.parse(r.body) as Message)
   }
   /**
-   * One statement for every session: the lowest matching row of each, by `DISTINCT ON`. Terms of three or more
-   * characters narrow candidates through the trigram index (a LIKE with the term's wildcards escaped); shorter ones by
-   * `strpos`. `search_text` is computed on write from the same function, so the narrowing is exact, and the reference
-   * matcher still decides on the stored row, so results equal the JSON adapter's scan, including non-ASCII case folding.
+   * One statement for every session. Terms of three or more characters narrow candidates through the trigram index (a
+   * LIKE with the term's wildcards escaped); shorter ones by `strpos`. `search_text` is computed on write from the same
+   * function, so a candidate whose stored text is exact is a real match: each session returns its rows up to and
+   * including the first such one, which for ordinary text is that row alone. The reference matcher decides on the stored
+   * row, so results equal the JSON adapter's scan, including non-ASCII case folding.
    */
   async searchMessages(sids: readonly string[], terms: readonly string[], depth: number): Promise<Map<string, MessageMatch>> {
     this.db.check()
@@ -92,13 +95,19 @@ class PostgresSessions implements SessionBackend {
     if (!sids.length || !terms.length) return matches
     const params: (string | number | readonly string[])[] = [sids, depth]
     const where = ['session_id = ANY($1::text[])', '($2::integer = 0 OR idx < $2::integer)']
+    // A term Postgres cannot store exactly can only be in a row whose stored text is not exact either.
+    if (!terms.every(exact)) where.push('NOT search_exact')
     for (const term of terms) {
       const narrow = searchable(term)
       if (!narrow) continue
       params.push(Array.from(narrow).length >= 3 ? likeContaining(narrow) : narrow)
       where.push(Array.from(narrow).length >= 3 ? `search_text LIKE $${String(params.length)} ESCAPE '\\'` : `strpos(search_text, $${String(params.length)}) > 0`)
     }
-    for (const row of await this.db.rows<{ session_id: string; idx: number; body: string }>(`SELECT DISTINCT ON (session_id) session_id, idx, body FROM ${this.s}messages WHERE ${where.join(' AND ')} ORDER BY session_id, idx`, ...params)) {
+    for (const row of await this.db.rows<{ session_id: string; idx: number; body: string }>(`SELECT session_id, idx, body FROM (
+        SELECT session_id, idx, body, count(*) FILTER (WHERE search_exact) OVER (PARTITION BY session_id ORDER BY idx ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS exact_before
+        FROM ${this.s}messages WHERE ${where.join(' AND ')}) AS candidates
+      WHERE exact_before = 0 ORDER BY session_id, idx`, ...params)) {
+      if (matches.has(row.session_id)) continue
       const text = sessionSearchMessageText(JSON.parse(row.body))
       if (sessionSearchMatches(text, terms)) matches.set(row.session_id, { idx: row.idx, text })
     }
@@ -154,8 +163,9 @@ class PostgresSessions implements SessionBackend {
   /** Every row in one statement, whatever the count. */
   private async insert(tx: Queries, sid: string, start: number, rows: readonly Message[]): Promise<void> {
     if (!rows.length) return
-    await tx.run(`INSERT INTO ${this.s}messages (session_id, idx, body, search_text) SELECT $1, $2 + u.n - 1, u.body, u.search_text FROM unnest($3::text[], $4::text[]) WITH ORDINALITY AS u(body, search_text, n)`,
-      sid, start, rows.map((row) => JSON.stringify(row)), rows.map((row) => searchable(sessionSearchMessageText(row).toLowerCase())))
+    const texts = rows.map((row) => sessionSearchMessageText(row).toLowerCase())
+    await tx.run(`INSERT INTO ${this.s}messages (session_id, idx, body, search_text, search_exact) SELECT $1, $2 + u.n - 1, u.body, u.search_text, u.search_exact FROM unnest($3::text[], $4::text[], $5::boolean[]) WITH ORDINALITY AS u(body, search_text, search_exact, n)`,
+      sid, start, rows.map((row) => JSON.stringify(row)), texts.map(searchable), texts.map(exact))
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     this.checked(sid)

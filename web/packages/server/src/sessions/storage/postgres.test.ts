@@ -77,6 +77,20 @@ it('matches LIKE wildcards and backslashes in a term only literally', async () =
   expect(await search('%%')).toEqual([])
 })
 
+it('keeps searching a session past a row only its stored search text matched', async () => {
+  const { storage } = await open()
+  // Postgres text holds neither NUL nor lone surrogates, so these rows' search text cannot equal their text.
+  await storage.sessions.write('session', { doc: doc('session'), messages: { kind: 'replace', rows: [
+    { role: 'user', content: 'nee\0dle' }, { role: 'user', content: 'a\ud800b' }, { role: 'assistant', content: 'needle and a\ufffdb' }, { role: 'user', content: 'x\0y' },
+  ] } }, null)
+  const search = async (query: string) => await storage.sessions.searchMessages(['session'], sessionSearchTerms(query), 0)
+  expect(await search('needle')).toEqual(new Map([['session', { idx: 2, text: 'needle and a\ufffdb' }]]))
+  expect((await search('a\ufffdb')).get('session')?.idx).toBe(2)
+  expect((await search('a\ud800b')).get('session')?.idx).toBe(1)
+  expect((await search('x\0y')).get('session')?.idx).toBe(3)
+  expect(await search('xy')).toEqual(new Map())
+})
+
 it('raises RevisionConflict for a stale writer on a second pool instead of losing its update', async () => {
   const first = await open()
   const second = await open(first.schema)

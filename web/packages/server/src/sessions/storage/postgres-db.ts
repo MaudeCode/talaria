@@ -21,8 +21,9 @@ export function postgresOptions(env: Record<string, string | undefined>): Postgr
  */
 export const MIGRATIONS: readonly string[] = [
   `CREATE TABLE {s}.sessions (id text PRIMARY KEY, doc text NOT NULL, message_count integer NOT NULL, revision bigint NOT NULL, updated_at double precision);
-   CREATE TABLE {s}.messages (session_id text NOT NULL REFERENCES {s}.sessions(id) ON DELETE CASCADE, idx integer NOT NULL, body text NOT NULL, search_text text NOT NULL, PRIMARY KEY (session_id, idx));
-   -- search_text is already lowercased the way JavaScript does it, so a case-sensitive LIKE on it is an exact substring test.
+   CREATE TABLE {s}.messages (session_id text NOT NULL REFERENCES {s}.sessions(id) ON DELETE CASCADE, idx integer NOT NULL, body text NOT NULL, search_text text NOT NULL, search_exact boolean NOT NULL, PRIMARY KEY (session_id, idx));
+   -- search_text is already lowercased the way JavaScript does it, so a case-sensitive LIKE on it is an exact substring
+   -- test. search_exact is false when it could not hold that text exactly (a NUL or a lone surrogate).
    CREATE INDEX messages_search ON {s}.messages USING gin (search_text {trgm}.gin_trgm_ops);
    CREATE TABLE {s}.session_tombstones (id text PRIMARY KEY, deleted_at double precision NOT NULL);
    CREATE TABLE {s}.shrink_backups (session_id text PRIMARY KEY REFERENCES {s}.sessions(id) ON DELETE CASCADE, doc text NOT NULL, messages text NOT NULL, saved_at double precision NOT NULL, revision bigint NOT NULL);
@@ -45,7 +46,7 @@ const quote = (identifier: string): string => `"${identifier.replaceAll('"', '""
 /** A new revision, past the previous one and the clock in milliseconds, so a deleted and recreated item never reuses one. */
 export const NEXT_REVISION = (previous: string): string => `GREATEST(${previous} + 1, (extract(epoch FROM clock_timestamp()) * 1000)::bigint)`
 
-export type Param = string | number | boolean | null | Buffer | readonly (string | number)[]
+export type Param = string | number | boolean | null | Buffer | readonly (string | number | boolean)[]
 /** Queries on one connection: the pool, or a transaction's client. */
 export interface Queries {
   rows<T>(sql: string, ...params: Param[]): Promise<T[]>
