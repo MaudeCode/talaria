@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { CancelResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
+import { BackgroundTasksResponseSchema, CancelResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
+import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -110,6 +111,32 @@ export const ServerSessionWaitResultSchema = z.object({
   truncated: z.boolean(),
 })
 
+/**
+ * TAL-1166: session management. Each target must be in the caller's profile and may be the caller; each action honours
+ * the target row's `can_*` flag (`read_only` for a title or project), refused with the server's reason.
+ */
+export const ServerSessionBranchParamsSchema = ServerQueueListParamsSchema.extend({ mode: z.enum(['branch', 'duplicate']) })
+
+/** The new session, made as `/api/session/branch` (whole history) or `/api/session/duplicate` makes it. */
+export const ServerSessionBranchResultSchema = z.object({ session_id: z.string(), title: z.string() })
+
+/** Only the fields given are applied: `title` (rename), `project_id` (move; null or empty leaves the project), `pinned`, `archived`. */
+export const ServerSessionUpdateParamsSchema = ServerQueueListParamsSchema.extend({
+  title: z.string().min(1).optional(),
+  project_id: z.string().nullable().optional(),
+  pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+}).refine((p) => p.title !== undefined || p.project_id !== undefined || p.pinned !== undefined || p.archived !== undefined, 'give at least one of title, project_id, pinned, archived')
+
+/** The target's row after the last change, as the routes return it. */
+export const ServerSessionUpdateResultSchema = z.object({ session: SessionRowSchema })
+
+/** `/api/session/compress`'s summary, without the session it returns (its whole transcript). */
+export const ServerSessionCompressResultSchema = z.object({ session_id: z.string(), summary: CompressionSummarySchema })
+
+/** The caller's own background work, as `/api/background/tasks` answers for its session. */
+export const ServerBackgroundListParamsSchema = z.object({ caller_session_id: z.string().min(1) })
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -123,6 +150,12 @@ export const SIDECAR_SERVER_METHODS = {
   'server.session_wait': { params: ServerSessionWaitParamsSchema, result: ServerSessionWaitResultSchema },
   /** TAL-1165: `/api/chat/cancel`'s answer for the target's running turn. */
   'server.session_interrupt': { params: ServerQueueListParamsSchema, result: CancelResponseSchema },
+  'server.session_branch': { params: ServerSessionBranchParamsSchema, result: ServerSessionBranchResultSchema },
+  'server.session_update': { params: ServerSessionUpdateParamsSchema, result: ServerSessionUpdateResultSchema },
+  /** TAL-1166: `/api/session/handoff-summary`'s answer for the target (no `since`). */
+  'server.session_handoff': { params: ServerQueueListParamsSchema, result: HandoffSummarySchema },
+  'server.session_compress': { params: ServerQueueListParamsSchema, result: ServerSessionCompressResultSchema },
+  'server.background_list': { params: ServerBackgroundListParamsSchema, result: BackgroundTasksResponseSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

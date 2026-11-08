@@ -1,4 +1,4 @@
-"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1167): Talaria-owned tools that run on the Web server.
+"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167): Talaria-owned tools that run on the Web server.
 
 Each handler forwards its call to the server over the sidecar's RPC channel (``rpc.call_server``) and returns the
 server's result unchanged. The toolset is registered once the Agent imports, and is never one of a profile's default
@@ -18,7 +18,10 @@ log = logging.getLogger("talaria_sidecar.talaria_toolset")
 
 TOOLSET = "talaria"
 # The Agent describes a registry-only toolset as "Plugin toolset: <name>"; the catalog shows this instead.
-TOOLSET_DESCRIPTION = "List, start and message this profile's Talaria chats, wait on or stop their turns, and manage their queued messages."
+TOOLSET_DESCRIPTION = (
+    "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their "
+    "turns, manage their queued messages, and list your background work."
+)
 
 SESSION_LIST_SCHEMA = {
     "name": "session_list",
@@ -127,6 +130,74 @@ SESSION_INTERRUPT_SCHEMA = {
 }
 
 
+_ANY_SESSION_ID = {"type": "string", "description": "The session_id of a session in this profile (yours included), from session_list."}
+
+SESSION_BRANCH_SCHEMA = {
+    "name": "session_branch",
+    "description": (
+        "Make a new Talaria session from one in this profile: branch forks its whole history (titled \"(fork)\"), "
+        "duplicate copies it (titled \"(copy)\"). Returns the new session_id. Refused with not_permitted when the "
+        "session does not allow it."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {"session_id": _ANY_SESSION_ID, "mode": {"type": "string", "enum": ["branch", "duplicate"]}},
+        "required": ["session_id", "mode"],
+    },
+}
+
+SESSION_UPDATE_SCHEMA = {
+    "name": "session_update",
+    "description": (
+        "Rename, move, pin or archive a Talaria session in this profile. Only the fields you give change; archiving also "
+        "unpins. Returns the session's row. Refused with not_permitted, and nothing changed, when the session does not "
+        "allow one of them."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": _ANY_SESSION_ID,
+            "title": {"type": "string", "description": "The new title."},
+            "project_id": {"type": ["string", "null"], "description": "The project to move it to; null or empty removes it from its project."},
+            "pinned": {"type": "boolean"},
+            "archived": {"type": "boolean"},
+        },
+        "required": ["session_id"],
+    },
+}
+
+SESSION_HANDOFF_SCHEMA = {
+    "name": "session_handoff",
+    "description": (
+        "Summarise a Talaria session's recent conversation for a handoff, as its handoff card does, and add the summary "
+        "card to its transcript. Needs at least 10 answered rounds; refused while the session is running."
+    ),
+    "parameters": {"type": "object", "properties": {"session_id": _ANY_SESSION_ID}, "required": ["session_id"]},
+}
+
+SESSION_COMPRESS_SCHEMA = {
+    "name": "session_compress",
+    "description": (
+        "Compress a Talaria session's model context now, as /compress does, and return the compression summary. "
+        "Refused while the session is running, with the reason."
+    ),
+    "parameters": {"type": "object", "properties": {"session_id": _ANY_SESSION_ID}, "required": ["session_id"]},
+}
+
+BACKGROUND_LIST_SCHEMA = {
+    "name": "background_list",
+    "description": (
+        "List your own session's background work: the delegations, background processes and /background tasks it "
+        "started, each with its status."
+    ),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+# The server bounds a handoff summary at two 60-second attempts; a compression has no deadline of its own.
+SESSION_HANDOFF_TIMEOUT_S = 150.0
+SESSION_COMPRESS_TIMEOUT_S = 600.0
+
+
 def caller_session_id(agent_session_id: str) -> str:
     """The Web session whose running agent has ``agent_session_id``: compression can move an agent onto a new id, and
     only a running turn calls tools. Any other id is passed on as is, for the server to resolve or refuse."""
@@ -171,6 +242,14 @@ def _with_title(args: dict, params: dict) -> None:
         params["title"] = title.strip()
 
 
+def _update_fields(args: dict, params: dict) -> None:
+    """``session_update``'s optional fields, sent only when given; the server checks their types."""
+    for field in ("title", "project_id", "pinned", "archived"):
+        if field in args:
+            value = args[field]
+            params[field] = value.strip() if isinstance(value, str) else value
+
+
 def _tool(method: str, name: str, fields: tuple[str, ...], extra=None):
     """A handler that sends the caller and the named string ``fields`` to ``method``; the server checks the target.
     ``extra`` adds optional params and may return the call's timeout."""
@@ -199,6 +278,11 @@ session_new = _tool("server.session_new", "session_new", ("message",), _with_tit
 session_send = _tool("server.session_send", "session_send", ("session_id", "message"))
 session_wait = _tool("server.session_wait", "session_wait", ("session_id",), _wait_timeout)
 session_interrupt = _tool("server.session_interrupt", "session_interrupt", ("session_id",))
+session_branch = _tool("server.session_branch", "session_branch", ("session_id", "mode"))
+session_update = _tool("server.session_update", "session_update", ("session_id",), _update_fields)
+session_handoff = _tool("server.session_handoff", "session_handoff", ("session_id",), lambda args, params: SESSION_HANDOFF_TIMEOUT_S)
+session_compress = _tool("server.session_compress", "session_compress", ("session_id",), lambda args, params: SESSION_COMPRESS_TIMEOUT_S)
+background_list = _tool("server.background_list", "background_list", ())
 
 _TOOLS = (
     (SESSION_LIST_SCHEMA, session_list, "🗂️"),
@@ -209,11 +293,16 @@ _TOOLS = (
     (SESSION_SEND_SCHEMA, session_send, "💬"),
     (SESSION_WAIT_SCHEMA, session_wait, "⏳"),
     (SESSION_INTERRUPT_SCHEMA, session_interrupt, "⏹️"),
+    (SESSION_BRANCH_SCHEMA, session_branch, "🌿"),
+    (SESSION_UPDATE_SCHEMA, session_update, "🏷️"),
+    (SESSION_HANDOFF_SCHEMA, session_handoff, "📝"),
+    (SESSION_COMPRESS_SCHEMA, session_compress, "🗜️"),
+    (BACKGROUND_LIST_SCHEMA, background_list, "🧵"),
 )
 
 
 # The Agent stops a tool after its generic deadline (420 s by default) unless the tool registers a longer budget.
-_EXECUTION_TIMEOUTS = {"session_wait": SESSION_WAIT_MAX_S + rpc.SERVER_CALL_TIMEOUT}
+_EXECUTION_TIMEOUTS = {"session_wait": SESSION_WAIT_MAX_S + rpc.SERVER_CALL_TIMEOUT, "session_compress": SESSION_COMPRESS_TIMEOUT_S}
 
 
 def register() -> None:

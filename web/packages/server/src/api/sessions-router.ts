@@ -401,10 +401,7 @@ export const sessionsRouter = os.router({
       requireFields(input, 'session_id')
       const sid = str(input.session_id).trim()
       await guardVisibility(ctx, sid)
-      const job = await ctx.deps.sessions.startCompression(sid, input.focus_topic || input.topic)
-      await job.done
-      if (job.status === 'error') throw new HttpError(job.error_status ?? 400, job.error ?? 'Compression failed', job.error_extra)
-      return job.result as { ok: true; session: { session_id: string; title: string }; summary: Record<string, unknown>; focus_topic: string | null }
+      return ctx.deps.sessions.compressNow(sid, input.focus_topic || input.topic)
     })),
     compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id')

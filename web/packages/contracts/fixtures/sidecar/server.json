@@ -188,5 +188,197 @@
         "activity_phase": "cancelled"
       }
     }
+  ],
+  "server.session_branch": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "mode": "branch"
+      },
+      "result": {
+        "session_id": "20261020_121500_fork",
+        "title": "Fix the flaky test (fork)"
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "mode": "duplicate"
+      },
+      "result": {
+        "session_id": "20261020_121600_copy",
+        "title": "Fix the flaky test (copy)"
+      }
+    }
+  ],
+  "server.session_update": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "title": "Ship it",
+        "project_id": "3132c643e9de",
+        "pinned": true
+      },
+      "result": {
+        "session": {
+          "session_id": "20261020_120500_busy",
+          "title": "Ship it",
+          "workspace": "/home/user/work",
+          "model": null,
+          "created_at": 1792500000,
+          "updated_at": 1792500600,
+          "last_message_at": 1792500003,
+          "message_count": 4,
+          "pinned": true,
+          "archived": false,
+          "project_id": "3132c643e9de",
+          "profile": "default",
+          "is_streaming": false,
+          "is_cli_session": false,
+          "source_kind": "webui",
+          "is_messaging_session": false,
+          "sort_ts": 1792500003,
+          "read_only": false,
+          "can_branch": true,
+          "can_pin": true,
+          "can_archive": true,
+          "can_delete": true,
+          "can_duplicate": true,
+          "can_share": true,
+          "source_tag": null,
+          "source_label": null,
+          "session_source": null,
+          "raw_source": null,
+          "active_stream_id": null,
+          "share_token": null,
+          "share_url": null,
+          "workspace_name": "work",
+          "context_used_tokens": null,
+          "context_window_tokens": null,
+          "context_usage_percent": null,
+          "context_threshold_percent": null,
+          "context_window_source": null,
+          "model_provider": null,
+          "model_option_id": null,
+          "served_model": null,
+          "served_model_provider": null,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost": null,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cache_hit_percent": null,
+          "personality": null,
+          "reasoning_effort": null,
+          "compression_anchor_summary": null,
+          "pre_compression_snapshot": false,
+          "context_engine": null,
+          "compression_anchor_engine": null,
+          "compression_anchor_mode": null,
+          "compression_anchor_details": {},
+          "context_engine_state": {},
+          "context_length": null,
+          "threshold_tokens": null,
+          "last_prompt_tokens": null,
+          "post_compression_context_tokens_estimate": null,
+          "compression_recovery": {},
+          "recommended_recovery_action": null,
+          "gateway_routing": null,
+          "gateway_routing_history": [],
+          "manual_title": true,
+          "created_workspace": "/home/user/work",
+          "user_message_count": 2,
+          "pending_user_message": null,
+          "has_pending_user_message": false,
+          "enabled_toolsets": null,
+          "composer_draft": {
+            "text": "",
+            "files": []
+          },
+          "process_wakeup_pause": {},
+          "share_created_at": null,
+          "active_turn_origin": null,
+          "activity_phase": "completed",
+          "context_detail_key": "231665287ac00ed00718c9d2e3ce56f9c476bd9e00c7f76e51e83c2470294e26",
+          "assistant_name": "Hermes",
+          "focus_path": null
+        }
+      }
+    }
+  ],
+  "server.session_handoff": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy"
+      },
+      "result": {
+        "ok": true,
+        "summary": "- Ship the release.",
+        "message_count": 20,
+        "rounds": 10,
+        "fallback": false
+      }
+    }
+  ],
+  "server.session_compress": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_121600_copy"
+      },
+      "result": {
+        "session_id": "20261020_121600_copy",
+        "summary": {
+          "headline": "Compressed: 4 → 2 messages",
+          "token_line": "Approx request size: ~400 → ~120 tokens",
+          "note": null,
+          "noop": false
+        }
+      }
+    }
+  ],
+  "server.background_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller"
+      },
+      "result": {
+        "activity_phase": "stale",
+        "session_id": "20261020_120000_caller",
+        "tasks": [
+          {
+            "task_id": "bg-1",
+            "kind": "background_command",
+            "status": "unknown",
+            "title": "Check the synthetic data",
+            "started_at": 1792500100,
+            "updated_at": 1792500110,
+            "completed_at": null,
+            "result_available": false,
+            "child_sessions": [],
+            "exit_code": null,
+            "agents": null,
+            "pinned": true,
+            "dismissible": true,
+            "can_stop": false,
+            "active": true
+          }
+        ],
+        "agent_available": true,
+        "agents_working": false,
+        "delegation_status": {
+          "availability": "available",
+          "running_count": 0,
+          "awaiting_delivery_count": 0,
+          "memory_live": false,
+          "visible": false,
+          "refresh": false
+        }
+      }
+    }
   ]
 }
