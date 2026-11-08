@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import time
 
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
@@ -29,6 +30,8 @@ _REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
 _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
+# The owner held state.db past the read budget while committing; the caller may retry.
+_STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
 # Queued on a watch's event queue when its call is cancelled, so the watch ends without polling the flag (TAL-1746).
 _WAKE = object()
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
@@ -57,21 +60,35 @@ def _control_refusal(home: Path, sid: str) -> str | None:
 
     Read the owner's committed admission in a read-only connection; opening SessionDB here
     would run its schema writer alongside the owner. Compression keeps the logical target.
+    A lock held while the owner commits is transient: retry within a bounded budget, then
+    report the owner busy (retryable) rather than an unverifiable owner (TAL-1671).
     """
+    deadline = time.monotonic() + _STATE_BUSY_BUDGET
+    while True:
+        try:
+            with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True,
+                                         timeout=min(.5, _STATE_BUSY_BUDGET))) as db:
+                payloads = [raw for (raw,) in db.execute("""SELECT payload_json FROM session_admissions
+                    WHERE target_session_id=? AND status IN ('queued', 'started')""", (sid,))]
+            break
+        except sqlite3.OperationalError as exc:
+            if exc.sqlite_errorcode & 0xFF not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+                return "owner_controls_unverified"
+            if time.monotonic() >= deadline:
+                return _STATE_BUSY
+            time.sleep(.05)
+        except (sqlite3.Error, OSError):
+            return "owner_controls_unverified"
     try:
-        with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True, timeout=2)) as db:
-            rows = db.execute("""SELECT payload_json FROM session_admissions
-                WHERE target_session_id=? AND status IN ('queued', 'started')""", (sid,))
-            for (raw,) in rows:
-                payload = json.loads(raw)
-                policy = payload.get("cli_turn_v1", {})
-                if not isinstance(policy, dict):
-                    return "owner_controls_unverified"
-                if "clarify_batch" in policy and not isinstance(policy["clarify_batch"], bool):
-                    return "owner_controls_unverified"
-                if policy.get("clarify_batch") is True and not _batch_locks():
-                    return "native_clarify_batch_unavailable"
-    except (sqlite3.Error, OSError, ValueError, TypeError, AttributeError):
+        for raw in payloads:
+            policy = json.loads(raw).get("cli_turn_v1", {})
+            if not isinstance(policy, dict):
+                return "owner_controls_unverified"
+            if "clarify_batch" in policy and not isinstance(policy["clarify_batch"], bool):
+                return "owner_controls_unverified"
+            if policy.get("clarify_batch") is True and not _batch_locks():
+                return "native_clarify_batch_unavailable"
+    except (ValueError, TypeError, AttributeError):
         return "owner_controls_unverified"
     return None
 
@@ -496,6 +513,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
         except GatewayRPCError as exc:
             if params["action"] == "react" and str(exc) not in {"invalid_params", "not_found", "permission_denied", "profile_mismatch"}:
                 return _refused("unavailable", "reaction_outcome_unknown")
+            if str(exc) == _STATE_BUSY:
+                return {**_refused("unavailable", _STATE_BUSY), "receipt": receipt}
             if params["action"] == "export":
                 return _refused("refused", "export_too_large" if str(exc) == "export_too_large" else "owner_export_unsupported")
             return {**_refused("incompatible" if str(exc) in _CONTROL_REFUSALS else "refused", str(exc)), "receipt": receipt}

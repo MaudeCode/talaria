@@ -208,6 +208,7 @@ def native_owner_stub(tmp_path, monkeypatch):
         yield SimpleNamespace(rpc=rpc), queue
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
     monkeypatch.setattr(adapter, "_connect", connect)
+    owner.control_refusal = adapter._control_refusal
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
     endpoint = SimpleNamespace(code_sha=SUPPORTED_REVISIONS[-1], control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
     found = SimpleNamespace(endpoint=endpoint, state="ready")
@@ -294,6 +295,48 @@ def test_verified_served_owner_keeps_restart_and_diagnostic_gates(tmp_path, nati
     assert owner.calls == []
     assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["state"] == "attached"
     assert adapter._served(tmp_path, owner.endpoint), "diagnostic creation requires its own verified contract"
+
+
+def _owner_admission(home, payload):
+    import sqlite3
+    from contextlib import closing
+    with closing(sqlite3.connect(home / "state.db")) as db:
+        db.execute("CREATE TABLE session_admissions(target_session_id TEXT, payload_json TEXT, status TEXT)")
+        db.execute("INSERT INTO session_admissions VALUES ('chat', ?, 'queued')", (json.dumps(payload),))
+        db.commit()
+
+
+@pytest.mark.parametrize("held,result", [(0.2, ("attached", None)), (None, ("unavailable", "owner_state_busy"))])
+def test_locked_owner_state_is_retryable_not_incompatible(tmp_path, native_owner_stub, monkeypatch, held, result):
+    """TAL-1671: a write lock while the owner commits an admission is transient, never an incompatible owner."""
+    import sqlite3
+    import threading
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_control_refusal", native_owner_stub.control_refusal)
+    if not held:
+        monkeypatch.setattr(adapter, "_STATE_BUSY_BUDGET", 0.5, raising=False)
+    _owner_admission(tmp_path, {"cli_turn_v1": {"clarify_batch": False}})
+    writer = sqlite3.connect(tmp_path / "state.db", isolation_level=None, check_same_thread=False)
+    writer.execute("BEGIN EXCLUSIVE")
+    release = threading.Timer(held, writer.rollback) if held else None
+    try:
+        if release:
+            release.start()
+        outcome = native_owner_stub.run(None, {"session_id": "chat", "action": "snapshot"})
+    finally:
+        if release:
+            release.join()
+        writer.close()
+    assert (outcome["state"], outcome["reason"]) == result, outcome
+
+
+@pytest.mark.parametrize("policy", [[], {"clarify_batch": "yes"}])
+def test_malformed_owner_admission_stays_incompatible(tmp_path, native_owner_stub, monkeypatch, policy):
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_control_refusal", native_owner_stub.control_refusal)
+    _owner_admission(tmp_path, {"cli_turn_v1": policy})
+    outcome = native_owner_stub.run(None, {"session_id": "chat", "action": "snapshot"})
+    assert (outcome["state"], outcome["reason"]) == ("incompatible", "owner_controls_unverified"), outcome
 
 
 @pytest.mark.parametrize("fmt", ["json", "markdown", "html"])

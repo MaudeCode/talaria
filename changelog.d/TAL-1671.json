@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat whose Agent is briefly busy saving a message now reports it as temporarily unavailable instead of incompatible.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
