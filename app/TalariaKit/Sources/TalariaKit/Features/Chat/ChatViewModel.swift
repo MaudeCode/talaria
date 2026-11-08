@@ -779,7 +779,10 @@ public final class ChatViewModel {
         self.streamCoordinator.attach(delegate: self)
         self.pendingActionCoordinator.delegate = self
         self.pendingActionCoordinator.approvalHeadDidBecomeVisible = { prompt in
-            ApprovalNotificationService.shared.observe(prompt, server: server)
+            PendingActionNotificationService.shared.observe(prompt, server: server)
+        }
+        self.pendingActionCoordinator.clarificationHeadDidBecomeVisible = { prompt in
+            PendingActionNotificationService.shared.observe(prompt, server: server)
         }
         self.attachmentCoordinator.delegate = self
         recomputeSelectedModelTitle()

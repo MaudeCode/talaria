@@ -5105,115 +5105,327 @@
         }
       }
     },
-    "Approval Alerts" : {
-      "extractionState" : "manual",
+    "An agent run is waiting for your answer." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "تنبيهات الموافقة"
+            "state" : "needs_review",
+            "value" : "ينتظر تشغيل وكيل إجابتك."
           }
         },
         "de" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Genehmigungshinweise"
+            "state" : "needs_review",
+            "value" : "Ein Agentenlauf wartet auf deine Antwort."
           }
         },
         "es" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas de aprobación"
+            "state" : "needs_review",
+            "value" : "Una ejecución del agente espera tu respuesta."
           }
         },
         "fr" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertes d’approbation"
+            "state" : "needs_review",
+            "value" : "Une exécution de l’agent attend votre réponse."
           }
         },
         "he" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "התראות אישור"
+            "state" : "needs_review",
+            "value" : "הרצת סוכן ממתינה לתשובה שלך."
           }
         },
         "it" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avvisi di approvazione"
+            "state" : "needs_review",
+            "value" : "Un’esecuzione dell’agente attende la tua risposta."
           }
         },
         "ja" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "承認の通知"
+            "state" : "needs_review",
+            "value" : "エージェントの実行が回答を待っています。"
           }
         },
         "ko" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "승인 알림"
+            "state" : "needs_review",
+            "value" : "에이전트 실행이 답변을 기다리고 있습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Goedkeuringsmeldingen"
+            "state" : "needs_review",
+            "value" : "Een agent wacht op je antwoord."
           }
         },
         "pl" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alerty zatwierdzenia"
+            "state" : "needs_review",
+            "value" : "Uruchomienie agenta czeka na Twoją odpowiedź."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alertas de aprovação"
+            "state" : "needs_review",
+            "value" : "Uma execução do agente aguarda sua resposta."
           }
         },
         "ru" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Уведомления о подтверждении"
+            "state" : "needs_review",
+            "value" : "Запуск агента ожидает вашего ответа."
           }
         },
         "tr" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Onay uyarıları"
+            "state" : "needs_review",
+            "value" : "Bir aracı çalıştırması yanıtınızı bekliyor."
           }
         },
         "ur" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "منظوری کی اطلاعات"
+            "state" : "needs_review",
+            "value" : "ایجنٹ کی کارروائی آپ کے جواب کی منتظر ہے۔"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "批准提醒"
+            "state" : "needs_review",
+            "value" : "代理執行正在等待你的回答。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "审批提醒"
+            "state" : "needs_review",
+            "value" : "代理运行正在等待您的回答。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "核准提醒"
+            "state" : "needs_review",
+            "value" : "代理執行正在等待您的回答。"
+          }
+        }
+      }
+    },
+    "Question waiting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سؤال بانتظار الرد"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Frage wartet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pregunta pendiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Question en attente"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שאלה ממתינה"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Domanda in attesa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "質問が待機中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "답변 대기 중인 질문"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vraag wacht op antwoord"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pytanie czeka na odpowiedź"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pergunta aguardando"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ожидается ответ на вопрос"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yanıt bekleyen soru"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سوال منتظر ہے"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "問題等待回覆"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "问题等待回复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "問題等待回覆"
+          }
+        }
+      }
+    },
+    "Approval and Question Alerts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تنبيهات الموافقة والأسئلة"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Genehmigungs- und Fragenhinweise"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alertas de aprobación y preguntas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alertes d’approbation et de question"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "התראות אישור ושאלות"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avvisi di approvazione e domande"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "承認と質問の通知"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "승인 및 질문 알림"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Meldingen voor goedkeuring en vragen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alerty zatwierdzeń i pytań"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alertas de aprovação e perguntas"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Уведомления о подтверждениях и вопросах"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Onay ve soru uyarıları"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "منظوری اور سوالات کی اطلاعات"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "批准及問題提醒"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "审批和问题提醒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "核准與問題提醒"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Approval Alerts"
+            "value" : "Approval and Question Alerts"
           }
         }
       }

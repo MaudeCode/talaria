@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Approval and Question Alerts also notify you when an agent asks a question while Talaria is in the background.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Question alerts",
+        "description": "Get notified when an agent asks you a question while Talaria is in the background.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

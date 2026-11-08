@@ -25,6 +25,23 @@ final class ApprovalNotificationTests: XCTestCase {
     }
 
     @MainActor
+    func testEveryClarificationSourceReachesVisibleHeadNotificationBoundary() {
+        let coordinator = ChatPendingActionCoordinator(
+            client: APIClient(baseURL: URL(string: "https://approval-alert.test")!),
+            approvalStreamClient: SSEClient(), clarifyStreamClient: SSEClient(), pollingIntervals: .standard
+        )
+        let delegate = ApprovalNotificationTestDelegate()
+        coordinator.delegate = delegate
+        var observed: [String] = []
+        coordinator.clarificationHeadDidBecomeVisible = { observed.append($0.pending.clarifyId ?? "") }
+        // Chat stream, clarify SSE and polling all use this method.
+        for _ in 0..<3 { coordinator.applyClarificationUpdate(clarification("first"), sessionID: "session-abc") }
+        coordinator.applyClarificationUpdate(ClarificationPendingResponse(pending: nil, pendingCount: 0), sessionID: "session-abc")
+        coordinator.applyClarificationUpdate(clarification("second"), sessionID: "session-abc")
+        XCTAssertEqual(observed, ["first", "second"], "Each newly visible question head must reach the alert boundary once.")
+    }
+
+    @MainActor
     func testApprovalPollResponseAfterPollingStopsDoesNotShowPrompt() async throws {
         let approvalRequests = LockedCounter()
         let releaseResponse = DispatchSemaphore(value: 0)
@@ -82,7 +99,7 @@ final class ApprovalNotificationTests: XCTestCase {
     @MainActor
     func testDeduplicatesAcrossSourcesReconnectAndQueueReplacement() async {
         let scheduler = ApprovalNotificationSpy(status: .authorized)
-        let service = ApprovalNotificationService(scheduler: scheduler, preferenceEnabled: { true },
+        let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { true },
             sceneIsActive: { false }, relayOwnsAlerts: { _ in false })
         let first = prompt("first")
         let task = service.observe(first, server: server)
@@ -107,11 +124,13 @@ final class ApprovalNotificationTests: XCTestCase {
                 for active in [false, true] {
                     for relay in [false, true] {
                         let scheduler = ApprovalNotificationSpy(status: status)
-                        let service = ApprovalNotificationService(scheduler: scheduler, preferenceEnabled: { enabled },
+                        let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { enabled },
                             sceneIsActive: { active }, relayOwnsAlerts: { _ in relay })
                         await service.observe(prompt("first"), server: server)?.value
+                        await service.observe(question("first"), server: server)?.value
                         let permitted = status != .denied && status != .notDetermined
-                        XCTAssertEqual(scheduler.requests.count, enabled && !active && !relay && permitted ? 1 : 0)
+                        XCTAssertEqual(scheduler.requests.map(\.kind),
+                                       enabled && !active && !relay && permitted ? [.approval, .question] : [])
                     }
                 }
             }
@@ -124,7 +143,7 @@ final class ApprovalNotificationTests: XCTestCase {
         var enabled = true
         var relay = false
         let scheduler = ApprovalNotificationSpy(status: .authorized)
-        let service = ApprovalNotificationService(scheduler: scheduler, preferenceEnabled: { enabled },
+        let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { enabled },
             sceneIsActive: { active }, relayOwnsAlerts: { _ in relay })
         XCTAssertNil(service.observe(prompt("foreground"), server: server))
         active = false
@@ -143,7 +162,7 @@ final class ApprovalNotificationTests: XCTestCase {
     @MainActor
     func testSanitizedContentAndPayloadReachExistingTapRoute() async throws {
         let scheduler = ApprovalNotificationSpy(status: .authorized)
-        let service = ApprovalNotificationService(scheduler: scheduler, preferenceEnabled: { true },
+        let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { true },
             sceneIsActive: { false }, relayOwnsAlerts: { _ in false })
         await service.observe(prompt("stable-id"), server: server)?.value
         let request = try XCTUnwrap(scheduler.requests.first)
@@ -166,6 +185,24 @@ final class ApprovalNotificationTests: XCTestCase {
     }
 
 
+    @MainActor
+    func testQuestionAlertsOncePerRequestAndOpensItsSession() async throws {
+        let scheduler = ApprovalNotificationSpy(status: .authorized)
+        let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { true },
+            sceneIsActive: { false }, relayOwnsAlerts: { _ in false })
+        await service.observe(question("clarify-1"), server: server)?.value
+        for _ in 0..<3 { XCTAssertNil(service.observe(question("clarify-1"), server: server)) }
+        // An approval sharing the ID is a different queue head.
+        await service.observe(prompt("clarify-1"), server: server)?.value
+        await service.observe(question("clarify-2"), server: server)?.value
+        XCTAssertEqual(scheduler.requests.map(\.kind), [.question, .approval, .question])
+        let request = try XCTUnwrap(scheduler.requests.first)
+        XCTAssertEqual(request.userInfo, ["sessionId": "session-abc", "publisherId": "https://approval-alert.test"])
+        XCTAssertEqual(request.content.title, "Question waiting")
+        XCTAssertEqual(request.content.body, "An agent run is waiting for your answer.")
+        XCTAssertEqual(request.content.userInfo as? [String: String], request.userInfo)
+    }
+
     /// TAL-59: the relay's approval push reaches the same session route as the local fallback and shows the same
     /// localized copy. The opened chat's approval stream refreshes the head
     /// (`testApprovalStreamPublishesPromptAndRespondsWithoutStoppingChatStream`).
@@ -187,7 +224,7 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), "https://approval-alert.test")
         XCTAssertNil(SessionNotificationRefresh.sessionURL(userInfo: ["aps": [:], "sessionId": "  "]))
 
-        let fallback = ApprovalNotificationRequest(sessionID: "session-abc", publisherID: "https://approval-alert.test")
+        let fallback = PendingActionNotificationRequest(kind: .approval, sessionID: "session-abc", publisherID: "https://approval-alert.test")
         XCTAssertEqual(SessionNotificationRefresh.sessionURL(userInfo: fallback.userInfo), url)
         XCTAssertEqual(fallback.content.title, alert["title-loc-key"])
         XCTAssertEqual(fallback.content.body, alert["loc-key"])
@@ -208,7 +245,7 @@ final class ApprovalNotificationTests: XCTestCase {
         defaults.set("synthetic-push-token", forKey: TalariaRelayNotifications.pushTokenKey)
         defaults.set(false, forKey: TalariaRelayNotifications.isEnabledKey)
         let scheduler = ApprovalNotificationSpy(status: .authorized)
-        let service = ApprovalNotificationService(scheduler: scheduler, preferenceEnabled: { true },
+        let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { true },
             sceneIsActive: { false }, relayOwnsAlerts: {
                 TalariaRelayConfigurationStore.ownsApprovalAlerts(for: $0, keychain: keychain, defaults: defaults)
             })
@@ -237,6 +274,14 @@ final class ApprovalNotificationTests: XCTestCase {
             pending: PendingApproval(approvalId: id, command: "private command /private/path", description: "private transcript"),
             pendingCount: 2)
     }
+    private func clarification(_ id: String) -> ClarificationPendingResponse {
+        ClarificationPendingResponse.streamPayload(from: Data(#"""
+            {"pending":{"clarify_id":"\#(id)","steps":[{"qid":"q0","question":"private question","choices":[],"multi_select":false}]},"pending_count":1}
+            """#.utf8))
+    }
+    private func question(_ id: String) -> ClarificationPromptState {
+        ClarificationPromptState(sessionID: "session-abc", pending: clarification(id).pending!, pendingCount: 1)
+    }
 }
 
 @MainActor
@@ -250,14 +295,14 @@ private final class ApprovalNotificationTestDelegate: ChatPendingActionCoordinat
 }
 
 @MainActor
-private final class ApprovalNotificationSpy: ApprovalNotificationScheduling {
+private final class ApprovalNotificationSpy: PendingActionNotificationScheduling {
     let status: UNAuthorizationStatus
     var onAuthorization: () -> Void = {}
-    var requests: [ApprovalNotificationRequest] = []
+    var requests: [PendingActionNotificationRequest] = []
     init(status: UNAuthorizationStatus) { self.status = status }
     func authorizationStatus() async -> UNAuthorizationStatus {
         onAuthorization()
         return status
     }
-    func schedule(_ request: ApprovalNotificationRequest) async { requests.append(request) }
+    func schedule(_ request: PendingActionNotificationRequest) async { requests.append(request) }
 }
