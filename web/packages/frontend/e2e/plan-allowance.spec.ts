@@ -40,7 +40,7 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
   }
   await page.route('**/api/models', (route) => route.fulfill({ json: { default_model: 'saved', default_option_id: 'saved', groups: [group] } }))
   await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { main: { model: 'saved', provider: 'nous' }, tasks: [] } }))
-  await page.goto('/settings/preferences'); await settle(page)
+  await page.goto('/settings/models'); await settle(page)
   await page.getByRole('combobox', { name: 'Default Model', exact: true }).click()
   await expect(page.getByRole('option')).toHaveCount(4)
   if (!legacy) {
@@ -59,7 +59,7 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
     availability: { authoritative: quotaPhase !== 'offline', status: quotaPhase === 'offline' ? 'unavailable' : 'available', generation: 'synthetic-generation', unavailable_reason: quotaPhase === 'offline' ? 'Account status temporarily unavailable.' : null },
     sources: legacy || quotaPhase === 'offline' ? [] : [{ source_id: 'test-nous', provider_id: 'nous', status: 'available', plan_usage: { ...plan, credits_pay: quotaPhase === 'credits' }, plan_stale: false, windows: [] }],
   } }))
-  await page.goto('/settings/providers'); await settle(page)
+  await page.goto('/settings/models'); await settle(page)
   if (!legacy) {
     await expect(page.getByTestId('provider-plan-usage')).toContainText('0% remaining')
     await expect(page.getByTestId('provider-plan-usage')).toContainText('80% remaining')

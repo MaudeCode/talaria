@@ -1,42 +1,39 @@
 import { lazy, Suspense, type ReactNode } from 'react'
-import type { SettingsSection as Section } from '../../contracts/url'
+import type { AgentTab, SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
 import { LoadingState } from '../../ui/States'
 import { useLocale } from '../../i18n/useLocale'
 
 const AppearanceSection = lazy(() => import('./AppearanceSection').then((module) => ({ default: module.AppearanceSection })))
-const PreferencesSection = lazy(() => import('./PreferencesSection').then((module) => ({ default: module.PreferencesSection })))
-const ConversationSection = lazy(() => import('./ConversationSection').then((module) => ({ default: module.ConversationSection })))
-const SpeechSection = lazy(() => import('./SpeechSection').then((module) => ({ default: module.SpeechSection })))
+const ChatSection = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSection })))
+const SidebarSection = lazy(() => import('./SidebarSection').then((module) => ({ default: module.SidebarSection })))
+const ModelsSection = lazy(() => import('./ModelsSection').then((module) => ({ default: module.ModelsSection })))
 const NotificationsSection = lazy(() => import('./NotificationsSection').then((module) => ({ default: module.NotificationsSection })))
-const ProvidersSection = lazy(() => import('./ProvidersSection').then((module) => ({ default: module.ProvidersSection })))
-const AuxiliaryModelsSection = lazy(() => import('./AuxiliaryModels').then((module) => ({ default: module.AuxiliaryModelsSection })))
-const ConnectorsSection = lazy(() => import('../connectors/ConnectorsSection').then((module) => ({ default: module.ConnectorsSection })))
-const PluginsSection = lazy(() => import('./PluginsSection').then((module) => ({ default: module.PluginsSection })))
-const ExtensionsSection = lazy(() => import('./ExtensionsSection').then((module) => ({ default: module.ExtensionsSection })))
+const SpeechSection = lazy(() => import('./SpeechSection').then((module) => ({ default: module.SpeechSection })))
+const AgentSection = lazy(() => import('./AgentSection').then((module) => ({ default: module.AgentSection })))
 const SystemSection = lazy(() => import('./SystemSection').then((module) => ({ default: module.SystemSection })))
-const HelpSection = lazy(() => import('./HelpSection').then((module) => ({ default: module.HelpSection })))
+const AboutSection = lazy(() => import('./AboutSection').then((module) => ({ default: module.AboutSection })))
 
-const SECTIONS: Partial<Record<Section, () => ReactNode>> = {
+/** `tab` and `onTabChange` reach the one section with tabs, Agent. */
+interface SectionProps { tab?: AgentTab | undefined; onTabChange?: ((tab: AgentTab) => void) | undefined }
+
+const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   appearance: () => <AppearanceSection />,
-  preferences: () => <PreferencesSection />,
-  conversation: () => <ConversationSection />,
-  speech: () => <SpeechSection />,
+  chat: () => <ChatSection />,
+  sidebar: () => <SidebarSection />,
+  models: () => <ModelsSection />,
   notifications: () => <NotificationsSection />,
-  providers: () => <ProvidersSection />,
-  auxiliary: () => <AuxiliaryModelsSection />,
-  connectors: () => <ConnectorsSection />,
-  plugins: () => <PluginsSection />,
-  extensions: () => <ExtensionsSection />,
+  speech: () => <SpeechSection />,
+  agent: (props) => <AgentSection {...props} />,
   system: () => <SystemSection />,
-  help: () => <HelpSection />,
+  about: () => <AboutSection />,
 }
 
-export function registerSettingsSection(section: Section, render: () => ReactNode): void {
+export function registerSettingsSection(section: Section, render: (props: SectionProps) => ReactNode): void {
   SECTIONS[section] = render
 }
 
-export function SettingsSection({ section }: { section: Section }) {
+export function SettingsSection({ section, ...props }: { section: Section } & SectionProps) {
   useLocale()
   const render = SECTIONS[section]
   return (
@@ -47,7 +44,7 @@ export function SettingsSection({ section }: { section: Section }) {
             <h1 className="settings-section-title text-[18px] font-semibold tracking-(--heading-tracking) text-text leading-[1.3] mb-1">{SECTION_LABEL[section]()}</h1>
           </div>
         </div>
-        <Suspense fallback={<LoadingState compact />}>{render ? render() : <LoadingState compact />}</Suspense>
+        <Suspense fallback={<LoadingState compact />}>{render ? render(props) : <LoadingState compact />}</Suspense>
       </div>
     </div>
   )

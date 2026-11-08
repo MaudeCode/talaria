@@ -22,7 +22,7 @@ import { loadBootstrap } from '../../app/bootstrap'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
-import { McpSection } from './McpSection'
+import { PrivacySettings } from './PrivacySettings'
 import { GatewayRestart } from './GatewayRestart'
 import { WhatsNewReplay } from '../whats-new/WhatsNew'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
@@ -171,7 +171,6 @@ export function SystemSection() {
           <dd>{canManage && <GatewayRestart />}</dd>
         </dl>
       </section>
-      <McpSection heading={heading} />
       {(canManage || bootstrap.auth.passkey_feature_flag || bootstrap.auth.auth_enabled) && <section aria-labelledby="systemAccessHeading" className="flex flex-col gap-4">
         <h2 id="systemAccessHeading" className={heading}>{m.system_access()}</h2>
       {canManage && (
@@ -200,6 +199,10 @@ export function SystemSection() {
       )}
         {bootstrap.auth.auth_enabled && <div><Button onClick={() => { void logout() }}>{m.system_logout()}</Button></div>}
       </section>}
+      <section aria-labelledby="systemPrivacyHeading" className="flex flex-col" data-group="privacy">
+        <h2 id="systemPrivacyHeading" className={heading}>{m.settings_group_privacy()}</h2>
+        <PrivacySettings />
+      </section>
       {canManage && (
         <section aria-labelledby="systemStopHeading" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-error/40 px-4 py-3">
           <h2 id="systemStopHeading" className="text-sm font-semibold text-error">{m.system_shutdown()}<HelpTip label={m.field_help_about({ label: m.system_shutdown() })}>{m.system_shutdown_hint()}</HelpTip></h2>

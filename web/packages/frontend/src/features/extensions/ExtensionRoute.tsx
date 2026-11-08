@@ -116,7 +116,7 @@ export function ExtensionRoute({ extensionId }: { extensionId: string }) {
       {manifests.isPending && <LoadingState />}
       {manifests.isError && <div className="p-4"><ErrorState error={manifests.error} onRetry={() => { void manifests.refetch() }} /></div>}
       {manifests.isSuccess && !manifest && (
-        <HubPage title={extensionId}><ErrorState error={new Error(m.extensions_unknown())} /><Link to="/settings/$section" params={{ section: 'extensions' }} className="mt-2 inline-block text-sm text-accent-text underline">{m.settings_section_extensions_title()}</Link></HubPage>
+        <HubPage title={extensionId}><ErrorState error={new Error(m.extensions_unknown())} /><Link to="/settings/$section" params={{ section: 'agent' }} search={{ tab: 'extensions' }} className="mt-2 inline-block text-sm text-accent-text underline">{m.settings_section_extensions_title()}</Link></HubPage>
       )}
       {manifest && !manifest.enabled && <HubPage title={manifest.name}><ErrorState error={new Error(m.extensions_disabled_panel())} /></HubPage>}
       {manifest && manifest.enabled && manifest.native_view === 'meshy_gallery' && <Suspense fallback={<LoadingState />}><MeshyGallery title={manifest.name} /></Suspense>}

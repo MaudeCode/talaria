@@ -18,16 +18,18 @@ vi.mock('../../api/endpoints', () => ({
   fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve(costHistory)), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
   onboardingOauthStart: vi.fn(), onboardingOauthPoll: vi.fn(), onboardingOauthCancel: vi.fn(),
   saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(), installPlugin: vi.fn(),
+  fetchModels: vi.fn(() => Promise.resolve({ groups: [] })), fetchAuxiliaryModels: vi.fn(() => Promise.resolve({ main: {}, tasks: [] })),
   fetchProviders: vi.fn(() => Promise.resolve(providersResponse.current ?? { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] })),
   fetchProviderQuotas: vi.fn(() => Promise.resolve(quotaResponse.current ?? { version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources: [] })),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { ProvidersSection } from './ProvidersSection'
+import { ModelsSection } from './ModelsSection'
 
-const renderSection = () => {
+const renderSection = (ui = <ProvidersSection />) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={qc}><ProvidersSection /></QueryClientProvider>)
+  render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
 }
 const DEFAULTS = { warning_remaining_percent: 25, critical_remaining_percent: 10, pace_tolerance_percent: 3, pace_warning_burn_rate_percent: 125, pace_critical_burn_rate_percent: 175, pace_minimum_elapsed_hours: 12 }
 const quotasWith = (sources: Record<string, unknown>[]) => ProviderQuotasSchema.parse({ version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources })
@@ -237,7 +239,7 @@ describe('ProvidersSection', () => {
   it('shows the profile thresholds from settings and saves an edit, then refetches quotas (TAL-411)', async () => {
     vi.mocked(api.fetchSettings).mockResolvedValue({ provider_quota_thresholds: DEFAULTS })
     vi.mocked(api.saveSettings).mockResolvedValue({ provider_quota_thresholds: { ...DEFAULTS, warning_remaining_percent: 30 } })
-    renderSection()
+    renderSection(<ModelsSection />)
     const warning = await screen.findByRole('spinbutton', { name: 'Warning at % remaining' })
     await waitFor(() => expect(warning).toHaveValue(25))
     expect(screen.getByRole('spinbutton', { name: 'Projection after hours' })).toHaveValue(12)

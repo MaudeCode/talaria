@@ -19,7 +19,6 @@ import { cn } from '../../ui/cn'
 import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
-import { QuotaThresholdsForm } from './QuotaThresholds'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { usePluginInstall } from './usePluginInstall'
 
@@ -62,7 +61,6 @@ export function ProvidersSection() {
       </div>
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
-      <QuotaThresholdsForm />
       <ul className="flex flex-col">
         {providers.data.providers.map((p) => {
           const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []

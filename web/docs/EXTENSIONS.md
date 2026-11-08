@@ -120,7 +120,7 @@ protocol document.
 ### One-click install (no configuration required)
 
 For a single-user self-hosted instance you do not need to configure anything.
-Open **Settings → Extensions**, pick an extension from the gallery, and click
+Open **Settings → Agent → Extensions**, pick an extension from the gallery, and click
 **Install** — it just works. The first install creates a WebUI-managed
 extension directory under your state dir (`STATE_DIR/extensions`, e.g.
 `~/.hermes/webui/extensions/`) and installs into it; gallery-installed
@@ -437,7 +437,7 @@ following [`docs/extension-entry.md`](https://github.com/hermes-webui/hermes-web
 (entry layout, `extension.json`/`manifest.json` shape, and the capability +
 best-practice conventions). Every entry PR runs the repo's CI validators and
 safety scan before it can merge, and merged entries are published to the registry
-that powers Settings → Extensions.
+that powers Settings → Agent → Extensions.
 
 ## Diagnostics
 
@@ -448,7 +448,7 @@ GET /api/extensions/status
 ```
 
 The status endpoint is read-only and follows the normal WebUI authentication
-rules. The same sanitized diagnostics are also shown in **Settings → Extensions**
+rules. The same sanitized diagnostics are also shown in **Settings → Agent → Extensions**
 for operators who prefer to inspect extension state from the browser. Installed
 manifest entries can be enabled or disabled from that panel through the
 authenticated `POST /api/extensions/toggle` endpoint. The toggle writes only a
@@ -470,7 +470,7 @@ return `HERMES_WEBUI_EXTENSION_DIR`, resolved manifest paths, raw environment
 values, rejected URL strings, rejected sidecar origins, rejected health paths, or
 the override state-file path.
 
-When sanitized loopback sidecars are present, **Settings → Extensions** renders a sidecar monitor card. The host page checks each declared `health_url` with `fetch(..., { credentials: 'omit', cache: 'no-store' })` and a short timeout. A successful HTTP response is shown as healthy, a non-OK HTTP response as unhealthy, and CORS/network/timeouts as unreachable or blocked; raw health response bodies are never rendered. If a healthy response includes an optional top-level `runtime` object, the panel may parse it and render only allowlisted scalar fields such as `sidecar`, `native_host`, `bridge`, `last_seen_at`, and `webui_origin`. This keeps sidecar-specific diagnostics machine-readable without making WebUI depend on any one extension's private payload shape.
+When sanitized loopback sidecars are present, **Settings → Agent → Extensions** renders a sidecar monitor card. The host page checks each declared `health_url` with `fetch(..., { credentials: 'omit', cache: 'no-store' })` and a short timeout. A successful HTTP response is shown as healthy, a non-OK HTTP response as unhealthy, and CORS/network/timeouts as unreachable or blocked; raw health response bodies are never rendered. If a healthy response includes an optional top-level `runtime` object, the panel may parse it and render only allowlisted scalar fields such as `sidecar`, `native_host`, `bridge`, `last_seen_at`, and `webui_origin`. This keeps sidecar-specific diagnostics machine-readable without making WebUI depend on any one extension's private payload shape.
 
 The same card also exposes proxy consent through `POST /api/extensions/sidecar-proxy-consent` and reports the fixed per-extension sidecar path `/api/extensions/<extension-id>/sidecar/<relative-path>`. WebUI strips `Cookie`, `Authorization`, and CSRF headers before contacting the sidecar, and sidecar `Set-Cookie` headers are stripped before the browser sees the response. WebUI does not create arbitrary extension-owned backend routes; the proxy surface stays on that fixed per-extension sidecar path.
 

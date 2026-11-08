@@ -11,7 +11,7 @@ test('plugin save distinguishes persisted settings from live MCP application', a
   await page.route('**/api/plugins/settings', (route) => route.fulfill({ json: {
     ok: true, key: 'demo', written: ['api_key'], settings: fields, runtime_application,
   } }))
-  await page.goto('/settings/plugins')
+  await page.goto('/settings/agent')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   for (const [application, message] of [

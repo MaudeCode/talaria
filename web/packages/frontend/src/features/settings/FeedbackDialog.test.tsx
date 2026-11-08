@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
 import { deferred } from '../../test/fixtures'
 
-vi.mock('../../api/endpoints', () => ({ submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn(), fetchFeedbackOptions: vi.fn(), uploadFeedbackAttachment: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(() => Promise.resolve({})), submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn(), fetchFeedbackOptions: vi.fn(), uploadFeedbackAttachment: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn(), showRichToast: vi.fn(), dismissToast: vi.fn() }))
 // jsdom has no canvas or WebCodecs; the real compression runs in Playwright (e2e/feedback-media.spec.ts).
 vi.mock('./feedbackMedia', () => ({ compressImage: vi.fn(), compressVideo: vi.fn() }))
@@ -24,12 +24,12 @@ async function setup(options: Options = OPTIONS) {
   // Compression is identity here: a picked file is "compressed" to itself.
   vi.mocked(media.compressImage).mockImplementation((file) => Promise.resolve({ ok: true, file, contentType: file.type as (typeof ALL_TYPES)[number] }))
   vi.mocked(media.compressVideo).mockImplementation((file) => Promise.resolve({ ok: true, file, contentType: file.type as (typeof ALL_TYPES)[number] }))
-  const { HelpSection } = await import('./HelpSection')
+  const { AboutSection } = await import('./AboutSection')
   // The shell owns the single dialog mount (TAL-1588); Help only opens it.
   const { FeedbackDialog } = await import('./FeedbackDialog')
   ;({ ApiError } = await import('../../contracts/common'))
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(<QueryClientProvider client={qc}><HelpSection /><FeedbackDialog /></QueryClientProvider>)
+  const view = render(<QueryClientProvider client={qc}><AboutSection /><FeedbackDialog /></QueryClientProvider>)
   return { upload: vi.mocked(api.uploadFeedbackAttachment), compressImage: vi.mocked(media.compressImage), submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
@@ -53,7 +53,7 @@ const invalid = () => new ApiError({ kind: 'http', status: 400, body: { error: '
 const lost = () => new ApiError({ kind: 'network', path: 'api/feedback/submit', message: 'Failed to fetch' })
 
 // Transform the module graph once; every case then re-evaluates it cheaply.
-beforeAll(async () => { await import('./HelpSection') }, 60_000)
+beforeAll(async () => { await import('./AboutSection') }, 60_000)
 
 beforeEach(() => {
   vi.resetModules()

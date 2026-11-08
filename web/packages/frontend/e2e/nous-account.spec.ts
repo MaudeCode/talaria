@@ -20,7 +20,7 @@ test('Nous result remains readable, survives reload, and reconnect is an explici
   await page.route('**/api/connectors/operations/reconnect-1', (route) => route.fulfill({ json: { op_id: 'reconnect-1', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
     { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/gmail', launch: null, actions: ['skip'], env_fields: [] },
   ] } }))
-  await page.goto('/settings/providers')
+  await page.goto('/settings/models')
   await settle(page)
   const row = page.locator('[data-provider="nous"]')
   await expect(row).not.toContainText('u***@example.test')
@@ -64,7 +64,7 @@ test('Nous approval keeps the transfer result on screen until Continue', async (
     approved = true
     return route.fulfill({ json: { ok: true, status: 'approved', flow_id: 'native-flow', provider: 'nous', error: null, nous_account: { ...account, poll_after: 1 } } })
   })
-  await page.goto('/settings/connectors')
+  await page.goto('/settings/agent?tab=connectors')
   await settle(page)
   await page.getByRole('button', { name: 'Sign in with Nous Portal' }).click()
   await expect(page.getByText('NOUS-42')).toBeVisible()

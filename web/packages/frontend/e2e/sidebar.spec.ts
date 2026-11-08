@@ -457,7 +457,7 @@ test('with nothing pinned the sidebar has no group and reads no quotas', async (
   expect(reads).toBe(0)
 })
 
-test('Preferences pins from the server projection, shows a choice at once and rolls a refusal back', async ({ page, errors }, info) => {
+test('Sidebar settings pin from the server projection, shows a choice at once and rolls a refusal back', async ({ page, errors }, info) => {
   desktopOnly(info.project.name)
   let projection = { sidebar_source_ids: [] as string[], sidebar_can_pin: true }
   await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, ...projection } }))
@@ -467,7 +467,7 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     const response = await route.fetch()
     await route.fulfill({ response, json: { ...await response.json(), ...projection } })
   })
-  await page.goto('/settings/preferences')
+  await page.goto('/settings/sidebar')
   await settle(page)
   const picker = page.locator('#settingsSidebarQuotas')
   const source = (name: string) => picker.getByRole('switch', { name })
@@ -512,7 +512,7 @@ test('Preferences pins from the server projection, shows a choice at once and ro
     // Leaving the section unmounts the picker while the write is still held.
     await sidebar(page).getByRole('link', { name: 'Appearance' }).click()
     await expect(picker).toHaveCount(0)
-    await sidebar(page).getByRole('link', { name: 'Preferences' }).click()
+    await sidebar(page).getByRole('link', { name: 'Sidebar', exact: true }).click()
     await source('OpenRouter').click()
     await expect(source('OpenRouter')).not.toBeChecked()
     refuse()
@@ -565,7 +565,7 @@ test('a confirmed first pin stays in the sidebar when a later choice is refused 
     await held
     return ++posts === 1 ? route.fulfill({ json: { sidebar_quota_sources: ['qsrc_weekly'], sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true } }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
   })
-  await page.goto('/settings/preferences')
+  await page.goto('/settings/sidebar')
   await settle(page)
   const source = (name: string) => page.locator('#settingsSidebarQuotas').getByRole('switch', { name })
   await source('Claude').click()
@@ -638,7 +638,7 @@ test('Back keeps the query of the page it returns to, and goes to the chat after
   await button(page, 'Back').click()
   await expect(page).toHaveURL(/\/insights\?tab=usage$/)
 
-  await page.goto('/settings/help')
+  await page.goto('/settings/about')
   await settle(page)
   await button(page, 'Back').click()
   await expect(page).not.toHaveURL(/settings/)

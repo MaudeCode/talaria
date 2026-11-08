@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { InsightsTab } from '../../contracts/url'
+import { TabStrip } from '../../ui/TabStrip'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useLocale } from '../../i18n/useLocale'
@@ -16,7 +17,6 @@ import { BarChart } from './BarChart'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
 import { QUOTA_PERCENT_MODES, toQuotaPercentMode, type QuotaPercentMode } from './QuotaMeter'
 import { readPersisted, writePersisted } from '../../lib/persisted'
-import { cn } from '../../ui/cn'
 
 const PERIODS = [7, 30, 90, 365]
 const TABS: { id: InsightsTab; label: () => string }[] = [{ id: 'quotas', label: m.insights_tab_quotas }, { id: 'usage', label: m.insights_tab_usage }]
@@ -74,13 +74,7 @@ export function InsightsPage() {
       title={m.tab_insights()}
       toolbar={
         <>
-          <div role="tablist" aria-label={m.tab_insights()} className="flex gap-1">
-            {TABS.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`insights-${t.id}`} onClick={() => setTab(t.id)} className={cn('rounded-md px-3 py-1.5 text-sm', tab === t.id ? 'bg-accent-bg text-accent-text' : 'text-muted hover:bg-hover hover:text-text')}>
-                {t.label()}
-              </button>
-            ))}
-          </div>
+          <TabStrip label={m.tab_insights()} tabs={TABS} value={tab} onChange={setTab} panelPrefix="insights" />
           {tab === 'quotas' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_percentage()} <Select value={percentMode} aria-label={m.insights_percentage()} onValueChange={(v) => choosePercentMode(toQuotaPercentMode(v))}>{QUOTA_PERCENT_MODES.map((k) => <option key={k} value={k}>{k === 'used' ? m.provider_quota_metric_used() : m.provider_quota_metric_remaining()}</option>)}</Select></label>}
           {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} aria-label={m.insights_period()} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
         </>

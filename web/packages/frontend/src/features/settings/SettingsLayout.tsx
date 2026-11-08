@@ -1,9 +1,5 @@
 import type { ReactNode } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { webPushSupported } from '../../app/pwa'
-import * as api from '../../api/endpoints'
-import { keys } from '../../api/queryKeys'
 import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead } from '../../shell/PanelHead'
 import { m } from '../../paraglide/messages.js'
@@ -11,36 +7,31 @@ import { cn } from '../../ui/cn'
 import { SettingsSectionSchema, type SettingsSection as Section } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import { MessageSquare, AudioLines, Bell, SunMedium, SlidersHorizontal, Key, Cpu, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
+import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, Bot, Server, Info, type LucideIcon } from 'lucide-react'
 
-const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, notifications: Bell, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, auxiliary: Cpu, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
+const SECTION_ICON: Record<Section, LucideIcon> = { appearance: SunMedium, chat: MessageSquare, sidebar: PanelLeft, models: Cpu, notifications: Bell, speech: AudioLines, agent: Bot, system: Server, about: Info }
 
 export const SECTION_LABEL: Record<Section, () => string> = {
   appearance: () => m.settings_section_appearance_title(),
-  conversation: () => m.settings_section_conversation_title(),
-  speech: () => m.settings_section_speech_title(),
+  chat: () => m.settings_section_chat_title(),
+  sidebar: () => m.settings_section_sidebar_title(),
+  models: () => m.settings_section_models_title(),
   notifications: () => m.settings_section_notifications_title(),
-  preferences: () => m.settings_section_preferences_title(),
-  providers: () => m.settings_section_providers_title(),
-  auxiliary: () => m.settings_label_auxiliary_models(),
-  connectors: () => m.settings_section_connectors_title(),
-  plugins: () => m.settings_section_plugins_title(),
-  extensions: () => m.settings_section_extensions_title(),
+  speech: () => m.settings_section_speech_title(),
+  agent: () => m.settings_section_agent_title(),
   system: () => m.settings_section_system_title(),
-  help: () => m.settings_section_help_title(),
+  about: () => m.settings_section_about_title(),
 }
 
 export function SectionMenu() {
   useLocale()
   const params: { section?: string } = useParams({ strict: false })
-  // TAL-818: the server's connectors gate; the entry stays hidden until it answers true.
-  const connectors = useQuery({ queryKey: keys.connectors.available, queryFn: api.fetchConnectorsAvailable, staleTime: 5 * 60_000 }).data?.available === true
   return (
     <div className="panel-view active" id="panelSettings">
       <PanelHead title={m.tab_settings()} />
       <nav className="side-menu flex flex-col gap-px p-2 overflow-visible min-h-0" id="settingsMenu" aria-label={m.tab_settings()}>
         <div className="settings-menu-items flex flex-col gap-0.5 min-h-0 flex-1 overflow-y-auto">
-          {SettingsSectionSchema.options.filter((section) => (section !== 'connectors' || connectors) && (section !== 'notifications' || webPushSupported())).map((section) => {
+          {SettingsSectionSchema.options.map((section) => {
             const active = params.section === section
             const Icon = SECTION_ICON[section]
             return (

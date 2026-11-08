@@ -1,4 +1,5 @@
 import type { MemoryCompactionPreview } from '@maudecode/talaria-web-contracts'
+import { TabStrip } from '../../ui/TabStrip'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
@@ -10,7 +11,6 @@ import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { isApiError, isDefiniteRefusal } from '../../contracts/common'
-import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
@@ -95,13 +95,7 @@ export function MemoryPage() {
     <HubPage
       title={m.tab_memory()}
       toolbar={
-        <div role="tablist" aria-label={m.tab_memory()} className="flex gap-1">
-          {SECTIONS.map((s) => (
-            <button key={s.id} type="button" role="tab" aria-selected={section === s.id} onClick={() => setSection(s.id)} className={cn('rounded-md px-3 py-1.5 text-sm', section === s.id ? 'bg-accent-bg text-accent-text' : 'text-muted hover:bg-hover hover:text-text')}>
-              {s.label()}
-            </button>
-          ))}
-        </div>
+        <TabStrip label={m.tab_memory()} tabs={SECTIONS} value={section} onChange={setSection} />
       }
     >
       <PendingWritesPanel kind="memory" />

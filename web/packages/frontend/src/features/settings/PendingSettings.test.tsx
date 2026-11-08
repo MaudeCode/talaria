@@ -2,8 +2,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { PreferencesSection } from './PreferencesSection'
-import { ConversationSection } from './ConversationSection'
+import { SidebarSection } from './SidebarSection'
+import { ChatSection } from './ChatSection'
+import { NotificationsSection } from './NotificationsSection'
+import { PrivacySettings } from './PrivacySettings'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { keys } from '../../api/queryKeys'
@@ -29,7 +31,7 @@ beforeEach(() => {
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   qc.setQueryData(keys.settings, initial)
-  render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><PreferencesSection /><ConversationSection /></BootstrapContext.Provider></QueryClientProvider>)
+  render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SidebarSection /><ChatSection /><NotificationsSection /><PrivacySettings /></BootstrapContext.Provider></QueryClientProvider>)
   return qc
 }
 

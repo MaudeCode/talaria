@@ -15,7 +15,7 @@ const KEY = 'hermes.ext.settings.tuner'
 
 test('an extension settings schema renders all four input types and saves values', async ({ page }) => {
   await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, manifests: [tuner] } }))
-  await page.goto('/settings/extensions')
+  await page.goto('/settings/agent?tab=extensions')
   await settle(page)
   const row = page.locator('[data-extension-id="tuner"]')
   const badge = row.getByRole('switch', { name: 'Show badge' })

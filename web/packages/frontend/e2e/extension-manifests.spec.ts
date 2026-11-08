@@ -17,7 +17,7 @@ test('a gallery extension with a panel gets a sidebar entry, Open, and Uninstall
   const record = (files: string[]) => ({ version: '1.0.0', files, installed_at: '2026-01-01T00:00:00Z' })
   writeFileSync(join(state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: record(['manifest.json', 'index.html']), old: record(['manifest.json', 'old.js']) } }))
   try {
-    await page.goto('/settings/extensions')
+    await page.goto('/settings/agent?tab=extensions')
     await settle(page)
     const gal = page.locator('[data-extension-id="gal"]')
     await expect(gal).toHaveAttribute('data-source', 'gallery')
@@ -64,7 +64,7 @@ test('a gallery extension theme is offered in Appearance, applies only its allow
     if (process.env.TAL711_SHOTS) await page.screenshot({ path: `${process.env.TAL711_SHOTS}/appearance-${testInfo.project.name}.png` })
 
     // Disabling the extension (in-app, no reload) drops its skin from the live page and falls back to the built-in skin.
-    await page.evaluate(() => { history.pushState({}, '', '/settings/extensions'); dispatchEvent(new PopStateEvent('popstate')) })
+    await page.evaluate(() => { history.pushState({}, '', '/settings/agent?tab=extensions'); dispatchEvent(new PopStateEvent('popstate')) })
     await page.locator('[data-extension-id="dusk"]').getByRole('switch').click()
     await expect(html).not.toHaveAttribute('data-ext-skin')
     expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--bg'))).toBe('')

@@ -23,11 +23,11 @@ for (const authenticated of [false, true]) test(`profile Agent dashboard uses th
   writeFileSync(config, 'plugins:\n  enabled: []\n  disabled: [factory-dashboard]\n')
   try {
     if (authenticated) {
-      await page.goto(`${process.env.HERMES_E2E_AUTH_BASE_URL}/settings/extensions`)
+      await page.goto(`${process.env.HERMES_E2E_AUTH_BASE_URL}/settings/agent?tab=extensions`)
       await page.locator('#pw').fill(E2E_PASSWORD)
       await page.getByRole('button', { name: /sign in/i }).click()
-      await expect(page).toHaveURL(/\/settings\/extensions$/)
-    } else await page.goto('/settings/extensions')
+      await expect(page).toHaveURL(/\/settings\/agent\?tab=extensions$/)
+    } else await page.goto('/settings/agent?tab=extensions')
     await settle(page)
     const row = page.locator('[data-source="agent-plugin"]').filter({ hasText: 'Factory dashboard' })
     await expect(row).toBeVisible()

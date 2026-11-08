@@ -10,7 +10,7 @@ for (const theme of ['dark', 'light'] as const) {
     await page.route('**/api/feedback/diagnostics', (route) => route.fulfill({ json: diagnostics }))
     let held: Route | null = null
     await page.route('**/api/feedback/submit', (route) => { held = route })
-    await page.goto('/settings/help')
+    await page.goto('/settings/about')
     await settle(page)
     await page.getByRole('button', { name: 'Send feedback' }).click()
     const dialog = page.getByRole('dialog', { name: 'Send feedback' })
@@ -43,7 +43,7 @@ for (const theme of ['dark', 'light'] as const) {
 test('Send feedback stays reachable on a short viewport with diagnostics open', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 })
   await page.route('**/api/feedback/diagnostics', (route) => route.fulfill({ json: { text: Array.from({ length: 40 }, (_, i) => `line ${String(i)}`).join('\n'), bytes: 0 } }))
-  await page.goto('/settings/help')
+  await page.goto('/settings/about')
   await settle(page)
   await page.getByRole('button', { name: 'Send feedback' }).click()
   const dialog = page.getByRole('dialog', { name: 'Send feedback' })
@@ -62,9 +62,9 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
   const notifications = page.locator('aside.sidebar').getByRole('button', { name: 'Notifications', exact: true })
   const back = page.locator('aside.sidebar').getByRole('button', { name: 'Back', exact: true })
   const toggle = page.getByRole('switch', { name: 'Sidebar feedback button' })
-  const openPreferences = async () => {
+  const openSidebarSettings = async () => {
     await page.locator('aside.sidebar').getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.locator('[data-settings-section="preferences"]').click()
+    await page.locator('[data-settings-section="sidebar"]').click()
   }
   try {
     await page.goto('/skills')
@@ -73,7 +73,7 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
     await expect(notifications).toBeVisible()
     await expect(railButton).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-off.png') })
-    await openPreferences()
+    await openSidebarSettings()
     await expect(toggle).not.toBeChecked()
     const saved = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/settings'))
     await toggle.click()
@@ -92,7 +92,7 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-dialog.png') })
     await page.keyboard.press('Escape')
 
-    await openPreferences()
+    await openSidebarSettings()
     await toggle.click()
     await back.click()
     await expect(railButton).toHaveCount(0)
@@ -111,7 +111,7 @@ test('Send feedback stages an attachment, closes at once, and keeps it across a 
   await page.route('**/api/feedback/attachments', (route) => { upload = route })
   const submits: Route[] = []
   await page.route('**/api/feedback/submit', (route) => { submits.push(route) })
-  await page.goto('/settings/help')
+  await page.goto('/settings/about')
   await settle(page)
   await page.getByRole('button', { name: 'Send feedback' }).click()
   const dialog = page.getByRole('dialog', { name: 'Send feedback' })

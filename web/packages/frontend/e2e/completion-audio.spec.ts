@@ -10,7 +10,7 @@ test('completion sound settings stay local and preview uses browser audio', asyn
     Object.assign(window, { audioAttempts: attempts })
     HTMLMediaElement.prototype.play = function () { attempts.push(this.src); return Promise.resolve() }
   })
-  await page.goto('/settings/preferences')
+  await page.goto('/settings/notifications')
   const sound = page.getByRole('switch', { name: 'Notification sound', exact: true })
   await sound.scrollIntoViewIfNeeded()
   if (!baseline) {
@@ -63,7 +63,7 @@ test('live completions play once across tabs, while history and replay stay quie
     for (const tab of [page, peer]) await tab.evaluate(({ event, data }) => (window as unknown as { emitAudioFrame: (event: string, data: unknown) => void }).emitAudioFrame(event, data), { event, data })
   }
   const count = async () => (await Promise.all([page, peer].map((tab) => tab.evaluate(() => (window as unknown as { audioAttempts: string[] }).audioAttempts.length)))).reduce((a, b) => a + b, 0)
-  await Promise.all([page.goto('/settings/preferences'), peer.goto('/settings/preferences')])
+  await Promise.all([page.goto('/settings/notifications'), peer.goto('/settings/notifications')])
   for (const tab of [page, peer]) await expect(tab.getByRole('combobox', { name: 'Completion sound', exact: true })).toBeVisible()
   const completion = { identity: 'browser-run', scope: 'server-profile-a', profile: 'default', eligible: true, expires_at: Date.now() + 60_000 }
   await emit('initial', { web_audio: [completion] })

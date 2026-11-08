@@ -49,14 +49,13 @@ it('the app layout static dependency graph excludes the sidecar RPC schemas', ()
 })
 
 it('the settings section route loads each section as its own chunk', () => {
-  // TAL-1702: opening one section must not download the other eleven.
+  // TAL-1702: opening one section must not download the other eight (TAL-1691: nine shared sections).
   const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8')) as Record<string, { file: string; src?: string }>
   const layout = new Set(readLayout().files)
   const route = layoutFiles(manifest, 'src/routes/_app.settings.$section.tsx?tsr-split=component').filter((file) => !layout.has(file))
   expect(totalBytes(route)).toBeLessThan(60_000)
-  // AuxiliaryModels.tsx holds AuxiliaryModelsSection, the one section whose file name lacks the suffix.
-  const sections = Object.values(manifest).filter(({ src }) => /^src\/features\/(settings\/\w+Section|settings\/AuxiliaryModels|connectors\/ConnectorsSection)\.tsx$/.test(src ?? ''))
-  expect(new Set(sections.map(({ file }) => file)).size).toBeGreaterThanOrEqual(12)
+  const sections = Object.values(manifest).filter(({ src }) => /^src\/features\/settings\/(Appearance|Chat|Sidebar|Models|Notifications|Speech|Agent|System|About)Section\.tsx$/.test(src ?? ''))
+  expect(new Set(sections.map(({ file }) => file)).size).toBe(9)
 })
 
 it('counts shared static imports and styles once, follows cycles, and excludes dynamic imports', () => {

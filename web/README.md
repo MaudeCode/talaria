@@ -207,7 +207,7 @@ retired HTTP gateway URL/key settings. Profiles served by a shared multiplexer c
 sessions when the owner's exact boot revision has passed Talaria's profile-isolation contract.
 Unverified owners remain read-only. Diagnostic fresh chats still require a dedicated owner.
 
-To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Providers**.
+To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Models & Providers**.
 
 Chat prompts omit the session ID by default so new chats can share the provider's prompt cache.
 If a skill needs its own session ID, set `webui.pass_session_id: true` in the profile's `config.yaml`.
@@ -219,7 +219,7 @@ or unavailable catalog keeps the selected model and provider while discovery ref
 background. Concurrent picker and repair refreshes share discovery for the same profile and source
 generation. Explicit model configuration changes retain their validation.
 
-Settings → Preferences → **Speed** lists the tiers the installed Agent supports
+Settings → Models & Providers → **Speed** lists the tiers the installed Agent supports
 for the default model and its endpoint. Fast and Ultrafast may cost more. The
 setting applies only to turns on that default model; unsupported routes show no
 speed control.
@@ -229,7 +229,7 @@ Use **Use profile defaults** to remove the session override. An operator's `agen
 always applies, including to saved overrides, cached chat Agents, and manual compression. Catalog
 availability is read from the server; a failed catalog load leaves selection disabled.
 
-Settings → System → **MCP Servers → Cost policy** shows declared tool estimates,
+Settings → Agent → **MCP Servers → Cost policy** shows declared tool estimates,
 per-chat limits and whether each value comes from native config or a portable package.
 These are declared estimates, not vendor bills. Edit one native policy field at a time;
 **Use inherited/default** removes that key, while zero explicitly disables a limit and
@@ -244,7 +244,7 @@ The first MCP discovery for a profile waits for its tools before chat starts. La
 two seconds for discovery, then use the registered tools while connections finish in the background.
 The composer shows a notice while that turn is waiting for more tools.
 
-Settings → Plugins shows available updates from the Agent's last stored plugin check, without
+Settings → Agent → Plugins shows available updates from the Agent's last stored plugin check, without
 fetching on each visit. Update applies the revision through the Agent's security scan. A caution
 verdict requires confirmation for that profile, installation, revision and scan result. Changed or
 expired confirmation requires a fresh review; a dangerous verdict blocks the update. New dependency consent
@@ -298,7 +298,7 @@ requests, unarchive and automatic cleanup send no event. This notification prese
 approvals and Agent database; plugin failures do not undo the archive. Older Agents without the
 emitter retain the existing archive behavior.
 
-Opening or refreshing Settings → Connectors never provisions a Nous identity or refreshes credentials.
+Opening or refreshing the Connectors group in Settings → Agent never provisions a Nous identity or refreshes credentials.
 Without an identity, Agents with a public catalog let you browse apps; older Agents offer sign-in.
 Rules stay off and read-only until the portal returns them. Sign in or choose **Connect** to authorize
 account setup; after signing in through the Agent, refresh the page to load that account.

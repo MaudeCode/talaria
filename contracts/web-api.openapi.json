@@ -129365,5 +129365,24 @@
         }
       }
     }
+  },
+  "components": {
+    "schemas": {
+      "SettingsSection": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "appearance",
+          "chat",
+          "sidebar",
+          "models",
+          "notifications",
+          "speech",
+          "agent",
+          "system",
+          "about"
+        ]
+      }
+    }
   }
 }

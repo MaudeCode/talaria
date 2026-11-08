@@ -87,7 +87,7 @@ test('a connector account disconnects from its menu through the confirmation', a
   await page.route('**/api/connectors', (route) => route.fulfill({ json: shared.page }))
   const removals: unknown[] = []
   await page.route('**/api/connectors/accounts/*', async (route) => { removals.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`); await route.fulfill({ json: { ok: true } }) })
-  await page.goto('/settings/connectors')
+  await page.goto('/settings/agent?tab=connectors')
   await settle(page)
 
   const accounts = page.getByRole('list', { name: 'Notion accounts' })

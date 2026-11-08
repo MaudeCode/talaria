@@ -15,7 +15,7 @@ test('provider device sign-in is usable across phone layouts and reconciles appr
   })
   await page.route('**/api/onboarding/oauth/poll?*', (route) => route.fulfill({ json: { ok: true, status: approved ? 'approved' : 'pending', provider: 'copilot', flow_id: 'device-flow' } }))
   await page.route('**/api/onboarding/oauth/cancel', (route) => route.fulfill({ json: { ok: true, status: 'cancelled', provider: 'copilot', flow_id: 'device-flow' } }))
-  await page.goto('/settings/providers')
+  await page.goto('/settings/models')
   await settle(page)
   const row = page.locator('[data-provider="copilot"]')
   const viewports = testInfo.project.name === 'desktop'

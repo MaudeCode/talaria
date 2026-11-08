@@ -13,14 +13,14 @@ test('a disabled switch dims with a not-allowed cursor while an enabled one stay
     const boot = await response.json() as { auth: object }
     await route.fulfill({ response, json: { ...boot, auth: { ...boot.auth, can_manage_server: false } } })
   })
-  await page.goto('/settings/preferences')
+  await page.goto('/settings/system')
   await settle(page)
 
   const disabled = page.getByRole('switch', { name: 'Redact sensitive data in API responses' })
   await expect(disabled).toHaveAttribute('aria-disabled', 'true')
   expect(await look(disabled)).toEqual({ opacity: '0.5', cursor: 'not-allowed' })
 
-  const enabled = page.getByRole('switch', { name: 'Show non-WebUI sessions' })
+  const enabled = page.getByRole('switch', { name: 'Sync to insights' })
   await expect(enabled).toBeEnabled()
   expect(await look(enabled)).toEqual({ opacity: '1', cursor: 'pointer' })
 })

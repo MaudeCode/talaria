@@ -44,7 +44,7 @@ async function openDialog(page: Page, limits: Partial<Limits>): Promise<{ upload
     const { contentType, data } = uploadedFile(route.request())
     return route.fulfill({ json: { attachmentId: '3b241101-e2bb-4255-8caf-4136c566a962', contentType, bytes: data.length } })
   })
-  await page.goto('/settings/help')
+  await page.goto('/settings/about')
   await settle(page)
   await page.getByRole('button', { name: 'Send feedback' }).click()
   await expect(page.getByRole('dialog', { name: 'Send feedback' }).getByRole('button', { name: 'Attach' })).toBeVisible()
