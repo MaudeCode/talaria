@@ -60,11 +60,24 @@ export type DecisionProgress = z.infer<typeof DecisionProgressSchema>
 /** Submit is allowed on an open review with at least one answered item; otherwise `reason` says why. */
 export const DecisionSubmitSchema = z.object({ allowed: z.boolean(), reason: z.enum(['nothing_answered', 'not_open']).nullable() })
 
-/** `items` are in display order: new and changed items first, each group in the agent's order. */
+/**
+ * TAL-1964: the answers view's filters, item ids in display order. `new` holds the new and changed items, `pending` the
+ * items with no answer; the view's `all` filter is `items`.
+ */
+export const DecisionFiltersSchema = z.object({ new: z.array(z.string()), pending: z.array(z.string()) })
+export const DECISION_FILTERS = ['all', 'new', 'pending'] as const
+export type DecisionFilter = (typeof DECISION_FILTERS)[number]
+
+/**
+ * `items` are in display order: new and changed items first, each group in the agent's order. `next_item_id` (TAL-1964)
+ * is the item Continue opens: the first one with no answer, a deferred answer or an answer that needs review; null when
+ * none is left.
+ */
 export const DecisionReviewSchema = z.object({
   review_id: DecisionReviewIdSchema, session_id: z.string(), profile: z.string(), title: z.string(), intro: z.string().nullable(),
   status: DecisionReviewStatusSchema, created_at: z.number(), updated_at: z.number(), submitted_at: z.number().nullable(),
   progress: DecisionProgressSchema, submit: DecisionSubmitSchema, items: z.array(DecisionItemSchema),
+  filters: DecisionFiltersSchema, next_item_id: z.string().nullable(),
 })
 export type DecisionReview = z.infer<typeof DecisionReviewSchema>
 
@@ -73,6 +86,7 @@ export const DecisionReviewsSchema = z.object({ reviews: z.array(DecisionReviewS
 /**
  * `PUT /api/decisions/{review_id}/answers/{item_id}`: `expected_version` is the stored answer's version, 0 when there is
  * none; `content_hash` is the item's as the user saw it, so an answer to content the agent has since revised is refused.
+ * TAL-1964: no choice, not deferred and not custom clears the stored answer (and its outcome).
  */
 export const DecisionAnswerInputSchema = z.object({
   review_id: z.string(), item_id: z.string(), value: z.string().nullable(), notes: z.string().max(DECISION_LIMITS.notes),
@@ -80,7 +94,7 @@ export const DecisionAnswerInputSchema = z.object({
 })
 export type DecisionAnswerInput = z.infer<typeof DecisionAnswerInputSchema>
 
-/** The `decision_review` session stream event and the transcript card's reference, both set by the server. */
+/** The `decision_review` session stream event and the transcript card's reference, both set by the server; a session's `decision_review` (TAL-1964) is its newest open review. */
 export const DecisionReviewEventSchema = z.object({ session_id: z.string(), review_id: DecisionReviewIdSchema, status: DecisionReviewStatusSchema, progress: DecisionProgressSchema })
 export const DecisionReviewRefSchema = z.object({ review_id: DecisionReviewIdSchema, title: z.string(), progress: DecisionProgressSchema })
 export type DecisionReviewRef = z.infer<typeof DecisionReviewRefSchema>

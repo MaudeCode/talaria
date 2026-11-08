@@ -432,6 +432,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       sessionGoal: (sid: string): SessionGoal | null => turns.sessionGoal(sid),
       evictAgent: async (sid, endSession) => { if (sidecar && (!endSession || !(await sessions.readOnlyReason(sid)))) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
+      openDecisionReview: (sid) => decisions.openRef(sid),
       deleteDecisionReviews: (sid) => decisions.deleteForSession(sid),
       deleteCliSession: async (profile, sid) => {
         if (!sidecar) return { ok: false }

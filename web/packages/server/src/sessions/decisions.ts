@@ -6,7 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
   DECISION_LIMITS, DecisionReviewIdSchema,
-  type DecisionAnswer, type DecisionAnswerInput, type DecisionItem, type DecisionItemInput, type DecisionProgress, type DecisionReview,
+  type DecisionAnswer, type DecisionAnswerInput, type DecisionItem, type DecisionReviewRef, type DecisionItemInput, type DecisionProgress, type DecisionReview,
   type SidecarServerParams, type SidecarServerResultInput,
 } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
@@ -21,7 +21,7 @@ const NAMESPACE = 'decision-reviews'
 interface StoredAnswer extends DecisionAnswer { content_hash: string; question: string }
 type ItemContent = Omit<DecisionItem, 'content_hash' | 'fresh' | 'needs_review' | 'answer' | 'outcome'>
 interface StoredItem extends ItemContent { content_hash: string; fresh: DecisionItem['fresh']; answer: StoredAnswer | null; outcome: DecisionItem['outcome'] }
-type HistoryEntry = { kind: 'answer'; at: number; item_id: string; answer: StoredAnswer } | { kind: 'removed'; at: number; item: StoredItem }
+type HistoryEntry = { kind: 'answer' | 'cleared'; at: number; item_id: string; answer: StoredAnswer } | { kind: 'removed'; at: number; item: StoredItem }
 export interface StoredReview {
   review_id: string; session_id: string; profile: string; title: string; intro: string | null; status: DecisionReview['status']
   created_at: number; updated_at: number; submitted_at: number | null; items: StoredItem[]; history: HistoryEntry[]
@@ -105,6 +105,9 @@ export function reviewView(review: StoredReview): DecisionReview {
       recommendation: item.recommendation, recommended_choice: item.recommended_choice, choices: item.choices, technical: item.technical,
       content_hash: item.content_hash, fresh: item.fresh, needs_review: needsReview(item), answer: publicAnswer(item.answer), outcome: item.outcome,
     })),
+    // TAL-1964: the answers view's filters and the item Continue opens.
+    filters: { new: ordered.filter((item) => item.fresh !== 'carried').map((item) => item.id), pending: ordered.filter((item) => !item.answer).map((item) => item.id) },
+    next_item_id: ordered.find((item) => !isAnswered(item.answer) || needsReview(item))?.id ?? null,
   }
 }
 
@@ -133,6 +136,17 @@ export class DecisionReviews {
     let count = 0
     for (const owner of this.open.values()) if (owner === sid) count += 1
     return count
+  }
+
+  /** TAL-1964: the session's newest open review, for its composer chip. */
+  async openRef(sid: string): Promise<DecisionReviewRef | null> {
+    let newest: StoredReview | null = null
+    for (const [id, owner] of this.open) {
+      if (owner !== sid) continue
+      const review = await this.load(id)
+      if (review?.status === 'open' && (!newest || review.created_at > newest.created_at)) newest = review
+    }
+    return newest && { review_id: newest.review_id, title: newest.title, progress: progressOf(newest) }
   }
 
   private profileName(profile: string | null | undefined): string {
@@ -287,6 +301,13 @@ export class DecisionReviews {
       const version = item.answer?.version ?? 0
       if (input.expected_version !== version) throw refuse(409, 'answer_conflict', 'This answer changed since it was loaded.', { answer: publicAnswer(item.answer) })
       if (input.content_hash !== item.content_hash) throw refuse(409, 'item_changed', 'This decision changed since it was loaded.', { answer: publicAnswer(item.answer) })
+      // TAL-1964: no choice, not deferred and not custom clears the answer; the cleared one stays in history.
+      if (input.value === null && !input.deferred && !input.custom) {
+        if (item.answer) stored.history.push({ kind: 'cleared', at: this.now(), item_id: item.id, answer: item.answer })
+        item.answer = null
+        item.outcome = null
+        return
+      }
       const notes = input.notes.trim()
       let choice: StoredItem['choices'][number] | null = null
       if (input.deferred || input.custom) {

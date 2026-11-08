@@ -268,6 +268,43 @@ describe('decision reviews (TAL-1963)', () => {
     expect(s.deps.decisions.openCount(CALLER)).toBe(0)
   })
 
+  it('ships the answers view filters and Continue item, and clears an answer back to pending (TAL-1964)', async () => {
+    const id = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a'), item('b'), item('c')] }))
+    await answer(id, 'a', { value: 'keep' })
+    const deferred = DecisionReviewSchema.parse((await answer(id, 'b', { deferred: true })).body)
+    expect([deferred.filters, deferred.next_item_id]).toEqual([{ new: ['a', 'b', 'c'], pending: ['c'] }, 'b'])
+
+    clock += 5
+    const cleared = await answer(id, 'a', { expected_version: 1 })
+    expect(cleared.status).toBe(200)
+    const view = DecisionReviewSchema.parse(cleared.body)
+    expect(view.items.find((i) => i.id === 'a')).toMatchObject({ answer: null, outcome: null })
+    expect([view.filters.pending, view.next_item_id, view.progress.answered]).toEqual([['a', 'c'], 'a', 0])
+    expect((await stored(id))!.history.at(-1)).toMatchObject({ kind: 'cleared', item_id: 'a', at: 1_794_000_005, answer: { value: 'keep', version: 1 } })
+
+    // A revision: only the changed item is new, and an answer to changed content is where Continue goes.
+    await answer(id, 'c', { value: 'keep' })
+    await answer(id, 'a', { value: 'keep' })
+    await answer(id, 'b', { value: 'keep', expected_version: 1 })
+    await ask('server.decision_review_put', { review_id: id, title: 'Release choices', items: [item('a'), item('b'), item('c', { question: 'Should c change now?' })] })
+    const revised = DecisionReviewSchema.parse((await http('GET', `/api/decisions/${id}`)).body)
+    expect([revised.filters, revised.next_item_id]).toEqual([{ new: ['c'], pending: [] }, 'c'])
+  })
+
+  it('names the session\'s newest open review on its detail, and none once it closes (TAL-1964)', async () => {
+    const detail = async () => ((await http('GET', `/api/session?session_id=${CALLER}`)).body.session as { decision_review: unknown }).decision_review
+    expect(await detail()).toBeNull()
+    const older = created(await ask('server.decision_review_put', { title: 'First choices', items: [item('a')] }))
+    clock += 5
+    const newer = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a'), item('b')] }))
+    await answer(newer, 'a', { value: 'keep' })
+    expect(await detail()).toEqual({ review_id: newer, title: 'Release choices', progress: { total: 2, answered: 1, deferred: 0, needs_review: 0 } })
+    await http('POST', `/api/decisions/${newer}/cancel`)
+    expect(await detail()).toMatchObject({ review_id: older })
+    await http('POST', `/api/decisions/${older}/cancel`)
+    expect(await detail()).toBeNull()
+  })
+
   it('deletes a session\'s reviews with the session', async () => {
     sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, deleted_ids: [CALLER] }))
     const id = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a')] }))

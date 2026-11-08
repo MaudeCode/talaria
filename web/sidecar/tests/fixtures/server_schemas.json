@@ -3698,6 +3698,34 @@
             ],
             "additionalProperties": false
           }
+        },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "new": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "pending": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "new",
+            "pending"
+          ],
+          "additionalProperties": false
+        },
+        "next_item_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -3712,7 +3740,9 @@
         "submitted_at",
         "progress",
         "submit",
-        "items"
+        "items",
+        "filters",
+        "next_item_id"
       ],
       "additionalProperties": false
     }
@@ -4077,6 +4107,34 @@
             ],
             "additionalProperties": false
           }
+        },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "new": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "pending": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "new",
+            "pending"
+          ],
+          "additionalProperties": false
+        },
+        "next_item_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -4091,7 +4149,9 @@
         "submitted_at",
         "progress",
         "submit",
-        "items"
+        "items",
+        "filters",
+        "next_item_id"
       ],
       "additionalProperties": false
     }

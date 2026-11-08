@@ -14,7 +14,7 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
-import type { ContextWindowSource, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionSkills } from '@maudecode/talaria-web-contracts'
+import type { ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -183,6 +183,8 @@ export interface SessionServiceDeps {
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
     evictAgent: (sid: string, endSession?: boolean) => Promise<void>
     closeTerminal: (sid: string) => void
+    /** TAL-1964: the session's newest open decision review, for its composer chip. */
+    openDecisionReview?: (sid: string) => Promise<DecisionReviewRef | null>
     /** TAL-1963: remove the session's decision reviews, answers included. */
     deleteDecisionReviews?: (sid: string) => Promise<void>
     /**
@@ -1350,6 +1352,7 @@ export class SessionService {
     raw.automatic_turns_held = (await this.deps.runtime.automaticTurnsHeld?.(s.session_id)) ?? false
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
     raw.goal = this.deps.runtime.sessionGoal?.(s.session_id) ?? null
+    raw.decision_review = (await this.deps.runtime.openDecisionReview?.(s.session_id)) ?? null
     const publicRow = redactSessionData(raw, this.deps.redactEnabled())
     return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, s.profile)
   }

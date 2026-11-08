@@ -310,7 +310,18 @@
             },
             "outcome": null
           }
-        ]
+        ],
+        "filters": {
+          "new": [
+            "autosave",
+            "telemetry"
+          ],
+          "pending": [
+            "autosave",
+            "telemetry"
+          ]
+        },
+        "next_item_id": "autosave"
       }
     }
   ],
@@ -460,7 +471,18 @@
               "note": "Set logging.retention_days to 30."
             }
           }
-        ]
+        ],
+        "filters": {
+          "new": [
+            "autosave",
+            "telemetry"
+          ],
+          "pending": [
+            "autosave",
+            "telemetry"
+          ]
+        },
+        "next_item_id": "autosave"
       }
     }
   ]
