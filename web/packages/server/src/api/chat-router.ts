@@ -2,11 +2,11 @@
 import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { chatContract, type BackgroundTask, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
-import type { RequestContext } from '../http/context.js'
+import type { AppDeps, RequestContext } from '../http/context.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import type { Session } from '../sessions/session.js'
@@ -32,6 +32,16 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
     if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
     throw error
   }
+}
+
+/** TAL-372, TAL-1166: the background work `s` owns, as `/api/background/tasks` and the `background_list` tool answer it. */
+export async function sessionBackgroundTasks(deps: AppDeps, s: Session, kind?: BackgroundTask['kind']) {
+  const snapshot = await deps.background.snapshot(s.session_id, s.profile, { canStop: !(await deps.sessions.isReadOnly(s)) })
+  // Ownership that cannot be read is unknown, never a direct session (TAL-1579).
+  const owner = deps.sessions.owner
+  const owned = owner ? await owner.ownership(s.session_id, s.profile ?? undefined).catch(() => null) : false
+  const delegation_status = await deps.background.delegationStatus(s.session_id, s.profile, { owned, tasks: snapshot.tasks })
+  return { session_id: s.session_id, ...snapshot, delegation_status, tasks: kind ? snapshot.tasks.filter((t) => t.kind === kind) : snapshot.tasks }
 }
 
 /** A session this request's profile may see (TAL-372 background work never crosses owners). */
@@ -286,13 +296,7 @@ export const chatRouter = os.router({
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
     })),
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
-      const s = (await visibleSession(ctx, input.session_id))
-      const snapshot = await ctx.deps.background.snapshot(s.session_id, s.profile, { canStop: !(await ctx.deps.sessions.isReadOnly(s)) })
-      // Ownership that cannot be read is unknown, never a direct session (TAL-1579).
-      const owner = ctx.deps.sessions.owner
-      const owned = owner ? await owner.ownership(s.session_id, s.profile ?? undefined).catch(() => null) : false
-      const delegation_status = await ctx.deps.background.delegationStatus(s.session_id, s.profile, { owned, tasks: snapshot.tasks })
-      return { session_id: s.session_id, ...snapshot, delegation_status, tasks: input.kind ? snapshot.tasks.filter((t) => t.kind === input.kind) : snapshot.tasks }
+      return sessionBackgroundTasks(ctx.deps, (await visibleSession(ctx, input.session_id)), input.kind)
     })),
     result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))

@@ -42,6 +42,7 @@ import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
 import { sidebarListSelection } from './api/sessions-router.js'
+import { sessionBackgroundTasks } from './api/chat-router.js'
 import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { JsonStorage } from './sessions/storage/json.js'
@@ -750,14 +751,33 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
    * the caller (`self`, why it cannot be), and writable: not read-only or a view-only subagent child (else the reason).
    */
   const sessionTarget = async (caller: Session, targetId: string, self: string): Promise<Session> => {
+    const target = await visibleTarget(caller, targetId)
+    if (target.session_id === caller.session_id) throw new SidecarServerError(self, 'self_target')
+    const readOnly = await writeRefusal(target)
+    if (readOnly) throw new SidecarServerError(readOnly, 'read_only')
+    return target
+  }
+  /** A session in the caller's profile (the caller included); another profile's, or another person's, reads as unknown. */
+  const visibleTarget = async (caller: Session, targetId: string): Promise<Session> => {
     const target = await storedSession(targetId)
     // TAL-48: another person's session (or, for a person, an unowned one) is as unknown as another profile's.
     if (!target || !profilesMatch(target.profile, caller.profile) || !sessions.personMaySee(target.owner_person_id)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
-    if (target.session_id === caller.session_id) throw new SidecarServerError(self, 'self_target')
-    const readOnly = await sessions.readOnlyReason(target)
-      ?? ((await sessions.isSubagentViewOnly(target.session_id)) ? 'Subagent sessions are view-only and cannot be written from WebUI' : null)
-    if (readOnly) throw new SidecarServerError(readOnly, 'read_only')
     return target
+  }
+  const writeRefusal = async (target: Session): Promise<string | null> => (await sessions.readOnlyReason(target))
+    ?? ((await sessions.isSubagentViewOnly(target.session_id)) ? 'Subagent sessions are view-only and cannot be written from WebUI' : null)
+  type ManagedAction = 'branch' | 'duplicate' | 'title' | 'project_id' | 'pinned' | 'archived'
+  /**
+   * TAL-1166: refuse every action the target's row disallows before any runs: `can_branch`, `can_duplicate`, `can_pin`
+   * and `can_archive` as the session menu reads them, and `read_only` for a rename or move.
+   */
+  const assertPermitted = async (target: Session, actions: ManagedAction[]): Promise<void> => {
+    const row = await sessions.wireRow(target)
+    const allowed: Record<ManagedAction, unknown> = { branch: row.can_branch, duplicate: row.can_duplicate, title: !row.read_only, project_id: !row.read_only, pinned: row.can_pin, archived: row.can_archive }
+    const denied = actions.filter((action) => allowed[action] !== true)
+    if (!denied.length) return
+    const reason = await writeRefusal(target)
+    throw new SidecarServerError(`session ${target.session_id} does not allow ${denied.join(', ')}${reason ? ` (${reason})` : ''}`, 'not_permitted')
   }
   const queueTarget = (caller: Session, targetId: string) => sessionTarget(caller, targetId, 'a session cannot manage its own queue; it is delivered after your turn ends')
   const runTarget = (caller: Session, targetId: string) => sessionTarget(caller, targetId, 'a session cannot message, wait on or stop its own turn')
@@ -807,6 +827,36 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       const streamId = registry.activeRunStreamForSession(target.session_id) ?? (str(target.active_stream_id) || null)
       return streamId ? cancelSessionStream(deps, streamId, target.session_id) : { ok: true, cancelled: false }
     }),
+    // TAL-1166: the services behind `/api/session/{branch,duplicate,rename,move,pin,archive,handoff-summary,compress}`
+    // and `/api/background/tasks`. No tool deletes a session or changes another session's toolsets or YOLO.
+    'server.session_branch': ({ caller_session_id, session_id, mode }) => asCaller(caller_session_id, async (caller) => {
+      const target = await visibleTarget(caller, session_id)
+      await assertPermitted(target, [mode])
+      const made = mode === 'branch' ? await sessions.branch(target.session_id, {}) : (await sessions.duplicate(target.session_id)).session as Record<string, unknown>
+      return { session_id: str(made.session_id), title: str(made.title) }
+    }),
+    'server.session_update': ({ caller_session_id, session_id, title, project_id, pinned, archived }) => asCaller(caller_session_id, async (caller) => {
+      const target = await visibleTarget(caller, session_id)
+      const sid = target.session_id
+      // Archiving unpins, as the archive route does, so it runs last.
+      const steps: [ManagedAction, () => Promise<Record<string, unknown>>][] = []
+      if (title !== undefined) steps.push(['title', () => sessions.rename(sid, title)])
+      if (project_id !== undefined) steps.push(['project_id', () => sessions.move(sid, project_id || null)])
+      if (pinned !== undefined) steps.push(['pinned', () => sessions.pin(sid, pinned)])
+      if (archived !== undefined) steps.push(['archived', () => sessions.archive(sid, archived)])
+      await assertPermitted(target, steps.map(([action]) => action))
+      let session: Record<string, unknown> = {}
+      for (const [, apply] of steps) session = (await apply()).session as Record<string, unknown>
+      // `wireRow` is the row the routes return; its type is erased as the routers do.
+      return { session } as never
+    }),
+    'server.session_handoff': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => sessions.handoffSummary((await visibleTarget(caller, session_id)).session_id, null)),
+    'server.session_compress': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => {
+      const target = await visibleTarget(caller, session_id)
+      // The service refuses a target whose turn is still streaming, with its reason.
+      return { session_id: target.session_id, summary: (await sessions.compressNow(target.session_id, null)).summary }
+    }),
+    'server.background_list': ({ caller_session_id }) => asCaller(caller_session_id, (caller) => sessionBackgroundTasks(deps, caller)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {

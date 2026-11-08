@@ -1,5 +1,27 @@
 # Sidecar RPC (TAL-245)
 
+RPC v82 adds the toolset's session management tools (TAL-1166), each a
+`server.*` method that calls the service behind a route. A target must be in the
+caller's profile and may be the caller itself. `session_branch`
+(`server.session_branch`, `mode: branch | duplicate`) makes a new session as
+`/api/session/branch` (the whole history) or `/api/session/duplicate` does and
+answers its `session_id` and `title`. `session_update` (`server.session_update`)
+applies only the fields given, in order: `title` (`/api/session/rename`),
+`project_id` (`/api/session/move`; null or empty leaves the project), `pinned`
+and `archived` (archiving unpins), and answers the row the last route returned.
+Before anything runs, every requested action is checked against the target's
+wire row: `can_branch`, `can_duplicate`, `can_pin`, `can_archive`, and
+`read_only` for a rename or move. A false flag refuses the whole call with
+`not_permitted` and the session's read-only reason. `session_handoff`
+(`server.session_handoff`) answers `/api/session/handoff-summary` without
+`since`; `session_compress` (`server.session_compress`) answers
+`/api/session/compress`'s `summary` without its session, and the service refuses
+a streaming target with its reason. The sidecar's calls wait 150 seconds for a
+handoff and 600 for a compression; `session_compress` registers that budget as its Agent
+`execution_timeout`. `background_list` (`server.background_list`) answers
+`/api/background/tasks` for the caller's own session. No tool deletes a session
+or changes another session's toolsets or YOLO.
+
 RPC v81 adds `history_prefix_len` to the `chat.start` result (TAL-1690): `messages`
 holds only the rows after that many leading rows, which repeat the request's
 `conversation_history` byte for byte. The server rebuilds the transcript from the

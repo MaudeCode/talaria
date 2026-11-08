@@ -7,7 +7,7 @@ import { SidecarClient } from './client.js'
 import { FakeSidecar } from './fake.js'
 import { answerSidecarRequest, SidecarServerError } from './server-methods.js'
 import { Session } from '../sessions/session.js'
-import { bootTestServer } from '../test/harness.js'
+import { bootTestServer, openStateDb } from '../test/harness.js'
 
 const fixtures = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')
 const recorded = (JSON.parse(readFileSync(join(fixtures, 'server.json'), 'utf8')) as Record<string, { params: Record<string, unknown>; result: unknown }[]>)['server.session_list']![0]!
@@ -323,6 +323,120 @@ describe('agent session tools under person isolation (TAL-48)', () => {
           expect(await sidecar.serverRequest(method, { caller_session_id: 'alicecaller', session_id, steer_id: 'steer-x' }), `${method} ${session_id}`).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
         }
       }
+    } finally {
+      await s.close()
+    }
+  })
+})
+
+describe('server.session_branch, session_update, session_handoff, session_compress, background_list (TAL-1166)', () => {
+  it('manages sessions in the caller profile through the route services and honours each can_* flag', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => (await (await s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })).json()) as Record<string, unknown>
+      mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+      const conversation = ['one', 'two', 'three', 'four'].map((content, i) => ({ role: i % 2 ? 'assistant' : 'user', content, timestamp: 1_792_500_000 + i }))
+      const save = async (session_id: string, profile: string, extra: Record<string, unknown> = {}) => {
+        await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, updated_at: 1_792_500_000, messages: structuredClone(conversation), ...extra }, { workspace: s.state, model: null }))
+      }
+      await save('agentcaller', 'default')
+      await save('agentpeer', 'default')
+      await save('agentforeign', 'other')
+      await save('agentchild', 'default', { source_tag: 'subagent' })
+      await save('agentimported', 'default', { read_only: true })
+      type Method = 'server.session_branch' | 'server.session_update' | 'server.session_handoff' | 'server.session_compress' | 'server.background_list'
+      const ask = async (method: Method, params: Record<string, unknown>, callerId = 'agentcaller') => {
+        const answer = await sidecar.serverRequest(method, { caller_session_id: callerId, ...params })
+        return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) as Record<string, unknown> }
+      }
+      const stored = (sid: string) => s.deps.sessionStore.get(sid)
+
+      // session_branch: a fork of the whole history and a copy, each a new session in the profile.
+      const forked = await ask('server.session_branch', { session_id: 'agentpeer', mode: 'branch' })
+      const forkId = String((forked as { result?: { session_id?: unknown } }).result?.session_id)
+      expect(forked).toEqual({ result: { session_id: forkId, title: 'agentpeer (fork)' } })
+      expect(await stored(forkId)).toMatchObject({ parent_session_id: 'agentpeer', profile: 'default', messages: conversation })
+      const copied = await ask('server.session_branch', { session_id: 'agentpeer', mode: 'duplicate' })
+      const copyId = String((copied as { result?: { session_id?: unknown } }).result?.session_id)
+      expect(copied).toEqual({ result: { session_id: copyId, title: 'agentpeer (copy)' } })
+      expect(await stored(copyId)).toMatchObject({ profile: 'default', messages: conversation })
+
+      // session_update: only the fields given, returning the row after the last change; archiving unpins.
+      const project = (await post('/api/projects/create', { name: 'Release' })).project as { project_id: string }
+      const updated = await ask('server.session_update', { session_id: 'agentpeer', title: 'Ship it', project_id: project.project_id, pinned: true })
+      expect(updated).toMatchObject({ result: { session: { session_id: 'agentpeer', title: 'Ship it', project_id: project.project_id, pinned: true, archived: false } } })
+      expect(await stored('agentpeer')).toMatchObject({ title: 'Ship it', project_id: project.project_id, pinned: true, archived: false })
+      expect(await ask('server.session_update', { session_id: 'agentpeer', archived: true })).toMatchObject({ result: { session: { title: 'Ship it', pinned: false, archived: true } } })
+      expect(await ask('server.session_update', { session_id: 'agentpeer', project_id: null, archived: false })).toMatchObject({ result: { session: { project_id: null, archived: false } } })
+      expect(await ask('server.session_update', { session_id: 'agentcaller', title: 'Coordinator' })).toMatchObject({ result: { session: { session_id: 'agentcaller', title: 'Coordinator' } } })
+      expect(await ask('server.session_update', { session_id: 'agentpeer' })).toMatchObject({ error: { data: { condition: 'invalid_params' } } })
+
+      // Each can_*-gated action is refused on a row whose flag is false, before anything is applied.
+      const childRow = await s.deps.sessions.wireRow(await stored('agentchild'))
+      expect(childRow).toMatchObject({ can_branch: false, can_duplicate: false, can_pin: false, can_archive: false })
+      for (const [method, params, denied] of [
+        ['server.session_branch', { mode: 'branch' }, 'branch'],
+        ['server.session_branch', { mode: 'duplicate' }, 'duplicate'],
+        ['server.session_update', { pinned: true }, 'pinned'],
+        ['server.session_update', { archived: true }, 'archived'],
+        ['server.session_update', { title: 'renamed' }, 'title'],
+      ] as const) {
+        expect(await ask(method, { session_id: 'agentchild', ...params })).toMatchObject({ error: { message: `session agentchild does not allow ${denied} (Subagent sessions are view-only and cannot be written from WebUI)`, data: { condition: 'not_permitted' } } })
+      }
+      // An imported read-only row may be pinned (`can_pin`) but not renamed or branched; a refused update applies nothing.
+      expect(await s.deps.sessions.wireRow(await stored('agentimported'))).toMatchObject({ read_only: true, can_pin: true, can_branch: false })
+      expect(await ask('server.session_update', { session_id: 'agentimported', title: 'renamed', pinned: true })).toMatchObject({ error: { data: { condition: 'not_permitted' } } })
+      expect(await stored('agentimported')).toMatchObject({ title: 'agentimported', pinned: false })
+      expect(await ask('server.session_branch', { session_id: 'agentimported', mode: 'branch' })).toMatchObject({ error: { message: 'session agentimported does not allow branch (Read-only imported sessions cannot be modified from WebUI)', data: { condition: 'not_permitted' } } })
+      expect(await ask('server.session_update', { session_id: 'agentimported', pinned: true })).toMatchObject({ result: { session: { session_id: 'agentimported', pinned: true } } })
+
+      // session_handoff: the handoff dock's summary of the target's state.db conversation.
+      const db = openStateDb(join(s.state, 'state.db'))
+      db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, model TEXT, started_at REAL, message_count INTEGER DEFAULT 0, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+      db.prepare('INSERT INTO sessions (id, source, started_at, message_count) VALUES (?, ?, ?, ?)').run('agentpeer', 'webui', 1, 20)
+      for (let i = 0; i < 10; i += 1) for (const [role, content] of [['user', `question ${i}`], ['assistant', `answer ${i}`]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run('agentpeer', role, content, 1000 + i)
+      db.close()
+      sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
+      sidecar.respond('aux.complete', (params) => ({ model: String(params.model), text: '- Ship the release.', usage: null, finish_reason: 'stop' }))
+      expect(await ask('server.session_handoff', { session_id: 'agentpeer' })).toEqual({ result: { ok: true, summary: '- Ship the release.', message_count: 20, rounds: 10, fallback: false } })
+      expect(await ask('server.session_handoff', { session_id: 'agentimported' })).toMatchObject({ error: { data: { condition: 'refused' } } })
+
+      // session_compress: the compression summary; refused, with the server's reason, while the target streams.
+      sidecar.respond('chat.compress', (params) => ({
+        status: 'compressed', messages: [params.conversation_history[0]!, params.conversation_history.at(-1)!], before_tokens: 400, after_tokens: 120, message: null, agent_session_id: params.session_id, commit_token: 'token-1',
+        summary: { noop: false, headline: 'Compressed: 4 → 2 messages', token_line: 'Approx request size: ~400 → ~120 tokens', note: null },
+      }))
+      sidecar.respond('chat.compress_finalize', () => ({ finalized: true }))
+      expect(await ask('server.session_compress', { session_id: copyId })).toMatchObject({ result: { session_id: copyId, summary: { headline: 'Compressed: 4 → 2 messages' } } })
+      let finish: () => void = () => undefined
+      sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'working' } })
+        finish = () => { resolve({ status: 'completed', messages: [], final_response: 'done', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } as never) }
+      }))
+      const streamer = String(((await post('/api/session/new', {})).session as Record<string, unknown>).session_id)
+      const streamId = String((await post('/api/chat/start', { session_id: streamer, message: 'keep going' })).stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+      expect(await ask('server.session_compress', { session_id: streamer })).toMatchObject({ error: { message: 'Session is still streaming; wait for the current turn to finish.', data: { condition: 'refused' } } })
+      finish()
+      await s.deps.turns.finished(streamId)
+
+      // background_list: the caller's own background work, as `/api/background/tasks` answers it.
+      await s.deps.background.trackCommand('agentcaller', 'bg-1', 'Check the synthetic data')
+      const background = await ask('server.background_list', {})
+      expect(background).toMatchObject({ result: { session_id: 'agentcaller', tasks: [{ task_id: 'bg-1' }] } })
+      expect((background as { result: unknown }).result).toEqual(await (await s.get('/api/background/tasks?session_id=agentcaller')).json())
+
+      // Another profile's session is unknown to every tool that takes a target; an unknown caller to every tool.
+      for (const [method, params] of [
+        ['server.session_branch', { mode: 'branch' }], ['server.session_branch', { mode: 'duplicate' }], ['server.session_update', { title: 'x' }],
+        ['server.session_handoff', {}], ['server.session_compress', {}],
+      ] as const) {
+        expect(await ask(method, { session_id: 'agentforeign', ...params })).toMatchObject({ error: { message: 'no Talaria session agentforeign in this profile', data: { condition: 'target_unknown' } } })
+        expect(await ask(method, { session_id: 'agentpeer', ...params }, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+      }
+      expect(await ask('server.background_list', {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+      expect(await stored('agentforeign')).toMatchObject({ title: 'agentforeign', pinned: false, archived: false })
     } finally {
       await s.close()
     }

@@ -2462,6 +2462,14 @@ export class SessionService {
 
   // ── manual compression (TAL-255) ────────────────────────────────────────
 
+  /** TAL-255, TAL-1166: start or join the session's compression job and answer with its result, or its refusal. */
+  async compressNow(sid: string, focusRaw: unknown): Promise<{ ok: true; session: { session_id: string; title: string }; summary: Record<string, unknown>; focus_topic: string | null }> {
+    const job = await this.startCompression(sid, focusRaw)
+    await job.done
+    if (job.status === 'error') throw new HttpFailure(job.error_status ?? 400, job.error ?? 'Compression failed', job.error_extra)
+    return job.result as { ok: true; session: { session_id: string; title: string }; summary: Record<string, unknown>; focus_topic: string | null }
+  }
+
   /**
    * Python `_handle_session_compress_start`: validate, then join the session's running job or start a fresh one (a
    * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.

@@ -567,5 +567,1334 @@
       ],
       "additionalProperties": {}
     }
+  },
+  "server.session_branch": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "branch",
+            "duplicate"
+          ]
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id",
+        "mode"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "title"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.session_update": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+            },
+            "title": {
+              "type": "string"
+            },
+            "workspace": {
+              "type": "string"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "updated_at": {
+              "type": "number"
+            },
+            "last_message_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "message_count": {
+              "type": "number"
+            },
+            "pinned": {
+              "type": "boolean"
+            },
+            "archived": {
+              "type": "boolean"
+            },
+            "project_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "is_streaming": {
+              "type": "boolean",
+              "description": "True only while the session's run is a live stream on this server."
+            },
+            "is_cli_session": {
+              "type": "boolean"
+            },
+            "source_kind": {
+              "type": "string",
+              "enum": [
+                "webui",
+                "cli",
+                "messaging",
+                "cron",
+                "webhook",
+                "subagent",
+                "claude_code",
+                "kanban",
+                "api",
+                "other"
+              ],
+              "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+            },
+            "is_messaging_session": {
+              "type": "boolean",
+              "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+            },
+            "sort_ts": {
+              "type": "number",
+              "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+            },
+            "cron_running": {
+              "type": "boolean"
+            },
+            "read_only": {
+              "type": "boolean",
+              "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+            },
+            "read_only_reason": {
+              "description": "Server-owned reason this session is display-only or its ownership cannot be verified.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "owner_attachment": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "attached",
+                    "stopped",
+                    "unavailable",
+                    "incompatible",
+                    "refused"
+                  ]
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "can_submit": {
+                  "type": "boolean"
+                },
+                "can_interrupt": {
+                  "type": "boolean"
+                },
+                "can_attach": {
+                  "type": "boolean"
+                },
+                "restarting": {
+                  "type": "boolean",
+                  "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                },
+                "revision": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "execution_generation": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model_change": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "applied",
+                        "deferred",
+                        "confirmation_required",
+                        "refused"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "confirm": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reasoning": {
+                      "description": "The level chosen with this model; a confirmed resend carries it again.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                "active_admission": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "admission_id": {
+                          "type": "string"
+                        },
+                        "sequence": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "started",
+                            "unknown",
+                            "terminal"
+                          ]
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "authority_epoch": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "execution_generation": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "controls": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "steering": {
+                          "type": "boolean"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "input_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "admission_id",
+                        "sequence",
+                        "status",
+                        "outcome",
+                        "authority_epoch",
+                        "execution_generation"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "admissions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "admission_id": {
+                        "type": "string"
+                      },
+                      "sequence": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "queued",
+                          "started",
+                          "unknown",
+                          "terminal"
+                        ]
+                      },
+                      "outcome": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "authority_epoch": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "execution_generation": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "controls": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "steering": {
+                        "type": "boolean"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "input_id": {
+                        "type": "string"
+                      },
+                      "actions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "cancel",
+                            "steer",
+                            "edit",
+                            "retry",
+                            "discard"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "admission_id",
+                      "sequence",
+                      "status",
+                      "outcome",
+                      "authority_epoch",
+                      "execution_generation",
+                      "actions"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "connection": {
+                  "description": "TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "op_id": {
+                          "type": "string"
+                        },
+                        "settled": {
+                          "type": "boolean"
+                        },
+                        "outcome": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "connected",
+                                "not_connected"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "can_continue": {
+                          "type": "boolean"
+                        },
+                        "tool_call_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "owner": {
+                          "type": "object",
+                          "properties": {
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "authority_epoch": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "session_id",
+                            "authority_epoch"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "can_wake": {
+                          "type": "boolean"
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "initiated",
+                                  "connected",
+                                  "skipped",
+                                  "failed",
+                                  "expired",
+                                  "not_connected"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              },
+                              "connect_url": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "launch": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "stdio",
+                                          "remote"
+                                        ]
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "env": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "cwd": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "target",
+                                      "env",
+                                      "cwd"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "actions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "skip",
+                                    "retry",
+                                    "approve"
+                                  ]
+                                }
+                              },
+                              "env_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "required": {
+                                      "type": "boolean"
+                                    },
+                                    "secret": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "label",
+                                    "required",
+                                    "secret"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "title",
+                              "kind",
+                              "state",
+                              "detail",
+                              "connect_url",
+                              "launch",
+                              "actions",
+                              "env_fields"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "op_id",
+                        "settled",
+                        "outcome",
+                        "can_continue",
+                        "tool_call_id",
+                        "targets"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reasoning_control": {
+                  "description": "Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker.",
+                  "type": "object",
+                  "properties": {
+                    "reasoning_effort": {
+                      "description": "The level this chat runs now, clamped for its route. Null is the provider default.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "supported_efforts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "supports_reasoning_effort": {
+                      "type": "boolean"
+                    },
+                    "supports_thinking_toggle": {
+                      "type": "boolean"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "set",
+                          "reset"
+                        ]
+                      },
+                      "description": "What this client may ask the owner now. Empty while the owner cannot take a change."
+                    },
+                    "deferred": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "effort": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "effort"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset."
+                    }
+                  },
+                  "required": [
+                    "reasoning_effort",
+                    "supported_efforts",
+                    "supports_reasoning_effort",
+                    "supports_thinking_toggle",
+                    "actions",
+                    "deferred"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "state",
+                "reason",
+                "can_submit",
+                "can_interrupt",
+                "can_attach",
+                "restarting",
+                "revision",
+                "execution_generation",
+                "admissions"
+              ],
+              "additionalProperties": false
+            },
+            "can_branch": {
+              "type": "boolean",
+              "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
+            },
+            "can_pin": {
+              "type": "boolean",
+              "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
+            },
+            "can_archive": {
+              "type": "boolean",
+              "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
+            },
+            "can_delete": {
+              "type": "boolean",
+              "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+            },
+            "can_duplicate": {
+              "type": "boolean",
+              "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
+            },
+            "can_share": {
+              "type": "boolean",
+              "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+            },
+            "attention": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_tag": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session_source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "raw_source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "parent_session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "active_stream_id": {
+              "description": "The live stream id; non-null only while `is_streaming` is true.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "share_token": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "share_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "worktree_branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "match_type": {
+              "type": "string",
+              "enum": [
+                "title",
+                "metadata",
+                "content"
+              ]
+            },
+            "match_preview": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sidebar_group": {
+              "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "pinned",
+                    "recent",
+                    "scheduled",
+                    "webhook"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sidebar_parent_session_id": {
+              "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sidebar_source": {
+              "description": "TAL-1863: the source tab the row files in, the one verdict `webui_session_count`, `cli_session_count` and the `sidebar_source` request filter read. A subagent row takes its parent's tab, listed or not, in its own profile; with no resolvable parent it keeps its own (`webui`). `is_cli_session` stays false for a subagent. `GET /api/sessions` and its sidebar search set it; other routes omit it.",
+              "type": "string",
+              "enum": [
+                "webui",
+                "cli"
+              ]
+            },
+            "context_used_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context_window_tokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context_usage_percent": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context_threshold_percent": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context_window_source": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "pinned",
+                    "fallback"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "session_id",
+            "title",
+            "is_streaming",
+            "source_kind",
+            "is_messaging_session",
+            "sort_ts",
+            "read_only",
+            "can_branch",
+            "can_pin",
+            "can_archive",
+            "can_delete",
+            "can_duplicate",
+            "can_share"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.session_handoff": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "summary": {
+          "type": "string"
+        },
+        "message_count": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "summary",
+        "message_count",
+        "rounds",
+        "fallback"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.session_compress": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "headline": {
+              "type": "string"
+            },
+            "token_line": {
+              "type": "string"
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reference_message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "session_id",
+        "summary"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.background_list": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "activity_phase": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "running",
+            "waiting_for_approval",
+            "waiting_for_input",
+            "completed",
+            "failed",
+            "cancelled",
+            "stale"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "delegation",
+                  "process",
+                  "background_command"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "attention",
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "unknown"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "updated_at": {
+                "type": "number"
+              },
+              "completed_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "result_available": {
+                "type": "boolean"
+              },
+              "child_sessions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                    }
+                  },
+                  "required": [
+                    "goal",
+                    "session_id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agents": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "total": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "completed": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "failed": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "running": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "total",
+                      "completed",
+                      "failed",
+                      "running"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              },
+              "dismissible": {
+                "type": "boolean"
+              },
+              "can_stop": {
+                "type": "boolean"
+              },
+              "active": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "task_id",
+              "kind",
+              "status",
+              "title",
+              "started_at",
+              "updated_at",
+              "completed_at",
+              "result_available",
+              "child_sessions",
+              "exit_code",
+              "agents",
+              "pinned",
+              "dismissible",
+              "active"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "agent_available": {
+          "type": "boolean"
+        },
+        "agents_working": {
+          "type": "boolean"
+        },
+        "delegation_status": {
+          "type": "object",
+          "properties": {
+            "availability": {
+              "type": "string",
+              "enum": [
+                "available",
+                "unknown",
+                "unsupported"
+              ]
+            },
+            "running_count": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "awaiting_delivery_count": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memory_live": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "visible": {
+              "type": "boolean"
+            },
+            "refresh": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "availability",
+            "running_count",
+            "awaiting_delivery_count",
+            "memory_live",
+            "visible",
+            "refresh"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "session_id",
+        "tasks",
+        "agent_available"
+      ],
+      "additionalProperties": false
+    }
   }
 }
