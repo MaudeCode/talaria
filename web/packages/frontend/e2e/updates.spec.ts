@@ -314,7 +314,7 @@ test('a Web update blocked by running chats offers Update anyway, and Cancel sen
   const update = page.getByRole('button', { name: 'Update Web', exact: true })
   await update.click()
   const confirm = page.getByRole('alertdialog', { name: 'Update anyway?' })
-  await expect(confirm).toContainText('2 chats are still running. Updating now stops them and saves their partial replies as interrupted.')
+  await expect(confirm).toContainText('2 chats are still running. Updating now stops them and continues them once Talaria Web is back.')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('update-anyway.png') })
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()

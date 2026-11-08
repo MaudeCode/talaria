@@ -20,6 +20,7 @@ import { bootTestServer, WEB_ROOT } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
+import { writeContinuation } from './update-continuation.js'
 import {
   applyAgentUpdate, applyWebUpdate, AUTO_UPDATE_INTERVAL_MS, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, purgePycache, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
@@ -704,7 +705,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   }
 
   /** An UpdateService over a global npm install one Stable release behind, the only kind that updates itself (TAL-379). */
-  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } & Pick<UpdateServiceDeps, 'interruptibleRuns' | 'interruptRuns' | 'now'> = {}) {
+  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } & Pick<UpdateServiceDeps, 'interruptibleRuns' | 'interruptRuns' | 'continuationRuns' | 'continueChat' | 'now'> = {}) {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
@@ -714,6 +715,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
       ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
       ...(opts.interruptibleRuns ? { interruptibleRuns: opts.interruptibleRuns } : {}), ...(opts.interruptRuns ? { interruptRuns: opts.interruptRuns } : {}), ...(opts.now ? { now: opts.now } : {}),
+      ...(opts.continuationRuns ? { continuationRuns: opts.continuationRuns } : {}), ...(opts.continueChat ? { continueChat: opts.continueChat } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
       scheduleRestart: () => restarts.push(1), llm: null, log: () => undefined,
     })
@@ -922,7 +924,17 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       const work = { runs: [...initial], other: false, unsaved: [] as string[], clock: 1_000 }
       const interrupted: string[][] = []
       const order: string[] = []
+      const stateDir = tmp()
+      // TAL-1990: the chats each continue as `chat-<run>`, noting whether turn admission was open then.
+      const continued: string[] = []
       const ctx = npmService({
+        stateDir,
+        npm: (inner) => (args, cwd, timeoutMs) => {
+          if (args[0] === 'install') order.push(`install:${existsSync(join(stateDir, 'update-continuation.json')) ? 'recorded' : 'unrecorded'}`)
+          return inner(args, cwd, timeoutMs)
+        },
+        continuationRuns: (runs) => { order.push('capture'); return Promise.resolve(runs.map((run) => ({ session_id: `chat-${run}`, profile: 'default', stream_id: run }))) },
+        continueChat: (run, claim) => { claim(); continued.push(`${run.session_id}:${ctx.svc.blocksNewWork() ? 'fenced' : 'open'}`); return Promise.resolve(true) },
         blockers: () => ({ active_streams: work.runs.length, active_runs: work.runs.length, active_terminals: work.other ? 1 : 0, blocking_stream_ids: work.runs, blocking_run_ids: work.runs, restart_blocked: work.runs.length > 0 || work.other }),
         interruptibleRuns: () => work.other ? null : [...work.runs].sort(),
         interruptRuns: (runs) => {
@@ -938,8 +950,84 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
         expect(blocked).toMatchObject({ ok: false, restart_blocked: true })
         return blocked.interrupt_confirmation as { token: string; runs: number; expires_at: string }
       }
-      return { ...ctx, work, interrupted, order, offer }
+      return { ...ctx, work, interrupted, order, offer, stateDir, continued }
     }
+
+    /** TAL-1990: the server that boots after the update, running `revision`, continuing chats with `continueChat`. */
+    function booted(stateDir: string, revision: string, continueChat: NonNullable<UpdateServiceDeps['continueChat']>, onAgentReconnect?: NonNullable<UpdateServiceDeps['onAgentReconnect']>): UpdateService {
+      return updateService({
+        stateDir, webRoot: tmp(), getJson: () => Promise.reject(new Error('offline')), identity: { release: () => ({ sourceRevision: revision }), stamped: () => ({}), runningSourceRevision: () => revision },
+        webuiVersion: 'web-v2.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false, scheduleRestart: () => undefined, log: () => undefined, continueChat,
+        blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }), ...(onAgentReconnect ? { onAgentReconnect } : {}),
+      })
+    }
+    const record = (stateDir: string): { target_revision: string; target_version: string; runs: { session_id: string; stream_id: string }[] } | null => {
+      try { return JSON.parse(readFileSync(join(stateDir, 'update-continuation.json'), 'utf8')) as never } catch { return null }
+    }
+    const continuing = (into: string[]): NonNullable<UpdateServiceDeps['continueChat']> => (run, claim) => { claim(); into.push(run.session_id); return Promise.resolve(true) }
+
+    it('records the interrupted chats before installing, and the restarted server on the target continues each once (TAL-1990)', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: (await t.offer()).token })).toMatchObject({ ok: true, restart_scheduled: true })
+      const saved = record(t.stateDir)!
+      expect(saved).toMatchObject({ target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: 'default', stream_id: 'r1' }, { session_id: 'chat-r2', profile: 'default', stream_id: 'r2' }] })
+      // The old server, about to restart, continues nothing itself.
+      expect(t.continued).toEqual([])
+      const continued: string[] = []
+      const next = booted(t.stateDir, saved.target_revision, continuing(continued))
+      await next.resumeContinuations()
+      await next.resumeContinuations()
+      expect(continued).toEqual(['chat-r1', 'chat-r2'])
+      expect(record(t.stateDir)).toBeNull()
+    })
+
+    it('fails before installing when the interrupted chats cannot be recorded, with the chats saved and admission reopened (TAL-1990)', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      mkdirSync(join(t.stateDir, 'update-continuation.json'))
+      const failed = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: (await t.offer()).token })
+      expect(failed).toMatchObject({ ok: false, interrupt_failed: true, message: '2 running chats were saved as interrupted, but could not be set to continue after the update, so Talaria Web was not updated.' })
+      expect([t.interrupted, t.installs(), t.version(), t.restarts, t.continued]).toEqual([[['r1', 'r2']], 0, '1.0.0', [], []])
+      expect(t.svc.blocksNewWork()).toBe(false)
+    })
+
+    it('never continues an entry twice when the server restarts again mid-resume (TAL-1990)', async () => {
+      const stateDir = tmp()
+      writeContinuation(stateDir, { update_id: 'u', target_revision: 'a'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: null, stream_id: 'r1' }, { session_id: 'chat-r2', profile: null, stream_id: 'r2' }] })
+      // The first boot claims chat-r1 and dies before its turn starts.
+      void booted(stateDir, 'a'.repeat(40), (_run, claim) => { claim(); return new Promise<boolean>(() => undefined) }).resumeContinuations()
+      await vi.waitFor(() => { expect(record(stateDir)?.runs.map((run) => run.stream_id)).toEqual(['r2']) })
+      const continued: string[] = []
+      await booted(stateDir, 'a'.repeat(40), continuing(continued)).resumeContinuations()
+      expect(continued).toEqual(['chat-r2'])
+      expect(record(stateDir)).toBeNull()
+    })
+
+    it('continues the recorded chats on the same server when the install fails after interrupting them (TAL-1990)', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const { token } = await t.offer()
+      t.n.mode.outcome = 'failure'
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: token })).toMatchObject({ ok: false })
+      expect([t.version(), t.restarts]).toEqual(['1.0.0', []])
+      expect(t.continued).toEqual(['chat-r1:open', 'chat-r2:open'])
+      expect(record(t.stateDir)).toBeNull()
+    })
+
+    it('keeps the recorded chats until the Agent runtime is ready, then continues them on its next handshake (TAL-1990)', async () => {
+      const stateDir = tmp()
+      writeContinuation(stateDir, { update_id: 'u', target_revision: 'a'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: null, stream_id: 'r1' }] })
+      const runtime = { ready: false, handshake: null as ((describe: RuntimeDescribe) => void) | null }
+      const continued: string[] = []
+      const svc = booted(stateDir, 'a'.repeat(40), (run, claim) => runtime.ready ? continuing(continued)(run, claim) : Promise.resolve(false), (listener) => { runtime.handshake = listener; return () => { runtime.handshake = null } })
+      await svc.resumeContinuations()
+      expect([continued, record(stateDir)?.runs.length]).toEqual([[], 1])
+      runtime.ready = true
+      runtime.handshake?.({ compatible: true, stale: false } as RuntimeDescribe)
+      await vi.waitFor(() => { expect(continued).toEqual(['chat-r1']) })
+      expect([record(stateDir), runtime.handshake]).toEqual([null, null])
+    })
 
     it('offers the operator a one-shot confirmation naming the chats, then interrupts exactly those before installing', async () => {
       const t = blockedByChats()
@@ -951,7 +1039,8 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       const applied = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: confirmation.token })
       expect(applied).toMatchObject({ ok: true, restart_scheduled: true })
       expect(t.interrupted).toEqual([['r1', 'r2']])
-      expect(t.order).toEqual(['interrupt:0'])
+      // TAL-1990: each chat is read before it is interrupted, and recorded to continue before anything installs.
+      expect(t.order).toEqual(['capture', 'interrupt:0', 'install:recorded'])
       expect(t.installs()).toBe(1)
       expect(t.version()).toBe('2.0.0')
       // The restart is deferred until the drained server re-execs; turn admission stays fenced until then.

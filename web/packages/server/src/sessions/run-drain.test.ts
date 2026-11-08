@@ -10,6 +10,9 @@ import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-c
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer as bootServer, type BootOptions, type TestServer } from '../test/harness.js'
 import { sessionPath, useJsonStorage } from '../test/storage.js'
+import { join } from 'node:path'
+import { writeContinuation } from '../tools/update-continuation.js'
+import type { UpdateServiceDeps } from '../tools/updates.js'
 
 // The cases read the saved session file after storage closed, which only the JSON backend leaves readable.
 useJsonStorage()
@@ -33,14 +36,16 @@ function result(params: SidecarParams<'chat.start'>, status: 'completed' | 'canc
   }
 }
 
-/** A sidecar whose turns stream `partial` and then hold until released (completed) or interrupted (cancelled). */
+/** A sidecar whose turns stream `partial` and then hold until released (completed) or interrupted (cancelled); a turn started after release completes at once. */
 function heldSidecar(): { sidecar: FakeSidecar; release: () => void; interrupts: string[] } {
   const sidecar = new FakeSidecar()
   const interrupts: string[] = []
   const held = new Map<string, (status: 'completed' | 'cancelled') => void>()
+  let released = false
   sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
     held.set(params.stream_id, (status) => { resolve(result(params, status, status === 'completed' ? 'finished answer' : 'partial')) })
     emit({ event: 'token', data: { text: 'partial' } })
+    if (released) held.get(params.stream_id)!('completed')
   }))
   sidecar.respond('chat.interrupt', (params) => {
     const streamId = params.stream_id ?? ''
@@ -48,7 +53,7 @@ function heldSidecar(): { sidecar: FakeSidecar; release: () => void; interrupts:
     held.get(streamId)?.('cancelled')
     return { ok: true, pending_steer: '' }
   })
-  return { sidecar, interrupts, release: () => { for (const finish of held.values()) finish('completed') } }
+  return { sidecar, interrupts, release: () => { released = true; for (const finish of held.values()) finish('completed') } }
 }
 
 async function startTurn(server: TestServer, message: string): Promise<{ sid: string; streamId: string }> {
@@ -269,6 +274,128 @@ describe('a confirmed Web update interrupts the named local runs (TAL-1629)', ()
       expect(server.deps.registry.activeRuns.has(streamId)).toBe(true)
       expect(durable(server, sid).messages.some((m) => m._terminal_state === 'interrupted')).toBe(false)
       expect(server.deps.updates.blocksNewWork()).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+})
+
+describe('chats a confirmed Web update interrupted continue once Web is back (TAL-1990)', () => {
+  type Deps = Pick<UpdateServiceDeps, 'continuationRuns' | 'identity'>
+  const updateDeps = (server: TestServer): Deps => (server.deps.updates as unknown as { deps: Deps }).deps
+  const running = (server: TestServer): string => { const revision = updateDeps(server).identity.release().sourceRevision; return typeof revision === 'string' ? revision : '' }
+  /** What a confirmed Update anyway does before install: read the runs' chats, save them as interrupted, record them. */
+  async function interruptForUpdate(server: TestServer, streamIds: string[], target = running(server)): Promise<void> {
+    const runs = await updateDeps(server).continuationRuns!(streamIds)
+    expect(await server.deps.turns.interrupt(streamIds, 5_000)).toMatchObject({ unresolved: [] })
+    writeContinuation(server.deps.config.stateDir, { update_id: 'update-1', target_revision: target, target_version: '2.0.0', runs })
+  }
+  const continuations = (sidecar: FakeSidecar): string[] => sidecar.calls.filter((c) => c.method === 'chat.start' && (c.params as { user_message?: string }).user_message === 'Continue where you left off.').map((c) => String((c.params as { session_id?: string }).session_id))
+  const recorded = (server: TestServer): boolean => { try { readFileSync(join(server.deps.config.stateDir, 'update-continuation.json')); return true } catch { return false } }
+
+  it('starts exactly one update_continuation turn in each interrupted chat, with no client action', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const one = await startTurn(server, 'one')
+      const two = await startTurn(server, 'two')
+      await interruptForUpdate(server, [one.streamId, two.streamId])
+      await server.deps.updates.resumeContinuations()
+      // A second pass (another boot, a reconnect) finds nothing left to continue.
+      await server.deps.updates.resumeContinuations()
+      await expect.poll(() => continuations(sidecar).sort()).toEqual([one.sid, two.sid].sort())
+      expect(recorded(server)).toBe(false)
+      for (const { sid } of [one, two]) {
+        const session = await server.deps.sessionStore.get(sid)
+        expect(session.pending_user_source).toBe('update_continuation')
+        expect(session.pending_user_message).toBe('Continue where you left off.')
+      }
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('stamps the continuation prompt as the existing server-owned automatic row', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'one')
+      await interruptForUpdate(server, [streamId])
+      await server.deps.updates.resumeContinuations()
+      await expect.poll(() => continuations(sidecar)).toEqual([sid])
+      release()
+      await expect.poll(async () => (await server.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
+      const served = ((await (await server.get(`/api/session?session_id=${sid}&messages=1`)).json()) as { session: { messages: Record<string, unknown>[] } }).session.messages
+      const prompt = served.find((m) => m.role === 'user' && m.content === 'Continue where you left off.')
+      expect(prompt).toMatchObject({ _source: 'update_continuation', _background_update: { kind: 'other', summary: 'Continue where you left off.', review_state: 'reviewed' } })
+      expect(served.find((m) => m.role === 'user' && m.content === 'one')).not.toHaveProperty('_background_update')
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('skips a chat that was deleted', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'one')
+      await interruptForUpdate(server, [streamId])
+      expect((await server.get('/api/session/delete', { method: 'POST', body: JSON.stringify({ session_id: sid }), headers: { 'content-type': 'application/json' } })).status).toBe(200)
+      await server.deps.updates.resumeContinuations()
+      expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
+      expect(recorded(server)).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('skips a chat that is read-only', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'one')
+      await interruptForUpdate(server, [streamId])
+      const session = await server.deps.sessionStore.get(sid)
+      session.read_only = true
+      await server.deps.sessionStore.save(session)
+      await server.deps.updates.resumeContinuations()
+      expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
+      expect(recorded(server)).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('skips a chat with a newer turn than the interrupted one', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'one')
+      await interruptForUpdate(server, [streamId])
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: sid, message: 'newer' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: newer } = await start.json() as { stream_id: string }
+      expect(await server.deps.turns.interrupt([newer], 5_000)).toMatchObject({ unresolved: [] })
+      await server.deps.updates.resumeContinuations()
+      expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
+      expect(recorded(server)).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('skips a chat whose turn finished on its own before the update stopped it', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'one')
+      const runs = await updateDeps(server).continuationRuns!([streamId])
+      release()
+      await expect.poll(async () => (await server.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
+      expect(await server.deps.turns.interrupt([streamId], 5_000)).toMatchObject({ unresolved: [] })
+      writeContinuation(server.deps.config.stateDir, { update_id: 'update-1', target_revision: running(server), target_version: '2.0.0', runs })
+      await server.deps.updates.resumeContinuations()
+      expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
+      expect(recorded(server)).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('skips every chat when Web is not running the update\'s target revision', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { streamId } = await startTurn(server, 'one')
+      await interruptForUpdate(server, [streamId], 'f'.repeat(40))
+      await server.deps.updates.resumeContinuations()
+      expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
+      expect(recorded(server)).toBe(false)
     } finally { release(); await server.running.close().catch(() => undefined) }
   })
 })

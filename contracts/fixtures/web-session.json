@@ -1835,6 +1835,54 @@
       },
       {
         "role": "user",
+        "content": "Continue where you left off.",
+        "message_id": "continuation-user",
+        "timestamp": 1770000208,
+        "_turn_id": "continue-contract",
+        "_background_update": {
+          "kind": "other",
+          "attention": false,
+          "count": 1,
+          "summary": "Continue where you left off.",
+          "lines": [
+            {
+              "kind": "other",
+              "status": "completed",
+              "label": "Continue where you left off.",
+              "review_state": "unknown"
+            }
+          ],
+          "review_state": "unknown"
+        },
+        "_source": "update_continuation",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "Picking up where the update stopped me.",
+        "message_id": "continuation-reply",
+        "timestamp": 1770000209,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Picking up where the update stopped me.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "42dc140e5804552088503bdcc94709828bc74389acf85be731d73f4614387329"
+        },
+        "_turn_id": "continue-contract",
+        "_background_reply": true,
+        "_display": "row"
+      },
+      {
+        "role": "user",
         "content": "Reply with exactly NO_REPLY",
         "message_id": "user-no-reply",
         "timestamp": 1770000208,

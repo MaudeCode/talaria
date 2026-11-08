@@ -39,7 +39,7 @@ import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
-import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
+import { isAutomaticSource, mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { CHECKPOINT_STORE_BUSY_MESSAGE } from '../workspace/rollback.js'
@@ -657,8 +657,8 @@ export class TurnRunner {
     timing.identify(s.session_id, streamId)
     const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt
     const attachments = opts.attachments ?? []
-    // A background wakeup stays one in a forked session too (TAL-460).
-    const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
+    // A background wakeup (TAL-460) or update continuation (TAL-1990) stays one in a forked session too.
+    const source = !isAutomaticSource(opts.source) && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
     // TAL-1005: the context figures the last turn reported hold for a turn on the same model only, and are judged before
     // admission clears the post-compression estimate. A `/btw` clone is thrown away after one answer, so it is never due.
     const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)

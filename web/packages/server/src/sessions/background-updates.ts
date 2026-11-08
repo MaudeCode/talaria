@@ -10,6 +10,7 @@ import type { Session } from './session.js'
 import { isDict, messageText } from './merge.js'
 import { str } from '../util.js'
 import { backgroundEventKind } from './background-events.js'
+import { UPDATE_CONTINUATION_SOURCE } from '../tools/update-continuation.js'
 
 type Dict = Record<string, unknown>
 export type BackgroundUpdateKind = 'delegation' | 'process' | 'mixed' | 'other'
@@ -24,6 +25,9 @@ const LABEL_LIMIT = 120
 const SILENT_MARKERS = new Set(['[SILENT]', 'SILENT', 'NO_REPLY', 'NO REPLY'])
 const SILENT_MAX_LENGTH = 64
 const BACKGROUND_SOURCE = 'process_wakeup'
+/** Prompts the server sends on its own: background wakeups and TAL-1990's continuation after an Update anyway. */
+const AUTOMATIC_SOURCES = new Set([BACKGROUND_SOURCE, UPDATE_CONTINUATION_SOURCE])
+export const isAutomaticSource = (source: unknown): boolean => typeof source === 'string' && AUTOMATIC_SOURCES.has(source)
 /** The one instruction a background turn gets on top of the usual ones (TAL-460). */
 export const BACKGROUND_TURN_PROMPT = 'This turn was started by a background result, not by the user. If it needs nothing from the user, reply exactly [SILENT]. Otherwise tell the user what matters.'
 const DELEGATION_DONE = new Set(['completed', 'success'])
@@ -118,7 +122,7 @@ export function withBackgroundDisplayKinds<T>(messages: T[], session: Session): 
   return messages.map((m) => {
     if (!isDict(m) || m.role !== 'user') return m
     const meta = isDict(m.display_metadata) ? m.display_metadata : {}
-    const key = m._source === BACKGROUND_SOURCE ? str(m._turn_id) : AGENT_UPDATE_KINDS[str(m.display_kind)] ? `delegation:${str(meta.delegation_id)}` : ''
+    const key = isAutomaticSource(m._source) ? str(m._turn_id) : AGENT_UPDATE_KINDS[str(m.display_kind)] ? `delegation:${str(meta.delegation_id)}` : ''
     const update = recorded[key]
     return isDict(update) ? { ...m, _background_update: update, ...(update.display_kind === 'hidden' ? { display_kind: 'hidden' } : {}) } : m
   })
@@ -168,7 +172,7 @@ function agentUpdate(m: Dict, recorded: Dict): BackgroundUpdate | null {
 
 /**
  * Stamps `_background_update` on user rows that are automatic wakeups: Web's own (`_source: process_wakeup`, with the
- * update recorded at delivery, else a generic one for older rows) and the Agent's (`display_kind` from state.db). A
+ * update recorded at delivery, else a generic one for older rows; TAL-1990's `update_continuation` likewise) and the Agent's (`display_kind` from state.db). A
  * person typing the same text stays an ordinary user message. The rest of a wakeup's turn is the Agent's reply to it
  * (`_background_reply`); a reply that ends on a silence marker is `_background_silent` throughout. Needs `_turn_id` on
  * every row (`withTurnIds`). Returns copies; stored rows are untouched.
@@ -177,12 +181,12 @@ export interface BackgroundReviewContext { activeTurnId?: string | null; pending
 
 /** Persist terminal evidence on the admitted prompt, alongside its actual final reply. */
 export function recordBackgroundReview(session: Session, turnId: string): void {
-  const prompt = session.messages.find((m) => m.role === 'user' && m._source === BACKGROUND_SOURCE && m._turn_id === turnId)
+  const prompt = session.messages.find((m) => m.role === 'user' && isAutomaticSource(m._source) && m._turn_id === turnId)
   if (prompt) prompt._background_review_terminal = turnTerminalState(session.messages, turnId)
 }
 
 function parentReview(session: Session, rows: Dict[], turnId: string, pending: boolean, context: BackgroundReviewContext): BackgroundReviewState {
-  const receipt = rows.find((m) => m.role === 'user' && m._source === BACKGROUND_SOURCE)?._background_review_terminal
+  const receipt = rows.find((m) => m.role === 'user' && isAutomaticSource(m._source))?._background_review_terminal
   const last = rows.findLast((m) => m.role === 'assistant')
   const terminal = str(receipt) || str(last?._terminal_state) || (last?._error === true ? 'error' : '')
   if (terminal) {
@@ -190,7 +194,7 @@ function parentReview(session: Session, rows: Dict[], turnId: string, pending: b
     if (['cancelled', 'interrupted', 'no_response'].includes(terminal)) return pending ? 'waiting' : 'unknown'
     return 'failed'
   }
-  if (turnId && context.activeTurnId === turnId && session.active_stream_id === turnId && session.pending_user_source === BACKGROUND_SOURCE) return 'reviewing'
+  if (turnId && context.activeTurnId === turnId && session.active_stream_id === turnId && isAutomaticSource(session.pending_user_source)) return 'reviewing'
   return pending ? 'waiting' : 'unknown'
 }
 
@@ -220,14 +224,14 @@ export function withBackgroundUpdates<T>(messages: T[], session: Session, contex
   }
   const stamped = withBackgroundDisplayKinds(messages, session).map((m) => {
     if (!isDict(m) || m.role !== 'user') return m
-    const update: BackgroundUpdate | null = m._source === BACKGROUND_SOURCE
+    const update: BackgroundUpdate | null = isAutomaticSource(m._source)
       ? recordedUpdate(recorded, m._turn_id) ?? recordedUpdate({ row: m._background_update }, 'row') ?? summaryUpdate('other', false, backgroundUpdateSummary(messageText(m.content)))
       : agentUpdate(m, recorded)
     if (!update) return m
     backgroundTurns.add(str(m._turn_id))
     const delegationId = str(isDict(m.display_metadata) ? m.display_metadata.delegation_id : '')
     // An Agent notification can precede Web admission. Only the exact accepted result joins that parent's turn.
-    const reviewTurn = m._source === BACKGROUND_SOURCE ? str(m._turn_id) : admittedReviewTurn(session, delegationId)
+    const reviewTurn = isAutomaticSource(m._source) ? str(m._turn_id) : admittedReviewTurn(session, delegationId)
     const review = parentReview(session, turns.get(reviewTurn) ?? context.reviewRows?.(reviewTurn) ?? [], reviewTurn, Boolean(delegationId && context.pendingDelegations?.has(delegationId)), context)
     return { ...m, _background_update: { ...update, review_state: review, lines: update.lines.map((line) => ({ ...line, review_state: line.status === 'failed' ? 'failed' : line.status === 'notice' ? 'unknown' : review })) } }
   })
