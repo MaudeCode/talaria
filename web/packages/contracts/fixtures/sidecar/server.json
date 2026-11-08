@@ -380,5 +380,109 @@
         }
       }
     }
+  ],
+  "server.pending_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller"
+      },
+      "result": {
+        "pending": [
+          {
+            "session_id": "20261020_120500_busy",
+            "kind": "approval",
+            "id": "approval-1",
+            "pending_count": 1,
+            "prompt": {
+              "approval_id": "approval-1",
+              "command": "rm -rf build",
+              "description": "delete build output"
+            }
+          },
+          {
+            "session_id": "20261020_121000_asker",
+            "kind": "clarify",
+            "id": "clarify-1",
+            "pending_count": 1,
+            "prompt": {
+              "clarify_id": "clarify-1",
+              "question": "Which branch?",
+              "choices_offered": [
+                "main",
+                "release"
+              ],
+              "requested_at": 1792500000,
+              "timeout_seconds": 600,
+              "expires_at": 1792500600,
+              "kind": "clarify",
+              "steps": [
+                {
+                  "qid": "q0",
+                  "question": "Which branch?",
+                  "choices": [
+                    "main",
+                    "release"
+                  ],
+                  "multi_select": false
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_121000_asker"
+      },
+      "result": {
+        "pending": [
+          {
+            "session_id": "20261020_121000_asker",
+            "kind": "clarify",
+            "id": "clarify-1",
+            "pending_count": 1,
+            "prompt": {
+              "clarify_id": "clarify-1",
+              "question": "Which branch?",
+              "choices_offered": [
+                "main",
+                "release"
+              ],
+              "requested_at": 1792500000,
+              "timeout_seconds": 600,
+              "expires_at": 1792500600,
+              "kind": "clarify",
+              "steps": [
+                {
+                  "qid": "q0",
+                  "question": "Which branch?",
+                  "choices": [
+                    "main",
+                    "release"
+                  ],
+                  "multi_select": false
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "server.clarify_respond": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_121000_asker",
+        "clarify_id": "clarify-1",
+        "answer": "release"
+      },
+      "result": {
+        "ok": true,
+        "response": "release"
+      }
+    }
   ]
 }

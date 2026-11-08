@@ -356,6 +356,17 @@ export class GatewaySessions {
     return target ? this.activityPhaseFor(await this.call(target, { action: 'snapshot' }), target) : undefined
   }
 
+  /** TAL-1168: the sessions of `profile` whose owner snapshot, as this server watches or observes it, holds a prompt. */
+  promptedSessions(profile: string): string[] {
+    const home = this.deps.profileHome(profile)
+    const ids = new Set<string>()
+    for (const held of [this.watches, this.observations]) for (const [key, { snapshot }] of held) {
+      const [keyHome, sid] = JSON.parse(key) as [string, string]
+      if (keyHome === home && snapshot.prompts.length) ids.add(sid)
+    }
+    return [...ids]
+  }
+
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
   /**
    * TAL-1579: whether a native owner holds the session in `profile`: any canonical source, usable here or not, since its

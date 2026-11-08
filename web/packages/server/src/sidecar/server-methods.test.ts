@@ -8,6 +8,7 @@ import { FakeSidecar } from './fake.js'
 import { answerSidecarRequest, SidecarServerError } from './server-methods.js'
 import { Session } from '../sessions/session.js'
 import { bootTestServer, openStateDb } from '../test/harness.js'
+import { admission, bootOwnerAttachment, ownerHelpers, sid as ownedSid, snapshot as ownerSnapshot } from '../test/gateway-owner.js'
 
 const fixtures = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')
 const recorded = (JSON.parse(readFileSync(join(fixtures, 'server.json'), 'utf8')) as Record<string, { params: Record<string, unknown>; result: unknown }[]>)['server.session_list']![0]!
@@ -437,6 +438,114 @@ describe('server.session_branch, session_update, session_handoff, session_compre
       }
       expect(await ask('server.background_list', {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
       expect(await stored('agentforeign')).toMatchObject({ title: 'agentforeign', pinned: false, archived: false })
+    } finally {
+      await s.close()
+    }
+  })
+})
+
+describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
+  it('lists the profile sessions waiting on an approval or question and answers another session\'s question', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+      const save = async (session_id: string, profile: string) => {
+        await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, updated_at: 1_792_500_000, messages: [{ role: 'user', content: session_id, timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      }
+      await save('agentcaller', 'default')
+      await save('agentpeer', 'default')
+      await save('agentasker', 'default')
+      await save('agentforeign', 'other')
+      s.deps.pending.submitApproval('agentpeer', { approval_id: 'approval-1', command: 'rm -rf build', description: 'delete build output' })
+      s.deps.pending.submitClarify('agentasker', { clarify_id: 'clarify-1', question: 'Which branch?', choices_offered: ['main', 'release'], timeout_seconds: 600, requested_at: 1_792_500_000 })
+      s.deps.pending.submitClarify('agentcaller', { clarify_id: 'clarify-own', question: 'Ship it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      s.deps.pending.submitClarify('agentforeign', { clarify_id: 'clarify-foreign', question: 'Other profile?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      type Method = 'server.pending_list' | 'server.clarify_respond'
+      const ask = async (method: Method, params: Record<string, unknown>, callerId = 'agentcaller') => {
+        const answer = await sidecar.serverRequest(method, { caller_session_id: callerId, ...params })
+        return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) as Record<string, unknown> }
+      }
+      const routePending = async (kind: 'approval' | 'clarify', sid: string) => ((await (await s.get(`/api/${kind}/pending?session_id=${sid}`)).json()) as { pending: unknown }).pending
+
+      // Every session in the caller's profile that holds a prompt, each prompt as its pending route ships it.
+      const listed = await ask('server.pending_list', {})
+      expect(listed).toEqual({ result: { pending: [
+        { session_id: 'agentasker', kind: 'clarify', id: 'clarify-1', pending_count: 1, prompt: await routePending('clarify', 'agentasker') },
+        { session_id: 'agentcaller', kind: 'clarify', id: 'clarify-own', pending_count: 1, prompt: await routePending('clarify', 'agentcaller') },
+        { session_id: 'agentpeer', kind: 'approval', id: 'approval-1', pending_count: 1, prompt: await routePending('approval', 'agentpeer') },
+      ] } })
+      expect(listed).toMatchObject({ result: { pending: [{ prompt: { question: 'Which branch?', choices_offered: ['main', 'release'] } }, {}, { prompt: { command: 'rm -rf build', description: 'delete build output' } }] } })
+      expect(await ask('server.pending_list', { session_id: 'agentpeer' })).toMatchObject({ result: { pending: [{ session_id: 'agentpeer', kind: 'approval', id: 'approval-1' }] } })
+      expect(await ask('server.pending_list', {}, 'agentforeign')).toMatchObject({ result: { pending: [{ session_id: 'agentforeign', id: 'clarify-foreign' }] } })
+      expect(await ask('server.pending_list', { session_id: 'agentforeign' })).toMatchObject({ error: { message: 'no Talaria session agentforeign in this profile', data: { condition: 'target_unknown' } } })
+
+      // The answer reaches the parked Agent and the session's question clears.
+      const relayed: unknown[] = []
+      sidecar.respond('clarify.respond', (params) => { relayed.push({ session_id: params.session_id, clarify_id: params.clarify_id, response: params.response }); return { ok: true } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentasker', clarify_id: 'clarify-1', answer: 'release' })).toEqual({ result: { ok: true, response: 'release' } })
+      expect(relayed).toEqual([{ session_id: 'agentasker', clarify_id: 'clarify-1', response: 'release' }])
+      expect(await routePending('clarify', 'agentasker')).toBeNull()
+      expect(await ask('server.pending_list', { session_id: 'agentasker' })).toEqual({ result: { pending: [] } })
+
+      // Self, cross-profile and stale answers are refused and relay nothing.
+      expect(await ask('server.clarify_respond', { session_id: 'agentcaller', clarify_id: 'clarify-own', answer: 'yes' })).toMatchObject({ error: { data: { condition: 'self_target' } } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentforeign', clarify_id: 'clarify-foreign', answer: 'yes' })).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentasker', clarify_id: 'clarify-1', answer: 'main' })).toMatchObject({ error: { message: 'Clarification prompt expired or not found. The agent may have already proceeded.', data: { condition: 'stale' } } })
+      expect(relayed).toHaveLength(1)
+      expect(await routePending('clarify', 'agentcaller')).toMatchObject({ clarify_id: 'clarify-own' })
+      expect(s.deps.pending.clarifyPending('agentforeign').pending).toMatchObject({ clarify_id: 'clarify-foreign' })
+      expect(await ask('server.pending_list', {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+
+      // An answer never steers a session with more access than the caller: YOLO, or a toolset the caller lacks.
+      await save('agentyolo', 'default')
+      await s.deps.sessions.setYolo('agentyolo', true)
+      s.deps.pending.submitClarify('agentyolo', { clarify_id: 'clarify-yolo', question: 'Delete it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      await save('agentwider', 'default')
+      const wider = await s.deps.sessionStore.get('agentwider')
+      wider.enabled_toolsets = ['file', 'terminal']
+      await s.deps.sessionStore.save(wider)
+      s.deps.pending.submitClarify('agentwider', { clarify_id: 'clarify-wider', question: 'Run it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null }))
+      const narrow = await s.deps.sessionStore.get('agentcaller')
+      narrow.enabled_toolsets = ['file']
+      await s.deps.sessionStore.save(narrow)
+      expect(await ask('server.clarify_respond', { session_id: 'agentyolo', clarify_id: 'clarify-yolo', answer: 'yes' })).toMatchObject({ error: { message: 'session agentyolo has more access than this one (YOLO is on)', data: { condition: 'exceeds_caller' } } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentwider', clarify_id: 'clarify-wider', answer: 'yes' })).toMatchObject({ error: { message: 'session agentwider has more access than this one (toolsets: terminal)', data: { condition: 'exceeds_caller' } } })
+      expect(relayed).toHaveLength(1)
+      expect(await ask('server.pending_list', { session_id: 'agentyolo' })).toMatchObject({ result: { pending: [{ id: 'clarify-yolo' }] } })
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('lists the prompts of a session its profile\'s native owner holds and refuses to answer them', async () => {
+    const { s, sidecar } = await bootOwnerAttachment()
+    try {
+      await s.deps.sessionStore.save(new Session({ session_id: 'agentcaller', title: 'agentcaller', profile: 'default', updated_at: 1_792_500_000, messages: [{ role: 'user', content: 'go', timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      const prompts = [
+        { kind: 'approval', prompt_id: 'approval-native', execution_generation: 1, command: 'echo fixture', description: 'Approve fixture?', choices: ['once', 'deny'] },
+        { kind: 'clarify', prompt_id: 'clarify-native', execution_generation: 1, question: 'Which color?', choices: ['red', 'blue'] },
+      ]
+      const owner = await ownerHelpers(() => ({ s, sidecar })).observeOwner(ownerSnapshot({ running: true, pending: [admission()], prompts }))
+      const ask = async (method: 'server.pending_list' | 'server.clarify_respond', params: Record<string, unknown>) => {
+        const answer = await sidecar.serverRequest(method, { caller_session_id: 'agentcaller', ...params })
+        return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) as Record<string, unknown> }
+      }
+
+      // Discovery reaches the owner's prompts, each as the pending routes ship them.
+      const listed = await ask('server.pending_list', {})
+      expect(listed).toMatchObject({ result: { pending: [
+        { session_id: ownedSid, kind: 'approval', id: 'approval-native', pending_count: 1, prompt: { command: 'echo fixture' } },
+        { session_id: ownedSid, kind: 'clarify', id: 'clarify-native', pending_count: 1, prompt: { question: 'Which color?' } },
+      ] } })
+      expect(await ask('server.pending_list', { session_id: ownedSid })).toMatchObject({ result: { pending: [{ session_id: ownedSid, id: 'approval-native' }, { session_id: ownedSid, id: 'clarify-native' }] } })
+
+      // Its owner's access cannot be compared with the caller's, so an answer, which steers its turn, is refused.
+      expect(await ask('server.clarify_respond', { session_id: ownedSid, clarify_id: 'clarify-native', answer: 'blue' })).toMatchObject({ error: { data: { condition: 'exceeds_caller' } } })
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).not.toContainEqual(expect.objectContaining({ action: 'clarify' }))
+      owner.finish()
+      await owner.read
     } finally {
       await s.close()
     }

@@ -42,7 +42,7 @@ import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
 import { sidebarListSelection } from './api/sessions-router.js'
-import { sessionBackgroundTasks } from './api/chat-router.js'
+import { clarifyRespond, pendingPrompt, sessionBackgroundTasks } from './api/chat-router.js'
 import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { JsonStorage } from './sessions/storage/json.js'
@@ -760,10 +760,29 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   /** A session in the caller's profile (the caller included); another profile's, or another person's, reads as unknown. */
   const visibleTarget = async (caller: Session, targetId: string): Promise<Session> => {
     const target = await storedSession(targetId)
-    // TAL-48: another person's session (or, for a person, an unowned one) is as unknown as another profile's.
-    if (!target || !profilesMatch(target.profile, caller.profile) || !sessions.personMaySee(target.owner_person_id)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
+    if (!target || !inCallerScope(caller, target)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
     return target
   }
+  // TAL-48: another person's session (or, for a person, an unowned one) is as unknown as another profile's.
+  const inCallerScope = (caller: Session, target: Session): boolean => profilesMatch(target.profile, caller.profile) && sessions.personMaySee(target.owner_person_id)
+  /**
+   * TAL-1168: whether the caller may read and answer `sid`'s prompts: a Web session in its scope, or a session with no
+   * Web document that a native owner holds in the caller's profile and its person may see.
+   */
+  const inPromptScope = async (caller: Session, sid: string): Promise<boolean> => {
+    const target = await storedSession(sid)
+    if (target) return inCallerScope(caller, target)
+    return isSafeSessionId(sid) && (await sessions.owner?.ownership(sid, activeProfile())) === true && await sessions.personMaySeeForeign(sid)
+  }
+  const promptTarget = async (caller: Session, sid: string): Promise<string> => {
+    if (!(await inPromptScope(caller, sid))) throw new SidecarServerError(`no Talaria session ${sid} in this profile`, 'target_unknown')
+    return sid
+  }
+  /** TAL-1168: the oldest approval and clarify `sid` waits on, each with its queue's depth, as the pending routes ship them. */
+  const pendingEntries = async (sid: string) => (await Promise.all((['approval', 'clarify'] as const).map(async (kind) => {
+    const { pending: prompt, pending_count } = await pendingPrompt(deps, sid, kind)
+    return prompt ? [{ session_id: sid, kind, id: str(kind === 'approval' ? prompt.approval_id : prompt.clarify_id), pending_count, prompt }] : []
+  }))).flat()
   const writeRefusal = async (target: Session): Promise<string | null> => (await sessions.readOnlyReason(target))
     ?? ((await sessions.isSubagentViewOnly(target.session_id)) ? 'Subagent sessions are view-only and cannot be written from WebUI' : null)
   type ManagedAction = 'branch' | 'duplicate' | 'title' | 'project_id' | 'pinned' | 'archived'
@@ -857,6 +876,30 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return { session_id: target.session_id, summary: (await sessions.compressNow(target.session_id, null)).summary }
     }),
     'server.background_list': ({ caller_session_id }) => asCaller(caller_session_id, (caller) => sessionBackgroundTasks(deps, caller)),
+    // TAL-1168: the prompts behind `/api/{approval,clarify}/pending` and the service behind `/api/clarify/respond`.
+    'server.pending_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => {
+      if (session_id) return { pending: await pendingEntries(await promptTarget(caller, session_id)) }
+      // The prompts this server holds, and those of the native-owned sessions it watches in the caller's profile.
+      const sids: string[] = []
+      for (const sid of [...new Set([...pending.pendingSessionKeys(), ...sessions.owner?.promptedSessions(activeProfile()) ?? []])].sort()) {
+        if (await inPromptScope(caller, sid)) sids.push(sid)
+      }
+      return { pending: (await Promise.all(sids.map(pendingEntries))).flat() }
+    }),
+    'server.clarify_respond': ({ caller_session_id, session_id, clarify_id, answer }) => asCaller(caller_session_id, async (caller) => {
+      if ((await promptTarget(caller, session_id)) === caller.session_id) throw new SidecarServerError('a session cannot answer its own question; it is addressed to the user', 'self_target')
+      // An answer steers the target's turn, so it never reaches a session with more access than the caller's own. A
+      // native-owned session with no Web document runs with its owner's access, which this server cannot compare.
+      const target = await storedSession(session_id)
+      if (!target) throw new SidecarServerError(`session ${session_id} runs with its native owner's access, which cannot be compared with this one's`, 'exceeds_caller')
+      await assertNoWiderThanCaller(caller, target)
+      try {
+        return await clarifyRespond(deps, target.session_id, clarify_id, answer)
+      } catch (error) {
+        if (error instanceof HttpFailure && error.extra.stale === true) throw new SidecarServerError(error.message, 'stale')
+        throw error
+      }
+    }),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {

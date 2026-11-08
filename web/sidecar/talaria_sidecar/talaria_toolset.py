@@ -1,4 +1,4 @@
-"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167): Talaria-owned tools that run on the Web server.
+"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167, TAL-1168): Talaria-owned tools that run on the Web server.
 
 Each handler forwards its call to the server over the sidecar's RPC channel (``rpc.call_server``) and returns the
 server's result unchanged. The toolset is registered once the Agent imports, and is never one of a profile's default
@@ -20,7 +20,7 @@ TOOLSET = "talaria"
 # The Agent describes a registry-only toolset as "Plugin toolset: <name>"; the catalog shows this instead.
 TOOLSET_DESCRIPTION = (
     "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their "
-    "turns, manage their queued messages, and list your background work."
+    "turns, manage their queued messages, see what they wait on and answer their questions, and list your background work."
 )
 
 SESSION_LIST_SCHEMA = {
@@ -193,6 +193,34 @@ BACKGROUND_LIST_SCHEMA = {
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
+PENDING_LIST_SCHEMA = {
+    "name": "pending_list",
+    "description": (
+        "List the Talaria sessions in this profile that wait on an approval or a clarify question: each session's oldest "
+        "prompt of each kind (its id, and the command or question with its choices) and how many of that kind it holds. "
+        "Give session_id for one session."
+    ),
+    "parameters": {"type": "object", "properties": {"session_id": _ANY_SESSION_ID}, "required": []},
+}
+
+CLARIFY_RESPOND_SCHEMA = {
+    "name": "clarify_respond",
+    "description": (
+        "Answer another Talaria session's clarify question, from pending_list, as its user would. A question with several "
+        "steps takes {\"answers\": {\"q0\": \"...\", \"q1\": [\"...\"]}} as JSON. Your own session's questions are for the user; "
+        "an answered or expired question is refused as stale, and a session with more access than yours as exceeds_caller."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": {"type": "string", "description": "The session_id of another session in this profile."},
+            "clarify_id": {"type": "string", "description": "The question's id from pending_list."},
+            "answer": {"type": "string", "description": "The reply: one of its choices or your own text."},
+        },
+        "required": ["session_id", "clarify_id", "answer"],
+    },
+}
+
 # The server bounds a handoff summary at two 60-second attempts; a compression has no deadline of its own.
 SESSION_HANDOFF_TIMEOUT_S = 150.0
 SESSION_COMPRESS_TIMEOUT_S = 600.0
@@ -250,6 +278,13 @@ def _update_fields(args: dict, params: dict) -> None:
             params[field] = value.strip() if isinstance(value, str) else value
 
 
+def _optional_session(args: dict, params: dict) -> None:
+    """``pending_list`` narrows to one session only when given one."""
+    target = args.get("session_id")
+    if isinstance(target, str) and target.strip():
+        params["session_id"] = target.strip()
+
+
 def _tool(method: str, name: str, fields: tuple[str, ...], extra=None):
     """A handler that sends the caller and the named string ``fields`` to ``method``; the server checks the target.
     ``extra`` adds optional params and may return the call's timeout."""
@@ -283,6 +318,8 @@ session_update = _tool("server.session_update", "session_update", ("session_id",
 session_handoff = _tool("server.session_handoff", "session_handoff", ("session_id",), lambda args, params: SESSION_HANDOFF_TIMEOUT_S)
 session_compress = _tool("server.session_compress", "session_compress", ("session_id",), lambda args, params: SESSION_COMPRESS_TIMEOUT_S)
 background_list = _tool("server.background_list", "background_list", ())
+pending_list = _tool("server.pending_list", "pending_list", (), _optional_session)
+clarify_respond = _tool("server.clarify_respond", "clarify_respond", ("session_id", "clarify_id", "answer"))
 
 _TOOLS = (
     (SESSION_LIST_SCHEMA, session_list, "🗂️"),
@@ -298,6 +335,8 @@ _TOOLS = (
     (SESSION_HANDOFF_SCHEMA, session_handoff, "📝"),
     (SESSION_COMPRESS_SCHEMA, session_compress, "🗜️"),
     (BACKGROUND_LIST_SCHEMA, background_list, "🧵"),
+    (PENDING_LIST_SCHEMA, pending_list, "🔔"),
+    (CLARIFY_RESPOND_SCHEMA, clarify_respond, "🙋"),
 )
 
 

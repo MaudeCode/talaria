@@ -219,6 +219,8 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
         ("session_handoff", "talaria", "session_handoff"),
         ("session_compress", "talaria", "session_compress"),
         ("background_list", "talaria", "background_list"),
+        ("pending_list", "talaria", "pending_list"),
+        ("clarify_respond", "talaria", "clarify_respond"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # session_wait and session_compress outlast the Agent's generic tool deadline by their own server call's timeout.
@@ -238,9 +240,12 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
     ("session_handoff", "server.session_handoff", 0),
     ("session_compress", "server.session_compress", 0),
     ("background_list", "server.background_list", 0),
+    ("pending_list", "server.pending_list", 0),
+    ("pending_list", "server.pending_list", 1),
+    ("clarify_respond", "server.clarify_respond", 0),
 ])
 def test_session_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, index) -> None:
-    """TAL-1165, TAL-1166: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
+    """TAL-1165, TAL-1166, TAL-1168: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
     from types import SimpleNamespace
 
     from talaria_sidecar.methods import chat
@@ -262,7 +267,8 @@ def test_session_tools_forward_their_call_and_return_the_server_result_unchanged
     assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
 
     # A missing required string never reaches the server; the server's refusal reaches the agent with its condition.
-    for missing in [key for key, value in args.items() if isinstance(value, str) and key not in ("title", "project_id")]:
+    optional = ("session_id",) if tool == "pending_list" else ("title", "project_id")
+    for missing in [key for key, value in args.items() if isinstance(value, str) and key not in optional]:
         assert json.loads(handler({k: v for k, v in args.items() if k != missing}, session_id="20261020_130000_tip")) == {"error": f"{missing} is required", "condition": "invalid_params"}
     assert len(sent) == 1
 

@@ -44,6 +44,22 @@ export async function sessionBackgroundTasks(deps: AppDeps, s: Session, kind?: B
   return { session_id: s.session_id, ...snapshot, delegation_status, tasks: kind ? snapshot.tasks.filter((t) => t.kind === kind) : snapshot.tasks }
 }
 
+/** TAL-1168: the oldest pending approval or clarify of `sid` and the queue's depth, as its pending route answers them. */
+export async function pendingPrompt(deps: AppDeps, sid: string, kind: 'approval' | 'clarify'): Promise<{ pending: Record<string, unknown> | null; pending_count: number }> {
+  if (await deps.sessions.owner?.isOwned(sid)) return deps.sessions.owner!.pending(sid, kind)
+  return kind === 'approval' ? deps.pending.approvalPending(sid) : deps.pending.clarifyPending(sid)
+}
+
+/** `/api/clarify/respond`'s answer to `reply`, or its refusal; the `clarify_respond` tool shares it (TAL-1168). */
+export async function clarifyRespond(deps: AppDeps, sid: string, clarifyId: string, reply: Parameters<AppDeps['turns']['respondClarify']>[2]): Promise<{ ok: true; response?: string }> {
+  const result = await deps.turns.respondClarify(sid, clarifyId, reply)
+  if (result.stale) throw new HttpFailure(409, 'Clarification prompt expired or not found. The agent may have already proceeded.', { ok: false, stale: true })
+  if (result.invalid) throw new HttpFailure(400, 'answers must answer every question of the pending clarification', { ok: false })
+  if (!result.ok) throw new HttpFailure(503, result.error ?? 'clarify relay failed', { ok: false })
+  // A vault answer is never echoed back.
+  return result.response === undefined ? { ok: true } : { ok: true, response: result.response }
+}
+
 /** A session this request's profile may see (TAL-372 background work never crosses owners). */
 async function visibleSession(ctx: RequestContext, sid: string): Promise<Session> {
   if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
@@ -177,7 +193,7 @@ export const chatRouter = os.router({
     })),
   },
   approval: {
-    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.owner?.isOwned(str(input.session_id))) ? ctx.deps.sessions.owner!.pending(str(input.session_id), 'approval') : ctx.deps.pending.approvalPending(str(input.session_id)))),
+    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(() => pendingPrompt(ctx.deps, str(input.session_id), 'approval'))),
     respond: os.approval.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -194,7 +210,7 @@ export const chatRouter = os.router({
     })),
   },
   clarify: {
-    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.owner?.isOwned(str(input.session_id))) ? ctx.deps.sessions.owner!.pending(str(input.session_id), 'clarify') : ctx.deps.pending.clarifyPending(str(input.session_id)))),
+    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(() => pendingPrompt(ctx.deps, str(input.session_id), 'clarify'))),
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -202,12 +218,7 @@ export const chatRouter = os.router({
       // takes a decline (TAL-887).
       const reply = input.decline === true ? null : input.answers ?? str(input.response ?? input.answer ?? input.choice).trim()
       if (reply === '') throw new HttpError(400, 'response is required')
-      const result = await ctx.deps.turns.respondClarify(sid, str(input.clarify_id), reply)
-      if (result.stale) throw new HttpError(409, 'Clarification prompt expired or not found. The agent may have already proceeded.', { ok: false, stale: true })
-      if (result.invalid) throw new HttpError(400, 'answers must answer every question of the pending clarification', { ok: false })
-      if (!result.ok) throw new HttpError(503, result.error ?? 'clarify relay failed', { ok: false })
-      // A vault answer is never echoed back.
-      return result.response === undefined ? { ok: true } : { ok: true, response: result.response }
+      return clarifyRespond(ctx.deps, sid, str(input.clarify_id), reply)
     })),
   },
   goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => {
