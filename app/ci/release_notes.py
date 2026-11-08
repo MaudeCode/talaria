@@ -23,6 +23,8 @@ FILENAME = re.compile(r"TAL-([1-9][0-9]*)\.json")
 # The What's New announcement contract, generated from web/packages/contracts (TAL-1616).
 ANNOUNCEMENT_SCHEMA = Path(__file__).resolve().parents[2] / "contracts/whats-new.schema.json"
 ANNOUNCED = ("app", "web")
+# App Store Connect's limit on a build's TestFlight "What to Test" text.
+WHATS_NEW_LIMIT = 4000
 
 
 @functools.cache
@@ -611,6 +613,30 @@ def generate(previous, target, version, output, component="app"):
     print(f"Generated {version} from {previous}..{target} ({len(selected)} fragments) in {output}.")
 
 
+def testflight(previous, target, version):
+    """The App's TestFlight "What to Test" text: the App release range in plain text, highlights first per category."""
+    previous, _, selected = release_range(previous, target, version, "app")
+    sections = {category: [] for category in CATEGORIES}
+    for _, _, entry in component_entries(selected, "app"):
+        sections[entry["category"]].append(entry)
+    if not any(sections.values()):
+        return f"No App changes since {previous}.\n"
+    lines = [f"Changes since {previous}"]
+    for category, entries in sections.items():
+        if entries:
+            lines.extend(["", category, *(f"- {entry['summary']}" for entry in sorted(entries, key=lambda entry: not entry["highlight"]))])
+    total = sum(line.startswith("- ") for line in lines)
+    text = "\n".join(lines) + "\n"
+    while len(text) > WHATS_NEW_LIMIT and len(lines) > 1:
+        # Drop whole lines from the end, never leaving a category line without its entries.
+        lines.pop()
+        while len(lines) > 1 and not lines[-1].startswith("- "):
+            lines.pop()
+        hidden = total - sum(line.startswith("- ") for line in lines)
+        text = "\n".join([*lines, "", f"…and {hidden} more change{'s' if hidden != 1 else ''}"]) + "\n"
+    return text
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -628,13 +654,18 @@ def main():
     announce.add_argument("--target", required=True)
     announce.add_argument("--version", required=True, help="X.Y.Z, or a Web X.Y.Z-exp.<source> Experimental version")
     announce.add_argument("--output", type=Path, required=True)
+    notes = commands.add_parser("testflight", help="write the App build's plain-text TestFlight What to Test notes")
+    notes.add_argument("--previous", default="auto", help="previous release tag; default: highest lower reachable app tag")
+    notes.add_argument("--target", required=True)
+    notes.add_argument("--version", required=True)
+    notes.add_argument("--output", type=Path, required=True)
     published = commands.add_parser("previous-published", help="resolve the last successful upload using GitHub Actions history")
     published.add_argument("--target", required=True)
     published.add_argument("--version", required=True)
     published.add_argument("--repo", required=True)
     published.add_argument("--require-latest", action="store_true", help="bootstrap must advance the latest successful TestFlight publication")
     args = parser.parse_args()
-    if args.command in ("generate", "announcement"):
+    if args.command in ("generate", "announcement", "testflight"):
         args.output = args.output.resolve()
     try:
         os.chdir(git("rev-parse", "--show-toplevel"))
@@ -642,6 +673,10 @@ def main():
             validate(args.base, args.target)
         elif args.command == "previous-published":
             print(previous_published(args.target, args.version, args.repo, args.require_latest))
+        elif args.command == "testflight":
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(testflight(args.previous, args.target, args.version), encoding="utf-8")
+            print(f"Wrote the App {args.version} TestFlight notes to {args.output}.")
         elif args.command == "announcement":
             payload = announcement(args.target, args.version, args.component)
             if payload is None:

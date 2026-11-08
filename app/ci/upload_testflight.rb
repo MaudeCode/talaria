@@ -11,7 +11,8 @@ require_relative "app_store_connect"
 class TestFlightUpload < AppStoreConnectClient
   # Polls every 10 s for up to 30 minutes: Apple usually processes a build in a few minutes, and a coarser poll only
   # adds to every release (TAL-414).
-  def upload(path, version, number, sha256, attempts: 180, delay: 10)
+  # `whats_new` becomes the build's en-US TestFlight "What to Test" text once the build reads back VALID.
+  def upload(path, version, number, sha256, whats_new, attempts: 180, delay: 10)
     unless version.match?(/\A\d+\.\d+\.\d+\z/) && number.match?(/\A[1-9]\d*\z/) &&
            sha256.match?(/\A[a-f0-9]{64}\z/) && Digest::SHA256.file(path).hexdigest == sha256
       raise Error, "Invalid or changed TestFlight artifact"
@@ -86,8 +87,9 @@ class TestFlightUpload < AppStoreConnectClient
           end
           if build.dig("attributes", "processingState") == "VALID" && current_file.dig("attributes", "assetDeliveryState", "state") == "COMPLETE"
             warn format("TestFlight: build %s VALID %.0f s after the transfer began", build_id, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+            set_whats_new(build_id, whats_new)
             return {"buildId" => build_id, "uploadId" => upload_id, "ipaSha256" => sha256,
-                    "version" => version, "buildNumber" => number.to_i, "processingState" => "VALID"}
+                    "version" => version, "buildNumber" => number.to_i, "processingState" => "VALID", "whatsNewSet" => true}
           end
         end
       end
@@ -97,6 +99,23 @@ class TestFlightUpload < AppStoreConnectClient
   end
 
   private
+
+  # Updates the en-US localization when one exists (Apple may create it, or an earlier attempt did), so a retry never
+  # adds a second one.
+  def set_whats_new(build_id, text)
+    existing = fetch_paginated_json("/v1/builds/#{build_id}/betaBuildLocalizations", {"limit" => "200"})
+      .find { |localization| localization.dig("attributes", "locale") == "en-US" }
+    if existing
+      fetch_json("/v1/betaBuildLocalizations/#{existing.fetch("id")}", method: "PATCH", body: {data: {
+        type: "betaBuildLocalizations", id: existing.fetch("id"), attributes: {whatsNew: text}
+      }})
+    else
+      fetch_json("/v1/betaBuildLocalizations", method: "POST", body: {data: {
+        type: "betaBuildLocalizations", attributes: {locale: "en-US", whatsNew: text},
+        relationships: {build: {data: {type: "builds", id: build_id}}}
+      }})
+    end
+  end
 
   def builds(app, version, number)
     fetch_paginated_json("/v1/builds", {"filter[app]" => app, "filter[preReleaseVersion.version]" => version,
@@ -156,14 +175,15 @@ end
 
 if $PROGRAM_NAME == __FILE__
   begin
-    raise ArgumentError, "usage: upload_testflight.rb IPA VERSION BUILD SHA256" unless ARGV.length == 4
+    raise ArgumentError, "usage: upload_testflight.rb IPA VERSION BUILD SHA256 NOTES" unless ARGV.length == 5
 
     Tempfile.create(["talaria-asc-", ".p8"], ENV["RUNNER_TEMP"]) do |key|
       key.chmod(0o600)
       key.write(ENV.fetch("APP_STORE_CONNECT_PRIVATE_KEY").gsub('\\n', "\n"))
       key.flush
       env = ENV.to_h.merge("APP_STORE_CONNECT_KEY_PATH" => key.path)
-      puts JSON.generate(TestFlightUpload.new(env: env).upload(*ARGV))
+      ipa, version, number, sha256, notes = ARGV
+      puts JSON.generate(TestFlightUpload.new(env: env).upload(ipa, version, number, sha256, File.read(notes, encoding: "UTF-8")))
     end
   rescue StandardError => error
     warn error.message

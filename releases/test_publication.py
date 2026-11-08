@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -76,13 +77,18 @@ class PublicationTests(unittest.TestCase):
 
     def test_app_receipt_requires_verified_apple_readback(self):
         plan = {"releaseSet": "a" * 40, "changed": {"app": True}, "contracts": {"appWeb": {"app": [1]}},
-                "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0"}}}
+                "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0", "sourceRevision": "a" * 40}}}
         build = {"gate": "buildApp", "result": "success", "sourceRevision": plan["releaseSet"],
                  "tag": "app-v1.9.0", "buildNumber": 7, "ipaSha256": "b" * 64}
         apple = {"buildId": "synthetic-build", "uploadId": "synthetic-upload", "version": "1.9.0",
-                 "buildNumber": 7, "ipaSha256": "b" * 64, "processingState": "VALID"}
+                 "buildNumber": 7, "ipaSha256": "b" * 64, "processingState": "VALID", "whatsNewSet": True}
         env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "2"}
-        for field in (None, "version", "buildNumber", "ipaSha256", "processingState", "buildId", "uploadId"):
+
+        def notes(command, **kwargs):
+            self.assertEqual(command[2:], ["testflight", "--target", "a" * 40, "--version", "1.9.0", "--output", command[-1]])
+            Path(command[-1]).write_text("Changes since app-v1.8.0\n")
+
+        for field in (None, "version", "buildNumber", "ipaSha256", "processingState", "buildId", "uploadId", "whatsNewSet"):
             with self.subTest(field=field), TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 (root / "plan.json").write_text(json.dumps(plan))
@@ -92,9 +98,17 @@ class PublicationTests(unittest.TestCase):
                 output = root / "publication/receipt.json"
                 argv = ["publish.py", "app", "--plan", str(root / "plan.json"), "--build", str(root / "build.json"),
                         "--directory", str(root), "--output", str(output)]
+                uploaded = []
+
+                def upload(command, **kwargs):
+                    notes = Path(command[-1])
+                    uploaded.append((command, notes.read_text() if notes.is_file() else None))
+                    return json.dumps(response)
+
                 with patch("sys.argv", argv), patch.dict(os.environ, env), patch("publish.authorize"), \
                         patch("publish.verify_ipa", return_value=build["ipaSha256"]), \
-                        patch("publish.subprocess.check_output", return_value=json.dumps(response)) as upload:
+                        patch("publish.subprocess.run", side_effect=notes), \
+                        patch("publish.subprocess.check_output", side_effect=upload):
                     if field:
                         with self.assertRaisesRegex(ValueError, "readback differs"):
                             publish.main()
@@ -103,7 +117,9 @@ class PublicationTests(unittest.TestCase):
                         publish.main()
                         self.assertEqual(json.loads(output.read_text())["gate"], "uploadApp")
                         self.assertEqual(json.loads(output.with_name("apple-build.json").read_text()), apple)
-                    self.assertEqual(upload.call_args.args[0][-1], build["ipaSha256"])
+                    [(command, text)] = uploaded
+                    self.assertEqual(command[-2:], [build["ipaSha256"], command[-1]])
+                    self.assertEqual(text, "Changes since app-v1.8.0\n")
 
     def test_partial_release_publication_resumes_without_recreating_releases(self):
         for failure in ("web-create", "root-upload", "root-edit", "root-upload-after", "root-edit-after"):
@@ -312,6 +328,40 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue(any("releases/recover.py" in step.get("run", "") for step in app_steps[:upload_index]))
         self.assertFalse(any("cli.py assemble" in step.get("run", "") for step in app_steps[:upload_index]),
                          "Partial publication receipts must not be assembled as a dry-run candidate")
+
+    def test_recovery_runs_the_reviewed_testflight_helpers_from_its_snapshot(self):
+        """A recovery checks out an older source, so publish.py must find its upload helpers in the reviewed snapshot."""
+        root = Path(__file__).resolve().parents[1]
+        recovery = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/recover-cutover.yml")], text=True))
+        script = next(step["run"] for step in recovery["jobs"]["app"]["steps"] if "reviewed-publisher" in step.get("run", "")
+                      and "git archive" in step["run"])
+        archived = re.search(r'git archive "\$GITHUB_WORKFLOW_SHA" (.*?) \|', script, re.S)[1].replace("\\\n", " ").split()
+        source = (root / "releases/publish.py").read_text()
+        self.assertFalse('ROOT / "app/ci' in source, "publish.py must reach app/ci helpers through TOOLS")
+        helpers = re.findall(r'TOOLS / "([^"]+)"', source)
+        self.assertTrue(helpers)
+        with TemporaryDirectory() as temporary:
+            snapshot = Path(temporary)
+            archive = subprocess.run(["git", "-C", str(root), "archive", "HEAD", *archived], check=True, capture_output=True).stdout
+            subprocess.run(["tar", "-x", "-C", str(snapshot)], input=archive, check=True)
+            for helper in helpers:
+                self.assertTrue((snapshot / helper).is_file(), f"{helper} is missing from the reviewed snapshot")
+            # The snapshot's notes generator validates the checkout's fragments, announcements included.
+            checkout = snapshot / "checkout"
+            (checkout / "changelog.d").mkdir(parents=True)
+            (checkout / "changelog.d/TAL-1.json").write_text(json.dumps({"entries": [{
+                "category": "Added", "summary": "Pinned chats", "highlight": False,
+                "announcement": {"title": "Pinned chats", "description": "Keep favorites on top.", "icon": "chat"}}]}))
+            git = ["git", "-C", str(checkout), "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                   "-c", "commit.gpgsign=false"]
+            for command in (["init", "-q"], ["add", "."], ["commit", "-q", "-m", "fixture"]):
+                subprocess.run([*git, *command], check=True)
+            notes = snapshot / "notes.txt"
+            subprocess.run([sys.executable, str(snapshot / "app/ci/release_notes.py"), "testflight", "--previous", "HEAD",
+                            "--target", "HEAD", "--version", "1.0.0", "--output", str(notes)], cwd=checkout, check=True)
+            self.assertEqual(notes.read_text(), "No App changes since HEAD.\n")
 
     def test_signing_uses_a_job_owned_keychain_that_is_always_deleted(self):
         root = Path(__file__).resolve().parents[1]

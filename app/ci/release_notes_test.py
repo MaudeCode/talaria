@@ -71,6 +71,40 @@ class ReleaseNotesTests(unittest.TestCase):
     def generate(self, *args, **kwargs):
         return self.cli("generate", "--target", "HEAD", "--version", "1.1.0", "--output", "out", *args, **kwargs)
 
+    def testflight_notes(self, *args, version="1.1.0", **kwargs):
+        self.cli("testflight", "--target", "HEAD", "--version", version, "--output", "out/notes.txt", *args, **kwargs)
+        return (self.root / "out/notes.txt").read_text(encoding="utf-8")
+
+    def test_testflight_notes_list_app_entries_by_category_in_plain_text(self):
+        self.git("tag", "app-v1.0.1")
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+            {"category": "Fixed", "summary": "Reconnect safely", "highlight": False},
+            {"category": "Added", "summary": "Web only", "highlight": False, "components": ["web"], "announce": False},
+            {"category": "Changed", "summary": "Relay only", "highlight": False, "components": ["relay"]},
+            {"category": "Added", "summary": "Shared boards", "highlight": False, "components": ["web", "app"], "announce": False},
+            {"category": "Added", "summary": "Pinned chats", "highlight": True, "announce": False},
+        ]}))
+        self.commit("TAL-2: mixed components")
+        self.assertEqual(self.testflight_notes(), "Changes since app-v1.0.1\n\nAdded\n- Pinned chats\n- Shared boards\n\nFixed\n- Reconnect safely\n")
+
+    def test_testflight_notes_fit_the_app_store_connect_limit_on_a_line_boundary(self):
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+            {"category": "Fixed", "summary": f"Fix number {index:03} " + "x" * 80, "highlight": False} for index in range(100)]}))
+        self.commit("TAL-2: many fixes")
+        notes = self.testflight_notes()
+        self.assertLessEqual(len(notes), 4000)
+        lines = notes.splitlines()
+        shown = sum(line.startswith("- Fix number") for line in lines)
+        self.assertEqual(lines[-1], f"…and {100 - shown} more changes")
+        self.assertTrue(all(len(line) == len("- Fix number 000 " + "x" * 80) for line in lines if line.startswith("- ")))
+
+    def test_testflight_notes_name_an_empty_range(self):
+        self.git("tag", "app-v1.0.1")
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+            {"category": "Fixed", "summary": "Web fix", "highlight": False, "components": ["web"]}]}))
+        self.commit("TAL-2: web only")
+        self.assertEqual(self.testflight_notes(), "No App changes since app-v1.0.1.\n")
+
     def test_app_relocation_preserves_history_and_rejects_fragment_edits(self):
         self.write("Talaria/App.swift", "// unchanged app\n")
         self.commit("fixture app")

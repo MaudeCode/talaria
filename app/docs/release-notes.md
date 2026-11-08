@@ -271,6 +271,30 @@ A malformed fragment stops the stamp before it writes; no baseline tag is needed
   `GET /api/whats-new` only while it names the running Web release; see
   `web/docs/talaria-updates.md` for presentation eligibility.
 
+## TestFlight What to Test
+
+Every App upload, Nightly and production, sets the build's en-US TestFlight
+"What to Test" text from these fragments. `releases/publish.py upload_testflight`
+runs `ci/release_notes.py testflight --target <source> --version <version>`, which
+uses the App range `generate` would use with its default `--previous`: everything
+since the highest lower `app-v` tag, so a Nightly lists every App change in its
+marketing-version train. The text is plain, with no Markdown:
+
+```text
+Changes since app-v1.24.1
+
+Added
+- Pinned chats stay at the top of the chat list.
+
+Fixed
+- Chats reconnect after an interrupted response.
+```
+
+Categories follow the Added, Changed, Fixed, Security order, highlighted entries
+first within each. Text over App Store Connect's 4000-character limit loses whole
+lines from the end and closes with `…and N more changes`. A range without App
+entries reads `No App changes since app-vX.Y.Z.`
+
 `sourceCommit` records the exact validated Git SHA and lets a later release find
 the correct baseline even when this release was built through manual dispatch.
 

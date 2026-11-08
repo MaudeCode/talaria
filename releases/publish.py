@@ -9,6 +9,7 @@ import json
 import os
 import plistlib
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -18,6 +19,10 @@ from pathlib import Path
 from cli import REPOSITORY, ROOT, load, receipt, require_latest_predecessor, run_url, unused_release, write
 from plan import git
 from release_set import BRIDGE_IMAGE, validate
+
+# This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the upload
+# helpers come from beside this file, and recover-cutover.yml archives each of them.
+TOOLS = Path(__file__).resolve().parents[1]
 
 
 @contextlib.contextmanager
@@ -71,15 +76,21 @@ def file_digest(path):
 
 
 def upload_testflight(ipa, component, digest):
-    """Upload a verified IPA; App Store Connect must read it back VALID with the same identity."""
-    with timed("TestFlight upload and processing to VALID"):
-        uploaded = subprocess.check_output([
-            "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(ipa), component["version"], str(component["buildNumber"]), digest,
-        ], text=True)
+    """Upload a verified IPA with the App's release notes as its What to Test text; App Store Connect must read it back
+    VALID with the same identity and the notes set. Notes come from the checkout in the working directory."""
+    with tempfile.TemporaryDirectory() as temporary:
+        notes = Path(temporary) / "testflight-notes.txt"
+        subprocess.run([sys.executable, str(TOOLS / "app/ci/release_notes.py"), "testflight", "--target", component["sourceRevision"],
+                        "--version", component["version"], "--output", str(notes)], check=True)
+        with timed("TestFlight upload and processing to VALID"):
+            uploaded = subprocess.check_output([
+                "ruby", str(TOOLS / "app/ci/upload_testflight.rb"), str(ipa), component["version"], str(component["buildNumber"]), digest,
+                str(notes),
+            ], text=True)
     result = json.loads(uploaded)
     if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
             or result.get("ipaSha256") != digest or result.get("processingState") != "VALID"
-            or not result.get("buildId") or not result.get("uploadId")):
+            or not result.get("buildId") or not result.get("uploadId") or result.get("whatsNewSet") is not True):
         raise ValueError("App Store Connect readback differs from the verified build")
     print(json.dumps(result, sort_keys=True))
     return result
