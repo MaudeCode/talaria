@@ -291,4 +291,3 @@ def test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it
     assert 'harness' not in out['disabled']['enabled'] and not decision_tools & set(out['disabled']['tools']), out['disabled']
     assert not decision_tools & set(out['disabled_override']['tools']), out['disabled_override']
     assert 'read_file' in out['disabled_override']['tools']
-
