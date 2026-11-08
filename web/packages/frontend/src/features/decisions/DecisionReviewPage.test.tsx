@@ -186,6 +186,11 @@ describe('decision review: answers (TAL-1964)', () => {
     expect(screen.getByRole('button', { name: 'Submit' })).toBeDisabled()
     await act(async () => { await router.navigate({ to: '/decisions/$reviewId', params: { reviewId: ID }, search: {} }) })
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled()
+    // Still readable: Next moves through the items without saving.
+    expect(screen.queryByRole('button', { name: 'Save & next' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(await screen.findByRole('heading', { name: 'Crash reports' })).toBeInTheDocument()
+    expect(api.answerDecision).not.toHaveBeenCalled()
   })
 
   it('clears an answer from the row menu', async () => {

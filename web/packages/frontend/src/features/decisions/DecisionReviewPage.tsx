@@ -215,7 +215,10 @@ function DecideView({ review, itemId, draft: drafts, failure, onDraft, onAnswer,
       )}
       <div className="flex flex-wrap gap-2 border-t border-border pt-4">
         <Button disabled={!previous} onClick={() => { if (previous) onOpen(previous) }}>{m.back()}</Button>
-        <Button variant="primary" className="ml-auto" disabled={closed || draft.value === null} onClick={saveNext}>{m.decision_save_next()}</Button>
+        {/* A closed review stays readable: Next only moves on. */}
+        {closed
+          ? <Button className="ml-auto" disabled={!next} onClick={() => { if (next) onOpen(next) }}>{m.decision_next()}</Button>
+          : <Button variant="primary" className="ml-auto" disabled={draft.value === null} onClick={saveNext}>{m.decision_save_next()}</Button>}
       </div>
     </section>
   )

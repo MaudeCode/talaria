@@ -3195,6 +3195,7 @@
   "decision_use_notes": "Use my notes as the answer",
   "decision_technical": "Technical details and sources",
   "decision_save_next": "Save & next",
+  "decision_next": "Next",
   "decision_answer_kept": "Your earlier answer is kept",
   "decision_needs_review": "This changed since you answered",
   "decision_conflict": "This answer changed elsewhere",
