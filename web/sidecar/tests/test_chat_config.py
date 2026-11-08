@@ -64,7 +64,8 @@ def test_turn_reads_config_once_and_refreshes_between_turns(monkeypatch, tmp_pat
         kwargs = FakeAgent.instances[-1].kwargs
         assert kwargs['disabled_toolsets'] == (['todo' if index == 0 else 'changed'] if configured else [])
         assert kwargs['checkpoints_enabled'] is configured
-        assert kwargs['enabled_toolsets'] == (override if override is not None else ['web'] if configured else ['file'])
+        # Profile defaults carry Talaria's harness toolset (TAL-1963); an override is sent as is.
+        assert kwargs['enabled_toolsets'] == (override if override is not None else ['web', 'harness'] if configured else ['file', 'harness'])
         if configured:
             assert kwargs['providers_allowed'] == ['provider-a']
             assert kwargs['checkpoint_max_snapshots'] == 7 + index
