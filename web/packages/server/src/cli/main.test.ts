@@ -15,6 +15,7 @@ const trial = vi.hoisted(() => ({
   resumed: false,
   mark: vi.fn<(stage: string) => void>(),
   attached: null as (() => Promise<void>) | null,
+  unanswered: [] as string[],
 }))
 
 vi.mock('./dotenv.js', () => ({ loadStartupEnv: vi.fn() }))
@@ -38,12 +39,20 @@ vi.mock('node:fs', async (original) => {
     try { fs.fsyncSync(fd) } finally { trial.mark('filesystem flush finished') }
   } }
 })
+// Version detection gets fixed git answers: the host checkout's index state must not spend the startup budget.
 vi.mock('node:child_process', async (original) => {
   const cp = await original<typeof import('node:child_process')>()
+  const answers: Record<string, string> = { 'rev-parse': '', describe: 'web-v0.0.0-test', diff: '' }
   return { ...cp, execFileSync: (...args: Parameters<typeof cp.execFileSync>) => {
-    const command = `${args[0]} ${['rev-parse', 'describe', 'diff-index', 'diff'].find((name) => args[1]?.includes(name)) ?? ''}`
+    const name = ['rev-parse', 'describe', 'diff-index', 'diff'].find((n) => args[1]?.includes(n)) ?? ''
+    const command = `${args[0]} ${name}`
     trial.mark(`${command} started`)
-    try { return cp.execFileSync(...args) } finally { trial.mark(`${command} finished`) }
+    try {
+      if (args[0] !== 'git') return cp.execFileSync(...args)
+      if (name in answers && !args[1]?.includes('--binary')) return answers[name]!
+      trial.unanswered.push(args[1]?.join(' ') ?? '')
+      throw new Error(`unanswered git call: ${args[1]?.join(' ')}`)
+    } finally { trial.mark(`${command} finished`) }
   } }
 })
 vi.mock('../config.js', async (original) => {
@@ -137,6 +146,8 @@ it('serves auth within 500 ms and refuses chat while a five-second handshake is 
     expect((await trial.deps!.sessionStore.get(session.session.session_id)).pending_user_message).toBeNull()
     // Supervisor loss is watched before any startup work, and retires through the listener's own close.
     expect(stages[0]?.stage).toBe('retirement registered')
+    expect(stages.map(({ stage }) => stage)).toEqual(expect.arrayContaining(['git describe started', 'git diff started']))
+    expect(trial.unanswered).toEqual([])
     expect(trial.attached).toBe((await listening).close)
     expect(process.env.TALARIA_WEB_WORKER).toBeUndefined()
   } finally {
