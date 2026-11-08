@@ -6,7 +6,7 @@ import { cn } from '../../ui/cn'
 export function Toaster() {
   const toasts = useToasts()
   return (
-    <div className="pointer-events-none fixed left-1/2 top-[max(18px,env(safe-area-inset-top,0px))] z-[1400] w-[min(92vw,460px)] -translate-x-1/2 max-[641px]:top-[calc(60px+env(safe-area-inset-top,0px))]" role="status" aria-live="polite" aria-atomic="false">
+    <div className="pointer-events-none fixed left-1/2 top-[max(18px,env(safe-area-inset-top,0px))] z-[1400] w-[min(92%,460px)] -translate-x-1/2 max-[641px]:top-[calc(60px+env(safe-area-inset-top,0px))]" role="status" aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
         <div key={t.id} className="notification-toast-room" data-visible={String(t.visible)}>
           <div className="notification-toast-slot">

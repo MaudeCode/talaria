@@ -545,7 +545,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const entries: unknown[] = log.data?.log ?? log.data?.entries ?? []
   const actions = task.available_actions
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={task.title ?? String(task.id)} description={task.description ?? undefined} className="w-[min(92vw,640px)]">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={task.title ?? String(task.id)} description={task.description ?? undefined} maxWidth={640}>
       <div className="flex flex-col gap-3 text-sm">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>{m.kanban_column_label()}:</span>

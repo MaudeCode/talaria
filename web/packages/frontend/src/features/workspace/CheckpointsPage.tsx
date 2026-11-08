@@ -116,7 +116,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
 function CheckpointDiff({ workspace, sessionId, checkpoint, onClose }: { workspace: string; sessionId: string; checkpoint: Picked; onClose: () => void }) {
   const diff = useQuery({ queryKey: keys.checkpoints.diff(sessionId, workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(sessionId, checkpoint.id), staleTime: 0, gcTime: 0 })
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.checkpoint_diff_title()} description={checkpoint.message} className="flex max-h-[80vh] w-[min(92vw,800px)] flex-col">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.checkpoint_diff_title()} description={checkpoint.message} maxWidth={800} className="flex max-h-[80vh] flex-col">
       {diff.isPending && <LoadingState label={m.checkpoint_loading()} />}
       {diff.isError && <ErrorState error={diff.error} onRetry={() => { void diff.refetch() }} />}
       {diff.isSuccess && diff.data.comparison?.provenance === 'native_owner' && <div className="mb-2 text-xs text-muted">{m.checkpoint_project_baseline()} <HelpTip label={m.checkpoint_project_baseline()}>{m.checkpoint_project_baseline_help()}</HelpTip></div>}

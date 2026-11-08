@@ -116,7 +116,7 @@ export function WhatsNew() {
 export function WhatsNewDialog({ announcement, open, onDismiss }: { announcement: WhatsNewAnnouncement; open: boolean; onDismiss: () => void }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onDismiss() }} title={m.whats_new_title()}
-      className="max-h-[90dvh] w-[min(92vw,440px)] overflow-y-auto px-6 pt-8 pb-6 max-[480px]:px-5" titleClassName="text-center text-2xl leading-tight font-bold tracking-(--heading-tracking)">
+      maxWidth={440} className="max-h-[90dvh] overflow-y-auto px-6 pt-8 pb-6 max-[480px]:px-5" titleClassName="text-center text-2xl leading-tight font-bold tracking-(--heading-tracking)">
       <div data-whats-new="">
         <ul className="mt-2 flex flex-col gap-6">
           {announcement.rows.map((row) => {

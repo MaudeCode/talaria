@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "What's New, update and other dialogs in Talaria Web now fit the iPhone Duo's outer screen instead of running off both edges.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

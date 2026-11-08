@@ -33,7 +33,7 @@ export function SharePage({ token }: { token: string }) {
           <a href={appUrl('').href} className={buttonClass('default', 'min-h-11 no-underline max-[720px]:flex-1')}>{m.share_open_hermes()}</a>
         </div>
       </header>
-      <main className="share-wrap mx-auto w-[min(920px,calc(100vw-32px))] pb-18 pt-7">
+      <main className="share-wrap mx-auto w-[min(920px,calc(100%-32px))] pb-18 pt-7">
         <section className="pb-4">
           <div className="inline-flex items-center rounded-full border border-border2 bg-surface px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-muted">{m.share_public_badge()}</div>
           <h1 className="mb-2.5 mt-4 text-[32px] font-semibold leading-tight tracking-tight text-strong max-[720px]:text-[26px]" id="shareTitle">{title}</h1>

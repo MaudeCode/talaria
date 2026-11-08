@@ -1,6 +1,6 @@
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { AlertDialog as BaseAlertDialog } from '@base-ui/react/alert-dialog'
-import { memo, type ReactNode } from 'react'
+import { memo, type CSSProperties, type ReactNode } from 'react'
 import { cn } from './cn'
 import { BACKDROP_MOTION, DIALOG_MOTION, playExitOnUnmount } from './popupMotion'
 
@@ -11,6 +11,8 @@ export interface DialogProps {
   description?: string | undefined
   children?: ReactNode
   className?: string | undefined
+  /** Width cap in px; the dialog is 92% of the page up to this (TAL-1987: `%`, never `vw`). */
+  maxWidth?: number | undefined
   /** Replaces the title's default size and weight. */
   titleClassName?: string | undefined
   /** Where focus goes on close; by default the element focused before it opened. */
@@ -25,12 +27,12 @@ const HeldWhileClosing = memo(function HeldWhileClosing({ children }: { open: bo
 const BACKDROP = cn('fixed inset-0 z-[1300] bg-black/50', BACKDROP_MOTION)
 
 /** Modal dialog: focus trap, escape, backdrop click, and aria wiring via Base UI. */
-export function Dialog({ open, onOpenChange, title, description, children, className, titleClassName, finalFocus }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, className, maxWidth = 520, titleClassName, finalFocus }: DialogProps) {
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop ref={playExitOnUnmount} className={BACKDROP} />
-        <BaseDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
+        <BaseDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} style={{ '--dialog-max': `${maxWidth}px` } as CSSProperties} className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92%,var(--dialog-max))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
           <HeldWhileClosing open={open}>
             <BaseDialog.Title className={cn('text-strong [overflow-wrap:anywhere]', titleClassName ?? 'text-base font-semibold')}>{title}</BaseDialog.Title>
             {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}
@@ -79,7 +81,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
     <BaseAlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseAlertDialog.Portal>
         <BaseAlertDialog.Backdrop ref={playExitOnUnmount} className={BACKDROP} />
-        <BaseAlertDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION)}>
+        <BaseAlertDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92%,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION)}>
           <HeldWhileClosing open={open}>
             <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
             {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
