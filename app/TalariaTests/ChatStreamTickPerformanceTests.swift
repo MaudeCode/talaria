@@ -21,7 +21,7 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     /// Today's counts per phase. A settled row or bubble never re-renders, so their counts are absent. A keystroke
     /// re-runs only the composer; the chat's four passes follow the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
-        "reasoningGroups": 200, "markdownSplit": 1_204, "highlight": 100, "messages": 200
+        "reasoningGroups": 200, "markdownSplit": 200, "highlight": 100, "messages": 200
     ]
     private static let expectedKeystrokeWork = [
         "reasoningGroups": 4, "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212

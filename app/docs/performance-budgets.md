@@ -88,7 +88,7 @@ lands in at most one, so the test asserts each count's minimum across runs.
 | Work | 200 stream ticks | 200 keystrokes |
 | --- | --- | --- |
 | Reasoning-card derivation | 200 | 4 |
-| Streaming Markdown split | 1,204 | 0 |
+| Streaming Markdown split | 200 | 0 |
 | Code highlighting | 100 | 0 |
 | Message list body | 200 | 4 |
 | Settled transcript row body | 0 | 0 |
@@ -97,7 +97,7 @@ lands in at most one, so the test asserts each count's minimum across runs.
 | Toolbar body | 0 | 4 |
 | Composer body | 0 | 212 |
 
-A tick splits the streaming reply six times. A keystroke re-evaluates only the
+A tick splits the streaming reply once (TAL-853). A keystroke re-evaluates only the
 composer; the chat's four passes follow the composer's height as the draft
 wraps. A change that removes a repeat lowers its count in the test and here.
 

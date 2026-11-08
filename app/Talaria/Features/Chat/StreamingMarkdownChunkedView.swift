@@ -27,14 +27,16 @@ struct StreamingMarkdownChunkedView: View {
     /// blocks (paragraphs, list items) appear in reading order even when a
     /// fast stream backlogs a block's queue toward `maxStampLead`.
     @State private var chain = StreamingTextFadeStampChain()
-
-    private var segments: StreamingMarkdownBlockSegments {
-        StreamingMarkdownBlockSplitter.split(content)
-    }
+    @State private var splits = StreamingMarkdownSplitCache()
+    /// The active tail as of the last fade-window update, so an append can be
+    /// told apart from a rewrite without re-splitting the old content.
+    @State private var lastActiveMarkdown = ""
 
     var body: some View {
+        let split = splits.split(content)
+        let segments = split.segments
         let blockSplit = StreamingTextFadeTailSplitter.split(
-            segments.activeMarkdown,
+            split.tail,
             firstFadeOrdinal: StreamedTextAnimationSettings.effectiveFirstFadeOrdinal(
                 firstFadeOrdinal,
                 reduceMotion: reduceMotion,
@@ -83,8 +85,8 @@ struct StreamingMarkdownChunkedView: View {
         .onAppear {
             anchorFadeWindowAtCurrentBlock()
         }
-        .onChange(of: content) { oldContent, newContent in
-            advanceFadeWindow(from: oldContent, to: newContent)
+        .onChange(of: content) { _, newContent in
+            advanceFadeWindow(to: splits.split(newContent))
         }
         .onChange(of: isStreamedTextAnimationEnabled) { _, isEnabled in
             if isEnabled {
@@ -114,18 +116,20 @@ struct StreamingMarkdownChunkedView: View {
     /// the reopened window would arm blocks the user is already reading and
     /// visibly re-fade them.
     private func anchorFadeWindowAtCurrentBlock() {
-        let split = StreamingTextFadeTailSplitter.split(segments.activeMarkdown, firstFadeOrdinal: 0)
-        firstFadeOrdinal = split.boundaryCount
-        mountBoundaryCount = split.boundaryCount
-        lastBoundaryCount = split.boundaryCount
+        let current = splits.split(content)
+        firstFadeOrdinal = current.tail.count
+        mountBoundaryCount = current.tail.count
+        lastBoundaryCount = current.tail.count
         lastTouchedAt = [:]
+        lastActiveMarkdown = current.segments.activeMarkdown
     }
 
-    private func advanceFadeWindow(from oldContent: String, to newContent: String) {
+    private func advanceFadeWindow(to new: StreamingMarkdownSplitCache.Split) {
         let now = Date().timeIntervalSinceReferenceDate
-        let oldActive = StreamingMarkdownBlockSplitter.split(oldContent).activeMarkdown
-        let newActive = StreamingMarkdownBlockSplitter.split(newContent).activeMarkdown
-        let split = StreamingTextFadeTailSplitter.split(newActive, firstFadeOrdinal: firstFadeOrdinal)
+        let oldActive = lastActiveMarkdown
+        let newActive = new.segments.activeMarkdown
+        lastActiveMarkdown = newActive
+        let split = StreamingTextFadeTailSplitter.split(new.tail, firstFadeOrdinal: firstFadeOrdinal)
 
         if !newActive.hasPrefix(oldActive) {
             // Replaced content or a sealed stable chunk shifted the active
@@ -156,5 +160,30 @@ struct StreamingMarkdownChunkedView: View {
         )
         lastTouchedAt = lastTouchedAt.filter { $0.key >= firstFadeOrdinal }
         fadesActive = true
+    }
+}
+
+/// The streaming reply's block split and fade-tail boundaries for its latest
+/// content. Every body pass and fade-window update of one streaming update
+/// reads the same scan, so each token splits the whole reply once. A reference
+/// type so the memo survives body passes without invalidating the view.
+@MainActor
+private final class StreamingMarkdownSplitCache {
+    struct Split {
+        let segments: StreamingMarkdownBlockSegments
+        let tail: StreamingTextFadeTailSplitter.Boundaries
+    }
+
+    private var cached: (content: String, split: Split)?
+
+    func split(_ content: String) -> Split {
+        if let cached, cached.content == content { return cached.split }
+        let segments = StreamingMarkdownBlockSplitter.split(content)
+        let split = Split(
+            segments: segments,
+            tail: StreamingTextFadeTailSplitter.boundaries(in: segments.activeMarkdown)
+        )
+        cached = (content, split)
+        return split
     }
 }

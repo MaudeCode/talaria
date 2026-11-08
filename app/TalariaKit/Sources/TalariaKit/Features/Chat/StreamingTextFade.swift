@@ -290,7 +290,21 @@ public enum StreamingTextFadeTailSplitter {
         public let boundaryCount: Int
     }
 
+    /// A text's block boundaries, scanned once so any number of fade
+    /// ordinals can slice it without re-scanning.
+    public struct Boundaries: Sendable {
+        let text: String
+        let indices: [String.Index]
+
+        /// Ordinal of the current (still-growing) block == total boundaries.
+        public var count: Int { indices.count }
+    }
+
     public static func split(_ text: String, firstFadeOrdinal: Int) -> BlockSplit {
+        split(boundaries(in: text), firstFadeOrdinal: firstFadeOrdinal)
+    }
+
+    public static func boundaries(in text: String) -> Boundaries {
         var boundaries: [String.Index] = []
         // A completed item line's boundary is provisional: it vanishes if the
         // next line turns out to be indented (a nested child or continuation
@@ -334,7 +348,12 @@ public enum StreamingTextFadeTailSplitter {
         if let pending = pendingItemBoundary {
             boundaries.append(pending)
         }
+        return Boundaries(text: text, indices: boundaries)
+    }
 
+    public static func split(_ scanned: Boundaries, firstFadeOrdinal: Int) -> BlockSplit {
+        let text = scanned.text
+        let boundaries = scanned.indices
         // firstFadeOrdinal == boundaryCount + 1 (e.g. Int.max for Reduce
         // Motion) puts everything, including the current block, in the head.
         let firstKept = max(0, min(firstFadeOrdinal, boundaries.count + 1))
