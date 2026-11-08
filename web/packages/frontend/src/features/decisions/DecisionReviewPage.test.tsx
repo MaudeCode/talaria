@@ -193,6 +193,43 @@ describe('decision review: answers (TAL-1964)', () => {
     expect(api.answerDecision).not.toHaveBeenCalled()
   })
 
+  it('sends Submit only after an outstanding answer save settles', async () => {
+    const saved = deferred<DecisionReview>()
+    vi.mocked(api.answerDecision).mockReturnValue(saved.promise)
+    vi.mocked(api.submitDecisionReview).mockResolvedValue({ ...openReview(), status: 'submitted', submit: { allowed: false, reason: 'not_open' } })
+    await mount(`/decisions/${ID}?view=answers`)
+    await waitFor(() => expect(item('retention')).toBeInTheDocument())
+    await userEvent.pointer({ keys: '[MouseRight]', target: item('retention') })
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Clear answer' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    expect(api.submitDecisionReview).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-review-status]')).toHaveAttribute('data-review-status', 'submitted')
+    await act(async () => { saved.resolve(openReview()); await saved.promise })
+    await waitFor(() => expect(api.submitDecisionReview).toHaveBeenCalledWith(ID))
+  })
+
+  it('shows the server answer again once a save settles or the answer is cleared', async () => {
+    const cleared = openReview()
+    cleared.items[0]!.answer = { value: 'on', label: 'Save drafts', effect: 'Drafts come back after a reload.', notes: '', deferred: false, custom: false, version: 1, updated_at: 1 }
+    cleared.items[0]!.answer_version = 1
+    vi.mocked(api.answerDecision).mockResolvedValueOnce(cleared)
+    const { client } = await mount(`/decisions/${ID}`)
+    await screen.findByRole('heading', { name: 'Autosave drafts' })
+    await userEvent.click(screen.getByRole('radio', { name: /Save drafts/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save & next' }))
+    await screen.findByRole('heading', { name: 'Crash reports' })
+    // Another client clears the answer; this page reads the cleared review.
+    const after = openReview()
+    after.items[0]!.answer_version = 2
+    vi.mocked(api.fetchDecisionReview).mockResolvedValue(after)
+    await act(async () => { await client.invalidateQueries({ queryKey: ['decision-review', ID] }) })
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await screen.findByRole('heading', { name: 'Autosave drafts' })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Save drafts/ })).not.toBeChecked())
+    expect(screen.getByRole('button', { name: 'Save & next' })).toBeDisabled()
+  })
+
   it('clears an answer from the row menu', async () => {
     vi.mocked(api.answerDecision).mockImplementation(() => new Promise(() => undefined))
     await mount(`/decisions/${ID}?view=answers`)

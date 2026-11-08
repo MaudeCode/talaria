@@ -230,6 +230,7 @@
             "fresh": "changed",
             "needs_review": false,
             "answer": null,
+            "answer_version": 0,
             "outcome": null
           },
           {
@@ -261,6 +262,7 @@
             "fresh": "new",
             "needs_review": false,
             "answer": null,
+            "answer_version": 0,
             "outcome": null
           },
           {
@@ -308,6 +310,7 @@
               "version": 1,
               "updated_at": 1794000120
             },
+            "answer_version": 1,
             "outcome": null
           }
         ],
@@ -388,6 +391,7 @@
             "fresh": "changed",
             "needs_review": false,
             "answer": null,
+            "answer_version": 0,
             "outcome": null
           },
           {
@@ -419,6 +423,7 @@
             "fresh": "new",
             "needs_review": false,
             "answer": null,
+            "answer_version": 0,
             "outcome": null
           },
           {
@@ -466,6 +471,7 @@
               "version": 1,
               "updated_at": 1794000120
             },
+            "answer_version": 1,
             "outcome": {
               "state": "applied",
               "note": "Set logging.retention_days to 30."

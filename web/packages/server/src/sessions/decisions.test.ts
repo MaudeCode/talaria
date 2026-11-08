@@ -146,7 +146,7 @@ describe('decision reviews (TAL-1963)', () => {
 
     const before = await stored(id)
     const stale = await answerA('a', { value: 'keep', expected_version: 0 })
-    expect(stale).toEqual({ status: 409, body: { error: 'This answer changed since it was loaded.', code: 'answer_conflict', answer: { value: 'change', label: 'Change it', effect: 'It changes.', notes: 'Before Friday', deferred: false, custom: false, version: 1, updated_at: 1_794_000_005 } } })
+    expect(stale).toEqual({ status: 409, body: { error: 'This answer changed since it was loaded.', code: 'answer_conflict', answer: { value: 'change', label: 'Change it', effect: 'It changes.', notes: 'Before Friday', deferred: false, custom: false, version: 1, updated_at: 1_794_000_005 }, answer_version: 1 } })
     expect(await stored(id)).toEqual(before)
     expect((await answerA('a', { value: 'nope', expected_version: 1 })).body.code).toBe('invalid_answer')
     expect((await answerA('c', { custom: true, notes: '  ', expected_version: 1 })).body.code).toBe('invalid_answer')
@@ -284,11 +284,24 @@ describe('decision reviews (TAL-1963)', () => {
 
     // A revision: only the changed item is new, and an answer to changed content is where Continue goes.
     await answer(id, 'c', { value: 'keep' })
-    await answer(id, 'a', { value: 'keep' })
+    await answer(id, 'a', { value: 'keep', expected_version: 2 })
     await answer(id, 'b', { value: 'keep', expected_version: 1 })
     await ask('server.decision_review_put', { review_id: id, title: 'Release choices', items: [item('a'), item('b'), item('c', { question: 'Should c change now?' })] })
     const revised = DecisionReviewSchema.parse((await http('GET', `/api/decisions/${id}`)).body)
     expect([revised.filters, revised.next_item_id]).toEqual([{ new: ['c'], pending: [] }, 'c'])
+  })
+
+  it('never reuses a version after a clear, so a client holding the cleared answer is refused (TAL-1964)', async () => {
+    const id = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a')] }))
+    await answer(id, 'a', { value: 'keep' })
+    // Another client loaded the review now, with the answer at version 1.
+    const cleared = DecisionReviewSchema.parse((await answer(id, 'a', { expected_version: 1 })).body).items[0]!
+    expect([cleared.answer, cleared.answer_version]).toEqual([null, 2])
+    const replaced = DecisionReviewSchema.parse((await answer(id, 'a', { value: 'change', expected_version: 2 })).body).items[0]!
+    expect([replaced.answer?.version, replaced.answer_version]).toEqual([3, 3])
+    const stale = await answer(id, 'a', { value: 'keep', expected_version: 1 })
+    expect(stale.status).toBe(409)
+    expect(stale.body).toMatchObject({ code: 'answer_conflict', answer: { value: 'change', version: 3 }, answer_version: 3 })
   })
 
   it('names the session\'s newest open review on its detail, and none once it closes (TAL-1964)', async () => {

@@ -42,12 +42,14 @@ export const DecisionOutcomeSchema = z.object({ state: DecisionOutcomeStateSchem
 /**
  * One decision. `fresh` compares this item with the review's previous revision: `new` (not in it), `changed` (its
  * `content_hash` differs) or `carried`. `needs_review` is an answer given to different content than the item now has.
+ * `answer_version` (TAL-1964) counts every save and clear of the item's answer, 0 before the first; it never goes back,
+ * so a cleared answer's version is not reused.
  */
 export const DecisionItemSchema = z.object({
   id: z.string(), title: z.string(), question: z.string(), explanation: z.string(), example: z.string().nullable(),
   current: z.string(), recommendation: z.string(), recommended_choice: z.string(), choices: z.array(DecisionChoiceSchema).min(2).max(4),
   technical: DecisionTechnicalSchema, content_hash: z.string(), fresh: z.enum(['new', 'changed', 'carried']), needs_review: z.boolean(),
-  answer: DecisionAnswerSchema.nullable(), outcome: DecisionOutcomeSchema.nullable(),
+  answer: DecisionAnswerSchema.nullable(), answer_version: z.number().int().nonnegative(), outcome: DecisionOutcomeSchema.nullable(),
 })
 export type DecisionItem = z.infer<typeof DecisionItemSchema>
 
@@ -84,8 +86,8 @@ export type DecisionReview = z.infer<typeof DecisionReviewSchema>
 export const DecisionReviewsSchema = z.object({ reviews: z.array(DecisionReviewSchema) })
 
 /**
- * `PUT /api/decisions/{review_id}/answers/{item_id}`: `expected_version` is the stored answer's version, 0 when there is
- * none; `content_hash` is the item's as the user saw it, so an answer to content the agent has since revised is refused.
+ * `PUT /api/decisions/{review_id}/answers/{item_id}`: `expected_version` is the item's `answer_version` as loaded;
+ * `content_hash` is the item's as the user saw it, so an answer to content the agent has since revised is refused.
  * TAL-1964: no choice, not deferred and not custom clears the stored answer (and its outcome).
  */
 export const DecisionAnswerInputSchema = z.object({

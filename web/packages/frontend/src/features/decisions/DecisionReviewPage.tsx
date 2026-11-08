@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { DecisionAnswer, DecisionAnswerInput, DecisionFilter, DecisionItem, DecisionReview } from '@maudecode/talaria-web-contracts'
@@ -78,7 +78,7 @@ export function DecisionReviewPage({ reviewId, search }: { reviewId: string; sea
         // The server stamps the save; the shown answer keeps the old time until it does.
         deferred: input.deferred, custom: input.custom, version: input.expected_version + 1, updated_at: item?.answer?.updated_at ?? 0,
       }
-      return { fields: { answer, needs_review: false, outcome: null } }
+      return { fields: { answer, answer_version: input.expected_version + 1, needs_review: false, outcome: null } }
     },
     mutationFn: api.answerDecision,
     onSuccess: (result) => qc.setQueryData(queryKey, result),
@@ -86,25 +86,31 @@ export function DecisionReviewPage({ reviewId, search }: { reviewId: string; sea
   const submit = useResourceMutation({
     resource: () => reviewResource, queryKey, exclusive: true,
     effect: () => ({ fields: { status: 'submitted', submit: { allowed: false, reason: 'not_open' } } }),
-    mutationFn: () => api.submitDecisionReview(reviewId),
+    // Answers still being saved belong in the handoff: the submit waits for them and their reconciliation.
+    mutationFn: async () => { await Promise.allSettled([...saving.current]); return api.submitDecisionReview(reviewId) },
     onSuccess: (result) => qc.setQueryData(queryKey, result), onError: showErrorToast,
   })
 
+  const saving = useRef(new Set<Promise<unknown>>())
+  /** Drop `item`'s draft once the save of `shown` settles, so the server's answer shows; a later edit stays. */
+  const retire = (itemId: string, shown: Draft | undefined) => setDrafts((all) => shown && all[itemId] === shown ? Object.fromEntries(Object.entries(all).filter(([id]) => id !== itemId)) : all)
+
   /** Save `choice` for `item` as shown; a refusal brings the item back with the typed notes and names the refusal. */
-  const answer = (item: DecisionItem, choice: Choice) => {
+  const answer = (item: DecisionItem, choice: Choice, shown?: Draft) => {
     setFailure(null)
-    save.mutate({ review_id: reviewId, item_id: item.id, ...choice, expected_version: item.answer?.version ?? 0, content_hash: item.content_hash }, {
-      onError: (error) => {
-        const code = isApiError(error) ? error.code : undefined
-        if (code !== 'answer_conflict' && code !== 'item_changed') { showErrorToast(error); return }
-        // The 409 carries the stored answer: show it at once, behind the refetch the rollback starts.
-        const stored = (isApiError(error) ? (error.body as { answer?: DecisionAnswer | null } | undefined)?.answer : null) ?? null
-        qc.setQueryData<DecisionReview>(queryKey, (old) => old && { ...old, items: old.items.map((candidate) => candidate.id === item.id ? { ...candidate, answer: stored } : candidate) })
-        setDrafts((all) => ({ ...all, [item.id]: { value: stored?.value ?? null, notes: choice.notes } }))
-        setFailure({ itemId: item.id, kind: code === 'answer_conflict' ? 'conflict' : 'changed' })
-        go({ item: item.id })
-      },
+    const write = save.mutateAsync({ review_id: reviewId, item_id: item.id, ...choice, expected_version: item.answer_version, content_hash: item.content_hash }).then(() => retire(item.id, shown), (error: unknown) => {
+      const code = isApiError(error) ? error.code : undefined
+      if (code !== 'answer_conflict' && code !== 'item_changed') { showErrorToast(error); retire(item.id, shown); return }
+      // The 409 carries the stored answer: show it at once, behind the refetch the rollback starts.
+      const held = isApiError(error) ? error.body as { answer?: DecisionAnswer | null; answer_version?: number } | undefined : undefined
+      const stored = held?.answer ?? null
+      qc.setQueryData<DecisionReview>(queryKey, (old) => old && { ...old, items: old.items.map((candidate) => candidate.id === item.id ? { ...candidate, answer: stored, answer_version: held?.answer_version ?? candidate.answer_version } : candidate) })
+      setDrafts((all) => ({ ...all, [item.id]: { value: stored?.value ?? null, notes: choice.notes } }))
+      setFailure({ itemId: item.id, kind: code === 'answer_conflict' ? 'conflict' : 'changed' })
+      go({ item: item.id })
     })
+    saving.current.add(write)
+    void write.finally(() => saving.current.delete(write))
   }
 
   const title = review?.title ?? query.data?.title ?? m.decision_review_heading()
@@ -129,11 +135,11 @@ export function DecisionReviewPage({ reviewId, search }: { reviewId: string; sea
       {query.isPending && <LoadingState />}
       {query.isError && <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />}
       {review && (view === 'answers'
-        ? <AnswersView review={review} filter={search.filter ?? 'all'} onFilter={(filter) => go({ view: 'answers', filter })} onOpen={(item) => go({ item })} onClear={(item) => answer(item, { value: null, notes: '', deferred: false, custom: false })} onSubmit={() => submit.mutate(undefined)} />
+        ? <AnswersView review={review} filter={search.filter ?? 'all'} onFilter={(filter) => go({ view: 'answers', filter })} onOpen={(item) => go({ item })} onClear={(item) => { retire(item.id, drafts[item.id]); answer(item, { value: null, notes: '', deferred: false, custom: false }) }} onSubmit={() => submit.mutate(undefined)} />
         : <DecideView
           key={search.item ?? ''} review={review} itemId={search.item} draft={drafts} failure={failure}
           onDraft={(itemId, draft) => setDrafts((all) => ({ ...all, [itemId]: draft }))}
-          onAnswer={(item, choice, next) => { if (choice) answer(item, choice); go(next ? { item: next } : { view: 'answers' }) }}
+          onAnswer={(item, choice, next) => { if (choice) answer(item, choice, drafts[item.id]); go(next ? { item: next } : { view: 'answers' }) }}
           onOpen={(item) => go({ item })}
         />)}
     </HubPage>

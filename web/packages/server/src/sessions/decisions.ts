@@ -19,8 +19,9 @@ const NAMESPACE = 'decision-reviews'
 
 /** An answer as stored: the contract fields, the item's content and question it answered. */
 interface StoredAnswer extends DecisionAnswer { content_hash: string; question: string }
-type ItemContent = Omit<DecisionItem, 'content_hash' | 'fresh' | 'needs_review' | 'answer' | 'outcome'>
-interface StoredItem extends ItemContent { content_hash: string; fresh: DecisionItem['fresh']; answer: StoredAnswer | null; outcome: DecisionItem['outcome'] }
+type ItemContent = Omit<DecisionItem, 'content_hash' | 'fresh' | 'needs_review' | 'answer' | 'answer_version' | 'outcome'>
+/** `answer_version` (TAL-1964) counts saves and clears; a document written before it reads its answer's version. */
+interface StoredItem extends ItemContent { content_hash: string; fresh: DecisionItem['fresh']; answer: StoredAnswer | null; answer_version?: number; outcome: DecisionItem['outcome'] }
 type HistoryEntry = { kind: 'answer' | 'cleared'; at: number; item_id: string; answer: StoredAnswer } | { kind: 'removed'; at: number; item: StoredItem }
 export interface StoredReview {
   review_id: string; session_id: string; profile: string; title: string; intro: string | null; status: DecisionReview['status']
@@ -77,6 +78,7 @@ export function contentHash(item: ItemContent): string {
 }
 
 const isAnswered = (answer: StoredAnswer | null): boolean => !!answer && !answer.deferred
+const answerVersion = (item: StoredItem): number => item.answer_version ?? item.answer?.version ?? 0
 const needsReview = (item: StoredItem): boolean => !!item.answer && item.answer.content_hash !== item.content_hash
 
 export function progressOf(review: StoredReview): DecisionProgress {
@@ -103,7 +105,7 @@ export function reviewView(review: StoredReview): DecisionReview {
     items: ordered.map((item) => ({
       id: item.id, title: item.title, question: item.question, explanation: item.explanation, example: item.example, current: item.current,
       recommendation: item.recommendation, recommended_choice: item.recommended_choice, choices: item.choices, technical: item.technical,
-      content_hash: item.content_hash, fresh: item.fresh, needs_review: needsReview(item), answer: publicAnswer(item.answer), outcome: item.outcome,
+      content_hash: item.content_hash, fresh: item.fresh, needs_review: needsReview(item), answer: publicAnswer(item.answer), answer_version: answerVersion(item), outcome: item.outcome,
     })),
     // TAL-1964: the answers view's filters and the item Continue opens.
     filters: { new: ordered.filter((item) => item.fresh !== 'carried').map((item) => item.id), pending: ordered.filter((item) => !item.answer).map((item) => item.id) },
@@ -224,7 +226,7 @@ export class DecisionReviews {
         const next = hashed.map((item): StoredItem => {
           const prior = previous.get(item.id)
           const fresh = !prior ? 'new' : prior.content_hash === item.content_hash ? 'carried' : 'changed'
-          return { ...item, fresh, answer: prior?.answer ?? null, outcome: fresh === 'carried' ? prior!.outcome : null }
+          return { ...item, fresh, answer: prior?.answer ?? null, answer_version: prior ? answerVersion(prior) : 0, outcome: fresh === 'carried' ? prior!.outcome : null }
         })
         const kept = new Set(next.map((item) => item.id))
         const at = this.now()
@@ -243,7 +245,7 @@ export class DecisionReviews {
       const at = this.now()
       review = {
         review_id: id, session_id: caller.session_id, profile: this.profileName(caller.profile), title, intro, status: 'open',
-        created_at: at, updated_at: at, submitted_at: null, items: hashed.map((item) => ({ ...item, fresh: 'new', answer: null, outcome: null })), history: [],
+        created_at: at, updated_at: at, submitted_at: null, items: hashed.map((item) => ({ ...item, fresh: 'new', answer: null, answer_version: 0, outcome: null })), history: [],
       }
       await this.documents.put(NAMESPACE, id, review, null)
       this.changed(review, false)
@@ -298,13 +300,15 @@ export class DecisionReviews {
       const item = stored.items.find((candidate) => candidate.id === input.item_id)
       if (!item) throw refuse(404, 'item_unknown', `decision review ${stored.review_id} has no item ${input.item_id}`)
       if (stored.status !== 'open') throw refuse(409, 'review_closed', `decision review ${stored.review_id} is ${stored.status}`)
-      const version = item.answer?.version ?? 0
-      if (input.expected_version !== version) throw refuse(409, 'answer_conflict', 'This answer changed since it was loaded.', { answer: publicAnswer(item.answer) })
-      if (input.content_hash !== item.content_hash) throw refuse(409, 'item_changed', 'This decision changed since it was loaded.', { answer: publicAnswer(item.answer) })
+      const version = answerVersion(item)
+      const held = { answer: publicAnswer(item.answer), answer_version: version }
+      if (input.expected_version !== version) throw refuse(409, 'answer_conflict', 'This answer changed since it was loaded.', held)
+      if (input.content_hash !== item.content_hash) throw refuse(409, 'item_changed', 'This decision changed since it was loaded.', held)
       // TAL-1964: no choice, not deferred and not custom clears the answer; the cleared one stays in history.
       if (input.value === null && !input.deferred && !input.custom) {
         if (item.answer) stored.history.push({ kind: 'cleared', at: this.now(), item_id: item.id, answer: item.answer })
         item.answer = null
+        item.answer_version = version + 1
         item.outcome = null
         return
       }
@@ -323,6 +327,7 @@ export class DecisionReviews {
         version: version + 1, updated_at: this.now(), content_hash: item.content_hash, question: item.question,
       }
       item.answer = answer
+      item.answer_version = answer.version
       // An outcome answers the previous answer; the agent records the new one again.
       item.outcome = null
       stored.history.push({ kind: 'answer', at: answer.updated_at, item_id: item.id, answer })

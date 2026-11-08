@@ -3645,6 +3645,11 @@
                   }
                 ]
               },
+              "answer_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
               "outcome": {
                 "anyOf": [
                   {
@@ -3694,6 +3699,7 @@
               "fresh",
               "needs_review",
               "answer",
+              "answer_version",
               "outcome"
             ],
             "additionalProperties": false
@@ -4054,6 +4060,11 @@
                   }
                 ]
               },
+              "answer_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
               "outcome": {
                 "anyOf": [
                   {
@@ -4103,6 +4114,7 @@
               "fresh",
               "needs_review",
               "answer",
+              "answer_version",
               "outcome"
             ],
             "additionalProperties": false
