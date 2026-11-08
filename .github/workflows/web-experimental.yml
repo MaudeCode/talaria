@@ -32,21 +32,30 @@ jobs:
           # Stable web-v* tags set the version; history orders the forward-only tag.
           fetch-depth: 0
 
+      - uses: ./.github/actions/release-python
+
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+
       - name: Select Web changes
         id: changes
         env:
           GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          # workflow_run carries no push base; the repository activity feed records it.
-          # An unknown base classifies as every suite, which publishes.
-          base=$(gh api "repos/${GITHUB_REPOSITORY}/activity?ref=refs/heads/main&per_page=100" \
-            --jq "[.[] | select(.after == \"${HEAD_SHA}\") | .before][0] // \"\"") || base=""
-          python3 scripts/changed-components.py --base="$base" --head="$HEAD_SHA" > "$RUNNER_TEMP/changes"
-          cat "$RUNNER_TEMP/changes"
-          # Shared contract paths also select the web_* suites; `contracts` alone (App networking) leaves the artifact unchanged.
-          if ! grep -qxE '(web_server|web_frontend|web_sidecar)=true' "$RUNNER_TEMP/changes"; then
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          # Diff from the commit `experimental` names, so a Web change whose own CI failed ships with the next green
+          # commit (TAL-1986). Only a missing tag falls back to the push base from the activity feed, since
+          # workflow_run carries none. An unknown base counts as a Web change, which publishes.
+          before=$(gh api "repos/${GITHUB_REPOSITORY}/activity?ref=refs/heads/main&per_page=100" \
+            --jq "[.[] | select(.after == \"${HEAD_SHA}\") | .before][0] // \"\"") || before=""
+          base=$("$RELEASE_PYTHON" releases/experimental.py base --fallback "$before")
+          echo "Diffing ${base:-an unknown base}..${HEAD_SHA}."
+          # Release fragments and the What's New stamp change the artifact without selecting a web_* suite.
+          artifact=$(python3 scripts/changed-components.py --web-artifact --base="$base" --head="$HEAD_SHA")
+          echo "$artifact"
+          if [[ "$artifact" != "web_artifact=true" ]]; then
             exit 0
           fi
           # <next patch>-exp.<12-hex> is invalid SemVer when those 12 characters are digits with a leading zero.
@@ -57,15 +66,9 @@ jobs:
           echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - if: steps.changes.outputs.publish == 'true'
-        uses: ./.github/actions/release-python
-
-      - if: steps.changes.outputs.publish == 'true'
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
-
-      - if: steps.changes.outputs.publish == 'true'
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
 
       - name: Pack the Experimental npm package
         if: steps.changes.outputs.publish == 'true'
@@ -73,12 +76,7 @@ jobs:
 
       - name: Push the immutable sha- tag
         if: steps.changes.outputs.publish == 'true'
-        env:
-          REGISTRY_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          "$RELEASE_PYTHON" releases/experimental.py push "$RUNNER_TEMP/web-experimental"
+        run: '"$RELEASE_PYTHON" releases/experimental.py push "$RUNNER_TEMP/web-experimental"'
 
   # Only moving the tag and pruning are serialized. A pending advance can be replaced out of commit
   # order, so each advance moves experimental to the newest published commit on main, not its own.

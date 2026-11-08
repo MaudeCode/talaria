@@ -266,6 +266,69 @@ class RoutingTests(unittest.TestCase):
             self.assertIn("trailing whitespace", result.stdout)
             self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
 
+    def test_experimental_publishes_every_web_artifact_input(self):
+        """TAL-1986: release fragments and the What's New stamp change the packed artifact without selecting a web_*
+        suite, so Experimental publishes for them while a changelog-only PR still skips the Web tests."""
+        with tempfile.TemporaryDirectory(prefix="talaria-web-artifact-") as temporary:
+            root = Path(temporary)
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+            def git(*args):
+                return subprocess.check_output(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
+                    "-c", "commit.gpgsign=false", *args], cwd=root, env=env, text=True, stderr=subprocess.PIPE).strip()
+
+            def commit(files):
+                for name, text in files.items():
+                    (root / name).parent.mkdir(parents=True, exist_ok=True)
+                    if text is None:
+                        git("rm", "-q", name)
+                    else:
+                        (root / name).write_text(text)
+                git("add", ".")
+                git("commit", "--allow-empty", "-m", "synthetic")
+                return git("rev-parse", "HEAD")
+
+            def publishes(base, head):
+                result = subprocess.run([os.sys.executable, str(SCRIPT), "--web-artifact", f"--base={base}", f"--head={head}"],
+                                        cwd=root, env=env, text=True, capture_output=True)
+                self.assertIn(result.stdout, ("web_artifact=true\n", "web_artifact=false\n"), result.stderr)
+                return result.stdout == "web_artifact=true\n"
+
+            def fragment(*components):
+                return '{"entries": [{"category": "Added", "summary": "x", "highlight": false%s}]}' % (
+                    f', "components": {list(components)!r}'.replace("'", '"') if components else "")
+
+            git("init", "-q", "-b", "main")
+            base = commit({"README.md": "base\n"})
+            cases = [
+                ({"changelog.d/TAL-1.json": fragment("web")}, True),
+                ({"app/changelog.d/TAL-2.json": fragment("app", "web")}, True),
+                ({"changelog.d/TAL-3.json": fragment("app", "relay")}, False),
+                ({"changelog.d/TAL-4.json": fragment()}, False),  # Entries default to the App.
+                ({"changelog.d/TAL-5.json": '{"skip": "CI only"}'}, False),
+                ({"changelog.d/TAL-6.json": "not json"}, True),
+                ({"changelog.d/TAL-1.json": None}, True),  # Removing web rows changes the artifact too.
+                ({"changelog.d/TAL-2.json": fragment("web"), "app/changelog.d/TAL-2.json": None}, True),
+                ({"scripts/stamp-release.py": "stamp\n"}, True),
+                ({"app/ci/release_notes.py": "notes\n"}, True),
+                ({"contracts/whats-new.schema.json": "{}\n"}, True),
+                ({"web/packages/frontend/main.tsx": "ui\n"}, True),
+                ({"relay/convex/x.ts": "relay\n", "docs/guide.md": "docs\n"}, False),
+            ]
+            for files, expected in cases:
+                before = git("rev-parse", "HEAD")
+                after = commit(files)
+                with self.subTest(files=files):
+                    self.assertEqual(publishes(before, after), expected)
+                    paths = list(files)
+                    if not any(path.startswith(("web/", "contracts/")) for path in paths):
+                        self.assertFalse(routing.affected(paths) & {"web_server", "web_frontend", "web_sidecar"})
+            # The range since the published revision carries an earlier Web change that a red CI run never shipped.
+            self.assertTrue(publishes(base, after))
+            self.assertFalse(publishes(after, after))
+            self.assertTrue(publishes("", after))
+            self.assertTrue(publishes("0" * 40, after))
+
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},
                       "web": {"web_server", "web_frontend", "web_sidecar"}, "web-docker": {"docker"},

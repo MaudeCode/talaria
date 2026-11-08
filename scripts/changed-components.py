@@ -204,6 +204,34 @@ def affected(paths, deleted_workflows=frozenset()):
     return set().union(*({"tooling"} if path in deleted_workflows else path_suites(path) for path in paths))
 
 
+# The Web artifact stamps What's New from release fragments through these (TAL-1616), yet none selects a web_* suite, so
+# changelog-only PRs skip the Web tests. Experimental still publishes when they change (TAL-1986).
+WEB_ARTIFACT_INPUTS = ("scripts/stamp-release.py", "app/ci/release_notes.py", "contracts/whats-new.schema.json")
+
+
+def web_artifact(paths, names_web):
+    """Whether a diff changes the packed Web artifact; `names_web(path)` reads a changed release fragment.
+    An empty diff (a rerun at the published revision) changes nothing."""
+    paths = list(paths)
+    return bool(paths) and (bool(affected(paths) & JOBS["web"]) or any(path in WEB_ARTIFACT_INPUTS for path in paths)
+            or any(names_web(path) for path in paths if path.startswith(("changelog.d/", "app/changelog.d/"))))
+
+
+def fragment_names_web(path, *revisions):
+    """Whether any revision's copy of a release fragment has a web entry; an unreadable copy counts as one."""
+    for ref in revisions:
+        try:
+            data = git("show", f"{ref}:{path}")
+        except subprocess.CalledProcessError:
+            continue  # Added or deleted: only the other side has it.
+        try:
+            if any("web" in entry.get("components", ["app"]) for entry in json.loads(data).get("entries", [])):
+                return True
+        except (ValueError, AttributeError, TypeError):
+            return True
+    return False
+
+
 def git(*args):
     return subprocess.check_output(["git", *args], stderr=subprocess.PIPE)
 
@@ -263,6 +291,7 @@ def main():
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--check-results", action="store_true")
     parser.add_argument("--check-diff", action="store_true")
+    parser.add_argument("--web-artifact", action="store_true", help="Print whether the diff changes the packed Web artifact.")
     args = parser.parse_args()
     if args.self_test:
         subprocess.run([sys.executable, str(Path(__file__).with_name("test-changed-components.py"))], check=True)
@@ -273,6 +302,15 @@ def main():
     if args.check_results:
         check_results(json.loads(os.environ["CI_NEEDS"]))
         print("CI Gate passed.")
+        return
+    if args.web_artifact:
+        try:
+            base, head = diff_refs(args.base, args.head)
+            changed = web_artifact(git_diff(base, head), lambda path: fragment_names_web(path, base, head))
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            print("Could not classify the complete diff; the Web artifact counts as changed.", file=sys.stderr)
+            changed = True
+        print(f"web_artifact={str(changed).lower()}")
         return
     try:
         selected = set(SUITES)

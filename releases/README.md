@@ -306,8 +306,11 @@ BUILD_DIRECTORY` pushes that tarball to `ghcr.io/maudecode/talaria-web-experimen
 as `sha-<source>`. `experimental.py advance SOURCE` moves `experimental` forward to the newest
 published `sha-` commit on `main`, never behind its current revision, then keeps the newest 50 package versions plus
 the `experimental` and `nightly` targets. The `web-experimental.yml` workflow runs them after each
-passing `main` push that selects a Web suite (`web_server`, `web_frontend`, or `web_sidecar`), which shared contract
-changes also select; only `advance` is serialized.
+passing `main` push whose diff from `experimental.py base` (the revision `experimental` names, or the push's base
+while the tag is missing) changes the Web artifact, so a Web change whose own CI failed ships with the next green
+commit. `changed-components.py --web-artifact` decides: any Web suite (`web_server`, `web_frontend`, or
+`web_sidecar`, which shared contract changes also select), a release fragment with a `web` entry, or a What's New
+stamp input. Only `advance` is serialized.
 
 The Nightly channel sits between Experimental and Stable. `nightly.yml` has no GitHub cron: the external GitHub
 Scheduler service (`MaudeCode/github-scheduler`) dispatches it daily on `main`, and that service holds the schedule. A
