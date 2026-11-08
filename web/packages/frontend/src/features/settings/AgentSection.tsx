@@ -3,6 +3,7 @@ import type { AgentTab } from '../../contracts/url'
 import { useConnectorsAvailable } from '../../app/queries'
 import { SECTION_HEADER } from '../../ui/List'
 import { TabStrip } from '../../ui/TabStrip'
+import { LoadingState } from '../../ui/States'
 import { useSettingField } from './useSettingField'
 import { PluginsSection } from './PluginsSection'
 import { ExtensionsSection } from './ExtensionsSection'
@@ -20,20 +21,24 @@ export function AgentSection({ tab, onTabChange }: { tab?: AgentTab | undefined;
   const tabs: { id: AgentTab; label: () => string }[] = [
     { id: 'plugins', label: m.settings_section_plugins_title },
     { id: 'extensions', label: m.settings_section_extensions_title },
-    ...(connectors ? [{ id: 'connectors' as const, label: m.settings_section_connectors_title }] : []),
+    ...(connectors === true ? [{ id: 'connectors' as const, label: m.settings_section_connectors_title }] : []),
     { id: 'mcp', label: m.mcp_servers_title },
   ]
   const active: AgentTab = tabs.find((t) => t.id === tab)?.id ?? 'plugins'
+  // A Connectors link waits for the gate rather than opening Plugins first.
+  const gating = tab === 'connectors' && connectors === undefined
   return (
     <div className="flex flex-col gap-5" data-section="agent">
       {typeof settings.data?.agent_approvals === 'boolean' ? <SettingToggle label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /> : null}
-      <TabStrip label={m.settings_section_agent_title()} tabs={tabs} value={active} onChange={(next) => onTabChange?.(next)} panelPrefix="agent" />
-      <div role="tabpanel" id={`agent-${active}`} data-group={active} className="flex flex-col gap-5">
-        {active === 'plugins' && <PluginsSection />}
-        {active === 'extensions' && <ExtensionsSection />}
-        {active === 'connectors' && <ConnectorsSection />}
-        {active === 'mcp' && <McpSection heading={SECTION_HEADER} />}
-      </div>
+      {gating ? <LoadingState compact /> : <>
+        <TabStrip label={m.settings_section_agent_title()} tabs={tabs} value={active} onChange={(next) => onTabChange?.(next)} panelPrefix="agent" />
+        <div role="tabpanel" id={`agent-${active}`} data-group={active} className="flex flex-col gap-5">
+          {active === 'plugins' && <PluginsSection />}
+          {active === 'extensions' && <ExtensionsSection />}
+          {active === 'connectors' && <ConnectorsSection />}
+          {active === 'mcp' && <McpSection heading={SECTION_HEADER} />}
+        </div>
+      </>}
     </div>
   )
 }

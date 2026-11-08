@@ -19,3 +19,11 @@ test('/settings/system still opens System, the App\'s settings.system destinatio
   await expect(page).toHaveURL(/\/settings\/system$/)
   await expect(page.locator('[data-section="system"]')).toBeVisible()
 })
+
+test('an Agent tab keeps its list in the URL', async ({ page }) => {
+  await page.goto('/settings/agent')
+  await settle(page)
+  await page.getByRole('tablist', { name: 'Agent' }).getByRole('tab', { name: 'MCP Servers' }).click()
+  await expect(page).toHaveURL(/\/settings\/agent\?tab=mcp$/)
+  await expect(page.locator('[data-section="mcp-servers"]')).toBeVisible()
+})
