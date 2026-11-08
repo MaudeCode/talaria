@@ -4,6 +4,11 @@ const checkpointTargetKey = (sessionId: string, workspace: string) => ['checkpoi
 export const keys = {
   toolsets: (sessionId: string | undefined, value: string[] | null) => ['toolsets', sessionId, value] as const,
   executionModes: ['execution-modes'] as const,
+  /**
+   * TAL-1672: outside `sessions`, so session refreshes never reread an open inspector; the server's identity changes
+   * with owner epoch, model and context, and a new identity is a new read.
+   */
+  contextDetail: (id: string, identity: string) => ['context-detail', id, identity] as const,
   bootstrap: ['bootstrap'] as const,
   whatsNew: (scope: string) => ['whats-new', scope] as const,
   auth: ['auth'] as const,
@@ -28,7 +33,6 @@ export const keys = {
     list: (params: Record<string, string | boolean | number | undefined>) => ['sessions', 'list', params] as const,
     detail: (id: string) => ['sessions', 'detail', id] as const,
     status: (id: string) => ['sessions', 'status', id] as const,
-    contextDetail: (id: string, identity: string) => ['sessions', 'context-detail', id, identity] as const,
     usage: (id: string) => ['sessions', 'usage', id] as const,
     /** TAL-1649: refreshed with the session's other per-session reads when its turn settles. */
     skills: (id: string) => ['sessions', 'skills', id] as const,

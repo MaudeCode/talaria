@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening the context inspector right after closing it shows fresh details, and an open inspector no longer reloads when other chats change.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

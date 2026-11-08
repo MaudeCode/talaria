@@ -124,7 +124,7 @@ export function useExecutionModesQuery(enabled = true) {
   return useQuery({ queryKey: keys.executionModes, queryFn: api.fetchExecutionModes, gcTime: 0, retry: false, enabled })
 }
 
-/** Mounted only while the inspector is open. Never reuse another owner/context's details. */
+/** Mounted only while the inspector is open, one read per opening (TAL-1672). Never reuse another owner/context's details. */
 export function useContextDetailQuery(sessionId: string, identity: string) {
-  return useQuery({ queryKey: keys.sessions.contextDetail(sessionId, identity), queryFn: ({ signal }) => api.fetchContextDetail(sessionId, identity, signal), gcTime: 0, staleTime: 0, retry: false })
+  return useQuery({ queryKey: keys.contextDetail(sessionId, identity), queryFn: ({ signal }) => api.fetchContextDetail(sessionId, identity, signal), gcTime: 0, staleTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })
 }
