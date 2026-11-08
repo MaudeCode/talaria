@@ -274,6 +274,26 @@ sequence, starting at 1. Payloads are unchanged. The cursor is opaque to clients
   cursor receives no old frames.
 - Recovery frames carry no `id:` line, so they do not move a client's cursor.
 
+## Session-list cursors
+
+`/api/sessions/events` resumes Web completion sounds from the standard
+`Last-Event-ID` header. The `initial` frame and each session-list
+`sessions_changed` frame carry the bus version as their `id:` line, a decimal
+integer. Gateway frames on the merged stream carry none.
+
+- The bus retains its last 32 `web_audio` completions with their versions.
+- A reconnect whose cursor is at or below the current version receives, right
+  after `initial`, one `sessions_changed` frame (`reason: "web_completion"`)
+  carrying the retained, unexpired completions newer than the cursor. The same
+  profile and person rules as a live event apply, so another profile or person
+  never receives one. While that frame is pending, `initial` repeats the
+  client's cursor, so a connection lost between the two frames resumes from the
+  same place.
+- No cursor, a malformed one or a future one (from another server process)
+  replays nothing, so a fresh tab never plays an old sound.
+- Clients still claim each completion by `scope` and `identity`, so a repeat
+  delivery never plays twice.
+
 ## Live dictation WebSocket
 
 `GET /api/transcribe/stream` is the one WebSocket route (TAL-802). It is

@@ -4,7 +4,7 @@
  * only an owner, and nothing a client sends can name a different person.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 
 const ISSUER = 'https://identity.invalid'
 const OIDC_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins' }
@@ -107,6 +107,31 @@ describe('person isolation on', () => {
     expect((await post(server, bob, '/api/chat/start', { session_id: sid, message: 'hi' })).status).toBe(404)
     expect(await store.revision(sid)).toBe(revision)
     expect(store.sessions.has(sid)).toBe(false)
+  })
+
+  it('replays a missed completion sound only to the person whose session finished (TAL-1954)', async () => {
+    const server = await boot(true)
+    const alice = signIn(server, 'alice')
+    const bob = signIn(server, 'bob')
+    const aliceChat = await chat(server, alice)
+    // Each reads one connection through a sentinel published after `initial`, then reconnects as EventSource does.
+    const connect = (client: Client, headers: Record<string, string> = {}): Promise<SseFrame[]> => server.sse('/api/sessions/events', (frame) => {
+      if (frame.event === 'initial') server.deps.events.publish('sentinel')
+      return (frame.data as { reason?: string }).reason === 'sentinel'
+    }, { headers: { ...client.headers, ...headers } })
+    const cursor = async (client: Client): Promise<Record<string, string>> => {
+      const id = (await connect(client)).filter((frame) => frame.id).at(-1)?.id
+      expect(id, 'the stream writes a cursor').toBeTruthy()
+      return { 'last-event-id': id! }
+    }
+    const [aliceCursor, bobCursor] = [await cursor(alice), await cursor(bob)]
+    const webAudio = (identity: string) => ({ identity, scope: 'default', profile: 'default', eligible: true, expires_at: Date.now() + 60_000 })
+    server.deps.events.publish('web_completion', { profile: 'default', sessionId: aliceChat, webAudio: webAudio('alice-run') })
+    // A completion that names no session cannot prove whose it is.
+    server.deps.events.publish('web_completion', { profile: 'default', webAudio: webAudio('unnamed-run') })
+    const played = (frames: SseFrame[]) => frames.flatMap((frame) => ((frame.data as { web_audio?: { identity: string }[] }).web_audio ?? []).map((item) => item.identity))
+    expect(played(await connect(alice, aliceCursor))).toEqual(['alice-run'])
+    expect(played(await connect(bob, bobCursor))).toEqual([])
   })
 
   it('binds new sessions to the signed-in person, whatever the request claims', async () => {

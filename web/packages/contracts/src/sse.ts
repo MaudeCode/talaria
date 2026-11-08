@@ -120,7 +120,7 @@ export type ChatEvent = z.infer<typeof ChatEventSchema>
 /** Relay close set: stop draining after these (the server's `SSE_RELAY_CLOSE_EVENTS`). */
 export const RELAY_CLOSE_EVENTS: ReadonlySet<ChatEventName> = new Set(['stream_end', 'cancel', 'apperror', 'error'])
 
-/** Live-only Web playback instruction. Absent from initial/history/replay frames. */
+/** Web playback instruction. Absent from initial and history frames; a resumed `/api/sessions/events` connection replays missed ones (TAL-1954). */
 export const WebAudioCompletionSchema = z.object({
   identity: z.string().min(1).max(128), scope: z.string().min(1).max(128), profile: z.string().min(1),
   eligible: z.boolean(), expires_at: z.number(),

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The completion sound now plays when a chat finishes while Talaria Web is briefly reconnecting.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
