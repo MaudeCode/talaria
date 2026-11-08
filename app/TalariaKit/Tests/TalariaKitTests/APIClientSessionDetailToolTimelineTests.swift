@@ -237,6 +237,19 @@ func testToolStreamEventDecodesTheServerResultView() throws {
     XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).result?.text, "built\nwarn\nExit code: 2")
 }
 
+/// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
+func testTheReviewReferenceDecodesFromAToolResultAndASessionDetail() throws {
+    let ref = try DecisionReviewModelTests.fixture("ref")
+    let expected = DecisionReviewRef(reviewId: "dr_0a1b2c3d", title: "Workspace defaults", progress: DecisionProgress(total: 3, answered: 2))
+    let event = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-review","name":"decision_review_put","result_view":{"text":"opened","decision_review":\#(ref)}}"#.utf8))
+    XCTAssertEqual(event.resultView?.decisionReview, expected)
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let detail = try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"synthetic-session","decision_review":\#(ref)}"#.utf8))
+    XCTAssertEqual(detail.decisionReview, expected)
+    XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s","decision_review":null}"#.utf8)).decisionReview)
+}
+
 func testToolStreamEventCarriesAFileEditsDiffOntoItsCall() throws {
     let data = Data(#"{"id":"call-patch","name":"patch","kind":"write","target":"a.txt","edit_diff":{"added":2,"removed":1,"diff":"@@ -1 +1,2 @@\n-a\n+b\n+c","truncated":true}}"#.utf8)
     let event = try JSONDecoder().decode(ToolStreamEvent.self, from: data)

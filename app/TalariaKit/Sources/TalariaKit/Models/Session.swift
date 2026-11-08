@@ -322,10 +322,10 @@ public enum SessionSourceKind: String, Sendable, Hashable {
 }
 
 /// The server's summary of the prompts waiting on the user in a session (`attention`): approvals outrank clarify
-/// questions. A kind this build does not know decodes as `.other`.
+/// questions, and both outrank open decision reviews (TAL-1965). A kind this build does not know decodes as `.other`.
 public struct SessionAttention: Decodable, Equatable, Hashable, Sendable {
     public enum Kind: String, Sendable, Hashable {
-        case approval, clarify, other
+        case approval, clarify, decision, other
     }
 
     public let kind: Kind
@@ -986,6 +986,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public let clearGeneration: String?
     /// TAL-833: the standing `/goal`; nil when none runs or from a server that predates it.
     public let goal: SessionGoal?
+    /// TAL-1964: the session's newest open decision review; nil when none is open.
+    public let decisionReview: DecisionReviewRef?
     /// Server-resolved visibility. Reasoning arrives only when shown; nil preserves older-server presentation.
     public let showReasoning: Bool?
     public let messages: [ChatMessage]?
@@ -1058,6 +1060,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         case confirmsDeepTruncate
         case clearGeneration
         case goal
+        case decisionReview
         case showReasoning
         case messages
         case toolCalls
@@ -1134,6 +1137,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         confirmsDeepTruncate = container.decodeLossyBoolIfPresent(forKey: .confirmsDeepTruncate)
         clearGeneration = container.decodeLossyStringIfPresent(forKey: .clearGeneration)
         goal = try? container.decodeIfPresent(SessionGoal.self, forKey: .goal)
+        decisionReview = DecisionReview.decode(DecisionReviewRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .decisionReview))
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)
         messagesTruncated = container.decodeLossyBoolIfPresent(forKey: .underscoredMessagesTruncated)

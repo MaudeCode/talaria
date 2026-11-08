@@ -10,6 +10,9 @@ extension Notification.Name {
     /// Local optimistic removals and rollbacks. The object is the owning SessionListViewModel;
     /// userInfo[SessionListViewModel.removalSessionIDsKey] contains the currently removed IDs.
     public static let talariaSessionRemovalsChanged = Notification.Name("talariaSessionRemovalsChanged")
+    /// TAL-1965: a decision review changed on the server, from its session's `decision_review` event. The object is the
+    /// `DecisionReviewEvent`; the review's transcript card and open screen reread it.
+    public static let talariaDecisionReviewChanged = Notification.Name("talariaDecisionReviewChanged")
 }
 
 /// A change the server announced, or a resync after the subscription reconnected and may have

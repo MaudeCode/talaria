@@ -237,6 +237,22 @@ public final class ChatViewModel {
         }
     }
 
+    /// TAL-1965: a decision review for its transcript card.
+    public func decisionReview(id: String) async throws -> DecisionReview {
+        try await client.decisionReview(id: id)
+    }
+
+    /// TAL-1965: a `decision_review` event moves the composer chip's progress in place; a review that stopped being open
+    /// rereads the session, whose `decision_review` names the newest one still open.
+    public func handleDecisionReviewEvent(_ event: DecisionReviewEvent, modelContext: ModelContext? = nil) async {
+        guard event.sessionId == sessionID else { return }
+        if event.status == .open, let shown = sessionDecisionReview, shown.reviewId == event.reviewId {
+            sessionDecisionReview = DecisionReviewRef(reviewId: shown.reviewId, title: shown.title, progress: event.progress)
+        } else if event.status != .open || sessionDecisionReview == nil {
+            await handleSessionsChange(.changed(reason: "decision_review", sessionID: event.sessionId), modelContext: modelContext)
+        }
+    }
+
     /// TAL-331: the whole result of a scene tool row the server clipped (`ToolCall.resultTruncated`).
     public func fullToolResult(toolCallID: String) async throws -> ToolResultView {
         // A clipped row only comes from a loaded session; without one there is no result to fetch.
@@ -294,6 +310,8 @@ public final class ChatViewModel {
     }
     /// TAL-833: the standing `/goal` every session detail carries; nil hides its chip.
     public private(set) var sessionGoal: SessionGoal?
+    /// TAL-1965: the session's newest open decision review; nil hides its composer chip.
+    public private(set) var sessionDecisionReview: DecisionReviewRef?
     /// The server's display choice, with only this user's write shown optimistically.
     public var showsReasoning: Bool { requestedReasoningDisplay ?? serverShowsReasoning ?? true }
     private var serverShowsReasoning: Bool?
@@ -324,6 +342,7 @@ public final class ChatViewModel {
             sessionNotices = notices
         }
         sessionGoal = session?.goal
+        sessionDecisionReview = session?.decisionReview
         if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {

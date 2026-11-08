@@ -173,6 +173,8 @@ struct ChatView: View {
     /// the cache-first → network reconcile re-pins to the bottom without a jump (#289).
     @State private var cacheFirstSnapUntil: Date?
     @State private var forkedSession: SessionSummary?
+    /// TAL-1965: the decision review pushed over the chat; nil while none is open.
+    @State private var openedDecisionReviewID: String?
     @State private var removedForkedSession: SessionSummary?
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
@@ -1113,6 +1115,14 @@ struct ChatView: View {
                 ChatView(session: session, server: server, onAPIError: onAPIError,
                          sessionListOwner: sessionActions?.viewModel, splitFilesInspector: splitFilesInspector)
             }
+            .navigationDestination(isPresented: Binding(
+                get: { openedDecisionReviewID != nil },
+                set: { if !$0 { openedDecisionReviewID = nil } }
+            )) {
+                if let openedDecisionReviewID {
+                    DecisionReviewView(reviewID: openedDecisionReviewID, server: server, onAPIError: onAPIError)
+                }
+            }
             .onChange(of: forkedSession) { _, fork in
                 if fork == nil { splitFilesInspector?.reportSession(session) }
             }
@@ -1601,6 +1611,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: visibleSessionNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: goalChipPresentation)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.sessionDecisionReview)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: ownerAdmissions)
@@ -1620,6 +1631,7 @@ struct ChatView: View {
     private var hasReservedCompactStatusItems: Bool {
         activeRunStatusPresentation?.reservesTranscriptSpace == true || !visibleSessionNotices.isEmpty
             || showsSheetChipRow || goalChipPresentation != nil || showsApprovalBypassStatus
+            || viewModel.sessionDecisionReview != nil
     }
 
     private var compactStatusItems: some View {
@@ -1639,6 +1651,9 @@ struct ChatView: View {
             }
             if let goalChipPresentation {
                 StatusChip(label: goalChipPresentation.label, icon: .symbol(goalChipPresentation.symbol))
+            }
+            if let review = viewModel.sessionDecisionReview {
+                decisionReviewChip(review)
             }
             if showsApprovalBypassStatus {
                 Button {
@@ -1692,6 +1707,24 @@ struct ChatView: View {
 
     private func queuedMessagesAction() {
         showsQueuedMessagesSheet = true
+    }
+
+    /// TAL-1965: the session's open decision review; tapping Open pushes it.
+    private func decisionReviewChip(_ review: DecisionReviewRef) -> some View {
+        Button {
+            openedDecisionReviewID = review.reviewId
+        } label: {
+            StatusChip(
+                label: String(localized: "Decision review: \(review.progress.answered) of \(review.progress.total) answered"),
+                icon: .symbol("checklist"),
+                action: String(localized: "Open")
+            )
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(String(localized: "Opens the decision review"))
+        .accessibilityIdentifier("decision-review-chip")
     }
 
     private func backgroundTasksChip(_ tasks: [BackgroundWorkTask]) -> some View {
@@ -1898,6 +1931,12 @@ struct ChatView: View {
             .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
                 { try await viewModel.fullToolResult(toolCallID: toolCallID) }
             }
+            .chatEnvironmentAction(\.chatDecisionReviewLoader) { reviewID in
+                { try await viewModel.decisionReview(id: reviewID) }
+            }
+            .chatEnvironmentAction(\.chatOpenDecisionReview) { reviewID in
+                chat.openedDecisionReviewID = reviewID
+            }
             .chatEnvironmentAction(\.voiceNoteAction) { id, action in
                 switch action {
                 case .retry:
@@ -2085,6 +2124,9 @@ struct ChatView: View {
             count += 1
         }
         if goalChipPresentation != nil {
+            count += 1
+        }
+        if viewModel.sessionDecisionReview != nil {
             count += 1
         }
         if showsApprovalBypassStatus {
@@ -3880,11 +3922,18 @@ private struct ChatLiveSync: ViewModifier {
                 guard scenePhase == .active, let sessionID, !sessionID.isEmpty else { return }
                 await SessionEventsMonitor.run(
                     url: Endpoint.sessionStream(sessionID: sessionID).url(relativeTo: server),
-                    client: SessionEventStreamClient()
-                ) { change in
-                    await viewModel.handleSessionsChange(change, modelContext: modelContext)
-                    reportLastError()
-                }
+                    client: SessionEventStreamClient(),
+                    onChange: { change in
+                        await viewModel.handleSessionsChange(change, modelContext: modelContext)
+                        reportLastError()
+                    },
+                    onDecisionReview: { event in
+                        // The review's transcript card and open screen reread it.
+                        NotificationCenter.default.post(name: .talariaDecisionReviewChanged, object: event)
+                        await viewModel.handleDecisionReviewEvent(event, modelContext: modelContext)
+                        reportLastError()
+                    }
+                )
             }
             .task(id: scenePhase == .active) {
                 guard scenePhase == .active else { return }

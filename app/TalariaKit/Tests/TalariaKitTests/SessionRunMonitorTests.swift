@@ -43,6 +43,11 @@ final class SessionRunMonitorTests: APIClientTestCase {
         XCTAssertTrue(approval.isAwaitingUser)
         let question = SessionSummary(sessionId: "q", attention: SessionAttention(kind: .clarify))
         XCTAssertEqual(SessionRunMonitor.runStatus(for: question)?.label(agentName: "Hermes"), "Has a question")
+        // TAL-1965: an open decision review waits on the user like a question, with its own wording.
+        let decision = try XCTUnwrap(SessionRunMonitor.runStatus(for: SessionSummary(sessionId: "d", attention: SessionAttention(kind: .decision))))
+        XCTAssertTrue(decision.isAwaitingUser)
+        XCTAssertEqual(decision.label(agentName: "Hermes"), "Has decisions to review")
+        XCTAssertEqual(decision.accessibilityLabel(agentName: "Hermes"), "Hermes is waiting for your decisions")
 
         XCTAssertNil(SessionRunMonitor.runStatus(for: idle))
     }
@@ -55,6 +60,7 @@ final class SessionRunMonitorTests: APIClientTestCase {
         }
         XCTAssertEqual(try row(#"{"kind": "approval", "count": 2, "severity": "critical"}"#).attention, SessionAttention(kind: .approval, count: 2))
         XCTAssertEqual(try row(#"{"kind": "clarify", "count": 1}"#).attention?.kind, .clarify)
+        XCTAssertEqual(try row(#"{"kind": "decision", "count": 1, "severity": "question"}"#).attention?.kind, .decision)
         XCTAssertEqual(try row(#"{"kind": "future_kind"}"#).attention?.kind, .other)
         XCTAssertNil(try row("null").attention)
         XCTAssertNil(try row(#""unexpected""#).attention)

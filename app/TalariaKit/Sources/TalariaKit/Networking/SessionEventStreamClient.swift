@@ -8,6 +8,8 @@ public enum SessionEventFrame: Equatable, Sendable {
     /// The server's keepalive comment, sent every 5 s; it proves the stream is live.
     case keepalive
     case changed(SessionsChange)
+    /// TAL-1965: a decision review of the session changed; the chat rereads it and the session detail.
+    case decisionReview(DecisionReviewEvent)
     case ignored
 }
 
@@ -17,6 +19,11 @@ enum SessionEventFrameDecoder {
             return .ignored
         }
         if eventType == "initial", let sessionID = payload.session_id, !sessionID.isEmpty { return .keepalive }
+        if eventType == "decision_review" {
+            guard let event = try? DecisionReview.decoder.decode(DecisionReviewEvent.self, from: Data(data.utf8)),
+                  !event.sessionId.isEmpty, !event.reviewId.isEmpty else { return .ignored }
+            return .decisionReview(event)
+        }
         if ["session-updated", "server_turn_started", "bg_task_complete", "process_complete"].contains(eventType) {
             guard let sessionID = payload.session_id, !sessionID.isEmpty else { return .ignored }
             return .changed(.changed(reason: eventType, sessionID: sessionID))
@@ -33,8 +40,10 @@ enum SessionEventFrameDecoder {
 
 extension SessionEventFrame {
     var isChange: Bool {
-        if case .changed = self { return true }
-        return false
+        switch self {
+        case .changed, .decisionReview: true
+        default: false
+        }
     }
 }
 
@@ -145,6 +154,7 @@ public enum SessionEventsMonitor {
         url: URL,
         client: SessionEventStreaming,
         onChange: @escaping @MainActor (SessionsChange) async -> Void,
+        onDecisionReview: @MainActor (DecisionReviewEvent) async -> Void = { _ in },
         onLiveChange: @MainActor (Bool) -> Void = { _ in },
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
@@ -168,8 +178,13 @@ public enum SessionEventsMonitor {
                     if hasConnected { await onChange(.resync) }
                     hasConnected = true
                 }
-                if case .changed(let change) = frame {
+                switch frame {
+                case .changed(let change):
                     await onChange(change)
+                case .decisionReview(let event):
+                    await onDecisionReview(event)
+                default:
+                    break
                 }
             }
             continuation.finish()

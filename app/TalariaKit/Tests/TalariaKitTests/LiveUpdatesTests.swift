@@ -87,6 +87,16 @@ final class SessionEventFrameDecoderTests: XCTestCase {
         XCTAssertEqual(frame, .changed(.changed(reason: "session_done", sessionID: nil)))
     }
 
+    /// TAL-1965: the review's change, from the shared fixture's event.
+    func testDecodesADecisionReviewEvent() throws {
+        let event = try DecisionReviewModelTests.fixture("event")
+        XCTAssertEqual(
+            SessionEventFrameDecoder.decode(eventType: "decision_review", data: event),
+            .decisionReview(DecisionReviewEvent(sessionId: "synthetic-session", reviewId: "dr_0a1b2c3d", status: .open, progress: DecisionProgress(total: 3, answered: 3)))
+        )
+        XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: "decision_review", data: #"{"session_id":"s"}"#), .ignored)
+    }
+
     func testOtherEventsAndMalformedDataAreIgnored() {
         XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: "gateway_status", data: "{}"), .ignored)
         XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: "sessions_changed", data: "not json"), .ignored)

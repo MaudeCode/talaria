@@ -91,18 +91,25 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let stderr: String?
     public let error: String?
     public let exitCode: Int?
+    /// TAL-1965: the review a `decision_review_put` made or revised, as it stood then.
+    public let decisionReview: DecisionReviewRef?
 
-    public init(text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil) {
+    public init(
+        text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
+        decisionReview: DecisionReviewRef? = nil
+    ) {
         self.text = text
         self.stdout = stdout
         self.stderr = stderr
         self.error = error
         self.exitCode = exitCode
+        self.decisionReview = decisionReview
     }
 
     enum CodingKeys: String, CodingKey {
         case text, stdout, stderr, error
         case exitCode = "exit_code"
+        case decisionReview = "decision_review"
     }
 
     public init(from decoder: Decoder) throws {
@@ -112,6 +119,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         stderr = container.decodeLossyStringIfPresent(forKey: .stderr)
         error = container.decodeLossyStringIfPresent(forKey: .error)
         exitCode = container.decodeLossyIntIfPresent(forKey: .exitCode)
+        decisionReview = DecisionReview.decode(DecisionReviewRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .decisionReview))
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.

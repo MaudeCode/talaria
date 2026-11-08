@@ -63,6 +63,7 @@
 		D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000A002 /* DuoFoldHostedTests.swift */; };
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */; };
+		D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000004 /* DecisionReviewHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
 		157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157503000000000000000002 /* APIClientFeedbackTests.swift */; };
@@ -401,6 +402,7 @@
 		C166A0000000000000000001 /* TaskRunHistoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C166A0000000000000000101 /* TaskRunHistoryViews.swift */; };
 		8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2A37872AC842629FBDDFA4 /* SlashCommandAutocompleteView.swift */; };
 		8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */; };
+		D1965A000000000000000002 /* DecisionReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000001 /* DecisionReviewView.swift */; };
 		D1461A000000000000000001 /* ComposerDropHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1461A000000000000000002 /* ComposerDropHostedTests.swift */; };
 		A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */; };
 		C0CAM000000000000000B001 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0CAM000000000000000B002 /* CameraPickerView.swift */; };
@@ -521,6 +523,7 @@
 		D1477000000000000000A002 /* DuoFoldHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoFoldHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHostedTests.swift; sourceTree = "<group>"; };
+		D1965A000000000000000004 /* DecisionReviewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
 		157503000000000000000002 /* APIClientFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/APIClientFeedbackTests.swift; sourceTree = "<group>"; };
@@ -827,6 +830,7 @@
 		3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		C166A0000000000000000101 /* TaskRunHistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunHistoryViews.swift; sourceTree = "<group>"; };
 		57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
+		D1965A000000000000000001 /* DecisionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F1 /* ProvidersViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModel.swift; sourceTree = "<group>"; };
 		26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryModelsSettingsView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F2 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
@@ -1000,6 +1004,7 @@
 				D1477000000000000000A002 /* DuoFoldHostedTests.swift */,
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */,
+				D1965A000000000000000004 /* DecisionReviewHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
 				157503000000000000000002 /* APIClientFeedbackTests.swift */,
@@ -1079,6 +1084,7 @@
 				1A2B3C4D5E6F70000000206 /* Memory */,
 				B50E1CE3A8912B92B1924714 /* Insights */,
 				C1490000000000000000000D /* Kanban */,
+				D1965A000000000000000003 /* Decisions */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -1506,6 +1512,14 @@
 				C166A0000000000000000101 /* TaskRunHistoryViews.swift */,
 			);
 			path = Tasks;
+			sourceTree = "<group>";
+		};
+		D1965A000000000000000003 /* Decisions */ = {
+			isa = PBXGroup;
+			children = (
+				D1965A000000000000000001 /* DecisionReviewView.swift */,
+			);
+			path = Decisions;
 			sourceTree = "<group>";
 		};
 		B50E1CE3A8912B92B1924714 /* Insights */ = {
@@ -2026,6 +2040,7 @@
 				1A2B3C4D5E6F70000000212 /* SkillsView.swift in Sources */,
 				8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */,
 				8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */,
+				D1965A000000000000000002 /* DecisionReviewView.swift in Sources */,
 				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
 				26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,
@@ -2071,6 +2086,7 @@
 				D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */,
+				D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
 				157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */,
