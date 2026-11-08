@@ -316,11 +316,17 @@ with the decision for one tab. The tab sends its `loaded_build` and the opaque
 - The server answers with `observation` (store it now) or `acknowledgement` (store
   it only after the user dismisses an `eligible` announcement). A failed read and
   an unseen announcement therefore leave the stored token unchanged.
-- The first observation in a browser is quiet. A later `X.Y.Z` with an
-  announcement is eligible once. Experimental builds of one `X.Y.Z` and releases
-  without an announcement are quiet and record the installed version. An older
-  release is quiet and keeps the newer token, so returning to a release after a
-  rollback does not present it again.
+- The token lists the announcement row ids (`TAL-<n>-<entry>`) the browser has
+  acknowledged, newest last, capped at the 32 most recent ids and 1024
+  characters. The first observation in a browser is quiet and records every
+  packaged row. After that, any packaged row the token does not list is
+  presented once, whatever the release version: an Experimental build of the
+  same `X.Y.Z` that packages a new row presents that row, and a release whose
+  rows the browser never saw presents them later. The automatic prompt
+  (`presentation`) holds only those unseen rows; `announcement` stays the full
+  installed announcement. A release without new rows is quiet and keeps every
+  acknowledged id, so a rollback or a release without an announcement never
+  re-presents a row. A legacy `web:X.Y.Z` token acknowledges no rows.
 - A tab whose loaded build is not the build the server now serves (or cannot be
   verified) neither presents nor records anything, so a stale UI never announces
   the newer UI before it refreshes.
@@ -329,7 +335,8 @@ with the decision for one tab. The tab sends its `loaded_build` and the opaque
   other dialog or menu is open, no navigation is pending, and no focused field
   holds a draft. Continue, Escape and the backdrop close it at once and store
   the acknowledgement; other tabs of the browser close their copy. Settings >
-  System > What's New replays it; a replay never re-enables the automatic prompt.
+  System > What's New replays the full announcement; a replay never re-enables
+  the automatic prompt.
   A failed read stays quiet and is retried at the next launch or Settings visit.
 - An unreadable token counts as no observation. Tokens are only compared, never
   used as release identity. App releases have their own announcement and never

@@ -183,24 +183,46 @@ export function loadWhatsNew(webRoot: string, release: ReleaseInfo): WhatsNewAnn
   }
 }
 
-const OBSERVATION_RE = /^web:(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/
-const CORE_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-|$)/
+const ROW_TOKEN_RE = /^web:rows:((?:TAL-[1-9][0-9]*-[1-9][0-9]*)(?:,TAL-[1-9][0-9]*-[1-9][0-9]*)*)?$/
+const LEGACY_TOKEN_RE = /^web:(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/
+const TOKEN_IDS = 32
+const TOKEN_CHARS = 1024
+
+/** The acknowledged row ids in `observed`; a legacy release token acknowledges none, an unreadable one is null. */
+function acknowledgedRows(observed: string | undefined): string[] | null {
+  if (observed !== undefined && LEGACY_TOKEN_RE.test(observed)) return []
+  const match = ROW_TOKEN_RE.exec(observed ?? '')
+  return match === null ? null : match[1]?.split(',') ?? []
+}
+
+/** The token for `prior` plus `added` ids, newest last, keeping only the most recent that fit the contract's limits. */
+function rowToken(prior: readonly string[], added: readonly string[]): string {
+  const ids = [...prior.filter((id) => !added.includes(id)), ...added]
+  let token = `web:rows:${ids.join(',')}`
+  while (ids.length > TOKEN_IDS || token.length > TOKEN_CHARS) {
+    ids.shift()
+    token = `web:rows:${ids.join(',')}`
+  }
+  return token
+}
 
 /**
- * Whether one tab presents `announcement` now (TAL-1616). A browser's observation token names the X.Y.Z release it
- * last recorded: the first observation is quiet, and an announcement is eligible once for a later X.Y.Z. Builds of
- * one X.Y.Z (Experimental commits) and older releases are quiet, and an older release keeps the newer token. A tab whose loaded bundle is not the build this
- * server serves (a stale UI, or no verifiable build) neither presents nor records a release; an unreadable token
- * counts as no observation. `observed` is compared, never trusted as release identity.
+ * Whether one tab presents `announcement` now (TAL-1616, TAL-1981). A browser's observation token lists the row ids
+ * it acknowledged. The first observation is quiet and records every packaged row; afterwards the packaged rows it has
+ * not acknowledged are presented once, whatever the release version, so Experimental builds of one X.Y.Z and skipped
+ * releases announce their new rows. A legacy `web:X.Y.Z` token acknowledges no row. A tab whose loaded bundle is not
+ * the build this server serves (a stale UI, or no verifiable build) neither presents nor records anything. `observed`
+ * is compared, never trusted as release identity.
  */
 export function whatsNewState(announcement: WhatsNewAnnouncement | null, release: ReleaseInfo, observed: string | undefined, loadedBuild: string | undefined, currentBuild: string | null): WhatsNewState {
-  const quiet = { announcement, eligible: false, observation: null, acknowledgement: null }
-  const installed = release.sourceRevision === null ? null : CORE_RE.exec(release.version)
-  if (!installed || !currentBuild || loadedBuild !== currentBuild) return quiet
-  const token = `web:${installed[1]}.${installed[2]}.${installed[3]}`
-  const prior = OBSERVATION_RE.exec(observed ?? '')
-  const order = prior === null ? 1 : Math.sign([1, 2, 3].map((i) => Number(installed[i]) - Number(prior[i])).find((d) => d !== 0) ?? 0)
-  if (announcement && prior !== null && order > 0) return { ...quiet, eligible: true, acknowledgement: token }
-  // An older release keeps the newer token, so a rollback never re-presents a release the browser already recorded.
-  return order < 0 ? quiet : { ...quiet, observation: token }
+  const quiet = { announcement, presentation: null, eligible: false, observation: null, acknowledgement: null }
+  if (release.sourceRevision === null || !currentBuild || loadedBuild !== currentBuild) return quiet
+  const packaged = announcement?.rows.map((row) => row.id) ?? []
+  const prior = acknowledgedRows(observed)
+  const unseen = prior === null ? [] : announcement?.rows.filter((row) => !prior.includes(row.id)) ?? []
+  if (announcement && unseen.length > 0) {
+    return { ...quiet, presentation: { ...announcement, rows: unseen }, eligible: true, acknowledgement: rowToken(prior ?? [], packaged) }
+  }
+  // Prior ids are kept, so a rollback or a release without rows never re-presents a row the browser acknowledged.
+  return { ...quiet, observation: rowToken(prior ?? [], packaged) }
 }

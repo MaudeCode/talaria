@@ -117,8 +117,8 @@ export const WhatsNewAnnouncementSchema = z.object({
 })
 export type WhatsNewAnnouncement = z.infer<typeof WhatsNewAnnouncementSchema>
 
-/** A browser's stored observation token: opaque to clients, read by the server only to compare release versions. */
-export const WhatsNewObservedSchema = z.string().max(256)
+/** A browser's stored observation token: opaque to clients, read by the server only to find the rows it acknowledged. */
+export const WhatsNewObservedSchema = z.string().max(1024)
 /**
  * Whether this tab presents the installed Web release's announcement now. The client keeps one opaque token in local
  * storage: it stores `observation` at once when it is non-null, and `acknowledgement` only after the user dismisses an
@@ -127,6 +127,8 @@ export const WhatsNewObservedSchema = z.string().max(256)
 export const WhatsNewStateSchema = z.object({
   /** The installed release's announcement, also for replay from Settings; null when it has none. */
   announcement: WhatsNewAnnouncementSchema.nullable(),
+  /** The automatic prompt: the announcement with only the rows this browser has not acknowledged; non-null exactly when `eligible`. */
+  presentation: WhatsNewAnnouncementSchema.nullable(),
   eligible: z.boolean(),
   observation: z.string().nullable(),
   acknowledgement: z.string().nullable(),

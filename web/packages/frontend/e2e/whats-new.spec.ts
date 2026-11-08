@@ -19,6 +19,10 @@ const announcement: WhatsNewAnnouncement = {
     { id: 'TAL-12-1', icon: 'automation', title: 'Scheduled tasks', description: 'Run a prompt every morning and read the result when you sit down.' },
   ],
 }
+/** A later Experimental build of the same X.Y.Z core packages the newest four rows, one of them new (TAL-1981). */
+const EXPERIMENTAL = '1.1.0-exp.cccccccccccc'
+const NEW_ROW = { id: 'TAL-13-1', icon: 'share', title: 'Share a chat', description: 'Send a read-only link to any conversation.' } as const
+const experimental: WhatsNewAnnouncement = { ...announcement, id: `web-${EXPERIMENTAL}`, version: EXPERIMENTAL, rows: [...announcement.rows.slice(1), NEW_ROW] }
 const TITLE = "What's New in Talaria Web"
 const OLD_BUILD = 'a'.repeat(64)
 const BUILD_META = /(<meta name="talaria-build" content=")([a-f0-9]{64})(")/
@@ -34,7 +38,7 @@ async function serveWhatsNew(target: Page | BrowserContext, request: Page['reque
     const params = new URL(route.request().url()).searchParams
     server.reads.push({ loaded_build: params.get('loaded_build'), observed: params.get('observed') })
     if (server.fail) return route.fulfill({ status: 502, json: { error: 'bad gateway' } })
-    const payload = server.version === announcement.version ? announcement : null
+    const payload = [announcement, experimental].find((a) => a.version === server.version) ?? null
     return route.fulfill({ json: whatsNewState(payload, release(server.version), params.get('observed') ?? undefined, params.get('loaded_build') ?? undefined, current) })
   })
 }
@@ -57,7 +61,7 @@ test('a later Web release introduces itself once, and Settings replays the same 
   await page.reload()
   const shown = dialog(page)
   await expect(shown).toBeVisible()
-  expect(server.reads.at(-1)!.observed).toBe('web:1.0.0')
+  expect(server.reads.at(-1)!.observed).toBe('web:rows:')
   const rows = shown.getByRole('listitem')
   await expect(rows).toHaveCount(4)
   await expect(rows.nth(0)).toHaveText(announcement.rows[0]!.title + announcement.rows[0]!.description)
@@ -76,12 +80,24 @@ test('a later Web release introduces itself once, and Settings replays the same 
   await settle(page)
   await expect(dialog(page)).toHaveCount(0)
 
+  // An Experimental build of the same X.Y.Z presents only the row this browser has not acknowledged.
+  server.version = EXPERIMENTAL
+  await page.reload()
+  await expect(dialog(page).getByRole('listitem')).toHaveText([NEW_ROW.title + NEW_ROW.description])
+  await page.screenshot({ path: testInfo.outputPath('whats-new-experimental.png') })
+  await dialog(page).getByRole('button', { name: 'Continue' }).click()
+  await expect(dialog(page)).toHaveCount(0)
+  await page.reload()
+  await settle(page)
+  await expect(dialog(page)).toHaveCount(0)
+
   await page.goto('/settings/system')
   await settle(page)
   await page.screenshot({ path: testInfo.outputPath('whats-new-settings.png') })
   await page.getByRole('button', { name: "What's New", exact: true }).click()
   const replay = dialog(page)
-  await expect(replay.getByRole('listitem')).toHaveCount(4)
+  // Settings replays the installed build's full announcement, rows already seen included.
+  await expect(replay.getByRole('listitem')).toHaveText(experimental.rows.map((row) => row.title + row.description))
   await page.screenshot({ path: testInfo.outputPath('whats-new-replay.png') })
   await page.keyboard.press('Escape')
   await expect(replay).toHaveCount(0)
@@ -123,8 +139,8 @@ test('an open tab still running the old build waits for the refresh before annou
   stale = false
   await page.reload()
   await expect(dialog(page)).toBeVisible()
-  // The old tab recorded nothing, so the refreshed tab still had the 1.0.0 observation.
-  expect(server.reads.at(-1)!.observed).toBe('web:1.0.0')
+  // The old tab recorded nothing, so the refreshed tab still had the 1.0.0 observation with no rows.
+  expect(server.reads.at(-1)!.observed).toBe('web:rows:')
 })
 
 test('two tabs of one browser converge when either dismisses the prompt', async ({ context, page }) => {
@@ -162,7 +178,7 @@ test('a failed read keeps startup normal and leaves the announcement for the nex
   await page.reload()
   await expect(dialog(page)).toBeVisible()
   expect(server.reads.length).toBe(reads + 1)
-  expect(server.reads.at(-1)!.observed).toBe('web:1.0.0')
+  expect(server.reads.at(-1)!.observed).toBe('web:rows:')
 })
 
 test('the prompt waits for a draft in progress and returns to it untouched', async ({ page }) => {

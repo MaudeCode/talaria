@@ -102,7 +102,8 @@ class RoutingTests(unittest.TestCase):
             (["contracts/fixtures/vault-prompts.json"], FIXTURE_SUITES | {"app"}),
             (["contracts/fixtures/feedback-report.json"], FIXTURE_SUITES | {"relay"}),
             (["contracts/whats-new.schema.json"], CONSUMERS | {"tooling"}),
-            (["contracts/fixtures/whats-new.json"], CONSUMERS | {"tooling"}),
+            # Relay and the App's hosted tests never read the What's New fixture (TAL-1981).
+            (["contracts/fixtures/whats-new.json"], FIXTURE_SUITES | {"tooling"}),
             (["web/contract_versions.json"], CONSUMERS),
             (["web/packages/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
             (["scripts/check-web-server"], {"web_server", "tooling"}),
