@@ -3645,6 +3645,11 @@
                   }
                 ]
               },
+              "answer_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
               "outcome": {
                 "anyOf": [
                   {
@@ -3694,10 +3699,39 @@
               "fresh",
               "needs_review",
               "answer",
+              "answer_version",
               "outcome"
             ],
             "additionalProperties": false
           }
+        },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "new": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "pending": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "new",
+            "pending"
+          ],
+          "additionalProperties": false
+        },
+        "next_item_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -3712,7 +3746,9 @@
         "submitted_at",
         "progress",
         "submit",
-        "items"
+        "items",
+        "filters",
+        "next_item_id"
       ],
       "additionalProperties": false
     }
@@ -4024,6 +4060,11 @@
                   }
                 ]
               },
+              "answer_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
               "outcome": {
                 "anyOf": [
                   {
@@ -4073,10 +4114,39 @@
               "fresh",
               "needs_review",
               "answer",
+              "answer_version",
               "outcome"
             ],
             "additionalProperties": false
           }
+        },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "new": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "pending": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "new",
+            "pending"
+          ],
+          "additionalProperties": false
+        },
+        "next_item_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -4091,7 +4161,9 @@
         "submitted_at",
         "progress",
         "submit",
-        "items"
+        "items",
+        "filters",
+        "next_item_id"
       ],
       "additionalProperties": false
     }

@@ -1,5 +1,12 @@
 # Sidecar RPC (TAL-245)
 
+RPC v87 adds what the review page renders to `decision_review_read` and
+`decision_review_record` results (TAL-1964): `filters.new` and `filters.pending`
+(item ids in display order) and `next_item_id`, the first item with no answer,
+a deferred one or one that needs review. Each item also carries `answer_version`,
+which counts every save and clear of its answer and never goes back; a save's
+`expected_version` is that number, so a cleared answer's version is never reused.
+
 RPC v86 adds the default-on `harness` toolset (TAL-1963) and its decision
 reviews: `decision_review_put`, `decision_review_read` and
 `decision_review_record` (`server.decision_review_*`). A review belongs to the

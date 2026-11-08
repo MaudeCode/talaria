@@ -1,7 +1,10 @@
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
+import { Link } from '@tanstack/react-router'
+import type { DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import * as api from '../../../api/endpoints'
+import { keys } from '../../../api/queryKeys'
+import { reviewStatusLabel } from '../../decisions/reviewStatus'
 import { Button } from '../../../ui/Button'
 import { FieldRow, TextInput } from '../../../ui/Field'
 import { m } from '../../../paraglide/messages.js'
@@ -30,12 +33,9 @@ export function OutboundDraftResult({ sessionId, callId, reference }: { sessionI
     setEditing(null)
     write.mutate({ ...input, action, version: shown.version, revision: shown.revision, ...(action === 'edit' ? { fields: shown.fields } : {}) })
   }
-  return <section aria-label={m.outbound_draft_heading()} className="tool-card-result [&_button]:min-h-11 border-t border-border-subtle px-2.5 py-3 text-[13px]">
+  return <ResultSection label={m.outbound_draft_heading()}>
     {draft ? <>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <strong>{draft.fields.subject || m.outbound_draft_heading()}</strong>
-        <span className="text-xs text-muted" role="status">{stateLabel(draft.state)} · {m.outbound_draft_version({ version: String(draft.version) })}</span>
-      </div>
+      <ResultHeader title={draft.fields.subject || m.outbound_draft_heading()} status={<>{stateLabel(draft.state)} · {m.outbound_draft_version({ version: String(draft.version) })}</>} />
       <div className="mt-1 text-xs text-muted">{draft.producer} · {draft.producer_revision.slice(0, 7)}</div>
       {editing ? <DraftEditor key={`${editing.draft_id}:${editing.revision}`} draft={editing} onSave={(fields) => act('edit', { ...editing, fields })} onCancel={() => setEditing(null)} /> : <>
         <dl className="my-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -53,7 +53,33 @@ export function OutboundDraftResult({ sessionId, callId, reference }: { sessionI
         </div>
       </>}
     </> : <div className="flex items-center gap-2 text-muted"><span role="status">{query.isPending ? m.loading() : m.outbound_draft_status_unavailable()}</span>{!query.isPending && <Button variant="ghost" onClick={() => { void query.refetch() }}>{m.refresh()}</Button>}</div>}
-  </section>
+  </ResultSection>
+}
+
+/** A typed result body under a tool card's header: outbound drafts and decision reviews. */
+function ResultSection({ label, children }: { label: string; children: ReactNode }) {
+  return <section aria-label={label} className="tool-card-result [&_button]:min-h-11 border-t border-border-subtle px-2.5 py-3 text-[13px]">{children}</section>
+}
+
+function ResultHeader({ title, status }: { title: string; status: ReactNode }) {
+  return <div className="flex flex-wrap items-baseline justify-between gap-2"><strong>{title}</strong><span className="text-xs text-muted tabular-nums" role="status">{status}</span></div>
+}
+
+/**
+ * TAL-1964: the review a `decision_review_put` made, with its current status and progress (its session's
+ * `decision_review` events refresh it) and a link to answer it on its page; nothing is answered inline.
+ */
+export function DecisionReviewResult({ reference }: { reference: DecisionReviewRef }) {
+  const query = useQuery({ queryKey: keys.decisionReview(reference.review_id), queryFn: ({ signal }) => api.fetchDecisionReview(reference.review_id, signal), retry: false })
+  const review = query.data
+  const progress = review?.progress ?? reference.progress
+  const answered = m.decision_review_progress({ answered: progress.answered, total: progress.total })
+  return <ResultSection label={m.decision_review_heading()}>
+    <div data-decision-review={reference.review_id} data-review-status={review?.status}>
+      <ResultHeader title={review?.title ?? reference.title} status={review ? `${reviewStatusLabel(review.status)} · ${answered}` : answered} />
+      <Link to="/decisions/$reviewId" params={{ reviewId: reference.review_id }} className="mt-2 inline-flex min-h-11 items-center text-accent-text underline">{m.decision_review_open()}</Link>
+    </div>
+  </ResultSection>
 }
 
 const fieldLabel = (key: keyof OutboundDraft['fields']) => ({ from: m.outbound_draft_from, to: m.outbound_draft_to, cc: m.outbound_draft_cc, bcc: m.outbound_draft_bcc, subject: m.outbound_draft_subject, body: m.outbound_draft_body })[key]()

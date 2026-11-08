@@ -1,5 +1,6 @@
 import { defaultParseSearch, defaultStringifySearch } from '@tanstack/react-router'
 import { z } from 'zod'
+import { DECISION_FILTERS } from '@maudecode/talaria-web-contracts'
 import { SessionIdSchema } from './session'
 
 /**
@@ -49,6 +50,17 @@ export const LoginSearchSchema = z.object({ next: z.string().max(2048).optional(
 export const SkillsSearchSchema = z.object({ q: z.string().max(200).optional().catch(undefined), category: z.string().max(64).optional().catch(undefined) })
 // The router parses `?msg=5` as a number; persisted message keys are integer ids, so the key accepts both and stays a string.
 export const SessionSearchSchema = z.object({ msg: z.union([z.string().max(128), z.number().transform(String)]).optional().catch(undefined) })
+
+/**
+ * TAL-1964: a decision review's view (`answers`, else Decide), the item Decide shows (else the first) and the answers
+ * filter. Item ids are the agent's text, so a numeric-looking one stays a string.
+ */
+export const DecisionsSearchSchema = z.object({
+  view: z.enum(['answers']).optional().catch(undefined),
+  item: z.union([z.string().max(64), z.number().transform(String)]).optional().catch(undefined),
+  filter: z.enum(DECISION_FILTERS).optional().catch(undefined),
+})
+export type DecisionsSearch = z.infer<typeof DecisionsSearchSchema>
 
 /** Legacy `#settings` / `#sessions` hashes map to routes. */
 export function legacyHashRoute(hash: string): string | null {

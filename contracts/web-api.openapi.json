@@ -9092,6 +9092,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -14384,6 +14440,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -18438,6 +18550,62 @@
                             }
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
+                        },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -25504,6 +25672,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -31917,6 +32141,62 @@
                             }
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
+                        },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -38964,6 +39244,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -42967,6 +43303,62 @@
                             }
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
+                        },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -47034,6 +47426,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -51097,6 +51545,62 @@
                             }
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
+                        },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -66000,6 +66504,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -70055,6 +70615,62 @@
                             }
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
+                        },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -74791,6 +75407,62 @@
                           ],
                           "description": "TAL-808: the standing /goal; null when none runs."
                         },
+                        "decision_review": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "review_id": {
+                                  "type": "string",
+                                  "pattern": "^dr_[0-9a-f]{8}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "answered": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "deferred": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "needs_review": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "total",
+                                    "answered",
+                                    "deferred",
+                                    "needs_review"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "review_id",
+                                "title",
+                                "progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1964: the session's newest open decision review; null when none is open."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -79337,6 +80009,62 @@
                                 }
                               ],
                               "description": "TAL-808: the standing /goal; null when none runs."
+                            },
+                            "decision_review": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "review_id": {
+                                      "type": "string",
+                                      "pattern": "^dr_[0-9a-f]{8}$"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "progress": {
+                                      "type": "object",
+                                      "properties": {
+                                        "total": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "answered": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deferred": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "needs_review": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "total",
+                                        "answered",
+                                        "deferred",
+                                        "needs_review"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "review_id",
+                                    "title",
+                                    "progress"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1964: the session's newest open decision review; null when none is open."
                             },
                             "automatic_turns_held": {
                               "type": "boolean",
@@ -125402,6 +126130,11 @@
                                     }
                                   ]
                                 },
+                                "answer_version": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
                                 "outcome": {
                                   "anyOf": [
                                     {
@@ -125454,9 +126187,41 @@
                                 "fresh",
                                 "needs_review",
                                 "answer",
+                                "answer_version",
                                 "outcome"
                               ]
                             }
+                          },
+                          "filters": {
+                            "type": "object",
+                            "properties": {
+                              "new": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "pending": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "new",
+                              "pending"
+                            ]
+                          },
+                          "next_item_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -125471,7 +126236,9 @@
                           "submitted_at",
                           "progress",
                           "submit",
-                          "items"
+                          "items",
+                          "filters",
+                          "next_item_id"
                         ]
                       }
                     }
@@ -125784,6 +126551,11 @@
                               }
                             ]
                           },
+                          "answer_version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
                           "outcome": {
                             "anyOf": [
                               {
@@ -125836,9 +126608,41 @@
                           "fresh",
                           "needs_review",
                           "answer",
+                          "answer_version",
                           "outcome"
                         ]
                       }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "pending": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "pending"
+                      ]
+                    },
+                    "next_item_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -125853,7 +126657,9 @@
                     "submitted_at",
                     "progress",
                     "submit",
-                    "items"
+                    "items",
+                    "filters",
+                    "next_item_id"
                   ]
                 }
               }
@@ -125865,7 +126671,7 @@
     "/api/decisions/{review_id}/answers/{item_id}": {
       "put": {
         "operationId": "decisions.answer",
-        "summary": "Save one answer. A stale `expected_version` is 409 `answer_conflict`, and a `content_hash` the item no longer has is 409 `item_changed`, each with the stored `answer`; a closed review is 409 `review_closed`.",
+        "summary": "Save one answer, or clear it with no choice, not deferred and not custom. A stale `expected_version` is 409 `answer_conflict`, and a `content_hash` the item no longer has is 409 `item_changed`, each with the stored `answer` and `answer_version`; a closed review is 409 `review_closed`.",
         "tags": [
           "decisions"
         ],
@@ -126217,6 +127023,11 @@
                               }
                             ]
                           },
+                          "answer_version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
                           "outcome": {
                             "anyOf": [
                               {
@@ -126269,9 +127080,41 @@
                           "fresh",
                           "needs_review",
                           "answer",
+                          "answer_version",
                           "outcome"
                         ]
                       }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "pending": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "pending"
+                      ]
+                    },
+                    "next_item_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -126286,7 +127129,9 @@
                     "submitted_at",
                     "progress",
                     "submit",
-                    "items"
+                    "items",
+                    "filters",
+                    "next_item_id"
                   ]
                 }
               }
@@ -126594,6 +127439,11 @@
                               }
                             ]
                           },
+                          "answer_version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
                           "outcome": {
                             "anyOf": [
                               {
@@ -126646,9 +127496,41 @@
                           "fresh",
                           "needs_review",
                           "answer",
+                          "answer_version",
                           "outcome"
                         ]
                       }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "pending": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "pending"
+                      ]
+                    },
+                    "next_item_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -126663,7 +127545,9 @@
                     "submitted_at",
                     "progress",
                     "submit",
-                    "items"
+                    "items",
+                    "filters",
+                    "next_item_id"
                   ]
                 }
               }
@@ -126970,6 +127854,11 @@
                               }
                             ]
                           },
+                          "answer_version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
                           "outcome": {
                             "anyOf": [
                               {
@@ -127022,9 +127911,41 @@
                           "fresh",
                           "needs_review",
                           "answer",
+                          "answer_version",
                           "outcome"
                         ]
                       }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "pending": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "pending"
+                      ]
+                    },
+                    "next_item_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -127039,7 +127960,9 @@
                     "submitted_at",
                     "progress",
                     "submit",
-                    "items"
+                    "items",
+                    "filters",
+                    "next_item_id"
                   ]
                 }
               }

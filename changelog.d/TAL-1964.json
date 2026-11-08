@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When the agent asks for several decisions at once, answer them one at a time on a review page, revisit your answers, and submit them back to the chat.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Decision reviews",
+        "description": "Answer the agent's decisions one at a time, then hand them back in one go.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

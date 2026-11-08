@@ -423,6 +423,7 @@ export const SessionSchema = z.looseObject({
   compression_started_at: NullableNumber.optional().describe('TAL-1006: when the compression clients show started (epoch seconds): the running manual job\'s, else the live run\'s open span; null when none runs.'),
   notices: z.array(SessionNoticeSchema).optional().describe('TAL-803: the Agent\'s active notices for the session, oldest first.'),
   goal: SessionGoalSchema.nullable().optional().describe('TAL-808: the standing /goal; null when none runs.'),
+  decision_review: DecisionReviewRefSchema.nullable().optional().describe('TAL-1964: the session\'s newest open decision review; null when none is open.'),
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,

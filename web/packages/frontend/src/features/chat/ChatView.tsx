@@ -36,6 +36,7 @@ import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
+import { decisionReviewNotice } from '../decisions/reviewStatus'
 import { showRichToast, showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { isApiError } from '../../contracts/common'
@@ -459,6 +460,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     ...(modelNotice ? [modelNotice] : []),
     ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []),
     ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []),
+    // TAL-1964: the session's open decision review until it is submitted or cancelled.
+    ...(session?.decision_review ? [decisionReviewNotice(session.decision_review, (reviewId) => { void navigate({ to: '/decisions/$reviewId', params: { reviewId } }) })] : []),
     ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : []),
   ]
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404

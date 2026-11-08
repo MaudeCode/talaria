@@ -78,7 +78,7 @@ const isDisclosure = (id: GroupId): id is DisclosureId => id === 'scheduled' || 
 const DISCLOSURE_PREVIEW = 5
 
 /** Spoken status for a row that needs the user; the server names the kind. */
-const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : m.session_attention_generic_title()
+const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : kind === 'decision' ? m.session_attention_decision_title() : m.session_attention_generic_title()
 
 const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older', 'scheduled', 'webhook']
 
