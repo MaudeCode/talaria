@@ -23,11 +23,15 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
         super.tearDown()
     }
 
-    func testStreamingFenceRebuildsOnlyItsOpenGroupPerUpdate() throws {
+    func testStreamingFenceRebuildsOnlyItsOpenGroupPerUpdate() async throws {
         let fence = StreamingFence()
         let recorder = ChatBodyEvaluationRecorder()
         ChatBodyEvaluationRecorder.installed = recorder
         let window = try hostWindow(ScrollView { StreamingFenceView(fence: fence) })
+        // A loaded CI runner keeps re-rendering a freshly mounted block for about a second, as the chat budget sees
+        // after a send; measure only once it has stopped.
+        let quiet = await awaitQuiet { recorder.counts.values.reduce(0, +) }
+        XCTAssertNotNil(quiet, "The block must stop re-rendering after it mounts before measuring")
         let linesPerUpdate = Self.lineCount / Self.updateCount
         var fallbacks = 0
 
@@ -39,8 +43,9 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
             recorder.reset()
             let first = update * linesPerUpdate
             fence.content += (first..<first + linesPerUpdate).map { "let value\($0) = compute(\($0))\n" }.joined()
-            XCTAssertTrue(waitUntil { recorder.counts["codeLine", default: 0] > 0 }, "Update \(update) never rendered")
-            settle(0.01)
+            let rendered = await awaitCondition { recorder.counts["codeLine", default: 0] > 0 }
+            XCTAssertTrue(rendered, "Update \(update) never rendered")
+            try await Task.sleep(for: .milliseconds(10))
             window.layoutIfNeeded()
 
             let rebuilt = recorder.counts["codeLine", default: 0]
@@ -55,8 +60,9 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
         // The settled block decides once: `text` is never highlighted, so it logs one fallback.
         recorder.reset()
         fence.isStreaming = false
-        XCTAssertTrue(waitUntil { recorder.counts["highlightFallback", default: 0] > 0 }, "The settled block never decided")
-        settle(0.05)
+        let decided = await awaitCondition { recorder.counts["highlightFallback", default: 0] > 0 }
+        XCTAssertTrue(decided, "The settled block never decided")
+        try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(recorder.counts["highlightFallback", default: 0], 1)
     }
 }
