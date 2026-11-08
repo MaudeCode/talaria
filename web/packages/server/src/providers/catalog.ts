@@ -24,7 +24,7 @@ import {
   ACCOUNT_USAGE_PROVIDERS, FALLBACK_MODELS, OAUTH_PROVIDERS, PORTAL_PROVIDERS, PROVIDER_DISPLAY, PROVIDER_ENV_VAR, PROVIDER_ENV_VAR_ALIASES, PROVIDER_MODELS, SELF_HOSTED_PROVIDER_IDS,
 } from './tables.js'
 import {
-  activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderOwner, customProviderSlug, dict, isNativeCustomProviderKey, effectiveDefaultModel, isDict,
+  activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderOwner, customProviderSlug, dict, isNativeCustomEntry, isNativeCustomProviderKey, effectiveDefaultModel, isDict,
   modelSection, parseProviderQualifiedModel, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
@@ -1522,7 +1522,7 @@ export class ProviderCatalog {
     }
     if (!customId) for (const cp of customProviderEntries(config)) {
       const name = str(cp.name).trim().toLowerCase()
-      if (!name || !(pid === name || pid === `custom:${name}` || pid === customProviderSlug(name) || (Boolean(baseUrl) && str(cp.base_url).trim().replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')))) continue
+      if (!name || !(pid === name || pid === `custom:${name}` || pid === customProviderSlug(name) || (Boolean(baseUrl) && !isNativeCustomEntry(cp) && str(cp.base_url).trim().replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')))) continue
       if (!baseUrl) baseUrl = str(cp.base_url).trim()
       configContextLength ??= fromModels(cp.models)
     }

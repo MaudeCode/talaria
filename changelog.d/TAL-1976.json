@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat on a generic custom endpoint or a built-in provider no longer takes its context window from another custom provider that shares the same URL.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

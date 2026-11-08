@@ -126,6 +126,17 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     expect(await build({}).contextLengthInputs(home, 'box-model', 'custom:my_box')).toEqual({ base_url: 'https://box.invalid/v1', api_key: 'sk-synthetic-box', config_context_length: 4242 })
   })
 
+  it.each(['custom', 'openai'])('keeps another native identity\'s window off a %s session on its URL, legacy URL matches intact (TAL-1976)', async (provider) => {
+    const shared = 'https://shared.invalid/v1'
+    const other = { api: shared, api_key: 'sk-synthetic-other', models: { 'shared-model': { context_length: 777777 } } }
+    config = { model: { provider, default: 'shared-model', base_url: shared }, providers: { 'custom:other': other } }
+    const catalog = build({})
+    expect(await catalog.contextLengthInputs(home, 'shared-model', provider)).toEqual({ base_url: shared, config_context_length: null })
+    expect(await catalog.contextLengthInputs(home, 'shared-model', 'custom:other')).toEqual({ base_url: shared, api_key: 'sk-synthetic-other', config_context_length: 777777 })
+    config = { ...config, custom_providers: [{ name: 'Legacy', base_url: shared, models: { 'shared-model': { context_length: 4242 } } }] }
+    expect((await build({}).contextLengthInputs(home, 'shared-model', provider)).config_context_length).toBe(4242)
+  })
+
   it('never routes a disabled identity to another record or key', async () => {
     config = { model: { provider: 'anthropic' }, providers: { 'custom:demo': { ...DEMO, enabled: false }, demo: { api: 'https://other.invalid/v1', api_key: 'sk-other-owner' } } }
     const catalog = build({ DEMO_KEY: 'sk-synthetic-demo' })
