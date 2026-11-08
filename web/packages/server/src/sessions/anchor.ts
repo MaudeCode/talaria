@@ -8,7 +8,7 @@ import { reasoningDisclosureKey } from './reasoning-titles.js'
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
+import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, approvalAnsweredBy, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -250,7 +250,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
         ...(editDiff ? { edit_diff: editDiff } : {}),
         done,
         is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
-        duration: finite(tool.duration), cost_usd: finite(tool.cost_usd),
+        duration: finite(tool.duration), cost_usd: finite(tool.cost_usd), ...approvalAnsweredBy(tool.approval_answered_by),
         ...(tool.result_truncated === true ? { result_truncated: true as const, result_chars: finite(tool.result_chars) } : {}),
       } })
     }
@@ -408,7 +408,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         id, name, args: toolArgs(call),
         ...(call.progress !== undefined ? { progress: call.done === false ? ToolProgressSchema.safeParse(call.progress).data ?? null : null } : {}),
         preview: str(call.preview) || null, result, result_view: resultView, ...(editDiff ? { edit_diff: editDiff } : {}), done: typeof call.done === 'boolean' ? call.done : true,
-        is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
+        is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd), ...approvalAnsweredBy(call.approval_answered_by),
         ...(clipped && reply ? { result_truncated: true as const, result_chars: messageText(reply.content).length } : {}),
       } })
     }

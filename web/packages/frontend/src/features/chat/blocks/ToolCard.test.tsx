@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, type ToolCardData } from './ToolCard'
+import { sceneItems } from '../turnActivity'
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
 
@@ -38,6 +39,15 @@ describe('ToolCard unlocked by an approval (TAL-1783)', () => {
     view.rerender(<ToolCard call={{ ...running, approvalOutcome: 'allowed' }} />)
     expect(header().className).not.toContain('tool-flash')
   })
+})
+
+it('names the chat whose agent answered its approval, from the settled scene row (TAL-1169)', () => {
+  const row = (approval_answered_by: unknown) => ({ row_id: 'tool:push', role: 'tool', tool: { id: 'push', name: 'terminal', kind: 'shell', target: 'git push', preview: null, done: true, is_error: false, duration: null, cost_usd: null, approval_answered_by } })
+  const [answered, user] = sceneItems([row({ session_id: 'planner', title: 'Release planner', outcome: 'allowed' }), { ...row(undefined), row_id: 'tool:read' }])
+  const view = render(<ToolCard call={(answered as { call: ToolCardData }).call} />)
+  expect(screen.getByText('Approved by Release planner')).toBeInTheDocument()
+  view.rerender(<ToolCard call={(user as { call: ToolCardData }).call} />)
+  expect(view.container.querySelector('.tool-card-answered-by')).toBeNull()
 })
 
 describe('ToolCard result (TAL-315)', () => {

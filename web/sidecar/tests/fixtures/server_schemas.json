@@ -2346,5 +2346,75 @@
       ],
       "additionalProperties": {}
     }
+  },
+  "server.approval_respond": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approval_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "choice": {
+          "type": "string",
+          "enum": [
+            "once",
+            "deny"
+          ]
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id",
+        "approval_id",
+        "choice"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "choice": {
+          "type": "string"
+        },
+        "yolo_enabled": {
+          "type": "boolean"
+        },
+        "stale_cleared": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "pending_count": {
+          "type": "number"
+        },
+        "instruction_outcome": {
+          "description": "Where a deny's instruction went: into the running turn, queued next in this session, or unknown because the steer lost its acknowledgment (it may have landed, so it is not sent again).",
+          "type": "string",
+          "enum": [
+            "steered",
+            "queued",
+            "unconfirmed"
+          ]
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": {}
+    }
   }
 }

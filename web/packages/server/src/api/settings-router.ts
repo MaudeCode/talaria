@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -147,6 +147,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
+  into.agent_approvals = await agentApprovals(deps.agentConfig, home(ctx))
   Object.assign(into, await groupDiscussionFields(ctx, into.group_discussion_restart_baseline))
   Reflect.deleteProperty(into, 'group_discussion_restart_baseline')
 }
@@ -231,6 +232,10 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const prepareAheadProvided = 'compression_prepare_ahead' in body
   const prepareAhead = body.compression_prepare_ahead
   Reflect.deleteProperty(body, 'compression_prepare_ahead')
+  const agentApprovalsProvided = 'agent_approvals' in body
+  const agentApprovalsValue = body.agent_approvals
+  Reflect.deleteProperty(body, 'agent_approvals')
+  if (agentApprovalsProvided && typeof agentApprovalsValue !== 'boolean') throw new HttpError(400, 'agent_approvals must be a boolean')
   const discussionPatch: Partial<DiscussionLimits> = {}
   for (const [field, limit] of Object.entries(DISCUSSION_LIMIT_FIELDS)) {
     if (!(field in body)) continue
@@ -259,6 +264,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
     if (!(await deps.agentConfig.declaresKey(PREPARE_AHEAD_KEY))) throw new HttpError(409, 'This Agent does not offer prepared compaction.', { condition: 'setting_unavailable' })
     await deps.agentConfig.update(cfgHome, (c) => { c.compression = { ...dict(c.compression), prepare_ahead: prepareAhead } })
   }
+  if (agentApprovalsProvided) await setAgentApprovals(deps.agentConfig, cfgHome, agentApprovalsValue as boolean)
   if (Object.keys(discussionPatch).length) {
     if (!(await discussionLimitsOffered(ctx))) throw new HttpError(409, 'This Agent does not offer Group Chat limits.', { condition: 'setting_unavailable' })
     await saveGroupDiscussionLimits(ctx, discussionPatch)

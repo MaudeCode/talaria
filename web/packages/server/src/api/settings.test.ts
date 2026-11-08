@@ -152,6 +152,30 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('round-trips talaria.agent_approvals through the profile config, off by default, keeping the section\'s other keys (TAL-1169)', async () => {
+    const before = structuredClone(configs.get(s.state))
+    configs.set(s.state, { ...before, talaria: { other: 1 } })
+    s.deps.agentConfig.invalidate(s.state)
+    try {
+      expect((await json(await s.get('/api/settings'))).agent_approvals).toBe(false)
+      for (const value of [true, false]) {
+        const saved = await post(s, '/api/settings', { agent_approvals: value })
+        expect(saved.status).toBe(200)
+        expect((await json(saved)).agent_approvals).toBe(value)
+        expect(configs.get(s.state)?.talaria).toEqual({ other: 1, agent_approvals: value })
+      }
+      expect(await s.deps.settings.readRaw()).not.toHaveProperty('agent_approvals')
+      // A refused value changes nothing, not even a sibling field of the same save.
+      const refused = await post(s, '/api/settings', { agent_approvals: 'yes', bot_name: 'Refused' })
+      expect(refused.status).toBe(400)
+      expect(configs.get(s.state)?.talaria).toEqual({ other: 1, agent_approvals: false })
+      expect((await json(await s.get('/api/settings'))).bot_name).not.toBe('Refused')
+    } finally {
+      configs.set(s.state, before ?? {})
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
   // Same rule as the Agent's `is_truthy_value`, so a hand-edited config shows what the Agent will do.
   it.each([['yes', true], ['Off', false], [1, true], [0, false], [null, false]])('reads a hand-written prepare_ahead of %j as the Agent does (TAL-1825)', async (value, expected) => {
     const before = structuredClone(configs.get(s.state))

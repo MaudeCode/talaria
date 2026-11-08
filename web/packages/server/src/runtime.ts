@@ -42,7 +42,7 @@ import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
 import { sidebarListSelection } from './api/sessions-router.js'
-import { clarifyRespond, pendingPrompt, sessionBackgroundTasks } from './api/chat-router.js'
+import { approvalRespond, clarifyRespond, pendingPrompt, sessionBackgroundTasks } from './api/chat-router.js'
 import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { JsonStorage } from './sessions/storage/json.js'
@@ -69,7 +69,7 @@ import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { SSE_STREAM_LEASE_MS, StreamSlots } from './api/sse-routes.js'
-import { AgentConfig, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
+import { AgentConfig, agentApprovals, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
@@ -817,6 +817,18 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     const extra = [...(await effectiveToolsets(target))].filter((name) => !allowed.has(name))
     if (extra.length) throw refuse(`toolsets: ${extra.join(', ')}`)
   }
+  /**
+   * TAL-1168, TAL-1169: a session whose prompt the caller may answer. The caller's own prompts are the user's. An answer
+   * steers or releases the target's turn, so it never reaches a session with more access than the caller's own; a
+   * native-owned session, with or without a Web document, runs with its owner's access, which this server cannot compare.
+   */
+  const answerTarget = async (caller: Session, sid: string, prompt: 'question' | 'approval'): Promise<Session> => {
+    if ((await promptTarget(caller, sid)) === caller.session_id) throw new SidecarServerError(`a session cannot answer its own ${prompt}; it is addressed to the user`, 'self_target')
+    const target = await storedSession(sid)
+    if (!target || await sessions.owner?.isOwned(sid) === true) throw new SidecarServerError(`session ${sid} runs with its native owner's access, which cannot be compared with this one's`, 'exceeds_caller')
+    await assertNoWiderThanCaller(caller, target)
+    return target
+  }
   sidecar?.serveSidecarRequests?.({
     'server.session_list': ({ caller_session_id, query }) => asCaller(caller_session_id, async (caller) => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false))),
     'server.queue_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => sessions.agentQueue(await queueTarget(caller, session_id))),
@@ -887,18 +899,24 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return { pending: (await Promise.all(sids.map(pendingEntries))).flat() }
     }),
     'server.clarify_respond': ({ caller_session_id, session_id, clarify_id, answer }) => asCaller(caller_session_id, async (caller) => {
-      if ((await promptTarget(caller, session_id)) === caller.session_id) throw new SidecarServerError('a session cannot answer its own question; it is addressed to the user', 'self_target')
-      // An answer steers the target's turn, so it never reaches a session with more access than the caller's own. A
-      // native-owned session with no Web document runs with its owner's access, which this server cannot compare.
-      const target = await storedSession(session_id)
-      if (!target) throw new SidecarServerError(`session ${session_id} runs with its native owner's access, which cannot be compared with this one's`, 'exceeds_caller')
-      await assertNoWiderThanCaller(caller, target)
+      const target = await answerTarget(caller, session_id, 'question')
       try {
         return await clarifyRespond(deps, target.session_id, clarify_id, answer)
       } catch (error) {
         if (error instanceof HttpFailure && error.extra.stale === true) throw new SidecarServerError(error.message, 'stale')
         throw error
       }
+    }),
+    // TAL-1169: the service behind `/api/approval/respond`, only `once` or `deny`, and only while the profile allows it.
+    'server.approval_respond': ({ caller_session_id, session_id, approval_id, choice }) => asCaller(caller_session_id, async (caller) => {
+      if ((await agentApprovals(agentConfig, profileHome(caller.profile ?? 'default'))) !== true) {
+        throw new SidecarServerError('agents may not answer approvals in this profile: its setting talaria.agent_approvals is off, and only the user can turn it on', 'agent_approvals_off')
+      }
+      const target = await answerTarget(caller, session_id, 'approval')
+      const result = await approvalRespond(deps, target.session_id, choice, approval_id, { answeredBy: { session_id: caller.session_id, title: str(caller.title) || caller.session_id } })
+      // The route answers an approval it no longer holds with `stale_cleared`, or `ok: false` when the Agent refused it.
+      if (result.stale_cleared === true || !result.ok) throw new SidecarServerError(`approval ${approval_id} is no longer pending; the agent may have already proceeded`, 'stale')
+      return result
     }),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })

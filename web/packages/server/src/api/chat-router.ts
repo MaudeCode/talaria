@@ -2,7 +2,7 @@
 import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract, type BackgroundTask, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { chatContract, type ApprovalAnswerer, type BackgroundTask, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
@@ -58,6 +58,16 @@ export async function clarifyRespond(deps: AppDeps, sid: string, clarifyId: stri
   if (!result.ok) throw new HttpFailure(503, result.error ?? 'clarify relay failed', { ok: false })
   // A vault answer is never echoed back.
   return result.response === undefined ? { ok: true } : { ok: true, response: result.response }
+}
+
+/**
+ * `/api/approval/respond`'s answer, or its refusal; the `approval_respond` tool shares it (TAL-1169) and names the
+ * answering session in `answeredBy`.
+ */
+export async function approvalRespond(deps: AppDeps, sid: string, choice: string, approvalId: string, opts: { enableYolo?: boolean; instruction?: string; answeredBy?: ApprovalAnswerer } = {}): Promise<{ ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }> {
+  const result = await deps.turns.respondApproval(sid, choice, approvalId, opts.enableYolo === true, opts.instruction ?? '', opts.answeredBy)
+  if (typeof result._status === 'number' && result._status >= 400) { const { _status, error, ...rest } = result; throw new HttpFailure(_status, str(error), rest) }
+  return result as { ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }
 }
 
 /** A session this request's profile may see (TAL-372 background work never crosses owners). */
@@ -204,9 +214,7 @@ export const chatRouter = os.router({
       if (str(input.run_id).trim() || str(input.mirror_token).trim()) throw new HttpError(409, GATEWAY_APPROVAL_RELAY_UNAVAILABLE, { ok: false, choice, relayed: false, code: 'gateway_run_unavailable', ...(enableYolo ? { yolo_enabled: ctx.deps.sessions.yolo(sid).yolo_enabled === true } : {}) })
       const instruction = str(input.instruction).trim()
       if (input.instruction !== undefined && (!instruction || choice !== 'deny' || enableYolo || !str(input.approval_id))) throw new HttpError(400, 'An instruction needs its text, a deny and the approval it answers')
-      const result = await ctx.deps.turns.respondApproval(sid, choice, str(input.approval_id), enableYolo, instruction)
-      if (typeof result._status === 'number' && result._status >= 400) { const { _status, error, ...rest } = result; throw new HttpError(_status, str(error), rest) }
-      return result as { ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }
+      return approvalRespond(ctx.deps, sid, choice, str(input.approval_id), { enableYolo, instruction })
     })),
   },
   clarify: {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -544,6 +544,130 @@ describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
       // Its owner's access cannot be compared with the caller's, so an answer, which steers its turn, is refused.
       expect(await ask('server.clarify_respond', { session_id: ownedSid, clarify_id: 'clarify-native', answer: 'blue' })).toMatchObject({ error: { data: { condition: 'exceeds_caller' } } })
       expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).not.toContainEqual(expect.objectContaining({ action: 'clarify' }))
+      owner.finish()
+      await owner.read
+    } finally {
+      await s.close()
+    }
+  })
+})
+
+describe('server.approval_respond (TAL-1169)', () => {
+  it('answers another session\'s approval once or denies it only while the profile allows it, and records who answered', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      // The profile's config.yaml, as the sidecar reads and writes it.
+      const configs = new Map<string, Record<string, unknown>>()
+      sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+      sidecar.respond('config.set', (params) => {
+        configs.set(params.profile_home, params.config)
+        writeFileSync(join(params.profile_home, 'config.yaml'), `# fake ${String(Math.random())}\n`)
+        return { ok: true as const, path: join(params.profile_home, 'config.yaml') }
+      })
+      mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+      const save = async (session_id: string, profile: string) => {
+        await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, updated_at: 1_792_500_000, messages: [{ role: 'user', content: session_id, timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      }
+      await save('agentcaller', 'default')
+      await save('agentforeign', 'other')
+      s.deps.pending.submitApproval('agentcaller', { approval_id: 'approval-own', command: 'ls', description: 'list' })
+      s.deps.pending.submitApproval('agentforeign', { approval_id: 'approval-foreign', command: 'ls', description: 'list' })
+      const ask = async (params: Record<string, unknown>) => {
+        const answer = await sidecar.serverRequest('server.approval_respond', { caller_session_id: 'agentcaller', ...params })
+        return 'error' in answer ? answer : { result: answer.result }
+      }
+      const post = (path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+      const pendingHead = (sid: string) => { const { pending, pending_count } = s.deps.pending.approvalPending(sid); return { approval_id: pending?.approval_id ?? null, pending_count } }
+
+      // A running turn in a peer session holds two commands for approval, each tied to its tool row.
+      let release: () => void = () => undefined
+      sidecar.respond('chat.start', async (_params, emit) => {
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'git push' }, tid: 'call-push' } })
+        emit({ event: 'approval', data: { request_id: 'held-push', command: 'git push', tool_call_id: 'call-push', session_id: peer, allow_session: true, allow_permanent: true } })
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'rm -rf build' }, tid: 'call-rm' } })
+        emit({ event: 'approval', data: { request_id: 'held-rm', command: 'rm -rf build', tool_call_id: 'call-rm', session_id: peer, allow_session: true, allow_permanent: true } })
+        emit({ event: 'token', data: { text: 'waiting' } })
+        await new Promise<void>((resolve) => { release = resolve })
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'pushed', args: { command: 'git push' }, tid: 'call-push', is_error: false } })
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'denied', args: { command: 'rm -rf build' }, tid: 'call-rm', is_error: true } })
+        const done = [
+          { role: 'user', content: 'ship' },
+          { role: 'assistant', content: '', tool_calls: [{ id: 'call-push', type: 'function', function: { name: 'terminal', arguments: '{"command":"git push"}' } }, { id: 'call-rm', type: 'function', function: { name: 'terminal', arguments: '{"command":"rm -rf build"}' } }] },
+          { role: 'tool', tool_call_id: 'call-push', content: 'pushed' },
+          { role: 'tool', tool_call_id: 'call-rm', content: 'denied' },
+          { role: 'assistant', content: 'done' },
+        ]
+        return { status: 'completed', messages: done, final_response: 'done', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } as never
+      })
+      const relayed: unknown[] = []
+      sidecar.respond('approval.respond', (params) => { relayed.push(params.choice); return { ok: true, resolved: 1, choice: params.choice } })
+      const peer = String((((await (await post('/api/session/new', {})).json()) as Record<string, unknown>).session as Record<string, unknown>).session_id)
+      const streamId = String(((await (await post('/api/chat/start', { session_id: peer, message: 'ship' })).json()) as Record<string, unknown>).stream_id)
+      const asked = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+      expect(pendingHead(peer)).toEqual({ approval_id: 'held-push', pending_count: 2 })
+
+      // Off by default: refused with the setting's name, and the approval stays pending.
+      expect(await ask({ session_id: peer, approval_id: 'held-push', choice: 'once' })).toMatchObject({ error: { message: expect.stringContaining('talaria.agent_approvals') as unknown, data: { condition: 'agent_approvals_off' } } })
+      expect(relayed).toEqual([])
+      expect(pendingHead(peer)).toEqual({ approval_id: 'held-push', pending_count: 2 })
+
+      // The user turns it on for the profile.
+      expect((await post('/api/settings', { agent_approvals: true })).status).toBe(200)
+
+      // Never a standing permission, never the caller's own approval, never another profile's.
+      for (const choice of ['session', 'always', 'yolo']) expect(await ask({ session_id: peer, approval_id: 'held-push', choice })).toMatchObject({ error: { data: { condition: 'invalid_params' } } })
+      expect(await ask({ session_id: 'agentcaller', approval_id: 'approval-own', choice: 'once' })).toMatchObject({ error: { data: { condition: 'self_target' } } })
+      expect(await ask({ session_id: 'agentforeign', approval_id: 'approval-foreign', choice: 'once' })).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
+      // An answer releases or refuses the target's command, so a target with more access than the caller is refused too.
+      await save('agentyolo', 'default')
+      await s.deps.sessions.setYolo('agentyolo', true)
+      s.deps.pending.submitApproval('agentyolo', { approval_id: 'approval-yolo', command: 'ls', description: 'list' })
+      expect(await ask({ session_id: 'agentyolo', approval_id: 'approval-yolo', choice: 'once' })).toMatchObject({ error: { data: { condition: 'exceeds_caller' } } })
+      expect(relayed).toEqual([])
+      expect(pendingHead('agentcaller')).toEqual({ approval_id: 'approval-own', pending_count: 1 })
+
+      // `once` and `deny` resolve the approvals and tell the target's tool rows who answered.
+      expect(await ask({ session_id: peer, approval_id: 'held-push', choice: 'once' })).toEqual({ result: { ok: true, choice: 'once' } })
+      expect(await ask({ session_id: peer, approval_id: 'held-rm', choice: 'deny' })).toEqual({ result: { ok: true, choice: 'deny' } })
+      expect(relayed).toEqual(['once', 'deny'])
+      expect(pendingHead(peer)).toEqual({ approval_id: null, pending_count: 0 })
+      const answered = (await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(asked.length)}`, (f) => f.event === 'tool_approval' && (f.data as Record<string, unknown>).id === 'call-rm')).filter((f) => f.event === 'tool_approval').map((f) => f.data)
+      expect(answered).toEqual([
+        { id: 'call-push', outcome: 'allowed', answered_by: { session_id: 'agentcaller', title: 'agentcaller' } },
+        { id: 'call-rm', outcome: 'denied', answered_by: { session_id: 'agentcaller', title: 'agentcaller' } },
+      ])
+
+      // An answered approval is stale; the server's stale result reaches the agent as an error.
+      expect(await ask({ session_id: peer, approval_id: 'held-push', choice: 'once' })).toMatchObject({ error: { data: { condition: 'stale' } } })
+      expect(relayed).toEqual(['once', 'deny'])
+
+      // The settled transcript's rows keep who answered them.
+      release()
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+      const detail = ((await (await s.get(`/api/session?session_id=${peer}`)).json()) as { session: { messages: Record<string, unknown>[] } }).session
+      const scene = detail.messages.flatMap((m) => ((m._anchor_activity_scene as { activity_rows?: Record<string, unknown>[] } | undefined)?.activity_rows ?? []))
+      const rows = Object.fromEntries(scene.filter((row) => row.role === 'tool').map((row) => { const tool = row.tool as Record<string, unknown>; return [String(tool.id), tool.approval_answered_by] }))
+      expect(rows).toEqual({
+        'call-push': { session_id: 'agentcaller', title: 'agentcaller', outcome: 'allowed' },
+        'call-rm': { session_id: 'agentcaller', title: 'agentcaller', outcome: 'denied' },
+      })
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('refuses to answer an approval of a session a native owner runs, whose access it cannot compare', async () => {
+    const { s, sidecar } = await bootOwnerAttachment()
+    try {
+      const configs = new Map<string, Record<string, unknown>>([[s.state, { talaria: { agent_approvals: true } }]])
+      writeFileSync(join(s.state, 'config.yaml'), '# fake\n')
+      sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+      for (const session_id of ['agentcaller', ownedSid]) await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile: 'default', updated_at: 1_792_500_000, messages: [{ role: 'user', content: 'go', timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      const prompts = [{ kind: 'approval', prompt_id: 'approval-native', execution_generation: 1, command: 'echo fixture', description: 'Approve fixture?', choices: ['once', 'deny'] }]
+      const owner = await ownerHelpers(() => ({ s, sidecar })).observeOwner(ownerSnapshot({ running: true, pending: [admission()], prompts }))
+      expect(await sidecar.serverRequest('server.approval_respond', { caller_session_id: 'agentcaller', session_id: ownedSid, approval_id: 'approval-native', choice: 'once' })).toMatchObject({ error: { data: { condition: 'exceeds_caller' } } })
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).not.toContainEqual(expect.objectContaining({ action: 'approval' }))
       owner.finish()
       await owner.read
     } finally {

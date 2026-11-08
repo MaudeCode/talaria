@@ -1,4 +1,4 @@
-"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167, TAL-1168): Talaria-owned tools that run on the Web server.
+"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167, TAL-1168, TAL-1169): Talaria-owned tools that run on the Web server.
 
 Each handler forwards its call to the server over the sidecar's RPC channel (``rpc.call_server``) and returns the
 server's result unchanged. The toolset is registered once the Agent imports, and is never one of a profile's default
@@ -20,7 +20,8 @@ TOOLSET = "talaria"
 # The Agent describes a registry-only toolset as "Plugin toolset: <name>"; the catalog shows this instead.
 TOOLSET_DESCRIPTION = (
     "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their "
-    "turns, manage their queued messages, see what they wait on and answer their questions, and list your background work."
+    "turns, manage their queued messages, see what they wait on and answer their questions and approvals, and list your "
+    "background work."
 )
 
 SESSION_LIST_SCHEMA = {
@@ -221,6 +222,25 @@ CLARIFY_RESPOND_SCHEMA = {
     },
 }
 
+APPROVAL_RESPOND_SCHEMA = {
+    "name": "approval_respond",
+    "description": (
+        "Approve once or deny another Talaria session's pending command, from pending_list, as its user would. Works only "
+        "when the user turned on talaria.agent_approvals for this profile; otherwise it is refused as agent_approvals_off. "
+        "Your own session's approvals are for the user; an answered or expired one is refused as stale, and a session with "
+        "more access than yours as exceeds_caller. The target's transcript shows that your session answered."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": {"type": "string", "description": "The session_id of another session in this profile."},
+            "approval_id": {"type": "string", "description": "The approval's id from pending_list."},
+            "choice": {"type": "string", "enum": ["once", "deny"], "description": "once runs this one command; deny refuses it."},
+        },
+        "required": ["session_id", "approval_id", "choice"],
+    },
+}
+
 # The server bounds a handoff summary at two 60-second attempts; a compression has no deadline of its own.
 SESSION_HANDOFF_TIMEOUT_S = 150.0
 SESSION_COMPRESS_TIMEOUT_S = 600.0
@@ -320,6 +340,7 @@ session_compress = _tool("server.session_compress", "session_compress", ("sessio
 background_list = _tool("server.background_list", "background_list", ())
 pending_list = _tool("server.pending_list", "pending_list", (), _optional_session)
 clarify_respond = _tool("server.clarify_respond", "clarify_respond", ("session_id", "clarify_id", "answer"))
+approval_respond = _tool("server.approval_respond", "approval_respond", ("session_id", "approval_id", "choice"))
 
 _TOOLS = (
     (SESSION_LIST_SCHEMA, session_list, "🗂️"),
@@ -337,6 +358,7 @@ _TOOLS = (
     (BACKGROUND_LIST_SCHEMA, background_list, "🧵"),
     (PENDING_LIST_SCHEMA, pending_list, "🔔"),
     (CLARIFY_RESPOND_SCHEMA, clarify_respond, "🙋"),
+    (APPROVAL_RESPOND_SCHEMA, approval_respond, "✅"),
 )
 
 

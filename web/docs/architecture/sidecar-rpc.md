@@ -1,5 +1,20 @@
 # Sidecar RPC (TAL-245)
 
+RPC v84 adds the toolset's `approval_respond` tool (TAL-1169,
+`server.approval_respond`). It approves once or denies another session's
+pending command through the service behind `/api/approval/respond`, only while
+the caller's profile has `talaria.agent_approvals` on (a profile config key,
+default off, shipped as the `agent_approvals` settings field); otherwise it is
+refused with `agent_approvals_off` and the approval stays pending. `session`,
+`always` and YOLO are never accepted. It refuses the caller's own approval
+(`self_target`), another profile's session (`target_unknown`), a target with more
+access than the caller (`exceeds_caller`, as `clarify_respond`), and an answered
+or expired approval (`stale`). Both answer tools now also refuse a session a
+native owner runs even when it has a Web document, since it runs with the
+owner's access (`exceeds_caller`). The answered tool row records the answering
+session: the live `tool_approval` frame carries `answered_by`, and the call's
+persisted and scene fields carry `approval_answered_by`.
+
 RPC v83 adds the toolset's pending prompt tools (TAL-1168). `pending_list`
 (`server.pending_list`) answers, for each session in the caller's profile that
 waits on one, its oldest approval and its oldest clarify question exactly as

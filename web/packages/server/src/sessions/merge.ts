@@ -1,4 +1,4 @@
-import { OutboundDraftRefSchema } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, OutboundDraftRefSchema, type ApprovalAnsweredBy } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -650,6 +650,11 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): 
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+/** TAL-1169: a recorded `approval_answered_by`, or nothing when it is absent or malformed. */
+export const approvalAnsweredBy = (v: unknown): { approval_answered_by: ApprovalAnsweredBy } | Record<string, never> => {
+  const answered = ApprovalAnsweredBySchema.safeParse(v).data
+  return answered ? { approval_answered_by: answered } : {}
+}
 
 function nearestAssistantIdx(messages: unknown[], msgIdx: number): number {
   for (let i = msgIdx; i >= 0; i -= 1) if (isDict(messages[i]) && (messages[i] as Record<string, unknown>).role === 'assistant') return i
@@ -659,15 +664,16 @@ function nearestAssistantIdx(messages: unknown[], msgIdx: number): number {
 /**
  * Python `_extract_tool_calls_from_messages`, plus each call's outcome (TAL-313): `is_error` by `toolOutcome` of its
  * result, and the `duration` the live stream recorded for its id (this turn's `liveToolCalls`, else an earlier turn's
- * entry in `recorded`, the session's previous list), `null` when none did.
+ * entry in `recorded`, the session's previous list), `null` when none did; from the same record, the agent that
+ * answered its approval (TAL-1169).
  */
 export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = [], recorded: unknown[] = []): Record<string, unknown>[] {
   // An id may repeat across responses: an earlier turn's duration belongs to the row that made the call, and this turn's
   // live durations, in order, to the latest calls with each id.
-  const earlier = new Map<string, number | null>()
-  for (const tc of recorded) if (isDict(tc) && str(tc.tid)) earlier.set(`${String(tc.assistant_msg_idx)}\0${str(tc.tid)}`, finiteOrNull(tc.duration))
-  const liveDurations = new Map<string, (number | null)[]>()
-  for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveDurations.set(str(tc.tid), [...(liveDurations.get(str(tc.tid)) ?? []), finiteOrNull(tc.duration)])
+  const earlier = new Map<string, Record<string, unknown>>()
+  for (const tc of recorded) if (isDict(tc) && str(tc.tid)) earlier.set(`${String(tc.assistant_msg_idx)}\0${str(tc.tid)}`, tc)
+  const liveRecords = new Map<string, Record<string, unknown>[]>()
+  for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveRecords.set(str(tc.tid), [...(liveRecords.get(str(tc.tid)) ?? []), tc])
   const outcome = (raw: unknown, name: string, flagged = false) => ({ is_error: toolOutcome(raw, name, flagged).is_error })
   const toolCalls: Record<string, unknown>[] = []
   const pendingNames = new Map<string, string>()
@@ -732,8 +738,9 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
   for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
     const tc = toolCalls[i]!
     const tid = str(tc.tid)
-    const live = liveDurations.get(tid)
-    tc.duration = live?.length ? live.pop() ?? null : earlier.get(`${String(tc.assistant_msg_idx)}\0${tid}`) ?? null
+    const source = liveRecords.get(tid)?.pop() ?? earlier.get(`${String(tc.assistant_msg_idx)}\0${tid}`)
+    tc.duration = finiteOrNull(source?.duration)
+    Object.assign(tc, approvalAnsweredBy(source?.approval_answered_by))
   }
   return toolCalls
 }
@@ -807,6 +814,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
       return {
         ...(editDiff ? { edit_diff: editDiff } : {}),
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.is_error : rec?.is_error === true,
+        ...approvalAnsweredBy(rec?.approval_answered_by),
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
         result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
       }

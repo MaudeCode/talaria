@@ -49,7 +49,7 @@ function SidebarQuotaSources() {
 }
 
 export function PreferencesSection() {
-  const { settings, str, set, setAsync, bool, num } = useSettingField(['default_model', 'send_key', 'bot_name', 'sidebar_density', 'pinned_sessions_limit', 'show_cli_sessions', 'trusted_link_hosts', 'hidden_tabs'])
+  const { settings, str, set, setAsync, bool, num } = useSettingField(['default_model', 'send_key', 'bot_name', 'sidebar_density', 'pinned_sessions_limit', 'show_cli_sessions', 'trusted_link_hosts', 'hidden_tabs', 'agent_approvals'])
   const models = useModelsQuery()
   const setDefault = useSetDefaultModel()
   const chosen = useDefaultModelChoice()
@@ -114,6 +114,7 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_terminal_auto_expand()} settingKey="terminal_auto_expand_on_output" />
       <Toggle label={m.settings_label_terminal_screen_reader()} hint={m.settings_desc_terminal_screen_reader()} settingKey="screen_reader_mode" />
       <Toggle label={m.settings_label_new_chat_on_workspace_switch()} settingKey="new_chat_on_workspace_switch" />
+      {typeof settings.data.agent_approvals === 'boolean' ? <Toggle label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /> : null}
       <Toggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
       <Toggle label={m.settings_label_sound()} settingKey="sound_enabled" />
       <CompletionAudioSettings />
