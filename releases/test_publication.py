@@ -76,13 +76,18 @@ class PublicationTests(unittest.TestCase):
 
     def test_app_receipt_requires_verified_apple_readback(self):
         plan = {"releaseSet": "a" * 40, "changed": {"app": True}, "contracts": {"appWeb": {"app": [1]}},
-                "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0"}}}
+                "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0", "sourceRevision": "a" * 40}}}
         build = {"gate": "buildApp", "result": "success", "sourceRevision": plan["releaseSet"],
                  "tag": "app-v1.9.0", "buildNumber": 7, "ipaSha256": "b" * 64}
         apple = {"buildId": "synthetic-build", "uploadId": "synthetic-upload", "version": "1.9.0",
-                 "buildNumber": 7, "ipaSha256": "b" * 64, "processingState": "VALID"}
+                 "buildNumber": 7, "ipaSha256": "b" * 64, "processingState": "VALID", "whatsNewSet": True}
         env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "2"}
-        for field in (None, "version", "buildNumber", "ipaSha256", "processingState", "buildId", "uploadId"):
+
+        def notes(command, **kwargs):
+            self.assertEqual(command[2:], ["testflight", "--target", "a" * 40, "--version", "1.9.0", "--output", command[-1]])
+            Path(command[-1]).write_text("Changes since app-v1.8.0\n")
+
+        for field in (None, "version", "buildNumber", "ipaSha256", "processingState", "buildId", "uploadId", "whatsNewSet"):
             with self.subTest(field=field), TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 (root / "plan.json").write_text(json.dumps(plan))
@@ -92,9 +97,17 @@ class PublicationTests(unittest.TestCase):
                 output = root / "publication/receipt.json"
                 argv = ["publish.py", "app", "--plan", str(root / "plan.json"), "--build", str(root / "build.json"),
                         "--directory", str(root), "--output", str(output)]
+                uploaded = []
+
+                def upload(command, **kwargs):
+                    notes = Path(command[-1])
+                    uploaded.append((command, notes.read_text() if notes.is_file() else None))
+                    return json.dumps(response)
+
                 with patch("sys.argv", argv), patch.dict(os.environ, env), patch("publish.authorize"), \
                         patch("publish.verify_ipa", return_value=build["ipaSha256"]), \
-                        patch("publish.subprocess.check_output", return_value=json.dumps(response)) as upload:
+                        patch("publish.subprocess.run", side_effect=notes), \
+                        patch("publish.subprocess.check_output", side_effect=upload):
                     if field:
                         with self.assertRaisesRegex(ValueError, "readback differs"):
                             publish.main()
@@ -103,7 +116,9 @@ class PublicationTests(unittest.TestCase):
                         publish.main()
                         self.assertEqual(json.loads(output.read_text())["gate"], "uploadApp")
                         self.assertEqual(json.loads(output.with_name("apple-build.json").read_text()), apple)
-                    self.assertEqual(upload.call_args.args[0][-1], build["ipaSha256"])
+                    [(command, text)] = uploaded
+                    self.assertEqual(command[-2:], [build["ipaSha256"], command[-1]])
+                    self.assertEqual(text, "Changes since app-v1.8.0\n")
 
     def test_partial_release_publication_resumes_without_recreating_releases(self):
         for failure in ("web-create", "root-upload", "root-edit", "root-upload-after", "root-edit-after"):

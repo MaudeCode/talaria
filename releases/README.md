@@ -324,6 +324,13 @@ When `scripts/changed-components.py` selects the App since the last Nightly, `io
 TestFlight internal testing through the same upload and `VALID` readback as production. Only after both succeed
 does `nightly.py record` move the `nightly` git tag, so a failed run is retried the next night.
 
+Both channels upload through `publish.py upload_testflight`, which writes the App's release notes since the highest
+lower `app-v` tag (`app/ci/release_notes.py testflight`) and has `app/ci/upload_testflight.rb` set them as the build's
+en-US TestFlight "What to Test" text once the build is `VALID`. The uploader updates an existing en-US localization
+rather than adding another, so a retried run stays idempotent, and the upload fails unless App Store Connect's readback
+includes `whatsNewSet`. Notes need the source's tags, so every upload job checks out full history. See
+[TestFlight What to Test](../app/docs/release-notes.md#testflight-what-to-test) for the text's format.
+
 `cli.py gate` writes a success receipt only after its supplied validation command
 succeeds. `cli.py assemble` combines receipts and notes; failed/missing gates,
 changed artifact identities, and attempted completion of dry-run plans fail.

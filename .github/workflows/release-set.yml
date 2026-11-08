@@ -837,6 +837,8 @@ jobs:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.prepare.outputs.source }}
+        # TestFlight notes cover the App changes since the previous app-v tag.
+        fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-ruby
     - name: Restore release-plan, app-build and ios-ipa

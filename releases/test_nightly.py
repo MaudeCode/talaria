@@ -1,12 +1,15 @@
 """Nightly source selection (TAL-1569) over a synthetic local Git history."""
 
+import contextlib
+import json
 import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from nightly import TAG, select
+from nightly import TAG, select, upload
 
 
 class NightlyTests(unittest.TestCase):
@@ -56,6 +59,35 @@ class NightlyTests(unittest.TestCase):
         # Nothing green after the last Nightly: only Web's tag is refreshed against the recorded source.
         self.assertEqual(select(self.root, [previous]), {"changed": "false", "source": previous})
         self.assertEqual(select(self.root, []), {"changed": "false", "source": previous})
+
+    def test_the_upload_carries_the_app_notes_since_the_last_app_release(self):
+        self.write_fragment()
+        source = self.commit("app/Talaria/View.swift")
+        (self.root / "export").mkdir()
+        (self.root / "export/Talaria.ipa").write_bytes(b"synthetic")
+        uploads = []
+
+        def uploader(command, **kwargs):
+            notes = Path(command[-1])
+            uploads.append((command[2:], notes.read_text() if notes.is_file() else None))
+            return json.dumps({"buildId": "build", "uploadId": "upload", "version": "1.21.1", "buildNumber": 7,
+                               "ipaSha256": "f" * 64, "processingState": "VALID", **response})
+
+        with contextlib.chdir(self.root), patch("nightly.verify_ipa", return_value="f" * 64), \
+                patch("publish.subprocess.check_output", side_effect=uploader):
+            response = {"whatsNewSet": True}
+            upload(self.root / "export", "1.21.1", 7, source)
+            response = {}
+            with self.assertRaisesRegex(ValueError, "readback differs"):
+                upload(self.root / "export", "1.21.1", 7, source)
+        self.assertEqual(uploads[0], ([str(self.root / "export/Talaria.ipa"), "1.21.1", "7", "f" * 64, uploads[0][0][-1]],
+                                      "Changes since app-v1.21.0\n\nAdded\n- Nightly feature\n"))
+
+    def write_fragment(self):
+        fragment = self.root / "changelog.d/TAL-5.json"
+        fragment.parent.mkdir()
+        fragment.write_text(json.dumps({"entries": [
+            {"category": "Added", "summary": "Nightly feature", "highlight": False, "announce": False}]}))
 
 
 if __name__ == "__main__":

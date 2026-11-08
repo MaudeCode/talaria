@@ -21,6 +21,7 @@ class TestFlightUploadTest < Minitest::Test
       case path
       when "/v1/apps/synthetic-app/buildUploads" then [@remote[:upload]].compact * (@remote[:duplicate] ? 2 : 1)
       when %r{/buildUploadFiles$} then [@remote[:file]].compact
+      when "/v1/builds/build-1/betaBuildLocalizations" then @remote.fetch(:localizations, [])
       when "/v1/builds"
         @remote[:legacy] || @remote[:upload]&.dig("attributes", "state", "state") == "COMPLETE" ?
           [{"id" => "build-1", "attributes" => {"version" => "7", "processingState" => @remote.fetch(:build_state, "VALID"), "expired" => false}}] : []
@@ -54,6 +55,15 @@ class TestFlightUploadTest < Minitest::Test
         @remote[:upload]["attributes"]["state"] = {"state" => "COMPLETE"} if @remote[:ready]
         {"data" => @remote[:upload]}
       when ["GET", "/v1/buildUploadFiles/file-1"] then {"data" => @remote[:file]}
+      when ["POST", "/v1/betaBuildLocalizations"]
+        @remote[:localization_writes] = @remote.fetch(:localization_writes, []) << [method, data]
+        (@remote[:localizations] ||= []) << data.merge("id" => "localization-1")
+        {"data" => @remote[:localizations].last}
+      when ["PATCH", "/v1/betaBuildLocalizations/localization-1"]
+        @remote[:localization_writes] = @remote.fetch(:localization_writes, []) << [method, data]
+        localization = @remote[:localizations].find { |item| item["id"] == "localization-1" }
+        localization["attributes"].merge!(data.fetch("attributes"))
+        {"data" => localization}
       else raise "unexpected #{method} #{path}"
       end
     end
@@ -75,8 +85,34 @@ class TestFlightUploadTest < Minitest::Test
     @file.close!
   end
 
-  def run_upload
-    Apple.new(@remote).upload(@file.path, "1.9.0", "7", @sha, attempts: 1, delay: 0)
+  def run_upload(notes = "Changes since app-v1.8.0")
+    Apple.new(@remote).upload(@file.path, "1.9.0", "7", @sha, notes, attempts: 1, delay: 0)
+  end
+
+  def test_valid_build_gets_its_en_us_whats_new_once
+    @remote[:build_state] = "PROCESSING"
+    assert_raises(AppStoreConnectClient::Error) { run_upload }
+    assert_nil @remote[:localization_writes]
+    @remote[:build_state] = "VALID"
+    assert_equal true, run_upload["whatsNewSet"]
+    assert_equal 1, @remote[:localization_writes].length
+    method, data = @remote[:localization_writes].first
+    assert_equal "POST", method
+    assert_equal({"locale" => "en-US", "whatsNew" => "Changes since app-v1.8.0"}, data["attributes"])
+    assert_equal({"data" => {"type" => "builds", "id" => "build-1"}}, data.dig("relationships", "build"))
+    # A retry after the localization exists updates it instead of adding another.
+    assert_equal true, run_upload("Changes since app-v1.8.1")["whatsNewSet"]
+    assert_equal %w[POST PATCH], @remote[:localization_writes].map(&:first)
+    assert_equal [["en-US", "Changes since app-v1.8.1"]], @remote[:localizations].map { |item| item["attributes"].values_at("locale", "whatsNew") }
+  end
+
+  def test_existing_en_us_localization_is_patched_and_other_locales_are_left_alone
+    @remote[:localizations] = [{"id" => "other", "attributes" => {"locale" => "de-DE", "whatsNew" => nil}},
+                               {"id" => "localization-1", "attributes" => {"locale" => "en-US", "whatsNew" => nil}}]
+    assert_equal true, run_upload["whatsNewSet"]
+    assert_equal [["PATCH", {"type" => "betaBuildLocalizations", "id" => "localization-1",
+                             "attributes" => {"whatsNew" => "Changes since app-v1.8.0"}}]], @remote[:localization_writes]
+    assert_nil @remote[:localizations].first.dig("attributes", "whatsNew")
   end
 
   def test_accepted_upload_survives_lost_response_and_lost_receipt
