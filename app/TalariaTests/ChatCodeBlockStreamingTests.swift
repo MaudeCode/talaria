@@ -53,7 +53,6 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
                 rebuilt, linesAfter - openGroupStart + linesPerUpdate,
                 "Update \(update) rebuilt \(rebuilt) of \(linesAfter) lines; only lines from \(openGroupStart) on may change"
             )
-            print("DIAG update \(update): \(recorder.counts.filter { $0.key.hasPrefix("diag") }.sorted { $0.key < $1.key })")
             fallbacks += recorder.counts["highlightFallback", default: 0]
         }
         XCTAssertEqual(fallbacks, 0, "A streaming block must not log a highlight fallback")

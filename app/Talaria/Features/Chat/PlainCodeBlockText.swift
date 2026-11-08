@@ -16,9 +16,6 @@ struct PlainCodeBlockText: View {
     var colorsDiffLines = false
 
     var body: some View {
-#if DEBUG
-        let _ = ChatBodyEvaluationRecorder.record("diag.plainBody")
-#endif
         VStack(alignment: .leading, spacing: 3) {
             ForEach(MarkdownCodeLineGroup.groups(in: content, colorsDiffLines: colorsDiffLines)) { group in
                 PlainCodeLineGroup(group: group, wraps: wraps)
@@ -37,9 +34,6 @@ private struct PlainCodeLineGroup: View, Equatable {
     let wraps: Bool
 
     var body: some View {
-#if DEBUG
-        let _ = ChatBodyEvaluationRecorder.record("diag.group\(group.id) n\(group.lines.count) w\(wraps)")
-#endif
         VStack(alignment: .leading, spacing: 3) {
             ForEach(group.lines.indices, id: \.self) { index in
 #if DEBUG
