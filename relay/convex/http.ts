@@ -292,6 +292,9 @@ async function authenticatePublisher(
   }
 }
 
+// An opaque publisher digest of the approval at the head of the session's queue; never the approval's content.
+const approvalHeadPattern = /^[A-Za-z0-9_-]{1,64}$/;
+
 function parseState(
   value: unknown,
   envelope?: { eventId: string; revision: number },
@@ -308,8 +311,10 @@ function parseState(
   const updatedAt = numberField(value, "updatedAt");
   const deepLink = stringField(value, "deepLink", 512);
   const alertEligible = value.alertEligible;
+  const approvalHeadId = value.approvalHeadId;
   if (
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
+    (approvalHeadId !== undefined && (typeof approvalHeadId !== "string" || !approvalHeadPattern.test(approvalHeadId))) ||
     !sessionId ||
     streamId === null ||
     !eventId ||
@@ -338,6 +343,7 @@ function parseState(
     updatedAt,
     deepLink,
     alertEligible,
+    ...(approvalHeadId === undefined ? {} : { approvalHeadId }),
   };
 }
 
@@ -549,6 +555,7 @@ http.route({
               updatedAt: state.updatedAt,
               deepLink: state.deepLink,
               alertEligible: state.alertEligible,
+              approvalHeadId: state.approvalHeadId,
             }
           : null,
       });

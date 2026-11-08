@@ -11,7 +11,7 @@ struct ApprovalNotificationRequest: Equatable {
 
     var userInfo: [String: String] {
         var info = [SessionNotificationRefresh.sessionIDKey: sessionID]
-        if let publisherID { info["publisherId"] = publisherID }
+        if let publisherID { info[SessionNotificationRefresh.publisherIDKey] = publisherID }
         return info
     }
 

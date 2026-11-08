@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-import { alertForTransition } from "../convex/lib/aggregate";
+import { alertForTransition, approvalAlertBodyKey } from "../convex/lib/aggregate";
 import { defaultNotificationPreferences, type SessionPhase, type SessionState } from "../convex/lib/model";
 
 // Talaria Web's server applies the same vectors (web/packages/server/src/sessions/notify/alerts.test.ts).
@@ -15,7 +15,7 @@ interface Vector {
 }
 
 const { vectors } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[] };
-const bodyPrefix = { approval: "Approval needed", input: "Input needed", completion: "Completed", failure: "Failed" } as const;
+const bodyPrefix = { input: "Input needed", completion: "Completed", failure: "Failed" } as const;
 const now = 1_800_000_000_000;
 
 it.each(vectors)("shared alert rule: $name", (vector) => {
@@ -33,5 +33,6 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
   };
   const alert = alertForTransition(vector.previous, next, preferences);
   if (vector.expected === null) expect(alert).toBeNull();
+  else if (vector.expected === "approval") expect(alert?.body).toBe(approvalAlertBodyKey);
   else expect(alert?.body.startsWith(`${bodyPrefix[vector.expected]} on `)).toBe(true);
 });

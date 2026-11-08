@@ -154,6 +154,39 @@ describe('Talaria relay pairing and publishing', () => {
     s.deps.registry.activeRuns.delete('stream-h')
   })
 
+  it('names the approval queue head with an opaque id that holds across snapshots and changes with the head (TAL-59)', async () => {
+    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-heads' })
+    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Private approval title' }))).session as Json).session_id)
+    s.deps.registry.activeRuns.set('stream-heads', { stream_id: 'stream-heads', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    const publisher = s.deps.relay.current()!
+    const head = async () => {
+      await publisher.publishSnapshot()
+      const state = (relay.snapshots().at(-1)!.body.states as Json[]).find((row) => row.sessionId === sid)!
+      return { phase: state.phase, approvalHeadId: state.approvalHeadId }
+    }
+    try {
+      expect(await head()).toEqual({ phase: 'running', approvalHeadId: undefined })
+      s.deps.pending.submitApproval(sid, { request_id: 'first-approval', command: 'rm -rf /private/path' })
+      s.deps.pending.submitApproval(sid, { request_id: 'second-approval', command: 'cat /private/secret' })
+      const first = await head()
+      expect(first.phase).toBe('waiting_for_approval')
+      expect(String(first.approvalHeadId)).toMatch(/^[A-Za-z0-9_-]{22}$/)
+      expect(await head()).toEqual(first)
+
+      s.deps.pending.resolveApproval(sid, 'first-approval')
+      const second = await head()
+      expect(second.phase).toBe('waiting_for_approval')
+      expect(second.approvalHeadId).not.toBe(first.approvalHeadId)
+      expect(JSON.stringify(relay.snapshots().at(-1)!.body)).not.toMatch(/second-approval|private\/secret/)
+
+      s.deps.pending.resolveApproval(sid, 'second-approval')
+      expect(await head()).toEqual({ phase: 'running', approvalHeadId: undefined })
+    } finally {
+      s.deps.pending.clearApprovals(sid)
+      s.deps.registry.activeRuns.delete('stream-heads')
+    }
+  })
+
   it('keeps the session activity running after its parent reply completes while a background command runs (TAL-1520)', async () => {
     if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-background' })
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Background liveness' }))).session as Json).session_id)

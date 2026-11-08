@@ -11,6 +11,11 @@ import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
+// Approval alerts name only the App's Localizable keys, never the session.
+const localizedApprovalAlert = {
+  title: { "loc-key": "Approval required" },
+  body: { "loc-key": "An agent run is waiting for your approval." },
+};
 
 function testBackend() {
   const backend = convexTest(schema, modules);
@@ -3015,9 +3020,9 @@ describe("Convex relay state", () => {
     }
 
     it.each([
-      ["waiting_for_approval", "Approval needed on Home"],
-      ["waiting_for_input", "Input needed on Home"],
-    ] as const)("sends a silent activity update and a Time Sensitive notification for %s", async (phase, body) => {
+      ["waiting_for_approval", { "title-loc-key": "Approval required", "loc-key": "An agent run is waiting for your approval." }],
+      ["waiting_for_input", { title: "Build relay", body: "Input needed on Home" }],
+    ] as const)("sends a silent activity update and a Time Sensitive notification for %s", async (phase, alert) => {
       const jobs = await deliverTransition(phase, { activity: true });
 
       const activityJobs = jobs.filter((job) => job.kind.startsWith("live_activity_"));
@@ -3026,7 +3031,7 @@ describe("Convex relay state", () => {
       const notifications = jobs.filter((job) => job.kind === "notification");
       expect(notifications).toHaveLength(1);
       expect(notifications[0]!.aps).toMatchObject({
-        alert: { title: "Build relay", body },
+        alert,
         sound: "default",
         "interruption-level": "time-sensitive",
       });
@@ -3037,7 +3042,7 @@ describe("Convex relay state", () => {
 
       const starts = jobs.filter((job) => job.kind === "live_activity_start");
       expect(starts).toHaveLength(1);
-      expect(starts[0]!.aps.alert).toEqual({ title: "Build relay", body: "Approval needed on Home" });
+      expect(starts[0]!.aps.alert).toEqual(localizedApprovalAlert);
       const notifications = jobs.filter((job) => job.kind === "notification");
       expect(notifications).toHaveLength(1);
       expect(notifications[0]!.aps["interruption-level"]).toBe("time-sensitive");
@@ -3063,7 +3068,7 @@ describe("Convex relay state", () => {
       });
 
       expect(jobs.map((job) => job.kind)).toEqual(["live_activity_update"]);
-      expect(jobs[0]!.aps.alert).toEqual({ title: "Build relay", body: "Approval needed on Home", sound: "default" });
+      expect(jobs[0]!.aps.alert).toEqual({ ...localizedApprovalAlert, sound: "default" });
     });
 
     it("sends no approval alert when approval notifications are off", async () => {

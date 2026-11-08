@@ -1,0 +1,28 @@
+{
+  "snapshot": {
+    "snapshotId": "webui:00000000000000000000000000000001",
+    "states": [
+      {
+        "sessionId": "contract-session",
+        "streamId": "contract-stream",
+        "eventId": "snapshot:1800000000000:contract-session",
+        "revision": 1800000000000,
+        "title": "Contract fixture",
+        "phase": "waiting_for_approval",
+        "activityPhase": "waiting_for_approval",
+        "startedAt": 1799999940000,
+        "updatedAt": 1800000000000,
+        "deepLink": "/sessions/contract-session",
+        "approvalHeadId": "v5zPlTFdGWPlzGHmTN5i3e"
+      }
+    ]
+  },
+  "notificationAlert": {
+    "title-loc-key": "Approval required",
+    "loc-key": "An agent run is waiting for your approval."
+  },
+  "liveActivityAlert": {
+    "title": { "loc-key": "Approval required" },
+    "body": { "loc-key": "An agent run is waiting for your approval." }
+  }
+}

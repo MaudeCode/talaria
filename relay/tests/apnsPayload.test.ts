@@ -230,7 +230,7 @@ describe("ActivityKit payloads", () => {
     expect(makeLiveActivityUpdate({ ...common, aggregate, alert: approval }).payload.aps).not.toHaveProperty("alert");
     expect(makeLiveActivityEnd({ ...common, aggregate, alert: approval }).payload.aps).not.toHaveProperty("alert");
     expect((makeLiveActivityStart({ ...common, aggregate, alert: approval }).payload.aps as Record<string, unknown>).alert)
-      .toEqual({ title: approval.title, body: approval.body });
+      .toEqual({ title: { "loc-key": "Approval required" }, body: { "loc-key": "An agent run is waiting for your approval." } });
   });
 
   it("drops overflow rows before ActivityKit's content-state boundary", () => {

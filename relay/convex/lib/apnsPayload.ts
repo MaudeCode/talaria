@@ -16,6 +16,17 @@ export function liveActivityAlert(alert: ActivityAlert | null | undefined): Acti
   return alert && !alert.interruptionLevel ? alert : null;
 }
 
+// iOS looks a localized alert's keys up in the App's Localizable strings and shows an unknown key as written.
+function liveActivityAlertText(alert: ActivityAlert) {
+  return alert.localized
+    ? { title: { "loc-key": alert.title }, body: { "loc-key": alert.body } }
+    : { title: alert.title, body: alert.body };
+}
+
+function notificationAlertText(alert: ActivityAlert) {
+  return alert.localized ? { "title-loc-key": alert.title, "loc-key": alert.body } : { title: alert.title, body: alert.body };
+}
+
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 
@@ -78,7 +89,7 @@ export function makeLiveActivityUpdate(input: {
         event: "update",
         "content-state": aggregate,
         "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
-        ...(alert ? { alert: { title: alert.title, body: alert.body, sound: "default" } } : {}),
+        ...(alert ? { alert: { ...liveActivityAlertText(alert), sound: "default" } } : {}),
       },
     },
   };
@@ -110,8 +121,7 @@ export function makeLiveActivityStart(input: {
         "input-push-token": 1,
         // APNs requires an alert on push-to-start.
         alert: {
-          title: input.alert.title,
-          body: input.alert.body,
+          ...liveActivityAlertText(input.alert),
           ...(liveActivityAlert(input.alert) ? { sound: "default" } : {}),
         },
       },
@@ -141,7 +151,7 @@ export function makeLiveActivityEnd(input: {
         timestamp: input.nowEpochSeconds,
         event: "end",
         ...(aggregate ? { "content-state": aggregate } : {}),
-        ...(alert ? { alert: { title: alert.title, body: alert.body, sound: "default" } } : {}),
+        ...(alert ? { alert: { ...liveActivityAlertText(alert), sound: "default" } } : {}),
         "dismissal-date": input.nowEpochSeconds
           + (input.dismissalDelaySeconds ?? (aggregate ? 5 * 60 : 15)),
       },
@@ -167,7 +177,7 @@ export function makeNotification(input: {
     collapseId: input.threadId,
     payload: {
       aps: {
-        alert: { title: input.alert.title, body: input.alert.body },
+        alert: notificationAlertText(input.alert),
         sound: "default",
         "thread-id": input.threadId,
         ...(input.alert.interruptionLevel ? { "interruption-level": input.alert.interruptionLevel } : {}),

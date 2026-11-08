@@ -135,8 +135,9 @@ describe("alertForTransition", () => {
     const waiting = state("a", "waiting_for_approval");
 
     expect(alertForTransition(previous, waiting, defaultNotificationPreferences)).toEqual({
-      title: "Session a",
-      body: "Approval needed on Home",
+      title: "Approval required",
+      body: "An agent run is waiting for your approval.",
+      localized: true,
       interruptionLevel: "time-sensitive",
     });
     expect(alertForTransition(waiting, waiting, defaultNotificationPreferences)).toBeNull();

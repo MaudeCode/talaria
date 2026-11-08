@@ -141,7 +141,10 @@ describe("publisher alert eligibility", () => {
     const delivered = await jobs(backend);
     expect(delivered.map((job) => job.kind)).toEqual(["live_activity_update", "notification"]);
     expect(delivered[0]!.aps.alert).toEqual({ title: "session-1", body: "Completed on Home", sound: "default" });
-    expect(delivered[1]!.aps).toMatchObject({ alert: { title: "session-2", body: "Approval needed on Home" }, "interruption-level": "time-sensitive" });
+    expect(delivered[1]!.aps).toMatchObject({
+      alert: { "title-loc-key": "Approval required", "loc-key": "An agent run is waiting for your approval." },
+      "interruption-level": "time-sensitive",
+    });
   });
 
   it("honors the per-session route and keeps an ineligible end silent", async () => {

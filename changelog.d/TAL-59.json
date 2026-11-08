@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Each new approval request sends one notification while Talaria is in the background, even when another approval is already waiting, and tapping it opens that chat.",
+      "highlight": false,
+      "components": ["app", "web", "relay"],
+      "announce": false
+    },
+    {
+      "category": "Security",
+      "summary": "Approval notifications no longer show the chat title.",
+      "highlight": false,
+      "components": ["app", "relay"]
+    }
+  ]
+}
