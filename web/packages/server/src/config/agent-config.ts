@@ -483,6 +483,12 @@ export function customProviderEntries(config: Config, plugins?: ReadonlySet<stri
 }
 
 /**
+ * Whether a read-view entry is a native `providers` record (it carries `provider_key`). Only its own identity selects
+ * it; unlike a legacy entry, it never lends metadata to another provider that shares its URL (TAL-1976).
+ */
+export const isNativeCustomEntry = (entry: Dict): boolean => Boolean(str(entry.provider_key).trim())
+
+/**
  * The record owning one `custom:<slug>` route, for credential, endpoint, context and default lookups: a legacy entry
  * wins, else the native owner. A selected native owner keeps its key and metadata (TAL-1654).
  */
