@@ -509,7 +509,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 256
+              "maxLength": 1024
             },
             "allowEmptyValue": true,
             "allowReserved": true
@@ -524,6 +524,101 @@
                   "type": "object",
                   "properties": {
                     "announcement": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "schemaVersion": {
+                              "const": 1
+                            },
+                            "id": {
+                              "type": "string",
+                              "pattern": "^(app|web)-[0-9A-Za-z.-]+$"
+                            },
+                            "component": {
+                              "enum": [
+                                "app",
+                                "web"
+                              ],
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sourceCommit": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "rows": {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 4,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^TAL-[1-9][0-9]*-[1-9][0-9]*$"
+                                  },
+                                  "icon": {
+                                    "enum": [
+                                      "sparkles",
+                                      "chat",
+                                      "voice",
+                                      "attachment",
+                                      "search",
+                                      "notifications",
+                                      "automation",
+                                      "model",
+                                      "appearance",
+                                      "speed",
+                                      "reliability",
+                                      "security",
+                                      "sync",
+                                      "share",
+                                      "settings",
+                                      "accessibility"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 40,
+                                    "pattern": "^\\S(?:[^\\u0000-\\u001f]*\\S)?$"
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^\\S(?:[^\\u0000-\\u001f]*\\S)?$"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "icon",
+                                  "title",
+                                  "description"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "schemaVersion",
+                            "id",
+                            "component",
+                            "version",
+                            "sourceCommit",
+                            "rows"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "presentation": {
                       "anyOf": [
                         {
                           "type": "object",
@@ -644,6 +739,7 @@
                   },
                   "required": [
                     "announcement",
+                    "presentation",
                     "eligible",
                     "observation",
                     "acknowledgement"

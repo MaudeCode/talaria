@@ -151,44 +151,62 @@ describe("What's New (TAL-1616)", () => {
   const announcement = fixture.web
   const state = (release: ReleaseInfo, observed: string | undefined, loaded: string | undefined = build, current: string | null = build, payload: WhatsNewAnnouncement | null = announcement) => whatsNewState(payload, release, observed, loaded, current)
 
-  it('is quiet on first observation, presents a later release once, and stays quiet once acknowledged', () => {
-    const release = stamped('1.1.0')
-    const quiet = { announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null }
-    expect(state(release, undefined)).toEqual(quiet)
-    const eligible = state(release, 'web:1.0.9')
-    expect(eligible).toEqual(fixture.state)
+  const row = (id: string) => ({ id, icon: 'sparkles' as const, title: `Row ${id}`, description: `About ${id}.` })
+  const withRows = (...ids: string[]): WhatsNewAnnouncement => ({ ...announcement, rows: ids.map(row) })
+  const exp = (source: string) => stamped(`1.1.0-exp.${source.repeat(12)}`)
+
+  it('is quiet on first observation and records every packaged row', () => {
+    expect(state(stamped('1.1.0'), undefined)).toEqual({ announcement, presentation: null, eligible: false, observation: 'web:rows:TAL-9-1,TAL-10-2', acknowledgement: null })
+    expect(state(stamped('1.1.0'), undefined, build, build, null)).toEqual({ announcement: null, presentation: null, eligible: false, observation: 'web:rows:', acknowledgement: null })
+  })
+
+  it('presents a new row in a second Experimental build of one X.Y.Z core (TAL-1981)', () => {
+    const first = state(exp('c'), undefined, build, build, withRows('TAL-9-1'))
+    expect(first.eligible).toBe(false)
+    const second = state(exp('d'), first.observation!, build, build, withRows('TAL-9-1', 'TAL-12-1'))
+    expect(second).toMatchObject({ eligible: true, presentation: withRows('TAL-12-1') })
+    expect(second).toEqual({ announcement: withRows('TAL-9-1', 'TAL-12-1'), presentation: withRows('TAL-12-1'), eligible: true, observation: null, acknowledgement: 'web:rows:TAL-9-1,TAL-12-1' })
+    expect(first.observation).toBe('web:rows:TAL-9-1')
+  })
+
+  it('presents only unseen rows, then stays quiet while keeping prior ids', () => {
+    const eligible = state(stamped('1.1.0'), 'web:rows:TAL-9-1')
+    expect(eligible).toEqual({ announcement, presentation: { ...announcement, rows: [announcement.rows[1]!] }, eligible: true, observation: null, acknowledgement: 'web:rows:TAL-9-1,TAL-10-2' })
     // Until the user dismisses it, nothing is recorded: a failed or unseen read leaves the stored token unchanged.
-    expect(state(release, 'web:1.0.9')).toEqual(eligible)
-    expect(state(release, eligible.acknowledgement!)).toEqual(quiet)
-    expect(state(release, 'web:0.12.0').eligible).toBe(true)
+    expect(state(stamped('1.1.0'), 'web:rows:TAL-9-1')).toEqual(eligible)
+    expect(state(stamped('1.1.0'), 'web:rows:TAL-3-1,TAL-9-1,TAL-10-2')).toEqual({ announcement, presentation: null, eligible: false, observation: 'web:rows:TAL-3-1,TAL-9-1,TAL-10-2', acknowledgement: null })
+    // A release without rows (or a rollback to one) keeps every acknowledged id.
+    expect(state(stamped('1.0.0'), 'web:rows:TAL-3-1', build, build, null)).toMatchObject({ eligible: false, observation: 'web:rows:TAL-3-1' })
   })
 
-  it('keeps an acknowledged release quiet after a rollback and a return to it (TAL-1617)', () => {
-    // The tab stores `observation` when it is non-null, and `acknowledgement` after the user dismisses an eligible prompt.
-    let stored: string | undefined = 'web:1.0.0'
-    const visit = (version: string, dismiss = true) => {
-      const next = state(stamped(version), stored)
-      if (next.observation !== null) stored = next.observation
-      else if (next.eligible && dismiss) stored = next.acknowledgement!
-      return next.eligible
-    }
-    expect(visit('1.1.0')).toBe(true)
-    expect(visit('1.0.0')).toBe(false)
-    expect(visit('1.1.0')).toBe(false)
-    expect(visit('1.2.0')).toBe(true)
+  it('presents every packaged row after a legacy release token', () => {
+    expect(state(stamped('1.1.0'), 'web:1.24.1')).toEqual(fixture.state)
   })
 
-  it('keeps build-only, older, unannounced and App observations quiet', () => {
-    expect(state(stamped(`1.1.0-exp.${'c'.repeat(12)}`), 'web:1.1.0')).toEqual({ announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
-    expect(state(stamped('1.1.0'), 'web:1.2.0')).toEqual({ announcement, eligible: false, observation: null, acknowledgement: null })
-    expect(state(stamped('1.1.0'), 'web:1.0.0', build, build, null)).toEqual({ announcement: null, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
-    for (const observed of ['app:1.0.0', 'web:1.0', 'web:01.0.0', 'web:1.0.0 ', '{"version":"1.0.0"}', 'x'.repeat(256)]) {
-      expect(state(stamped('1.1.0'), observed), observed).toEqual({ announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
+  it('treats an unreadable token as no observation', () => {
+    for (const observed of ['app:1.0.0', 'web:1.0', 'web:01.0.0', 'web:rows:TAL-9-1,', 'web:rows:tal-9-1', 'web:1.0.0 ', '{"version":"1.0.0"}', 'x'.repeat(256)]) {
+      expect(state(stamped('1.1.0'), observed), observed).toEqual({ announcement, presentation: null, eligible: false, observation: 'web:rows:TAL-9-1,TAL-10-2', acknowledgement: null })
     }
+  })
+
+  it('keeps the token at or under 32 ids and 1024 characters, dropping the oldest', () => {
+    const prior = Array.from({ length: 40 }, (_, i) => `TAL-${String(100000000 + i)}-1`)
+    const next = state(stamped('1.1.0'), `web:rows:${prior.join(',')}`).acknowledgement!
+    const ids = next.slice('web:rows:'.length).split(',')
+    expect(ids.length).toBeLessThanOrEqual(32)
+    expect(next.length).toBeLessThanOrEqual(1024)
+    expect(ids.slice(-2)).toEqual(['TAL-9-1', 'TAL-10-2'])
+    expect(ids[0]).not.toBe(prior[0])
+    const long = Array.from({ length: 32 }, (_, i) => `TAL-${'9'.repeat(40)}${String(i)}-1`)
+    const capped = state(stamped('1.1.0'), undefined, build, build, withRows(...long.slice(-4))).observation!
+    expect(capped.length).toBeLessThanOrEqual(1024)
+    const seeded = state(stamped('1.1.0'), `web:rows:${long.slice(0, 20).join(',')}`, build, build, withRows(...long.slice(-4))).acknowledgement!
+    expect(seeded.length).toBeLessThanOrEqual(1024)
+    expect(seeded.endsWith(long.slice(-4).join(','))).toBe(true)
   })
 
   it('never presents or records a release for a stale, unverifiable or development UI', () => {
-    const silent = { announcement, eligible: false, observation: null, acknowledgement: null }
+    const silent = { announcement, presentation: null, eligible: false, observation: null, acknowledgement: null }
     for (const [loaded, current] of [['a'.repeat(64), build], [undefined, build], [build, null]] as const) {
       expect(whatsNewState(announcement, stamped('1.1.0'), 'web:1.0.0', loaded, current)).toEqual(silent)
       expect(whatsNewState(announcement, stamped('1.1.0'), undefined, loaded, current)).toEqual(silent)
@@ -223,7 +241,7 @@ describe("What's New (TAL-1616)", () => {
       expect(await res.json()).toEqual(fixture.state)
       expect(await (await read(`?loaded_build=${'a'.repeat(64)}&observed=web:1.0.0`)).json()).toMatchObject({ eligible: false, observation: null })
       expect((await read(`?loaded_build=not-a-build`)).status).toBe(400)
-      expect((await read(`?loaded_build=${build}&observed=${'x'.repeat(257)}`)).status).toBe(400)
+      expect((await read(`?loaded_build=${build}&observed=${'x'.repeat(1025)}`)).status).toBe(400)
       expect(s.deps.release).toEqual(stamped('1.1.0'))
     } finally {
       await s.close()

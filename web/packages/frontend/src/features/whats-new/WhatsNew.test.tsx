@@ -19,8 +19,9 @@ import { WhatsNew, WhatsNewReplay, whatsNewScope } from './WhatsNew'
 // The shared Web/App fixture the server suite composes (contracts/fixtures/whats-new.json).
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/whats-new.json'), 'utf8')) as { state: WhatsNewState }
 const announcement = shared.state.announcement!
-const eligible: WhatsNewState = { announcement, eligible: true, observation: null, acknowledgement: 'web:1.1.0' }
-const quiet: WhatsNewState = { announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null }
+const ACK = shared.state.acknowledgement!
+const eligible: WhatsNewState = { announcement, presentation: announcement, eligible: true, observation: null, acknowledgement: ACK }
+const quiet: WhatsNewState = { announcement, presentation: null, eligible: false, observation: ACK, acknowledgement: null }
 const fetchMock = vi.mocked(fetchWhatsNew)
 const SCOPE = whatsNewScope(null)
 const TITLE = "What's New in Talaria Web"
@@ -52,6 +53,19 @@ describe("What's New (TAL-1617)", () => {
     await waitFor(() => { expect(dialog).toContainElement(document.activeElement as HTMLElement) })
   })
 
+  it('presents only the unseen rows automatically and the full announcement from Settings (TAL-1981)', async () => {
+    const presentation = { ...announcement, rows: announcement.rows.slice(1) }
+    fetchMock.mockResolvedValue({ ...eligible, presentation })
+    renderShell(<><WhatsNewReplay /><WhatsNew /></>)
+    const titles = (dialog: HTMLElement) => within(dialog).getAllByRole('listitem').map((row) => row.textContent)
+    const prompt = await screen.findByRole('dialog', { name: TITLE })
+    expect(titles(prompt)).toEqual(presentation.rows.map((row) => row.title + row.description))
+    await userEvent.click(within(prompt).getByRole('button', { name: 'Continue' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    await userEvent.click(screen.getByRole('button', { name: "What's New" }))
+    expect(titles(await screen.findByRole('dialog', { name: TITLE }))).toEqual(announcement.rows.map((row) => row.title + row.description))
+  })
+
   it.each([
     ['Continue', async () => { await userEvent.click(screen.getByRole('button', { name: 'Continue' })) }],
     ['Escape', async () => { await userEvent.keyboard('{Escape}') }],
@@ -65,13 +79,13 @@ describe("What's New (TAL-1617)", () => {
     expect(window.localStorage.getItem(SCOPE)).toBe('web:1.0.0')
     await dismiss()
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(window.localStorage.getItem(SCOPE)).toBe('web:1.1.0')
+    expect(window.localStorage.getItem(SCOPE)).toBe(ACK)
   })
 
   it('stores a quiet observation at once and presents nothing', async () => {
     fetchMock.mockResolvedValue(quiet)
     renderShell()
-    await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe('web:1.1.0') })
+    await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe(ACK) })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -82,7 +96,7 @@ describe("What's New (TAL-1617)", () => {
     await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1) })
     expect(screen.queryByRole('dialog')).toBeNull()
     unmount()
-    fetchMock.mockResolvedValueOnce({ announcement: null, eligible: false, observation: null, acknowledgement: null })
+    fetchMock.mockResolvedValueOnce({ announcement: null, presentation: null, eligible: false, observation: null, acknowledgement: null })
     renderShell()
     await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2) })
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -130,16 +144,16 @@ describe("What's New (TAL-1617)", () => {
     renderShell()
     await screen.findByRole('dialog')
     act(() => {
-      window.localStorage.setItem(SCOPE, 'web:1.1.0')
-      window.dispatchEvent(new StorageEvent('storage', { key: SCOPE, newValue: 'web:1.1.0' }))
+      window.localStorage.setItem(SCOPE, ACK)
+      window.dispatchEvent(new StorageEvent('storage', { key: SCOPE, newValue: ACK }))
     })
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    expect(fetchMock).toHaveBeenLastCalledWith('web:1.1.0')
+    expect(fetchMock).toHaveBeenLastCalledWith(ACK)
   })
 
   it('does not reopen an acknowledged prompt when another tab later stores a newer token', async () => {
     window.localStorage.setItem(SCOPE, 'web:1.0.0')
-    fetchMock.mockResolvedValueOnce(eligible).mockResolvedValue({ announcement, eligible: false, observation: null, acknowledgement: null })
+    fetchMock.mockResolvedValueOnce(eligible).mockResolvedValue({ announcement, presentation: null, eligible: false, observation: null, acknowledgement: null })
     renderShell()
     await userEvent.click(await screen.findByRole('button', { name: 'Continue' }))
     act(() => {
@@ -166,7 +180,7 @@ describe("What's New (TAL-1617)", () => {
     fetchMock.mockResolvedValue(eligible)
     renderShell(<WhatsNew />, 'alice')
     await userEvent.click(await screen.findByRole('button', { name: 'Continue' }))
-    expect(window.localStorage.getItem(whatsNewScope('alice'))).toBe('web:1.1.0')
+    expect(window.localStorage.getItem(whatsNewScope('alice'))).toBe(ACK)
     expect(window.localStorage.getItem(whatsNewScope('bob'))).toBeNull()
     expect(window.localStorage.getItem(SCOPE)).toBeNull()
   })
@@ -174,13 +188,13 @@ describe("What's New (TAL-1617)", () => {
   it('replays the same dialog from Settings without recording or re-enabling the prompt', async () => {
     fetchMock.mockResolvedValue(quiet)
     renderShell(<><WhatsNewReplay /><WhatsNew /></>)
-    await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe('web:1.1.0') })
+    await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe(ACK) })
     await userEvent.click(await screen.findByRole('button', { name: "What's New" }))
     const dialog = await screen.findByRole('dialog', { name: "What's New in Talaria Web" })
     expect(within(dialog).getAllByRole('listitem')).toHaveLength(announcement.rows.length)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(window.localStorage.getItem(SCOPE)).toBe('web:1.1.0')
+    expect(window.localStorage.getItem(SCOPE)).toBe(ACK)
   })
 
   it('degrades to this page when browser storage is unavailable', async () => {
@@ -195,6 +209,6 @@ describe("What's New (TAL-1617)", () => {
     renderShell(<WhatsNew />, 'private-mode')
     await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2) })
     // The acknowledgement this page kept answers the next read and suppresses a repeat prompt.
-    expect(fetchMock).toHaveBeenLastCalledWith('web:1.1.0')
+    expect(fetchMock).toHaveBeenLastCalledWith(ACK)
   })
 })

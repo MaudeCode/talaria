@@ -1,8 +1,8 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouterState } from '@tanstack/react-router'
 import { Accessibility, Bell, Cpu, Gauge, Lock, MessageSquare, Mic, Palette, Paperclip, RefreshCw, Search, Settings, Share2, ShieldCheck, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
-import type { WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
+import { WhatsNewObservedSchema, type WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -66,7 +66,7 @@ export function useWhatsNewState() {
     queryKey: keys.whatsNew(scope),
     queryFn: async () => {
       const stored = readPersisted(scope)
-      const state = await api.fetchWhatsNew(stored !== null && stored.length <= 256 ? stored : null)
+      const state = await api.fetchWhatsNew(stored !== null && WhatsNewObservedSchema.safeParse(stored).success ? stored : null)
       if (state.observation !== null) writePersisted(scope, state.observation)
       return state
     },
@@ -76,7 +76,7 @@ export function useWhatsNewState() {
   return { scope, state: query.data, fetching: query.isFetching }
 }
 
-/** The What's New prompt for the installed Web release, shown once automatically and replayed from Settings. */
+/** The What's New prompt: the server's unseen rows once automatically, the installed release's full announcement from Settings. */
 export function WhatsNew() {
   const { scope, state, fetching } = useWhatsNewState()
   const qc = useQueryClient()
@@ -88,19 +88,23 @@ export function WhatsNew() {
     return () => { window.removeEventListener('storage', changed) }
   }, [qc, scope])
   const open = useSyncExternalStore(subscribe, () => manual, () => false)
-  const announcement = state?.announcement ?? null
   const acknowledgement = state?.eligible ? state.acknowledgement : null
-  const unseen = announcement !== null && acknowledgement !== null && !fetching
+  const unseen = state?.presentation != null && acknowledgement !== null && !fetching
+  // Settings replays the full announcement; the automatic prompt shows only the server's unseen rows. A closing
+  // dialog keeps the rows it opened with.
+  const content = (open ? state?.announcement : unseen ? state?.presentation : null) ?? null
+  const [announcement, setAnnouncement] = useState(content)
+  if (content !== null && content !== announcement) setAnnouncement(content)
   const navigating = useRouterState({ select: (s) => s.status === 'pending' })
   const interrupting = useSyncExternalStore(unseen && !open ? subscribeBusy : subscribeNever, busy, () => true)
-  const presented = announcement !== null && (open || (unseen && !navigating && !interrupting))
+  const presented = content !== null && (open || (unseen && !navigating && !interrupting))
   // Every dismissal (Continue, Escape, backdrop) closes this page's prompt at once, whether or not the token could be
   // saved; only a dismissed eligible prompt records it.
   const dismiss = () => {
     manual = false
     if (unseen) {
       writePersisted(scope, acknowledgement)
-      qc.setQueryData(keys.whatsNew(scope), { ...state, eligible: false, acknowledgement: null })
+      qc.setQueryData(keys.whatsNew(scope), { ...state, presentation: null, eligible: false, acknowledgement: null })
     }
     notify()
   }

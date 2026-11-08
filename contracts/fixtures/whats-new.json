@@ -177,9 +177,30 @@
         }
       ]
     },
+    "presentation": {
+      "schemaVersion": 1,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+      "rows": [
+        {
+          "id": "TAL-9-1",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-10-2",
+          "icon": "search",
+          "title": "Search everywhere",
+          "description": "Find any message across your chats from a single field."
+        }
+      ]
+    },
     "eligible": true,
     "observation": null,
-    "acknowledgement": "web:1.1.0"
+    "acknowledgement": "web:rows:TAL-9-1,TAL-10-2"
   },
   "invalid": [
     {

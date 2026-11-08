@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "What's New in Talaria Web now presents new rows in Experimental builds and rows from releases you skipped, and shows only the rows you have not seen.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
