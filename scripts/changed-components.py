@@ -22,8 +22,10 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
                          "packages/server/package.json", "packages/server/tsconfig.json",
                          "packages/server/tsconfig.build.json")
 # Web and TalariaKit's package tests read every root fixture; the App's hosted tests and Relay read only these
-# (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them.
+# (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them. The
+# release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
+    "tooling": {"whats-new.json"},
     "app": {"connectors.json", "execution-modes.json", "speech-prepare.json", "vault-prompts.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json", "relay-snapshot.json"},
@@ -113,8 +115,8 @@ def path_suites(path):
             or (docs_directory and path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif")))
             or path in ("LICENSE", "web/NOTICE")):
         return set()
-    # The release-note generator and stamp read the What's New schema; their tests share its fixture (TAL-1616).
-    if path in ("contracts/whats-new.schema.json", "contracts/fixtures/whats-new.json"):
+    # The release-note generator and stamp read the What's New schema (TAL-1616).
+    if path == "contracts/whats-new.schema.json":
         return CONSUMERS | {"tooling"}
     # Only Web's drift check reads the OpenAPI document; the contracts probe covers what the App decodes (TAL-1674).
     if path == "contracts/web-api.openapi.json":
