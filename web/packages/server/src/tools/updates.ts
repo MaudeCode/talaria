@@ -17,7 +17,7 @@ import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
 import { SidecarError } from '../sidecar/client.js'
 import { execFile } from 'node:child_process'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -28,6 +28,7 @@ import { supportedAgents, validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 import { atomicWriteText } from '../fs/atomic.js'
 import { readUpdateRollback, rollbackPaths } from './update-rollback.js'
+import { claimContinuation, clearContinuation, readContinuation, restoreContinuation, writeContinuation, type ContinuationEntry, type ContinuationRun, type ContinueOutcome } from './update-continuation.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
@@ -1434,6 +1435,8 @@ const RECOVERY_DELAYS = [0, 1000, 4000, 15000, 60000, 120000]
 /** TAL-1430: re-check spacing for a native drain, and the lightweight lifecycle probe of exhausted debt. */
 const RECOVERY_DRAIN_RETRY_MS = 15000
 const RECOVERY_PROBE_MS = 60000
+/** TAL-1990: how soon an interrupted chat whose continuation admission refused for now (busy workspace, fence) is tried again. */
+const CONTINUATION_RETRY_MS = 15_000
 
 export interface UpdateServiceDeps {
   /** One retained-transaction step, including loaded-runtime reconciliation. No release selection. */
@@ -1478,6 +1481,10 @@ export interface UpdateServiceDeps {
   interruptibleRuns?: () => string[] | null
   /** TAL-1629: save these local runs as interrupted through the shared drain owner; lists those left without a saved outcome. */
   interruptRuns?: (runs: readonly string[]) => Promise<{ unresolved: string[] }>
+  /** TAL-1990: each local run's session and profile, read before it is interrupted, so its chat continues after the update. */
+  continuationRuns?: (runs: readonly string[]) => Promise<ContinuationRun[]>
+  /** TAL-1990: continue one recorded chat (`continueChat`), claiming its entry first and restoring it after a passing refusal. */
+  continueChat?: (run: ContinuationRun, entry: ContinuationEntry) => Promise<ContinueOutcome>
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
   scheduleRestart: () => void
   /** TAL-953: a post-update `hermes gateway restart` is running; Agent source must not change under it. */
@@ -1526,6 +1533,14 @@ export class UpdateService {
   private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
   /** TAL-1629: offered Update anyway confirmations by token; each is used at most once. */
   private readonly consents = new Map<string, InterruptConsent>()
+  /** TAL-1990: the latest continuation pass (passes run one after another), and the reconnect retry the runtime owes. */
+  private continuing: Promise<void> = Promise.resolve()
+  private continuationRetry: (() => void) | null = null
+  /** TAL-1990: a pass an update deferred, owed once its lock releases; a timed retry after admission refused an entry. */
+  private continuationOwed = false
+  private continuationTimer: NodeJS.Timeout | null = null
+  /** TAL-1990: the record this process wrote; its chats continue here (failed install) without the revision check. */
+  private recordedUpdate: string | null = null
   private readonly git: GitRun
   private readonly npm: BuildRun
   private readonly now: () => number
@@ -1780,6 +1795,10 @@ export class UpdateService {
     this.recoveryAbort?.abort()
     this.recoveryUnsubscribe?.()
     this.recoveryUnsubscribe = null
+    this.continuationRetry?.()
+    this.continuationRetry = null
+    if (this.continuationTimer) clearTimeout(this.continuationTimer)
+    this.continuationTimer = null
   }
 
   /** One sequence owns its timer and RPC; unchanged permanent debt cannot restart it. */
@@ -1955,7 +1974,10 @@ export class UpdateService {
   private async locked(fn: () => Promise<Dict>): Promise<Dict> {
     if (this.applying || this.recoveryAbort) return { ok: false, message: 'Update or retained recovery already in progress' }
     this.applying = true
-    try { return await fn() } finally { this.applying = false; this.refreshOwedCheck(); this.armRecovery() }
+    try { return await fn() } finally {
+      this.applying = false; this.refreshOwedCheck(); this.armRecovery()
+      if (this.continuationOwed && !this.autoRestartScheduled) { this.continuationOwed = false; void this.resumeContinuations() }
+    }
   }
 
   /** Python `apply_update`. */
@@ -1971,7 +1993,11 @@ export class UpdateService {
       if (blocked) return this.offerInterrupt(blocked, target, resolved, options)
     }
     const lifecycle = this.lifecycle
-    return this.locked(() => this.applyInner(target, resolved, () => lifecycle === this.lifecycle && canApply(), consent ? { ...options, beforeReplace: this.interruptBeforeReplace(consent, resolved, options) } : options))
+    const recorded = { continuation: false }
+    const result = await this.locked(() => this.applyInner(target, resolved, () => lifecycle === this.lifecycle && canApply(), consent ? { ...options, beforeReplace: this.interruptBeforeReplace(consent, resolved, options, recorded) } : options))
+    // TAL-1990: no restart follows a failed install, so this server continues the chats it interrupted, once admission reopens.
+    if (recorded.continuation && result.ok !== true) await this.resumeContinuations()
+    return result
   }
 
   /**
@@ -2016,7 +2042,7 @@ export class UpdateService {
    * with fresh consent; otherwise the consented runs are saved as interrupted before anything is replaced. A run left
    * without a saved outcome fails the update before it installs or restarts.
    */
-  private interruptBeforeReplace(consent: InterruptConsent, channel: WebChannel, options: UpdateOptions): NonNullable<UpdateOptions['beforeReplace']> {
+  private interruptBeforeReplace(consent: InterruptConsent, channel: WebChannel, options: UpdateOptions, recorded: { continuation: boolean }): NonNullable<UpdateOptions['beforeReplace']> {
     return async (target) => {
       const runs = this.coveredRuns(consent)
       if (runs?.length === 0) return null
@@ -2024,10 +2050,81 @@ export class UpdateService {
         const blocked = this.blockedResponse('webui') ?? { ok: false, target: 'webui', restart_blocked: true, message: 'The running work changed. Review it and confirm again.' }
         return this.offerInterrupt(blocked, 'webui', channel, options, target.sourceRevision)
       }
+      const continued = await this.deps.continuationRuns?.(runs)
       const { unresolved } = await this.deps.interruptRuns!(runs)
       if (unresolved.length) return { ok: false, target: 'webui', interrupt_failed: true, message: `${String(unresolved.length)} running chat${unresolved.length === 1 ? '' : 's'} could not be saved as interrupted, so Talaria Web was not updated.` }
+      // TAL-1990: the saved chats continue once Web is back; a record that cannot be written fails the update before install.
+      if (continued && this.deps.continueChat) {
+        try {
+          if (!this.deps.stateDir) throw new Error('the Web state directory is unknown')
+          const updateId = randomUUID()
+          writeContinuation(this.deps.stateDir, { update_id: updateId, target_revision: target.sourceRevision, target_version: target.version, runs: continued })
+          this.recordedUpdate = updateId
+          recorded.continuation = true
+        } catch (error) {
+          this.deps.log(`[updates] could not record the interrupted chats for continuation: ${(error as Error).message}`)
+          return { ok: false, target: 'webui', interrupt_failed: true, message: `${String(runs.length)} running chat${runs.length === 1 ? ' was' : 's were'} saved as interrupted, but could not be set to continue after the update, so Talaria Web was not updated.` }
+        }
+      }
       this.deps.log(`[updates] interrupted ${String(runs.length)} local chat run${runs.length === 1 ? '' : 's'} for a confirmed Web update`)
       return null
+    }
+  }
+
+  /**
+   * TAL-1990: start one continuation turn for each chat the recorded Update anyway interrupted. After a restart only a
+   * server on the record's target revision continues them (a rollback or failed start drops them); the server that wrote
+   * the record continues them itself when its install failed. While the Agent runtime is not ready the entries wait for
+   * its next handshake; while an update holds admission, for its lock to release; an entry admission refused for now is
+   * retried shortly.
+   */
+  resumeContinuations(): Promise<void> {
+    const { continueChat, stateDir } = this.deps
+    if (!continueChat || !stateDir) return Promise.resolve()
+    this.continuing = this.continuing.then(() => this.continueRecorded(stateDir, continueChat)).catch((error: unknown) => {
+      this.deps.log(`[updates] could not continue the interrupted chats: ${(error as Error).message}`)
+    })
+    return this.continuing
+  }
+
+  private async continueRecorded(stateDir: string, continueChat: NonNullable<UpdateServiceDeps['continueChat']>): Promise<void> {
+    this.continuationRetry?.()
+    this.continuationRetry = null
+    if (this.continuationTimer) clearTimeout(this.continuationTimer)
+    this.continuationTimer = null
+    // An update holds turn admission: the pass runs once its lock releases. One that restarts leaves its record to the next server.
+    const pending = (): boolean => {
+      if (this.applying) this.continuationOwed = true
+      return this.applying || this.autoRestartScheduled
+    }
+    if (pending()) return
+    const record = readContinuation(stateDir)
+    if (!record) return
+    const running = str(this.deps.identity.release().sourceRevision)
+    if (record.update_id !== this.recordedUpdate && running !== record.target_revision) {
+      for (const run of record.runs) this.deps.log(`[updates] not continuing chat ${run.session_id} after the update: Talaria Web is not running the updated release`)
+      clearContinuation(stateDir)
+      return
+    }
+    let refused = false
+    for (const run of record.runs) {
+      if (pending()) return
+      let outcome: ContinueOutcome
+      try { outcome = await continueChat(run, { claim: () => { claimContinuation(stateDir, run.stream_id) }, restore: () => { restoreContinuation(stateDir, record, run) } }) } catch (error) {
+        this.deps.log(`[updates] could not continue chat ${run.session_id} after the update: ${(error as Error).message}`)
+        continue
+      }
+      if (outcome === 'not_ready') {
+        this.deps.log('[updates] the Agent runtime is not ready; interrupted chats continue once it is')
+        const unsubscribe = this.deps.onAgentReconnect?.((runtime) => { if (runtime.compatible && !runtime.stale) void this.resumeContinuations() })
+        this.continuationRetry = unsubscribe ?? null
+        return
+      }
+      if (outcome === 'retry') refused = true
+    }
+    if (refused && !pending()) {
+      this.continuationTimer = setTimeout(() => { this.continuationTimer = null; void this.resumeContinuations() }, CONTINUATION_RETRY_MS)
+      this.continuationTimer.unref()
     }
   }
 

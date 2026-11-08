@@ -72,6 +72,8 @@ async function serve(args: string[]): Promise<number> {
     deps.completions.start()
     deps.hygiene.start()
     deps.updates.startAutoApply()
+    // TAL-1990: the chats an Update anyway interrupted continue on the restarted server.
+    void deps.updates.resumeContinuations()
     await deps.gatewayRestarts.resume()
     log(`  Then open:     ${running.scheme}://localhost:${running.port}`)
   }

@@ -247,7 +247,8 @@ export const MessageSchema = z.looseObject({
   _media: z.array(DisplayMediaSchema).optional(),
   /**
    * TAL-371: an automatic background wakeup (delegation results, background process or watch notice), not a message the
-   * user sent. Clients render it as a "Background update" disclosure: a localized label per `kind` (with `count`), a
+   * user sent. TAL-1990: also the `update_continuation` prompt that continues a chat an Update anyway interrupted
+   * (`kind` `other`). Clients render it as a "Background update" disclosure: a localized label per `kind` (with `count`), a
    * warning when `attention`, the server's one-line `summary`, and `content` in full on expansion.
    */
   _background_update: z.object({

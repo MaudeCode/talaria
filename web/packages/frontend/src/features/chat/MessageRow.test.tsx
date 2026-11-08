@@ -120,6 +120,8 @@ describe('background updates (TAL-460)', () => {
       `background:${keyOf('wakeup-mixed-user')}`, `assistant:${keyOf('wakeup-mixed-reply')}`,
       `background:${keyOf('wakeup-legacy-user')}`, `assistant:${keyOf('wakeup-legacy-reply')}`,
       `background:${keyOf('wakeup-silent-user')}`,
+      // TAL-1990: the server's continuation after an Update anyway is an automatic row too, with its reply under it.
+      `background:${keyOf('continuation-user')}`, `assistant:${keyOf('continuation-reply')}`,
       `user:${keyOf('user-no-reply')}`, `assistant:${keyOf('user-no-reply-answer')}`,
     ])
     expect(view.container.querySelector(`[data-message-key="${keyOf('wakeup-silent-user')}"] summary`)).toHaveTextContent('./backup.sh')

@@ -108,7 +108,7 @@ describe('SystemSection "Check now"', () => {
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /update web/i }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('2 chats are still running. Updating now stops them and saves their partial replies as interrupted.')
+    expect(dialog).toHaveTextContent('2 chats are still running. Updating now stops them and continues them once Talaria Web is back.')
     await userEvent.click(within(dialog).getByRole('button', { name: accept ? 'Update anyway' : 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     if (accept) {

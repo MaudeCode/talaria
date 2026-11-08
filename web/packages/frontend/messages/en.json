@@ -2735,8 +2735,8 @@
 				"n"
 			],
 			"match": {
-				"n=1": "1 chat is still running. Updating now stops it and saves its partial reply as interrupted.",
-				"n=*": "{n} chats are still running. Updating now stops them and saves their partial replies as interrupted."
+				"n=1": "1 chat is still running. Updating now stops it and continues it once Talaria Web is back.",
+				"n=*": "{n} chats are still running. Updating now stops them and continues them once Talaria Web is back."
 			}
 		}
 	],

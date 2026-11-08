@@ -17,6 +17,16 @@ any other expired, reused or unknown token refuses the update again with fresh c
 Gateway-owned or unknown runs are never interrupted and keep refusing; automatic updates and Agent updates never
 offer it. New chats are refused from the confirmation through the restart. If an interrupted chat cannot be saved,
 nothing is installed and new chats are admitted again.
+
+Those chats then continue on their own (TAL-1990). Before anything is installed, the update records each saved chat
+(its session, profile and interrupted turn) in `update-continuation.json` under the Web state directory; if that
+record cannot be written, nothing is installed and new chats are admitted again. Once the restarted server is up and
+the Agent runtime is current, it starts one turn in each recorded chat with the prompt "Continue where you left off."
+and source `update_continuation`, shown like an automatic background update rather than a message the user sent. Each
+entry is removed before its turn starts, so another restart mid-resume never repeats one. A chat is skipped when it
+was deleted, is read-only or already has a newer turn, and every chat is skipped when the restarted server is not on
+the update's release (a rollback or a failed start). When the install fails and no restart follows, the same server
+continues the chats right away.
 Only a direct global npm installation (`npm install -g @maudecode/talaria-web`) updates itself. Stable installs the
 exact package in the newest completed release set; Experimental installs the verified artifact that CI publishes to
 `ghcr.io/maudecode/talaria-web-experimental` for each passing `main` commit that changes Web or shared contracts.

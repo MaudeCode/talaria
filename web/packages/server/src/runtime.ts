@@ -35,6 +35,7 @@ import type { AppDeps, RequestScope } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew, whenDescribeInputsChange } from './release.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
+import { continueChat, UPDATE_CONTINUATION_PROMPT, UPDATE_CONTINUATION_SOURCE, type ContinuationRun } from './tools/update-continuation.js'
 import { RESTART_EXIT_CODE, RUN_SETTLE_MS } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
@@ -1223,6 +1224,21 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     // TAL-1629: an Update anyway may interrupt only this server's own local chats; a terminal or cron run keeps refusing.
     interruptibleRuns: () => { const b = restartBlockers(); return b.active_terminals || b.active_cron_jobs ? null : turns.interruptibleRuns() },
     interruptRuns: (runs) => turns.interrupt(runs, RUN_SETTLE_MS),
+    // TAL-1990: each run's chat, read before it is interrupted; its profile is informational, so an unreadable one is null.
+    continuationRuns: async (runs) => (await Promise.all(runs.map(async (streamId): Promise<ContinuationRun | null> => {
+      const sessionId = registry.activeRuns.get(streamId)?.session_id ?? registry.ownerSessionId(streamId)
+      if (!sessionId) return null
+      let profile: string | null = null
+      try { profile = (await store.get(sessionId, { metadataOnly: true })).profile ?? null } catch { /* informational only */ }
+      return { session_id: sessionId, profile, stream_id: streamId }
+    }))).filter((run) => run !== null),
+    continueChat: (run, entry) => continueChat(run, entry, {
+      ensureRuntime: () => ensureAgentRuntimeCurrent(sidecar),
+      session: async (sid) => { try { return await store.get(sid) } catch (error) { if (error instanceof SessionNotFound) return null; throw error } },
+      readOnlyReason: (session) => sessions.readOnlyReason(session),
+      startTurn: (session) => turns.startServerTurn(session, { msg: UPDATE_CONTINUATION_PROMPT, source: UPDATE_CONTINUATION_SOURCE }),
+      log,
+    }),
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
     gatewayRestarting: () => deps.gatewayRestarts.restarting(),
     llm: async (system, user) => {
