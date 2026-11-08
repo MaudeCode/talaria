@@ -1,4 +1,4 @@
-"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167, TAL-1168, TAL-1169): Talaria-owned tools that run on the Web server.
+"""The opt-in ``talaria`` agent toolset (TAL-1164, TAL-1165, TAL-1166, TAL-1167, TAL-1168, TAL-1169, TAL-1170): Talaria-owned tools that run on the Web server.
 
 Each handler forwards its call to the server over the sidecar's RPC channel (``rpc.call_server``) and returns the
 server's result unchanged. The toolset is registered once the Agent imports, and is never one of a profile's default
@@ -20,8 +20,8 @@ TOOLSET = "talaria"
 # The Agent describes a registry-only toolset as "Plugin toolset: <name>"; the catalog shows this instead.
 TOOLSET_DESCRIPTION = (
     "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their "
-    "turns, manage their queued messages, see what they wait on and answer their questions and approvals, and list your "
-    "background work."
+    "turns, manage their queued messages, see what they wait on and answer their questions and approvals, read or set "
+    "their goals, organise this profile's projects and workspaces, list profiles, and list your background work."
 )
 
 SESSION_LIST_SCHEMA = {
@@ -241,6 +241,93 @@ APPROVAL_RESPOND_SCHEMA = {
     },
 }
 
+_NO_PARAMS = {"type": "object", "properties": {}, "required": []}
+_PROJECT_NAME = {"type": "string", "description": "The project's name, at most 128 characters."}
+_WORKSPACE_PATH = {"type": "string", "description": "The workspace folder's path, as workspace_list gives it."}
+
+PROJECT_LIST_SCHEMA = {
+    "name": "project_list",
+    "description": "List this profile's Talaria projects, the folders the sidebar groups chats into, each with its project_id and name.",
+    "parameters": _NO_PARAMS,
+}
+
+PROJECT_CREATE_SCHEMA = {
+    "name": "project_create",
+    "description": "Create a Talaria project in this profile. Move a chat into it with session_update's project_id.",
+    "parameters": {"type": "object", "properties": {"name": _PROJECT_NAME}, "required": ["name"]},
+}
+
+PROJECT_RENAME_SCHEMA = {
+    "name": "project_rename",
+    "description": "Rename one of this profile's Talaria projects.",
+    "parameters": {
+        "type": "object",
+        "properties": {"project_id": {"type": "string", "description": "The project's project_id, from project_list."}, "name": _PROJECT_NAME},
+        "required": ["project_id", "name"],
+    },
+}
+
+WORKSPACE_LIST_SCHEMA = {
+    "name": "workspace_list",
+    "description": "List this profile's Talaria workspaces, the folders a chat can work in, each with its path and name.",
+    "parameters": _NO_PARAMS,
+}
+
+WORKSPACE_ADD_SCHEMA = {
+    "name": "workspace_add",
+    "description": (
+        "Add an existing folder to this profile's Talaria workspaces. The server refuses a path that does not exist, is "
+        "not a folder, is a system directory, or is already listed, with its reason."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "The folder's absolute path; ~ is the user's home."},
+            "name": {"type": "string", "description": "Its name in the workspace list; the folder's name when absent."},
+        },
+        "required": ["path"],
+    },
+}
+
+WORKSPACE_RENAME_SCHEMA = {
+    "name": "workspace_rename",
+    "description": "Rename one of this profile's Talaria workspaces.",
+    "parameters": {
+        "type": "object",
+        "properties": {"path": _WORKSPACE_PATH, "name": {"type": "string", "description": "Its new name."}},
+        "required": ["path", "name"],
+    },
+}
+
+PROFILE_LIST_SCHEMA = {
+    "name": "profile_list",
+    "description": "List the Hermes profiles on this server and which one this session runs in (active). Read-only.",
+    "parameters": _NO_PARAMS,
+}
+
+GOAL_GET_SCHEMA = {
+    "name": "goal_get",
+    "description": "Read a Talaria session's standing /goal: its text, status, and turns used of its budget.",
+    "parameters": {"type": "object", "properties": {"session_id": _ANY_SESSION_ID}, "required": ["session_id"]},
+}
+
+GOAL_SET_SCHEMA = {
+    "name": "goal_set",
+    "description": (
+        "Run /goal on a Talaria session in this profile, as its user would. New goal text replaces its goal and starts its "
+        "first turn toward it; pause, resume and clear control the standing goal. A running session takes only pause, "
+        "resume, clear or status; a session with more access than yours is refused as exceeds_caller."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": _ANY_SESSION_ID,
+            "text": {"type": "string", "description": "The goal, or pause, resume or clear."},
+        },
+        "required": ["session_id", "text"],
+    },
+}
+
 # The server bounds a handoff summary at two 60-second attempts; a compression has no deadline of its own.
 SESSION_HANDOFF_TIMEOUT_S = 150.0
 SESSION_COMPRESS_TIMEOUT_S = 600.0
@@ -284,10 +371,15 @@ def _wait_timeout(args: dict, params: dict) -> float:
     return params["timeout_s"] + rpc.SERVER_CALL_TIMEOUT
 
 
-def _with_title(args: dict, params: dict) -> None:
-    title = args.get("title")
-    if isinstance(title, str) and title.strip():
-        params["title"] = title.strip()
+def _optional(field: str):
+    """Send ``field`` only when given a non-blank string, stripped."""
+
+    def add(args: dict, params: dict) -> None:
+        value = args.get(field)
+        if isinstance(value, str) and value.strip():
+            params[field] = value.strip()
+
+    return add
 
 
 def _update_fields(args: dict, params: dict) -> None:
@@ -296,13 +388,6 @@ def _update_fields(args: dict, params: dict) -> None:
         if field in args:
             value = args[field]
             params[field] = value.strip() if isinstance(value, str) else value
-
-
-def _optional_session(args: dict, params: dict) -> None:
-    """``pending_list`` narrows to one session only when given one."""
-    target = args.get("session_id")
-    if isinstance(target, str) and target.strip():
-        params["session_id"] = target.strip()
 
 
 def _tool(method: str, name: str, fields: tuple[str, ...], extra=None):
@@ -329,7 +414,7 @@ def _tool(method: str, name: str, fields: tuple[str, ...], extra=None):
 queue_list = _tool("server.queue_list", "queue_list", ("session_id",))
 queue_send_now = _tool("server.queue_send_now", "queue_send_now", ("session_id", "steer_id"))
 queue_withdraw = _tool("server.queue_withdraw", "queue_withdraw", ("session_id", "steer_id"))
-session_new = _tool("server.session_new", "session_new", ("message",), _with_title)
+session_new = _tool("server.session_new", "session_new", ("message",), _optional("title"))
 session_send = _tool("server.session_send", "session_send", ("session_id", "message"))
 session_wait = _tool("server.session_wait", "session_wait", ("session_id",), _wait_timeout)
 session_interrupt = _tool("server.session_interrupt", "session_interrupt", ("session_id",))
@@ -338,9 +423,18 @@ session_update = _tool("server.session_update", "session_update", ("session_id",
 session_handoff = _tool("server.session_handoff", "session_handoff", ("session_id",), lambda args, params: SESSION_HANDOFF_TIMEOUT_S)
 session_compress = _tool("server.session_compress", "session_compress", ("session_id",), lambda args, params: SESSION_COMPRESS_TIMEOUT_S)
 background_list = _tool("server.background_list", "background_list", ())
-pending_list = _tool("server.pending_list", "pending_list", (), _optional_session)
+pending_list = _tool("server.pending_list", "pending_list", (), _optional("session_id"))
 clarify_respond = _tool("server.clarify_respond", "clarify_respond", ("session_id", "clarify_id", "answer"))
 approval_respond = _tool("server.approval_respond", "approval_respond", ("session_id", "approval_id", "choice"))
+project_list = _tool("server.project_list", "project_list", ())
+project_create = _tool("server.project_create", "project_create", ("name",))
+project_rename = _tool("server.project_rename", "project_rename", ("project_id", "name"))
+workspace_list = _tool("server.workspace_list", "workspace_list", ())
+workspace_add = _tool("server.workspace_add", "workspace_add", ("path",), _optional("name"))
+workspace_rename = _tool("server.workspace_rename", "workspace_rename", ("path", "name"))
+profile_list = _tool("server.profile_list", "profile_list", ())
+goal_get = _tool("server.goal_get", "goal_get", ("session_id",))
+goal_set = _tool("server.goal_set", "goal_set", ("session_id", "text"))
 
 _TOOLS = (
     (SESSION_LIST_SCHEMA, session_list, "🗂️"),
@@ -359,6 +453,15 @@ _TOOLS = (
     (PENDING_LIST_SCHEMA, pending_list, "🔔"),
     (CLARIFY_RESPOND_SCHEMA, clarify_respond, "🙋"),
     (APPROVAL_RESPOND_SCHEMA, approval_respond, "✅"),
+    (PROJECT_LIST_SCHEMA, project_list, "📁"),
+    (PROJECT_CREATE_SCHEMA, project_create, "🗃️"),
+    (PROJECT_RENAME_SCHEMA, project_rename, "✏️"),
+    (WORKSPACE_LIST_SCHEMA, workspace_list, "🗄️"),
+    (WORKSPACE_ADD_SCHEMA, workspace_add, "➕"),
+    (WORKSPACE_RENAME_SCHEMA, workspace_rename, "🔤"),
+    (PROFILE_LIST_SCHEMA, profile_list, "👤"),
+    (GOAL_GET_SCHEMA, goal_get, "🎯"),
+    (GOAL_SET_SCHEMA, goal_set, "🏁"),
 )
 
 

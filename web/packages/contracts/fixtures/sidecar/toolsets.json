@@ -486,7 +486,7 @@
           },
           {
             "name": "talaria",
-            "description": "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their turns, manage their queued messages, see what they wait on and answer their questions and approvals, and list your background work.",
+            "description": "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their turns, manage their queued messages, see what they wait on and answer their questions and approvals, read or set their goals, organise this profile's projects and workspaces, list profiles, and list your background work.",
             "available": true,
             "selected": false,
             "unavailable_reason": null,

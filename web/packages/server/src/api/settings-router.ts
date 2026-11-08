@@ -8,7 +8,7 @@ import { WEB_UPDATE_CHANNELS } from '../tools/updates.js'
 import { gatewayRecordedAt, type GatewayProcess } from '../tools/health.js'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
-import type { RequestContext } from '../http/context.js'
+import type { AppDeps, RequestContext } from '../http/context.js'
 import { activeProfileName, buildProfileCookie, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import type { Session } from '../sessions/session.js'
 import { forwardedClientIp, isLoopback, rawPeerIsTrustedProxy } from '../http/origin.js'
@@ -377,6 +377,12 @@ async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'pro
   }
 }
 
+/** `/api/profiles` in the request's profile; the agent's `profile_list` calls it too (TAL-1170). */
+export async function profileList(deps: AppDeps) {
+  const active = deps.activeProfile()
+  return { profiles: await deps.profiles.list(active) as never[], active, single_profile_mode: deps.isolatedProfileMode() }
+}
+
 export const settingsRouter = os.router({
   feedback: {
     diagnostics: os.feedback.diagnostics.handler(({ context: { ctx } }) => run(() => feedbackDiagnostics(ctx.deps, home(ctx)))),
@@ -395,7 +401,7 @@ export const settingsRouter = os.router({
     apply: os.profileImport.apply.handler(({ input, context: { ctx } }) => run(() => importProfile(ctx, { action: 'apply', ...input }))),
   },
   profiles: {
-    list: os.profiles.list.handler(({ context: { ctx } }) => run(async () => ({ profiles: await ctx.deps.profiles.list(activeProfileName(ctx)) as never[], active: activeProfileName(ctx), single_profile_mode: ctx.deps.isolatedProfileMode() }))),
+    list: os.profiles.list.handler(({ context: { ctx } }) => run(() => profileList(ctx.deps))),
     active: os.profiles.active.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.profiles.activePayload(activeProfileName(ctx))) as never)),
     switch: os.profiles.switch.handler(({ input, context: { ctx } }) => run(async () => {
       const name = str(input.name ?? input.profile).trim()

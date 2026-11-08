@@ -73,15 +73,64 @@ export async function approvalRespond(deps: AppDeps, sid: string, choice: string
 /** A session this request's profile may see (TAL-372 background work never crosses owners). */
 async function visibleSession(ctx: RequestContext, sid: string): Promise<Session> {
   if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
-  return (await getSession(ctx, sid, true))
+  return (await getSession(ctx.deps, sid, true))
 }
 
-async function getSession(ctx: RequestContext, sid: string, metadataOnly = false): Promise<Session> {
+async function getSession(deps: AppDeps, sid: string, metadataOnly = false): Promise<Session> {
   try {
-    return (await ctx.deps.sessionStore.get(sid, { metadataOnly }))
+    return (await deps.sessionStore.get(sid, { metadataOnly }))
   } catch {
     throw new HttpError(404, 'Session not found')
   }
+}
+
+/** `/api/goal`: run `/goal <args>` on a session and start its kickoff turn; the agent's goal tools call it too (TAL-1170). */
+export async function goalCommand(deps: AppDeps, body: Record<string, unknown>) {
+  requireField(body, 'session_id')
+  const args = str(body.args || body.text)
+  if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
+  const sid = str(body.session_id)
+  // Python: a delegated subagent child is view-only; its goal state is never mutated and no turn starts on it.
+  if ((await deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
+  const s = (await getSession(deps, sid))
+  if ((await deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+  const requestedProfile = str(body.profile).trim()
+  if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
+  if (requestedProfile && !deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
+  let streamRunning = false
+  if (s.active_stream_id) {
+    streamRunning = deps.registry.liveIds.has(s.active_stream_id)
+    if (!streamRunning) (await deps.sessions.clearStaleStreamState(s))
+  }
+  const sidecar = deps.sidecar()
+  if (!sidecar) throw new HttpError(503, 'Goal controls need the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
+  const profileHome = deps.sessions.deps.workspaces.deps.profileHome(s.profile ?? deps.activeProfile())
+  // Python `_default_max_turns`: the profile's `goals.max_turns` (default 20) is the /goal turn budget.
+  let defaultMaxTurns = 20
+  try { const cfg = await deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
+  const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
+  await deps.sessions.assertWritable(s)
+  const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined }) as Record<string, unknown>
+  // TAL-808: the session `goal` follows the command before the client reloads the session.
+  await deps.turns.refreshGoal(s)
+  if (payload.ok === false) {
+    // Clients show the body's `error`, so the Agent's reason replaces the sidecar's code there.
+    const reason = str(payload.message || payload.error || 'goal command failed')
+    throw new HttpError(payload.error === 'agent_running' ? 409 : 400, reason, { ...payload, error: reason })
+  }
+  const kickoff = str(payload.kickoff_prompt).trim()
+  if (kickoff) {
+    const workspace = (await deps.sessions.turnWorkspace(s, body.workspace))
+    const [model, provider, normalized] = deps.sessions.turnModel(s, body)
+    const started = (await deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
+    if (started._status !== undefined && started._status >= 400) {
+      try { await deps.sessions.assertWritable(s); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
+      await deps.turns.refreshGoal(s)
+      throw new HttpError(started._status, started.error ?? 'goal kickoff failed', { ...payload, ok: false })
+    }
+    Object.assign(payload, startPayload(started))
+  }
+  return payload
 }
 
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
@@ -118,7 +167,7 @@ async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Pro
   })
   const streamId = str(started.stream_id)
   if (streamId) await ctx.deps.turns.finished(streamId)
-  const s = (await getSession(ctx, str(body.session_id)))
+  const s = (await getSession(ctx.deps, str(body.session_id)))
   const session = (await ctx.deps.turns.publicTerminalSession(s, streamId)) as never
   const ended = outcome as { answer: string } | TurnFailure | null
   // A `[SILENT]` control message starts no turn.
@@ -229,61 +278,14 @@ export const chatRouter = os.router({
       return clarifyRespond(ctx.deps, sid, str(input.clarify_id), reply)
     })),
   },
-  goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => {
-    const body = input as Record<string, unknown>
-    requireField(body, 'session_id')
-    const args = str(body.args || body.text)
-    if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
-    const sid = str(body.session_id)
-    // Python: a delegated subagent child is view-only; its goal state is never mutated and no turn starts on it.
-    if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
-    const s = (await getSession(ctx, sid))
-    if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
-    const requestedProfile = str(body.profile).trim()
-    if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
-    if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
-    let streamRunning = false
-    if (s.active_stream_id) {
-      streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)
-      if (!streamRunning) (await ctx.deps.sessions.clearStaleStreamState(s))
-    }
-    const sidecar = ctx.deps.sidecar()
-    if (!sidecar) throw new HttpError(503, 'Goal controls need the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
-    const profileHome = ctx.deps.sessions.deps.workspaces.deps.profileHome(s.profile ?? ctx.deps.activeProfile())
-    // Python `_default_max_turns`: the profile's `goals.max_turns` (default 20) is the /goal turn budget.
-    let defaultMaxTurns = 20
-    try { const cfg = await ctx.deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
-    const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
-    await ctx.deps.sessions.assertWritable(s)
-    const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined }) as Record<string, unknown>
-    // TAL-808: the session `goal` follows the command before the client reloads the session.
-    await ctx.deps.turns.refreshGoal(s)
-    if (payload.ok === false) {
-      // Clients show the body's `error`, so the Agent's reason replaces the sidecar's code there.
-      const reason = str(payload.message || payload.error || 'goal command failed')
-      throw new HttpError(payload.error === 'agent_running' ? 409 : 400, reason, { ...payload, error: reason })
-    }
-    const kickoff = str(payload.kickoff_prompt).trim()
-    if (kickoff) {
-      const workspace = (await ctx.deps.sessions.turnWorkspace(s, body.workspace))
-      const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
-      const started = (await ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
-      if (started._status !== undefined && started._status >= 400) {
-        try { await ctx.deps.sessions.assertWritable(s); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
-        await ctx.deps.turns.refreshGoal(s)
-        throw new HttpError(started._status, started.error ?? 'goal kickoff failed', { ...payload, ok: false })
-      }
-      Object.assign(payload, startPayload(started))
-    }
-    return payload
-  })),
+  goal: os.goal.handler(({ input, context: { ctx } }) => run(() => goalCommand(ctx.deps, input as Record<string, unknown>))),
   background: {
     start: os.background.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id', 'prompt')
       // A subagent child's profile/workspace/context must never seed a runnable background session.
       if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
-      const parent = (await getSession(ctx, str(body.session_id)))
+      const parent = (await getSession(ctx.deps, str(body.session_id)))
       if ((await ctx.deps.sessions.isReadOnly(parent)) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
@@ -341,7 +343,7 @@ export const chatRouter = os.router({
       const body = input as Record<string, unknown>
       requireField(body, 'session_id')
       const sid = str(body.session_id).trim()
-      const s = (await getSession(ctx, sid, true))
+      const s = (await getSession(ctx.deps, sid, true))
       const pid = str(body.task_id || body.process_id).trim()
       if (str(body.process_id).trim()) ctx.extraResponseHeaders = { deprecation: 'true' }
       return { ok: true as const, session_id: s.session_id, task_id: pid, noop: true as const }
@@ -354,7 +356,7 @@ export const chatRouter = os.router({
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
     // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
     if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
-    const s = (await getSession(ctx, sid))
+    const s = (await getSession(ctx.deps, sid))
     if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')

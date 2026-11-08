@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
+import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, GoalResponseSchema, PendingSteerSchema, ProfilesSchema, ProjectSchema, ProjectsSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema, WorkspacesSchema } from '../views.js'
 import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
+import { WorkspacesMutation } from '../routes/workspaces.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -134,8 +135,8 @@ export const ServerSessionUpdateResultSchema = z.object({ session: SessionRowSch
 /** `/api/session/compress`'s summary, without the session it returns (its whole transcript). */
 export const ServerSessionCompressResultSchema = z.object({ session_id: z.string(), summary: CompressionSummarySchema })
 
-/** The caller's own background work, as `/api/background/tasks` answers for its session. */
-export const ServerBackgroundListParamsSchema = z.object({ caller_session_id: z.string().min(1) })
+/** A tool that takes no target: only the calling session, whose profile scopes the answer. */
+export const ServerCallerParamsSchema = z.object({ caller_session_id: z.string().min(1) })
 
 /**
  * TAL-1168: the approvals and clarify questions sessions in the caller's profile wait on. With `session_id`, that one
@@ -184,6 +185,27 @@ export const ServerApprovalRespondParamsSchema = ServerQueueListParamsSchema.ext
   choice: z.enum(['once', 'deny']),
 })
 
+/**
+ * TAL-1170: organise the containers sessions live in, in the caller's profile, through the services behind
+ * `/api/projects{,/create,/rename}`, `/api/workspaces{,/add,/rename}` and `/api/profiles`, each answering as its route
+ * does. No tool deletes a project or workspace, or switches or creates a profile.
+ */
+export const ServerProjectCreateParamsSchema = ServerCallerParamsSchema.extend({ name: z.string().min(1) })
+export const ServerProjectRenameParamsSchema = ServerCallerParamsSchema.extend({ project_id: z.string().min(1), name: z.string().min(1) })
+export const ServerProjectResultSchema = z.object({ ok: z.literal(true), project: ProjectSchema })
+/** `name` defaults to the folder's name; the path passes the route's validation. */
+export const ServerWorkspaceAddParamsSchema = ServerCallerParamsSchema.extend({ path: z.string().min(1), name: z.string().min(1).optional() })
+/** A workspace is named by its `path`, as `workspace_list` gives it. */
+export const ServerWorkspaceRenameParamsSchema = ServerCallerParamsSchema.extend({ path: z.string().min(1), name: z.string().min(1) })
+
+/**
+ * TAL-1170: a session's `/goal`, through the service behind `/api/goal`. `goal_get` runs `/goal status`; `goal_set` runs
+ * `/goal <text>`, so a new goal starts the target's kickoff turn and `pause`, `resume` or `clear` control the standing one.
+ * The target is in the caller's profile and may be the caller; a target with more access than the caller is refused
+ * (`exceeds_caller`) for `goal_set`, as `session_send` refuses it.
+ */
+export const ServerGoalSetParamsSchema = ServerQueueListParamsSchema.extend({ text: z.string().min(1) })
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -202,10 +224,20 @@ export const SIDECAR_SERVER_METHODS = {
   /** TAL-1166: `/api/session/handoff-summary`'s answer for the target (no `since`). */
   'server.session_handoff': { params: ServerQueueListParamsSchema, result: HandoffSummarySchema },
   'server.session_compress': { params: ServerQueueListParamsSchema, result: ServerSessionCompressResultSchema },
-  'server.background_list': { params: ServerBackgroundListParamsSchema, result: BackgroundTasksResponseSchema },
+  /** The caller's own background work, as `/api/background/tasks` answers for its session. */
+  'server.background_list': { params: ServerCallerParamsSchema, result: BackgroundTasksResponseSchema },
   'server.pending_list': { params: ServerPendingListParamsSchema, result: ServerPendingListResultSchema },
   'server.clarify_respond': { params: ServerClarifyRespondParamsSchema, result: ClarifyRespondResponseSchema },
   'server.approval_respond': { params: ServerApprovalRespondParamsSchema, result: ApprovalRespondResponseSchema },
+  'server.project_list': { params: ServerCallerParamsSchema, result: ProjectsSchema },
+  'server.project_create': { params: ServerProjectCreateParamsSchema, result: ServerProjectResultSchema },
+  'server.project_rename': { params: ServerProjectRenameParamsSchema, result: ServerProjectResultSchema },
+  'server.workspace_list': { params: ServerCallerParamsSchema, result: WorkspacesSchema },
+  'server.workspace_add': { params: ServerWorkspaceAddParamsSchema, result: WorkspacesMutation },
+  'server.workspace_rename': { params: ServerWorkspaceRenameParamsSchema, result: WorkspacesMutation },
+  'server.profile_list': { params: ServerCallerParamsSchema, result: ProfilesSchema },
+  'server.goal_get': { params: ServerQueueListParamsSchema, result: GoalResponseSchema },
+  'server.goal_set': { params: ServerGoalSetParamsSchema, result: GoalResponseSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

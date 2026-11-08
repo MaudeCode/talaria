@@ -510,5 +510,281 @@
         "choice": "deny"
       }
     }
+  ],
+  "server.project_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller"
+      },
+      "result": {
+        "projects": [
+          {
+            "project_id": "c88683cdc37e",
+            "name": "Release",
+            "color": null,
+            "profile": "default",
+            "created_at": 1792500000.0,
+            "workspaces": [],
+            "default_workspace": null,
+            "model": null,
+            "model_provider": null,
+            "model_option_id": null
+          }
+        ],
+        "active_profile": "default",
+        "all_profiles": false,
+        "other_profile_count": 1
+      }
+    }
+  ],
+  "server.project_create": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "name": "Release"
+      },
+      "result": {
+        "ok": true,
+        "project": {
+          "project_id": "c88683cdc37e",
+          "name": "Release",
+          "color": null,
+          "profile": "default",
+          "created_at": 1792500000.0
+        }
+      }
+    }
+  ],
+  "server.project_rename": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "project_id": "c88683cdc37e",
+        "name": "Release 2"
+      },
+      "result": {
+        "ok": true,
+        "project": {
+          "project_id": "c88683cdc37e",
+          "name": "Release 2",
+          "color": null,
+          "profile": "default",
+          "created_at": 1792500000.0
+        }
+      }
+    }
+  ],
+  "server.workspace_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller"
+      },
+      "result": {
+        "workspaces": [
+          {
+            "name": "Home",
+            "path": "/home/talaria/workspace"
+          },
+          {
+            "name": "Synthetic repo",
+            "path": "/home/talaria/src/synthetic-repo"
+          }
+        ],
+        "last": "/home/talaria/workspace",
+        "terminal_remote_backend": false
+      }
+    }
+  ],
+  "server.workspace_add": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "path": "/home/talaria/src/synthetic-repo"
+      },
+      "result": {
+        "ok": true,
+        "workspaces": [
+          {
+            "name": "Home",
+            "path": "/home/talaria/workspace"
+          },
+          {
+            "name": "synthetic-repo",
+            "path": "/home/talaria/src/synthetic-repo"
+          }
+        ]
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "path": "/home/talaria/src/synthetic-repo",
+        "name": "Synthetic"
+      },
+      "result": {
+        "ok": true,
+        "workspaces": [
+          {
+            "name": "Home",
+            "path": "/home/talaria/workspace"
+          },
+          {
+            "name": "Synthetic",
+            "path": "/home/talaria/src/synthetic-repo"
+          }
+        ]
+      }
+    }
+  ],
+  "server.workspace_rename": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "path": "/home/talaria/src/synthetic-repo",
+        "name": "Synthetic repo"
+      },
+      "result": {
+        "ok": true,
+        "workspaces": [
+          {
+            "name": "Home",
+            "path": "/home/talaria/workspace"
+          },
+          {
+            "name": "Synthetic repo",
+            "path": "/home/talaria/src/synthetic-repo"
+          }
+        ]
+      }
+    }
+  ],
+  "server.profile_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller"
+      },
+      "result": {
+        "profiles": [
+          {
+            "name": "default",
+            "path": "/home/talaria/.hermes",
+            "is_active": true,
+            "is_default": true,
+            "model": null,
+            "provider": null,
+            "skill_count": 0,
+            "total_skills": 0,
+            "enabled_skills": 0,
+            "gateway_running": false,
+            "has_env": false,
+            "visible": true,
+            "gateway_mode": "stopped",
+            "display_name": "",
+            "description": "",
+            "has_avatar": false,
+            "canonical_session": null,
+            "pending_writes": 0
+          },
+          {
+            "name": "other",
+            "path": "/home/talaria/.hermes/profiles/other",
+            "is_active": false,
+            "is_default": false,
+            "model": null,
+            "provider": null,
+            "skill_count": 0,
+            "total_skills": 0,
+            "enabled_skills": 0,
+            "gateway_running": false,
+            "has_env": false,
+            "visible": true,
+            "gateway_mode": "stopped",
+            "display_name": "",
+            "description": "",
+            "has_avatar": false,
+            "canonical_session": null,
+            "pending_writes": 0
+          }
+        ],
+        "active": "default",
+        "single_profile_mode": false
+      }
+    }
+  ],
+  "server.goal_get": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy"
+      },
+      "result": {
+        "ok": true,
+        "action": "status",
+        "goal": {
+          "status": "active",
+          "max_turns": 20,
+          "goal": "Ship the release notes",
+          "turns_used": 0,
+          "last_verdict": null,
+          "last_reason": null,
+          "paused_reason": null
+        },
+        "message": "⊙ Goal (active): Ship the release notes"
+      }
+    }
+  ],
+  "server.goal_set": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "text": "Ship the release notes"
+      },
+      "result": {
+        "ok": true,
+        "action": "set",
+        "goal": {
+          "status": "active",
+          "max_turns": 20,
+          "goal": "Ship the release notes",
+          "turns_used": 0,
+          "last_verdict": null,
+          "last_reason": null,
+          "paused_reason": null
+        },
+        "message": "⊙ Goal set: Ship the release notes",
+        "kickoff_prompt": "Ship the release notes",
+        "stream_id": "03cb9e517bbd45da82748c5a8058f888",
+        "turn_id": "03cb9e517bbd45da82748c5a8058f888",
+        "session_id": "20261020_120500_busy",
+        "pending_started_at": 1792500000.5,
+        "title": "Ship the release notes"
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "text": "pause"
+      },
+      "result": {
+        "ok": true,
+        "action": "pause",
+        "goal": {
+          "status": "paused",
+          "max_turns": 20,
+          "goal": "Ship the release notes",
+          "turns_used": 0,
+          "last_verdict": null,
+          "last_reason": null,
+          "paused_reason": null
+        },
+        "message": "⏸ Goal paused: Ship the release notes",
+        "message_key": "goal_paused",
+        "message_args": [
+          "Ship the release notes"
+        ]
+      }
+    }
   ]
 }

@@ -41,8 +41,10 @@ import { StartupGate } from './startup.js'
 import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
-import { sidebarListSelection } from './api/sessions-router.js'
-import { approvalRespond, clarifyRespond, pendingPrompt, sessionBackgroundTasks } from './api/chat-router.js'
+import { projectCreate, projectList, projectRename, sidebarListSelection, workspaceAdd, workspaceList, workspaceRename } from './api/sessions-router.js'
+import { approvalRespond, clarifyRespond, goalCommand, pendingPrompt, sessionBackgroundTasks } from './api/chat-router.js'
+import { profileList } from './api/settings-router.js'
+import { HttpError } from './api/router.js'
 import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { JsonStorage } from './sessions/storage/json.js'
@@ -743,6 +745,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return await requestScope.run({ requestProfile: caller.profile ?? 'default', ...(personAccess ? { personAccess } : {}) }, () => fn(caller))
     } catch (error) {
       if (error instanceof HttpFailure) throw new SidecarServerError(error.message, typeof error.extra.code === 'string' ? error.extra.code : 'refused')
+      // TAL-1170: a route body the tool shares refuses with the route's own error and message.
+      if (error instanceof HttpError) throw new SidecarServerError(error.message, typeof error.data.code === 'string' ? error.data.code : 'refused')
       throw error
     }
   }
@@ -917,6 +921,23 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       // The route answers an approval it no longer holds with `stale_cleared`, or `ok: false` when the Agent refused it.
       if (result.stale_cleared === true || !result.ok) throw new SidecarServerError(`approval ${approval_id} is no longer pending; the agent may have already proceeded`, 'stale')
       return result
+    }),
+    // TAL-1170: the services behind `/api/projects`, `/api/workspaces` and `/api/profiles`, in the caller's profile.
+    'server.project_list': ({ caller_session_id }) => asCaller(caller_session_id, () => projectList(deps, false)),
+    'server.project_create': ({ caller_session_id, name }) => asCaller(caller_session_id, () => projectCreate(deps, { name })),
+    'server.project_rename': ({ caller_session_id, project_id, name }) => asCaller(caller_session_id, () => projectRename(deps, { project_id, name })),
+    // The workspace entries' type is erased as the routers do.
+    'server.workspace_list': ({ caller_session_id }) => asCaller(caller_session_id, async () => (await workspaceList(deps)) as never),
+    'server.workspace_add': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceAdd(deps, { path, name })) as never),
+    'server.workspace_rename': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceRename(deps, { path, name })) as never),
+    'server.profile_list': ({ caller_session_id }) => asCaller(caller_session_id, () => profileList(deps)),
+    // TAL-1170: `/api/goal` on a session in the caller's profile. A new goal starts the target's turn, so, as
+    // `session_send`, it never reaches a session with more access than the caller's.
+    'server.goal_get': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => goalCommand(deps, { session_id: (await visibleTarget(caller, session_id)).session_id, args: 'status' })),
+    'server.goal_set': ({ caller_session_id, session_id, text }) => asCaller(caller_session_id, async (caller) => {
+      const target = await visibleTarget(caller, session_id)
+      await assertNoWiderThanCaller(caller, target)
+      return goalCommand(deps, { session_id: target.session_id, args: text })
     }),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
