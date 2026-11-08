@@ -241,7 +241,7 @@ eligibility and expiry. The server filters instructions to the request's profile
 history and reconnect snapshots carry none. Coalesced invalidations retain at most 32 instructions.
 The browser never infers completion from text or transcript rows. Its existing bounded IndexedDB
 playback claim ledger serializes attempts across tabs, including failed or muted attempts.
-Settings > Preferences stores sound, volume, local quiet hours and at most one local audio file
+Settings > Notifications stores sound, volume, local quiet hours and at most one local audio file
 in browser storage. Audio files are limited to 1 MiB and 10 seconds; preview requires a click.
 Storage or autoplay failure stays quiet. Web audio does not change Relay/APNs policy, viewed
 acknowledgements, speech preferences or background-process notification settings.

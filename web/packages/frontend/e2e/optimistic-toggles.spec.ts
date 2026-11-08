@@ -28,9 +28,12 @@ for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
       enabled = true
       await route.fulfill({ json: { ok: true, name: 'alpha', enabled: true, revision: 'rev-8' } })
     })
-    await page.goto({ skill: '/skills', mcp: '/settings/system', extension: '/settings/extensions', connector: '/settings/connectors' }[kind])
+    await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
+    await page.goto({ skill: '/skills', mcp: '/settings/agent?tab=mcp', extension: '/settings/agent?tab=extensions', connector: '/settings/agent?tab=connectors' }[kind])
     await settle(page)
-    const toggle = page.getByRole('switch', { name: /^alpha(?:[: ]|$)/ })
+    // MCP, extensions and connectors share the Agent page, so each kind's switch is found in its own group.
+    const scope = kind === 'skill' ? page.locator('body') : page.locator({ mcp: '[data-section="mcp-servers"]', extension: '[data-group="extensions"]', connector: '[data-group="connectors"]' }[kind])
+    const toggle = scope.getByRole('switch', { name: /^alpha(?:[: ]|$)/ })
     await toggle.scrollIntoViewIfNeeded()
     if (kind === 'extension') {
       const label = page.locator('[data-extension-id="alpha"] label')
@@ -43,7 +46,7 @@ for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
       await expect(toggle).not.toHaveAttribute('aria-busy', 'true')
       await expect(toggle).toBeEnabled()
       await expect(page.getByText(/^Pending/)).toHaveCount(0)
-      await expect(page.getByRole('switch', { name: /^beta(?:[: ]|$)/ })).toBeEnabled()
+      await expect(scope.getByRole('switch', { name: /^beta(?:[: ]|$)/ })).toBeEnabled()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     } finally {
       await page.screenshot({ path: testInfo.outputPath(`${kind}-shown.png`), animations: 'disabled' })

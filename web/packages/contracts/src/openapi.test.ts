@@ -24,4 +24,9 @@ describe('OpenAPI generation', () => {
     const message = paths['/api/session']?.get?.responses['200']?.content['application/json']?.schema.properties.session.properties.messages.items.properties
     expect(Object.keys(message ?? {})).toEqual(expect.arrayContaining(['_turnDuration', '_turnTps', 'reasoning_titles', '_ts']))
   })
+
+  it('publishes the Settings section ids both clients route by (TAL-1691)', async () => {
+    const schemas = (await generateOpenApiDocument()).components?.schemas as Record<string, { enum?: unknown }> | undefined
+    expect(schemas?.SettingsSection?.enum).toEqual(['appearance', 'chat', 'sidebar', 'models', 'notifications', 'speech', 'agent', 'system', 'about'])
+  })
 })

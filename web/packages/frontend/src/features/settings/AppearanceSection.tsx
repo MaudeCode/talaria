@@ -7,7 +7,8 @@ import { SKINS } from '../../theme/skins'
 import { FontSizeSchema, SkinSchema } from '../../contracts/persisted'
 import { LOCALE_INFO } from '@maudecode/talaria-web-contracts'
 import { useLocale } from '../../i18n/useLocale'
-import { useSaveSettings, useSetting } from '../../app/queries'
+import { useSaveSettings } from '../../app/queries'
+import { useSettingField } from './useSettingField'
 import { useExtensionSkins } from '../../extensions/registry'
 import { cn } from '../../ui/cn'
 
@@ -29,7 +30,7 @@ function PickButton({ active, onClick, className, children, label, ...rest }: { 
 export function AppearanceSection() {
   const appearance = useAppearance()
   const locale = useLocale()
-  const version = useSetting('webui_version')
+  const density = useSettingField(['sidebar_density'])
   const save = useSaveSettings()
   const extSkins = useExtensionSkins()
   const pickSkin = (key: string) => { const v = SkinSchema.safeParse(key); if (v.success) setSkin(v.data); else if (extSkins.some((s) => s.key === key)) setSkin(key) }
@@ -96,7 +97,14 @@ export function AppearanceSection() {
           </Select>
         </FieldRow>
       </div>
-      {version && <div className="settings-version-badge inline-flex items-center px-2 py-[3px] rounded-(--r-sm) bg-surface-subtle text-muted text-[11px] font-semibold font-mono shrink-0 self-start tracking-[.02em] border border-border max-[769px]:whitespace-nowrap max-[769px]:max-w-full max-[769px]:overflow-hidden max-[769px]:text-ellipsis" data-testid="webui-version">v{version}</div>}
+      <div className="settings-field">
+        <FieldRow label={m.settings_label_sidebar_density()} htmlFor="settingsSidebarDensity" inline>
+          <Select id="settingsSidebarDensity" value={density.str('sidebar_density', 'compact')} onValueChange={(v) => density.set({ sidebar_density: v })}>
+            <option value="compact">{m.settings_sidebar_density_compact()}</option>
+            <option value="detailed">{m.settings_sidebar_density_detailed()}</option>
+          </Select>
+        </FieldRow>
+      </div>
     </div>
   )
 }

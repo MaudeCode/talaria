@@ -23,7 +23,7 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
     return route.fulfill({ json: { ok: true, provider: 'lmstudio', models: catalog() } })
   })
 
-  await page.goto('/settings/providers')
+  await page.goto('/settings/models')
   await settle(page)
   const row = page.locator('[data-provider="lmstudio"]')
   // TAL-603: the rows render the server's key-source kind and active flag.

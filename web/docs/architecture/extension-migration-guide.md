@@ -100,7 +100,7 @@ with `#root` and `#app` mount nodes. Anything that reached into the WebUI page
 (`window.parent`, shared globals, cookies) must move to protocol methods.
 
 A plugin is off until `dashboard_plugins.<name>` is `true` in `settings.json`;
-its switch in Settings > Extensions (`POST /api/extensions/toggle`) sets that
+its switch in Settings > Agent > Extensions (`POST /api/extensions/toggle`) sets that
 key, and the change applies without a restart. While off, its panel, assets,
 and tab page all answer 404. Assets are served only from `dist/` or `static/`,
 without dotfiles, for known static file types.

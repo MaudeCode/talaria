@@ -2,6 +2,8 @@ import type { ComponentProps, ReactNode } from 'react'
 import { cn } from './cn'
 
 const LABEL = 'text-xs uppercase tracking-wider text-muted'
+/** The `SectionHeader` type, for a group heading another component renders. */
+export const SECTION_HEADER = `${LABEL} font-medium`
 
 /** The meter track (§5), shared by the quota meter and the Kanban timing bar. */
 export const METER_RAIL = 'relative h-2 overflow-hidden rounded-full bg-border'
@@ -18,10 +20,10 @@ export function Row({ compact, className, ...props }: ComponentProps<'li'> & { c
 
 /** The `h3` above a group of rows (§4). `detail` is live data (a peak, a count), never an explanation; `action` sits at the right. */
 export function SectionHeader({ children, detail, action, className }: { children: ReactNode; detail?: ReactNode; action?: ReactNode; className?: string }) {
-  if (detail == null && action == null) return <h3 className={cn(LABEL, 'font-medium', className)}>{children}</h3>
+  if (detail == null && action == null) return <h3 className={cn(SECTION_HEADER, className)}>{children}</h3>
   return (
     <div className={cn('flex min-w-0 items-baseline gap-2', className)}>
-      <h3 className={cn('shrink-0', LABEL, 'font-medium')}>{children}</h3>
+      <h3 className={cn('shrink-0', SECTION_HEADER)}>{children}</h3>
       {detail != null && <span className="min-w-0 truncate text-xs font-normal text-muted">{detail}</span>}
       {action != null && <div className="ml-auto shrink-0">{action}</div>}
     </div>

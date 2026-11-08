@@ -17,7 +17,7 @@ test('default model speed uses server tiers and survives a reload', async ({ pag
     main.service_tier = body.advanced.service_tier
     await route.fulfill({ json: { ok: true, model: main.model, provider: main.provider } })
   })
-  await page.goto('/settings/preferences')
+  await page.goto('/settings/models')
   await settle(page)
   const speed = page.getByRole('combobox', { name: 'Speed', exact: true })
   await expect(speed).toHaveText('Fast')

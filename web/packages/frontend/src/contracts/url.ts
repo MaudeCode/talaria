@@ -1,6 +1,6 @@
 import { defaultParseSearch, defaultStringifySearch } from '@tanstack/react-router'
 import { z } from 'zod'
-import { DECISION_FILTERS } from '@maudecode/talaria-web-contracts'
+import { DECISION_FILTERS, type SettingsSectionId } from '@maudecode/talaria-web-contracts'
 import { SessionIdSchema } from './session'
 
 /**
@@ -34,8 +34,20 @@ export type IndexSearch = z.infer<typeof IndexSearchSchema>
 
 export const TasksSearchSchema = z.object({ job: z.string().optional().catch(undefined) })
 
-export const SettingsSectionSchema = z.enum(['appearance', 'conversation', 'speech', 'notifications', 'preferences', 'providers', 'auxiliary', 'connectors', 'plugins', 'extensions', 'system', 'help'])
-export type SettingsSection = z.infer<typeof SettingsSectionSchema>
+/** TAL-1691: the section ids are shared with the App through the contracts package. */
+export { SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
+export type { SettingsSectionId as SettingsSection } from '@maudecode/talaria-web-contracts'
+
+/** TAL-1691: Settings > Agent keeps each of its lists on a `?tab=`. */
+export const AgentTabSchema = z.enum(['plugins', 'extensions', 'connectors', 'mcp'])
+export type AgentTab = z.infer<typeof AgentTabSchema>
+export const SettingsSearchSchema = z.object({ tab: AgentTabSchema.optional().catch(undefined) })
+
+/** TAL-1691: where each retired `/settings/<id>` now lives, so bookmarks and older deep links keep working. */
+export const LEGACY_SETTINGS_SECTIONS: Readonly<Record<string, { section: SettingsSectionId; tab?: AgentTab }>> = {
+  preferences: { section: 'sidebar' }, conversation: { section: 'chat' }, providers: { section: 'models' }, auxiliary: { section: 'models' },
+  plugins: { section: 'agent', tab: 'plugins' }, extensions: { section: 'agent', tab: 'extensions' }, connectors: { section: 'agent', tab: 'connectors' }, help: { section: 'about' },
+}
 
 export const LogsSearchSchema = z.object({
   file: z.enum(['agent', 'webui', 'gateway', 'bootstrap']).optional().catch(undefined),

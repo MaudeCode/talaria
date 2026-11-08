@@ -33,6 +33,11 @@ export function useDefaultModelChoice() {
 }
 
 /** TAL-802: whether this profile offers live dictation. */
+/** TAL-818: the server's connectors gate; Connectors stay hidden until it answers true. */
+export function useConnectorsAvailable(): boolean {
+  return useQuery({ queryKey: keys.connectors.available, queryFn: api.fetchConnectorsAvailable, staleTime: 5 * 60_000 }).data?.available === true
+}
+
 export function useTranscribeCapabilityQuery() {
   return useQuery({ queryKey: keys.transcribeCapability, queryFn: api.fetchTranscribeCapability, staleTime: 60_000 })
 }

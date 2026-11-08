@@ -27,7 +27,7 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
     updated = true
     return route.fulfill({ json: { key: body.key, status: 'updated' } })
   })
-  await page.goto('/settings/plugins')
+  await page.goto('/settings/agent')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   await expect(section.getByText(/^Weather/)).toBeVisible()
@@ -71,7 +71,7 @@ test('TAL-1829: a long update reason stays on its plugin row without widening th
       { key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: false, activation: 'disabled' },
     ],
   } }))
-  await page.goto('/settings/plugins')
+  await page.goto('/settings/agent')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   await expect(section.locator('li', { hasText: 'Weather' })).toContainText('Turned off by the last update: the dependency environment no longer builds with it')
@@ -110,7 +110,7 @@ test('TAL-1914: the switch, Update all and a behind catalog row work and fit the
     updated = true
     return route.fulfill({ json: { key: body.key, status: 'updated' } })
   })
-  await page.goto('/settings/plugins')
+  await page.goto('/settings/agent')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   const toggle = section.getByRole('switch', { name: 'Auto-update' })

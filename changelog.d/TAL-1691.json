@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings in Talaria Web are now grouped into Appearance, Chat, Sidebar, Models & Providers, Notifications, Speech, Agent, System and About, and old Settings links open the new section.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Reorganized Settings",
+        "description": "Settings are regrouped by where you use them, and old Settings links still open the right page.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

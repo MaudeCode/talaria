@@ -19,7 +19,7 @@ test('a dashboard plugin row toggles through the extensions toggle; a row the se
     boardEnabled = body.enabled
     await route.fulfill({ json: { enabled: true, extensions: [] } })
   })
-  await page.goto('/settings/extensions')
+  await page.goto('/settings/agent?tab=extensions')
   await settle(page)
 
   await expect(page.locator('[data-extension-id="locked"]')).toBeVisible()

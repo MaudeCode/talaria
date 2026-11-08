@@ -373,7 +373,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       }
       case 'goal': if (sessionId) { const r = await api.goalCommand(sessionId, args); showToast(r.message ?? (r.goal?.text ?? m.done())); await refresh() } return true
       case 'status': if (sessionId) { const s = await api.fetchSessionStatus(sessionId); showToast(`${s.model ?? ''} · ${s.message_count ?? 0} msgs · ${s.agent_running ? m.status_streaming() : m.done()}`, 4000) } return true
-      case 'help': await navigate({ to: '/settings/$section', params: { section: 'help' } }); return true
+      case 'help': await navigate({ to: '/settings/$section', params: { section: 'about' } }); return true
       case 'skills': await navigate({ to: '/skills' }); return true
       case 'use': return false
       case 'voice': showToast(m.voice_error(), 3000); return true

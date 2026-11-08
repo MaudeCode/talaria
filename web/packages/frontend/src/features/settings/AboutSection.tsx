@@ -1,11 +1,24 @@
 import { m } from '../../paraglide/messages.js'
 import { Button } from '../../ui/Button'
+import { useSetting } from '../../app/queries'
 import { openFeedback } from './FeedbackDialog'
 
-export function HelpSection() {
+const BADGE = 'settings-version-badge inline-flex items-center px-2 py-[3px] rounded-(--r-sm) bg-surface-subtle text-muted text-[11px] font-semibold font-mono tracking-[.02em] border border-border'
+
+/** TAL-1691: Settings > About, the installed versions, docs, shortcuts and feedback. */
+export function AboutSection() {
   const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl'
+  const web = useSetting('webui_version')
+  const agent = useSetting('agent_version')
   return (
-    <div className="flex flex-col gap-4 text-sm" data-section="help">
+    <div className="flex flex-col gap-4 text-sm" data-section="about">
+      {(web || agent) && <section>
+        <h2 className="mb-1 font-semibold text-text">{m.settings_group_versions()}</h2>
+        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1">
+          {web && <><dt className="text-muted">Talaria Web</dt><dd><span className={BADGE} data-testid="webui-version">{web}</span></dd></>}
+          {agent && <><dt className="text-muted">Hermes Agent</dt><dd><span className={BADGE} data-testid="agent-version">{agent}</span></dd></>}
+        </dl>
+      </section>}
       <section>
         <Button onClick={openFeedback}>{m.feedback_send_open()}</Button>
       </section>

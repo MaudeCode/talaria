@@ -200,7 +200,7 @@ test.describe('shell', () => {
     await settle(page)
     await expect(subtitle).toHaveText('missing')
     await page.getByRole('link', { name: 'Extensions', exact: true }).last().click()
-    await expect(page).toHaveURL(/\/settings\/extensions$/)
+    await expect(page).toHaveURL(/\/settings\/agent\?tab=extensions$/)
     await expect(subtitle).toHaveCount(0)
   })
 

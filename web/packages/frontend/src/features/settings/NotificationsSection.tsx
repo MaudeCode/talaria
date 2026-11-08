@@ -8,6 +8,9 @@ import { m } from '../../paraglide/messages.js'
 import { FieldRow, Switch } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
+import { CompletionAudioSettings } from './CompletionAudioSettings'
+import { useSettingField } from './useSettingField'
+import { SettingToggle } from './SettingsRows'
 
 const KINDS: { key: keyof WebPushPreferences; label: () => string }[] = [
   { key: 'notify_on_approval', label: () => m.settings_label_notify_approval() },
@@ -32,7 +35,22 @@ function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0))
 }
 
+/** TAL-1691: Settings > Notifications, in-app alerts and sounds, then this browser's push subscription. */
 export function NotificationsSection() {
+  const { settings } = useSettingField(['notifications_enabled', 'sound_enabled'])
+  if (settings.isPending) return <LoadingState />
+  if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
+  return (
+    <div className="flex flex-col divide-y divide-border-subtle" data-section="notifications">
+      <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
+      <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" />
+      <CompletionAudioSettings />
+      <WebPushSection />
+    </div>
+  )
+}
+
+export function WebPushSection() {
   return webPushSupported() ? <WebPushSettings /> : null
 }
 
@@ -102,7 +120,7 @@ function WebPushSettings() {
 
   const preferences = shown.enabled ? shown.preferences : null
   return (
-    <div className="flex flex-col divide-y divide-border-subtle" data-section="notifications">
+    <div className="flex flex-col divide-y divide-border-subtle" data-section="web-push">
       <FieldRow label={m.settings_label_web_push()} htmlFor="settings-web_push" inline>
         <Switch id="settings-web_push" checked={shown.enabled} onCheckedChange={toggle} />
       </FieldRow>

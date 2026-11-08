@@ -4,7 +4,7 @@ import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as api from '../../api/endpoints'
-import { NotificationsSection } from './NotificationsSection'
+import { WebPushSection } from './NotificationsSection'
 import { showErrorToast } from '../toast/errorToast'
 
 vi.mock('../../api/endpoints', () => ({ fetchWebPushStatus: vi.fn(), subscribeWebPush: vi.fn(), updateWebPush: vi.fn(), unsubscribeWebPush: vi.fn() }))
@@ -39,7 +39,7 @@ const main = () => screen.getByRole('switch', { name: 'Notify this browser' })
 it('is hidden when the browser has no Push API', () => {
   vi.stubGlobal('PushManager', undefined)
   Reflect.deleteProperty(window, 'PushManager')
-  const { container } = render(<NotificationsSection />)
+  const { container } = render(<WebPushSection />)
   expect(container).toBeEmptyDOMElement()
   expect(api.fetchWebPushStatus).not.toHaveBeenCalled()
 })
@@ -47,7 +47,7 @@ it('is hidden when the browser has no Push API', () => {
 it('subscribes this browser with the server key, then shows the four alert kinds', async () => {
   vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: null })
   vi.mocked(api.subscribeWebPush).mockResolvedValue({ ok: true, preferences: ALL })
-  render(<NotificationsSection />)
+  render(<WebPushSection />)
   expect(await screen.findByRole('switch', { name: 'Notify this browser' })).not.toBeChecked()
   expect(screen.queryByRole('switch', { name: 'Approval requests' })).toBeNull()
   await userEvent.click(main())
@@ -62,7 +62,7 @@ it('subscribes this browser with the server key, then shows the four alert kinds
 it('rolls the switch back when notification permission is refused', async () => {
   vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: null })
   vi.stubGlobal('Notification', { requestPermission: vi.fn(() => Promise.resolve('denied')) })
-  render(<NotificationsSection />)
+  render(<WebPushSection />)
   await userEvent.click(await screen.findByRole('switch', { name: 'Notify this browser' }))
   await waitFor(() => { expect(main()).not.toBeChecked() })
   expect(showErrorToast).toHaveBeenCalled()
@@ -77,7 +77,7 @@ it('updates one alert kind at once and unsubscribes on the server and in the bro
   const update = Promise.withResolvers<{ ok: true; preferences: typeof ALL }>()
   vi.mocked(api.updateWebPush).mockReturnValue(update.promise)
   vi.mocked(api.unsubscribeWebPush).mockResolvedValue({ ok: true })
-  render(<NotificationsSection />)
+  render(<WebPushSection />)
   const completed = await screen.findByRole('switch', { name: 'Completed runs' })
   expect(api.fetchWebPushStatus).toHaveBeenCalledWith(ENDPOINT)
   await userEvent.click(completed)
@@ -96,7 +96,7 @@ it('reconciles with the server when a preference write fails', async () => {
   current = fakeSubscription(ENDPOINT)
   vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: { preferences: ALL } })
   vi.mocked(api.updateWebPush).mockRejectedValue(new Error('Connection lost'))
-  render(<NotificationsSection />)
+  render(<WebPushSection />)
   const failed = await screen.findByRole('switch', { name: 'Failed runs' })
   await userEvent.click(failed)
   await waitFor(() => { expect(screen.getByRole('switch', { name: 'Failed runs' })).toBeChecked() })
@@ -110,7 +110,7 @@ it('keeps the latest choice when the browser is switched off while turning on', 
   vi.mocked(api.unsubscribeWebPush).mockResolvedValue({ ok: true })
   const permission = Promise.withResolvers<NotificationPermission>()
   vi.stubGlobal('Notification', { requestPermission: vi.fn(() => permission.promise) })
-  render(<NotificationsSection />)
+  render(<WebPushSection />)
   await userEvent.click(await screen.findByRole('switch', { name: 'Notify this browser' }))
   await userEvent.click(main())
   expect(main()).not.toBeChecked()
