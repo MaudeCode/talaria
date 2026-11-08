@@ -9,9 +9,10 @@ import XCTest
 /// Every streamed token and every composer keystroke should cost the chat screen only the work that changed. This
 /// hosts the real chat over a long, busy transcript, drives stream ticks and draft edits through their real paths,
 /// and counts the main-thread work each one repeats: reasoning-card derivation, streaming Markdown splits, code
-/// highlighting, and body evaluations of settled transcript rows and bubbles, the message list and the whole chat. Work a tick
-/// or keystroke causes recurs in every run, while an unrelated timer-driven update lands in at most one, so each
-/// count's minimum across the runs is asserted exactly; the tickets that remove each repeat lower its count.
+/// highlighting, built code lines, and body evaluations of settled transcript rows and bubbles, the message list and
+/// the whole chat. Work a tick or keystroke causes recurs in every run, while an unrelated timer-driven update lands
+/// in at most one, so each count's minimum across the runs is asserted exactly; the tickets that remove each repeat
+/// lower its count.
 /// Wall-clock and CPU are recorded for comparison, with one ceiling that leaves headroom for a loaded CI host.
 @MainActor
 final class ChatStreamTickPerformanceTests: XCTestCase {
@@ -20,10 +21,11 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
 
     /// Today's counts per phase. A settled row or bubble never re-renders, code is highlighted off the main thread
     /// (TAL-854), and reasoning cards are derived only when the transcript changes (TAL-855), so their counts are
-    /// absent. A keystroke
-    /// re-runs only the composer; the chat's four passes follow the composer's height as the draft wraps (TAL-852).
+    /// absent. The streaming fence keeps its view and rebuilds only its open group of lines, and builds every line
+    /// once more when it closes and moves into the Markdown (TAL-1396). A keystroke re-runs only the composer; the
+    /// chat's four passes follow the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
-        "markdownSplit": 200, "messages": 200
+        "markdownSplit": 200, "messages": 200, "codeLine": 3_268
     ]
     private static let expectedKeystrokeWork = [
         "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212
