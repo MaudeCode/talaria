@@ -178,6 +178,8 @@ export default defineSchema({
     activityExpiresAt: v.optional(v.number()),
     runKey: v.optional(v.string()),
     alertEligible: v.optional(v.boolean()),
+    // The latest approval queue head this run made visible; it outlives the approval phase within the run.
+    approvalHeadId: v.optional(v.string()),
     receivedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])
@@ -244,6 +246,8 @@ export default defineSchema({
     activityId: v.optional(v.string()),
     sourcePublisherId: v.optional(v.string()),
     sourceSessionId: v.optional(v.string()),
+    // An approval alert stays deliverable, through retries, while this head is still the session's head.
+    sourceApprovalHeadId: v.optional(v.string()),
     kind: v.union(
       v.literal("live_activity_update"),
       v.literal("live_activity_end"),

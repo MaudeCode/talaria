@@ -43,6 +43,35 @@ it('publishes exactly the shared publisher-snapshot fixture', async () => {
   }
 })
 
+// TAL-59: the Relay gate accepts this snapshot (relay/tests/sharedContracts.test.ts) and alerts with the fixture's keys.
+it('publishes the shared approval queue head fixture for a pending approval', async () => {
+  const { snapshot: expected } = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/relay-approval-alert.json'), 'utf8')) as { snapshot: { states: { startedAt: number; updatedAt: number }[] } }
+  const now = expected.states[0]!.updatedAt / 1000
+  const home = mkdtempSync(join(tmpdir(), 'talaria-relay-contract-'))
+  try {
+    const keyPath = join(home, 'publisher.pem')
+    writeFileSync(keyPath, generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }))
+    const registry = new StreamRegistry()
+    registry.activeRuns.set('contract-stream', { stream_id: 'contract-stream', session_id: 'contract-session', started_at: expected.states[0]!.startedAt / 1000, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
+    const requests: { url: string; body: string }[] = []
+    const deps = {
+      documents: new JsonDocuments(home, () => home), registry, presence: new PresenceLeases(() => now), now: () => now, log: vi.fn(),
+      pending: { approvalPending: () => ({ pending: { approval_id: 'contract-approval', command: 'private command' }, pending_count: 1 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
+      store: { sessions: new Map(), exists: () => Promise.resolve(true), get: () => ({ title: 'Contract fixture', profile: 'default' }) },
+      background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'waiting_for_approval' }) },
+      profileHome: () => home,
+      profilesMatch: (row: string | null | undefined, active: string | null | undefined) => row === active,
+      fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },
+    } as unknown as RelayPublisherDeps
+    const publisher = (await initializeStore(new RelayPublisher({ url: 'https://relay.example', publisher_id: 'https://contract.example', key_id: 'contract-key', private_key_path: keyPath, profiles: { default: { identity: (await testProfileIdentity(home)), profile_id: 'prf_default' } } }, deps)))
+    await publisher.publishSnapshot()
+    expect(requests).toHaveLength(1)
+    expect(JSON.parse(requests[0]!.body)).toEqual(expected)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 // The Relay gate accepts this fixture as the Web publisher's session-started body (relay/tests/sharedContracts.test.ts).
 it('publishes exactly the shared publisher-session-started fixture', async () => {
   const expected = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/publisher-session-started.json'), 'utf8')) as { startedAt: number }

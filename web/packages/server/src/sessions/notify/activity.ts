@@ -3,6 +3,7 @@
  * recently finished run, its phase, and whether a browser tab for the profile mutes alerts. Channels add their
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
+import { createHash } from 'node:crypto'
 import type { SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
 import type { PendingPrompts } from '../pending.js'
@@ -39,6 +40,8 @@ export interface ActivityState {
   updatedAt: number
   deepLink: string
   alertEligible: boolean
+  /** The approval at the head of the queue while the session waits for one, as an opaque digest (TAL-59). */
+  approvalHeadId?: string
   /** TAL-48: the session's person under person isolation; channels never send it, they filter by it. */
   ownerPersonId: string | null
 }
@@ -49,6 +52,11 @@ type TrackedRun = ActiveRun & { relay_phase?: string; terminal_at?: number }
 export async function hasSessionData(store: SessionStore, sid: string): Promise<boolean> {
   if (store.sessions.has(sid)) return true
   return (await store.exists(sid))
+}
+
+/** Stable for one approval across snapshots and restarts; the digest carries nothing the approval says. */
+export function approvalHeadId(sid: string, approvalId: string): string {
+  return createHash('sha256').update(`${sid}\0${approvalId}`, 'utf8').digest('base64url').slice(0, 22)
 }
 
 /** Python `build_states` without the Relay's revision numbering. */
@@ -108,7 +116,8 @@ export class ActivityStates {
       try { session = (await this.deps.store.get(sid, { metadataOnly: true })) } catch { continue }
       if (!this.deps.profilesMatch(session.profile, profile)) continue
       let phase = run.relay_phase ?? 'running'
-      if (!(TERMINAL_PHASES as readonly string[]).includes(phase) && this.deps.pending.approvalPending(sid).pending) phase = 'waiting_for_approval'
+      const approval = this.deps.pending.approvalPending(sid).pending
+      if (!(TERMINAL_PHASES as readonly string[]).includes(phase) && approval) phase = 'waiting_for_approval'
       if (phase === 'running' && this.deps.pending.clarifyPending(sid).pending) phase = 'waiting_for_input'
       if (phase === 'running' && run.phase.endsWith('starting')) phase = 'starting'
       const snapshot = await this.deps.background?.snapshot(sid, session.profile, { ...(run.relay_phase ? { excludeStreamId: run.stream_id, terminalPhase: run.relay_phase as SessionActivityPhase } : {}) })
@@ -119,7 +128,8 @@ export class ActivityStates {
       if (run.phase === 'settled' && !run.stream_id) phase = snapshot?.activity_phase ?? 'stale'
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ownerPersonId: session.owner_person_id })
+      const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ownerPersonId: session.owner_person_id })
     }
     return states
   }

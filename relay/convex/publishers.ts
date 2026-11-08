@@ -62,13 +62,27 @@ function expiryForState(
 }
 
 // Ineligibility belongs to the phase transition that carried it, so same-phase updates of the same run inherit it
-// until the phase changes. A new stream is a new run and starts from its own value.
+// until the phase changes. A new stream is a new run and starts from its own value, and so does a new approval head.
 function alertEligibleForState(
   current: Doc<"sessionStates"> | null | undefined,
-  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean },
+  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean; approvalHeadId?: string },
 ): boolean | undefined {
   return current && !current.deleted && activityPhase(current) === activityPhase(next) && current.streamId === next.streamId
-    && current.alertEligible === false ? false : next.alertEligible;
+    && !approvalHeadChanged(current, next) && current.alertEligible === false ? false : next.alertEligible;
+}
+
+function sameRun(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string }): current is Doc<"sessionStates"> {
+  return !!current && !current.deleted && current.streamId === next.streamId;
+}
+
+// The run's latest visible approval head. It survives the run's other phases, so a head the relay already saw never
+// alerts again; a publisher without approval heads leaves it unset and keeps phase-only alerts.
+function approvalHeadFor(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string; approvalHeadId?: string }) {
+  return next.approvalHeadId ?? (sameRun(current, next) ? current.approvalHeadId : undefined);
+}
+
+function approvalHeadChanged(current: Doc<"sessionStates"> | null | undefined, next: { approvalHeadId?: string }): boolean {
+  return next.approvalHeadId !== undefined && next.approvalHeadId !== current?.approvalHeadId;
 }
 
 // The phase a delivery transition starts from. A first publication, a re-created session, or a new run that begins in
@@ -110,6 +124,7 @@ function exposedState(state: Doc<"sessionStates">) {
     terminalExpiresAt: state.terminalExpiresAt,
     activityExpiresAt: state.activityExpiresAt,
     alertEligible: state.alertEligible,
+    approvalHeadId: state.approvalHeadId,
     receivedAt: state.receivedAt,
   };
 }
@@ -249,6 +264,7 @@ export const acceptState = internalMutation({
             revision: args.revision,
             ...args.state,
             alertEligible: alertEligibleForState(existing, args.state),
+            approvalHeadId: approvalHeadFor(existing, args.state),
             runKey: stateRunKey(existing, { ...args.state, eventId: args.eventId }),
             ...expiryForState(existing, args.state, args.receivedAt),
             receivedAt: args.receivedAt,
@@ -276,7 +292,11 @@ export const acceptState = internalMutation({
       await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
         userId: grant.userId,
         transitions: args.state
-          ? [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase, state: exposedState(next as Doc<"sessionStates">) }]
+          ? [{
+              publisherId: args.publisherId, sessionId: args.sessionId, previousPhase,
+              previousApprovalHeadId: sameRun(existing, args.state) ? existing.approvalHeadId : undefined,
+              state: exposedState(next as Doc<"sessionStates">),
+            }]
           : previousPhase === undefined ? [] : [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase }],
       });
       accepted = true;
@@ -313,6 +333,7 @@ export const acceptSnapshot = internalMutation({
         publisherId: string;
         sessionId: string;
         previousPhase?: SessionPhase;
+        previousApprovalHeadId?: string;
         state: ReturnType<typeof exposedState>;
       }[] = [];
       for (const state of args.states) {
@@ -335,18 +356,21 @@ export const acceptSnapshot = internalMutation({
           publisherLabel: authorization.label,
           ...state,
           alertEligible: alertEligibleForState(current, state),
+          approvalHeadId: approvalHeadFor(current, state),
           runKey: stateRunKey(current, state),
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
         // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
-        // record the deferral and revalidate any queued alert for it.
+        // record the deferral and revalidate any queued alert for it. A new approval head is a transition of its own.
         if (!current || activityPhase(current) !== activityPhase(state) || current.streamId !== state.streamId
+          || approvalHeadChanged(current, state)
           || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
             previousPhase: previousPhaseFor(current, state),
+            previousApprovalHeadId: sameRun(current, state) ? current.approvalHeadId : undefined,
             state: exposedState(next as Doc<"sessionStates">),
           });
         }

@@ -32,6 +32,7 @@ export interface SessionState {
   activityExpiresAt?: number;
   terminalExpiresAt?: number;
   alertEligible?: boolean;
+  approvalHeadId?: string;
 }
 
 export interface PublishedSessionState {
@@ -46,6 +47,7 @@ export interface PublishedSessionState {
   updatedAt: number;
   deepLink: string;
   alertEligible?: boolean;
+  approvalHeadId?: string;
 }
 
 export interface AggregateRow {
@@ -85,6 +87,8 @@ export interface NotificationPreferences {
 export interface ActivityAlert {
   title: string;
   body: string;
+  // `title` and `body` are keys in the App's Localizable strings, so the phone shows them in its own language.
+  localized?: true;
   // Time Sensitive alerts break through Focus; they arrive as a standalone notification wherever the device can receive one.
   interruptionLevel?: "time-sensitive";
 }

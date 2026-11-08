@@ -139,11 +139,32 @@ export function alertForTransition(
   previous: SessionState | SessionPhase | null,
   next: SessionState,
   preferences: NotificationPreferences,
+  previousApprovalHeadId?: string,
 ): ActivityAlert | null {
   const previousPhase = typeof previous === "string" ? previous : previous ? activityPhase(previous) : null;
-  if (!previousPhase || previousPhase === activityPhase(next)) return null;
+  if (!previousPhase || !isAttentionTransition(previousPhase, previousApprovalHeadId, next)) return null;
   return alertForState(next, preferences);
 }
+
+/**
+ * When both sides name an approval queue head, the head decides: a head the relay already saw never alerts again,
+ * even after the row went stale, and a new head alerts while the phase stays the same. Otherwise the phase decides.
+ */
+export function isAttentionTransition(
+  previousPhase: SessionPhase,
+  previousApprovalHeadId: string | undefined,
+  next: SessionState,
+): boolean {
+  const phase = activityPhase(next);
+  if (phase === "waiting_for_approval" && next.approvalHeadId !== undefined && previousApprovalHeadId !== undefined) {
+    return next.approvalHeadId !== previousApprovalHeadId;
+  }
+  return previousPhase !== phase;
+}
+
+// The App's local approval fallback shows these same Localizable keys (contracts/fixtures/relay-approval-alert.json).
+export const approvalAlertTitleKey = "Approval required";
+export const approvalAlertBodyKey = "An agent run is waiting for your approval.";
 
 export function alertForState(
   next: SessionState,
@@ -153,7 +174,8 @@ export function alertForState(
   switch (activityPhase(next)) {
     case "waiting_for_approval":
       return preferences.notifyOnApproval
-        ? { title: next.title, body: `Approval needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive" }
+        // Generic copy: an approval alert never carries the session title or anything the approval names.
+        ? { title: approvalAlertTitleKey, body: approvalAlertBodyKey, localized: true, interruptionLevel: "time-sensitive" }
         : null;
     case "waiting_for_input":
       return preferences.notifyOnInput

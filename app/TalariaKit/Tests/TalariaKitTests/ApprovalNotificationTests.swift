@@ -166,6 +166,33 @@ final class ApprovalNotificationTests: XCTestCase {
     }
 
 
+    /// TAL-59: the relay's approval push reaches the same session route as the local fallback and shows the same
+    /// localized copy. The opened chat's approval stream refreshes the head
+    /// (`testApprovalStreamPublishesPromptAndRespondsWithoutStoppingChatStream`).
+    @MainActor
+    func testRelayApprovalPushOpensItsSessionWithTheLocalFallbackCopy() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(
+            "contracts/fixtures/relay-approval-alert.json"))) as? [String: Any])
+        let alert = try XCTUnwrap(fixture["notificationAlert"] as? [String: String])
+        // The payload relay/convex/lib/apnsPayload.ts `makeNotification` sends for an approval head.
+        let push: [AnyHashable: Any] = [
+            "aps": ["alert": alert, "sound": "default", "interruption-level": "time-sensitive"],
+            "publisherId": "https://approval-alert.test", "sessionId": "session-abc", "deepLink": "/sessions/session-abc",
+        ]
+        let url = try XCTUnwrap(SessionNotificationRefresh.sessionURL(userInfo: push))
+        XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "session-abc")
+        XCTAssertEqual(TalariaDeepLink.publisherID(from: url), "https://approval-alert.test")
+        XCTAssertNil(SessionNotificationRefresh.sessionURL(userInfo: ["aps": [:], "sessionId": "  "]))
+
+        let fallback = ApprovalNotificationRequest(sessionID: "session-abc", publisherID: "https://approval-alert.test")
+        XCTAssertEqual(SessionNotificationRefresh.sessionURL(userInfo: fallback.userInfo), url)
+        XCTAssertEqual(fallback.content.title, alert["title-loc-key"])
+        XCTAssertEqual(fallback.content.body, alert["loc-key"])
+    }
+
     @MainActor
     func testRetainedPushTokenDoesNotSuppressLocalApprovalWhenRelayApprovalPreferenceIsOff() async throws {
         let suite = "approval-relay-preference-\(UUID().uuidString)"

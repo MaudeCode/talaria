@@ -183,3 +183,41 @@ it("times a relay-pushed Live Activity from the run's start, not from the activi
     spy.mockRestore();
   }
 });
+
+it("alerts a Web publisher's approval queue head with only the shared localized keys", async () => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+  try {
+    const { backend, signedPut } = await relayWithPublisher();
+    await backend.run(async (ctx) => {
+      const device = (await ctx.db.query("devices").collect())[0]!;
+      await ctx.db.patch(device._id, {
+        pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true },
+      });
+    });
+    const { snapshot, notificationAlert } = JSON.parse(fixture("relay-approval-alert")) as {
+      snapshot: { snapshotId: string; states: Record<string, unknown>[] }; notificationAlert: Record<string, string>;
+    };
+    const path = publisherPath("prf_default", "snapshot");
+    const running = JSON.parse(fixture("publisher-snapshot")) as { states: { revision: number; eventId: string }[] };
+    running.states[0]!.revision -= 1;
+    running.states[0]!.eventId = `snapshot:${String(running.states[0]!.revision)}:contract-session`;
+    expect((await signedPut(path, JSON.stringify(running))).status).toBe(200);
+    expect((await signedPut(path, JSON.stringify(snapshot))).status).toBe(200);
+    const scheduled = await backend.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    for (const job of scheduled) {
+      if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, (job.args as [never])[0]);
+    }
+    const notifications = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
+      .filter((job) => job.kind === "notification");
+    expect(notifications).toHaveLength(1);
+    expect(JSON.parse(notifications[0]!.request.payloadJson).aps.alert).toEqual(notificationAlert);
+    expect(notifications[0]!.request.payloadJson).not.toContain("Contract fixture");
+    // The head is bounded and opaque; anything else rejects the whole snapshot.
+    for (const approvalHeadId of ["", "x".repeat(65), "has/slash", 7]) {
+      const invalid = { ...snapshot, states: [{ ...snapshot.states[0], approvalHeadId }] };
+      expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
+    }
+  } finally {
+    clock.mockRestore();
+  }
+});

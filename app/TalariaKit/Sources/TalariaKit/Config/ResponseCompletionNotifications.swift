@@ -210,11 +210,19 @@ extension Notification.Name {
 public enum SessionNotificationRefresh {
     /// The `userInfo` key relay pushes and local notifications share for the session.
     public static let sessionIDKey = "sessionId"
+    /// The publisher origin a relay push names, so a tap opens the session on the server that owns it.
+    public static let publisherIDKey = "publisherId"
 
     /// Only a notification that names a session says anything about the list.
     /// Relay and response-completion notifications both carry `sessionId`.
     public static func namesASession(userInfo: [AnyHashable: Any]) -> Bool {
         guard let sessionID = userInfo[sessionIDKey] as? String else { return false }
         return !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Where a tapped relay push or local fallback leads: its session, on its publisher when it names one.
+    public static func sessionURL(userInfo: [AnyHashable: Any]) -> URL? {
+        guard namesASession(userInfo: userInfo), let sessionID = userInfo[sessionIDKey] as? String else { return nil }
+        return TalariaDeepLink.sessionURL(sessionID: sessionID, publisherID: userInfo[publisherIDKey] as? String)
     }
 }
