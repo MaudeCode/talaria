@@ -934,7 +934,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
           return inner(args, cwd, timeoutMs)
         },
         continuationRuns: (runs) => { order.push('capture'); return Promise.resolve(runs.map((run) => ({ session_id: `chat-${run}`, profile: 'default', stream_id: run }))) },
-        continueChat: (run, claim) => { claim(); continued.push(`${run.session_id}:${ctx.svc.blocksNewWork() ? 'fenced' : 'open'}`); return Promise.resolve(true) },
+        continueChat: (run, entry) => { entry.claim(); continued.push(`${run.session_id}:${ctx.svc.blocksNewWork() ? 'fenced' : 'open'}`); return Promise.resolve('done') },
         blockers: () => ({ active_streams: work.runs.length, active_runs: work.runs.length, active_terminals: work.other ? 1 : 0, blocking_stream_ids: work.runs, blocking_run_ids: work.runs, restart_blocked: work.runs.length > 0 || work.other }),
         interruptibleRuns: () => work.other ? null : [...work.runs].sort(),
         interruptRuns: (runs) => {
@@ -954,8 +954,8 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     }
 
     /** TAL-1990: the server that boots after the update, running `revision`, continuing chats with `continueChat`. */
-    function booted(stateDir: string, revision: string, continueChat: NonNullable<UpdateServiceDeps['continueChat']>, onAgentReconnect?: NonNullable<UpdateServiceDeps['onAgentReconnect']>): UpdateService {
-      return updateService({
+    function booted(stateDir: string, revision: string, continueChat: NonNullable<UpdateServiceDeps['continueChat']>, onAgentReconnect?: NonNullable<UpdateServiceDeps['onAgentReconnect']>, npm?: BuildRun): UpdateService {
+      return updateService({ ...(npm ? { npm } : {}),
         stateDir, webRoot: tmp(), getJson: () => Promise.reject(new Error('offline')), identity: { release: () => ({ sourceRevision: revision }), stamped: () => ({}), runningSourceRevision: () => revision },
         webuiVersion: 'web-v2.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false, scheduleRestart: () => undefined, log: () => undefined, continueChat,
         blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }), ...(onAgentReconnect ? { onAgentReconnect } : {}),
@@ -964,7 +964,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const record = (stateDir: string): { target_revision: string; target_version: string; runs: { session_id: string; stream_id: string }[] } | null => {
       try { return JSON.parse(readFileSync(join(stateDir, 'update-continuation.json'), 'utf8')) as never } catch { return null }
     }
-    const continuing = (into: string[]): NonNullable<UpdateServiceDeps['continueChat']> => (run, claim) => { claim(); into.push(run.session_id); return Promise.resolve(true) }
+    const continuing = (into: string[]): NonNullable<UpdateServiceDeps['continueChat']> => (run, entry) => { entry.claim(); into.push(run.session_id); return Promise.resolve('done') }
 
     it('records the interrupted chats before installing, and the restarted server on the target continues each once (TAL-1990)', async () => {
       const t = blockedByChats()
@@ -996,7 +996,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       const stateDir = tmp()
       writeContinuation(stateDir, { update_id: 'u', target_revision: 'a'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: null, stream_id: 'r1' }, { session_id: 'chat-r2', profile: null, stream_id: 'r2' }] })
       // The first boot claims chat-r1 and dies before its turn starts.
-      void booted(stateDir, 'a'.repeat(40), (_run, claim) => { claim(); return new Promise<boolean>(() => undefined) }).resumeContinuations()
+      void booted(stateDir, 'a'.repeat(40), (_run, entry) => { entry.claim(); return new Promise<never>(() => undefined) }).resumeContinuations()
       await vi.waitFor(() => { expect(record(stateDir)?.runs.map((run) => run.stream_id)).toEqual(['r2']) })
       const continued: string[] = []
       await booted(stateDir, 'a'.repeat(40), continuing(continued)).resumeContinuations()
@@ -1020,13 +1020,56 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       writeContinuation(stateDir, { update_id: 'u', target_revision: 'a'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: null, stream_id: 'r1' }] })
       const runtime = { ready: false, handshake: null as ((describe: RuntimeDescribe) => void) | null }
       const continued: string[] = []
-      const svc = booted(stateDir, 'a'.repeat(40), (run, claim) => runtime.ready ? continuing(continued)(run, claim) : Promise.resolve(false), (listener) => { runtime.handshake = listener; return () => { runtime.handshake = null } })
+      const svc = booted(stateDir, 'a'.repeat(40), (run, entry) => runtime.ready ? continuing(continued)(run, entry) : Promise.resolve('not_ready' as const), (listener) => { runtime.handshake = listener; return () => { runtime.handshake = null } })
       await svc.resumeContinuations()
       expect([continued, record(stateDir)?.runs.length]).toEqual([[], 1])
       runtime.ready = true
       runtime.handshake?.({ compatible: true, stale: false } as RuntimeDescribe)
       await vi.waitFor(() => { expect(continued).toEqual(['chat-r1']) })
       expect([record(stateDir), runtime.handshake]).toEqual([null, null])
+    })
+
+    it('continues the recorded chats once another update releases admission, when the runtime became ready during it (TAL-1990)', async () => {
+      const stateDir = tmp()
+      writeContinuation(stateDir, { update_id: 'u', target_revision: 'a'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: null, stream_id: 'r1' }] })
+      const runtime = { ready: false, handshake: null as ((describe: RuntimeDescribe) => void) | null }
+      const continued: string[] = []
+      let finishInstall!: () => void
+      const installing = new Promise<void>((resolve) => { finishInstall = resolve })
+      // The other update fails after holding admission: its npm discovery waits, then finds no global install.
+      const npm: BuildRun = async () => { await installing; return { ok: false, out: '' } }
+      const svc = booted(stateDir, 'a'.repeat(40), (run, entry) => runtime.ready ? continuing(continued)(run, entry) : Promise.resolve('not_ready' as const), (listener) => { runtime.handshake = listener; return () => { runtime.handshake = null } }, npm)
+      await svc.resumeContinuations()
+      const update = svc.apply('webui')
+      await vi.waitFor(() => { expect(svc.blocksNewWork()).toBe(true) })
+      runtime.ready = true
+      runtime.handshake?.({ compatible: true, stale: false } as RuntimeDescribe)
+      await svc.resumeContinuations()
+      expect(continued).toEqual([])
+      finishInstall()
+      expect(await update).toMatchObject({ ok: false })
+      await vi.waitFor(() => { expect(continued).toEqual(['chat-r1']) })
+      expect(record(stateDir)).toBeNull()
+    })
+
+    it('puts back an entry admission refused for now and continues it on a later try (TAL-1990)', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        const stateDir = tmp()
+        writeContinuation(stateDir, { update_id: 'u', target_revision: 'a'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'chat-r1', profile: null, stream_id: 'r1' }] })
+        const outcomes: string[] = []
+        const svc = booted(stateDir, 'a'.repeat(40), (run, entry) => {
+          entry.claim()
+          if (!outcomes.length) { entry.restore(); outcomes.push('refused'); return Promise.resolve('retry' as const) }
+          outcomes.push(`started:${run.session_id}`)
+          return Promise.resolve('done' as const)
+        })
+        await svc.resumeContinuations()
+        expect([outcomes, record(stateDir)?.runs.map((run) => run.stream_id)]).toEqual([['refused'], ['r1']])
+        await vi.advanceTimersByTimeAsync(15_000)
+        await svc.resumeContinuations()
+        expect([outcomes, record(stateDir)]).toEqual([['refused', 'started:chat-r1'], null])
+      } finally { vi.useRealTimers() }
     })
 
     it('offers the operator a one-shot confirmation naming the chats, then interrupts exactly those before installing', async () => {

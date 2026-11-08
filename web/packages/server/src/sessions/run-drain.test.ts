@@ -328,6 +328,24 @@ describe('chats a confirmed Web update interrupted continue once Web is back (TA
     } finally { release(); await server.running.close().catch(() => undefined) }
   })
 
+  it('keeps a chat whose continuation admission refused for now, and continues it on the next pass', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'one')
+      await interruptForUpdate(server, [streamId])
+      // Another update fences admission between the continuation's checks and its admission.
+      vi.spyOn(server.deps.updates, 'blocksNewWork').mockReturnValueOnce(false).mockReturnValueOnce(true)
+      await server.deps.updates.resumeContinuations()
+      expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
+      expect(recorded(server)).toBe(true)
+      vi.restoreAllMocks()
+      await server.deps.updates.resumeContinuations()
+      await expect.poll(() => continuations(sidecar)).toEqual([sid])
+      expect(recorded(server)).toBe(false)
+    } finally { vi.restoreAllMocks(); release(); await server.running.close().catch(() => undefined) }
+  })
+
   it('skips a chat that was deleted', async () => {
     const { sidecar, release } = heldSidecar()
     const server = await bootTestServer({ sidecar })

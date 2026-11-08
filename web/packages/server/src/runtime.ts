@@ -1232,7 +1232,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       try { profile = (await store.get(sessionId, { metadataOnly: true })).profile ?? null } catch { /* informational only */ }
       return { session_id: sessionId, profile, stream_id: streamId }
     }))).filter((run) => run !== null),
-    continueChat: (run, claim) => continueChat(run, claim, {
+    continueChat: (run, entry) => continueChat(run, entry, {
       ensureRuntime: () => ensureAgentRuntimeCurrent(sidecar),
       session: async (sid) => { try { return await store.get(sid) } catch (error) { if (error instanceof SessionNotFound) return null; throw error } },
       readOnlyReason: (session) => sessions.readOnlyReason(session),

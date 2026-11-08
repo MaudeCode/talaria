@@ -51,36 +51,53 @@ export function claimContinuation(stateDir: string, streamId: string): void {
   else clearContinuation(stateDir)
 }
 
+/** Puts a claimed entry back after a refusal that started no turn; a newer update's record replaced the old one and keeps it. */
+export function restoreContinuation(stateDir: string, from: ContinuationRecord, run: ContinuationRun): void {
+  const record = readContinuation(stateDir)
+  if (record && record.update_id !== from.update_id) return
+  const runs = record?.runs ?? []
+  if (!runs.some((entry) => entry.stream_id === run.stream_id)) writeContinuation(stateDir, { ...from, runs: [...runs, run] })
+}
+
+/** `done`: the turn started or the chat is skipped for good. `not_ready`: the Agent runtime cannot take a turn yet. `retry`: admission refused for now. */
+export type ContinueOutcome = 'done' | 'not_ready' | 'retry'
+/** One recorded entry: `claim` removes it before its turn starts; `restore` puts it back when admission refused it. */
+export interface ContinuationEntry { claim: () => void; restore: () => void }
+
 export interface ContinueChatDeps {
   /** Throws an `HttpFailure` while the Agent runtime cannot take a turn (`ensureAgentRuntimeCurrent`). */
   ensureRuntime: () => Promise<void>
   /** The session, or null when it no longer exists. */
   session: (sessionId: string) => Promise<Session | null>
   readOnlyReason: (session: Session) => Promise<string | null>
-  startTurn: (session: Session) => Promise<{ _status?: number; error?: string }>
+  startTurn: (session: Session) => Promise<{ _status?: number; error?: string; held?: boolean; active_stream_id?: string }>
   log: (line: string) => void
 }
 
 /**
- * Continues one recorded chat. `claim` removes its entry first, also for a chat that is skipped (deleted, read-only, with
- * a newer turn than the interrupted one, or whose turn finished on its own before the interrupt). False, with the entry
- * kept, while the Agent runtime is not ready.
+ * Continues one recorded chat. Its entry is claimed first, also for a chat that is skipped (deleted, read-only, with a
+ * newer turn than the interrupted one, or whose turn finished on its own before the interrupt). The entry stays while the
+ * Agent runtime is not ready, and comes back when admission refuses for now (an update or shutdown fence, a busy
+ * workspace or checkpoint store); a Stop hold, read-only refusal or newer active turn ends it.
  */
-export async function continueChat(run: ContinuationRun, claim: () => void, deps: ContinueChatDeps): Promise<boolean> {
-  try { await deps.ensureRuntime() } catch { return false }
-  const skip = (reason: string): true => {
-    claim()
+export async function continueChat(run: ContinuationRun, entry: ContinuationEntry, deps: ContinueChatDeps): Promise<ContinueOutcome> {
+  try { await deps.ensureRuntime() } catch { return 'not_ready' }
+  const skip = (reason: string): 'done' => {
+    entry.claim()
     deps.log(`[updates] not continuing chat ${run.session_id} after the update: ${reason}`)
-    return true
+    return 'done'
   }
   const session = await deps.session(run.session_id)
   if (!session) return skip('it was deleted')
   if (await deps.readOnlyReason(session)) return skip('it is read-only')
   if (session.active_stream_id || str(withTurnIds(session.messages).at(-1)?._turn_id) !== run.stream_id) return skip('it has a newer turn')
   if (turnTerminalState(session.messages, run.stream_id) !== 'interrupted') return skip('its turn finished before the update stopped it')
-  claim()
+  entry.claim()
   const started = await deps.startTurn(session)
-  if (started._status !== undefined) deps.log(`[updates] could not continue chat ${run.session_id} after the update: ${str(started.error)}`)
-  else deps.log(`[updates] continuing chat ${run.session_id} after the update`)
-  return true
+  if (started._status === undefined) { deps.log(`[updates] continuing chat ${run.session_id} after the update`); return 'done' }
+  const lasting = started.held === true || started._status === 403 || Boolean(started.active_stream_id)
+  deps.log(`[updates] could not continue chat ${run.session_id} after the update${lasting ? '' : ' yet'}: ${str(started.error)}`)
+  if (lasting) return 'done'
+  entry.restore()
+  return 'retry'
 }
