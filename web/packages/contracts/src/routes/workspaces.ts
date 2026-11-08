@@ -4,7 +4,8 @@ import { WorkspaceEntrySchema, WorkspacesSchema, DirListingSchema, FileContentSc
 
 const Json = z.unknown()
 const tags = ['workspaces']
-const WorkspacesMutation = z.object({ ok: z.literal(true), workspaces: z.array(WorkspaceEntrySchema) })
+/** The workspace list after an add, rename or remove; the agent's workspace tools return it too (TAL-1170). */
+export const WorkspacesMutation = z.object({ ok: z.literal(true), workspaces: z.array(WorkspaceEntrySchema) })
 
 
 const FileSource = FileSourceSchema.optional()

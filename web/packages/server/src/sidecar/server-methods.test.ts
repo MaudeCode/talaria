@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -670,6 +670,100 @@ describe('server.approval_respond (TAL-1169)', () => {
       expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).not.toContainEqual(expect.objectContaining({ action: 'approval' }))
       owner.finish()
       await owner.read
+    } finally {
+      await s.close()
+    }
+  })
+})
+
+describe('server.project_*, workspace_*, profile_list, goal_get, goal_set (TAL-1170)', () => {
+  it('organises the caller profile\'s projects and workspaces, lists profiles, and reads and sets a session goal through the route services', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      type Method = 'server.project_list' | 'server.project_create' | 'server.project_rename' | 'server.workspace_list' | 'server.workspace_add' | 'server.workspace_rename' | 'server.profile_list' | 'server.goal_get' | 'server.goal_set'
+      const ask = async (method: Method, params: Record<string, unknown> = {}, callerId = 'agentcaller') => {
+        const answer = await sidecar.serverRequest(method, { caller_session_id: callerId, ...params })
+        return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) as Record<string, unknown> }
+      }
+      const route = async (path: string, body?: unknown): Promise<unknown> => (await (await s.get(path, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })).json())
+      mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+      const save = async (session_id: string, profile: string) => {
+        await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, updated_at: 1_792_500_000, messages: [{ role: 'user', content: session_id, timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      }
+      await save('agentcaller', 'default')
+      await save('agentyolo', 'default')
+      await s.deps.sessions.setYolo('agentyolo', true)
+      await save('agentforeign', 'other')
+      await save('agentforeigncaller', 'other')
+
+      // Projects: made in, listed from and renamed within the caller's profile, as the routes answer.
+      const created = await ask('server.project_create', { name: '  Release  ' })
+      expect(created).toEqual({ result: { ok: true, project: { project_id: expect.stringMatching(/^[0-9a-f]{12}$/) as string, name: 'Release', color: null, profile: 'default', created_at: expect.any(Number) as number } } })
+      const project = (created as { result: { project: { project_id: string } } }).result.project
+      const foreign = (await ask('server.project_create', { name: 'Other work' }, 'agentforeigncaller') as { result: { project: { project_id: string; profile: string } } }).result.project
+      expect(foreign.profile).toBe('other')
+      expect(await ask('server.project_rename', { project_id: project.project_id, name: 'Release 2' })).toMatchObject({ result: { ok: true, project: { project_id: project.project_id, name: 'Release 2' } } })
+      const projects = await ask('server.project_list')
+      expect((projects as { result: { projects: { name: string }[] } }).result.projects.map((p) => p.name)).toEqual(['Release 2'])
+      expect(projects).toEqual({ result: await route('/api/projects') })
+      // Another profile's project is not found, and is left as it was.
+      expect(await ask('server.project_rename', { project_id: foreign.project_id, name: 'Taken' })).toMatchObject({ error: { message: 'Project not found', data: { condition: 'refused' } } })
+      expect((await s.deps.projects.load()).find((p) => p.project_id === foreign.project_id)).toMatchObject({ name: 'Other work' })
+
+      // Workspaces: added with the route's path validation, renamed by path, listed as `/api/workspaces` lists them.
+      mkdirSync(join(s.state, 'synthetic-repo'), { recursive: true })
+      const folder = realpathSync(join(s.state, 'synthetic-repo'))
+      const added = await ask('server.workspace_add', { path: folder, name: 'Synthetic' })
+      expect(added).toMatchObject({ result: { ok: true, workspaces: expect.arrayContaining([{ path: folder, name: 'Synthetic' }]) as unknown } })
+      expect(await ask('server.workspace_rename', { path: folder, name: 'Synthetic repo' })).toMatchObject({ result: { ok: true, workspaces: expect.arrayContaining([{ path: folder, name: 'Synthetic repo' }]) as unknown } })
+      const workspaces = await ask('server.workspace_list')
+      expect((workspaces as { result: { workspaces: unknown[] } }).result.workspaces).toContainEqual({ path: folder, name: 'Synthetic repo' })
+      expect(workspaces).toEqual({ result: await route('/api/workspaces') })
+      // An invalid path is refused with the route's own validation error.
+      const missing = join(s.state, 'no-such-folder')
+      const invalid = await ask('server.workspace_add', { path: missing })
+      expect(invalid).toMatchObject({ error: { code: RPC_ERROR_CODES.application, data: { condition: 'refused' } } })
+      expect((invalid as { error: { message: string } }).error.message).toBe((await route('/api/workspaces/add', { path: missing }) as { error: string }).error)
+      expect(await ask('server.workspace_add', { path: folder })).toMatchObject({ error: { message: 'Workspace already in list' } })
+      expect(await ask('server.workspace_rename', { path: missing, name: 'x' })).toMatchObject({ error: { message: 'Workspace not found' } })
+
+      // Profiles: read-only, with the caller's profile active.
+      sidecar.respond('profiles.list', () => ({ profiles: ['default', 'other'].map((name) => ({ name, path: name === 'default' ? s.state : join(s.state, 'profiles', name), is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })) }))
+      s.deps.profiles.invalidate()
+      const profiles = await ask('server.profile_list')
+      expect(profiles).toEqual({ result: await route('/api/profiles') })
+      expect((profiles as { result: { profiles: { name: string; is_active: boolean }[] } }).result.profiles.map((p) => [p.name, p.is_active])).toEqual([['default', true], ['other', false]])
+      expect(await ask('server.profile_list', {}, 'agentforeigncaller')).toMatchObject({ result: { active: 'other', profiles: [{ name: 'default', is_active: false }, { name: 'other', is_active: true }] } })
+
+      // Goals: `/goal status` and `/goal <text>` on a session in the caller's profile; a new goal starts its kickoff turn.
+      const goalState = { goal: 'Ship the release notes', status: 'active', turns_used: 0, max_turns: 20, last_verdict: null, last_reason: null, paused_reason: null }
+      sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+      sidecar.respond('goals.command', (params) => params.args === 'status'
+        ? { ok: true, action: 'status', message: '⊙ Goal (active): Ship the release notes', goal: goalState }
+        : { ok: true, action: 'set', message: `⊙ Goal set: ${params.args}`, goal: { ...goalState, goal: params.args }, kickoff_prompt: params.args })
+      sidecar.respond('goals.evaluate', () => ({ status: 'done', should_continue: false, continuation_prompt: null, verdict: 'done', reason: 'shipped', message: '' }))
+      sidecar.respond('chat.start', () => ({ status: 'completed', messages: [{ role: 'user', content: 'kickoff' }, { role: 'assistant', content: 'done' }], final_response: 'done', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+      const goalPeer = String(((await route('/api/session/new', {}) as { session: Record<string, unknown> }).session).session_id)
+      const set = await ask('server.goal_set', { session_id: goalPeer, text: 'Ship the release notes' })
+      expect(set).toMatchObject({ result: { ok: true, action: 'set', goal: { goal: 'Ship the release notes' }, stream_id: expect.stringMatching(/^[0-9a-f]{32}$/) as unknown } })
+      await s.deps.turns.finished((set as { result: { stream_id: string } }).result.stream_id)
+      const goalCommands = () => sidecar.calls.filter((c) => c.method === 'goals.command').map((c) => c.params as { session_id: string; args: string })
+      expect(goalCommands().map((p) => [p.session_id, p.args])).toEqual([[goalPeer, 'Ship the release notes']])
+      expect(await ask('server.goal_get', { session_id: goalPeer })).toEqual({ result: { ok: true, action: 'status', message: '⊙ Goal (active): Ship the release notes', goal: goalState } })
+      expect(goalCommands().at(-1)).toMatchObject({ session_id: goalPeer, args: 'status' })
+
+      // Another profile's session is unknown; a session with more access than the caller is not handed a goal.
+      const commands = goalCommands().length
+      expect(await ask('server.goal_set', { session_id: 'agentforeign', text: 'Take over' })).toMatchObject({ error: { message: 'no Talaria session agentforeign in this profile', data: { condition: 'target_unknown' } } })
+      expect(await ask('server.goal_get', { session_id: 'agentforeign' })).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
+      expect(await ask('server.goal_set', { session_id: 'agentyolo', text: 'rm -rf' })).toMatchObject({ error: { message: 'session agentyolo has more access than this one (YOLO is on)', data: { condition: 'exceeds_caller' } } })
+      expect(goalCommands().length).toBe(commands)
+
+      // An unknown caller is refused by every tool.
+      for (const method of ['server.project_list', 'server.workspace_list', 'server.profile_list'] as const) {
+        expect(await ask(method, {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+      }
     } finally {
       await s.close()
     }

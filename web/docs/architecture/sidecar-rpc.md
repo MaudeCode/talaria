@@ -1,5 +1,19 @@
 # Sidecar RPC (TAL-245)
 
+RPC v85 adds the toolset's organising tools (TAL-1170), each through the
+service behind its route and answering as the route does, in the caller's
+profile: `project_list`, `project_create` and `project_rename`
+(`/api/projects`, `/api/projects/create`, `/api/projects/rename`);
+`workspace_list`, `workspace_add` and `workspace_rename` (`/api/workspaces`,
+`/api/workspaces/add` with its path validation, `/api/workspaces/rename`, a
+workspace named by its path); `profile_list` (`/api/profiles`, read-only); and
+`goal_get` and `goal_set` (`/api/goal` running `/goal status` or `/goal
+<text>` on a session in the caller's profile, the caller included). A new goal
+starts the target's kickoff turn, so `goal_set` refuses a target with more
+access than the caller (`exceeds_caller`), as `session_send` does. A route's
+refusal reaches the agent with the route's message (`refused`). No tool deletes
+a project or workspace, or switches or creates a profile.
+
 RPC v84 adds the toolset's `approval_respond` tool (TAL-1169,
 `server.approval_respond`). It approves once or denies another session's
 pending command through the service behind `/api/approval/respond`, only while

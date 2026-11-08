@@ -222,6 +222,15 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
         ("pending_list", "talaria", "pending_list"),
         ("clarify_respond", "talaria", "clarify_respond"),
         ("approval_respond", "talaria", "approval_respond"),
+        ("project_list", "talaria", "project_list"),
+        ("project_create", "talaria", "project_create"),
+        ("project_rename", "talaria", "project_rename"),
+        ("workspace_list", "talaria", "workspace_list"),
+        ("workspace_add", "talaria", "workspace_add"),
+        ("workspace_rename", "talaria", "workspace_rename"),
+        ("profile_list", "talaria", "profile_list"),
+        ("goal_get", "talaria", "goal_get"),
+        ("goal_set", "talaria", "goal_set"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # session_wait and session_compress outlast the Agent's generic tool deadline by their own server call's timeout.
@@ -246,9 +255,20 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
     ("clarify_respond", "server.clarify_respond", 0),
     ("approval_respond", "server.approval_respond", 0),
     ("approval_respond", "server.approval_respond", 1),
+    ("project_list", "server.project_list", 0),
+    ("project_create", "server.project_create", 0),
+    ("project_rename", "server.project_rename", 0),
+    ("workspace_list", "server.workspace_list", 0),
+    ("workspace_add", "server.workspace_add", 0),
+    ("workspace_add", "server.workspace_add", 1),
+    ("workspace_rename", "server.workspace_rename", 0),
+    ("profile_list", "server.profile_list", 0),
+    ("goal_get", "server.goal_get", 0),
+    ("goal_set", "server.goal_set", 0),
+    ("goal_set", "server.goal_set", 1),
 ])
 def test_session_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, index) -> None:
-    """TAL-1165, TAL-1166, TAL-1168, TAL-1169: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
+    """TAL-1165, TAL-1166, TAL-1168, TAL-1169, TAL-1170: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
     from types import SimpleNamespace
 
     from talaria_sidecar.methods import chat
@@ -270,7 +290,7 @@ def test_session_tools_forward_their_call_and_return_the_server_result_unchanged
     assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
 
     # A missing required string never reaches the server; the server's refusal reaches the agent with its condition.
-    optional = ("session_id",) if tool == "pending_list" else ("title", "project_id")
+    optional = {"pending_list": ("session_id",), "session_new": ("title",), "session_update": ("title", "project_id"), "workspace_add": ("name",)}.get(tool, ())
     for missing in [key for key, value in args.items() if isinstance(value, str) and key not in optional]:
         assert json.loads(handler({k: v for k, v in args.items() if k != missing}, session_id="20261020_130000_tip")) == {"error": f"{missing} is required", "condition": "invalid_params"}
     assert len(sent) == 1

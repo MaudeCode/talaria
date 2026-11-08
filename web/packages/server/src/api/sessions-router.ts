@@ -7,7 +7,7 @@ import { writeFully } from '../fs/atomic.js'
 import { basename, dirname, extname, join, relative } from 'node:path'
 import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
-import { ifNoneMatchMatches, type RequestContext } from '../http/context.js'
+import { ifNoneMatchMatches, type AppDeps, type RequestContext } from '../http/context.js'
 import { SidecarError } from '../sidecar/client.js'
 import { HttpError, RawResponse, requireFields, type ApiContext } from './router.js'
 import { GitWorkspaceError, WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -71,15 +71,15 @@ function queryPositiveInt(value: string | undefined, fallback: number | null, ma
 const sanitizeError = sanitizePaths
 
 /** TAL-1032: project rows with their bindings normalized and the catalog entry each bound model pair selects. */
-async function projectViews(ctx: RequestContext, projects: Project[]): Promise<Project[]> {
+async function projectViews(deps: AppDeps, projects: Project[]): Promise<Project[]> {
   const resolvers = new Map<string, Promise<(model: string | null, provider: string | null) => string | null>>()
   return Promise.all(projects.map(async (p) => {
     const bound = projectBindings(p)
     let option: string | null = null
     if (bound.model) {
       try {
-        const home = ctx.deps.profileHome(p.profile || ctx.deps.activeProfile())
-        if (!resolvers.has(home)) resolvers.set(home, ctx.deps.catalog.modelOptionResolver(home))
+        const home = deps.profileHome(p.profile || deps.activeProfile())
+        if (!resolvers.has(home)) resolvers.set(home, deps.catalog.modelOptionResolver(home))
         option = (await resolvers.get(home)!)(bound.model, bound.model_provider)
       } catch { option = null }
     }
@@ -149,6 +149,99 @@ export function sidebarListSelection(settings: Settings, input: SessionsListQuer
     archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
     archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
   }
+}
+
+/**
+ * The services behind `/api/projects{,/create,/rename}` and `/api/workspaces{,/add,/rename}`, in the request's profile.
+ * The agent's project and workspace tools call them too (TAL-1170).
+ */
+export async function projectList(deps: AppDeps, allProfiles: boolean) {
+  const activeProfile = deps.activeProfile()
+  const all = (await deps.projects.load())
+  const scoped = allProfiles ? all : all.filter((p) => deps.profilesMatch(p.profile ?? null, activeProfile))
+  return { projects: await projectViews(deps, scoped), all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
+}
+
+export async function projectCreate(deps: AppDeps, input: { name: string; color?: string | null | undefined; profile?: string | null | undefined }) {
+  const name = input.name.trim().slice(0, 128)
+  if (!name) throw new HttpError(400, 'name required')
+  const color = input.color ?? null
+  if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
+  const requested = (input.profile ?? '').trim()
+  if (requested && requested !== 'default' && !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(requested)) throw new HttpError(400, 'invalid profile')
+  const proj = { project_id: randomUUID().replace(/-/g, '').slice(0, 12), name, color, profile: requested || deps.activeProfile() || 'default', created_at: deps.auth.now() }
+  await deps.projects.mutate((projects) => { projects.push(proj) })
+  deps.events.publish('project_create', { profile: proj.profile })
+  return { ok: true as const, project: proj }
+}
+
+export async function projectRename(deps: AppDeps, input: { project_id: string; name: string; color?: string | null | undefined }) {
+  const activeProfile = deps.activeProfile()
+  const proj = await deps.projects.mutate((projects) => {
+    const proj = projects.find((p) => p.project_id === input.project_id)
+    if (!proj || !deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
+    requireFields(input, 'project_id', 'name')
+    proj.name = input.name.trim().slice(0, 128)
+    if ('color' in input) {
+      const color = input.color ?? null
+      if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
+      proj.color = color
+    }
+    return proj
+  })
+  deps.events.publish('project_rename', { profile: activeProfile })
+  return { ok: true as const, project: proj }
+}
+
+export async function workspaceList(deps: AppDeps) {
+  const profile = deps.activeProfile()
+  return { workspaces: (await deps.workspaces.load(profile)), last: (await deps.workspaces.lastWorkspace(profile)), terminal_remote_backend: deps.features().terminal_remote_backend }
+}
+
+export async function workspaceAdd(deps: AppDeps, input: { path: string; name?: string | undefined; create?: unknown }) {
+  const ws = deps.workspaces
+  const pathStr = stripSurroundingQuotes(input.path.trim())
+  const name = (input.name ?? '').trim()
+  if (!pathStr) throw new HttpError(400, 'path is required')
+  const profile = deps.activeProfile()
+  let candidate: string
+  let remote: string | null
+  try {
+    remote = ws.remoteTerminalWorkspaceCandidate(pathStr, profile)
+    candidate = ws.resolvePath(pathStr, profile)
+  } catch (error) {
+    throw new HttpError(400, `Invalid path: ${sanitizeError(error)}`)
+  }
+  if (remote === null) {
+    if (isBlockedSystemPath(candidate)) {
+      const home = ws.homePath()
+      if (!(home !== '/' && (candidate === home || isWithin(candidate, home)))) throw new HttpError(400, `Path points to a system directory: ${candidate}`)
+    }
+    if (input.create) {
+      assertWorkspaceFree(deps, candidate)
+      try { mkdirSync(candidate, { recursive: true }) } catch (error) { throw new HttpError(400, `Could not create directory: ${sanitizeError(error)}`) }
+    }
+  }
+  let p: string
+  try { p = ws.validateToAdd(pathStr, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+  const list = (await ws.load(profile, { forWrite: true }))
+  if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
+  list.push({ path: p, name: name || basename(p) })
+  await ws.save(list, profile)
+  return { ok: true as const, workspaces: list }
+}
+
+export async function workspaceRename(deps: AppDeps, input: { path: string; name: string }) {
+  const pathStr = input.path.trim()
+  const name = input.name.trim()
+  if (!pathStr || !name) throw new HttpError(400, 'path and name are required')
+  const profile = deps.activeProfile()
+  const list = (await deps.workspaces.load(profile, { forWrite: true }))
+  const entry = list.find((w) => w.path === pathStr)
+  if (!entry) throw new HttpError(404, 'Workspace not found')
+  entry.name = name
+  await deps.workspaces.save(list, profile)
+  return { ok: true as const, workspaces: list }
 }
 
 export const sessionsRouter = os.router({
@@ -449,42 +542,9 @@ export const sessionsRouter = os.router({
     })),
   },
   projects: {
-    list: os.projects.list.handler(({ input, context: { ctx } }) => run(async () => {
-      const activeProfile = ctx.deps.activeProfile()
-      const all = (await ctx.deps.projects.load())
-      const allProfiles = allProfilesEnabled(ctx, input.all_profiles)
-      const scoped = allProfiles ? all : all.filter((p) => ctx.deps.profilesMatch(p.profile ?? null, activeProfile))
-      return { projects: await projectViews(ctx, scoped), all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || ctx.deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
-    })),
-    create: os.projects.create.handler(({ input, context: { ctx } }) => run(async () => {
-      const name = input.name.trim().slice(0, 128)
-      if (!name) throw new HttpError(400, 'name required')
-      const color = input.color ?? null
-      if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
-      const requested = (input.profile ?? '').trim()
-      if (requested && requested !== 'default' && !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(requested)) throw new HttpError(400, 'invalid profile')
-      const proj = { project_id: randomUUID().replace(/-/g, '').slice(0, 12), name, color, profile: requested || ctx.deps.activeProfile() || 'default', created_at: ctx.deps.auth.now() }
-      await ctx.deps.projects.mutate((projects) => { projects.push(proj) })
-      ctx.deps.events.publish('project_create', { profile: proj.profile })
-      return { ok: true as const, project: proj }
-    })),
-    rename: os.projects.rename.handler(({ input, context: { ctx } }) => run(async () => {
-      const activeProfile = ctx.deps.activeProfile()
-      const proj = await ctx.deps.projects.mutate((projects) => {
-        const proj = projects.find((p) => p.project_id === input.project_id)
-        if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
-        requireFields(input, 'project_id', 'name')
-        proj.name = input.name.trim().slice(0, 128)
-        if ('color' in input) {
-          const color = input.color ?? null
-          if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
-          proj.color = color
-        }
-        return proj
-      })
-      ctx.deps.events.publish('project_rename', { profile: activeProfile })
-      return { ok: true as const, project: proj }
-    })),
+    list: os.projects.list.handler(({ input, context: { ctx } }) => run(() => projectList(ctx.deps, allProfilesEnabled(ctx, input.all_profiles)))),
+    create: os.projects.create.handler(({ input, context: { ctx } }) => run(() => projectCreate(ctx.deps, input))),
+    rename: os.projects.rename.handler(({ input, context: { ctx } }) => run(() => projectRename(ctx.deps, input))),
     setBindings: os.projects.setBindings.handler(({ input, context: { ctx } }) => run(async () => {
       const activeProfile = ctx.deps.activeProfile()
       const visible = (p: Project | undefined): p is Project => !!p && ctx.deps.profilesMatch(p.profile ?? null, activeProfile)
@@ -530,7 +590,7 @@ export const sessionsRouter = os.router({
         return row
       })
       ctx.deps.events.publish('project_rename', { profile: activeProfile })
-      return { ok: true as const, project: (await projectViews(ctx, [project]))[0]! }
+      return { ok: true as const, project: (await projectViews(ctx.deps, [project]))[0]! }
     })),
     delete: os.projects.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const activeProfile = ctx.deps.activeProfile()
@@ -586,43 +646,9 @@ export const sessionsRouter = os.router({
     })),
   },
   workspaces: {
-    list: os.workspaces.list.handler(({ context: { ctx } }) => run(async () => {
-      const profile = ctx.deps.activeProfile()
-      return { workspaces: (await ctx.deps.workspaces.load(profile)), last: (await ctx.deps.workspaces.lastWorkspace(profile)), terminal_remote_backend: ctx.deps.features().terminal_remote_backend }
-    })),
+    list: os.workspaces.list.handler(({ context: { ctx } }) => run(() => workspaceList(ctx.deps))),
     suggest: os.workspaces.suggest.handler(({ input, context: { ctx } }) => run(async () => ({ suggestions: (await ctx.deps.workspaces.suggest(input.prefix ?? '', 12, ctx.deps.activeProfile())), prefix: input.prefix ?? '' }))),
-    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(async () => {
-      const ws = ctx.deps.workspaces
-      const pathStr = stripSurroundingQuotes(input.path.trim())
-      const name = (input.name ?? '').trim()
-      if (!pathStr) throw new HttpError(400, 'path is required')
-      const profile = ctx.deps.activeProfile()
-      let candidate: string
-      let remote: string | null
-      try {
-        remote = ws.remoteTerminalWorkspaceCandidate(pathStr, profile)
-        candidate = ws.resolvePath(pathStr, profile)
-      } catch (error) {
-        throw new HttpError(400, `Invalid path: ${sanitizeError(error)}`)
-      }
-      if (remote === null) {
-        if (isBlockedSystemPath(candidate)) {
-          const home = ws.homePath()
-          if (!(home !== '/' && (candidate === home || isWithin(candidate, home)))) throw new HttpError(400, `Path points to a system directory: ${candidate}`)
-        }
-        if (input.create) {
-          assertWorkspaceFree(ctx, candidate)
-          try { mkdirSync(candidate, { recursive: true }) } catch (error) { throw new HttpError(400, `Could not create directory: ${sanitizeError(error)}`) }
-        }
-      }
-      let p: string
-      try { p = ws.validateToAdd(pathStr, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
-      const list = (await ws.load(profile, { forWrite: true }))
-      if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
-      list.push({ path: p, name: name || basename(p) })
-      await ws.save(list, profile)
-      return { ok: true as const, workspaces: list }
-    })),
+    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(() => workspaceAdd(ctx.deps, input))),
     remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(async () => {
       const pathStr = input.path.trim()
       if (!pathStr) throw new HttpError(400, 'path is required')
@@ -631,18 +657,7 @@ export const sessionsRouter = os.router({
       await ctx.deps.workspaces.save(list, profile)
       return { ok: true as const, workspaces: list }
     })),
-    rename: os.workspaces.rename.handler(({ input, context: { ctx } }) => run(async () => {
-      const pathStr = input.path.trim()
-      const name = input.name.trim()
-      if (!pathStr || !name) throw new HttpError(400, 'path and name are required')
-      const profile = ctx.deps.activeProfile()
-      const list = (await ctx.deps.workspaces.load(profile, { forWrite: true }))
-      const entry = list.find((w) => w.path === pathStr)
-      if (!entry) throw new HttpError(404, 'Workspace not found')
-      entry.name = name
-      await ctx.deps.workspaces.save(list, profile)
-      return { ok: true as const, workspaces: list }
-    })),
+    rename: os.workspaces.rename.handler(({ input, context: { ctx } }) => run(() => workspaceRename(ctx.deps, input))),
     reorder: os.workspaces.reorder.handler(({ input, context: { ctx } }) => run(async () => {
       const paths = input.paths
       if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths is required and must be a list')
@@ -697,7 +712,7 @@ export const sessionsRouter = os.router({
       try {
         if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Office documents cannot be saved from the Web UI')
         const root = s.workspace
-        assertWorkspaceFree(ctx, root)
+        assertWorkspaceFree(ctx.deps, root)
         const target = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
@@ -714,7 +729,7 @@ export const sessionsRouter = os.router({
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
-        assertWorkspaceFree(ctx, root)
+        assertWorkspaceFree(ctx.deps, root)
         const target = safeResolve(root, input.path)
         if (existsSync(target)) throw new HttpError(400, 'File already exists')
         const data = Buffer.from(input.content ?? '', 'utf8')
@@ -731,7 +746,7 @@ export const sessionsRouter = os.router({
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
-        assertWorkspaceFree(ctx, root)
+        assertWorkspaceFree(ctx.deps, root)
         const target = safeResolve(root, input.path)
         if (existsSync(target)) throw new HttpError(400, 'Path already exists')
         makeAnchoredDir(root, target)
@@ -745,7 +760,7 @@ export const sessionsRouter = os.router({
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
-        assertWorkspaceFree(ctx, root)
+        assertWorkspaceFree(ctx.deps, root)
         const target = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot delete a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
@@ -763,7 +778,7 @@ export const sessionsRouter = os.router({
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
-        assertWorkspaceFree(ctx, root)
+        assertWorkspaceFree(ctx.deps, root)
         const rootResolved = resolvePathLikePython(root)
         const source = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot rename a symlinked entry')
@@ -785,7 +800,7 @@ export const sessionsRouter = os.router({
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
-        assertWorkspaceFree(ctx, root)
+        assertWorkspaceFree(ctx.deps, root)
         const rootResolved = resolvePathLikePython(root)
         const source = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot move a symlinked entry')
@@ -899,8 +914,8 @@ function isSymlinkAt(path: string): boolean {
 }
 
 /** Workspace writes are synchronous, so refusing while Git holds the workspace keeps the two from overlapping. */
-function assertWorkspaceFree(ctx: RequestContext, path: string): void {
-  if (ctx.deps.git.workspaceBusy(path)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
+function assertWorkspaceFree(deps: AppDeps, path: string): void {
+  if (deps.git.workspaceBusy(path)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
 }
 
 export function fileError(error: unknown, notFoundStatus = 400): Error {

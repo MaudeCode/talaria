@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Added", "summary": "The Talaria toolset can list, create and rename projects, list, add and rename workspaces, list profiles, and read or set a chat's goal, all within the chat's own profile.", "highlight": false, "components": ["web"]}]
+}
