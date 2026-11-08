@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria for iPhone streams replies and takes typing more smoothly in long chats with reasoning, because the reasoning cards are built once when the chat changes instead of on every update.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

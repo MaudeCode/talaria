@@ -171,17 +171,22 @@ public final class ChatViewModel {
     @ObservationIgnored private var isDeferringTranscriptMapping = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
     private var completedToolCallGroupLookup = ToolCallGroupAnchorLookup()
-    private(set) var completedReasoningGroups: [ReasoningGroup] = []
+    private(set) var completedReasoningGroups: [ReasoningGroup] = [] {
+        didSet { recomputeDisplayedReasoningGroups() }
+    }
     private(set) var archivedAssistantActivity: [String: [AssistantActivityRow]] = [:]
     /// Earlier scene rows paged from the server for long completed turns, keyed by the turn's anchor.
     public private(set) var earlierSceneRows: [String: [AssistantActivitySceneRow]] = [:]
     private var loadingEarlierSceneRows = Set<String>()
-    public var displayedReasoningGroups: [ReasoningGroup] {
-        Self.reasoningDisplayGroups(
-            messages: messages,
-            messageOffset: messagesOffset,
-            archivedGroups: completedReasoningGroups
-        )
+    /// Memoized reasoning cards (TAL-855): derived when the messages, their offset or the archived groups change,
+    /// and assigned only when the cards differ, so stream ticks and keystrokes leave them alone.
+    public private(set) var displayedReasoningGroups: [ReasoningGroup] = []
+    private var reasoningGroupsByAnchorID: [String?: [ReasoningGroup]] = [:]
+#if DEBUG
+    @ObservationIgnored private(set) var displayedReasoningGroupsUpdateCount = 0
+#endif
+    public func reasoningGroupsForAnchor(_ anchorMessageID: String?) -> [ReasoningGroup] {
+        reasoningGroupsByAnchorID[anchorMessageID] ?? []
     }
     public func completedToolCallGroupsForAnchor(_ anchorMessageID: String?) -> [ToolCallGroup] {
         completedToolCallGroupLookup.groups(anchorMessageID: anchorMessageID)
@@ -246,12 +251,15 @@ public final class ChatViewModel {
         let wasDeferring = isDeferringTranscriptMapping
         let previousMessages = messages
         let previousOffset = messagesOffset
+        let previousReasoningGroups = completedReasoningGroups
         isDeferringTranscriptMapping = true
         defer {
             isDeferringTranscriptMapping = wasDeferring
             if !wasDeferring {
                 if messages != previousMessages || messagesOffset != previousOffset {
                     recomputeDisplayedTranscriptMessages()
+                } else if completedReasoningGroups != previousReasoningGroups {
+                    recomputeDisplayedReasoningGroups()
                 }
             }
         }
@@ -267,6 +275,22 @@ public final class ChatViewModel {
             from: messages,
             messageOffset: messagesOffset
         )
+        recomputeDisplayedReasoningGroups()
+    }
+
+    private func recomputeDisplayedReasoningGroups() {
+        guard !isDeferringTranscriptMapping else { return }
+        let groups = Self.reasoningDisplayGroups(
+            messages: messages,
+            messageOffset: messagesOffset,
+            archivedGroups: completedReasoningGroups
+        )
+        guard groups != displayedReasoningGroups else { return }
+#if DEBUG
+        displayedReasoningGroupsUpdateCount += 1
+#endif
+        displayedReasoningGroups = groups
+        reasoningGroupsByAnchorID = Dictionary(grouping: groups, by: \.anchorMessageID)
     }
     /// TAL-833: the standing `/goal` every session detail carries; nil hides its chip.
     public private(set) var sessionGoal: SessionGoal?
@@ -6397,6 +6421,7 @@ public final class ChatViewModel {
     }
 
     private func updateStreamingAssistantMessage(at messageIndex: Int, with message: ChatMessage) {
+        let previousMessage = messages[messageIndex]
         isDeferringTranscriptMapping = true
         messages[messageIndex] = message
         isDeferringTranscriptMapping = false
@@ -6425,6 +6450,14 @@ public final class ChatViewModel {
             message: lastSegment.message,
             assistantSegments: updatedSegments
         )
+
+        // A streamed update reaches the reasoning cards only through candidates anchored at this message: its own
+        // reasoning, or an archived group whose echo is stripped against its content.
+        let anchorID = TranscriptTurnClassifier.anchorID(for: message, at: messageIndex, messageOffset: messagesOffset)
+        if previousMessage.reasoning != nil || message.reasoning != nil
+            || completedReasoningGroups.contains(where: { $0.anchorMessageID == anchorID }) {
+            recomputeDisplayedReasoningGroups()
+        }
     }
 
     @discardableResult
