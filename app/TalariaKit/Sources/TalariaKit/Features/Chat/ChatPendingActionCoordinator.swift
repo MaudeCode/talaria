@@ -133,6 +133,8 @@ final class ChatPendingActionCoordinator {
 
     weak var delegate: ChatPendingActionCoordinatorDelegate?
     var approvalHeadDidBecomeVisible: (ApprovalPromptState) -> Void = { _ in }
+    /// Fires once when a clarify-queue head, a question or a vault prompt, becomes visible in the open chat.
+    var clarificationHeadDidBecomeVisible: (ClarificationPromptState) -> Void = { _ in }
 
     fileprivate let client: APIClient
     fileprivate let pollingIntervals: ChatPollingIntervals
@@ -653,8 +655,12 @@ final class ChatPendingActionCoordinator {
         let prompt = delegate?.pendingActionSessionID.flatMap { sessionID in
             delegate?.pendingActionHasActiveStream == true ? clarificationPendingBySession[sessionID] : nil
         }
+        let previous = clarificationPrompt ?? vaultPrompt
         clarificationPrompt = prompt?.pending.vault == nil ? prompt : nil
         vaultPrompt = prompt?.pending.vault == nil ? nil : prompt
+        if let prompt, previous?.requestID != prompt.requestID {
+            clarificationHeadDidBecomeVisible(prompt)
+        }
     }
 }
 

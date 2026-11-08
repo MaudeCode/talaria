@@ -157,7 +157,7 @@ struct NotificationPermissionToggle: View {
             switch self {
             case .responseCompletion: String(localized: "Response Complete Alerts")
             case .providerQuota: String(localized: "Provider Quota Alerts")
-            case .approval: String(localized: "Approval Alerts")
+            case .approval: String(localized: "Approval and Question Alerts")
             }
         }
 
