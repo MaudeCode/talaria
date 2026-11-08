@@ -7,8 +7,8 @@ import XCTest
 // The members of MarkdownMathRendererTests that need the App host; the rest run in TalariaKitTests (TAL-399).
 final class MarkdownMathRendererTests: XCTestCase {
     @MainActor
-    func testMarkdownCodeHighlighterRendersLightModeSwiftForegroundColors() {
-        let result = MarkdownCodeHighlighter.highlightedCode(
+    func testMarkdownCodeHighlighterRendersLightModeSwiftForegroundColors() async {
+        let result = await MarkdownCodeHighlighter.highlightedCode(
             for: MarkdownCodeHighlightRequest(
                 code: "func greet(name: String) -> String {\n    return \"Hello\"\n}",
                 language: "swift",
@@ -26,8 +26,8 @@ final class MarkdownMathRendererTests: XCTestCase {
     }
 
     @MainActor
-    func testMarkdownCodeHighlighterRendersLightModeNonSwiftForegroundColors() {
-        let result = MarkdownCodeHighlighter.highlightedCode(
+    func testMarkdownCodeHighlighterRendersLightModeNonSwiftForegroundColors() async {
+        let result = await MarkdownCodeHighlighter.highlightedCode(
             for: MarkdownCodeHighlightRequest(
                 code: """
                 {
