@@ -6,7 +6,12 @@
       "highlight": false,
       "components": [
         "web"
-      ]
+      ],
+      "announcement": {
+        "title": "Steer a Group Chat",
+        "description": "Give a discussion a purpose and shared notes, and choose whether everyone answers or a lead assigns.",
+        "icon": "chat"
+      }
     }
   ]
 }

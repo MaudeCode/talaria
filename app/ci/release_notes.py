@@ -160,9 +160,21 @@ def introduced(base, target, current):
         sources = {path: (directory / path).read_text(encoding="utf-8")
                    for path in current}
     for path, source in old.items():
-        if sources.get(path) != source:
+        if sources.get(path) != source and not decided_later(source, current.get(path)):
             raise ValueError(f"{path}: out-of-range fragment already exists at base; add a new ticket fragment")
     return {path: data for path, data in current.items() if path not in old}
+
+
+def decided_later(source, data):
+    """A merged fragment may gain an announce decision on entries that had none, and nothing else."""
+    old = json.loads(source)
+    if data is None or len(data.get("entries", [])) != len(old.get("entries", [])):
+        return False
+    decisions = ("announcement", "announce")
+    entries = [entry if any(key in before for key in decisions)
+               else {key: value for key, value in entry.items() if key not in decisions}
+               for before, entry in zip(old.get("entries", []), data.get("entries", []))]
+    return {**data, "entries": entries} == old
 
 
 def repository_only(path):
@@ -354,12 +366,14 @@ def validate(base=None, target=None):
         changed = changes(base, target)
         if changed and not selected:
             raise ValueError(f"missing release metadata: add {DIRECTORY}/TAL-<number>.json with entries or an explicit skip reason")
-        # A new highlighted App or Web entry decides whether What's New shows it; merged history predates the rule.
+        # A new highlighted, Added or Changed App or Web entry decides whether What's New shows it;
+        # merged history predates the rule.
         undecided = dict.fromkeys(path for path, data in sorted(selected.items()) for entry in data.get("entries", [])
-                                  if entry["highlight"] and set(entry.get("components", ["app"])) & set(ANNOUNCED)
+                                  if (entry["highlight"] or entry["category"] in ("Added", "Changed"))
+                                  and set(entry.get("components", ["app"])) & set(ANNOUNCED)
                                   and not {"announcement", "announce"} & set(entry))
         if undecided:
-            raise ValueError(f'{", ".join(undecided)}: a highlighted app or web entry needs an "announcement" or "announce": false')
+            raise ValueError(f'{", ".join(undecided)}: add an "announcement", or "announce": false if a user would not benefit from noticing it')
         has_app_entries = any("app" in entry.get("components", ["app"])
                               for data in selected.values() for entry in data.get("entries", []))
         app_changes = [path for path in changed if not repository_only(path)

@@ -6,7 +6,12 @@
       "highlight": false,
       "components": [
         "web"
-      ]
+      ],
+      "announcement": {
+        "title": "Redirect instead of deny",
+        "description": "Answer an approval with \"No, and tell Hermes instead\" to steer the running turn.",
+        "icon": "chat"
+      }
     }
   ]
 }

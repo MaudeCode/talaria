@@ -3,7 +3,9 @@
 Run these commands from `app/`. All components share the repository-root
 `changelog.d/` directory. Historical fragments also remain readable under
 `app/changelog.d/` in source-migration commits. Byte-identical moves preserve
-fragment identities; edits or deletions of historical fragments still fail.
+fragment identities; edits or deletions of historical fragments still fail,
+except adding an `announcement` or `"announce": false` to an entry that has
+neither.
 
 Agents add release metadata with each implementation. The root release-set
 workflow validates the selected source and generates component Markdown and
@@ -86,15 +88,19 @@ characters. Icons are the keys in `../contracts/whats-new.schema.json`
 `automation`, `model`, `appearance`, `speed`, `reliability`, `security`, `sync`,
 `share`, `settings`, `accessibility`); each client maps a key to its own symbol
 in its accent color. An announced entry must include `app` or `web`, and each
-component shows only the rows its `components` select. Announce only the few
-changes a user benefits from noticing. The schema is generated from
-`web/packages/contracts`; the generator reads its icons and limits from it.
+component shows only the rows its `components` select. The schema is generated
+from `web/packages/contracts`; the generator reads its icons and limits from it.
 
-Every new highlighted entry whose `components` include `app` or `web` (omitted
-`components` means `app`) must decide: add an `announcement`, or mark it
-`"announce": false` to keep it in the release notes only. `validate --base`
-rejects a new highlighted App or Web entry with neither; fragments already
-merged before this rule are not checked. `announce` accepts only `false` and
+Announce a new feature, a new button or control, or a redesign of a screen,
+including the entry that completes an Epic delivering one of those. Mark speed,
+performance, reliability, bug fixes, internal work and small polish
+`"announce": false`, even when the change is large or completes an Epic.
+
+Every new entry whose `components` include `app` or `web` (omitted `components`
+means `app`) and that is highlighted or in `Added` or `Changed` must decide: add
+an `announcement`, or mark it `"announce": false` to keep it in the release
+notes only. `validate --base` rejects such an entry with neither; fragments
+already merged before this rule are not checked. `announce` accepts only `false` and
 never appears beside an `announcement`.
 
 ```json
