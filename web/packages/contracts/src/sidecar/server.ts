@@ -139,7 +139,8 @@ export const ServerBackgroundListParamsSchema = z.object({ caller_session_id: z.
 
 /**
  * TAL-1168: the approvals and clarify questions sessions in the caller's profile wait on. With `session_id`, that one
- * session (the caller included); without, every session the server holds a prompt for.
+ * session (the caller included); without, every session the server holds a prompt for, native-owned ones it watches
+ * included.
  */
 export const ServerPendingListParamsSchema = z.object({
   caller_session_id: z.string().min(1),

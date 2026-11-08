@@ -765,6 +765,19 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   // TAL-48: another person's session (or, for a person, an unowned one) is as unknown as another profile's.
   const inCallerScope = (caller: Session, target: Session): boolean => profilesMatch(target.profile, caller.profile) && sessions.personMaySee(target.owner_person_id)
+  /**
+   * TAL-1168: whether the caller may read and answer `sid`'s prompts: a Web session in its scope, or a session with no
+   * Web document that a native owner holds in the caller's profile and its person may see.
+   */
+  const inPromptScope = async (caller: Session, sid: string): Promise<boolean> => {
+    const target = await storedSession(sid)
+    if (target) return inCallerScope(caller, target)
+    return isSafeSessionId(sid) && (await sessions.owner?.ownership(sid, activeProfile())) === true && await sessions.personMaySeeForeign(sid)
+  }
+  const promptTarget = async (caller: Session, sid: string): Promise<string> => {
+    if (!(await inPromptScope(caller, sid))) throw new SidecarServerError(`no Talaria session ${sid} in this profile`, 'target_unknown')
+    return sid
+  }
   /** TAL-1168: the oldest approval and clarify `sid` waits on, each with its queue's depth, as the pending routes ship them. */
   const pendingEntries = async (sid: string) => (await Promise.all((['approval', 'clarify'] as const).map(async (kind) => {
     const { pending: prompt, pending_count } = await pendingPrompt(deps, sid, kind)
@@ -865,19 +878,19 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.background_list': ({ caller_session_id }) => asCaller(caller_session_id, (caller) => sessionBackgroundTasks(deps, caller)),
     // TAL-1168: the prompts behind `/api/{approval,clarify}/pending` and the service behind `/api/clarify/respond`.
     'server.pending_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => {
-      if (session_id) return { pending: await pendingEntries((await visibleTarget(caller, session_id)).session_id) }
+      if (session_id) return { pending: await pendingEntries(await promptTarget(caller, session_id)) }
+      // The prompts this server holds, and those of the native-owned sessions it watches in the caller's profile.
       const sids: string[] = []
-      for (const sid of [...pending.pendingSessionKeys()].sort()) {
-        const target = await storedSession(sid)
-        if (target && inCallerScope(caller, target)) sids.push(sid)
+      for (const sid of [...new Set([...pending.pendingSessionKeys(), ...sessions.owner?.promptedSessions(activeProfile()) ?? []])].sort()) {
+        if (await inPromptScope(caller, sid)) sids.push(sid)
       }
       return { pending: (await Promise.all(sids.map(pendingEntries))).flat() }
     }),
     'server.clarify_respond': ({ caller_session_id, session_id, clarify_id, answer }) => asCaller(caller_session_id, async (caller) => {
-      const target = await visibleTarget(caller, session_id)
-      if (target.session_id === caller.session_id) throw new SidecarServerError('a session cannot answer its own question; it is addressed to the user', 'self_target')
+      const target = await promptTarget(caller, session_id)
+      if (target === caller.session_id) throw new SidecarServerError('a session cannot answer its own question; it is addressed to the user', 'self_target')
       try {
-        return await clarifyRespond(deps, target.session_id, clarify_id, answer)
+        return await clarifyRespond(deps, target, clarify_id, answer)
       } catch (error) {
         if (error instanceof HttpFailure && error.extra.stale === true) throw new SidecarServerError(error.message, 'stale')
         throw error

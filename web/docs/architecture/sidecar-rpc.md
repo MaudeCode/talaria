@@ -5,7 +5,9 @@ RPC v83 adds the toolset's pending prompt tools (TAL-1168). `pending_list`
 waits on one, its oldest approval and its oldest clarify question exactly as
 `/api/approval/pending` and `/api/clarify/pending` ship them, with the prompt's
 id and the queue's `pending_count`; with `session_id`, that one session (the
-caller included). `clarify_respond` (`server.clarify_respond`) answers another
+caller included). It covers the prompts this server holds and those of the
+native-owned sessions it watches in the caller's profile; a native-owned session
+with no Web document is in scope when its owner holds it in that profile. `clarify_respond` (`server.clarify_respond`) answers another
 session's question through the service behind `/api/clarify/respond` and returns
 its result. The caller's own question is refused (`self_target`), and an
 answered or expired one with the route's stale message (`stale`). Approvals are

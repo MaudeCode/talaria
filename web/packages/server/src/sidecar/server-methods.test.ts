@@ -8,6 +8,7 @@ import { FakeSidecar } from './fake.js'
 import { answerSidecarRequest, SidecarServerError } from './server-methods.js'
 import { Session } from '../sessions/session.js'
 import { bootTestServer, openStateDb } from '../test/harness.js'
+import { admission, bootOwnerAttachment, ownerHelpers, sid as ownedSid, snapshot as ownerSnapshot } from '../test/gateway-owner.js'
 
 const fixtures = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')
 const recorded = (JSON.parse(readFileSync(join(fixtures, 'server.json'), 'utf8')) as Record<string, { params: Record<string, unknown>; result: unknown }[]>)['server.session_list']![0]!
@@ -495,6 +496,38 @@ describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
       expect(await routePending('clarify', 'agentcaller')).toMatchObject({ clarify_id: 'clarify-own' })
       expect(s.deps.pending.clarifyPending('agentforeign').pending).toMatchObject({ clarify_id: 'clarify-foreign' })
       expect(await ask('server.pending_list', {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('finds and answers the questions of a session its profile\'s native owner holds', async () => {
+    const { s, sidecar } = await bootOwnerAttachment()
+    try {
+      await s.deps.sessionStore.save(new Session({ session_id: 'agentcaller', title: 'agentcaller', profile: 'default', updated_at: 1_792_500_000, messages: [{ role: 'user', content: 'go', timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      const prompts = [
+        { kind: 'approval', prompt_id: 'approval-native', execution_generation: 1, command: 'echo fixture', description: 'Approve fixture?', choices: ['once', 'deny'] },
+        { kind: 'clarify', prompt_id: 'clarify-native', execution_generation: 1, question: 'Which color?', choices: ['red', 'blue'] },
+      ]
+      const owner = await ownerHelpers(() => ({ s, sidecar })).observeOwner(ownerSnapshot({ running: true, pending: [admission()], prompts }))
+      const ask = async (method: 'server.pending_list' | 'server.clarify_respond', params: Record<string, unknown>) => {
+        const answer = await sidecar.serverRequest(method, { caller_session_id: 'agentcaller', ...params })
+        return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) as Record<string, unknown> }
+      }
+
+      // Discovery reaches the owner's prompts, each as the pending routes ship them.
+      const listed = await ask('server.pending_list', {})
+      expect(listed).toMatchObject({ result: { pending: [
+        { session_id: ownedSid, kind: 'approval', id: 'approval-native', pending_count: 1, prompt: { command: 'echo fixture' } },
+        { session_id: ownedSid, kind: 'clarify', id: 'clarify-native', pending_count: 1, prompt: { question: 'Which color?' } },
+      ] } })
+      expect(await ask('server.pending_list', { session_id: ownedSid })).toMatchObject({ result: { pending: [{ session_id: ownedSid, id: 'approval-native' }, { session_id: ownedSid, id: 'clarify-native' }] } })
+
+      // The answer goes to the owner with the prompt's generation.
+      expect(await ask('server.clarify_respond', { session_id: ownedSid, clarify_id: 'clarify-native', answer: 'blue' })).toEqual({ result: { ok: true } })
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session').map((c) => c.params)).toContainEqual(expect.objectContaining({ action: 'clarify', prompt_id: 'clarify-native', execution_generation: 1, text: 'blue' }))
+      owner.finish()
+      await owner.read
     } finally {
       await s.close()
     }
