@@ -64,7 +64,9 @@ struct ChatTranscriptView: View {
     let latestTranscriptMessageRole: String?
     let isScrolledNearBottom: Bool
     let activeStreamID: String?
-    let streamingScrollTrigger: Int
+    /// Reads the stream's scroll trigger. Only `StreamingFollowTrigger` calls it, so a bump re-runs that leaf rather
+    /// than the message list and the transcript (TAL-852).
+    let streamingScrollTrigger: () -> Int
     let cacheFirstReconcileScrollToken: Int
     let transcriptMessageSpacing: CGFloat
     let transcriptBlockSpacing: CGFloat
@@ -296,8 +298,10 @@ struct ChatTranscriptView: View {
                 .onChange(of: scrollToBottomRequest) {
                     releasingPreservation { onScrollToBottom(scrollCommands) }
                 }
-                .onChange(of: streamingScrollTrigger) {
-                    following { onScrollToLatestContent(scrollCommands, true) }
+                .background {
+                    StreamingFollowTrigger(trigger: streamingScrollTrigger) {
+                        following { onScrollToLatestContent(scrollCommands, true) }
+                    }
                 }
                 .onChange(of: followReplayRequest) {
                     following { onScrollToLatestContent(scrollCommands, true) }
@@ -407,7 +411,7 @@ struct ChatTranscriptView: View {
             }
             .onAppear { controller.rowDidAppear(id) }
             .onDisappear { controller.forgetRow(id) }
-            .environment(\.chatDisclosureToggled) {
+            .chatDisclosureToggled {
                 pinReaderForDisclosure(proxy: proxy, anchorRowID: id)
             }
     }
@@ -456,7 +460,7 @@ struct ChatTranscriptView: View {
             // Centres the readable column; the scroll view stays full width.
             .frame(width: viewportWidth)
             .clipped()
-            .environment(\.chatDisclosureToggled) {
+            .chatDisclosureToggled {
                 pinReaderForDisclosure(proxy: proxy, anchorRowID: nil)
             }
             .id(transcriptContentID)
@@ -791,5 +795,17 @@ struct ChatTranscriptView: View {
                 ToolActivityGroupView(group: group)
             }
         }
+    }
+}
+
+/// Runs `onFire` each time the stream's scroll trigger bumps, which happens once per streamed tick and only to follow.
+private struct StreamingFollowTrigger: View {
+    let trigger: () -> Int
+    let onFire: () -> Void
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: trigger()) { onFire() }
     }
 }

@@ -6,8 +6,9 @@ struct MessageBubbleView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
-    @Environment(\.voiceNoteControls) private var voiceNoteControls
+    @Environment(\.voiceNoteAction) private var voiceNoteAction
     @Environment(\.pendingSteerControls) private var pendingSteerControls
+    @Environment(\.pendingSteerAction) private var pendingSteerAction
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
     /// Device-local disclosure for a body the server collapsed (TAL-456) or a prompt it folds (TAL-452).
@@ -53,6 +54,10 @@ struct MessageBubbleView: View {
     }
 
     var body: some View {
+#if DEBUG
+        // Counts settled bubbles re-run by an environment change alone: the row above them has not re-run (TAL-852).
+        let _ = isStreaming ? () : ChatBodyEvaluationRecorder.record("settledBubble")
+#endif
         if isLocalNotice {
             localNoticeRow
         } else if isLocalAssistant {
@@ -106,9 +111,9 @@ struct MessageBubbleView: View {
                     Text("Sending voice note")
                 case .failed(let error), .uncertain(let error):
                     Text(error)
-                    Button("Retry") { voiceNoteControls.retry(message.id) }
+                    Button("Retry") { voiceNoteAction((message.id, .retry)) }
                         .frame(minHeight: 44)
-                    Button("Remove", role: .destructive) { voiceNoteControls.remove(message.id) }
+                    Button("Remove", role: .destructive) { voiceNoteAction((message.id, .remove)) }
                         .frame(minHeight: 44)
                 }
             }
@@ -173,7 +178,7 @@ struct MessageBubbleView: View {
 
     private func pendingSteerButton(_ label: String, systemImage: String, id: String, action: PendingSteerAction) -> some View {
         Button {
-            pendingSteerControls.perform(id, action)
+            pendingSteerAction((id, action))
         } label: {
             Image(systemName: systemImage)
                 .font(.footnote.weight(.semibold))
@@ -188,9 +193,9 @@ struct MessageBubbleView: View {
     @ViewBuilder
     private var pendingSteerMenu: some View {
         if let actions = pendingSteerActions, let id = message.messageId {
-            if actions.sendNow { Button(String(localized: "Send now"), systemImage: "arrow.up") { pendingSteerControls.perform(id, .sendNow) } }
-            if actions.edit { Button(String(localized: "Edit steering message"), systemImage: "pencil") { pendingSteerControls.perform(id, .edit) } }
-            if actions.cancel { Button(String(localized: "Cancel steering message"), systemImage: "xmark", role: .destructive) { pendingSteerControls.perform(id, .cancel) } }
+            if actions.sendNow { Button(String(localized: "Send now"), systemImage: "arrow.up") { pendingSteerAction((id, .sendNow)) } }
+            if actions.edit { Button(String(localized: "Edit steering message"), systemImage: "pencil") { pendingSteerAction((id, .edit)) } }
+            if actions.cancel { Button(String(localized: "Cancel steering message"), systemImage: "xmark", role: .destructive) { pendingSteerAction((id, .cancel)) } }
         }
     }
 
@@ -588,7 +593,6 @@ enum PendingSteerAction {
 struct PendingSteerControls {
     var actions: [String: PendingSteer.Actions] = [:]
     var inFlight: Set<String> = []
-    var perform: (String, PendingSteerAction) -> Void = { _, _ in }
 }
 
 private struct PendingSteerControlsKey: EnvironmentKey {
@@ -600,6 +604,16 @@ extension EnvironmentValues {
         get { self[PendingSteerControlsKey.self] }
         set { self[PendingSteerControlsKey.self] = newValue }
     }
+
+    /// Performs a pending steer action, by message ID.
+    var pendingSteerAction: ChatEnvironmentAction<(String, PendingSteerAction), Void> {
+        get { self[PendingSteerActionKey.self] }
+        set { self[PendingSteerActionKey.self] = newValue }
+    }
+}
+
+private struct PendingSteerActionKey: EnvironmentKey {
+    static var defaultValue: ChatEnvironmentAction<(String, PendingSteerAction), Void> { ChatEnvironmentAction { _ in } }
 }
 
 // MARK: - Remote image loading with cookie-aware session
@@ -611,16 +625,18 @@ extension EnvironmentValues {
 // MARK: - Assistant turn timestamp formatting
 
 /// Voice preparation is device-owned; pending steer actions come from a different server contract.
-struct VoiceNoteControls {
-    var retry: (String) -> Void = { _ in }
-    var remove: (String) -> Void = { _ in }
+enum VoiceNoteAction {
+    case retry, remove
 }
-private struct VoiceNoteControlsKey: EnvironmentKey {
-    static var defaultValue: VoiceNoteControls { VoiceNoteControls() }
+
+private struct VoiceNoteActionKey: EnvironmentKey {
+    static var defaultValue: ChatEnvironmentAction<(String, VoiceNoteAction), Void> { ChatEnvironmentAction { _ in } }
 }
+
 extension EnvironmentValues {
-    var voiceNoteControls: VoiceNoteControls {
-        get { self[VoiceNoteControlsKey.self] }
-        set { self[VoiceNoteControlsKey.self] = newValue }
+    /// Retries or removes a voice note the device could not send, by message ID.
+    var voiceNoteAction: ChatEnvironmentAction<(String, VoiceNoteAction), Void> {
+        get { self[VoiceNoteActionKey.self] }
+        set { self[VoiceNoteActionKey.self] = newValue }
     }
 }

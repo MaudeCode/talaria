@@ -236,7 +236,7 @@ struct ToolCallCardView: View {
         isLoadingFullResult = true
         defer { isLoadingFullResult = false }
         do {
-            let result = try await loadFullToolResult(toolCall.id)
+            let result = try await loadFullToolResult(toolCall.id)()
             chatDisclosureToggled()
             fullResultFailed = false
             fullResult = result
@@ -305,12 +305,14 @@ struct ToolCallCardView: View {
 }
 
 /// TAL-331: fetches the whole result of a tool call the server clipped; the chat screen supplies it for its session.
+typealias ChatFullToolResultLoader = ChatEnvironmentAction<String, @MainActor () async throws -> ToolResultView>
+
 struct ChatFullToolResultLoaderKey: EnvironmentKey {
-    static let defaultValue: (@MainActor (String) async throws -> ToolResultView)? = nil
+    static var defaultValue: ChatFullToolResultLoader? { nil }
 }
 
 extension EnvironmentValues {
-    var chatFullToolResultLoader: (@MainActor (String) async throws -> ToolResultView)? {
+    var chatFullToolResultLoader: ChatFullToolResultLoader? {
         get { self[ChatFullToolResultLoaderKey.self] }
         set { self[ChatFullToolResultLoaderKey.self] = newValue }
     }

@@ -21,8 +21,14 @@ struct MessageComposerView: View {
     @ScaledMetric(relativeTo: .title3) private var plusIconSize: CGFloat = 24
     @ScaledMetric(relativeTo: .title3) private var plusButtonSize: CGFloat = 28
 
-    @Binding var draftMessage: String
-    let draftWriteRevision: Int
+    /// The owner's draft, only read here. The owner passes its plain `$state`: SwiftUI re-runs the owner of a get/set
+    /// binding on every write, and a keystroke must not re-run the whole chat (TAL-852). Edits go to `onDraftEdit`.
+    @Binding var draft: String
+    /// Bumped by every write to the draft, so the text view can ignore an update a newer write superseded (TAL-159).
+    /// A binding for the same reason as `draft`: only this view reads it.
+    @Binding var draftWriteRevision: Int
+    /// Every edit made here (typing, completions, dictation, drops), for the owner to apply and persist.
+    let onDraftEdit: (String) -> Void
     @Binding var clarificationPanelHeight: CGFloat
     let availableHeight: CGFloat
     @Binding var isFocused: Bool
@@ -38,7 +44,8 @@ struct MessageComposerView: View {
     /// TAL-1043: the Agent runtime that owns this chat; its capabilities gate sending, stopping, attaching and the
     /// session settings it freezes. Nil for a chat Talaria runs itself.
     let ownerAttachment: OwnerAttachment?
-    let isChromeCompact: Bool
+    /// The chat's compact-chrome decision with no draft; this view adds its own draft, which the chat never reads.
+    let isChromeCompactWithoutDraft: Bool
     let errorMessage: String?
     var warningMessage: String? = nil
     let configurationErrorMessage: String?
@@ -252,6 +259,15 @@ struct MessageComposerView: View {
         case .models, .reasoningLevels, .goalActions, .none:
             return ""
         }
+    }
+
+    private var draftMessage: String {
+        get { draft }
+        nonmutating set { onDraftEdit(newValue) }
+    }
+
+    private var draftBinding: Binding<String> {
+        Binding(get: { draft }, set: onDraftEdit)
     }
 
     var body: some View {
@@ -735,7 +751,7 @@ struct MessageComposerView: View {
                 // would drop the keyboard.
                 ComposerCardLayout(isOneRow: usesOneRowCard) {
                     ComposerTextInputView(
-                        text: $draftMessage,
+                        text: draftBinding,
                         revision: draftWriteRevision,
                         isFocused: $isFocused,
                         inputHeight: $textInputHeight,
@@ -1299,7 +1315,7 @@ struct MessageComposerView: View {
     }
 
     private var usesSingleLineShell: Bool {
-        tabletopHeight == nil && !isAnsweringClarification && (isChromeCompact || (
+        tabletopHeight == nil && !isAnsweringClarification && ((isChromeCompactWithoutDraft && draftMessage.isEmpty) || (
             !isFocused
                 && draftMessage.isEmpty
                 && pendingAttachments.isEmpty
@@ -1498,7 +1514,7 @@ struct MessageComposerView: View {
         Task { @MainActor in
             for (provider, item) in items {
                 guard let text = await item.draftText(from: provider) else { continue }
-                caret.insert(text, into: $draftMessage)
+                caret.insert(text, into: draftBinding)
             }
             requestTextViewFocusIfPossible()
         }

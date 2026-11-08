@@ -638,7 +638,7 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         liveTokensPerSecond: nil, showsRunStateCheck: false, clarificationPrompt: nil,
         showsThinkingAndToolCards: false, shouldFollowLatestMessage: false,
         isDisclosureSettling: false, latestTranscriptMessageRole: nil, isScrolledNearBottom: false,
-        activeStreamID: nil, streamingScrollTrigger: 0, cacheFirstReconcileScrollToken: 0,
+        activeStreamID: nil, streamingScrollTrigger: { 0 }, cacheFirstReconcileScrollToken: 0,
         transcriptMessageSpacing: 12, transcriptBlockSpacing: 8,
         transcriptBottomInsetHeight: 0, scrollToBottomRequest: scrollRequest, followReplayRequest: 0,
         assistantName: "Assistant", localAttachmentPreviews: [:], listeningMessageID: nil,

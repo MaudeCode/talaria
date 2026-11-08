@@ -1869,7 +1869,7 @@ private struct RecycledBodyView: View {
             Group {
                 if let tool = state.tool {
                     ToolCallCardView(toolCall: tool)
-                        .environment(\.chatFullToolResultLoader) { _ in await state.toolResult() }
+                        .chatEnvironmentAction(\.chatFullToolResultLoader) { _ in { await state.toolResult() } }
                 } else {
                     MessageBubbleView(message: ChatMessage(role: "user", content: "Full retained fixture body", timestamp: nil,
                                                           messageId: "retained-body", displayExcerpt: "Excerpt"))

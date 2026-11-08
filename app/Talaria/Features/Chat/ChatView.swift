@@ -354,8 +354,9 @@ struct ChatView: View {
 
     private func messageComposerInput(prompt: ClarificationPromptState?, availableHeight: CGFloat) -> some View {
         MessageComposerView(
-            draftMessage: composerDraftBinding(promptID: prompt?.id),
-            draftWriteRevision: draftWriteRevision,
+            draft: prompt == nil ? $draftMessageStorage : clarificationDraftBinding,
+            draftWriteRevision: $draftWriteRevision,
+            onDraftEdit: { editComposerDraft($0, promptID: prompt?.id) },
             clarificationPanelHeight: $clarificationPanelHeight,
             availableHeight: availableHeight,
             isFocused: $composerIsFocused,
@@ -366,7 +367,7 @@ struct ChatView: View {
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isSessionReadOnly: viewModel.isComposerReadOnly,
             ownerAttachment: viewModel.ownerAttachment,
-            isChromeCompact: isComposerChromeCompact,
+            isChromeCompactWithoutDraft: isComposerChromeCompactWithoutDraft,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
             warningMessage: prompt == nil ? viewModel.streamWarningMessage : nil,
             configurationErrorMessage: prompt == nil ? (viewModel.composerConfigurationErrorMessage ?? viewModel.ownerModelChangeMessage) : nil,
@@ -1798,7 +1799,7 @@ struct ChatView: View {
                 latestTranscriptMessageRole: chat.latestTranscriptMessageRole,
                 isScrolledNearBottom: chat.isScrolledNearBottom,
                 activeStreamID: viewModel.activeStreamID,
-                streamingScrollTrigger: viewModel.streamingScrollTrigger,
+                streamingScrollTrigger: { viewModel.streamingScrollTrigger },
                 cacheFirstReconcileScrollToken: viewModel.cacheFirstReconcileScrollToken,
                 transcriptMessageSpacing: chat.transcriptMessageSpacing,
                 transcriptBlockSpacing: chat.transcriptBlockSpacing,
@@ -1891,32 +1892,36 @@ struct ChatView: View {
                 onReaderMoved: chat.recordReadingRow
             )
             .environment(\.chatShowsReasoning, viewModel.showsReasoning)
-            .environment(\.openURL, OpenURLAction(handler: chat.handleTranscriptLink))
-            .environment(\.chatFullToolResultLoader) { toolCallID in
-                try await viewModel.fullToolResult(toolCallID: toolCallID)
+            .transcriptLinks(perform: chat.handleTranscriptLink)
+            .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
+                { try await viewModel.fullToolResult(toolCallID: toolCallID) }
             }
-            .environment(\.voiceNoteControls, VoiceNoteControls(
-                retry: { id in Task {
-                    if chat.needsSessionStart {
-                        guard await chat.startPendingSession() else { return }
+            .chatEnvironmentAction(\.voiceNoteAction) { id, action in
+                switch action {
+                case .retry:
+                    Task {
+                        if chat.needsSessionStart {
+                            guard await chat.startPendingSession() else { return }
+                        }
+                        await viewModel.retryVoiceNote(messageID: id, modelContext: chat.modelContext)
                     }
-                    await viewModel.retryVoiceNote(messageID: id, modelContext: chat.modelContext)
-                } },
-                remove: { viewModel.removeVoiceNote(messageID: $0) }
-            ))
+                case .remove:
+                    viewModel.removeVoiceNote(messageID: id)
+                }
+            }
             .environment(\.pendingSteerControls, PendingSteerControls(
                 actions: viewModel.pendingSteerActions,
-                inFlight: viewModel.steerActionsInFlight,
-                perform: { id, action in
-                    Task {
-                        switch action {
-                        case .sendNow: await viewModel.sendPendingSteerNow(id: id)
-                        case .edit: await viewModel.withdrawPendingSteer(id: id, reason: .edit)
-                        case .cancel: await viewModel.withdrawPendingSteer(id: id, reason: .cancel)
-                        }
+                inFlight: viewModel.steerActionsInFlight
+            ))
+            .chatEnvironmentAction(\.pendingSteerAction) { id, action in
+                Task {
+                    switch action {
+                    case .sendNow: await viewModel.sendPendingSteerNow(id: id)
+                    case .edit: await viewModel.withdrawPendingSteer(id: id, reason: .edit)
+                    case .cancel: await viewModel.withdrawPendingSteer(id: id, reason: .cancel)
                     }
                 }
-            ))
+            }
             // TAL-426: a steer taken back (Edit, or a Stop of this device's steer) returns after the draft, blank line between.
             .onChange(of: viewModel.returnedComposerTexts) { _, texts in
                 guard !texts.isEmpty else { return }
@@ -1986,16 +1991,13 @@ struct ChatView: View {
         !isScrolledNearBottom && (viewModel.activeStreamID == nil || !shouldFollowLatestMessage)
     }
 
-    private var isComposerChromeCompact: Bool {
-        usesCompactComposer
-    }
-
-    private var usesCompactComposer: Bool {
+    /// Leaves the draft to the composer: reading it here would re-run the whole chat on every keystroke (TAL-852).
+    private var isComposerChromeCompactWithoutDraft: Bool {
         ChatScrollPolicy.shouldUseCompactComposer(
             isReadingOlderTranscript: isReadingOlderTranscript,
             hasMessages: viewModel.hasMessages,
             isFocused: composerIsFocused,
-            hasDraft: !draftMessage.isEmpty,
+            hasDraft: false,
             hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,
             isLoadingComposerConfiguration: viewModel.isLoadingComposerConfiguration,
             isBusyOrUnavailable: isComposerBusyOrUnavailable,
@@ -2738,22 +2740,22 @@ struct ChatView: View {
         )
     }
 
-    private func composerDraftBinding(promptID: String?) -> Binding<String> {
-        Binding(
-            get: { promptID == nil ? draftMessage : viewModel.clarificationDraftResponse },
-            set: { newValue in
-                // UIKit and voice callbacks can outlive the input they belong to.
-                guard promptID == viewModel.clarificationPrompt?.id else { return }
-                if let promptID {
-                    viewModel.setClarificationDraftResponse(newValue, promptID: promptID)
-                    draftWriteRevision &+= 1
-                } else {
-                    draftMessage = newValue
-                    draftRevision &+= 1
-                    persistComposerDraft()
-                }
-            }
-        )
+    /// The open question's answer, read by the composer while it shows; its edits go through `editComposerDraft`.
+    private var clarificationDraftBinding: Binding<String> {
+        Binding(get: { viewModel.clarificationDraftResponse }, set: { _ in })
+    }
+
+    private func editComposerDraft(_ newValue: String, promptID: String?) {
+        // UIKit and voice callbacks can outlive the input they belong to.
+        guard promptID == viewModel.clarificationPrompt?.id else { return }
+        if let promptID {
+            viewModel.setClarificationDraftResponse(newValue, promptID: promptID)
+            draftWriteRevision &+= 1
+        } else {
+            draftMessage = newValue
+            draftRevision &+= 1
+            persistComposerDraft()
+        }
     }
 
     private func hydrateDraftIfNeeded() async {

@@ -37,4 +37,18 @@ final class TranscriptLinkRouteTests: XCTestCase {
     func testFileLinksOutsideTheWorkspaceKeepTheSystemBehaviour() throws {
         XCTAssertEqual(try route("file:///etc/hosts"), .system)
     }
+
+    /// The chat installs one link action for good; a tap must still reach the handler from its latest pass (TAL-852).
+    @MainActor
+    func testTheInstalledLinkActionRunsTheLatestHandler() throws {
+        let router = TranscriptLinkRouter()
+        let installed = router.action
+        var opened: [String] = []
+        router.handler = { _ in opened.append("first"); return .handled }
+        router.handler = { url in opened.append(url.absoluteString); return .handled }
+
+        installed(try XCTUnwrap(URL(string: "https://example.invalid/latest")))
+
+        XCTAssertEqual(opened, ["https://example.invalid/latest"])
+    }
 }
