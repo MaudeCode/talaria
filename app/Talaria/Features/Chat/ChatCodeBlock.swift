@@ -29,7 +29,12 @@ struct ChatCodeBlock: View {
 
     private let logger = Logger.talariaMarkdownRendering
 
+    @State private var diagID = UUID()
+
     var body: some View {
+#if DEBUG
+        let _ = ChatBodyEvaluationRecorder.record("diag.codeBlock \(diagID.uuidString.prefix(4)) natural\(Int(naturalCodeWidth)) col\(Int(columnWidth)) vp\(Int(scrollViewportWidth))")
+#endif
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(displayLanguage)
