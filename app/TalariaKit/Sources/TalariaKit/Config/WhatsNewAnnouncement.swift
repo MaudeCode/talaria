@@ -35,35 +35,47 @@ public struct WhatsNewAnnouncement: Decodable, Equatable, Sendable, Identifiable
     }
 
     static let lastVersionKey = "whatsNew.lastVersion"
-    static let acknowledgedKey = "whatsNew.acknowledgedIDs"
+    static let acknowledgedRowsKey = "whatsNew.acknowledgedRowIDs"
 
-    /// The installed announcement to offer at this launch (TAL-182): only after a marketing-version change from a
-    /// recorded earlier one, and only until it is acknowledged. A first install, a build-only change, an acknowledged
-    /// release, or missing or malformed content stays quiet and records this version as seen.
+    /// The installed announcement's rows not yet acknowledged, to offer at this launch (TAL-182, TAL-1980). Rows, not
+    /// releases, are acknowledged, so a later Nightly of one marketing version or an update that skipped releases
+    /// offers exactly the rows this install has not seen. A first run, when neither the version nor any row was ever
+    /// recorded, introduces nothing and records every packaged row; missing or malformed content stays quiet.
     public static func pending(info: [String: Any] = Bundle.main.infoDictionary ?? [:],
                                defaults: UserDefaults = .standard) -> WhatsNewAnnouncement? {
-        guard let version = info["CFBundleShortVersionString"] as? String else { return nil }
-        let lastVersion = defaults.string(forKey: lastVersionKey)
-        guard lastVersion != version else { return nil }
+        let isFirstRun = defaults.object(forKey: lastVersionKey) == nil && defaults.object(forKey: acknowledgedRowsKey) == nil
+        if let version = info["CFBundleShortVersionString"] as? String { defaults.set(version, forKey: lastVersionKey) }
         let announcement = installed(info: info)
-        if let announcement, lastVersion != nil, !announcement.isAcknowledged(defaults: defaults) {
-            return announcement
+        if isFirstRun {
+            record(announcement?.rows ?? [], defaults: defaults)
+            return nil
         }
-        announcement?.acknowledge(defaults: defaults)
-        defaults.set(version, forKey: lastVersionKey)
-        return nil
+        guard let announcement else { return nil }
+        let acknowledged = Set(acknowledgedRowIDs(defaults: defaults))
+        let unseen = announcement.rows.filter { !acknowledged.contains($0.id) }
+        guard !unseen.isEmpty else { return nil }
+        return WhatsNewAnnouncement(schemaVersion: announcement.schemaVersion, id: announcement.id,
+                                    component: announcement.component, version: announcement.version,
+                                    sourceCommit: announcement.sourceCommit, rows: unseen)
     }
 
-    /// Whether this announcement was already seen, at launch or from a Settings replay.
+    /// Whether every row of this announcement was already seen, at launch or from a Settings replay.
     public func isAcknowledged(defaults: UserDefaults = .standard) -> Bool {
-        (defaults.stringArray(forKey: Self.acknowledgedKey) ?? []).contains(id)
+        Set(rows.map(\.id)).isSubset(of: Self.acknowledgedRowIDs(defaults: defaults))
     }
 
-    /// Records this announcement as seen, so no later launch of its release offers it again.
+    /// Records every row of this announcement as seen, so no later launch offers them again.
     public func acknowledge(defaults: UserDefaults = .standard) {
-        var acknowledged = defaults.stringArray(forKey: Self.acknowledgedKey) ?? []
-        if !acknowledged.contains(id) { acknowledged.append(id) }
-        defaults.set(acknowledged, forKey: Self.acknowledgedKey)
-        defaults.set(version, forKey: Self.lastVersionKey)
+        Self.record(rows, defaults: defaults)
+    }
+
+    private static func acknowledgedRowIDs(defaults: UserDefaults) -> [String] {
+        defaults.stringArray(forKey: acknowledgedRowsKey) ?? []
+    }
+
+    private static func record(_ rows: [Row], defaults: UserDefaults) {
+        var acknowledged = acknowledgedRowIDs(defaults: defaults)
+        for row in rows where !acknowledged.contains(row.id) { acknowledged.append(row.id) }
+        defaults.set(acknowledged, forKey: acknowledgedRowsKey)
     }
 }

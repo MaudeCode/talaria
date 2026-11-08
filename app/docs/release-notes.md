@@ -249,12 +249,16 @@ A malformed fragment or a missing baseline tag stops the stamp before it writes.
   TalariaKit decodes it offline, without a server, and returns nil for a missing,
   malformed, or mismatched payload. A Nightly build is ranged from the last Stable
   App tag, so each build of one marketing version carries every row announced
-  since then, up to four. `WhatsNewAnnouncement.pending()` offers it at launch
-  only after a marketing-version change from a recorded earlier one: a first
-  install, a build-only change, or missing content records the version quietly.
-  The sheet waits until no sign-in, import, deep link or other presentation is
-  up, and closing it records its `id` so that release never shows again;
-  Settings > About > What's New replays it.
+  since then, up to four. Acknowledgement is per row `id`, not per release:
+  `WhatsNewAnnouncement.pending()` offers the packaged rows this install has not
+  acknowledged, in packaged order, whatever the marketing version. A later Nightly
+  of the same marketing version therefore presents only the rows added since the
+  last one launched, and an update that skipped releases presents only its unseen
+  rows. A first install records every packaged row quietly; missing or malformed
+  content stays quiet. The sheet waits until no sign-in, import, deep link or
+  other presentation is up, and closing it records the rows it showed so they
+  never show again; Settings > About > What's New replays every packaged row and
+  acknowledges them all.
 - **Web:** the payload is written to `web/_whats_new.json` beside `_release.json`
   and ships in the npm package and image. The server serves it from
   `GET /api/whats-new` only while it names the running Web release; see

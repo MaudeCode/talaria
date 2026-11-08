@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "What's New in the App now appears after an update again, showing only the items you have not seen yet, including those added in later Nightly builds of the same version.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

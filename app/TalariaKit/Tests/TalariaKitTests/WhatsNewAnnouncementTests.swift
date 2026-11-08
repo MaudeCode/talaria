@@ -61,7 +61,8 @@ final class WhatsNewAnnouncementTests: XCTestCase {
     }
 }
 
-/// The launch check that decides whether an installed App update offers its What's New (TAL-182).
+/// The launch check that decides which packaged rows an App build offers (TAL-182, TAL-1980): each row once,
+/// whatever build or marketing version carries it.
 final class WhatsNewLaunchTests: XCTestCase {
     private var defaults: UserDefaults!
 
@@ -71,13 +72,13 @@ final class WhatsNewLaunchTests: XCTestCase {
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
     }
 
-    /// A stamped build of `version`: its own announcement unless `payload` overrides it, or none when `nil`.
-    private func build(_ version: String, payload: String?? = .none, rows: Int = 2) -> [String: Any] {
+    /// A stamped build of `version` packaging one row per ticket in `tickets`, or `payload` verbatim when given.
+    private func build(_ version: String, tickets: [Int] = [1, 2], payload: String?? = .none) -> [String: Any] {
         let source = String(repeating: "a", count: 40)
         var info: [String: Any] = ["CFBundleShortVersionString": version, "TalariaRelease": ["sourceRevision": source]]
         let announcement: [String: Any] = [
             "schemaVersion": 1, "id": "app-\(version)", "component": "app", "version": version, "sourceCommit": source,
-            "rows": (1...rows).map { ["id": "TAL-\($0)-1", "icon": "chat", "title": "Row \($0) of \(version)", "description": "Synthetic."] },
+            "rows": tickets.map { ["id": "TAL-\($0)-1", "icon": "chat", "title": "Row \($0)", "description": "Synthetic."] },
         ]
         switch payload {
         case .none: info["TalariaWhatsNew"] = String(decoding: try! JSONSerialization.data(withJSONObject: announcement), as: UTF8.self)
@@ -90,51 +91,49 @@ final class WhatsNewLaunchTests: XCTestCase {
         WhatsNewAnnouncement.pending(info: info, defaults: defaults)
     }
 
-    func testFirstInstallRecordsItsBaselineQuietly() {
+    /// The persisted row acknowledgements, under the key every installed build reads.
+    private var acknowledged: [String]? {
+        defaults.stringArray(forKey: "whatsNew.acknowledgedRowIDs")
+    }
+
+    func testFirstRunRecordsEveryPackagedRowQuietly() {
         XCTAssertNil(launch(build("1.1.0")), "A fresh install introduces nothing")
-        XCTAssertNil(launch(build("1.1.0")), "Relaunching the same version stays quiet")
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        XCTAssertNil(launch(build("1.1.0")), "The first-install release counts as seen")
+        XCTAssertEqual(acknowledged, ["TAL-1-1", "TAL-2-1"])
+        XCTAssertNil(launch(build("1.1.0")), "Relaunching the same build stays quiet")
     }
 
-    func testMarketingUpgradeOffersOnceItIsAcknowledged() throws {
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        let offered = try XCTUnwrap(launch(build("1.1.0")))
-        XCTAssertEqual(offered.id, "app-1.1.0")
-        XCTAssertEqual(offered.rows.map(\.title), ["Row 1 of 1.1.0", "Row 2 of 1.1.0"])
+    func testALaterBuildOfTheSameVersionOffersOnlyItsNewRowUntilAcknowledged() throws {
+        XCTAssertNil(launch(build("1.1.0", tickets: [1])))
+        let offered = try XCTUnwrap(launch(build("1.1.0", tickets: [1, 2])), "A Nightly that packages a new row offers it")
+        XCTAssertEqual(offered.rows.map(\.id), ["TAL-2-1"])
         // Presented but never closed (the process ended): still offered on the next launch.
-        XCTAssertEqual(launch(build("1.1.0"))?.id, "app-1.1.0")
+        XCTAssertEqual(launch(build("1.1.0", tickets: [1, 2]))?.rows.map(\.id), ["TAL-2-1"])
         offered.acknowledge(defaults: defaults)
-        XCTAssertNil(launch(build("1.1.0")), "An acknowledged release stays quiet on relaunch")
+        XCTAssertEqual(acknowledged, ["TAL-1-1", "TAL-2-1"])
+        XCTAssertNil(launch(build("1.1.0", tickets: [1, 2])), "Every packaged row is acknowledged")
     }
 
-    func testBuildOnlyChangeStaysQuiet() {
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        XCTAssertNil(launch(build("1.0.0")), "A new build of the same marketing version announces nothing")
+    func testAnUpdateOffersOnlyTheRowsNotYetAcknowledged() throws {
+        XCTAssertNil(launch(build("1.0.0", tickets: [1])))
+        let offered = try XCTUnwrap(launch(build("1.4.0", tickets: [1, 2])))
+        XCTAssertEqual(offered.rows.map(\.id), ["TAL-2-1"])
+        XCTAssertEqual(offered.rows.first?.title, "Row 2")
     }
 
-    func testMissingEmptyAndMalformedContentRecordsTheVersionQuietly() {
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        for (version, payload) in [("1.1.0", nil), ("1.2.0", "{"), ("1.3.0", "{\"rows\":[]}")] as [(String, String?)] {
-            XCTAssertNil(launch(build(version, payload: .some(payload))), version)
-            XCTAssertNil(launch(build(version)), "\(version) was recorded, so a later build of it stays quiet")
+    func testAnExistingInstallOffersEveryPackagedRow() throws {
+        // An install from before row acknowledgement recorded only the marketing version it last saw.
+        defaults.set("1.1.0", forKey: "whatsNew.lastVersion")
+        let offered = try XCTUnwrap(launch(build("1.1.0", tickets: [1, 2, 3])))
+        XCTAssertEqual(offered.rows.map(\.id), ["TAL-1-1", "TAL-2-1", "TAL-3-1"])
+        offered.acknowledge(defaults: defaults)
+        XCTAssertEqual(acknowledged, ["TAL-1-1", "TAL-2-1", "TAL-3-1"])
+    }
+
+    func testMissingOrMalformedContentStaysQuietWithoutHidingLaterRows() throws {
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))), "A first run without content is quiet")
+        for payload in [nil, "{", "{\"rows\":[]}"] as [String?] {
+            XCTAssertNil(launch(build("1.1.0", payload: .some(payload))), "\(String(describing: payload))")
         }
-    }
-
-    func testAcknowledgedReleaseStaysQuietAfterADowngrade() throws {
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        try XCTUnwrap(launch(build("1.1.0"))).acknowledge(defaults: defaults)
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        XCTAssertNil(launch(build("1.1.0")), "Returning to an acknowledged release does not repeat it")
-    }
-
-    func testSkippedReleasesOfferOnlyTheInstalledOneThenTheNextUpdateOffersAgain() throws {
-        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
-        let skipped = try XCTUnwrap(launch(build("1.4.0", rows: 4)))
-        XCTAssertEqual(skipped.id, "app-1.4.0")
-        XCTAssertEqual(skipped.rows.count, 4)
-        XCTAssertTrue(skipped.rows.allSatisfy { $0.title.hasSuffix("1.4.0") })
-        skipped.acknowledge(defaults: defaults)
-        XCTAssertEqual(launch(build("1.5.0"))?.id, "app-1.5.0", "A second update offers its own release")
+        XCTAssertEqual(launch(build("1.1.0"))?.rows.map(\.id), ["TAL-1-1", "TAL-2-1"])
     }
 }

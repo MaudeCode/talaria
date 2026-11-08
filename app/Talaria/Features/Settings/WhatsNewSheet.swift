@@ -3,7 +3,8 @@ import TalariaKit
 import UIKit
 
 /// The installed release's What's New (TAL-182): its authored rows in their order, under one heading, with one
-/// Continue. Closing it any way, Continue or a swipe, acknowledges it; launch and Settings > About both present it.
+/// Continue. Closing it any way, Continue or a swipe, acknowledges the rows it showed (TAL-1980); launch presents the
+/// unseen rows and Settings > About replays every packaged row.
 struct WhatsNewSheet: View {
     static let title = String(localized: "What's New in Talaria")
 
