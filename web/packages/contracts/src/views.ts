@@ -1150,13 +1150,24 @@ export const UpdatesSummarySchema = z.object({
   cached: z.boolean(),
 })
 export type UpdatesSummary = z.infer<typeof UpdatesSummarySchema>
+/**
+ * TAL-1629: a Web update blocked only by this server's own local chats. Its operator may update anyway: the update saves
+ * those `runs` chats as interrupted first. The token is good once, until `expires_at`, for the same operator, update and chats.
+ */
+export const UpdateInterruptConfirmationSchema = z.object({
+  token: z.string().regex(/^[a-f0-9]{32}$/),
+  runs: z.number().int().positive(),
+  expires_at: z.iso.datetime(),
+})
 export const UpdateApplySchema = z.looseObject({
   recovery_only: z.boolean().optional().describe('Only a retained transaction was repaired; the selected update outcome remains unverified.'),
   recovery_pending: z.boolean().optional().describe('The initiating operation remains active through automatic recovery; follow its notification_id without replaying the update.'),
   verified_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), verified_version: z.string().nullable().optional(),
   recovery_compatibility: z.object({ manual_execution: z.boolean(), bot_chat_delivery: z.boolean() }).optional()
     .describe('Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change.'),
-  ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional(), gateway_restart: z.string().optional().describe('TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway\'s running work; the update notification reports its outcome.') })
+  ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional(), gateway_restart: z.string().optional().describe('TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway\'s running work; the update notification reports its outcome.'),
+  interrupt_failed: z.boolean().optional().describe('TAL-1629: a confirmed Update anyway stopped, but could not save every interrupted chat, so nothing was installed.'),
+  interrupt_confirmation: UpdateInterruptConfirmationSchema.optional() })
 /** `verifying` (TAL-1138): the gateway restarted, and the server is checking that the new gateway process and the Agent runtime answer. */
 export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'recovering', 'succeeded', 'blocked', 'failed', 'unknown'])
 export const UpdateNotificationActionSchema = z.object({

@@ -297,3 +297,31 @@ test('older Stable releases fold behind one node and install by version (TAL-946
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(applied).toHaveLength(2)
 })
+
+test('a Web update blocked by running chats offers Update anyway, and Cancel sends nothing (TAL-1629)', async ({ page }, testInfo) => {
+  const bodies: Record<string, unknown>[] = []
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
+    webui: { behind: bodies.length > 2 ? 0 : 1, install_kind: 'npm', no_git: true, manual_update: false }, agent: { behind: 0 },
+  }) }))
+  await page.route('**/api/updates/apply', (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    bodies.push(body)
+    return route.fulfill({ json: body.interrupt_token ? { ok: true, message: 'Synthetic update complete' }
+      : { ok: false, restart_blocked: true, message: 'Cannot update webui while 2 active chat streams are running.', interrupt_confirmation: { token: 'd'.repeat(32), runs: 2, expires_at: '2099-01-01T00:00:00.000Z' } } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  const update = page.getByRole('button', { name: 'Update Web', exact: true })
+  await update.click()
+  const confirm = page.getByRole('alertdialog', { name: 'Update anyway?' })
+  await expect(confirm).toContainText('2 chats are still running. Updating now stops them and saves their partial replies as interrupted.')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('update-anyway.png') })
+  await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(confirm).toBeHidden()
+  expect(bodies).toHaveLength(1)
+  await update.click()
+  await confirm.getByRole('button', { name: 'Update anyway', exact: true }).click()
+  await closeUpdating(page, 'Talaria Web', 'Synthetic update complete')
+  expect(bodies.map((body) => body.interrupt_token)).toEqual([undefined, undefined, 'd'.repeat(32)])
+})

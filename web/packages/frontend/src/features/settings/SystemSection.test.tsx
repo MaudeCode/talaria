@@ -100,6 +100,39 @@ describe('SystemSection "Check now"', () => {
     }
   })
 
+  const interruptOffer = { ok: false, restart_blocked: true, message: 'Cannot update webui while 2 active chat streams are running.', interrupt_confirmation: { token: 'd'.repeat(32), runs: 2, expires_at: '2026-11-08T12:02:00.000Z' }, notification_id: '00000000-0000-4000-8000-000000000002' }
+
+  it.each([false, true])('offers the server\'s Update anyway for a Web update blocked by running chats, accept=%s (TAL-1629)', async (accept) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(1), agent: current })
+    vi.mocked(api.applyUpdates).mockReset().mockResolvedValueOnce(interruptOffer).mockResolvedValueOnce({ ok: true, restart_scheduled: true, notification_id: '00000000-0000-4000-8000-000000000003' })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update web/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('2 chats are still running. Updating now stops them and saves their partial replies as interrupted.')
+    await userEvent.click(within(dialog).getByRole('button', { name: accept ? 'Update anyway' : 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    if (accept) {
+      await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledTimes(2))
+      expect(vi.mocked(api.applyUpdates).mock.calls[1]?.slice(2)).toEqual(['webui', { interrupt_token: 'd'.repeat(32) }])
+    } else {
+      // Cancel sends nothing: no second apply, and the refused update is left as the server recorded it.
+      expect(api.applyUpdates).toHaveBeenCalledTimes(1)
+      expect(api.cancelUpdateNotification).not.toHaveBeenCalled()
+    }
+  })
+
+  it('sends a Web confirmation once even when its outcome is lost in transit (TAL-1629)', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(1), agent: current })
+    vi.mocked(api.applyUpdates).mockReset().mockResolvedValueOnce(interruptOffer).mockRejectedValueOnce(new ApiError({ kind: 'network', status: 0, path: '/api/updates/apply', message: 'Network error' }))
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update web/i }))
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Update anyway' }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: /update web/i })).toBeEnabled())
+    expect(api.applyUpdates).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
   it('requires confirmation for an unsupported Agent and cancellation never applies it', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: behind(4914) })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable', notification_id: '00000000-0000-4000-8000-000000000001' })

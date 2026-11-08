@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When running chats block a Talaria Web update you start in Settings, Update anyway stops them, saves their partial replies and updates right away.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Update anyway",
+        "description": "Running chats no longer hold up a Web update you start. Their partial replies are saved.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

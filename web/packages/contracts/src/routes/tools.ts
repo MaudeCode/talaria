@@ -21,6 +21,7 @@ const ConnectorOperationOwnerFields = { session_id: z.string().min(1).optional()
 const AgentOptions = { agent_channel: z.enum(['stable', 'experimental']).optional(), agent_refresh_token: z.string().regex(/^[a-f0-9]{32}$/).optional(), confirmed_agent_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() }
 const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional(), ...AgentOptions,
   version: z.string().min(1).max(128).optional().describe('TAL-946: a Stable `versions[].ref` of this target to install instead of the newest. Rejected when it is not listed or on Experimental.'),
+  interrupt_token: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('TAL-1629: the `interrupt_confirmation.token` a blocked Web update offered this operator. Sent once, with the same target, channel and version, it saves the named local chats as interrupted and updates; otherwise the update is refused again with fresh consent.'),
   tab_id: TabIdSchema.optional() })
 
 /** TAL-784: a save whose `revision` no longer matches the file (409), so it would overwrite later changes. The page reloads. */

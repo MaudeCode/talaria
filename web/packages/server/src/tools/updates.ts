@@ -17,7 +17,7 @@ import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
 import { SidecarError } from '../sidecar/client.js'
 import { execFile } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -674,7 +674,11 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
 }
 
 /** Packaged-install collaborators: the Experimental registry, Web's state dir for channel-switch backups, and the candidate self-check timeout. */
-export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined; skipFailedVersion?: boolean | undefined }
+export interface PackagedUpdateOptions {
+  registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined; skipFailedVersion?: boolean | undefined
+  /** TAL-1629: runs once the target is resolved and before anything is replaced or restarted; a result refuses the update. */
+  beforeReplace?: ((target: { sourceRevision: string; version: string }) => Promise<Dict | null>) | undefined
+}
 
 async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun, canApply: () => boolean, packaged: PackagedUpdateOptions, version?: string): Promise<Dict> {
   const installed = await npmInstallInfo(webRoot, npmRun)
@@ -714,10 +718,10 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
   const priorRollback = readUpdateRollback(packaged.stateDir)
   if (packaged.skipFailedVersion && priorRollback?.failedVersion === target.version) return { ok: false, target: 'webui', channel, message: `Automatic update skipped: ${target.version} previously failed to start.` }
   const current = !switching && target.matches(onDisk)
-  if (current) {
-    if (same(id.release(), onDisk)) return { ok: true, up_to_date: true, target: 'webui', channel, message: channel === 'stable' ? 'Talaria Web already contains the selected npm release.' : `Talaria Web already contains ${target.label}.` }
-    return { ok: true, target: 'webui', channel, tag: target.tag, sourceRevision: target.sourceRevision, ...(target.npm ? { npm: target.npm } : {}), message: `Restarting Talaria Web with ${target.label}.` }
-  }
+  if (current && same(id.release(), onDisk)) return { ok: true, up_to_date: true, target: 'webui', channel, message: channel === 'stable' ? 'Talaria Web already contains the selected npm release.' : `Talaria Web already contains ${target.label}.` }
+  const refused = await packaged.beforeReplace?.({ sourceRevision: target.sourceRevision, version: target.version })
+  if (refused) return refused
+  if (current) return { ok: true, target: 'webui', channel, tag: target.tag, sourceRevision: target.sourceRevision, ...(target.npm ? { npm: target.npm } : {}), message: `Restarting Talaria Web with ${target.label}.` }
   if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
   // Global npm installs keep dependencies inside the package. Build the replacement beside the old package so
   // install/verification failures cannot damage the running installation and the final rename stays on one volume.
@@ -931,7 +935,16 @@ export interface UpdateOptions {
   onTransaction?: ((baseline: string, target: string) => Promise<void>) | undefined
   onFailure?: ((detail: unknown, identity?: { revision: string | null; version: string | null }) => Promise<boolean>) | undefined
   onProgress?: ((detail: string) => void) | undefined
+  /** TAL-1629: the requesting operator and profile; only their own Web update may be offered Update anyway. */
+  operator?: string | undefined
+  /** TAL-1629: the one-shot `interrupt_confirmation.token` a blocked Web update offered this operator. */
+  interruptToken?: string | undefined
+  beforeReplace?: PackagedUpdateOptions['beforeReplace']
 }
+/** TAL-1629: how long an offered Update anyway confirmation stays valid. */
+export const INTERRUPT_CONFIRMATION_TTL_S = 120
+/** TAL-1629: what one Update anyway confirmation covers: who asked, the update it names, and the exact local runs. */
+interface InterruptConsent { operator: string; channel: WebChannel; version: string | undefined; revision: string | undefined; runs: readonly string[]; expiresAt: number }
 /** TAL-1429: the Agent update waits for the gateways' own native drain instead of interrupting their work. */
 export const gatewayDrainDetail = (services: string[], seconds: number): string =>
   `Waiting for ${services.length ? services.join(', ') : 'the gateway'} to finish in-flight work before installing (up to ${String(Math.max(1, Math.ceil(seconds / 60)))} min).`
@@ -1461,6 +1474,10 @@ export interface UpdateServiceDeps {
     transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void | Promise<void>
   }
   blockers: () => RestartBlockers
+  /** TAL-1629: the local chat runs blocking a restart, sorted, or null when any blocker is other work (terminal, cron, Gateway or unknown-owner run). */
+  interruptibleRuns?: () => string[] | null
+  /** TAL-1629: save these local runs as interrupted through the shared drain owner; lists those left without a saved outcome. */
+  interruptRuns?: (runs: readonly string[]) => Promise<{ unresolved: string[] }>
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
   scheduleRestart: () => void
   /** TAL-953: a post-update `hermes gateway restart` is running; Agent source must not change under it. */
@@ -1507,6 +1524,8 @@ export class UpdateService {
   /** Counts runtime-current signals, so a refusal that was in flight across one is retried rather than deferred. */
   private runtimeCurrentEpoch = 0
   private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
+  /** TAL-1629: offered Update anyway confirmations by token; each is used at most once. */
+  private readonly consents = new Map<string, InterruptConsent>()
   private readonly git: GitRun
   private readonly npm: BuildRun
   private readonly now: () => number
@@ -1945,16 +1964,77 @@ export class UpdateService {
     const pendingRestart = this.pendingRestartResponse(target)
     if (pendingRestart) return pendingRestart
     if (!canApply()) return { ok: false, message: 'Web update settings changed; update deferred.' }
-    const blocked = this.blockedResponse(target)
-    if (blocked) return blocked
+    const resolved = channel ?? this.deps.channel()
+    const consent = target === 'webui' ? this.takeConsent(resolved, options) : null
+    if (!consent) {
+      const blocked = this.blockedResponse(target)
+      if (blocked) return this.offerInterrupt(blocked, target, resolved, options)
+    }
     const lifecycle = this.lifecycle
-    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel(), () => lifecycle === this.lifecycle && canApply(), options))
+    return this.locked(() => this.applyInner(target, resolved, () => lifecycle === this.lifecycle && canApply(), consent ? { ...options, beforeReplace: this.interruptBeforeReplace(consent, resolved, options) } : options))
+  }
+
+  /**
+   * TAL-1629: an operator's Web update blocked only by this server's own local chats offers a one-shot Update anyway,
+   * bound to that operator, the update it names (`resolvedRevision` once the update resolved its target) and the exact runs.
+   */
+  private offerInterrupt(blocked: Dict, target: string, channel: WebChannel, options: UpdateOptions, resolvedRevision?: string): Dict {
+    if (target !== 'webui' || !options.operator || !this.deps.interruptRuns) return blocked
+    const runs = this.deps.interruptibleRuns?.() ?? null
+    const web = dict(this.cache.webui)
+    // A named Stable version binds its own release; the newest binds the revision the operator's last check showed.
+    const revision = resolvedRevision ?? (options.version !== undefined ? undefined : this.cache.channel === channel && SHA.test(str(web.latest_sha)) ? str(web.latest_sha) : null)
+    if (!runs?.length || revision === null) return blocked
+    const now = this.now()
+    for (const [token, consent] of this.consents) if (consent.operator === options.operator || now > consent.expiresAt) this.consents.delete(token)
+    const token = randomBytes(16).toString('hex')
+    const expiresAt = now + INTERRUPT_CONFIRMATION_TTL_S
+    this.consents.set(token, { operator: options.operator, channel, version: options.version, revision, runs, expiresAt })
+    return { ...blocked, interrupt_confirmation: { token, runs: runs.length, expires_at: new Date(expiresAt * 1000).toISOString() } }
+  }
+
+  /**
+   * TAL-1629: the request's Update anyway confirmation, used up by this request. Null (the ordinary, non-interrupting path)
+   * when it is unknown, used, expired, another operator's or update's, or the local runs now include one it never named.
+   */
+  private takeConsent(channel: WebChannel, options: UpdateOptions): InterruptConsent | null {
+    if (!options.interruptToken) return null
+    const consent = this.consents.get(options.interruptToken)
+    this.consents.delete(options.interruptToken)
+    if (!consent || consent.operator !== options.operator || consent.channel !== channel || consent.version !== options.version || this.now() > consent.expiresAt) return null
+    return this.coveredRuns(consent) ? consent : null
+  }
+
+  /** The current local runs when `consent` names every one of them; null when any other run or work blocks. */
+  private coveredRuns(consent: InterruptConsent): string[] | null {
+    const runs = this.deps.interruptibleRuns?.() ?? null
+    return runs?.every((run) => consent.runs.includes(run)) ? runs : null
+  }
+
+  /**
+   * TAL-1629: inside the update lock (new turns fenced), once the target is resolved: a changed run set or target refuses
+   * with fresh consent; otherwise the consented runs are saved as interrupted before anything is replaced. A run left
+   * without a saved outcome fails the update before it installs or restarts.
+   */
+  private interruptBeforeReplace(consent: InterruptConsent, channel: WebChannel, options: UpdateOptions): NonNullable<UpdateOptions['beforeReplace']> {
+    return async (target) => {
+      const runs = this.coveredRuns(consent)
+      if (runs?.length === 0) return null
+      if (!runs || (consent.revision !== undefined && target.sourceRevision !== consent.revision)) {
+        const blocked = this.blockedResponse('webui') ?? { ok: false, target: 'webui', restart_blocked: true, message: 'The running work changed. Review it and confirm again.' }
+        return this.offerInterrupt(blocked, 'webui', channel, options, target.sourceRevision)
+      }
+      const { unresolved } = await this.deps.interruptRuns!(runs)
+      if (unresolved.length) return { ok: false, target: 'webui', interrupt_failed: true, message: `${String(unresolved.length)} running chat${unresolved.length === 1 ? '' : 's'} could not be saved as interrupted, so Talaria Web was not updated.` }
+      this.deps.log(`[updates] interrupted ${String(runs.length)} local chat run${runs.length === 1 ? '' : 's'} for a confirmed Web update`)
+      return null
+    }
   }
 
   private async applyInner(target: string, channel: WebChannel, canApply: () => boolean = () => true, options: UpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') {
       const lifecycle = this.lifecycle
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.npm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir, skipFailedVersion: options.skipFailedVersion }, options.version)
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.npm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir, skipFailedVersion: options.skipFailedVersion, beforeReplace: options.beforeReplace }, options.version)
       // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
       if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { await this.invalidate('webui', result); this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result

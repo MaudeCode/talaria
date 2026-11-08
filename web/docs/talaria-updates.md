@@ -7,6 +7,16 @@ opt-in and requires update checks to be enabled. It applies only Web updates and
 retries blocked or failed attempts on the next check. Existing chats and manual cron
 jobs finish first, and open embedded terminals must be closed before an update;
 new chats receive a retry response while files are changing or restart is pending.
+
+When an update you start in Settings is blocked only by this server's own running chats, it offers **Update anyway**
+with the number of chats (TAL-1629). The apply response carries `interrupt_confirmation` (`token`, `runs`,
+`expires_at`); sending the same update again with `interrupt_token` saves those chats as interrupted, with their
+partial replies, through the shutdown drain's stop path, then installs and restarts. The token is good once, for two
+minutes, for the same operator, profile, channel, version and release. A chat it did not name, a changed release, or
+any other expired, reused or unknown token refuses the update again with fresh consent. Open terminals, cron runs,
+Gateway-owned or unknown runs are never interrupted and keep refusing; automatic updates and Agent updates never
+offer it. New chats are refused from the confirmation through the restart. If an interrupted chat cannot be saved,
+nothing is installed and new chats are admitted again.
 Only a direct global npm installation (`npm install -g @maudecode/talaria-web`) updates itself. Stable installs the
 exact package in the newest completed release set; Experimental installs the verified artifact that CI publishes to
 `ghcr.io/maudecode/talaria-web-experimental` for each passing `main` commit that changes Web or shared contracts.
