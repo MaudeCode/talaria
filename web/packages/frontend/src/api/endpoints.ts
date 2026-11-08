@@ -11,7 +11,7 @@ import { orpc, timeout } from './orpc'
 import type { GroupOperation } from '@maudecode/talaria-web-contracts'
 
 import type { ConnectorOperationView, OwnerActionRequest, AgentImportSource } from '@maudecode/talaria-web-contracts'
-import type { OutboundDraftAction, OutboundDraftRef, WebPushPreferences } from '@maudecode/talaria-web-contracts'
+import type { DecisionAnswerInput, OutboundDraftAction, OutboundDraftRef, WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
@@ -106,6 +106,10 @@ export const fetchAnchorScene = (session_id: string, message_ref: string, messag
 export const fetchToolResult = (session_id: string, tool_call_id: string, signal: AbortSignal) => orpc().session.toolResult({ session_id, tool_call_id }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
 export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: string; tool_call_id: string }, signal?: AbortSignal) => orpc().session.outboundDraft(input, signal ? { signal } : {})
 export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)
+/** TAL-1964: a decision review and the user's answers to it; the server owns order, progress, filters and submit. */
+export const fetchDecisionReview = (review_id: string, signal?: AbortSignal) => orpc().decisions.get({ review_id }, signal ? { signal } : {})
+export const answerDecision = (input: DecisionAnswerInput) => orpc().decisions.answer(input)
+export const submitDecisionReview = (review_id: string) => orpc().decisions.submit({ review_id })
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const fetchSessionSkills = (id: SessionId) => orpc().session.skills({ session_id: id })
