@@ -55,7 +55,7 @@ public final class DecisionReviewModel {
     /// Saves still waiting on the server or their reread; Submit waits for them.
     @ObservationIgnored private var saveRequests: [UUID: Task<Void, Never>] = [:]
     /// Saves whose outcome is unknown because their reread failed too: the shown answer stays until a read decides.
-    private var unresolvedAnswers: [String: (token: UUID, landedVersion: Int, savedDraft: Draft?)] = [:]
+    private var unresolvedAnswers: [String: (token: UUID, input: DecisionAnswerInput, savedDraft: Draft?)] = [:]
     /// A submit whose outcome is unknown: it shows submitted until a read decides.
     private var submitUnresolved = false
     /// Saves that did not land as shown (refused, in conflict, or unresolved); a queued Submit stops when one fails.
@@ -275,8 +275,8 @@ public final class DecisionReviewModel {
             } else {
                 // Unknown outcome: the shown answer stays until a server read decides whether the save landed; it is never
                 // resent, and a failed reread leaves it unresolved rather than rolled back.
-                unresolvedAnswers[itemID] = (token, input.expectedVersion + 1, savedDraft)
-                if await reconcile(), confirmed?.item(id: itemID)?.answerVersion == input.expectedVersion + 1 {
+                unresolvedAnswers[itemID] = (token, input, savedDraft)
+                if await reconcile(), Self.landed(input, in: confirmed?.item(id: itemID)) {
                     failedSaves -= 1
                 } else {
                     report(error)
@@ -328,7 +328,7 @@ public final class DecisionReviewModel {
         if currentItemID.flatMap(review.item(id:)) == nil { currentItemID = review.items.first?.id }
         for (itemID, unresolved) in unresolvedAnswers {
             settle(itemID, token: unresolved.token)
-            if review.item(id: itemID)?.answerVersion == unresolved.landedVersion { retire(unresolved.savedDraft, of: itemID) }
+            if Self.landed(unresolved.input, in: review.item(id: itemID)) { retire(unresolved.savedDraft, of: itemID) }
         }
         unresolvedAnswers = [:]
         if submitUnresolved {
@@ -345,6 +345,15 @@ public final class DecisionReviewModel {
         } else {
             page = .answers
         }
+    }
+
+    /// Whether `item` holds this write: the version it would have made and the same answer, so another client's save at
+    /// that version does not count as ours.
+    static func landed(_ input: DecisionAnswerInput, in item: DecisionItem?) -> Bool {
+        guard let item, item.answerVersion == input.expectedVersion + 1 else { return false }
+        guard let answer = item.answer else { return input.clears }
+        return !input.clears && answer.value == input.value && answer.deferred == input.deferred && answer.custom == input.custom
+            && answer.notes == input.notes.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The server answered and refused: a 4xx other than a timeout. Anything else leaves the outcome unknown.

@@ -249,6 +249,41 @@ final class DecisionReviewModelTests: XCTestCase {
         XCTAssertEqual(model.review?.item(id: "retention")?.answerVersion, 3, "The read settles it")
     }
 
+    func testAnotherClientsAnswerAtTheExpectedVersionIsNotTakenForALostSave() async throws {
+        let review = try Self.fixture("review")
+        let theirs = try Self.review(answering: "retention", with: #"{"value":"never","label":"Never archive","effect":"The sidebar keeps every chat until you archive it.","notes":"","deferred":false,"custom":false,"version":3,"updated_at":1893456800}"#, version: 3)
+        let wrote = LockedTestValue(false)
+        let submits = LockedTestValue(0)
+        let writes = DeferredRequests()
+        let arrived = expectation(description: "answer write held")
+        let model = model { request in
+            if Self.isAnswerWrite(request.request) {
+                wrote.value = true
+                _ = writes.append(request)
+                arrived.fulfill()
+            } else if request.request.url?.path.hasSuffix("/submit") == true {
+                submits.value += 1
+                request.complete(withJSON: theirs)
+            } else { request.complete(withJSON: wrote.value ? theirs : review) }
+        }
+        await model.load()
+        let item = try XCTUnwrap(model.currentItem)
+        model.setDraft(.init(value: "week", notes: ""), for: item)
+        let save = Task { await model.saveAndNext() }
+        await fulfillment(of: [arrived], timeout: 5)
+        let submit = Task { await model.submit() }
+        await drainMainActor()
+
+        // The response is lost, and the reread finds another client's answer at the version this save would have made.
+        writes.request(at: 0).fail(with: URLError(.networkConnectionLost))
+        await save.value
+        await submit.value
+
+        XCTAssertEqual(submits.value, 0, "A save that did not land stops the queued submit")
+        XCTAssertEqual(model.review?.status, .open)
+        XCTAssertEqual(model.draft(for: try XCTUnwrap(model.review?.item(id: "retention"))).value, "week", "The user's choice is kept")
+    }
+
     func testARefreshThatStartedBeforeASaveCannotUndoIt() async throws {
         let review = try Self.fixture("review")
         let saved = try Self.review(answering: "retention", with: #"{"value":"week","label":"Archive after a week","effect":"Chats older than seven days move to the archive.","notes":"","deferred":false,"custom":false,"version":3,"updated_at":1893456800}"#, version: 3)
