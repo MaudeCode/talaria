@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria for iPhone streams long code blocks more smoothly, because each update redraws only the block's last lines instead of the whole block.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
