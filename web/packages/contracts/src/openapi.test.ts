@@ -26,7 +26,8 @@ describe('OpenAPI generation', () => {
   })
 
   it('publishes the Settings section ids both clients route by (TAL-1691)', async () => {
-    const schemas = (await generateOpenApiDocument()).components?.schemas as Record<string, { enum?: unknown }> | undefined
+    const { components } = await generateOpenApiDocument() as { components?: { schemas?: Record<string, { enum?: unknown }> } }
+    const schemas = components?.schemas
     expect(schemas?.SettingsSection?.enum).toEqual(['appearance', 'chat', 'sidebar', 'models', 'notifications', 'speech', 'agent', 'system', 'about'])
   })
 })
