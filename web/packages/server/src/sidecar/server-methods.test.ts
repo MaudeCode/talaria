@@ -442,3 +442,61 @@ describe('server.session_branch, session_update, session_handoff, session_compre
     }
   })
 })
+
+describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
+  it('lists the profile sessions waiting on an approval or question and answers another session\'s question', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+      const save = async (session_id: string, profile: string) => {
+        await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, updated_at: 1_792_500_000, messages: [{ role: 'user', content: session_id, timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))
+      }
+      await save('agentcaller', 'default')
+      await save('agentpeer', 'default')
+      await save('agentasker', 'default')
+      await save('agentforeign', 'other')
+      s.deps.pending.submitApproval('agentpeer', { approval_id: 'approval-1', command: 'rm -rf build', description: 'delete build output' })
+      s.deps.pending.submitClarify('agentasker', { clarify_id: 'clarify-1', question: 'Which branch?', choices_offered: ['main', 'release'], timeout_seconds: 600, requested_at: 1_792_500_000 })
+      s.deps.pending.submitClarify('agentcaller', { clarify_id: 'clarify-own', question: 'Ship it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      s.deps.pending.submitClarify('agentforeign', { clarify_id: 'clarify-foreign', question: 'Other profile?', timeout_seconds: 600, requested_at: 1_792_500_000 })
+      type Method = 'server.pending_list' | 'server.clarify_respond'
+      const ask = async (method: Method, params: Record<string, unknown>, callerId = 'agentcaller') => {
+        const answer = await sidecar.serverRequest(method, { caller_session_id: callerId, ...params })
+        return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) as Record<string, unknown> }
+      }
+      const routePending = async (kind: 'approval' | 'clarify', sid: string) => ((await (await s.get(`/api/${kind}/pending?session_id=${sid}`)).json()) as { pending: unknown }).pending
+
+      // Every session in the caller's profile that holds a prompt, each prompt as its pending route ships it.
+      const listed = await ask('server.pending_list', {})
+      expect(listed).toEqual({ result: { pending: [
+        { session_id: 'agentasker', kind: 'clarify', id: 'clarify-1', pending_count: 1, prompt: await routePending('clarify', 'agentasker') },
+        { session_id: 'agentcaller', kind: 'clarify', id: 'clarify-own', pending_count: 1, prompt: await routePending('clarify', 'agentcaller') },
+        { session_id: 'agentpeer', kind: 'approval', id: 'approval-1', pending_count: 1, prompt: await routePending('approval', 'agentpeer') },
+      ] } })
+      expect(listed).toMatchObject({ result: { pending: [{ prompt: { question: 'Which branch?', choices_offered: ['main', 'release'] } }, {}, { prompt: { command: 'rm -rf build', description: 'delete build output' } }] } })
+      expect(await ask('server.pending_list', { session_id: 'agentpeer' })).toMatchObject({ result: { pending: [{ session_id: 'agentpeer', kind: 'approval', id: 'approval-1' }] } })
+      expect(await ask('server.pending_list', {}, 'agentforeign')).toMatchObject({ result: { pending: [{ session_id: 'agentforeign', id: 'clarify-foreign' }] } })
+      expect(await ask('server.pending_list', { session_id: 'agentforeign' })).toMatchObject({ error: { message: 'no Talaria session agentforeign in this profile', data: { condition: 'target_unknown' } } })
+
+      // The answer reaches the parked Agent and the session's question clears.
+      const relayed: unknown[] = []
+      sidecar.respond('clarify.respond', (params) => { relayed.push({ session_id: params.session_id, clarify_id: params.clarify_id, response: params.response }); return { ok: true } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentasker', clarify_id: 'clarify-1', answer: 'release' })).toEqual({ result: { ok: true, response: 'release' } })
+      expect(relayed).toEqual([{ session_id: 'agentasker', clarify_id: 'clarify-1', response: 'release' }])
+      expect(await routePending('clarify', 'agentasker')).toBeNull()
+      expect(await ask('server.pending_list', { session_id: 'agentasker' })).toEqual({ result: { pending: [] } })
+
+      // Self, cross-profile and stale answers are refused and relay nothing.
+      expect(await ask('server.clarify_respond', { session_id: 'agentcaller', clarify_id: 'clarify-own', answer: 'yes' })).toMatchObject({ error: { data: { condition: 'self_target' } } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentforeign', clarify_id: 'clarify-foreign', answer: 'yes' })).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
+      expect(await ask('server.clarify_respond', { session_id: 'agentasker', clarify_id: 'clarify-1', answer: 'main' })).toMatchObject({ error: { message: 'Clarification prompt expired or not found. The agent may have already proceeded.', data: { condition: 'stale' } } })
+      expect(relayed).toHaveLength(1)
+      expect(await routePending('clarify', 'agentcaller')).toMatchObject({ clarify_id: 'clarify-own' })
+      expect(s.deps.pending.clarifyPending('agentforeign').pending).toMatchObject({ clarify_id: 'clarify-foreign' })
+      expect(await ask('server.pending_list', {}, 'nosuchsession')).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+    } finally {
+      await s.close()
+    }
+  })
+})

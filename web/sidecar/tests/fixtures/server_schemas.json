@@ -1896,5 +1896,455 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.pending_list": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "pending": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "approval"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "pending_count": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "allowed_choices": {
+                        "description": "The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four.",
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "once",
+                            "session",
+                            "always",
+                            "deny"
+                          ]
+                        }
+                      },
+                      "can_enable_yolo": {
+                        "type": "boolean"
+                      },
+                      "can_deny_with_instruction": {
+                        "description": "This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no.",
+                        "type": "boolean"
+                      },
+                      "tool_call_id": {
+                        "description": "The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none.",
+                        "type": "string"
+                      },
+                      "approval_id": {
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "type": "string"
+                      },
+                      "command": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "question": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "pending_count": {
+                        "type": "number"
+                      },
+                      "run_id": {
+                        "type": "string"
+                      },
+                      "mirror_token": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "kind",
+                  "id",
+                  "pending_count",
+                  "prompt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "clarify"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "pending_count": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "steps": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "qid": {
+                              "type": "string"
+                            },
+                            "question": {
+                              "type": "string"
+                            },
+                            "choices": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "multi_select": {
+                              "type": "boolean"
+                            },
+                            "answered": {
+                              "description": "TAL-1271: a gateway-owned batch question the owner already holds an answer for; it stays editable until the last answer.",
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "qid",
+                            "question",
+                            "choices",
+                            "multi_select"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "vault": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "vault_unlock",
+                              "vault_save_login",
+                              "vault_code",
+                              "skill_secret"
+                            ]
+                          },
+                          "backend": {
+                            "description": "The password manager (`vault_unlock`).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "display_name": {
+                            "description": "Its display name (`vault_unlock`).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "origin": {
+                            "description": "The page origin the login is saved for (`vault_save_login`).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "site": {
+                            "description": "The site, by host (`vault_save_login`, `vault_code`).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "hint": {
+                            "description": "Where the code was sent, when the Agent says (`vault_code`).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "skill": {
+                            "description": "Profile-local environment setup metadata (`skill_secret`).",
+                            "type": "object",
+                            "properties": {
+                              "env_var": {
+                                "type": "string"
+                              },
+                              "skill_name": {
+                                "type": "string"
+                              },
+                              "help": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "required_for": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "env_var",
+                              "skill_name",
+                              "help",
+                              "required_for"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "enum": [
+                                    "master_password",
+                                    "identifier",
+                                    "password",
+                                    "code",
+                                    "secret"
+                                  ]
+                                },
+                                "secure": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "secure"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "timeout_at": {
+                            "type": "number",
+                            "description": "Unix seconds when the Agent stops waiting."
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "backend",
+                          "display_name",
+                          "origin",
+                          "site",
+                          "hint",
+                          "fields",
+                          "timeout_at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "clarify_id": {
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "type": "string"
+                      },
+                      "question": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "choices": {
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
+                            }
+                          ]
+                        }
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "raw_preview": {
+                        "type": "string"
+                      },
+                      "timeout_at": {
+                        "type": "number"
+                      },
+                      "timeout_seconds": {
+                        "type": "number"
+                      },
+                      "pending_count": {
+                        "type": "number"
+                      },
+                      "index": {
+                        "type": "number"
+                      },
+                      "total": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "kind",
+                  "id",
+                  "pending_count",
+                  "prompt"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "pending"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.clarify_respond": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clarify_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answer": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id",
+        "clarify_id",
+        "answer"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "response": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": {}
+    }
   }
 }

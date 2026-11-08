@@ -1,5 +1,16 @@
 # Sidecar RPC (TAL-245)
 
+RPC v83 adds the toolset's pending prompt tools (TAL-1168). `pending_list`
+(`server.pending_list`) answers, for each session in the caller's profile that
+waits on one, its oldest approval and its oldest clarify question exactly as
+`/api/approval/pending` and `/api/clarify/pending` ship them, with the prompt's
+id and the queue's `pending_count`; with `session_id`, that one session (the
+caller included). `clarify_respond` (`server.clarify_respond`) answers another
+session's question through the service behind `/api/clarify/respond` and returns
+its result. The caller's own question is refused (`self_target`), and an
+answered or expired one with the route's stale message (`stale`). Approvals are
+listed but not answered.
+
 RPC v82 adds the toolset's session management tools (TAL-1166), each a
 `server.*` method that calls the service behind a route. A target must be in the
 caller's profile and may be the caller itself. `session_branch`

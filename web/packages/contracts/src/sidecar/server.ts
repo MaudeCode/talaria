@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { BackgroundTasksResponseSchema, CancelResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
+import { ApprovalPendingSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
 import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
 
 /**
@@ -137,6 +137,39 @@ export const ServerSessionCompressResultSchema = z.object({ session_id: z.string
 /** The caller's own background work, as `/api/background/tasks` answers for its session. */
 export const ServerBackgroundListParamsSchema = z.object({ caller_session_id: z.string().min(1) })
 
+/**
+ * TAL-1168: the approvals and clarify questions sessions in the caller's profile wait on. With `session_id`, that one
+ * session (the caller included); without, every session the server holds a prompt for.
+ */
+export const ServerPendingListParamsSchema = z.object({
+  caller_session_id: z.string().min(1),
+  session_id: z.string().min(1).optional(),
+})
+
+const pendingEntry = <K extends 'approval' | 'clarify', P extends z.ZodType>(kind: K, prompt: P) => z.object({
+  session_id: z.string(),
+  kind: z.literal(kind),
+  /** The prompt's `approval_id` or `clarify_id`, the id an answer names. */
+  id: z.string(),
+  /** How many prompts of this kind the session holds; answering this one shows the next. */
+  pending_count: z.number().int().positive(),
+  /** The oldest prompt of this kind, exactly as `/api/approval/pending` or `/api/clarify/pending` ships it. */
+  prompt,
+})
+
+export const ServerPendingListResultSchema = z.object({
+  pending: z.array(z.discriminatedUnion('kind', [pendingEntry('approval', ApprovalPendingSchema), pendingEntry('clarify', ClarifyPendingSchema)])),
+})
+
+/**
+ * TAL-1168: answer another session's clarify question as `/api/clarify/respond` does. `answer` is the reply text; a
+ * multi-question prompt takes `{"answers": {"q0": "…", "q1": ["…"]}}` as JSON. The caller's own question is the user's.
+ */
+export const ServerClarifyRespondParamsSchema = ServerQueueListParamsSchema.extend({
+  clarify_id: z.string().min(1),
+  answer: z.string().min(1),
+})
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -156,6 +189,8 @@ export const SIDECAR_SERVER_METHODS = {
   'server.session_handoff': { params: ServerQueueListParamsSchema, result: HandoffSummarySchema },
   'server.session_compress': { params: ServerQueueListParamsSchema, result: ServerSessionCompressResultSchema },
   'server.background_list': { params: ServerBackgroundListParamsSchema, result: BackgroundTasksResponseSchema },
+  'server.pending_list': { params: ServerPendingListParamsSchema, result: ServerPendingListResultSchema },
+  'server.clarify_respond': { params: ServerClarifyRespondParamsSchema, result: ClarifyRespondResponseSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS
