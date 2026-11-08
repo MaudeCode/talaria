@@ -16,7 +16,8 @@ final class WhatsNewHostedTests: XCTestCase {
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
     }
 
-    private func announcement(_ version: String = "1.1.0", rows: Int = 4) -> WhatsNewAnnouncement {
+    /// A synthetic announcement whose rows are tickets `firstTicket` onward.
+    private func announcement(_ version: String = "1.1.0", rows: Int = 4, firstTicket: Int = 1) -> WhatsNewAnnouncement {
         let authored: [(String, String, String)] = [
             ("chat", "Pinned chats", "Keep the conversations you use most at the top of the list."),
             ("voice", "Dictation", "Speak your message and Talaria types it for you."),
@@ -27,13 +28,13 @@ final class WhatsNewHostedTests: XCTestCase {
             schemaVersion: 1, id: "app-\(version)", component: "app", version: version,
             sourceCommit: String(repeating: "a", count: 40),
             rows: authored.prefix(rows).enumerated().map { index, row in
-                .init(id: "TAL-\(index + 1)-1", icon: row.0, title: row.1, description: row.2)
+                .init(id: "TAL-\(firstTicket + index)-1", icon: row.0, title: row.1, description: row.2)
             }
         )
     }
 
     private var acknowledged: [String] {
-        defaults.stringArray(forKey: WhatsNewAnnouncement.acknowledgedKey) ?? []
+        defaults.stringArray(forKey: WhatsNewAnnouncement.acknowledgedRowsKey) ?? []
     }
 
     @discardableResult
@@ -114,22 +115,24 @@ final class WhatsNewHostedTests: XCTestCase {
         let presenter = WhatsNewPresenter(pending: nil, defaults: defaults)
         let window = try hostWindow(WhatsNewHost(presenter: presenter))
 
-        presenter.presented = announcement("1.1.0")
+        let first = announcement("1.1.0", rows: 2)
+        presenter.presented = first
         try await requireHeading(in: window)
         XCTAssertEqual(acknowledged, [], "Showing it is not seeing it: a process ending here offers it again")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Continue"))
         let closed = await awaitNoElement(in: window) { $0.accessibilityLabel == WhatsNewSheet.title }
         XCTAssertTrue(closed)
-        XCTAssertEqual(acknowledged, ["app-1.1.0"])
+        XCTAssertEqual(acknowledged, first.rows.map(\.id), "Closing it acknowledges the rows it showed")
         XCTAssertNil(presenter.presented)
 
-        presenter.presented = announcement("1.2.0")
+        let second = announcement("1.2.0", rows: 2, firstTicket: 3)
+        presenter.presented = second
         try await requireHeading(in: window)
         // A swipe ends in the same dismissal of the presented controller.
         window.rootViewController?.presentedViewController?.dismiss(animated: false)
         let swiped = await awaitNoElement(in: window) { $0.accessibilityLabel == WhatsNewSheet.title }
         XCTAssertTrue(swiped)
-        XCTAssertEqual(acknowledged, ["app-1.1.0", "app-1.2.0"])
+        XCTAssertEqual(acknowledged, (first.rows + second.rows).map(\.id))
     }
 
     // MARK: - Launch queue
@@ -167,11 +170,11 @@ final class WhatsNewHostedTests: XCTestCase {
         addTeardownBlock { offer.cancel() }
         settle(0.2)
 
-        // Settings is open over the launch, and its About replay closes with the release acknowledged.
+        // Settings is open over the launch, and its About replay closes with every packaged row acknowledged.
         queued.acknowledge(defaults: defaults)
         host.state.showsOther = false
         let offered = await awaitCondition(timeout: 2) { presenter.presented != nil }
-        XCTAssertFalse(offered, "An announcement acknowledged by a replay is not offered again")
+        XCTAssertFalse(offered, "Rows acknowledged by a replay are not offered again")
         XCTAssertNil(HostedAccessibility.element(in: window, label: WhatsNewSheet.title))
     }
 
@@ -186,7 +189,8 @@ final class WhatsNewHostedTests: XCTestCase {
             serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: registryDefaults)
         )
         XCTAssertEqual(authManager.state, .unconfigured)
-        let window = try hostLaunch(authManager: authManager, presenter: WhatsNewPresenter(pending: announcement(), defaults: defaults))
+        let offered = announcement()
+        let window = try hostLaunch(authManager: authManager, presenter: WhatsNewPresenter(pending: offered, defaults: defaults))
 
         try await requireHeading(in: window)
         attachHostedScreenshot(window, name: "whats-new-over-onboarding")
@@ -195,15 +199,16 @@ final class WhatsNewHostedTests: XCTestCase {
         XCTAssertEqual(authManager.state, .unconfigured)
         XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: "Control your Hermes agent").isEmpty,
                        "Onboarding is still where it was")
-        XCTAssertEqual(acknowledged, ["app-1.1.0"])
+        XCTAssertEqual(acknowledged, offered.rows.map(\.id))
     }
 
     func testSignedInAndSignedOutLaunchesOfferIt() async throws {
         let fixture = try FixtureApp(for: self)
         let authManager = fixture.environment.authManager
         guard case .loggedIn = authManager.state else { return XCTFail("The fixture starts signed in") }
+        let first = announcement("1.1.0", rows: 2)
         let signedIn = try hostLaunch(authManager: authManager, cache: fixture.cache,
-                                      presenter: WhatsNewPresenter(pending: announcement("1.1.0"), defaults: defaults))
+                                      presenter: WhatsNewPresenter(pending: first, defaults: defaults))
         try await requireHeading(in: signedIn)
         HostedAccessibility.activate(try await requireElement(in: signedIn, label: "Continue"))
         _ = await awaitNoElement(in: signedIn) { $0.accessibilityLabel == WhatsNewSheet.title }
@@ -213,12 +218,13 @@ final class WhatsNewHostedTests: XCTestCase {
         await authManager.signOut()
         // Signing out of the only server returns to onboarding.
         XCTAssertEqual(authManager.state, .unconfigured)
+        let second = announcement("1.2.0", rows: 2, firstTicket: 3)
         let loggedOut = try hostLaunch(authManager: authManager, cache: fixture.cache,
-                                       presenter: WhatsNewPresenter(pending: announcement("1.2.0"), defaults: defaults))
+                                       presenter: WhatsNewPresenter(pending: second, defaults: defaults))
         try await requireHeading(in: loggedOut)
         HostedAccessibility.activate(try await requireElement(in: loggedOut, label: "Continue"))
         _ = await awaitNoElement(in: loggedOut) { $0.accessibilityLabel == WhatsNewSheet.title }
-        XCTAssertEqual(acknowledged, ["app-1.1.0", "app-1.2.0"])
+        XCTAssertEqual(acknowledged, (first.rows + second.rows).map(\.id))
     }
 
     // MARK: - Settings replay
@@ -229,7 +235,8 @@ final class WhatsNewHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.element(in: none, identifier: "settings-whats-new"))
         none.isHidden = true
 
-        let window = try hostWindow(NavigationStack { AboutSettingsView(whatsNew: announcement(), defaults: defaults) })
+        let installed = announcement()
+        let window = try hostWindow(NavigationStack { AboutSettingsView(whatsNew: installed, defaults: defaults) })
         let found = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-whats-new" }
         let row = try XCTUnwrap(found)
         HostedAccessibility.activate(row)
@@ -238,8 +245,8 @@ final class WhatsNewHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "whats-new-settings-replay")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Continue"))
         _ = await awaitNoElement(in: window) { $0.accessibilityLabel == WhatsNewSheet.title }
-        // A replay counts as seen, so it never comes back on its own.
-        XCTAssertEqual(acknowledged, ["app-1.1.0"])
+        // A replay shows and acknowledges every packaged row, so none comes back on its own.
+        XCTAssertEqual(acknowledged, installed.rows.map(\.id))
     }
 
     private func hostLaunch(authManager: AuthManager, cache: ModelContainer? = nil,
