@@ -183,6 +183,16 @@ export class DecisionReviews {
     return review
   }
 
+  /** A deleted session takes its reviews and their answers with it. */
+  async deleteForSession(sid: string): Promise<void> {
+    for (const { key } of await this.documents.list(NAMESPACE)) {
+      const review = await this.load(key)
+      if (review?.session_id !== sid) continue
+      await this.documents.delete(NAMESPACE, key)
+      this.open.delete(key)
+    }
+  }
+
   // ── agent tools ─────────────────────────────────────────────────────────
 
   /** `decision_review_put`: create a review, or revise one of the caller's. */

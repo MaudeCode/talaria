@@ -268,6 +268,18 @@ describe('decision reviews (TAL-1963)', () => {
     expect(s.deps.decisions.openCount(CALLER)).toBe(0)
   })
 
+  it('deletes a session\'s reviews with the session', async () => {
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, deleted_ids: [CALLER] }))
+    const id = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a')] }))
+    await save('20261108_120500_other')
+    const kept = created(await ask('server.decision_review_put', { title: 'Other choices', items: [item('a')] }, '20261108_120500_other'))
+    expect((await http('POST', '/api/session/delete', { session_id: CALLER })).status).toBe(200)
+    expect((await http('GET', `/api/decisions/${id}`)).status).toBe(404)
+    expect(await stored(id)).toBeUndefined()
+    expect(s.deps.decisions.openCount(CALLER)).toBe(0)
+    expect(((await http('GET', '/api/decisions')).body.reviews as { review_id: string }[]).map((review) => review.review_id)).toEqual([kept])
+  })
+
   it('keeps the open index across a restart', async () => {
     await ask('server.decision_review_put', { title: 'Release choices', items: [item('a')] })
     const reloaded = new DecisionReviews(documents, () => s.deps, () => clock)
