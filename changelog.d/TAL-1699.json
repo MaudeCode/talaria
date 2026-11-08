@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Extracting a large archive or downloading a large folder no longer freezes Talaria Web for other chats and requests while it works.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

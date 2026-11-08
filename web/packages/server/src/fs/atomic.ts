@@ -5,9 +5,10 @@
  * and a symlinked target is written through to its referent. New files are
  * created with 0o666 so the kernel applies the process umask.
  */
-import { chmodSync, closeSync, fsyncSync, openSync, realpathSync, renameSync, statSync, unlinkSync, writeSync, lstatSync } from 'node:fs'
+import { chmodSync, closeSync, fsyncSync, openSync, realpathSync, renameSync, statSync, unlinkSync, write as fsWrite, writeSync, lstatSync } from 'node:fs'
 import { chmod, lstat, open, realpath, rename, stat, unlink, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { promisify } from 'node:util'
 
 let counter = 0
 
@@ -54,8 +55,10 @@ export function atomicWriteText(path: string, text: string, opts: { mode?: numbe
   }
 }
 
-/** `writeFully` for a promise `FileHandle`, off the event loop. */
-export async function writeFullyAsync(handle: FileHandle, data: string | Uint8Array, write: (handle: FileHandle, buffer: Buffer, offset: number, length: number) => Promise<number> = async (h, b, o, l) => (await h.write(b, o, l)).bytesWritten): Promise<void> {
+const writeFd = promisify(fsWrite)
+
+/** `writeFully` for a promise `FileHandle` or a descriptor, off the event loop. */
+export async function writeFullyAsync<H extends FileHandle | number>(handle: H, data: string | Uint8Array, write: (handle: H, buffer: Buffer, offset: number, length: number) => Promise<number> = async (h, b, o, l) => (await (typeof h === 'number' ? writeFd(h, b, o, l) : h.write(b, o, l))).bytesWritten): Promise<void> {
   const buffer = toBuffer(data)
   let offset = 0
   while (offset < buffer.length) {

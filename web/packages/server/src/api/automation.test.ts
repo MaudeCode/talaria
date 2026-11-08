@@ -941,16 +941,16 @@ describe('crons, kanban, extensions, terminal', () => {
 })
 
 describe('automation helpers', () => {
-  it('zip reader, loopback origin, proxy path, and relative path validators', () => {
+  it('zip reader, loopback origin, proxy path, and relative path validators', async () => {
     const zip = makeZip({ 'a.txt': 'hello', 'dir/b.txt': 'world' })
     const entries = readZip(zip)
-    expect(entries.map((e) => [e.name, e.read().toString()])).toEqual([['a.txt', 'hello'], ['dir/b.txt', 'world']])
+    expect(await Promise.all(entries.map(async (e) => [e.name, (await e.read()).toString()]))).toEqual([['a.txt', 'hello'], ['dir/b.txt', 'world']])
     expect(() => readZip(Buffer.from('nope'))).toThrow()
     // A member whose central-directory size is understated is rejected instead of inflating past the declared budget.
     const lying = makeZip({ 'big.bin': '0'.repeat(1024 * 1024) })
     const cdOffset = lying.readUInt32LE(lying.length - 22 + 16)
     lying.writeUInt32LE(10, cdOffset + 24)
-    expect(() => readZip(lying)[0]!.read()).toThrow(/big\.bin/)
+    await expect(readZip(lying)[0]!.read()).rejects.toThrow(/big\.bin/)
     expect(normalizeLoopbackOrigin('http://localhost:8080')).toBe('http://localhost:8080')
     expect(normalizeLoopbackOrigin('http://localhost:8080/path')).toBeNull()
     expect(normalizeLoopbackOrigin('https://example.com')).toBeNull()

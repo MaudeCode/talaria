@@ -751,7 +751,7 @@ export class ExtensionService {
       for (const vfile of ['extension.json', 'manifest.json']) {
         const entry = entries.find((e) => e.name === prefix + vfile)
         if (!entry) continue
-        try { const m = JSON.parse(entry.read().toString('utf8')) as unknown; if (isDict(m) && typeof m.version === 'string') { version = m.version; break } } catch { /* ignore */ }
+        try { const m = JSON.parse((await entry.read()).toString('utf8')) as unknown; if (isDict(m) && typeof m.version === 'string') { version = m.version; break } } catch { /* ignore */ }
       }
       try { if (lstatSync(extDir).isSymbolicLink()) throw new ExtensionError('Extension directory is a symlink', 400) } catch (error) { if (error instanceof ExtensionError) throw error }
       try { makeAnchoredDir(anchor, extDir) } catch { throw new ExtensionError('Extension directory is a symlink', 400) }
@@ -765,9 +765,10 @@ export class ExtensionService {
         // already inside the extension (or a parent swapped mid-extraction) can never redirect a write outside it.
         for (const e of files) {
           const dest = resolve(extDir, fullyUnquote(stripped(e.name)))
+          const data = await e.read()
           let fd: number
           try { fd = openAnchoredCreateFd(anchor, dest) } catch (error) { if (!(error instanceof FileExistsError)) throw error; fd = openAnchoredWriteFd(anchor, dest) }
-          try { writeFileSync(fd, e.read()) } finally { closeSync(fd) }
+          try { writeFileSync(fd, data) } finally { closeSync(fd) }
           written.push(dest)
         }
       } catch { rollback(); throw new ExtensionError('Extraction failed', 500) }

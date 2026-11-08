@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { readZip } from '../workspace/unzip.js'
-import { folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
-import { homedir } from 'node:os'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { collectFolder, folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
+import { loopTurnsDuring } from '../test/sync-fs.js'
+import { homedir, tmpdir } from 'node:os'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { appendFileSync, closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
@@ -189,7 +190,7 @@ describe('raw byte routes', () => {
       const zip = Buffer.from(await res.arrayBuffer())
       expect(grown).toBe(true)
       const entry = readZip(zip).find((e) => e.name === 'log.txt')
-      expect(entry?.read().toString()).toBe('first\n')
+      expect((await entry?.read())?.toString()).toBe('first\n')
     } finally {
       spy.mockRestore()
     }
@@ -471,5 +472,34 @@ describe('raw byte routes', () => {
     const remove = await post(s, '/api/session/worktree/remove', { session_id: sid })
     expect(remove.status).toBe(200)
     expect((await json(remove)).warnings).toEqual(['Worktree directory no longer exists on disk.'])
+  })
+})
+
+describe('folder download walk (TAL-1699)', () => {
+  it('yields the event loop while walking a 5,000-file folder and lists the files in walk order', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-folder-walk-')))
+    try {
+      for (let d = 0; d < 50; d += 1) {
+        mkdirSync(join(root, `d${String(d)}`, 'nested'), { recursive: true })
+        for (let f = 0; f < 50; f += 1) {
+          writeFileSync(join(root, `d${String(d)}`, `f${String(f)}.txt`), 'x'.repeat(f))
+          writeFileSync(join(root, `d${String(d)}`, 'nested', `n${String(f)}.txt`), 'y')
+        }
+      }
+      // Each directory lists its files in directory order, then descends into its subdirectories in that order.
+      const expected: [string, string, number][] = []
+      const walk = (dir: string): void => {
+        const entries = readdirSync(dir, { withFileTypes: true })
+        for (const e of entries) if (e.isFile()) expected.push([join(dir, e.name), relative(root, join(dir, e.name)), readFileSync(join(dir, e.name)).length])
+        for (const e of entries) if (e.isDirectory()) walk(join(dir, e.name))
+      }
+      walk(root)
+      expect(expected).toHaveLength(5000)
+      const { value, turns } = await loopTurnsDuring(() => collectFolder(root, root, 1024 * 1024 * 1024, 50_000))
+      expect(turns).toBeGreaterThan(10)
+      expect(value).toEqual({ files: expected, total: expected.reduce((sum, [, , size]) => sum + size, 0), limit: null })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

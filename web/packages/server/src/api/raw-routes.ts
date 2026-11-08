@@ -4,7 +4,8 @@
  * handler and reuses the anchored file helpers.
  */
 import { handleGroupFile } from './groups-router.js'
-import { closeSync, createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
+import { closeSync, createReadStream, existsSync, statSync, realpathSync } from 'node:fs'
+import { readdir, realpath, stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
@@ -270,30 +271,34 @@ export function folderZipMaxFiles(env: Record<string, string | undefined>): numb
   return Math.max(1, Number.isFinite(n) ? n : 50000)
 }
 
-function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): { files: [string, string, number][]; total: number; limit: 'max_files' | 'max_bytes' | null } {
+/**
+ * The folder-download preflight, walked with async `readdir`/`stat` so a 50,000-file folder never blocks the loop
+ * (TAL-1699). `readdir` keeps the sorted scandir order the archive has always used; `opendir` would not.
+ */
+export async function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): Promise<{ files: [string, string, number][]; total: number; limit: 'max_files' | 'max_bytes' | null }> {
   const files: [string, string, number][] = []
   let total = 0
   const stack = [target]
   while (stack.length) {
     const dir = stack.pop()!
     let realDir: string
-    try { realDir = realpathSync(dir) } catch { continue }
+    try { realDir = await realpath(dir) } catch { continue }
     if (realDir !== workspaceRoot && !isWithin(realDir, workspaceRoot)) continue
     let entries
-    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { continue }
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { continue }
     const subdirs: string[] = []
     for (const entry of entries) {
       const fp = join(dir, entry.name)
       if (entry.isDirectory()) { subdirs.push(fp); continue }
       if (entry.isSymbolicLink()) {
         try {
-          const real = realpathSync(fp)
+          const real = await realpath(fp)
           if (real !== workspaceRoot && !isWithin(real, workspaceRoot)) continue
-          if (statSync(real).isDirectory()) continue
+          if ((await stat(real)).isDirectory()) continue
         } catch { continue }
       } else if (!entry.isFile()) continue
       let size: number
-      try { size = statSync(fp).size } catch { continue }
+      try { size = (await stat(fp)).size } catch { continue }
       if (files.length >= maxFiles) return { files, total, limit: 'max_files' }
       const arcname = relative(target, fp)
       // Python compares the raw file bytes against the cap; record overhead is not charged.
@@ -325,7 +330,7 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   const workspaceRoot = realpathSync(s.workspace)
   const maxBytes = folderZipMaxBytes(ctx.deps.config.env)
   const maxFiles = folderZipMaxFiles(ctx.deps.config.env)
-  const { files, limit } = collectFolder(target, workspaceRoot, maxBytes, maxFiles)
+  const { files, limit } = await collectFolder(target, workspaceRoot, maxBytes, maxFiles)
   if (limit === 'max_files') {
     await ctx.json({ error: 'too many files', limit: maxFiles, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES' }, { status: 413 })
     return
