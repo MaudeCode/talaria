@@ -15,6 +15,8 @@ import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
 import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
+import type { SessionsChangedEvent } from '../sessions/events.js'
+import type { WebAudioCompletion } from '@maudecode/talaria-web-contracts'
 import { filterAsync, str } from '../util.js'
 import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
 import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
@@ -522,6 +524,33 @@ async function nextWithin<T>(next: (signal: AbortSignal) => Promise<T | null>, w
   }
 }
 
+/**
+ * TAL-48: under person isolation an event names its session, and plays its completion, only for a session the person
+ * may see; a coalesced event that no longer names its session cannot prove whose completion it carries.
+ */
+async function personMaySee(ctx: RequestContext, event: SessionsChangedEvent): Promise<boolean> {
+  return !ctx.personAccess || Boolean(event.session_id && await ctx.deps.sessions.personMaySeeSessionId(event.session_id))
+}
+
+/** A global invalidation may span profiles; playback instructions never cross the bound request profile. */
+function profileAudio(ctx: RequestContext, event: SessionsChangedEvent): WebAudioCompletion[] | undefined {
+  return event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
+}
+
+/**
+ * TAL-1954: completions published after the client's `Last-Event-ID` and before this connection subscribed, under the
+ * live rules. No cursor or a malformed one replays nothing, and neither does one past `through` (another server process).
+ */
+async function missedCompletions(ctx: RequestContext, through: number): Promise<WebAudioCompletion[]> {
+  const header = (ctx.header('last-event-id') ?? '').trim()
+  if (!/^\d+$/.test(header)) return []
+  const missed: WebAudioCompletion[] = []
+  for (const event of ctx.deps.events.completionsSince(Number(header), through)) {
+    if (await personMaySee(ctx, event)) missed.push(...profileAudio(ctx, event) ?? [])
+  }
+  return missed
+}
+
 /** `/api/sessions/events`: global session-list invalidation; `?gateway=1` merges the watcher feed with a `stream` discriminator. */
 export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   const wantGateway = truthyQuery(ctx.query.get('gateway'))
@@ -538,8 +567,11 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   ctx.res.on('close', () => { abort.abort() })
   const gatewaySub = wantGateway && gatewayStatus?.ok === true && watcher ? watcher.subscribe() : null
   try {
+    const cursor = String(sub.version)
+    const missed = await missedCompletions(ctx, sub.version)
     sse.start()
-    sse.event('initial', { stream: 'sessions' })
+    sse.event('initial', { stream: 'sessions' }, cursor)
+    if (missed.length) sse.event('sessions_changed', { type: 'sessions_changed', version: sub.version, reason: 'web_completion', web_audio: missed, stream: 'sessions' }, cursor)
     if (wantGateway && gatewayStatus) sse.event('gateway_status', gatewayStatus)
     let lastWrite = Date.now()
     for (;;) {
@@ -566,16 +598,10 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
         lastWrite = Date.now()
         continue
       }
-      // A global invalidation may span profiles; playback instructions never cross the bound request profile.
-      let web_audio = event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
+      const named = await personMaySee(ctx, event)
       const payload: Record<string, unknown> = { ...event, stream: 'sessions' }
-      // TAL-48: another person's session is never named, and its completion never plays; a coalesced event that no
-      // longer names its session cannot prove whose completion it carries.
-      if (ctx.personAccess && !(event.session_id && await ctx.deps.sessions.personMaySeeSessionId(event.session_id))) {
-        Reflect.deleteProperty(payload, 'session_id')
-        web_audio = undefined
-      }
-      sse.event(event.type, { ...payload, web_audio })
+      if (!named) Reflect.deleteProperty(payload, 'session_id')
+      sse.event(event.type, { ...payload, web_audio: named ? profileAudio(ctx, event) : undefined }, String(event.version))
       lastWrite = Date.now()
     }
   } finally {

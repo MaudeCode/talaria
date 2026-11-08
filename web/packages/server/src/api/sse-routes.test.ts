@@ -3,7 +3,7 @@ import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 import { JsonJournal } from '../sessions/storage/json-journal.js'
 import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
 
@@ -123,7 +123,7 @@ it('falls back to a snapshot when an unseen run finishes before idle attachment'
   expect(io.full).toHaveLength(1)
 })
 
-it('filters coalesced Web audio instructions to the SSE request profile and never replays them', async () => {
+it('filters coalesced Web audio instructions to the SSE request profile', async () => {
   const s = server = await bootTestServer()
   const received = s.sse('/api/sessions/events', (frame) => {
     if (frame.event === 'initial') {
@@ -133,9 +133,54 @@ it('filters coalesced Web audio instructions to the SSE request profile and neve
   })
   const frames = await received
   expect(frames.find((frame) => frame.event === 'sessions_changed')?.data).toMatchObject({ web_audio: [{ identity: 'default', profile: 'default' }] })
-  const reconnect = await s.sse('/api/sessions/events', () => true)
-  expect(reconnect[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
-  expect(reconnect[0]?.data).not.toHaveProperty('web_audio')
+})
+
+// TAL-1954: a completion published while a tab is between connections still plays once it resumes.
+const completion = (identity: string, profile = 'default', expiresAt = Date.now() + 60_000) => ({ identity, scope: profile, profile, eligible: true, expires_at: expiresAt })
+const publishCompletion = (s: TestServer, identity: string, profile = 'default', expiresAt?: number): void => { s.deps.events.publish('web_completion', { profile, webAudio: completion(identity, profile, expiresAt) }) }
+/** One session-list connection, read through a sentinel published after `initial` so it ends without a timeout. */
+const connectList = (s: TestServer, headers: Record<string, string> = {}): Promise<SseFrame[]> => s.sse('/api/sessions/events', (frame) => {
+  if (frame.event === 'initial') s.deps.events.publish('sentinel')
+  return (frame.data as { reason?: string }).reason === 'sentinel'
+}, { headers })
+/** What `EventSource` sends when it reconnects: the newest `id:` it saw, or no header at all. */
+const resumeFrom = (frames: SseFrame[]): Record<string, string> => {
+  const id = frames.filter((frame) => frame.id).at(-1)?.id
+  return id ? { 'last-event-id': id } : {}
+}
+const played = (frames: SseFrame[]): string[] => frames.filter((frame) => frame.event === 'sessions_changed').flatMap((frame) => ((frame.data as { web_audio?: { identity: string }[] }).web_audio ?? []).map((item) => item.identity))
+
+it('plays a completion published between connections to a client resuming with Last-Event-ID, once', async () => {
+  const s = server = await bootTestServer()
+  const first = await connectList(s)
+  publishCompletion(s, 'missed')
+  const resumed = await connectList(s, resumeFrom(first))
+  expect(played(resumed)).toEqual(['missed'])
+  expect(played(await connectList(s, resumeFrom(resumed))), 'a completion at or below the cursor is not sent again').toEqual([])
+})
+
+it.each([
+  ['no cursor', {}],
+  // Number() and parseInt() both read this as 0, which would replay everything.
+  ['a malformed cursor', { 'last-event-id': '0x0' }],
+])('replays no retained completion to a connection with %s', async (_label, headers: Record<string, string>) => {
+  const s = server = await bootTestServer()
+  await connectList(s)
+  publishCompletion(s, 'retained')
+  expect(played(await connectList(s, headers))).toEqual([])
+})
+
+it('replays only unexpired completions for the request profile, at most the newest 32', async () => {
+  const s = server = await bootTestServer()
+  let cursor = resumeFrom(await connectList(s))
+  publishCompletion(s, 'expired', 'default', Date.now() - 1)
+  publishCompletion(s, 'foreign', 'foreign')
+  publishCompletion(s, 'fresh')
+  const resumed = await connectList(s, cursor)
+  expect(played(resumed)).toEqual(['fresh'])
+  cursor = resumeFrom(resumed)
+  for (let i = 0; i < 40; i++) publishCompletion(s, `run-${String(i)}`)
+  expect(played(await connectList(s, cursor))).toEqual(Array.from({ length: 32 }, (_, i) => `run-${String(i + 8)}`))
 })
 
 // TAL-1561: a replay never re-opens a prompt its own run already settled.
