@@ -267,7 +267,7 @@ struct MessageComposerView: View {
     }
 
     private var draftBinding: Binding<String> {
-        Binding(get: { draft }, set: onDraftEdit)
+        Binding(get: { draft }, set: { draftMessage = $0 })
     }
 
     var body: some View {
