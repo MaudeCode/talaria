@@ -18,14 +18,15 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     private static let tickCount = 200
     private static let keystrokeCount = 200
 
-    /// Today's counts per phase. A settled row or bubble never re-renders, and code is highlighted off the main thread
-    /// (TAL-854), so their counts are absent. A keystroke
+    /// Today's counts per phase. A settled row or bubble never re-renders, code is highlighted off the main thread
+    /// (TAL-854), and reasoning cards are derived only when the transcript changes (TAL-855), so their counts are
+    /// absent. A keystroke
     /// re-runs only the composer; the chat's four passes follow the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
-        "reasoningGroups": 200, "markdownSplit": 200, "messages": 200
+        "markdownSplit": 200, "messages": 200
     ]
     private static let expectedKeystrokeWork = [
-        "reasoningGroups": 4, "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212
+        "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212
     ]
 
     /// Ceiling on the 400 measured operations together. They measure ~10 s on the build VM's Debug simulator and

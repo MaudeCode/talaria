@@ -1771,7 +1771,9 @@ struct ChatView: View {
                 messages: viewModel.messages,
                 displayedTranscriptMessages: chat.displayedTranscriptMessages,
                 branchedFrom: viewModel.branchedFrom,
-                reasoningGroups: viewModel.displayedReasoningGroups,
+                reasoningGroupsForAnchor: { anchorMessageID in
+                    viewModel.reasoningGroupsForAnchor(anchorMessageID)
+                },
                 completedToolCallGroupsForAnchor: { anchorMessageID in
                     viewModel.completedToolCallGroupsForAnchor(anchorMessageID)
                 },

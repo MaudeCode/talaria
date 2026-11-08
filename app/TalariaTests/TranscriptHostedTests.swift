@@ -630,7 +630,7 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
     return ChatTranscriptView(
         isLoading: false, errorMessage: nil, messages: messages,
         displayedTranscriptMessages: ChatViewModel.transcriptMessages(from: messages, messageOffset: messageOffset),
-        branchedFrom: nil, reasoningGroups: [],
+        branchedFrom: nil, reasoningGroupsForAnchor: { _ in [] },
         completedToolCallGroupsForAnchor: { _ in [] }, archivedActivityRowsForAnchor: { _ in [] },
         earlierSceneRowsForTurn: { _ in [] }, onLoadEarlierSceneRows: { _ in },
         liveReasoningText: "", liveActivityRows: [], reasoningAnchorMessageID: nil,

@@ -41,7 +41,7 @@ struct ChatTranscriptView: View {
     let messages: [ChatMessage]
     let displayedTranscriptMessages: [TranscriptMessage]
     let branchedFrom: SessionBranchLink?
-    let reasoningGroups: [ReasoningGroup]
+    let reasoningGroupsForAnchor: (String?) -> [ReasoningGroup]
     let completedToolCallGroupsForAnchor: (String?) -> [ToolCallGroup]
     let archivedActivityRowsForAnchor: (String?) -> [AssistantActivityRow]
     let earlierSceneRowsForTurn: (TranscriptMessage) -> [AssistantActivitySceneRow]
@@ -782,7 +782,7 @@ struct ChatTranscriptView: View {
     @ViewBuilder
     private func reasoningBlocks(anchorMessageID: String?) -> some View {
         if showsThinkingAndToolCards {
-            ForEach(reasoningGroups.filter { $0.anchorMessageID == anchorMessageID }) { group in
+            ForEach(reasoningGroupsForAnchor(anchorMessageID)) { group in
                 ReasoningBlockView(text: group.text, titles: group.titles, stateID: group.id)
             }
         }

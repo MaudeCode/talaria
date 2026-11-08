@@ -99,6 +99,44 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         XCTAssertEqual(viewModel.displayedTranscriptMessages.last?.message.content, "alpha beta")
     }
 
+    /// TAL-855: reasoning cards are derived when the transcript changes and published only when they differ.
+    @MainActor
+    func testReasoningCardsUpdateOnceForANewReasoningReplyAndNotPerStreamTick() async throws {
+        let streamClient = PacingSpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            wordCadenceNanoseconds: 1_000_000,
+            maxLagNanoseconds: 1_000_000_000,
+            sessionMessages: Self.reasoningTranscript(turns: 1)
+        )
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.displayedReasoningGroups.map(\.anchorMessageID), ["assistant-0"])
+        XCTAssertEqual(viewModel.reasoningGroupsForAnchor("assistant-0").map(\.text), ["Weigh question 0."])
+        let loadedUpdates = viewModel.displayedReasoningGroupsUpdateCount
+
+        let didStart = await viewModel.sendMessage("Question 1")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("alpha "))
+        _ = try await observeAssistantContent(viewModel, until: "alpha ")
+        streamClient.emit(.token("beta"))
+        _ = try await observeAssistantContent(viewModel, until: "alpha beta")
+        XCTAssertEqual(viewModel.displayedReasoningGroupsUpdateCount, loadedUpdates,
+                       "A send and its stream ticks leave the reasoning cards alone")
+
+        streamClient.emit(.done(DoneStreamEvent()))
+        streamClient.emit(.streamEnd)
+        try await waitUntil { await viewModel.activeStreamID == nil }
+        XCTAssertEqual(viewModel.displayedReasoningGroupsUpdateCount, loadedUpdates)
+        stubSession(messages: Self.reasoningTranscript(turns: 2))
+        await viewModel.loadMessages()
+
+        XCTAssertEqual(viewModel.displayedReasoningGroupsUpdateCount, loadedUpdates + 1,
+                       "The reply carrying new reasoning publishes the cards once")
+        XCTAssertEqual(viewModel.displayedReasoningGroups.map(\.anchorMessageID), ["assistant-0", "assistant-1"])
+        XCTAssertEqual(viewModel.reasoningGroupsForAnchor("assistant-1").map(\.text), ["Weigh question 1."])
+        XCTAssertEqual(viewModel.reasoningGroupsForAnchor(nil), [])
+    }
+
     @MainActor
     func testDoneEventFlushesRemainingBufferImmediately() async throws {
         let streamClient = PacingSpySSEStreamingClient()
@@ -267,22 +305,10 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
     private func makeViewModel(
         streamClient: PacingSpySSEStreamingClient,
         wordCadenceNanoseconds: UInt64,
-        maxLagNanoseconds: UInt64
+        maxLagNanoseconds: UInt64,
+        sessionMessages: String = "[]"
     ) throws -> ChatViewModel {
-        MockURLProtocol.requestHandler = { request in
-            switch request.url?.path {
-            case "/api/chat/start":
-                return apiTestJSONResponse(
-                    #"{"session_id": "session-abc", "stream_id": "stream-123"}"#,
-                    for: request
-                )
-            default:
-                return apiTestJSONResponse(
-                    #"{"session": {"session_id": "session-abc", "title": "Pacing", "messages": []}}"#,
-                    for: request
-                )
-            }
-        }
+        stubSession(messages: sessionMessages)
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
@@ -311,6 +337,34 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
             streamingWordRevealCadenceNanoseconds: wordCadenceNanoseconds,
             streamingMaxRevealLagNanoseconds: maxLagNanoseconds
         )
+    }
+
+    /// Serves `messages` (a JSON array) as the session transcript.
+    private func stubSession(messages: String) {
+        MockURLProtocol.requestHandler = { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id": "session-abc", "stream_id": "stream-123"}"#,
+                    for: request
+                )
+            default:
+                return apiTestJSONResponse(
+                    #"{"session": {"session_id": "session-abc", "title": "Pacing", "messages": \#(messages)}}"#,
+                    for: request
+                )
+            }
+        }
+    }
+
+    /// `turns` question-and-answer pairs, each answer carrying its own reasoning.
+    private static func reasoningTranscript(turns: Int) -> String {
+        let rows = (0..<turns).map { turn in
+            #"{"role": "user", "content": "Question \#(turn)", "message_id": "user-\#(turn)"}, "#
+                + #"{"role": "assistant", "content": "Answer \#(turn).", "message_id": "assistant-\#(turn)", "#
+                + #""reasoning": "Weigh question \#(turn)."}"#
+        }
+        return "[\(rows.joined(separator: ", "))]"
     }
 
     @MainActor
