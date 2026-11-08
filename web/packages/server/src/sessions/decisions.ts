@@ -276,6 +276,7 @@ export class DecisionReviews {
       if (stored.status !== 'open') throw refuse(409, 'review_closed', `decision review ${stored.review_id} is ${stored.status}`)
       const version = item.answer?.version ?? 0
       if (input.expected_version !== version) throw refuse(409, 'answer_conflict', 'This answer changed since it was loaded.', { answer: publicAnswer(item.answer) })
+      if (input.content_hash !== item.content_hash) throw refuse(409, 'item_changed', 'This decision changed since it was loaded.', { answer: publicAnswer(item.answer) })
       const notes = input.notes.trim()
       let choice: StoredItem['choices'][number] | null = null
       if (input.deferred || input.custom) {
@@ -291,6 +292,8 @@ export class DecisionReviews {
         version: version + 1, updated_at: this.now(), content_hash: item.content_hash, question: item.question,
       }
       item.answer = answer
+      // An outcome answers the previous answer; the agent records the new one again.
+      item.outcome = null
       stored.history.push({ kind: 'answer', at: answer.updated_at, item_id: item.id, answer })
     }, this.visibleCheck)
     return reviewView(review)

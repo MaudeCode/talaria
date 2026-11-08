@@ -70,10 +70,13 @@ export type DecisionReview = z.infer<typeof DecisionReviewSchema>
 
 export const DecisionReviewsSchema = z.object({ reviews: z.array(DecisionReviewSchema) })
 
-/** `PUT /api/decisions/{review_id}/answers/{item_id}`: `expected_version` is the stored answer's version, 0 when there is none. */
+/**
+ * `PUT /api/decisions/{review_id}/answers/{item_id}`: `expected_version` is the stored answer's version, 0 when there is
+ * none; `content_hash` is the item's as the user saw it, so an answer to content the agent has since revised is refused.
+ */
 export const DecisionAnswerInputSchema = z.object({
   review_id: z.string(), item_id: z.string(), value: z.string().nullable(), notes: z.string().max(DECISION_LIMITS.notes),
-  deferred: z.boolean(), custom: z.boolean(), expected_version: z.number().int().nonnegative(),
+  deferred: z.boolean(), custom: z.boolean(), expected_version: z.number().int().nonnegative(), content_hash: z.string(),
 })
 export type DecisionAnswerInput = z.infer<typeof DecisionAnswerInputSchema>
 
