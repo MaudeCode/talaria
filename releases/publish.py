@@ -20,6 +20,10 @@ from cli import REPOSITORY, ROOT, load, receipt, require_latest_predecessor, run
 from plan import git
 from release_set import BRIDGE_IMAGE, validate
 
+# This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the upload
+# helpers come from beside this file, and recover-cutover.yml archives each of them.
+TOOLS = Path(__file__).resolve().parents[1]
+
 
 @contextlib.contextmanager
 def timed(label):
@@ -76,11 +80,11 @@ def upload_testflight(ipa, component, digest):
     VALID with the same identity and the notes set. Notes come from the checkout in the working directory."""
     with tempfile.TemporaryDirectory() as temporary:
         notes = Path(temporary) / "testflight-notes.txt"
-        subprocess.run([sys.executable, str(ROOT / "app/ci/release_notes.py"), "testflight", "--target", component["sourceRevision"],
+        subprocess.run([sys.executable, str(TOOLS / "app/ci/release_notes.py"), "testflight", "--target", component["sourceRevision"],
                         "--version", component["version"], "--output", str(notes)], check=True)
         with timed("TestFlight upload and processing to VALID"):
             uploaded = subprocess.check_output([
-                "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(ipa), component["version"], str(component["buildNumber"]), digest,
+                "ruby", str(TOOLS / "app/ci/upload_testflight.rb"), str(ipa), component["version"], str(component["buildNumber"]), digest,
                 str(notes),
             ], text=True)
     result = json.loads(uploaded)

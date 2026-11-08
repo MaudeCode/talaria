@@ -59,7 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir "$RUNNER_TEMP/reviewed-publisher"
-          git archive "$GITHUB_WORKFLOW_SHA" releases/publish.py app/ci/upload_testflight.rb app/ci/app_store_connect.rb |
+          git archive "$GITHUB_WORKFLOW_SHA" releases/publish.py app/ci/upload_testflight.rb app/ci/app_store_connect.rb \
+            app/ci/release_notes.py contracts/whats-new.schema.json |
             tar -x -C "$RUNNER_TEMP/reviewed-publisher"
           git checkout --detach "$SOURCE"
       # recover.py authenticates the successful original build/publication jobs
