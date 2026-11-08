@@ -5,9 +5,12 @@ import XCTest
 
 /// A streaming code block rebuilds only its open last lines per update (TAL-1396).
 ///
-/// Hosts a real `ChatCodeBlock` and streams a 2,000-line fence into it in 200 updates. A finished group of 64 lines
+/// Streams a 2,000-line fence into a reply's Markdown in 200 updates, through the view a streaming reply draws its
+/// Markdown with, so the code block must also keep its identity across updates. A finished group of 64 lines
 /// must not rebuild when later lines arrive, so each update rebuilds only the group that was open before it and any
-/// group it opens. While streaming, the highlight task never runs, so no fallback is logged until the stream ends.
+/// group it opens. SwiftUI builds each inserted line twice, once more than a changed one, so the bound allows the
+/// update's new lines once more. While streaming, the highlight task never runs, so no fallback is logged until the
+/// stream ends.
 @MainActor
 final class ChatCodeBlockStreamingTests: XCTestCase {
     private static let lineCount = 2_000
@@ -29,9 +32,9 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
         var fallbacks = 0
 
         for update in 0..<Self.updateCount {
-            // Every line ends in a newline, so the block also shows one empty last line.
-            let linesBefore = update * linesPerUpdate + 1
-            let linesAfter = linesBefore + linesPerUpdate
+            // The renderer drops the code's last newline; an empty block still shows one line.
+            let linesBefore = max(update * linesPerUpdate, 1)
+            let linesAfter = (update + 1) * linesPerUpdate
             let openGroupStart = (linesBefore - 1) / Self.groupSize * Self.groupSize
             recorder.reset()
             let first = update * linesPerUpdate
@@ -42,14 +45,14 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
 
             let rebuilt = recorder.counts["codeLine", default: 0]
             XCTAssertLessThanOrEqual(
-                rebuilt, linesAfter - openGroupStart,
+                rebuilt, linesAfter - openGroupStart + linesPerUpdate,
                 "Update \(update) rebuilt \(rebuilt) of \(linesAfter) lines; only lines from \(openGroupStart) on may change"
             )
             fallbacks += recorder.counts["highlightFallback", default: 0]
         }
         XCTAssertEqual(fallbacks, 0, "A streaming block must not log a highlight fallback")
 
-        // The settled block is checked once: 2,001 lines exceed the highlighter's limit, so it logs one fallback.
+        // The settled block decides once: `text` is never highlighted, so it logs one fallback.
         recorder.reset()
         fence.isStreaming = false
         XCTAssertTrue(waitUntil { recorder.counts["highlightFallback", default: 0] > 0 }, "The settled block never decided")
@@ -69,6 +72,7 @@ private struct StreamingFenceView: View {
     let fence: StreamingFence
 
     var body: some View {
-        ChatCodeBlock(language: "swift", content: fence.content, isStreaming: fence.isStreaming)
+        ChatMarkdownView(content: "Here is the file.\n\n```text\n" + fence.content, colorScheme: .light,
+                         isStreaming: fence.isStreaming)
     }
 }
