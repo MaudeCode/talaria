@@ -274,6 +274,8 @@ const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font
 /** The footer ring; a click opens the usage figures and Compress now, as legacy's ring did. */
 export function ContextRing(figures: ContextFigures) {
   const [open, setOpen] = useState(false)
+  // TAL-1672: a reopen during the close transition keeps the popup mounted; a new key still makes it a new read.
+  const [opening, setOpening] = useState(0)
   const st = contextStats(figures)
   if (!st) return <ProviderQuotaPace gauge={figures.planGauge} compact />
   const { pct, tone: t, title } = st
@@ -282,7 +284,7 @@ export function ContextRing(figures: ContextFigures) {
   const tone = t === 'high' ? 'text-error' : t === 'mid' ? 'text-warning' : 'text-accent'
   return (
     <div className="ctx-indicator-wrap relative flex items-center" id="ctxIndicatorWrap">
-      <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Root open={open} onOpenChange={(next) => { if (next) setOpening((n) => n + 1); setOpen(next) }}>
         <Popover.Trigger className={cn('ctx-indicator relative flex h-8 w-8 items-center justify-center rounded-full', tone)} aria-label={title} title={title} id="ctxIndicator">
           <svg viewBox="0 0 24 24" className="h-6 w-6 -rotate-90" aria-hidden="true">
             <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
@@ -296,7 +298,7 @@ export function ContextRing(figures: ContextFigures) {
               <span className="font-medium">{st.usage}</span>
               {st.details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
               <ProviderQuotaPace gauge={figures.planGauge} compact />
-              <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />
+              <ContextDetailRows key={`${figures.detailKey ?? ''}:${opening}`} sessionId={figures.sessionId} identity={figures.detailKey} />
               {figures.onCompress && <Popover.Close className={cn(COMPRESS_CLASS, 'mt-1.5')} id="ctxCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</Popover.Close>}
             </Popover.Popup>
           </Popover.Positioner>
