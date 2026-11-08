@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria for iPhone streams long replies more smoothly, because each new word scans the reply once instead of six times.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
