@@ -6,7 +6,8 @@
       "highlight": false,
       "components": [
         "web"
-      ]
+      ],
+      "announce": false
     }
   ]
 }
