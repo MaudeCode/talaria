@@ -21,6 +21,7 @@
  */
 import { closeSync, constants, existsSync, fchmodSync, fsyncSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { open, type FileHandle } from 'node:fs/promises'
+import { isUtf8 } from 'node:buffer'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython, resolvePathLikePythonAsync } from './paths.js'
@@ -621,10 +622,14 @@ export interface FileContent { path: string; size: number; content?: string; lin
 
 export class FileTooLargeError extends Error {}
 
-/** `raw` as UTF-8 text, or null for a binary file (a NUL byte, or bytes that do not round-trip). */
+/** Whether `raw` is binary: a NUL byte, or bytes that are not valid UTF-8 (so would not round-trip through a decode). */
+export function isBinary(raw: Buffer): boolean {
+  return raw.includes(0) || !isUtf8(raw)
+}
+
+/** `raw` as UTF-8 text, or null for a binary file. */
 export function decodeText(raw: Buffer): string | null {
-  const content = raw.toString('utf8')
-  return raw.includes(0) || (content.includes('\uFFFD') && !raw.equals(Buffer.from(content, 'utf8'))) ? null : content
+  return isBinary(raw) ? null : raw.toString('utf8')
 }
 
 /** Python `read_file_content` (office previews were dropped with TAL-245). */
@@ -695,18 +700,38 @@ async function openAnchoredAsync(target: string): Promise<FileHandle> {
  * to anchor the walk, the synchronous read does it.
  */
 export async function readFileContentAsync(root: string, rel: string): Promise<FileContent> {
+  return decodedContent(rel, await readFileUpToAsync(root, rel, MAX_FILE_BYTES))
+}
+
+/**
+ * The bytes of the regular file `rel` under the resolved `root`, read off the event loop through the anchored walk: a
+ * symlink is followed only while it stays inside `root`. A file over `limit` bytes throws `FileTooLargeError`. Where no
+ * descriptor or inode path exists to anchor the walk, the synchronous walk does it.
+ */
+export async function readFileUpToAsync(root: string, rel: string, limit: number): Promise<Buffer> {
   const refuse = (): NotFoundError => new NotFoundError(`Not a file: ${rel}`)
   if (!POLICY.supported) throw refuse()
   const target = await resolvePathLikePythonAsync(resolve(root, rel))
   if (!isWithin(target, root)) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
-  if (!DESCRIPTOR_PATHS && !INODE_PATHS) return readFileContent(root, rel)
+  const tooLarge = (size: number): FileTooLargeError => new FileTooLargeError(`File too large (${size} bytes, max ${limit})`)
+  if (!DESCRIPTOR_PATHS && !INODE_PATHS) {
+    const fd = openAnchoredFd(root, target, { wantDir: false })
+    try {
+      const opened = fstatSync(fd)
+      if (!opened.isFile()) throw refuse()
+      if (opened.size > limit) throw tooLarge(opened.size)
+      return readFdUpTo(fd, limit + 1)
+    } finally {
+      closeSync(fd)
+    }
+  }
   let handle: FileHandle
   try { handle = await openAnchoredAsync(target) } catch { throw refuse() }
   try {
     const opened = await handle.stat()
     if (!opened.isFile()) throw refuse()
-    if (opened.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${opened.size} bytes, max ${MAX_FILE_BYTES})`)
-    return decodedContent(rel, await readHandleUpTo(handle, MAX_FILE_BYTES + 1))
+    if (opened.size > limit) throw tooLarge(opened.size)
+    return await readHandleUpTo(handle, limit + 1)
   } finally {
     await handle.close()
   }

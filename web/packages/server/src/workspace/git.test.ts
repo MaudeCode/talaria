@@ -1,10 +1,16 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { cleanGeneratedCommitMessage, classifyGitError, GitRunner } from './git.js'
+
+// Pass-through spies: the status pipeline must count untracked lines without a synchronous file read (TAL-1701).
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, readFileSync: vi.fn(fs.readFileSync), readSync: vi.fn(fs.readSync) }
+})
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -569,5 +575,169 @@ describe('status subprocesses leave the index alone (TAL-1559)', () => {
       expect(readFileSync(index).equals(bytes)).toBe(true)
       expect(statSync(index).mtimeMs).toBe(mtime)
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('status, branches and diff spawn budget (TAL-1701)', () => {
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  let root: string
+  let shim: string
+  beforeAll(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'tal-1701-')))
+    shim = join(root, 'bin')
+    mkdirSync(shim)
+    // Every Git process the runner starts goes through this logging shim on its PATH.
+    writeFileSync(join(shim, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$TAL_GIT_LOG"\nexec "${realGit}" "$@"\n`)
+    chmodSync(join(shim, 'git'), 0o755)
+  })
+  afterAll(() => { rmSync(root, { recursive: true, force: true }) })
+
+  let n = 0
+  const fixture = (): { repo: string; runner: GitRunner; spawned: () => string[] } => {
+    const dir = join(root, `case-${String(++n)}`)
+    const repo = join(dir, 'repo')
+    mkdirSync(repo, { recursive: true })
+    const log = join(dir, 'git.log')
+    writeFileSync(log, '')
+    git(repo, 'init', '-q', '-b', 'main')
+    const runner = new GitRunner({ env: { PATH: `${shim}:${process.env.PATH ?? ''}`, HOME: dir, XDG_CONFIG_HOME: dir, GIT_CONFIG_NOSYSTEM: '1', TAL_GIT_LOG: log } })
+    // The subcommand of each logged invocation, after the runner's `-c key=value` hardening.
+    const spawned = (): string[] => readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => {
+      const words = line.split(' ')
+      for (let i = 0; i < words.length; i++) if (words[i] === '-c') i++; else return words[i] ?? ''
+      return ''
+    })
+    return { repo, runner, spawned }
+  }
+  const resetLog = (repo: string): void => { writeFileSync(join(dirname(repo), 'git.log'), '') }
+
+  it('status runs at most five Git processes and reports staged, unstaged, renamed, binary and untracked files as before', async () => {
+    const { repo, runner, spawned } = fixture()
+    writeFileSync(join(repo, 'staged.txt'), 'a\n')
+    writeFileSync(join(repo, 'unstaged.txt'), 'a\n')
+    writeFileSync(join(repo, 'renamed-from.txt'), 'r1\nr2\n')
+    writeFileSync(join(repo, 'image.bin'), Buffer.from([0, 1, 2]))
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'init')
+    writeFileSync(join(repo, 'staged.txt'), 'a\nb\n')
+    writeFileSync(join(repo, 'image.bin'), Buffer.from([0, 1, 2, 3]))
+    git(repo, 'add', 'staged.txt', 'image.bin')
+    git(repo, 'mv', 'renamed-from.txt', 'renamed.txt')
+    writeFileSync(join(repo, 'unstaged.txt'), 'a\nb\nc\n')
+    writeFileSync(join(repo, 'text.txt'), 'one\ntwo\nthree')
+    writeFileSync(join(repo, 'crlf.txt'), 'a\r\nb\rc\n')
+    writeFileSync(join(repo, 'empty.txt'), '')
+    writeFileSync(join(repo, 'nul.bin'), Buffer.from([0x61, 0, 0x62]))
+    writeFileSync(join(repo, 'latin.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+    vi.mocked(readFileSync).mockClear()
+    vi.mocked(readSync).mockClear()
+    const status = await runner.status(repo)
+    const file = (path: string, fields: Partial<Record<string, unknown>>): Record<string, unknown> => ({
+      path, old_path: null, workspace_path: path, status: '??', staged: false, unstaged: false, untracked: true, ignored: false, conflict: false, additions: 0, deletions: 0, binary: false, ...fields,
+    })
+    expect(status).toEqual({
+      is_git: true, branch: 'main', upstream: '', ahead: 0, behind: 0, truncated: false,
+      totals: { changed: 9, staged: 3, unstaged: 1, untracked: 5, conflicts: 0 },
+      noise_filtering: { filemode_only: 0, crlf_only: 0, active: false },
+      files: [
+        file('crlf.txt', { additions: 3 }),
+        file('empty.txt', {}),
+        file('image.bin', { status: 'M', staged: true, untracked: false, binary: true }),
+        file('latin.txt', { binary: true }),
+        file('nul.bin', { binary: true }),
+        file('renamed.txt', { old_path: 'renamed-from.txt', status: 'R', staged: true, untracked: false }),
+        file('staged.txt', { status: 'M', staged: true, untracked: false, additions: 1 }),
+        file('text.txt', { additions: 3 }),
+        file('unstaged.txt', { status: 'M', unstaged: true, untracked: false, additions: 2 }),
+      ],
+    })
+    expect(spawned().length, spawned().join(', ')).toBeLessThanOrEqual(5)
+    // Untracked line counts read through async I/O, never a synchronous read of an opened file.
+    expect(vi.mocked(readFileSync).mock.calls.filter(([source]) => typeof source === 'number')).toEqual([])
+    expect(vi.mocked(readSync)).not.toHaveBeenCalled()
+  })
+
+  for (const scope of ['local', 'include', 'worktree'] as const) {
+    it(`status still neutralizes a ${scope} filter program with its single config lookup`, async () => {
+      const { repo, runner } = fixture()
+      writeFileSync(join(repo, '.gitattributes'), '*.txt filter=evil\n')
+      writeFileSync(join(repo, 'tracked.txt'), 'same\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-q', '-m', 'init')
+      const marker = join(dirname(repo), 'filter-ran')
+      const program = `printf ran >> "${marker}"; cat`
+      if (scope === 'local') git(repo, 'config', 'filter.evil.clean', program)
+      if (scope === 'include') {
+        writeFileSync(join(dirname(repo), 'extra.cfg'), `[filter "evil"]\n\tclean = ${program}\n`)
+        git(repo, 'config', 'include.path', join(dirname(repo), 'extra.cfg'))
+      }
+      if (scope === 'worktree') {
+        git(repo, 'config', 'extensions.worktreeConfig', 'true')
+        git(repo, 'config', '--worktree', 'filter.evil.clean', program)
+      }
+      utimesSync(join(repo, 'tracked.txt'), new Date('2001-01-01T00:00:00Z'), new Date('2001-01-01T00:00:00Z'))
+      expect((await runner.status(repo)).totals?.changed).toBe(0)
+      expect(existsSync(marker)).toBe(false)
+      // Control: the same repository runs the program for an unhardened diff.
+      git(repo, 'diff', '--numstat')
+      expect(existsSync(marker)).toBe(true)
+    })
+  }
+
+  it('concurrent polled status reads of one workspace share one pipeline', async () => {
+    const { repo, runner, spawned } = fixture()
+    writeFileSync(join(repo, 'a.txt'), 'a\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'init')
+    writeFileSync(join(repo, 'b.txt'), 'b\n')
+    const [first, second] = await Promise.all([runner.status(repo, { useCache: true }), runner.status(repo, { useCache: true })])
+    expect(second).toEqual(first)
+    expect(first.totals?.untracked).toBe(1)
+    expect(spawned().filter((command) => command === 'status')).toHaveLength(1)
+  })
+
+  it('branches reports every tracking branch ahead/behind with a constant number of Git processes', async () => {
+    const { repo, runner, spawned } = fixture()
+    const origin = join(dirname(repo), 'origin.git')
+    git(dirname(repo), 'init', '-q', '--bare', origin)
+    writeFileSync(join(repo, 'a.txt'), '1\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'c1')
+    git(repo, 'remote', 'add', 'origin', origin)
+    git(repo, 'push', '-q', '-u', 'origin', 'main')
+    const names = Array.from({ length: 20 }, (_, i) => `b${String(i).padStart(2, '0')}`)
+    for (const name of names) git(repo, 'branch', '-q', '--track', name, 'origin/main')
+    writeFileSync(join(repo, 'a.txt'), '2\n')
+    git(repo, 'commit', '-q', '-am', 'c2')
+    git(repo, 'push', '-q', 'origin', 'main')
+    git(repo, 'switch', '-q', 'b05')
+    writeFileSync(join(repo, 'b.txt'), 'b\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'c3')
+    git(repo, 'switch', '-q', 'main')
+    writeFileSync(join(repo, 'a.txt'), '4\n')
+    git(repo, 'commit', '-q', '-am', 'c4')
+    resetLog(repo)
+    const branches = await runner.branches(repo)
+    expect(spawned().length, spawned().join(', ')).toBeLessThanOrEqual(5)
+    expect(branches).toMatchObject({ current: 'main', detached: false, upstream: 'origin/main', ahead: 1, behind: 0 })
+    expect(branches.local.map(({ name, upstream, ahead, behind }) => ({ name, upstream, ahead, behind }))).toEqual([
+      ...names.map((name) => ({ name, upstream: 'origin/main', ahead: name === 'b05' ? 1 : 0, behind: 1 })),
+      { name: 'main', upstream: 'origin/main', ahead: 1, behind: 0 },
+    ])
+    expect(branches.remote.map(({ name, upstream }) => ({ name, upstream }))).toEqual([{ name: 'origin/main', upstream: '' }])
+  })
+
+  it('diff of an untracked file runs no status pipeline and still returns the synthetic diff', async () => {
+    const { repo, runner, spawned } = fixture()
+    writeFileSync(join(repo, 'a.txt'), 'a\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'init')
+    writeFileSync(join(repo, 'new.txt'), 'fresh\nlines\n')
+    resetLog(repo)
+    const diff = await runner.diff(repo, 'new.txt')
+    expect(diff).toMatchObject({ path: 'new.txt', kind: 'unstaged', binary: false, too_large: false, additions: 2, deletions: 0 })
+    expect(diff.diff).toBe('--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+fresh\n+lines\n')
+    expect(spawned()).not.toContain('status')
   })
 })

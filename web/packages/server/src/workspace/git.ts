@@ -7,11 +7,11 @@
  * against repo-local config, and bounded by a timeout.
  */
 import { execFile } from 'node:child_process'
-import { closeSync, constants as fsConstants, existsSync, fstatSync, futimesSync, lstatSync, mkdtempSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants as fsConstants, existsSync, fstatSync, futimesSync, lstatSync, mkdtempSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { expandHome, isWithin, resolvePathLikePython } from './paths.js'
-import { openAnchoredFd, rmtreeAnchored, safeResolveWs, unlinkAnchored } from './fs.js'
+import { decodeText, FileTooLargeError, isBinary, readFileUpToAsync, rmtreeAnchored, safeResolveWs, unlinkAnchored } from './fs.js'
 import { str } from '../util.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
 import type { DiffHunk } from '@maudecode/talaria-web-contracts'
@@ -106,6 +106,8 @@ interface RunOptions {
   disableFilterAttributes?: boolean
   neutralizeFilterPrograms?: boolean
   neutralizeRemoteHelpers?: boolean
+  /** The repository's filter names already looked up for this command, so the reads of one status share one lookup. */
+  filterNames?: Set<string>
   /** Trusted private config directory, also inherited by Git's own worktree-removal status subprocess. */
   commonDir?: string
 }
@@ -236,9 +238,19 @@ function splitLines(text: string): string[] {
   return lines
 }
 
+/** `splitLines(text).length` counted on the bytes: `\r\n`, `\r` and `\n` each end a line, and a final unterminated line counts. */
+function lineCount(data: Buffer): number {
+  let lines = 0
+  for (let at = data.indexOf(10); at >= 0; at = data.indexOf(10, at + 1)) lines++
+  for (let at = data.indexOf(13); at >= 0; at = data.indexOf(13, at + 1)) if (data[at + 1] !== 10) lines++
+  const last = data.at(-1)
+  return last === undefined || last === 10 || last === 13 ? lines : lines + 1
+}
+
 export class GitRunner {
   private readonly locks = new Map<string, Promise<void>>()
   private readonly statusCache = new Map<string, { storedAt: number; repoRoot: string; fingerprint: string; payload: GitStatus }>()
+  private readonly statusInFlight = new Map<string, Promise<GitStatus>>()
   private readonly generations = new Map<string, number>()
   /** Workspaces a working-tree mutation or worktree removal is changing; runs, terminals, and file writes stay out. */
   private readonly busy = new Map<string, number>()
@@ -307,24 +319,23 @@ export class GitRunner {
 
   // ── subprocess ───────────────────────────────────────────────────────────
 
-  private async configNamesForScope(scope: string, cwd: string, env: Record<string, string>, pattern: string, nameRe: RegExp, ignoreUnsupported = false): Promise<Set<string>> {
-    const result = await spawnGit(cwd, ['config', '--includes', scope, '--name-only', '--get-regexp', pattern], GIT_TIMEOUT_MS, env)
-    const names = new Set<string>()
+  /**
+   * Names from the repository's own config (`local` and `worktree` scopes, includes resolved within them) matching
+   * `pattern`, in one lookup: Git reads `config.worktree` only when `extensions.worktreeConfig` enables it.
+   */
+  private async namesLocalAndWorktree(cwd: string, env: Record<string, string>, pattern: string, nameRe: RegExp): Promise<Set<string>> {
+    const result = await spawnGit(cwd, ['config', '--includes', '--show-scope', '--name-only', '--get-regexp', pattern], GIT_TIMEOUT_MS, env)
     if (result.status !== 0 && result.status !== 1) {
-      if (ignoreUnsupported) return names
       const message = (result.stderr || result.stdout || 'Git command failed').trim()
       throw new GitWorkspaceError(message, classifyGitError(message, ['config']), { cause: result.error })
     }
+    const names = new Set<string>()
     for (const line of (result.stdout || '').split('\n')) {
-      const m = nameRe.exec(line.trim())
+      const tab = line.indexOf('\t')
+      if (!['local', 'worktree'].includes(line.slice(0, tab))) continue
+      const m = nameRe.exec(line.slice(tab + 1).trim())
       if (m?.[1]) names.add(m[1])
     }
-    return names
-  }
-
-  private async namesLocalAndWorktree(cwd: string, env: Record<string, string>, pattern: string, nameRe: RegExp): Promise<Set<string>> {
-    const names = await this.configNamesForScope('--local', cwd, env, pattern, nameRe)
-    for (const n of await this.configNamesForScope('--worktree', cwd, env, pattern, nameRe, true)) names.add(n)
     return names
   }
 
@@ -570,7 +581,7 @@ export class GitRunner {
         writeFileSync(attributesFile, '')
       }
       if (opts.disableFilterAttributes || opts.neutralizeFilterPrograms) {
-        for (const name of [...await this.filterNames(cwd, runEnv)].sort()) {
+        for (const name of [...(opts.filterNames ?? await this.filterNames(cwd, runEnv))].sort()) {
           if (!GitRunner.legal(name)) continue
           extraConfigs.push([`filter.${name}.clean`, 'cat'], [`filter.${name}.smudge`, 'cat'], [`filter.${name}.process`, ''], [`filter.${name}.required`, 'false'])
         }
@@ -771,6 +782,8 @@ export class GitRunner {
   invalidateStatusCache(repoRoot: string): void {
     this.generations.set(repoRoot, (this.generations.get(repoRoot) ?? 0) + 1)
     for (const [key, entry] of this.statusCache) if (entry.repoRoot === repoRoot) this.statusCache.delete(key)
+    // A read that started before the change keeps its callers, but no later poll joins it.
+    for (const key of this.statusInFlight.keys()) if (isWithin(key, repoRoot)) this.statusInFlight.delete(key)
   }
 
   // ── status ───────────────────────────────────────────────────────────────
@@ -812,70 +825,73 @@ export class GitRunner {
     return stats
   }
 
-  private async collectNumstat(ctx: GitContext, cached: boolean): Promise<Stats | null> {
+  private async collectNumstat(ctx: GitContext, cached: boolean, read: RunOptions): Promise<Stats | null> {
     const args = ['diff', '--numstat', '-z', '--no-textconv', '--ignore-cr-at-eol']
     if (cached) args.push('--cached')
     args.push('--', GitRunner.workspacePathspec(ctx))
-    const result = await this.run(ctx, args, { disableFilterAttributes: this.destructiveEnabled(), neutralizeFilterPrograms: true })
+    const result = await this.run(ctx, args, read)
     if (result.status !== 0) return null
     return this.parseNumstat(result.stdout, ctx)
   }
 
-  /** An untracked file's bytes through the anchored walk (no symlinked component), or null when unreadable/too large. */
-  private static readUntracked(workspace: string, path: string): { data: Buffer } | { tooLarge: true } | null {
-    let fd: number
-    // Python read an untracked symlink through its target; that is kept for links that stay inside the workspace, so
-    // a link pointing outside can never pull foreign bytes into a diff.
-    let source = path
+  /**
+   * An untracked file's bytes through the anchored walk, off the event loop, or null when unreadable. Python read an
+   * untracked symlink through its target; that is kept for links that stay inside the workspace, so a link pointing
+   * outside can never pull foreign bytes into a diff.
+   */
+  private static async readUntracked(workspace: string, rel: string): Promise<Buffer | 'too_large' | null> {
     try {
-      if (lstatSync(path).isSymbolicLink()) {
-        const real = realpathSync(path)
-        const root = realpathSync(workspace)
-        if (real !== root && !isWithin(real, root)) return null
-        source = real
-      }
-    } catch { return null }
-    try { fd = openAnchoredFd(workspace, source, { wantDir: false }) } catch { return null }
-    try {
-      const st = fstatSync(fd)
-      if (!st.isFile()) return null
-      if (st.size > DIFF_SIZE_LIMIT) return { tooLarge: true }
-      return { data: readFileSync(fd) }
-    } catch {
-      return null
-    } finally {
-      closeSync(fd)
+      return await readFileUpToAsync(workspace, rel, DIFF_SIZE_LIMIT)
+    } catch (error) {
+      return error instanceof FileTooLargeError ? 'too_large' : null
     }
   }
 
-  private static countUntrackedFile(workspace: string, path: string): [number, number, boolean] {
-    const read = GitRunner.readUntracked(workspace, path)
-    if (!read || 'tooLarge' in read) return [0, 0, false]
-    const data = read.data
-    if (data.includes(0)) return [0, 0, true]
-    const text = data.toString('utf8')
-    if (text.includes('�') && !data.equals(Buffer.from(text, 'utf8'))) return [0, 0, true]
-    return [splitLines(text).length || (text ? 1 : 0), 0, false]
+  /** An untracked file's added lines, counted on its bytes; nothing for an unreadable or too-large file. */
+  private static async countUntrackedFile(workspace: string, rel: string): Promise<Pick<GitFile, 'additions' | 'deletions' | 'binary'>> {
+    const data = await GitRunner.readUntracked(workspace, rel)
+    if (!(data instanceof Buffer)) return { additions: 0, deletions: 0, binary: false }
+    if (isBinary(data)) return { additions: 0, deletions: 0, binary: true }
+    return { additions: lineCount(data), deletions: 0, binary: false }
   }
 
+  /**
+   * A workspace's Git status. Polled reads (`useCache`) take a fresh cached payload, else share the read already running
+   * for the workspace; a mutation's own read always runs after it.
+   */
   async status(workspace: string, opts: { useCache?: boolean } = {}): Promise<GitStatus> {
     const resolved = resolvePathLikePython(workspace)
-    if (opts.useCache) {
-      const cached = this.cachedStatus(resolved)
-      if (cached) return cached
+    if (!opts.useCache) return await this.readStatus(resolved)
+    const cached = this.cachedStatus(resolved)
+    if (cached) return cached
+    let pending = this.statusInFlight.get(resolved)
+    if (!pending) {
+      const read = this.readStatus(resolved).finally(() => { if (this.statusInFlight.get(resolved) === read) this.statusInFlight.delete(resolved) })
+      this.statusInFlight.set(resolved, read)
+      pending = read
     }
+    return structuredClone(await pending)
+  }
+
+  private async readStatus(resolved: string): Promise<GitStatus> {
     const ctx = await this.resolveContext(resolved)
     if (!ctx) return { is_git: false }
     const generation = this.generations.get(ctx.repoRoot) ?? 0
-    const result = await this.run(ctx, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--', GitRunner.workspacePathspec(ctx)], { check: true, disableFilterAttributes: this.destructiveEnabled(), neutralizeFilterPrograms: true })
-    const stagedStats = await this.collectNumstat(ctx, true)
-    const unstagedStats = await this.collectNumstat(ctx, false)
+    // One filter lookup serves the three reads, which run together: none takes the index lock (GIT_OPTIONAL_LOCKS=0 for
+    // status, diff.autoRefreshIndex=false for diff).
+    const read: RunOptions = { disableFilterAttributes: this.destructiveEnabled(), neutralizeFilterPrograms: true, filterNames: await this.filterNames(ctx.repoRoot, this.cleanEnv()) }
+    const [result, stagedStats, unstagedStats] = await Promise.all([
+      this.run(ctx, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--', GitRunner.workspacePathspec(ctx)], { ...read, check: true }),
+      this.collectNumstat(ctx, true, read),
+      this.collectNumstat(ctx, false, read),
+    ])
     const statSources: Stats[] = [stagedStats ?? new Map<string, [number, number, boolean]>(), unstagedStats ?? new Map<string, [number, number, boolean]>()]
     let branch = ''
     let upstream = ''
     let ahead = 0
     let behind = 0
     const files = new Map<string, GitFile>()
+    const untrackedFiles: GitFile[] = []
     const noise = { filemode_only: 0, crlf_only: 0 }
     const tokens = result.stdout.split('\0')
     let i = 0
@@ -958,7 +974,6 @@ export class GitRunner {
           binary = binary || entry[2]
         }
       }
-      if (untracked) [additions, deletions, binary] = GitRunner.countUntrackedFile(ctx.workspace, join(ctx.workspace, workspacePath))
       let staged = x !== '.' && x !== '?' && !untracked
       let unstaged = y !== '.' && y !== ' ' && !untracked
       if (staged && stagedStats && !renamed) {
@@ -975,15 +990,22 @@ export class GitRunner {
         noise[modeOnly ? 'filemode_only' : 'crlf_only'] += 1
         continue
       }
-      files.set(workspacePath, {
+      const file: GitFile = {
         path: workspacePath, old_path: oldWorkspacePath, workspace_path: workspacePath, status: GitRunner.statusCode(xy, untracked, renamed),
         staged, unstaged, untracked, ignored: false, conflict, additions, deletions, binary,
-      })
+      }
+      files.set(workspacePath, file)
+      if (untracked) untrackedFiles.push(file)
       if (files.size >= STATUS_FILE_LIMIT) {
         truncated = true
         break
       }
     }
+    // A few reads at a time keep the event loop free without holding hundreds of descriptors open.
+    const queue = [...untrackedFiles]
+    await Promise.all(Array.from({ length: 8 }, async () => {
+      for (let file = queue.shift(); file; file = queue.shift()) Object.assign(file, await GitRunner.countUntrackedFile(ctx.workspace, file.path))
+    }))
     const fileList = [...files.values()].sort((a, b) => (a.path.toLowerCase() < b.path.toLowerCase() ? -1 : a.path.toLowerCase() > b.path.toLowerCase() ? 1 : 0))
     const totals: GitTotals = { changed: fileList.length, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
     for (const item of fileList) {
@@ -1003,45 +1025,36 @@ export class GitRunner {
 
   // ── branches ─────────────────────────────────────────────────────────────
 
-  private async branchAheadBehind(ctx: GitContext, branch: string, upstream: string): Promise<[number, number]> {
-    if (!upstream) return [0, 0]
-    const result = await this.run(ctx, ['rev-list', '--left-right', '--count', `${branch}...${upstream}`])
-    if (result.status !== 0) return [0, 0]
-    const parts = result.stdout.trim().split(/\s+/)
-    if (parts.length !== 2) return [0, 0]
-    const a = Number.parseInt(parts[0] ?? '', 10)
-    const b = Number.parseInt(parts[1] ?? '', 10)
-    return Number.isFinite(a) && Number.isFinite(b) ? [a, b] : [0, 0]
-  }
-
-  private async forEachRef(ctx: GitContext, refPrefix: string): Promise<GitRef[]> {
-    const fmt = '%(refname)%00%(refname:short)%00%(upstream:short)%00%(objectname:short)%00%(committerdate:unix)%00%(committerdate:relative)%00%(authorname)%00%(subject)'
+  /** The refs under `refPrefix` sorted by name, keyed by full ref name too; `%(upstream:track)` carries ahead/behind. */
+  private async forEachRef(ctx: GitContext, refPrefix: string): Promise<{ refs: GitRef[]; byRef: Map<string, GitRef> }> {
+    const fmt = '%(refname)%00%(refname:short)%00%(upstream:short)%00%(upstream:track)%00%(objectname:short)%00%(committerdate:unix)%00%(committerdate:relative)%00%(authorname)%00%(subject)'
     const result = await this.run(ctx, ['for-each-ref', `--format=${fmt}`, refPrefix], { check: true })
-    const refs: GitRef[] = []
+    const byRef = new Map<string, GitRef>()
     for (const line of result.stdout.split('\n')) {
-      const [fullName = '', name = '', upstream = '', sha = '', updated = '', updatedRelative = '', author = '', subject = ''] = line.split('\0')
+      const [fullName = '', name = '', upstream = '', track = '', sha = '', updated = '', updatedRelative = '', author = '', subject = ''] = line.split('\0')
       if (!name || fullName.endsWith('/HEAD') || name.endsWith('/HEAD')) continue
       if (refPrefix === 'refs/remotes' && !name.includes('/')) continue
-      const item: GitRef = { name, sha, updated: /^\d+$/.test(updated) ? Number.parseInt(updated, 10) : 0, updated_relative: updatedRelative, author, subject, upstream: '', ahead: 0, behind: 0 }
-      if (upstream) {
-        const [ahead, behind] = await this.branchAheadBehind(ctx, name, upstream)
-        Object.assign(item, { upstream, ahead, behind })
-      }
-      refs.push(item)
+      // `[ahead N, behind M]`, either half alone, `[gone]`, or empty when in sync.
+      const count = (side: string): number => (upstream ? Number.parseInt(new RegExp(`${side} (\\d+)`).exec(track)?.[1] ?? '0', 10) : 0)
+      byRef.set(fullName, { name, sha, updated: /^\d+$/.test(updated) ? Number.parseInt(updated, 10) : 0, updated_relative: updatedRelative, author, subject, upstream, ahead: count('ahead'), behind: count('behind') })
     }
-    return refs.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0))
+    const refs = [...byRef.values()].sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0))
+    return { refs, byRef }
   }
 
   async branches(workspace: string): Promise<GitBranches> {
     const ctx = await this.resolveContext(workspace)
     if (!ctx) throw new GitWorkspaceError('Workspace is not a Git repository', 'not_a_repo')
-    const headName = (await this.run(ctx, ['branch', '--show-current'], { check: true })).stdout.trim()
-    const headSha = (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
-    const status = await this.status(workspace)
+    const [headName, headSha, local, remote] = await Promise.all([
+      this.run(ctx, ['branch', '--show-current'], { check: true }).then((r) => r.stdout.trim()),
+      this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true }).then((r) => r.stdout.trim()),
+      this.forEachRef(ctx, 'refs/heads'),
+      this.forEachRef(ctx, 'refs/remotes'),
+    ])
+    const head = headName ? local.byRef.get(`refs/heads/${headName}`) : undefined
     return {
-      is_git: true, current: headName || headSha || 'HEAD', detached: !headName, head: headSha,
-      local: await this.forEachRef(ctx, 'refs/heads'), remote: await this.forEachRef(ctx, 'refs/remotes'),
-      upstream: status.upstream ?? '', ahead: status.ahead ?? 0, behind: status.behind ?? 0,
+      is_git: true, current: headName || headSha || 'HEAD', detached: !headName, head: headSha, local: local.refs, remote: remote.refs,
+      upstream: head?.upstream ?? '', ahead: head?.ahead ?? 0, behind: head?.behind ?? 0,
     }
   }
 
@@ -1187,7 +1200,8 @@ export class GitRunner {
       await this.validateCheckoutRequestLocked(ctx, ref, m, opts.newBranch ?? null)
       if (await this.dirtyWorktree(ctx)) throw new GitWorkspaceError('Checkout blocked because the Git worktree has uncommitted changes', 'dirty_worktree')
       const checkedOut = await this.performCheckoutLocked(ctx, ref, m, opts.newBranch ?? null, Boolean(opts.track))
-      return { checkedOut, status: await this.status(workspace), branches: await this.branches(workspace) }
+      const [status, branches] = await Promise.all([this.status(workspace), this.branches(workspace)])
+      return { checkedOut, status, branches }
     })
     const { status, branches } = result
     return { ok: true, message: GitRunner.remoteMessage(result.checkedOut), current_branch: branches.current, status, branches }
@@ -1217,7 +1231,8 @@ export class GitRunner {
         throw error
       }
       const restored = await this.restoreBranchSwitchStashLocked(ctx, await this.currentCheckoutLabel(ctx))
-      return { result, stashed, restored, status: await this.status(workspace), branches: await this.branches(workspace) }
+      const [status, branches] = await Promise.all([this.status(workspace), this.branches(workspace)])
+      return { result, stashed, restored, status, branches }
     })
     const { restored, status, branches } = outcome
     return {
@@ -1229,14 +1244,13 @@ export class GitRunner {
 
   // ── diff ─────────────────────────────────────────────────────────────────
 
-  private static syntheticUntrackedDiff(workspace: string, path: string, label: string): Omit<GitDiff, 'path' | 'kind'> {
-    const read = GitRunner.readUntracked(workspace, path)
-    if (!read) throw new GitWorkspaceError('Path is not a file')
-    if ('tooLarge' in read) return { binary: false, too_large: true, diff: '', additions: 0, deletions: 0, hunks: [] }
-    const data = read.data
-    const text = data.toString('utf8')
-    if (data.includes(0) || (text.includes('�') && !data.equals(Buffer.from(text, 'utf8')))) return { binary: true, too_large: false, diff: '', additions: 0, deletions: 0, hunks: [] }
-    const diffLines = unifiedDiffFromEmpty(splitLines(text), `b/${label}`)
+  private static async syntheticUntrackedDiff(workspace: string, rel: string): Promise<Omit<GitDiff, 'path' | 'kind'>> {
+    const data = await GitRunner.readUntracked(workspace, rel)
+    if (!data) throw new GitWorkspaceError('Path is not a file')
+    if (data === 'too_large') return { binary: false, too_large: true, diff: '', additions: 0, deletions: 0, hunks: [] }
+    const text = decodeText(data)
+    if (text === null) return { binary: true, too_large: false, diff: '', additions: 0, deletions: 0, hunks: [] }
+    const diffLines = unifiedDiffFromEmpty(splitLines(text), `b/${rel}`)
     let diff = diffLines.join('\n') + (diffLines.length ? '\n' : '')
     const tooLarge = Buffer.byteLength(diff, 'utf8') > DIFF_SIZE_LIMIT
     if (tooLarge) diff = diff.slice(0, DIFF_SIZE_LIMIT)
@@ -1249,9 +1263,10 @@ export class GitRunner {
     if (kind !== 'unstaged' && kind !== 'staged') throw new GitWorkspaceError('kind must be staged or unstaged')
     const repoRel = GitRunner.repoRel(ctx, path)
     const workspaceRel = GitRunner.workspaceRel(ctx, repoRel) ?? path
-    const status = await this.status(workspace)
-    const fileState = (status.files ?? []).find((f) => f.path === workspaceRel)
-    if (kind === 'unstaged' && fileState?.untracked) return { path: workspaceRel, kind, ...GitRunner.syntheticUntrackedDiff(ctx.workspace, join(ctx.workspace, workspaceRel), workspaceRel) }
+    if (kind === 'unstaged') {
+      const untracked = await this.run(ctx, ['ls-files', '-z', '--others', '--exclude-standard', '--', repoRel], { check: true })
+      if (untracked.stdout.split('\0').includes(repoRel)) return { path: workspaceRel, kind, ...await GitRunner.syntheticUntrackedDiff(ctx.workspace, workspaceRel) }
+    }
     const args = ['diff', '--no-ext-diff', '--no-textconv', '--unified=3']
     if (kind === 'staged') args.push('--cached')
     args.push('--', repoRel)
