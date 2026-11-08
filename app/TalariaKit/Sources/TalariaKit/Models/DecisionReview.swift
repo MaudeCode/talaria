@@ -14,6 +14,8 @@ public struct DecisionReview: Decodable, Equatable, Sendable {
     public let title: String
     public let intro: String?
     public let status: Status
+    /// When the server last changed the review; a later copy never has an earlier one.
+    public let updatedAt: Double
     public let progress: DecisionProgress
     public let submit: DecisionSubmit
     /// In display order: the server's, never re-sorted.
@@ -24,7 +26,7 @@ public struct DecisionReview: Decodable, Equatable, Sendable {
     public let nextItemId: String?
 
     public init(
-        reviewId: String, sessionId: String, title: String, intro: String? = nil, status: Status, progress: DecisionProgress,
+        reviewId: String, sessionId: String, title: String, intro: String? = nil, status: Status, updatedAt: Double = 0, progress: DecisionProgress,
         submit: DecisionSubmit, items: [DecisionItem], filters: DecisionFilters = DecisionFilters(new: [], pending: []), nextItemId: String? = nil
     ) {
         self.reviewId = reviewId
@@ -32,6 +34,7 @@ public struct DecisionReview: Decodable, Equatable, Sendable {
         self.title = title
         self.intro = intro
         self.status = status
+        self.updatedAt = updatedAt
         self.progress = progress
         self.submit = submit
         self.items = items
@@ -40,7 +43,7 @@ public struct DecisionReview: Decodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case reviewId, sessionId, title, intro, status, progress, submit, items, filters, nextItemId
+        case reviewId, sessionId, title, intro, status, updatedAt, progress, submit, items, filters, nextItemId
     }
 
     public init(from decoder: Decoder) throws {
@@ -50,6 +53,7 @@ public struct DecisionReview: Decodable, Equatable, Sendable {
         title = container.decodeLossyStringIfPresent(forKey: .title) ?? ""
         intro = container.decodeLossyStringIfPresent(forKey: .intro)
         status = (try? container.decode(Status.self, forKey: .status)) ?? .open
+        updatedAt = container.decodeLossyDoubleIfPresent(forKey: .updatedAt) ?? 0
         progress = (try? container.decode(DecisionProgress.self, forKey: .progress)) ?? DecisionProgress(total: 0, answered: 0)
         submit = (try? container.decode(DecisionSubmit.self, forKey: .submit)) ?? DecisionSubmit(allowed: false, reason: nil)
         items = container.decodeLossyArrayIfPresent(DecisionItem.self, forKey: .items) ?? []

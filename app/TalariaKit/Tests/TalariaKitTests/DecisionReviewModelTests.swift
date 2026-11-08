@@ -17,6 +17,8 @@ final class DecisionReviewModelTests: XCTestCase {
         let index = try XCTUnwrap(items.firstIndex { $0["id"] as? String == item })
         items[index]["answer"] = try JSONSerialization.jsonObject(with: Data(answer.utf8), options: .fragmentsAllowed)
         items[index]["answer_version"] = version
+        // Each write is a later server copy.
+        root["updated_at"] = 1_893_456_600 + version * 10
         root["items"] = items
         return String(decoding: try JSONSerialization.data(withJSONObject: root), as: UTF8.self)
     }
@@ -191,6 +193,86 @@ final class DecisionReviewModelTests: XCTestCase {
         let saveIndex = try XCTUnwrap(order.value.firstIndex { $0.hasPrefix("PUT") })
         let submitIndex = try XCTUnwrap(order.value.firstIndex { $0.hasSuffix("/submit") })
         XCTAssertLessThan(saveIndex, submitIndex)
+    }
+
+    func testASaveThatFailsStopsTheSubmitQueuedBehindIt() async throws {
+        let review = try Self.fixture("review")
+        let conflict = try Self.fixture("answer_conflict")
+        let order = LockedTestValue<[String]>([])
+        let writes = DeferredRequests()
+        let arrived = expectation(description: "answer write held")
+        let model = model { request in
+            order.value.append(request.request.url?.path ?? "")
+            if Self.isAnswerWrite(request.request) {
+                _ = writes.append(request)
+                arrived.fulfill()
+            } else { request.complete(withJSON: review) }
+        }
+        await model.load()
+        model.setDraft(.init(value: "week", notes: ""), for: try XCTUnwrap(model.currentItem))
+        let save = Task { await model.saveAndNext() }
+        await fulfillment(of: [arrived], timeout: 5)
+        let submit = Task { await model.submit() }
+        await drainMainActor()
+
+        writes.request(at: 0).complete(withJSON: conflict, statusCode: 409)
+        await save.value
+        await submit.value
+
+        XCTAssertFalse(order.value.contains { $0.hasSuffix("/submit") }, "A refused save stops the queued submit")
+        XCTAssertEqual(model.review?.status, .open)
+        XCTAssertEqual(model.refusal, .conflict(itemID: "retention"))
+    }
+
+    func testAnUnknownOutcomeWhoseRereadFailsStaysShownUntilARead() async throws {
+        let review = try Self.fixture("review")
+        let landed = try Self.review(answering: "retention", with: #"{"value":null,"label":null,"effect":null,"notes":"","deferred":true,"custom":false,"version":3,"updated_at":1893456800}"#, version: 3)
+        let offline = LockedTestValue(false)
+        let wrote = LockedTestValue(false)
+        let model = model { request in
+            if Self.isAnswerWrite(request.request) {
+                offline.value = true
+                wrote.value = true
+                request.fail(with: URLError(.networkConnectionLost))
+            } else if offline.value {
+                request.fail(with: URLError(.notConnectedToInternet))
+            } else { request.complete(withJSON: wrote.value ? landed : review) }
+        }
+        await model.load()
+
+        await model.deferCurrent()
+        XCTAssertEqual(model.review?.item(id: "retention")?.answer?.deferred, true, "No read decided, so nothing rolls back")
+        XCTAssertNotNil(model.lastError)
+
+        offline.value = false
+        await model.load()
+        XCTAssertEqual(model.review?.item(id: "retention")?.answerVersion, 3, "The read settles it")
+    }
+
+    func testARefreshThatStartedBeforeASaveCannotUndoIt() async throws {
+        let review = try Self.fixture("review")
+        let saved = try Self.review(answering: "retention", with: #"{"value":"week","label":"Archive after a week","effect":"Chats older than seven days move to the archive.","notes":"","deferred":false,"custom":false,"version":3,"updated_at":1893456800}"#, version: 3)
+        let reads = DeferredRequests()
+        let readHeld = expectation(description: "refresh held")
+        let model = model { request in
+            if Self.isAnswerWrite(request.request) {
+                request.complete(withJSON: saved)
+            } else {
+                _ = reads.append(request)
+                if reads.count == 2 { readHeld.fulfill() } else { request.complete(withJSON: review) }
+            }
+        }
+        await model.load()
+        model.setDraft(.init(value: "week", notes: ""), for: try XCTUnwrap(model.currentItem))
+        let refresh = Task { await model.load() }
+        await fulfillment(of: [readHeld], timeout: 5)
+
+        await model.saveAndNext()
+        reads.request(at: 1).complete(withJSON: review)
+        await refresh.value
+
+        XCTAssertEqual(model.review?.item(id: "retention")?.answerVersion, 3, "The older read is ignored")
+        XCTAssertEqual(model.review?.item(id: "retention")?.answer?.value, "week")
     }
 
     func testDeferUseNotesAndClearSendTheirAnswerShapes() async throws {

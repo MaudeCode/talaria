@@ -59,6 +59,8 @@ struct DecisionReviewView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.interactively)
+            // A read settles a save or submit whose outcome is still unknown.
+            .refreshable { await model.load() }
         } else if let error = model.loadError {
             ContentUnavailableView {
                 Label(String(localized: "Decision review unavailable"), systemImage: "exclamationmark.triangle")

@@ -54,6 +54,12 @@ public final class DecisionReviewModel {
     private var pendingAnswers: [String: (answer: DecisionAnswer?, version: Int, token: UUID)] = [:]
     /// Saves still waiting on the server or their reread; Submit waits for them.
     @ObservationIgnored private var saveRequests: [UUID: Task<Void, Never>] = [:]
+    /// Saves whose outcome is unknown because their reread failed too: the shown answer stays until a read decides.
+    private var unresolvedAnswers: [String: (token: UUID, landedVersion: Int, savedDraft: Draft?)] = [:]
+    /// A submit whose outcome is unknown: it shows submitted until a read decides.
+    private var submitUnresolved = false
+    /// Saves that did not land as shown (refused, in conflict, or unresolved); a queued Submit stops when one fails.
+    @ObservationIgnored private var failedSaves = 0
     private var pendingSubmit = false
     private var drafts: [String: Draft] = [:]
     @ObservationIgnored private let client: APIClient
@@ -82,7 +88,7 @@ public final class DecisionReviewModel {
         if pendingSubmit {
             shown = DecisionReview(
                 reviewId: shown.reviewId, sessionId: shown.sessionId, title: shown.title, intro: shown.intro, status: .submitted,
-                progress: shown.progress, submit: DecisionSubmit(allowed: false, reason: .notOpen), items: shown.items,
+                updatedAt: shown.updatedAt, progress: shown.progress, submit: DecisionSubmit(allowed: false, reason: .notOpen), items: shown.items,
                 filters: shown.filters, nextItemId: shown.nextItemId
             )
         }
@@ -187,8 +193,10 @@ public final class DecisionReviewModel {
         guard review?.submit.allowed == true, !pendingSubmit else { return }
         pendingSubmit = true
         lastError = nil
+        let failuresBefore = failedSaves
         while let request = saveRequests.values.first { await request.value }
-        guard confirmed?.submit.allowed == true else {
+        // A save that did not land as shown stops the submit: the agent would act on answers the user never saw.
+        guard failedSaves == failuresBefore, unresolvedAnswers.isEmpty, confirmed?.submit.allowed == true else {
             pendingSubmit = false
             return
         }
@@ -201,11 +209,19 @@ public final class DecisionReviewModel {
                 pendingSubmit = false
                 return
             }
-            // A refusal rolls back at once; an unknown outcome keeps the submitted look until the server's copy decides.
-            if Self.isRefusal(error) { pendingSubmit = false }
-            let reread = await reconcile()
-            pendingSubmit = false
-            if !reread || confirmed?.status == .open { report(error) }
+            if Self.isRefusal(error) {
+                pendingSubmit = false
+                report(error)
+                _ = await reconcile()
+                return
+            }
+            // Unknown outcome: the submitted look stays until a read shows whether the server took it.
+            submitUnresolved = true
+            if await reconcile() {
+                if confirmed?.status == .open { report(error) }
+            } else {
+                report(error)
+            }
         }
     }
 
@@ -247,6 +263,7 @@ public final class DecisionReviewModel {
                 settle(itemID, token: token)
                 return
             }
+            failedSaves += 1
             if let stored = (error as? APIError)?.decisionStoredAnswer {
                 settle(itemID, token: token)
                 restore(itemID, stored: stored, notes: input.notes, code: (error as? APIError)?.serverCode)
@@ -256,12 +273,11 @@ public final class DecisionReviewModel {
                 report(error)
                 _ = await reconcile()
             } else {
-                // Unknown outcome: the shown answer stays until the server's copy decides whether the save landed; it is
-                // never resent.
-                let reread = await reconcile()
-                settle(itemID, token: token)
-                if reread, confirmed?.item(id: itemID)?.answerVersion == input.expectedVersion + 1 {
-                    retire(savedDraft, of: itemID)
+                // Unknown outcome: the shown answer stays until a server read decides whether the save landed; it is never
+                // resent, and a failed reread leaves it unresolved rather than rolled back.
+                unresolvedAnswers[itemID] = (token, input.expectedVersion + 1, savedDraft)
+                if await reconcile(), confirmed?.item(id: itemID)?.answerVersion == input.expectedVersion + 1 {
+                    failedSaves -= 1
                 } else {
                     report(error)
                 }
@@ -304,9 +320,21 @@ public final class DecisionReviewModel {
         page = .decide
     }
 
+    /// Takes the server's copy unless it is older than the one shown, so a read that started before a save cannot undo
+    /// it. A read also settles every unresolved outcome.
     private func adopt(_ review: DecisionReview) {
+        if let confirmed, review.updatedAt < confirmed.updatedAt { return }
         confirmed = review
         if currentItemID.flatMap(review.item(id:)) == nil { currentItemID = review.items.first?.id }
+        for (itemID, unresolved) in unresolvedAnswers {
+            settle(itemID, token: unresolved.token)
+            if review.item(id: itemID)?.answerVersion == unresolved.landedVersion { retire(unresolved.savedDraft, of: itemID) }
+        }
+        unresolvedAnswers = [:]
+        if submitUnresolved {
+            submitUnresolved = false
+            pendingSubmit = false
+        }
     }
 
     /// The next item in the server's order, else the Answers list.
