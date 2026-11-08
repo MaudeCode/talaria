@@ -3,7 +3,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { BackgroundLink, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -34,6 +34,8 @@ export interface ToolCardData {
   resultTruncated?: boolean
   /** TAL-1783: the answer to the approval that held this call; the row lights once as it arrives. */
   approvalOutcome?: ToolApprovalOutcome | undefined
+  /** TAL-1169: another session's agent answered that approval (server field). */
+  approvalAnsweredBy?: ApprovalAnsweredBy | undefined
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
@@ -79,6 +81,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
   const args = pretty(call.args)
   const result = call.resultView ? resultText(call.resultView) : call.preview ?? ''
   const flash = useApprovalFlash([call])
+  const answeredBy = call.approvalAnsweredBy && (call.approvalAnsweredBy.outcome === 'denied' ? m.tool_approval_denied_by : m.tool_approval_allowed_by)({ title: call.approvalAnsweredBy.title })
   return (
     <div ref={arrival} className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
       <button type="button" className={cn('tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text', flash)} aria-expanded={open} onClick={toggle}>
@@ -87,6 +90,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
         <span className="tool-card-name min-w-0 flex-1 truncate"><SwapText className="tool-card-name-label" text={label} /></span>
         {!call.done && call.progress && <span className="tool-card-progress min-w-0 max-w-[60%] truncate text-[11px] tabular-nums text-muted" title={call.progress.message ?? undefined}>{[call.progress.percent === null ? null : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(call.progress.percent / 100), call.progress.message].filter(Boolean).join(' · ')}</span>}
         {call.background && <span className="tool-card-background shrink-0 text-[11px] text-muted" data-background-status={call.background.status}>{call.background.status === 'running' || call.background.status === 'completed' ? agentsSummary(call.background.agents) : `${statusLabel(call.background.status)} · ${agentsSummary(call.background.agents)}`}</span>}
+        {answeredBy && <span className="tool-card-answered-by min-w-0 max-w-[40%] shrink truncate text-[11px] text-muted" data-approval-outcome={call.approvalAnsweredBy?.outcome} title={answeredBy}>{answeredBy}</span>}
         {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={m.status_streaming()} />}
         {call.done && call.duration !== null && <span className="shrink-0 text-[11px] tabular-nums text-muted">{call.duration.toFixed(1)}s</span>}
         {timestamp && <span className="shrink-0 text-[11px] tabular-nums text-muted">{timestamp}</span>}

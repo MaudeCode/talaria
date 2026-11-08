@@ -65,10 +65,18 @@ export type ToolEditDiff = z.infer<typeof ToolEditDiffSchema>
 /** The latest server-normalized MCP update; never stored with the transcript. */
 export const ToolProgressSchema = z.object({ percent: z.number().min(0).max(100).nullable(), message: z.string().nullable() })
 export type ToolProgress = z.infer<typeof ToolProgressSchema>
+export const ToolApprovalOutcomeSchema = z.enum(['allowed', 'denied'])
+export type ToolApprovalOutcome = z.infer<typeof ToolApprovalOutcomeSchema>
+/** TAL-1169: the session whose agent answered another session's approval, and that session's title as the server names it. */
+export const ApprovalAnswererSchema = z.object({ session_id: z.string(), title: z.string() })
+export type ApprovalAnswerer = z.infer<typeof ApprovalAnswererSchema>
+export const ApprovalAnsweredBySchema = ApprovalAnswererSchema.extend({ outcome: ToolApprovalOutcomeSchema })
+export type ApprovalAnsweredBy = z.infer<typeof ApprovalAnsweredBySchema>
 /** Shared tool display fields. Progress is ephemeral, absent on older servers and null after completion. */
 export const ToolDisplayFields = {
   progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
   focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
+  approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),
 }
 
 /**
@@ -577,8 +585,6 @@ export const ApprovalPendingSchema = z.looseObject({
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
 export type ApprovalPending = z.infer<typeof ApprovalPendingSchema>
-export const ToolApprovalOutcomeSchema = z.enum(['allowed', 'denied'])
-export type ToolApprovalOutcome = z.infer<typeof ToolApprovalOutcomeSchema>
 export const ApprovalPendingEnvelopeSchema = z.looseObject({ pending: ApprovalPendingSchema.nullable(), pending_count: z.number().int() })
 export const ApprovalChoiceSchema = z.enum(['once', 'session', 'always', 'deny'])
 export const ApprovalRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, choice: ApprovalChoiceSchema, approval_id: z.string().optional(), instruction: z.string().optional(), command: z.string().optional(), yolo: z.boolean().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
@@ -754,6 +760,7 @@ export const SettingsSchema = z.looseObject({
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
+  agent_approvals: z.boolean().nullable().optional().describe('TAL-1169: the profile\'s `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session\'s pending command. Null when the profile config cannot be read.'),
   compression_prepare_ahead: z.boolean().nullable().optional().describe('TAL-1825: the profile\'s `compression.prepare_ahead`; null when the Agent does not offer it.'),
   group_discussion_max_rounds: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_rounds`, as a gateway loads it (default 3). Null when the session cannot manage the server or this server cannot offer it.'),
   group_discussion_max_messages: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`.'),

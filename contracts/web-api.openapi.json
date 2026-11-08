@@ -6965,6 +6965,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -7328,6 +7352,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -8264,6 +8312,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -12063,6 +12135,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -12426,6 +12522,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -13362,6 +13482,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -15924,6 +16068,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -16287,6 +16455,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -17223,6 +17415,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -22795,6 +23011,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -23158,6 +23398,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -24094,6 +24358,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -29015,6 +29303,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -29378,6 +29690,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -30314,6 +30650,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -35867,6 +36227,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -36230,6 +36614,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -37166,6 +37574,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -39677,6 +40109,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -40040,6 +40496,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -40976,6 +41456,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -43549,6 +44053,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -43912,6 +44440,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -44848,6 +45400,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -47419,6 +47995,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -47782,6 +48382,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -48718,6 +49342,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -51118,6 +51766,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "args": {},
                               "preview": {
@@ -62007,6 +62679,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -62370,6 +63066,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -63306,6 +64026,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -65869,6 +66613,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -66232,6 +67000,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -67168,6 +67960,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -70410,6 +71226,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -70773,6 +71613,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {
@@ -71709,6 +72573,30 @@
                                   }
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                              },
+                              "approval_answered_by": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "enum": [
+                                      "allowed",
+                                      "denied"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "title",
+                                  "outcome"
+                                ],
+                                "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                               },
                               "name": {
                                 "type": "string"
@@ -74821,6 +75709,30 @@
                                           ],
                                           "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                         },
+                                        "approval_answered_by": {
+                                          "type": "object",
+                                          "properties": {
+                                            "session_id": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "outcome": {
+                                              "enum": [
+                                                "allowed",
+                                                "denied"
+                                              ],
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "session_id",
+                                            "title",
+                                            "outcome"
+                                          ],
+                                          "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                        },
                                         "name": {
                                           "type": "string"
                                         },
@@ -75173,6 +76085,30 @@
                                                     }
                                                   ],
                                                   "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                                },
+                                                "approval_answered_by": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "session_id": {
+                                                      "type": "string"
+                                                    },
+                                                    "title": {
+                                                      "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "enum": [
+                                                        "allowed",
+                                                        "denied"
+                                                      ],
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "session_id",
+                                                    "title",
+                                                    "outcome"
+                                                  ],
+                                                  "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                                 },
                                                 "args": {},
                                                 "preview": {
@@ -76080,6 +77016,30 @@
                                       }
                                     ],
                                     "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                  },
+                                  "approval_answered_by": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "outcome": {
+                                        "enum": [
+                                          "allowed",
+                                          "denied"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "title",
+                                      "outcome"
+                                    ],
+                                    "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                   },
                                   "name": {
                                     "type": "string"
@@ -80326,6 +81286,17 @@
                         "pace_minimum_elapsed_hours"
                       ]
                     },
+                    "agent_approvals": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1169: the profile's `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session's pending command. Null when the profile config cannot be read."
+                    },
                     "compression_prepare_ahead": {
                       "anyOf": [
                         {
@@ -80686,6 +81657,17 @@
                         "pace_critical_burn_rate_percent",
                         "pace_minimum_elapsed_hours"
                       ]
+                    },
+                    "agent_approvals": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-1169: the profile's `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session's pending command. Null when the profile config cannot be read."
                     },
                     "compression_prepare_ahead": {
                       "anyOf": [
@@ -119917,6 +120899,30 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "approval_answered_by": {
+                                      "type": "object",
+                                      "properties": {
+                                        "session_id": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "outcome": {
+                                          "enum": [
+                                            "allowed",
+                                            "denied"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "session_id",
+                                        "title",
+                                        "outcome"
+                                      ],
+                                      "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -120280,6 +121286,30 @@
                                                 }
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
+                                            },
+                                            "approval_answered_by": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "enum": [
+                                                    "allowed",
+                                                    "denied"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "title",
+                                                "outcome"
+                                              ],
+                                              "description": "TAL-1169: another session's agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked."
                                             },
                                             "args": {},
                                             "preview": {

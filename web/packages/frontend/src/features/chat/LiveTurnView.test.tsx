@@ -55,6 +55,18 @@ it('lights only the tool row the approval held when the server reports its answe
   expect(header('read').className).not.toContain('tool-flash')
 })
 
+it('names the chat whose agent answered the approval on the live row (TAL-1169)', () => {
+  const run = liveRun()
+  run.emit({ event: 'tool', data: { id: 'push', name: 'terminal', kind: 'shell', target: 'git push' } })
+  run.emit({ event: 'tool', data: { id: 'read', name: 'read_file', kind: 'read', target: 'CHANGELOG.md' } })
+  const view = render(<View run={run} mode="transparent_stream" />)
+  run.emit({ event: 'tool_approval', data: { id: 'push', outcome: 'denied', answered_by: { session_id: 'planner', title: 'Release planner' } } })
+  run.emit({ event: 'tool_approval', data: { id: 'read', outcome: 'allowed' } })
+  view.rerender(<View run={run} mode="transparent_stream" />)
+  expect(view.container.querySelector('[data-tool-id="push"] .tool-card-answered-by')).toHaveTextContent('Denied by Release planner')
+  expect(view.container.querySelector('[data-tool-id="read"] .tool-card-answered-by')).toBeNull()
+})
+
 it('lights the group folding that row, which is all the reader can see of it (TAL-1783)', () => {
   const run = liveRun()
   run.emit({ event: 'tool', data: { id: 'read', name: 'read_file', kind: 'read', target: 'CHANGELOG.md' } })

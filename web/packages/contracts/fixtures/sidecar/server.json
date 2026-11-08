@@ -484,5 +484,31 @@
         "response": "release"
       }
     }
+  ],
+  "server.approval_respond": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "approval_id": "approval-1",
+        "choice": "once"
+      },
+      "result": {
+        "ok": true,
+        "choice": "once"
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "approval_id": "approval-2",
+        "choice": "deny"
+      },
+      "result": {
+        "ok": true,
+        "choice": "deny"
+      }
+    }
   ]
 }

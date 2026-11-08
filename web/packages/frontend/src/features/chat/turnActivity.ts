@@ -2,7 +2,7 @@ import type { Message } from '../../contracts'
 import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolProgressSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolProgressSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
@@ -47,6 +47,8 @@ function displayBody(display: unknown, media: unknown): DisplayBody {
 const resultViewOf = (v: unknown): ToolResultView | null => ToolResultViewSchema.safeParse(v).data ?? null
 /** TAL-372: a delegation row's link to the work it started, when the server sent a valid one. */
 const backgroundOf = (v: unknown): Pick<ToolCardData, 'background'> => { const link = BackgroundLinkSchema.safeParse(v).data; return link ? { background: link } : {} }
+/** TAL-1169: the other session whose agent answered this call's approval, when the server sent a valid one. */
+const answeredByOf = (v: unknown): Pick<ToolCardData, 'approvalAnsweredBy'> => { const by = ApprovalAnsweredBySchema.safeParse(v).data; return by ? { approvalAnsweredBy: by } : {} }
 
 /** The server stamps every row with its turn; clients group by equality and never infer turn boundaries. */
 export function turnIdOf(message: Message): string | undefined {
@@ -107,7 +109,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     return [{ key, kind: 'tool', call: {
       progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
-      ...backgroundOf(tool.background), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
+      ...backgroundOf(tool.background), ...answeredByOf(tool.approval_answered_by), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
     } }]
   })
 }
@@ -178,7 +180,7 @@ export function continuedActivity(activity: TurnActivity, turn: LiveTurn): TurnA
     const live = item.kind === 'tool' ? turn.tools[item.call.id] : undefined
     if (!live || item.kind !== 'tool') return item
     const call = item.call
-    return { ...item, call: { ...call, progress: live.progress ?? null, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView, approvalOutcome: live.approvalOutcome } }
+    return { ...item, call: { ...call, progress: live.progress ?? null, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView, approvalOutcome: live.approvalOutcome, approvalAnsweredBy: live.approvalAnsweredBy ?? call.approvalAnsweredBy } }
   })
   return { ...activity, items, continued: liveActivity(turn, toolIdsOf(activity)).items.length > 0 }
 }

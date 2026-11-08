@@ -14,7 +14,7 @@ vi.mock('../../api/endpoints', () => ({
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import { PreferencesSection } from './PreferencesSection'
-import { saveSettings, fetchAuxiliaryModels, fetchModels, setDefaultModel } from '../../api/endpoints'
+import { saveSettings, fetchAuxiliaryModels, fetchModels, fetchSettings, setDefaultModel } from '../../api/endpoints'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
@@ -43,6 +43,15 @@ describe('PreferencesSection', () => {
     await userEvent.type(hosts, '\nAPI.Example.com')
     await userEvent.click(within(hosts.closest('form')!).getByRole('button', { name: 'Save' }))
     expect(saveSettings).toHaveBeenLastCalledWith({ trusted_link_hosts: ['docs.example.com', 'API.Example.com'] })
+  })
+
+  it('shows the profile\'s agent approvals setting as the server reports it and writes it (TAL-1169)', async () => {
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', agent_approvals: true })
+    renderSection()
+    const toggle = await screen.findByRole('switch', { name: 'Let agents approve or deny other chats\' commands' })
+    expect(toggle).toBeChecked()
+    await userEvent.click(toggle)
+    expect(saveSettings).toHaveBeenLastCalledWith({ agent_approvals: false })
   })
 
   it('lets only a server owner change link safety and redaction (TAL-279, TAL-1880)', async () => {

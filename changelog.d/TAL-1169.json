@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Added", "summary": "A profile can let the Talaria toolset approve once or deny another chat's pending command; it is off by default, and the chat's transcript shows which chat answered.", "highlight": false, "components": ["web"]}]
+}

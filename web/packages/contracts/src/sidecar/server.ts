@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ApprovalPendingSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
+import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, PendingSteerSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema } from '../views.js'
 import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
 
 /**
@@ -172,6 +172,18 @@ export const ServerClarifyRespondParamsSchema = ServerQueueListParamsSchema.exte
   answer: z.string().min(1),
 })
 
+/**
+ * TAL-1169: approve once or deny another session's pending command as `/api/approval/respond` does, only while the
+ * profile's `talaria.agent_approvals` is on (else `agent_approvals_off`). `session`, `always` and YOLO are never accepted,
+ * so an agent cannot widen another session's standing permissions. The caller's own approval is the user's
+ * (`self_target`); an answered or expired one is `stale`; a target with more access than the caller is refused as
+ * `session_send` refuses it (`exceeds_caller`). The answer is recorded on the target's tool row (`approval_answered_by`).
+ */
+export const ServerApprovalRespondParamsSchema = ServerQueueListParamsSchema.extend({
+  approval_id: z.string().min(1),
+  choice: z.enum(['once', 'deny']),
+})
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -193,6 +205,7 @@ export const SIDECAR_SERVER_METHODS = {
   'server.background_list': { params: ServerBackgroundListParamsSchema, result: BackgroundTasksResponseSchema },
   'server.pending_list': { params: ServerPendingListParamsSchema, result: ServerPendingListResultSchema },
   'server.clarify_respond': { params: ServerClarifyRespondParamsSchema, result: ClarifyRespondResponseSchema },
+  'server.approval_respond': { params: ServerApprovalRespondParamsSchema, result: ApprovalRespondResponseSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

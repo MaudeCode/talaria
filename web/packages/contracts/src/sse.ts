@@ -1,7 +1,7 @@
 import { PlanGaugeSchema } from './plan-usage.js'
 import { z } from 'zod'
 import { RateLimitWaitSchema, RunStatusSchema } from './run-status.js'
-import { ApprovalPendingSchema, ToolApprovalOutcomeSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ApprovalAnswererSchema, ApprovalPendingSchema, ToolApprovalOutcomeSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 import { ConnectorOperationViewSchema } from './connector-operation.js'
 export { RateLimitWaitSchema, type RateLimitWait } from './run-status.js'
 
@@ -74,7 +74,7 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('tool_progress'), data: z.object({ id: z.string(), progress: ToolProgressSchema.nullable() }) }),
   z.object({ event: z.literal('tool_complete'), data: ToolComplete }),
   /** TAL-1783: the server took an answer to the approval holding this call, so its row can show it was unlocked or refused. */
-  z.object({ event: z.literal('tool_approval'), data: z.object({ id: z.string(), outcome: ToolApprovalOutcomeSchema }) }),
+  z.object({ event: z.literal('tool_approval'), data: z.object({ id: z.string(), outcome: ToolApprovalOutcomeSchema, /** TAL-1169: another session's agent gave the answer. */ answered_by: ApprovalAnswererSchema.optional() }) }),
   z.object({ event: z.literal('approval'), data: Approval }),
   /** TAL-514: the last pending approval was withdrawn (answered elsewhere, or the Agent stopped waiting); clients drop the card. */
   z.object({ event: z.literal('approval_cleared'), data: z.looseObject({ session_id: z.string().optional(), pending_count: z.number() }) }),

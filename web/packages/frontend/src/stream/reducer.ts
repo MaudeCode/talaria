@@ -17,7 +17,7 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -38,6 +38,8 @@ export interface LiveToolCall {
   resultView: ToolResultView | null
   /** TAL-1783: the server's report on the approval that held this call. */
   approvalOutcome?: ToolApprovalOutcome | undefined
+  /** TAL-1169: another session's agent gave that answer. */
+  approvalAnsweredBy?: ApprovalAnsweredBy | undefined
   startedAt: number
 }
 
@@ -254,7 +256,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'tool_approval': {
       const call = stamped.tools[event.data.id]
-      return call ? { ...stamped, tools: { ...stamped.tools, [call.id]: { ...call, approvalOutcome: event.data.outcome } } } : stamped
+      const { outcome, answered_by: answeredBy } = event.data
+      return call ? { ...stamped, tools: { ...stamped.tools, [call.id]: { ...call, approvalOutcome: outcome, ...(answeredBy ? { approvalAnsweredBy: { ...answeredBy, outcome } } : {}) } } } : stamped
     }
     case 'approval': {
       if (terminal) return stamped

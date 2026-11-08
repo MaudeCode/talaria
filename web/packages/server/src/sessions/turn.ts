@@ -19,7 +19,7 @@ import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalInstructionOutcome, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
+import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
@@ -2530,8 +2530,9 @@ export class TurnRunner {
    * The one way an approval is answered. A deny with an instruction steers first and denies second (TAL-1912). From the
    * steer on the approval is committed to that deny: every other answer is refused, and a retry after a failed deny
    * sends only the deny, so the instruction never goes out twice and an allow cannot release the command.
+   * `answeredBy` is the session whose agent gave the answer (TAL-1169); the answered tool row records it.
    */
-  async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean, instruction = ''): Promise<Record<string, unknown>> {
+  async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean, instruction = '', answeredBy?: ApprovalAnswerer): Promise<Record<string, unknown>> {
     const owner = this.deps.service().owner
     const owned = await owner?.isOwned(sessionId) === true
     if (!owned) sessionId = (await this.deps.service().idForMutation(sessionId))
@@ -2540,7 +2541,7 @@ export class TurnRunner {
     // Skipping approvals releases every parked one, so any committed to a deny refuses it, not only the one named here.
     const skipsCommitted = enableYolo && [...this.approvalTells.keys()].some((committed) => committed.startsWith(approvalTellKey(sessionId, '')))
     if (skipsCommitted || told === 'steering' || (told && choice !== 'deny')) return { ok: false, choice, error: 'This approval is already being denied', _status: 409 }
-    if (!told && !instruction) return this.answerApproval(sessionId, choice, approvalId, enableYolo, owned)
+    if (!told && !instruction) return this.answerApproval(sessionId, choice, approvalId, enableYolo, owned, answeredBy)
     if (!told) {
       if (!owned && this.deps.pending.peekApproval(sessionId, approvalId).entry?.can_deny_with_instruction !== true) return { ok: false, choice, error: 'This approval does not take an instruction', _status: 409 }
       this.approvalTells.set(key, 'steering')
@@ -2553,7 +2554,7 @@ export class TurnRunner {
       }
     }
     const instruction_outcome = this.approvalTells.get(key)
-    const answer = await this.answerApproval(sessionId, 'deny', approvalId, false, owned)
+    const answer = await this.answerApproval(sessionId, 'deny', approvalId, false, owned, answeredBy)
     if (answer.ok === true) this.approvalTells.delete(key)
     return { ...answer, instruction_outcome }
   }
@@ -2569,7 +2570,7 @@ export class TurnRunner {
     return 'queued'
   }
 
-  private async answerApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean, owned: boolean): Promise<Record<string, unknown>> {
+  private async answerApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean, owned: boolean, answeredBy?: ApprovalAnswerer): Promise<Record<string, unknown>> {
     if (owned) {
       if (enableYolo) throw new HttpFailure(403, 'Change approval policy through the owning Agent')
       await this.deps.service().owner!.respond(sessionId, 'approval', approvalId, choice)
@@ -2603,7 +2604,15 @@ export class TurnRunner {
       }
       if (resolved) {
         this.deps.pending.resolveApproval(sessionId, str(entry.approval_id))
-        if (str(entry.tool_call_id)) await this.emitToSession(sessionId, 'tool_approval', { id: str(entry.tool_call_id), outcome: choice === 'deny' ? 'denied' : 'allowed' })
+        const toolCallId = str(entry.tool_call_id)
+        if (toolCallId) {
+          const outcome = choice === 'deny' ? 'denied' as const : 'allowed' as const
+          // TAL-1169: an agent's answer stays on the call's live record, which the settled transcript keeps.
+          const stream = answeredBy ? this.registry.activeRunStreamForSession(sessionId) : null
+          const call = stream ? (this.registry.liveToolCalls.get(stream) ?? []).findLast((c) => c.tid === toolCallId) : undefined
+          if (call && answeredBy) call.approval_answered_by = { ...answeredBy, outcome }
+          await this.emitToSession(sessionId, 'tool_approval', { id: toolCallId, outcome, ...(answeredBy ? { answered_by: answeredBy } : {}) })
+        }
       } else {
         // TAL-514: a rejected answer can mean the Agent already stopped waiting on this card; drop what it no longer holds.
         await this.reconcileApprovals(sessionId, sidecar)

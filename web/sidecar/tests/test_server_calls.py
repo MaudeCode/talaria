@@ -221,6 +221,7 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
         ("background_list", "talaria", "background_list"),
         ("pending_list", "talaria", "pending_list"),
         ("clarify_respond", "talaria", "clarify_respond"),
+        ("approval_respond", "talaria", "approval_respond"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # session_wait and session_compress outlast the Agent's generic tool deadline by their own server call's timeout.
@@ -243,9 +244,11 @@ def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypa
     ("pending_list", "server.pending_list", 0),
     ("pending_list", "server.pending_list", 1),
     ("clarify_respond", "server.clarify_respond", 0),
+    ("approval_respond", "server.approval_respond", 0),
+    ("approval_respond", "server.approval_respond", 1),
 ])
 def test_session_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, index) -> None:
-    """TAL-1165, TAL-1166, TAL-1168: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
+    """TAL-1165, TAL-1166, TAL-1168, TAL-1169: each session tool sends the calling Web session and its arguments to its ``server.*`` method."""
     from types import SimpleNamespace
 
     from talaria_sidecar.methods import chat

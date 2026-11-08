@@ -618,6 +618,26 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
   }
 }
 
+// ── agent approvals ───────────────────────────────────────────────────
+
+/**
+ * TAL-1169: the profile's `talaria.agent_approvals`, a Talaria key the Agent ignores: whether an agent with the talaria
+ * toolset may approve once or deny another session's pending command. Off unless set, read as `compression.prepare_ahead`
+ * is; null when the config cannot be read, which every gate treats as off.
+ */
+export async function agentApprovals(store: AgentConfig, home: string): Promise<boolean | null> {
+  try {
+    const value = dict((await store.read(home)).talaria).agent_approvals
+    return typeof value === 'string' ? truthy(value) : pyBool(value)
+  } catch {
+    return null
+  }
+}
+
+export async function setAgentApprovals(store: AgentConfig, home: string, enabled: boolean): Promise<void> {
+  await store.update(home, (c) => { c.talaria = { ...dict(c.talaria), agent_approvals: enabled } })
+}
+
 // ── group discussion limits ───────────────────────────────────────────
 
 /** TAL-1828: the key whose presence means the Agent reads both limits; they arrived together in v0.22.6. */
