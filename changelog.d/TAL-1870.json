@@ -6,7 +6,12 @@
       "highlight": false,
       "components": [
         "web"
-      ]
+      ],
+      "announcement": {
+        "title": "Quotas in the sidebar",
+        "description": "Pin up to two provider quotas to the expanded sidebar from Settings > Preferences.",
+        "icon": "sparkles"
+      }
     }
   ]
 }

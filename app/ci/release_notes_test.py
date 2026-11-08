@@ -296,7 +296,7 @@ class ReleaseNotesTests(unittest.TestCase):
             {"category": "Added", "summary": "New boards", "highlight": True, "announce": False}]}))
         data = {"entries": [
             {"category": "Security", "summary": "Protect tokens", "highlight": True, "announce": False},
-            {"category": "Changed", "summary": "Clearer settings", "highlight": False},
+            {"category": "Changed", "summary": "Clearer settings", "highlight": False, "announce": False},
         ]}
         self.write("changelog.d/TAL-3.json", json.dumps(data))
         self.write("changelog.d/TAL-4.json", '{"skip": "Repository tooling only"}')
@@ -513,7 +513,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.write("changelog.d/TAL-2.json", '{"skip":"Docs only"}')
         self.commit("TAL-2: change app")
         self.cli("validate", "--base", "v1.0.0", error="require user-facing entries")
-        self.add_fragment(3)
+        self.add_fragment(3, category="Fixed")
         self.commit("TAL-3, TAL-4: more changes")
         self.cli("validate", "--base", "v1.0.0", error="TAL-4")
 
@@ -530,6 +530,26 @@ class ReleaseNotesTests(unittest.TestCase):
                 self.commit("TAL-2: invalid old fragment")
                 self.cli("validate", "--base", "v1.0.0", error="out-of-range fragment")
                 self.generate(error="out-of-range fragment")
+
+    def test_merged_fragments_may_only_gain_an_announce_decision(self):
+        valid = {"title": "Pinned chats", "description": "Keep favorites on top.", "icon": "chat"}
+        entry = {"category": "Added", "summary": "Old release", "highlight": False}
+        for decision in ({"announcement": valid}, {"announce": False}):
+            with self.subTest(decision=decision):
+                self.git("reset", "--hard", "v1.0.0")
+                self.write("changelog.d/TAL-1.json", json.dumps({"entries": [{**entry, **decision}]}))
+                self.add_fragment(2, "Newer fix", "Fixed")
+                self.commit("TAL-2: announce an older change")
+                self.cli("validate", "--base", "v1.0.0")
+                self.assertNotIn("Old release", self.generate().stdout + (self.root / "out/release-notes.md").read_text())
+        # An existing decision and every other field stay fixed.
+        decided = self.git("rev-parse", "HEAD")
+        for changed in ({**entry, "announcement": valid}, {**entry, "summary": "Rewritten", "announce": False}):
+            with self.subTest(changed=changed):
+                self.git("reset", "--hard", decided)
+                self.write("changelog.d/TAL-1.json", json.dumps({"entries": [changed]}))
+                self.commit("TAL-3: rewrite a merged fragment")
+                self.cli("validate", "--base", decided, error="out-of-range fragment")
 
     def test_previous_tag_uses_numeric_version_and_reachable_history(self):
         self.git("tag", "v1.0.9")
@@ -684,30 +704,36 @@ class ReleaseNotesTests(unittest.TestCase):
         self.cli("validate", error="announcement needs an app or web component")
 
 
-    def test_new_highlighted_app_and_web_entries_must_decide_whether_to_announce(self):
+    def test_new_app_and_web_features_and_highlights_must_decide_whether_to_announce(self):
         valid = {"title": "Pinned chats", "description": "Keep favorites on top.", "icon": "chat"}
         # Merged history predates the rule and keeps validating, with or without a base.
         self.add_fragment(2, "Historical highlight", highlight=True)
         self.commit("TAL-2: historical highlight")
         self.git("tag", "before")
-        self.cli("validate", "--base", "v1.0.0", error="changelog.d/TAL-2.json: a highlighted app or web entry")
+        self.cli("validate", "--base", "v1.0.0", error='changelog.d/TAL-2.json: add an "announcement"')
         self.cli("validate", "--base", "before")
         undecided = [
             {"category": "Added", "summary": "App by default", "highlight": True},
             {"category": "Added", "summary": "Web", "highlight": True, "components": ["web"]},
             {"category": "Added", "summary": "Shared", "highlight": True, "components": ["relay", "app"]},
+            {"category": "Fixed", "summary": "Highlighted fix", "highlight": True},
+            {"category": "Added", "summary": "Feature", "highlight": False},
+            {"category": "Changed", "summary": "Redesign", "highlight": False, "components": ["web"]},
+            {"category": "Changed", "summary": "Shared change", "highlight": False, "components": ["relay", "app"]},
         ]
         for entry in undecided:
             with self.subTest(entry=entry):
                 self.write("changelog.d/TAL-3.json", json.dumps({"entries": [entry]}))
                 self.cli("validate")
                 self.cli("validate", "--base", "before",
-                         error='changelog.d/TAL-3.json: a highlighted app or web entry needs an "announcement" or "announce": false')
+                         error='changelog.d/TAL-3.json: add an "announcement", or "announce": false if a user would not benefit from noticing it')
                 for decision in ({"announcement": valid}, {"announce": False}):
                     self.write("changelog.d/TAL-3.json", json.dumps({"entries": [{**entry, **decision}]}))
                     self.cli("validate", "--base", "before")
-        for entry in ({"category": "Added", "summary": "Detail", "highlight": False},
-                      {"category": "Added", "summary": "Relay", "highlight": True, "components": ["relay"]}):
+        for entry in ({"category": "Fixed", "summary": "Fix", "highlight": False},
+                      {"category": "Security", "summary": "Patch", "highlight": False, "components": ["web"]},
+                      {"category": "Added", "summary": "Relay", "highlight": True, "components": ["relay"]},
+                      {"category": "Changed", "summary": "Relay", "highlight": False, "components": ["relay"]}):
             with self.subTest(entry=entry):
                 self.write("changelog.d/TAL-3.json", json.dumps({"entries": [entry]}))
                 self.cli("validate", "--base", "before")

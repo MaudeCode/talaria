@@ -6,7 +6,12 @@
       "highlight": false,
       "components": [
         "app"
-      ]
+      ],
+      "announcement": {
+        "title": "Lock Talaria",
+        "description": "Require Face ID, Touch ID or your passcode to open the app, and hide your chats in the app switcher.",
+        "icon": "security"
+      }
     }
   ]
 }
