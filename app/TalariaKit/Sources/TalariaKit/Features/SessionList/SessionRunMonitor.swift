@@ -29,6 +29,8 @@ public enum SessionRunMonitor: Sendable {
             return ChatActiveRunStatusPresentation(kind: .awaitingApproval, runStartedAt: startedAt)
         case .clarify:
             return ChatActiveRunStatusPresentation(kind: .awaitingAnswer, runStartedAt: startedAt)
+        case .decision:
+            return ChatActiveRunStatusPresentation(kind: .awaitingDecision, runStartedAt: startedAt)
         case .other:
             return ChatActiveRunStatusPresentation(kind: .awaitingInput, runStartedAt: startedAt)
         case nil:

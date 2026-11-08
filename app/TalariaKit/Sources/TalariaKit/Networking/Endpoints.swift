@@ -165,6 +165,10 @@ public enum Endpoint: Sendable {
     case kanbanRemoveDependency(KanbanDependencyMutationRequest)
     case memory
     case memoryWrite
+    /// TAL-1965: one decision review, one answer's save, and the review's submit.
+    case decisionReview(id: String)
+    case decisionAnswer(reviewID: String, itemID: String)
+    case decisionSubmit(reviewID: String)
     case feedbackDiagnostics
     case feedbackSubmit
     case feedbackOptions
@@ -486,6 +490,12 @@ public enum Endpoint: Sendable {
             return "/api/memory"
         case .memoryWrite:
             return "/api/memory/write"
+        case let .decisionReview(id):
+            return "/api/decisions/\(id)"
+        case let .decisionAnswer(reviewID, itemID):
+            return "/api/decisions/\(reviewID)/answers/\(itemID)"
+        case let .decisionSubmit(reviewID):
+            return "/api/decisions/\(reviewID)/submit"
         case .feedbackDiagnostics:
             return "/api/feedback/diagnostics"
         case .feedbackSubmit:
@@ -757,6 +767,12 @@ public enum Endpoint: Sendable {
             url = updateNotificationURL(relativeTo: baseURL, id: id, actionID: actionID)
         case let .connectorOperation(opID, _):
             url = connectorOperationURL(relativeTo: baseURL, opID: opID)
+        case let .decisionReview(id):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/decisions", segments: [id])
+        case let .decisionAnswer(reviewID, itemID):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/decisions", segments: [reviewID, "answers", itemID])
+        case let .decisionSubmit(reviewID):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/decisions", segments: [reviewID, "submit"])
         default:
             url = baseURL.appending(path: path)
         }
@@ -773,49 +789,35 @@ public enum Endpoint: Sendable {
     }
 
     private func kanbanTaskURL(relativeTo baseURL: URL, cardID: String, suffix: String = "") -> URL {
-        let root = baseURL.appending(path: "/api/kanban/tasks")
-        guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
-              let encodedCardID = cardID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed)
-        else {
-            return root
-        }
-        components.percentEncodedPath += "/\(encodedCardID)\(suffix)"
-        return components.url ?? root
+        segmentsURL(relativeTo: baseURL, root: "/api/kanban/tasks", segments: [cardID], suffix: suffix)
     }
 
     private func kanbanBoardURL(relativeTo baseURL: URL, slug: String, suffix: String = "") -> URL {
-        let root = baseURL.appending(path: "/api/kanban/boards")
-        guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
-              let encodedSlug = slug.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed)
-        else {
-            return root
-        }
-        components.percentEncodedPath += "/\(encodedSlug)\(suffix)"
+        segmentsURL(relativeTo: baseURL, root: "/api/kanban/boards", segments: [slug], suffix: suffix)
+    }
+
+    /// `root` followed by each of `segments` percent-encoded as one path segment, then the literal `suffix`; `root` alone
+    /// when a segment cannot be encoded.
+    private func segmentsURL(relativeTo baseURL: URL, root path: String, segments: [String], suffix: String = "") -> URL {
+        let root = baseURL.appending(path: path)
+        let encoded = segments.compactMap { $0.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) }
+        guard encoded.count == segments.count,
+              var components = URLComponents(url: root, resolvingAgainstBaseURL: false)
+        else { return root }
+        components.percentEncodedPath += encoded.map { "/\($0)" }.joined() + suffix
         return components.url ?? root
     }
 
     /// `opID` is the server's opaque identity, sent back as one path segment.
     private func connectorOperationURL(relativeTo baseURL: URL, opID: String) -> URL {
-        let root = baseURL.appending(path: "/api/connectors/operations")
-        guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
-              let encodedID = opID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed)
-        else { return root }
-        components.percentEncodedPath += "/\(encodedID)"
-        return components.url ?? root
+        segmentsURL(relativeTo: baseURL, root: "/api/connectors/operations", segments: [opID])
     }
 
     private func updateNotificationURL(relativeTo baseURL: URL, id: String, actionID: String? = nil, suffix: String = "") -> URL {
-        let root = baseURL.appending(path: "/api/update-notifications")
-        guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
-              let encodedID = id.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed)
-        else { return root }
-        components.percentEncodedPath += "/\(encodedID)"
-        if let actionID, let encodedActionID = actionID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) {
-            components.percentEncodedPath += "/actions/\(encodedActionID)"
-        } else {
-            components.percentEncodedPath += suffix
+        guard let actionID else {
+            return segmentsURL(relativeTo: baseURL, root: "/api/update-notifications", segments: [id], suffix: suffix)
         }
-        return components.url ?? root
+        return segmentsURL(relativeTo: baseURL, root: "/api/update-notifications", segments: [id, "actions", actionID])
     }
 
     /// RFC 3986 unreserved characters minus `.`. Encoding dots as well keeps

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Answer the decision reviews your agent opens: one decision at a time with its choices and recommendation, then review your answers and submit them together.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Decision reviews",
+        "description": "Answer your agent's open decisions one at a time and submit them together.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

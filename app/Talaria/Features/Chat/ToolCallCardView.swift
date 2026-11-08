@@ -45,6 +45,11 @@ struct ToolCallCardView: View {
             .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.detailText))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
+            // TAL-1965: a decision review stays in view whether or not the call's details are open.
+            if let reference = toolCall.resultView?.decisionReview {
+                DecisionReviewResultSection(reference: reference)
+            }
+
             if isExpanded {
                 expandedContent(statusDisplay: statusDisplay)
                     .padding(.leading, 24)

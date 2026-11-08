@@ -29,6 +29,8 @@ struct StatusChip: View {
     var emphasis: Emphasis = .standard
     /// When set, an elapsed time that follows the label ("Working 42s").
     var elapsed: String?
+    /// When set, the action a tap on the chip takes, after the label in the accent colour ("Open", TAL-1965).
+    var action: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -52,8 +54,10 @@ struct StatusChip: View {
     }
 
     private var caption: Text {
-        guard let elapsed else { return Text(label) }
-        return Text(label) + Text(verbatim: " ") + Text(verbatim: elapsed).monospacedDigit()
+        var text = Text(label)
+        if let elapsed { text = text + Text(verbatim: " ") + Text(verbatim: elapsed).monospacedDigit() }
+        if let action { text = text + Text(verbatim: " ") + Text(action).foregroundStyle(Color.accentColor) }
+        return text
     }
 
     @ViewBuilder

@@ -1,0 +1,112 @@
+{
+  "review": {
+    "review_id": "dr_0a1b2c3d",
+    "session_id": "synthetic-session",
+    "profile": "default",
+    "title": "Workspace defaults",
+    "intro": null,
+    "status": "open",
+    "created_at": 1893456000,
+    "updated_at": 1893456600,
+    "submitted_at": null,
+    "progress": { "total": 3, "answered": 2, "deferred": 0, "needs_review": 1 },
+    "submit": { "allowed": true, "reason": null },
+    "items": [
+      {
+        "id": "retention",
+        "title": "Chat retention",
+        "question": "How long should finished chats stay in the sidebar?",
+        "explanation": "Finished chats move to the archive after a while so the sidebar stays short.",
+        "example": "A chat you finished on Monday leaves the sidebar the next Monday.",
+        "current": "Finished chats stay in the sidebar until you archive them.",
+        "recommendation": "Archive after a week: recent chats stay at hand and the list stays short.",
+        "recommended_choice": "week",
+        "choices": [
+          { "value": "week", "label": "Archive after a week", "effect": "Chats older than seven days move to the archive." },
+          { "value": "month", "label": "Archive after a month", "effect": "Chats older than thirty days move to the archive." },
+          { "value": "never", "label": "Never archive", "effect": "The sidebar keeps every chat until you archive it." }
+        ],
+        "technical": {
+          "detail": "Archiving sets the session's archived flag; nothing is deleted.",
+          "sources": ["https://example.invalid/docs/archive", "web/packages/server/src/sessions/service.ts"]
+        },
+        "content_hash": "synthetic-hash-retention",
+        "fresh": "new",
+        "needs_review": false,
+        "answer": null,
+        "answer_version": 2,
+        "outcome": null
+      },
+      {
+        "id": "notify",
+        "title": "Run notifications",
+        "question": "Where should a finished run notify you?",
+        "explanation": "A run that ends while you are away sends one notification.",
+        "example": null,
+        "current": "Runs notify on this device only.",
+        "recommendation": "Notify on every signed-in device so a long run reaches you anywhere.",
+        "recommended_choice": "all",
+        "choices": [
+          { "value": "all", "label": "Every device", "effect": "Each signed-in device shows the notification." },
+          { "value": "email", "label": "Email", "effect": "The notification arrives as an email instead." }
+        ],
+        "technical": { "detail": null, "sources": [] },
+        "content_hash": "synthetic-hash-notify-2",
+        "fresh": "changed",
+        "needs_review": true,
+        "answer": {
+          "value": "email", "label": "Email", "effect": "The notification arrives as an email instead.", "notes": "",
+          "deferred": false, "custom": false, "version": 2, "updated_at": 1893456300
+        },
+        "answer_version": 2,
+        "outcome": null
+      },
+      {
+        "id": "theme",
+        "title": "Appearance",
+        "question": "Which appearance should new devices start with?",
+        "explanation": "A device you sign in on for the first time uses this until you change it there.",
+        "example": null,
+        "current": "New devices follow the system appearance.",
+        "recommendation": "Keep following the system appearance.",
+        "recommended_choice": "system",
+        "choices": [
+          { "value": "system", "label": "Follow the system", "effect": "Light or dark follows the device setting." },
+          { "value": "dark", "label": "Always dark", "effect": "New devices start dark." }
+        ],
+        "technical": { "detail": null, "sources": [] },
+        "content_hash": "synthetic-hash-theme",
+        "fresh": "carried",
+        "needs_review": false,
+        "answer": {
+          "value": "system", "label": "Follow the system", "effect": "Light or dark follows the device setting.", "notes": "Keep it simple.",
+          "deferred": false, "custom": false, "version": 1, "updated_at": 1893456100
+        },
+        "answer_version": 1,
+        "outcome": { "state": "applied", "note": "New devices follow the system appearance." }
+      }
+    ],
+    "filters": { "new": ["retention", "notify"], "pending": ["retention"] },
+    "next_item_id": "retention"
+  },
+  "answer_conflict": {
+    "error": "This answer changed since it was loaded.",
+    "code": "answer_conflict",
+    "answer": {
+      "value": "month", "label": "Archive after a month", "effect": "Chats older than thirty days move to the archive.", "notes": "",
+      "deferred": false, "custom": false, "version": 3, "updated_at": 1893456700
+    },
+    "answer_version": 3
+  },
+  "event": {
+    "session_id": "synthetic-session",
+    "review_id": "dr_0a1b2c3d",
+    "status": "open",
+    "progress": { "total": 3, "answered": 3, "deferred": 0, "needs_review": 1 }
+  },
+  "ref": {
+    "review_id": "dr_0a1b2c3d",
+    "title": "Workspace defaults",
+    "progress": { "total": 3, "answered": 2, "deferred": 0, "needs_review": 1 }
+  }
+}

@@ -17,6 +17,8 @@ public enum ChatActiveRunStatusKind: Equatable, Sendable {
     /// TAL-1460: the run waits on the user, from the session row's `attention`.
     case awaitingApproval
     case awaitingAnswer
+    /// TAL-1965: an open decision review waits on the user.
+    case awaitingDecision
     case awaitingInput
 
     func label(agentName: String) -> String {
@@ -51,6 +53,8 @@ public enum ChatActiveRunStatusKind: Equatable, Sendable {
             return String(localized: "Needs approval")
         case .awaitingAnswer:
             return String(localized: "Has a question")
+        case .awaitingDecision:
+            return String(localized: "Has decisions to review")
         case .awaitingInput:
             return String(localized: "Waiting for you")
         }
@@ -87,6 +91,8 @@ public enum ChatActiveRunStatusKind: Equatable, Sendable {
             return String(localized: "\(agentName) needs your approval")
         case .awaitingAnswer:
             return String(localized: "\(agentName) has a question for you")
+        case .awaitingDecision:
+            return String(localized: "\(agentName) is waiting for your decisions")
         case .awaitingInput:
             return String(localized: "\(agentName) is waiting for you")
         }
@@ -105,7 +111,7 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
         self.kind = kind
         switch kind {
         case .active, .compressing, .promptReading, .rateLimitWait, .checking, .reconnecting,
-             .awaitingApproval, .awaitingAnswer, .awaitingInput:
+             .awaitingApproval, .awaitingAnswer, .awaitingDecision, .awaitingInput:
             self.runStartedAt = runStartedAt
         case .starting, .background, .waitingForNetwork, .stopping, .syncing:
             self.runStartedAt = nil
@@ -163,7 +169,7 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     /// Whether the run waits on the user's approval or answer (TAL-1460).
     public var isAwaitingUser: Bool {
         switch kind {
-        case .awaitingApproval, .awaitingAnswer, .awaitingInput: true
+        case .awaitingApproval, .awaitingAnswer, .awaitingDecision, .awaitingInput: true
         default: false
         }
     }
