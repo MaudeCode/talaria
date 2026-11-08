@@ -278,14 +278,23 @@ public enum ChatScrollPolicy {
 /// completed-work headers) call this right before they toggle so the transcript
 /// can pin the reader's offset and suspend follow scrolls through the size
 /// change.
+public typealias ChatDisclosureToggleAction = ChatEnvironmentAction<Void, Void>
+
 struct ChatDisclosureToggledKey: EnvironmentKey {
-    static var defaultValue: () -> Void { {} }
+    static var defaultValue: ChatDisclosureToggleAction { ChatDisclosureToggleAction { _ in } }
 }
 
 extension EnvironmentValues {
-    public var chatDisclosureToggled: () -> Void {
+    public var chatDisclosureToggled: ChatDisclosureToggleAction {
         get { self[ChatDisclosureToggledKey.self] }
         set { self[ChatDisclosureToggledKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Publishes `perform` as the disclosure action below this view.
+    public func chatDisclosureToggled(perform: @escaping () -> Void) -> some View {
+        chatEnvironmentAction(\.chatDisclosureToggled) { _ in perform() }
     }
 }
 

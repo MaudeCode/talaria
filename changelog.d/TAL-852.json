@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria for iPhone keeps long chats smoother while a reply streams and while you type, because earlier messages and the rest of the chat screen no longer redraw for every streamed word or keystroke.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

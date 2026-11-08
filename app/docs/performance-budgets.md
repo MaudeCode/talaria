@@ -55,12 +55,12 @@ Medians of three iterations.
 | --- | --- | --- |
 | Replay catch-up, 4,000 tokens (clock) | 0.009 s | 0.000 s |
 | Replay catch-up, 4,000 tokens (peak memory) | 53,447 kB | 16 kB |
-| Chat, 200 stream ticks and 200 keystrokes (clock) | 13.48 s | 0.91 s |
-| Chat, 200 stream ticks and 200 keystrokes (CPU) | 12.78 s | 0.88 s |
+| Chat, 200 stream ticks and 200 keystrokes (clock) | 10.10 s | 0.05 s |
+| Chat, 200 stream ticks and 200 keystrokes (CPU) | 9.54 s | 0.09 s |
 
 The chat budget was measured on an iOS simulator inside the local macOS build VM
-rather than the pool above. Ticks took 8.6-9.4 s (~45 ms each) and
-keystrokes 3.5-3.8 s (~18 ms each). GitHub's hosted runner measures about
+rather than the pool above. Ticks took 8.0-8.1 s (~40 ms each) and
+keystrokes 1.5-1.7 s (~8 ms each). GitHub's hosted runner measures about
 four times slower; the work counts match.
 
 The replay and chat budgets assert thresholds; the others record for comparison.
@@ -72,7 +72,7 @@ The replay and chat budgets assert thresholds; the others record for comparison.
   scales one noisy middle sample decides a per-step ratio.
 
 - The chat's 400 operations may not take more than 180 s: over 3x the 47-53 s
-  GitHub's hosted runner measures, and ~13x the build VM.
+  GitHub's hosted runner measured before TAL-852, and ~18x the build VM.
   Its work counts below are the real gate: each count's minimum across runs is
   asserted exactly.
 
@@ -87,18 +87,19 @@ lands in at most one, so the test asserts each count's minimum across runs.
 
 | Work | 200 stream ticks | 200 keystrokes |
 | --- | --- | --- |
-| Reasoning-card derivation | 400 | 204 |
+| Reasoning-card derivation | 200 | 4 |
 | Streaming Markdown split | 1,204 | 0 |
 | Code highlighting | 100 | 0 |
-| Message list body | 400 | 204 |
+| Message list body | 200 | 4 |
 | Settled transcript row body | 0 | 0 |
-| Whole chat body | 0 | 204 |
-| Toolbar body | 0 | 204 |
+| Settled message bubble body | 0 | 0 |
+| Whole chat body | 0 | 4 |
+| Toolbar body | 0 | 4 |
 | Composer body | 0 | 212 |
 
-A tick derives the reasoning cards twice and splits the streaming reply six
-times; a keystroke re-evaluates the whole chat, its toolbar and the message
-list. A change that removes a repeat lowers its count in the test and here.
+A tick splits the streaming reply six times. A keystroke re-evaluates only the
+composer; the chat's four passes follow the composer's height as the draft
+wraps. A change that removes a repeat lowers its count in the test and here.
 
 ## Replay catch-up: the measured change
 

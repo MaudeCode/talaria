@@ -9,7 +9,7 @@ import XCTest
 /// Every streamed token and every composer keystroke should cost the chat screen only the work that changed. This
 /// hosts the real chat over a long, busy transcript, drives stream ticks and draft edits through their real paths,
 /// and counts the main-thread work each one repeats: reasoning-card derivation, streaming Markdown splits, code
-/// highlighting, and body evaluations of settled transcript rows, the message list and the whole chat. Work a tick
+/// highlighting, and body evaluations of settled transcript rows and bubbles, the message list and the whole chat. Work a tick
 /// or keystroke causes recurs in every run, while an unrelated timer-driven update lands in at most one, so each
 /// count's minimum across the runs is asserted exactly; the tickets that remove each repeat lower its count.
 /// Wall-clock and CPU are recorded for comparison, with one ceiling that leaves headroom for a loaded CI host.
@@ -18,17 +18,17 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     private static let tickCount = 200
     private static let keystrokeCount = 200
 
-    /// Today's counts per phase, recorded on `main` before any of the per-tick fixes landed. A settled row never
-    /// re-renders today, so its count is absent.
+    /// Today's counts per phase. A settled row or bubble never re-renders, so their counts are absent. A keystroke
+    /// re-runs only the composer; the chat's four passes follow the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
-        "reasoningGroups": 400, "markdownSplit": 1_204, "highlight": 100, "messages": 400
+        "reasoningGroups": 200, "markdownSplit": 1_204, "highlight": 100, "messages": 200
     ]
     private static let expectedKeystrokeWork = [
-        "reasoningGroups": 204, "messages": 204, "chat": 204, "toolbar.horizontal": 204, "composer": 212
+        "reasoningGroups": 4, "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212
     ]
 
-    /// Ceiling on the 400 measured operations together. They measure ~13.5 s on the build VM's Debug simulator and
-    /// ~47-53 s on GitHub's hosted runner (`docs/performance-budgets.md`); this leaves over 3x headroom on the slower.
+    /// Ceiling on the 400 measured operations together. They measure ~10 s on the build VM's Debug simulator and
+    /// measured ~47-53 s on GitHub's hosted runner before TAL-852 (`docs/performance-budgets.md`), over 3x headroom.
     private static let maximumSeconds = 180.0
 
     override func tearDown() {
