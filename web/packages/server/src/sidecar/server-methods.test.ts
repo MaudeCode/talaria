@@ -277,10 +277,13 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       }
       const narrow = await routed(['file'])
       const profileDefault = await routed(null)
+      // TAL-1963: `harness` acts only on the target's own Talaria state, so it never makes a target wider than the caller.
+      const withHarness = await routed(['file', 'harness'])
       expect(await ask('server.session_send', { session_id: 'agentyolo', message: 'rm -rf' })).toMatchObject({ error: { message: 'session agentyolo has more access than this one (YOLO is on)', data: { condition: 'exceeds_caller' } } })
       expect(await ask('server.session_send', { session_id: 'agentwider', message: 'rm -rf' })).toMatchObject({ error: { message: 'session agentwider has more access than this one (toolsets: terminal)', data: { condition: 'exceeds_caller' } } })
       expect(await ask('server.session_send', { session_id: narrow, message: 'read the docs' })).toMatchObject({ result: { outcome: 'started' } })
       expect(await ask('server.session_send', { session_id: profileDefault, message: 'read the docs' })).toMatchObject({ result: { outcome: 'started' } })
+      expect(await ask('server.session_send', { session_id: withHarness, message: 'read the docs' })).toMatchObject({ result: { outcome: 'started' } })
 
       // Refused targets, for every tool that takes one.
       for (const method of ['server.session_send', 'server.session_wait', 'server.session_interrupt'] as const) {

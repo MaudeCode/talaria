@@ -213,8 +213,9 @@ def test_catalog_discovers_named_profile_plugin_before_any_turn(handshaken, herm
 
 
 @requires_agent
-def test_talaria_toolset_is_registered_listed_and_off_by_default(handshaken, hermes_home) -> None:
-    """TAL-1164: the sidecar's own ``talaria`` toolset is in the catalog, never a profile default, and the picker turns it on."""
+def test_own_toolsets_are_registered_and_listed_with_talaria_off_and_harness_on_by_default(handshaken, hermes_home) -> None:
+    """TAL-1164: the sidecar's own ``talaria`` toolset is in the catalog, never a profile default, and the picker turns it on.
+    TAL-1963: its ``harness`` toolset is a default unless ``agent.disabled_toolsets`` names it, which no selection overrides."""
     defaults = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': None})
     row = next((r for r in defaults['toolsets'] if r['name'] == 'talaria'), None)
     assert row is not None, 'the talaria toolset is missing from the catalog'
@@ -223,3 +224,71 @@ def test_talaria_toolset_is_registered_listed_and_off_by_default(handshaken, her
     assert 'talaria' not in defaults['selected_toolsets']
     picked = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': ['file', 'talaria']})
     assert next(r for r in picked['toolsets'] if r['name'] == 'talaria')['selected'] is True
+    harness = lambda result: next(r for r in result['toolsets'] if r['name'] == 'harness')  # noqa: E731
+    assert harness(defaults) == {'name': 'harness', 'description': 'Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each.',
+                                 'available': True, 'selected': True, 'unavailable_reason': None, 'stripped_tools': [], 'stripped_by': []}
+    assert 'harness' in defaults['selected_toolsets']
+    (hermes_home / 'config.yaml').write_text('agent:\n  disabled_toolsets: [harness]\n')
+    disabled = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': None})
+    assert 'harness' not in disabled['selected_toolsets'] and harness(disabled)['available'] is False
+    forced = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': ['file', 'harness']})
+    assert harness(forced)['available'] is False and harness(forced)['unavailable_reason'] == 'disabled'
+
+
+HARNESS_PROBE = r'''
+import json, os, sys
+from pathlib import Path
+sys.path.append(sys.argv[1])
+from talaria_sidecar import harness_toolset
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import chat
+from model_tools import get_tool_definitions
+
+harness_toolset.register()
+seen = []
+class Agent:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.session_id = kwargs['session_id']
+        seen.append(kwargs)
+    def run_conversation(self, **kwargs):
+        return {'final_response': 'ok', 'messages': []}
+    def close(self):
+        pass
+class Ctx:
+    cancelled = False
+    def emit(self, *args):
+        pass
+chat._agent_class = lambda: Agent
+chat._resolve_runtime = lambda *args: {'model': 'm', 'provider': 'p', 'api_key': 'synthetic'}
+chat._discover_mcp_tools = lambda run: None
+root = Path(os.environ['HERMES_HOME'])
+out = {}
+for i, (case, override) in enumerate([('default', None), ('override', ['file', 'harness']), ('disabled', None), ('disabled_override', ['file', 'harness'])]):
+    if case == 'disabled':
+        (root / 'config.yaml').write_text('agent:\n  disabled_toolsets: [harness]\nplatform_toolsets:\n  cli: [file]\n')
+    params = {'profile_home': str(root), 'session_id': f'harness-{i}', 'stream_id': f'st{i}', 'model': 'm', 'model_provider': 'p', 'user_message': 'hi', 'enabled_toolsets': override, 'conversation_history': []}
+    with scoped_home(root):
+        assert chat.start(Ctx(), params)['status'] == 'completed'
+    kw = {k: seen[-1].get(k) for k in ('enabled_toolsets', 'disabled_toolsets')}
+    out[case] = {'enabled': kw['enabled_toolsets'], 'tools': [d['function']['name'] for d in get_tool_definitions(**kw, quiet_mode=True, skip_tool_search_assembly=True)]}
+print(json.dumps(out))
+'''
+
+
+@requires_agent
+def test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it(tmp_path) -> None:
+    """TAL-1963: the profile default adds ``harness``; ``agent.disabled_toolsets`` removes it, and a session override cannot bring it back."""
+    root = tmp_path / '.hermes'
+    root.mkdir()
+    (root / 'config.yaml').write_text('platform_toolsets:\n  cli: [file]\n')
+    run = subprocess.run([AGENT_PYTHON, '-c', HARNESS_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    decision_tools = {'decision_review_put', 'decision_review_read', 'decision_review_record'}
+    assert 'harness' in out['default']['enabled'] and decision_tools <= set(out['default']['tools']), out['default']
+    assert decision_tools <= set(out['override']['tools'])
+    assert 'harness' not in out['disabled']['enabled'] and not decision_tools & set(out['disabled']['tools']), out['disabled']
+    assert not decision_tools & set(out['disabled_override']['tools']), out['disabled_override']
+    assert 'read_file' in out['disabled_override']['tools']
+

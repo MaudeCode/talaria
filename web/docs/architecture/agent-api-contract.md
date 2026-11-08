@@ -653,6 +653,11 @@ tools `agent.disabled_toolsets` cuts down without removing them all carries `str
 empties reads `unavailable_reason: "disabled"` with both fields empty, even under a legacy name.
 Older Agents return both fields empty.
 
+Talaria's own `harness` toolset (TAL-1963) is a profile default for every Web turn, appended to the
+resolved `platform_toolsets.cli` list unless `agent.disabled_toolsets` names it. The Agent receives
+that list as `disabled_toolsets` too, so a session selection that names `harness` cannot bring it
+back. The opt-in `talaria` toolset stays off by default.
+
 `compression_prepare_ahead` in `/api/settings` is the profile's `compression.prepare_ahead`, or
 null on Agents whose `DEFAULT_CONFIG` lacks the key (before v0.22.6), where a write answers 409
 `setting_unavailable`. The Agent reads it once, at construction, so it is part of the cached chat

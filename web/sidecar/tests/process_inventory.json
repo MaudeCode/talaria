@@ -793,9 +793,16 @@
         ""
       ]
     },
-    "tests/test_chat_toolsets.py::test_talaria_toolset_is_registered_listed_and_off_by_default": {
+    "tests/test_chat_toolsets.py::test_own_toolsets_are_registered_and_listed_with_talaria_off_and_harness_on_by_default": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the sidecar registers its talaria toolset in the installed release's tool registry, the catalog lists it, and the release's own default toolset resolution leaves it off. Uses the real installed release, not a fabricated API response.",
+      "reason": "Supported-Agent API compatibility: the sidecar registers its talaria and harness toolsets in the installed release's tool registry, the catalog lists both, the release's own default toolset resolution leaves talaria off, and its disabled_toolsets policy turns harness off even when selected. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_toolsets.py::test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a turn's Agent gets the harness toolset by default, and the installed release's disabled_toolsets filter removes its tools even when a session override names it. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
       ]

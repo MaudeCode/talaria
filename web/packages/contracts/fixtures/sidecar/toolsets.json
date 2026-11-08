@@ -197,6 +197,15 @@
             "stripped_by": []
           },
           {
+            "name": "harness",
+            "description": "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each.",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": []
+          },
+          {
             "name": "hermes-acp",
             "description": "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without messaging, audio, or clarify UI",
             "available": true,
@@ -592,7 +601,8 @@
           "todo",
           "tts",
           "vision",
-          "web"
+          "web",
+          "harness"
         ],
         "using_defaults": true
       }

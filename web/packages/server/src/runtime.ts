@@ -24,6 +24,7 @@ import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore, settledActivityPhase } from './sessions/background-tasks.js'
 import { PromptQueues } from './sessions/prompt-queues.js'
+import { DecisionReviews } from './sessions/decisions.js'
 import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
@@ -134,6 +135,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   mkdirSync(config.sessionDir, { recursive: true })
   const now = opts.now ?? (() => Date.now() / 1000)
   const storage = opts.storage?.(config) ?? createStorage(config, now, (name) => profileHome(name))
+  // TAL-1963: the sidebar attention summary reads its open-review index synchronously.
+  const decisions = new DecisionReviews(storage.documents, () => deps, now)
   const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
   await settings.load()
   const passkeys = new PasskeyStore(storage.documents, now)
@@ -405,12 +408,14 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       runningCronJobs,
       // TAL-1564: the registry owns run liveness; a native-owner watch has no Web session in the store.
       live: (sid) => { const stream = registry.activeRunStreamForSession(sid); return stream ? { stream_id: stream, session: store.sessions.get(sid) } : undefined },
-      // Python `_session_attention_summary`: approvals outrank clarify prompts.
+      // Python `_session_attention_summary`: approvals outrank clarify prompts, which outrank open decision reviews (TAL-1963).
       attention: (sid) => {
         const approvals = pending.approvalPending(sid).pending_count
         if (approvals > 0) return { kind: 'approval', count: approvals, severity: 'critical' }
         const clarifies = pending.clarifyPending(sid).pending_count
         if (clarifies > 0) return { kind: 'clarify', count: clarifies, severity: 'question' }
+        const reviews = decisions.openCount(sid)
+        if (reviews > 0) return { kind: 'decision', count: reviews, severity: 'question' }
         return null
       },
       activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
@@ -818,7 +823,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     if (yoloSessions.has(target.session_id) && !yoloSessions.has(caller.session_id)) throw refuse('YOLO is on')
     if (JSON.stringify(target.enabled_toolsets) === JSON.stringify(caller.enabled_toolsets)) return
     const allowed = await effectiveToolsets(caller)
-    const extra = [...(await effectiveToolsets(target))].filter((name) => !allowed.has(name))
+    // TAL-1963: `harness` acts only on the target's own Talaria state, so it adds no access the caller could enlist.
+    const extra = [...(await effectiveToolsets(target))].filter((name) => !allowed.has(name) && name !== 'harness')
     if (extra.length) throw refuse(`toolsets: ${extra.join(', ')}`)
   }
   /**
@@ -939,6 +945,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       await assertNoWiderThanCaller(caller, target)
       return goalCommand(deps, { session_id: target.session_id, args: text })
     }),
+    // TAL-1963: the `harness` toolset's decision reviews, each of the calling session.
+    'server.decision_review_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => decisions.put(caller, params)),
+    'server.decision_review_read': ({ caller_session_id, review_id }) => asCaller(caller_session_id, (caller) => decisions.read(caller, review_id)),
+    'server.decision_review_record': ({ caller_session_id, review_id, outcomes }) => asCaller(caller_session_id, (caller) => decisions.record(caller, review_id, outcomes)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {
@@ -995,6 +1005,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     journal,
     background,
     promptQueues: new PromptQueues(storage.documents, () => deps),
+    decisions,
     connectorOffers: new ConnectorOffers(storage.documents),
     groups: new Groups(() => deps),
     streamSlots,
@@ -1236,6 +1247,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   await sidecar?.addReadyGate?.((call) => sessions.retainWorktrees(call))
 
   await deps.promptQueues.initialize()
+  await decisions.initialize()
 
   return deps
 }

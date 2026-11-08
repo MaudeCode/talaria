@@ -26,6 +26,8 @@ const formats: Record<string, Format> = {
   background: { directory: 'sessions/_background' },
   'prompt-queues': { directory: 'prompt-queues', secret: true },
   'connector-offers': { directory: 'connector-offers', secret: true },
+  // TAL-1963: one decision review per file, keyed by its review id; it holds the user's answers.
+  'decision-reviews': { directory: 'decision-reviews', secret: true },
   'skill-replays': { directory: 'skill-replays', secret: true },
   'skill-replay-receipts': { directory: 'skill-replay-receipts', secret: true },
   catalog: { files: { 'quota-scope': '.quota_scope_id' }, text: true },

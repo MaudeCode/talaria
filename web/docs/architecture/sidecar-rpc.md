@@ -1,5 +1,18 @@
 # Sidecar RPC (TAL-245)
 
+RPC v86 adds the default-on `harness` toolset (TAL-1963) and its decision
+reviews: `decision_review_put`, `decision_review_read` and
+`decision_review_record` (`server.decision_review_*`). A review belongs to the
+calling session; another session's is `review_unknown`. The server validates
+the items (1 to 100, 2 to 4 choices with unique values, unique ids, a
+recommended choice among them, capped lengths) and refuses with the failed
+condition, writing nothing. It stores one `decision-reviews` document per
+review with every answer as the user saw it and the history of answers and
+removed items, and serves it on `/api/decisions`. `toolsets.catalog` lists
+`harness` with its own description, selected by default unless
+`agent.disabled_toolsets` names it. Submitting a review sends the owning
+session one line naming it, through the path `session_send` uses.
+
 RPC v85 adds the toolset's organising tools (TAL-1170), each through the
 service behind its route and answering as the route does, in the caller's
 profile: `project_list`, `project_create` and `project_rename`

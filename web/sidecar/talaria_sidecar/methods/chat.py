@@ -38,6 +38,7 @@ from .checkpoints import checkpoint_kwargs
 from .providers import context_window_source, require_runtime_ownership, runtime_failure
 from .state_db import release_all, release_home, release_session_db
 from .toolsets import disabled_toolsets
+from ..harness_toolset import TOOLSET as HARNESS_TOOLSET
 
 log = logging.getLogger("talaria_sidecar.chat")
 
@@ -912,12 +913,17 @@ def _turn_toolsets(toolsets, cfg: dict | None = None) -> list[str]:
 
 def _profile_toolsets(cfg: dict | None = None) -> list[str]:
     """The profile's ``platform_toolsets.cli`` through the Agent's own resolver (default-off toolsets stay off), like
-    ``hermes chat``. Runs under the call's ``scoped_home``."""
+    ``hermes chat``, and Talaria's own ``harness`` toolset unless ``agent.disabled_toolsets`` names it (TAL-1963). Runs
+    under the call's ``scoped_home``."""
     from hermes_cli.config import load_config
     from hermes_cli.tools_config import _get_platform_tools
 
-    resolved = sorted(_get_platform_tools((load_config() or {}) if cfg is None else cfg, "cli"))
-    return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
+    cfg = (load_config() or {}) if cfg is None else cfg
+    resolved = sorted(_get_platform_tools(cfg, "cli"))
+    names = list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
+    if HARNESS_TOOLSET not in names and HARNESS_TOOLSET not in disabled_toolsets(cfg):
+        names.append(HARNESS_TOOLSET)
+    return names
 
 
 def _mcp_discovery_settled(done: threading.Event, home: str) -> bool:

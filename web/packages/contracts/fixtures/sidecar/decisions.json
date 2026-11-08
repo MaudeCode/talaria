@@ -1,0 +1,467 @@
+{
+  "server.decision_review_put": [
+    {
+      "params": {
+        "caller_session_id": "20261108_120000_caller",
+        "title": "Hermes audit decisions",
+        "intro": "Two settings the audit flagged.",
+        "items": [
+          {
+            "id": "retention",
+            "title": "Session log retention",
+            "question": "How long should session logs be kept?",
+            "explanation": "Logs fill the disk on small servers, but they are the only record of what an agent ran.",
+            "example": "With 30 days, a chat from early October is gone by November.",
+            "current": "Logs are kept forever.",
+            "recommendation": "Keep 90 days: long enough to audit a release, short enough to bound disk use.",
+            "recommended_choice": "90d",
+            "choices": [
+              {
+                "value": "forever",
+                "label": "Keep forever",
+                "effect": "Nothing changes; disk use keeps growing."
+              },
+              {
+                "value": "90d",
+                "label": "Keep 90 days",
+                "effect": "Older logs are deleted nightly."
+              },
+              {
+                "value": "shorter",
+                "label": "Keep 30 days",
+                "effect": "Older logs are deleted nightly; audits reach back one month."
+              }
+            ],
+            "technical": {
+              "detail": "Sets logging.retention_days in config.yaml.",
+              "sources": [
+                "https://example.com/docs/logging"
+              ]
+            }
+          },
+          {
+            "id": "autosave",
+            "title": "Autosave drafts",
+            "question": "Should unsent drafts be saved automatically?",
+            "explanation": "A draft survives a reload when it is saved.",
+            "current": "Drafts are lost on reload.",
+            "recommendation": "Turn it on.",
+            "recommended_choice": "on",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Save drafts",
+                "effect": "Drafts come back after a reload."
+              },
+              {
+                "value": "off",
+                "label": "Do not save",
+                "effect": "Drafts are lost on reload."
+              }
+            ]
+          }
+        ]
+      },
+      "result": {
+        "review_id": "dr_0a1b2c3d",
+        "url": "/decisions/dr_0a1b2c3d",
+        "title": "Hermes audit decisions",
+        "status": "open",
+        "progress": {
+          "total": 2,
+          "answered": 0,
+          "deferred": 0,
+          "needs_review": 0
+        }
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261108_120000_caller",
+        "review_id": "dr_0a1b2c3d",
+        "title": "Hermes audit decisions",
+        "intro": "Three settings the audit flagged.",
+        "items": [
+          {
+            "id": "retention",
+            "title": "Session log retention",
+            "question": "How long should session logs be kept?",
+            "explanation": "Logs fill the disk on small servers, but they are the only record of what an agent ran.",
+            "example": "With 30 days, a chat from early October is gone by November.",
+            "current": "Logs are kept forever.",
+            "recommendation": "Keep 90 days: long enough to audit a release, short enough to bound disk use.",
+            "recommended_choice": "90d",
+            "choices": [
+              {
+                "value": "forever",
+                "label": "Keep forever",
+                "effect": "Nothing changes; disk use keeps growing."
+              },
+              {
+                "value": "90d",
+                "label": "Keep 90 days",
+                "effect": "Older logs are deleted nightly."
+              },
+              {
+                "value": "shorter",
+                "label": "Keep 30 days",
+                "effect": "Older logs are deleted nightly; audits reach back one month."
+              }
+            ],
+            "technical": {
+              "detail": "Sets logging.retention_days in config.yaml.",
+              "sources": [
+                "https://example.com/docs/logging"
+              ]
+            }
+          },
+          {
+            "id": "autosave",
+            "title": "Autosave drafts",
+            "question": "Should unsent drafts be saved automatically on every device?",
+            "explanation": "A draft survives a reload when it is saved.",
+            "current": "Drafts are lost on reload.",
+            "recommendation": "Turn it on.",
+            "recommended_choice": "on",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Save drafts",
+                "effect": "Drafts come back after a reload."
+              },
+              {
+                "value": "off",
+                "label": "Do not save",
+                "effect": "Drafts are lost on reload."
+              }
+            ]
+          },
+          {
+            "id": "telemetry",
+            "title": "Crash reports",
+            "question": "Should crash reports be sent?",
+            "explanation": "Reports help find bugs; they contain stack traces only.",
+            "example": null,
+            "current": "Nothing is sent.",
+            "recommendation": "Leave it off until the report format is reviewed.",
+            "recommended_choice": "off",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Send reports",
+                "effect": "Stack traces go to the crash service."
+              },
+              {
+                "value": "off",
+                "label": "Do not send",
+                "effect": "Nothing changes."
+              }
+            ]
+          }
+        ]
+      },
+      "result": {
+        "review_id": "dr_0a1b2c3d",
+        "url": "/decisions/dr_0a1b2c3d",
+        "title": "Hermes audit decisions",
+        "status": "open",
+        "progress": {
+          "total": 3,
+          "answered": 0,
+          "deferred": 0,
+          "needs_review": 0
+        }
+      }
+    }
+  ],
+  "server.decision_review_read": [
+    {
+      "params": {
+        "caller_session_id": "20261108_120000_caller",
+        "review_id": "dr_0a1b2c3d"
+      },
+      "result": {
+        "review_id": "dr_0a1b2c3d",
+        "session_id": "20261108_120000_caller",
+        "profile": "default",
+        "title": "Hermes audit decisions",
+        "intro": "Three settings the audit flagged.",
+        "status": "submitted",
+        "created_at": 1794000060,
+        "updated_at": 1794000180,
+        "submitted_at": 1794000180,
+        "progress": {
+          "total": 3,
+          "answered": 1,
+          "deferred": 0,
+          "needs_review": 0
+        },
+        "submit": {
+          "allowed": false,
+          "reason": "not_open"
+        },
+        "items": [
+          {
+            "id": "autosave",
+            "title": "Autosave drafts",
+            "question": "Should unsent drafts be saved automatically on every device?",
+            "explanation": "A draft survives a reload when it is saved.",
+            "example": null,
+            "current": "Drafts are lost on reload.",
+            "recommendation": "Turn it on.",
+            "recommended_choice": "on",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Save drafts",
+                "effect": "Drafts come back after a reload."
+              },
+              {
+                "value": "off",
+                "label": "Do not save",
+                "effect": "Drafts are lost on reload."
+              }
+            ],
+            "technical": {
+              "detail": null,
+              "sources": []
+            },
+            "content_hash": "3bb73a866060a8c6",
+            "fresh": "changed",
+            "needs_review": false,
+            "answer": null,
+            "outcome": null
+          },
+          {
+            "id": "telemetry",
+            "title": "Crash reports",
+            "question": "Should crash reports be sent?",
+            "explanation": "Reports help find bugs; they contain stack traces only.",
+            "example": null,
+            "current": "Nothing is sent.",
+            "recommendation": "Leave it off until the report format is reviewed.",
+            "recommended_choice": "off",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Send reports",
+                "effect": "Stack traces go to the crash service."
+              },
+              {
+                "value": "off",
+                "label": "Do not send",
+                "effect": "Nothing changes."
+              }
+            ],
+            "technical": {
+              "detail": null,
+              "sources": []
+            },
+            "content_hash": "7866ad3079475d6f",
+            "fresh": "new",
+            "needs_review": false,
+            "answer": null,
+            "outcome": null
+          },
+          {
+            "id": "retention",
+            "title": "Session log retention",
+            "question": "How long should session logs be kept?",
+            "explanation": "Logs fill the disk on small servers, but they are the only record of what an agent ran.",
+            "example": "With 30 days, a chat from early October is gone by November.",
+            "current": "Logs are kept forever.",
+            "recommendation": "Keep 90 days: long enough to audit a release, short enough to bound disk use.",
+            "recommended_choice": "90d",
+            "choices": [
+              {
+                "value": "forever",
+                "label": "Keep forever",
+                "effect": "Nothing changes; disk use keeps growing."
+              },
+              {
+                "value": "90d",
+                "label": "Keep 90 days",
+                "effect": "Older logs are deleted nightly."
+              },
+              {
+                "value": "shorter",
+                "label": "Keep 30 days",
+                "effect": "Older logs are deleted nightly; audits reach back one month."
+              }
+            ],
+            "technical": {
+              "detail": "Sets logging.retention_days in config.yaml.",
+              "sources": [
+                "https://example.com/docs/logging"
+              ]
+            },
+            "content_hash": "74c544ba89781c35",
+            "fresh": "carried",
+            "needs_review": false,
+            "answer": {
+              "value": "shorter",
+              "label": "Keep 30 days",
+              "effect": "Older logs are deleted nightly; audits reach back one month.",
+              "notes": "Disk is tight",
+              "deferred": false,
+              "custom": false,
+              "version": 1,
+              "updated_at": 1794000120
+            },
+            "outcome": null
+          }
+        ]
+      }
+    }
+  ],
+  "server.decision_review_record": [
+    {
+      "params": {
+        "caller_session_id": "20261108_120000_caller",
+        "review_id": "dr_0a1b2c3d",
+        "outcomes": [
+          {
+            "id": "retention",
+            "state": "applied",
+            "note": "Set logging.retention_days to 30."
+          }
+        ]
+      },
+      "result": {
+        "review_id": "dr_0a1b2c3d",
+        "session_id": "20261108_120000_caller",
+        "profile": "default",
+        "title": "Hermes audit decisions",
+        "intro": "Three settings the audit flagged.",
+        "status": "applied",
+        "created_at": 1794000060,
+        "updated_at": 1794000300,
+        "submitted_at": 1794000180,
+        "progress": {
+          "total": 3,
+          "answered": 1,
+          "deferred": 0,
+          "needs_review": 0
+        },
+        "submit": {
+          "allowed": false,
+          "reason": "not_open"
+        },
+        "items": [
+          {
+            "id": "autosave",
+            "title": "Autosave drafts",
+            "question": "Should unsent drafts be saved automatically on every device?",
+            "explanation": "A draft survives a reload when it is saved.",
+            "example": null,
+            "current": "Drafts are lost on reload.",
+            "recommendation": "Turn it on.",
+            "recommended_choice": "on",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Save drafts",
+                "effect": "Drafts come back after a reload."
+              },
+              {
+                "value": "off",
+                "label": "Do not save",
+                "effect": "Drafts are lost on reload."
+              }
+            ],
+            "technical": {
+              "detail": null,
+              "sources": []
+            },
+            "content_hash": "3bb73a866060a8c6",
+            "fresh": "changed",
+            "needs_review": false,
+            "answer": null,
+            "outcome": null
+          },
+          {
+            "id": "telemetry",
+            "title": "Crash reports",
+            "question": "Should crash reports be sent?",
+            "explanation": "Reports help find bugs; they contain stack traces only.",
+            "example": null,
+            "current": "Nothing is sent.",
+            "recommendation": "Leave it off until the report format is reviewed.",
+            "recommended_choice": "off",
+            "choices": [
+              {
+                "value": "on",
+                "label": "Send reports",
+                "effect": "Stack traces go to the crash service."
+              },
+              {
+                "value": "off",
+                "label": "Do not send",
+                "effect": "Nothing changes."
+              }
+            ],
+            "technical": {
+              "detail": null,
+              "sources": []
+            },
+            "content_hash": "7866ad3079475d6f",
+            "fresh": "new",
+            "needs_review": false,
+            "answer": null,
+            "outcome": null
+          },
+          {
+            "id": "retention",
+            "title": "Session log retention",
+            "question": "How long should session logs be kept?",
+            "explanation": "Logs fill the disk on small servers, but they are the only record of what an agent ran.",
+            "example": "With 30 days, a chat from early October is gone by November.",
+            "current": "Logs are kept forever.",
+            "recommendation": "Keep 90 days: long enough to audit a release, short enough to bound disk use.",
+            "recommended_choice": "90d",
+            "choices": [
+              {
+                "value": "forever",
+                "label": "Keep forever",
+                "effect": "Nothing changes; disk use keeps growing."
+              },
+              {
+                "value": "90d",
+                "label": "Keep 90 days",
+                "effect": "Older logs are deleted nightly."
+              },
+              {
+                "value": "shorter",
+                "label": "Keep 30 days",
+                "effect": "Older logs are deleted nightly; audits reach back one month."
+              }
+            ],
+            "technical": {
+              "detail": "Sets logging.retention_days in config.yaml.",
+              "sources": [
+                "https://example.com/docs/logging"
+              ]
+            },
+            "content_hash": "74c544ba89781c35",
+            "fresh": "carried",
+            "needs_review": false,
+            "answer": {
+              "value": "shorter",
+              "label": "Keep 30 days",
+              "effect": "Older logs are deleted nightly; audits reach back one month.",
+              "notes": "Disk is tight",
+              "deferred": false,
+              "custom": false,
+              "version": 1,
+              "updated_at": 1794000120
+            },
+            "outcome": {
+              "state": "applied",
+              "note": "Set logging.retention_days to 30."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import { McpEventsSchema } from './mcp-events.js'
  */
 import { z } from 'zod'
 import { OutboundDraftRefSchema } from './outbound-drafts.js'
+import { DecisionReviewRefSchema } from './decisions.js'
 import { MeshyModelRefSchema } from './meshy.js'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
@@ -85,7 +86,7 @@ export const ToolDisplayFields = {
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**
