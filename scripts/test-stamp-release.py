@@ -60,6 +60,7 @@ class StampReleaseTests(unittest.TestCase):
         """What the release-note generator writes for this checkout, as the stamp must package it byte for byte."""
         output = self.root.parent / f"{self.root.name}-announcement.json"
         self.addCleanup(output.unlink, missing_ok=True)
+        output.unlink(missing_ok=True)
         subprocess.run([sys.executable, "app/ci/release_notes.py", "announcement", "--component", "app", "--target", "HEAD",
                         "--version", version, "--output", str(output)], cwd=self.root, check=True, capture_output=True)
         return output.read_text() if output.exists() else None
@@ -97,20 +98,24 @@ class StampReleaseTests(unittest.TestCase):
         self.assertEqual(app["TalariaWhatsNew"], expected)
         self.assertNotIn("TalariaWhatsNew", widget)
 
-    def test_app_without_announced_rows_or_a_baseline_packages_nothing_or_refuses(self):
+    def test_app_after_an_unannounced_release_without_a_tag_still_packages_the_newest_rows(self):
         self.git("tag", "app-v1.2.3")
         self.write_fragment(3, {"skip": "Repository tooling only."})
         source = self.commit("TAL-3: skip only")
-        self.assertIsNone(self.announcement("1.2.4"))
-        stamped = self.stamp("app", "--build-number", "8", version="1.2.4", source=source)
-        self.assertEqual(stamped.returncode, 0, stamped.stderr)
-        self.assertNotIn("TalariaWhatsNew", plistlib.loads((self.root / PLISTS[0]).read_bytes()))
-        self.git("checkout", "--", ".")
         for tag in ("app-v1.0.0", "app-v1.2.3"):
             self.git("tag", "-d", tag)
-        before = self.snapshot()
-        self.assert_refused(self.stamp("app", "--build-number", "9", version="1.2.4", source=source),
-                            "What's New announcement: no preceding semantic release tag", before)
+        expected = self.announcement("1.2.4")
+        self.assertEqual([row["id"] for row in json.loads(expected)["rows"]], ["TAL-2-1"])
+        stamped = self.stamp("app", "--build-number", "8", version="1.2.4", source=source)
+        self.assertEqual(stamped.returncode, 0, stamped.stderr)
+        self.assertEqual(plistlib.loads((self.root / PLISTS[0]).read_bytes())["TalariaWhatsNew"], expected)
+        self.git("checkout", "--", ".")
+        self.write_fragment(2, {"skip": "Withdrawn."})
+        source = self.commit("TAL-2: withdraw the announcement")
+        self.assertIsNone(self.announcement("1.2.5"))
+        stamped = self.stamp("app", "--build-number", "9", version="1.2.5", source=source)
+        self.assertEqual(stamped.returncode, 0, stamped.stderr)
+        self.assertNotIn("TalariaWhatsNew", plistlib.loads((self.root / PLISTS[0]).read_bytes()))
 
     def test_app_refuses_a_partially_stamped_artifact_without_writing_either_bundle(self):
         widget = self.root / PLISTS[1]

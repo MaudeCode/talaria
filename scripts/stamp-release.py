@@ -51,14 +51,14 @@ def validate_release_info(metadata):
 
 
 def announcement(parser, component, version, source):
-    """The installed release's What's New payload (TAL-1616), ranged from the highest lower component tag; None without
-    opted-in rows. Generation reads committed fragments, so it is the same for every build of this source and version."""
+    """The build's What's New payload (TAL-1616): the newest announced rows reachable from the source, or None. Generation
+    reads committed fragments, so it is the same for every build of this source and version and needs no release tag."""
     sys.path.insert(0, str(ROOT / "app/ci"))
     sys.dont_write_bytecode = True  # The stamped checkout stays clean apart from its artifacts.
     import release_notes
     os.chdir(ROOT)
     try:
-        return release_notes.announcement("auto", source, version, component)
+        return release_notes.announcement(source, version, component)
     except (ValueError, OSError, KeyError) as error:
         parser.error(f"What's New announcement: {error}")
 

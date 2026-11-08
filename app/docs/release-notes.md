@@ -106,19 +106,22 @@ never appears beside an `announcement`.
 }
 ```
 
-A release shows at most four rows, in the same ticket and entry order as its
-notes. Rows past the fourth stay in the release notes only. A release with no
-opted-in rows has no announcement and stays quiet. The announcement covers only
-the installed release's range, so an install that skips versions sees the
-current release's rows, never a history. To preview one:
+Every App and Web build packages the newest four announced rows reachable from
+its source, whatever release tags exist. A fragment's age is the commit time of
+the last commit that touched it, so a fragment edited later to add an
+`announcement` counts as new. Rows run newest first, ties by ticket number
+descending, entries in authored order; older rows stay in the release notes
+only. A source with no announced rows has no announcement and stays quiet. Rows
+repeat from build to build; the App and Web acknowledge each row `id`, so a
+build after a skipped or adjacent release presents only the rows the user has
+not seen. To preview one:
 
 ```sh
 python3 ci/release_notes.py announcement --component web \
   --target HEAD --version 1.8.0 --output build/whats-new.json
 ```
 
-`--previous` defaults to the highest lower component tag, as for `generate`; an
-Experimental Web version `X.Y.Z-exp.<12-hex source>` is ranged like `X.Y.Z`.
+An Experimental Web version `X.Y.Z-exp.<12-hex source>` must name its target.
 The output is byte-identical for the same component, version, and source.
 
 For repository, documentation, or test maintenance with no app behavior change:
@@ -237,19 +240,17 @@ announcements are excluded from both outputs.
 ## Packaged What's New
 
 `../scripts/stamp-release.py` generates the announcement while it stamps an App
-or Web artifact, from the highest lower component tag reachable from the source.
+or Web artifact: the newest four announced rows reachable from the source.
 Every path that builds an installable artifact passes through it: the release-set
 Web build (Stable npm package and image) and App dry run in `releases/build.py`,
 the Experimental Web package (`build.py web --experimental`), and the signed
 production and Nightly App builds in `.github/workflows/ios-release-build.yml`.
-A malformed fragment or a missing baseline tag stops the stamp before it writes.
+A malformed fragment stops the stamp before it writes; no baseline tag is needed.
 
 - **App:** the exact payload JSON is stored as the `TalariaWhatsNew` string in the
   App's Info.plist (not the widget's). `WhatsNewAnnouncement.installed()` in
   TalariaKit decodes it offline, without a server, and returns nil for a missing,
-  malformed, or mismatched payload. A Nightly build is ranged from the last Stable
-  App tag, so each build of one marketing version carries every row announced
-  since then, up to four. Acknowledgement is per row `id`, not per release:
+  malformed, or mismatched payload. Acknowledgement is per row `id`, not per release:
   `WhatsNewAnnouncement.pending()` offers the packaged rows this install has not
   acknowledged, in packaged order, whatever the marketing version. A later Nightly
   of the same marketing version therefore presents only the rows added since the
