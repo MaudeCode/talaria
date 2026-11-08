@@ -949,6 +949,9 @@ extension ChatViewModel {
         messageOffset: Int? = nil,
         archivedGroups: [ReasoningGroup]
     ) -> [ReasoningGroup] {
+#if DEBUG
+        ChatBodyEvaluationRecorder.record("reasoningGroups")
+#endif
         let turnKeysByMessageID = TranscriptTurnClassifier.assistantTurnKeysByAnchorID(
             messages,
             messageOffset: messageOffset

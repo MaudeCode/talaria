@@ -16,6 +16,7 @@ sidebar are checked on a device against the release phone list
 | Streaming replay catch-up scaling | `TalariaTests/ReplayCatchUpPerformanceTests` |
 | Dense Kanban load and filter | `TalariaTests/KanbanBoardPerformanceTests` |
 | Large image preview preparation | `TalariaTests/ImagePreviewPerformanceTests` |
+| Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
 
 ## Fixture data
 
@@ -24,6 +25,12 @@ them.
 
 - The Kanban budget decodes a generated 1,200-card Board across six columns.
 - The image budget encodes a deterministic 4032x3024 tile pattern as JPEG.
+- The chat stream tick budget hosts the chat over 100 generated turns (200
+  messages; every fifth reply carries reasoning and every fifth, offset by two,
+  a fenced code block), streams a reply that opens, fills and closes a Swift
+  code block, ends the reply, then types into the composer. Typing waits for
+  the reply to end: a live stream silent for 12 s starts a stale-stream check,
+  which would make keystroke counts depend on the host's speed.
 - The replay budget streams generated tokens, replays them over a scripted
   reconnect, and checks the resulting transcript on every run so a broken dedup
   cannot pass as a fast one.
@@ -48,14 +55,50 @@ Medians of three iterations.
 | --- | --- | --- |
 | Replay catch-up, 4,000 tokens (clock) | 0.009 s | 0.000 s |
 | Replay catch-up, 4,000 tokens (peak memory) | 53,447 kB | 16 kB |
+| Chat, 200 stream ticks and 200 keystrokes (clock) | 13.48 s | 0.91 s |
+| Chat, 200 stream ticks and 200 keystrokes (CPU) | 12.78 s | 0.88 s |
 
-Only the replay budget asserts a threshold; the others record for comparison.
+The chat budget was measured on an iOS simulator inside the local macOS build VM
+rather than the pool above. Ticks took 8.6-9.4 s (~45 ms each) and
+keystrokes 3.5-3.8 s (~18 ms each). GitHub's hosted runner measures about
+four times slower; the work counts match.
+
+The replay and chat budgets assert thresholds; the others record for comparison.
 
 - Replay catch-up may not cost more than 8x across the curve's 4x span, and
   4,000 tokens may not take more than 80 ms. A linear path measures ~3.9x and
   ~8.7 ms; the quadratic path this replaced measured ~16x and 212 ms. The
   endpoints are compared rather than each step because at these millisecond
   scales one noisy middle sample decides a per-step ratio.
+
+- The chat's 400 operations may not take more than 180 s: over 3x the 47-53 s
+  GitHub's hosted runner measures, and ~13x the build VM.
+  Its work counts below are the real gate: each count's minimum across runs is
+  asserted exactly.
+
+## Chat stream tick and keystroke work
+
+`ChatBodyEvaluationRecorder` (DEBUG builds only) counts the main-thread work
+each operation repeats. Every tick and keystroke is rendered and its queued
+main-actor work run until the counted work stays unchanged for three hops,
+without waiting on a clock. Work an
+operation causes recurs in every run, while an unrelated timer-driven update
+lands in at most one, so the test asserts each count's minimum across runs.
+
+| Work | 200 stream ticks | 200 keystrokes |
+| --- | --- | --- |
+| Reasoning-card derivation | 400 | 204 |
+| Streaming Markdown split | 1,204 | 0 |
+| Code highlighting | 100 | 0 |
+| Message list body | 400 | 204 |
+| Settled transcript row body | 0 | 0 |
+| Whole chat body | 0 | 204 |
+| Toolbar body | 0 | 204 |
+| Composer body | 0 | 212 |
+
+A tick derives the reasoning cards twice and splits the streaming reply six
+times; a keystroke re-evaluates the whole chat, its toolbar and the message
+list. A change that removes a repeat lowers its count in the test and here.
 
 ## Replay catch-up: the measured change
 

@@ -17,15 +17,17 @@ from pathlib import Path
 
 TARGET = "TalariaTests"
 # Each listed class's test time, and every other class's together, from PR CI run 42130994534's four shards (894 s of
-# tests). hosted_test_shard_test.py fails when they leave a shard more than 90 s over the mean; rebalance from a current
-# run's timings when a shard's job outgrows the others.
+# tests), plus ChatStreamTickPerformanceTests' 226 s from PR CI run 42421102751 (TAL-851). hosted_test_shard_test.py
+# fails when they leave a shard more than 90 s over the mean; rebalance from a current run's timings when a shard's job
+# outgrows the others.
 SECONDS = {"SessionListHostedTests": 184.8, "TranscriptHostedTests": 69.3, "ChatHostedTests": 208.8,
-           "InsightsHostedTests": 28.8, "StreamHostedTests": 65.6, "SessionActionsHostedTests": 73.9, "RegularSplitHostedTests": 56.7}
+           "InsightsHostedTests": 28.8, "StreamHostedTests": 65.6, "SessionActionsHostedTests": 73.9, "RegularSplitHostedTests": 56.7,
+           "ChatStreamTickPerformanceTests": 226.0}
 OTHER_SECONDS = 205.7
 SHARDS = (
-    ("SessionListHostedTests", "TranscriptHostedTests"),
-    ("ChatHostedTests", "InsightsHostedTests"),
-    ("StreamHostedTests", "SessionActionsHostedTests", "RegularSplitHostedTests"),
+    ("SessionListHostedTests", "TranscriptHostedTests", "StreamHostedTests"),
+    ("ChatHostedTests", "InsightsHostedTests", "SessionActionsHostedTests"),
+    ("ChatStreamTickPerformanceTests", "RegularSplitHostedTests"),
 )
 COUNT = len(SHARDS) + 1
 LISTED = [name for shard in SHARDS for name in shard]
