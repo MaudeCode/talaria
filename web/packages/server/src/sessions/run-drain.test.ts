@@ -193,3 +193,82 @@ describe('server close drains local runs (TAL-1628)', () => {
     } finally { vi.restoreAllMocks(); await server.running.close().catch(() => undefined) }
   })
 })
+
+describe('a confirmed Web update interrupts the named local runs (TAL-1629)', () => {
+  it('saves exactly the named runs as interrupted with their partials, leaving the others running', async () => {
+    const { sidecar, release, interrupts } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const named = await startTurn(server, 'one')
+      const other = await startTurn(server, 'two')
+      expect(server.deps.turns.interruptibleRuns()).toEqual([named.streamId, other.streamId].sort())
+      expect(await server.deps.turns.interrupt([named.streamId], 5_000)).toEqual({ interrupted: 1, unresolved: [] })
+      const saved = durable(server, named.sid)
+      expect(saved.active_stream_id).toBeNull()
+      expect(saved.messages.map((m) => [m.role, m._terminal_state ?? null])).toEqual([['user', null], ['assistant', null], ['assistant', 'interrupted']])
+      expect(saved.messages[1]).toMatchObject({ content: 'partial', _partial: true })
+      expect((await terminalEvents(server, named.sid, named.streamId)).map((e) => [e.event, (e.payload as { terminal_state?: string }).terminal_state])).toEqual([['apperror', 'interrupted']])
+      expect(interrupts).toEqual([named.streamId])
+      expect(server.deps.registry.activeRuns.has(other.streamId)).toBe(true)
+      expect(server.deps.turns.interruptibleRuns()).toEqual([other.streamId])
+      // An interruption is not a shutdown: new turns are admitted again once the update lock releases.
+      expect(server.deps.turns.draining).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('reports a run whose interrupted outcome could not be saved', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { sid, streamId } = await startTurn(server, 'hello')
+      const save = server.deps.sessionStore.save.bind(server.deps.sessionStore)
+      vi.spyOn(server.deps.sessionStore, 'save').mockImplementation(async (s, opts) => {
+        if (s.session_id === sid) throw new Error('disk full')
+        return save(s, opts)
+      })
+      expect(await server.deps.turns.interrupt([streamId], 5_000)).toMatchObject({ unresolved: [streamId] })
+    } finally { release(); vi.restoreAllMocks(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('names no interruptible runs while a Gateway-owned run is active', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      await startTurn(server, 'hello')
+      server.deps.registry.registerActiveRun({ stream_id: 'owner:gateway-run', session_id: 'gateway-session', started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false, origin: 'user' })
+      expect(server.deps.turns.interruptibleRuns()).toBeNull()
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('refuses a turn whose admission checks passed just before an update fenced admission', async () => {
+    const { sidecar } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      vi.spyOn(server.deps.updates, 'blocksNewWork').mockReturnValueOnce(false).mockReturnValue(true)
+      expect(await server.deps.turns.start(session, { msg: 'hi', workspace: server.deps.config.defaultWorkspace, model: null, modelProvider: null })).toMatchObject({ _status: 503, error: 'Web is updating. Retry after it restarts.' })
+      expect(server.deps.registry.activeRuns.size).toBe(0)
+      expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+    } finally { vi.restoreAllMocks(); await server.running.close().catch(() => undefined) }
+  })
+
+  it('offers Update anyway over HTTP for the blocked Web update, and a confirmed update still refuses a source checkout', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    const post = async (body: Record<string, unknown>): Promise<Record<string, unknown>> => (await server.get('/api/updates/apply', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })).json() as never
+    try {
+      const { sid, streamId } = await startTurn(server, 'hello')
+      const blocked = await post({ target: 'webui', version: '2.0.0', tab_id: 'tab-interrupt' })
+      expect(blocked).toMatchObject({ ok: false, restart_blocked: true, interrupt_confirmation: { runs: 1 }, notification_id: expect.any(String) as string })
+      const token = (blocked.interrupt_confirmation as { token: string }).token
+      // The confirmation names the exact update: another version is refused again with fresh consent.
+      const other = await post({ target: 'webui', version: '1.0.0', interrupt_token: token, tab_id: 'tab-interrupt' })
+      expect(other).toMatchObject({ restart_blocked: true, interrupt_confirmation: { runs: 1 } })
+      const confirmed = await post({ target: 'webui', version: '1.0.0', interrupt_token: (other.interrupt_confirmation as { token: string }).token, tab_id: 'tab-interrupt' })
+      expect(confirmed).toMatchObject({ ok: false, manual_update: true })
+      expect(server.deps.registry.activeRuns.has(streamId)).toBe(true)
+      expect(durable(server, sid).messages.some((m) => m._terminal_state === 'interrupted')).toBe(false)
+      expect(server.deps.updates.blocksNewWork()).toBe(false)
+    } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+})

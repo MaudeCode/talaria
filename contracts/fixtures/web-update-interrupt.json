@@ -1,0 +1,51 @@
+{
+  "offered": {
+    "ok": false,
+    "target": "webui",
+    "restart_blocked": true,
+    "active_streams": 2,
+    "active_runs": 2,
+    "active_terminals": 0,
+    "active_cron_jobs": 0,
+    "blocking_stream_ids": ["1111111111111111111111111111aaaa", "2222222222222222222222222222bbbb"],
+    "blocking_run_ids": ["1111111111111111111111111111aaaa", "2222222222222222222222222222bbbb"],
+    "message": "Cannot update webui while 2 active chat streams and 2 active agent runs is running. Wait for work to finish and close open terminals, then retry the update.",
+    "interrupt_confirmation": {
+      "token": "dddddddddddddddddddddddddddddddd",
+      "runs": 2,
+      "expires_at": "2026-11-08T12:02:00.000Z"
+    },
+    "notification_id": "00000000-0000-4000-8000-000000000002"
+  },
+  "not_offered": {
+    "ok": false,
+    "target": "webui",
+    "restart_blocked": true,
+    "active_streams": 1,
+    "active_runs": 1,
+    "active_terminals": 1,
+    "active_cron_jobs": 0,
+    "blocking_stream_ids": ["1111111111111111111111111111aaaa"],
+    "blocking_run_ids": ["1111111111111111111111111111aaaa"],
+    "message": "Cannot update webui while 1 active chat stream and 1 active agent run and 1 open terminal is running. Wait for work to finish and close open terminals, then retry the update.",
+    "notification_id": "00000000-0000-4000-8000-000000000003"
+  },
+  "interrupt_failed": {
+    "ok": false,
+    "target": "webui",
+    "interrupt_failed": true,
+    "message": "1 running chat could not be saved as interrupted, so Talaria Web was not updated.",
+    "notification_id": "00000000-0000-4000-8000-000000000004"
+  },
+  "confirmed": {
+    "ok": true,
+    "target": "webui",
+    "channel": "stable",
+    "tag": "web-v2.0.0",
+    "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "npm": "@maudecode/talaria-web@2.0.0",
+    "message": "Updated Talaria Web to npm release 2.0.0.",
+    "restart_scheduled": true,
+    "notification_id": "00000000-0000-4000-8000-000000000005"
+  }
+}

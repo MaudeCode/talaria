@@ -704,7 +704,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   }
 
   /** An UpdateService over a global npm install one Stable release behind, the only kind that updates itself (TAL-379). */
-  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } = {}) {
+  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } & Pick<UpdateServiceDeps, 'interruptibleRuns' | 'interruptRuns' | 'now'> = {}) {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
@@ -713,6 +713,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       agentDir: () => opts.agentDir ?? null, channel: opts.channel ?? (() => 'stable'), includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
       ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
+      ...(opts.interruptibleRuns ? { interruptibleRuns: opts.interruptibleRuns } : {}), ...(opts.interruptRuns ? { interruptRuns: opts.interruptRuns } : {}), ...(opts.now ? { now: opts.now } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
       scheduleRestart: () => restarts.push(1), llm: null, log: () => undefined,
     })
@@ -910,6 +911,174 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(restarts).toEqual([])
     expect(installs()).toBe(0)
     expect(version()).toBe('1.0.0')
+  })
+
+  describe('Update anyway for a Web update blocked by local chats (TAL-1629)', () => {
+    /**
+     * An npm install one Stable release behind, blocked by synthetic local chat runs. `other` stands for a blocker that is
+     * not a local chat (terminal, cron, Gateway run). Interrupting saves the runs, which ends them, unless `unsaved` names one.
+     */
+    function blockedByChats(initial: string[] = ['r1', 'r2']) {
+      const work = { runs: [...initial], other: false, unsaved: [] as string[], clock: 1_000 }
+      const interrupted: string[][] = []
+      const order: string[] = []
+      const ctx = npmService({
+        blockers: () => ({ active_streams: work.runs.length, active_runs: work.runs.length, active_terminals: work.other ? 1 : 0, blocking_stream_ids: work.runs, blocking_run_ids: work.runs, restart_blocked: work.runs.length > 0 || work.other }),
+        interruptibleRuns: () => work.other ? null : [...work.runs].sort(),
+        interruptRuns: (runs) => {
+          interrupted.push([...runs])
+          order.push(`interrupt:${String(ctx.installs())}`)
+          work.runs = work.runs.filter((run) => work.unsaved.includes(run))
+          return Promise.resolve({ unresolved: runs.filter((run) => work.unsaved.includes(run)) })
+        },
+        now: () => work.clock,
+      })
+      const offer = async (operator = 'operator-a', version?: string): Promise<{ token: string; runs: number; expires_at: string }> => {
+        const blocked = await ctx.svc.apply('webui', null, undefined, { operator, ...(version ? { version } : {}) })
+        expect(blocked).toMatchObject({ ok: false, restart_blocked: true })
+        return blocked.interrupt_confirmation as { token: string; runs: number; expires_at: string }
+      }
+      return { ...ctx, work, interrupted, order, offer }
+    }
+
+    it('offers the operator a one-shot confirmation naming the chats, then interrupts exactly those before installing', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const confirmation = await t.offer()
+      expect(confirmation).toEqual({ token: expect.stringMatching(/^[a-f0-9]{32}$/) as string, runs: 2, expires_at: new Date(1_120_000).toISOString() })
+      expect(t.interrupted).toEqual([])
+      expect(t.installs()).toBe(0)
+      const applied = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: confirmation.token })
+      expect(applied).toMatchObject({ ok: true, restart_scheduled: true })
+      expect(t.interrupted).toEqual([['r1', 'r2']])
+      expect(t.order).toEqual(['interrupt:0'])
+      expect(t.installs()).toBe(1)
+      expect(t.version()).toBe('2.0.0')
+      // The restart is deferred until the drained server re-execs; turn admission stays fenced until then.
+      expect(t.restarts).toEqual([1])
+      expect(t.svc.blocksNewWork()).toBe(true)
+      // The confirmation was used up: a replay interrupts nothing more.
+      t.work.runs = ['r3']
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: confirmation.token })).toMatchObject({ ok: true, restart_scheduled: true, message: 'A Web restart is already scheduled.' })
+      expect(t.interrupted).toEqual([['r1', 'r2']])
+    })
+
+    it('never offers or interrupts for automatic updates, requests without an operator, or Agent updates', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const plain = await t.svc.apply('webui')
+      expect(plain).toMatchObject({ ok: false, restart_blocked: true })
+      expect(plain).not.toHaveProperty('interrupt_confirmation')
+      expect(await t.svc.apply('agent', null, undefined, { operator: 'operator-a' })).not.toHaveProperty('interrupt_confirmation')
+      const interrupt = vi.fn(() => Promise.resolve({ unresolved: [] }))
+      const auto = npmService({ autoApply: () => true, blockers: () => ({ active_streams: 1, active_runs: 1, blocking_stream_ids: ['r1'], blocking_run_ids: ['r1'], restart_blocked: true }), interruptibleRuns: () => ['r1'], interruptRuns: interrupt })
+      const result = await auto.svc.autoApplyOnce()
+      expect(result).toMatchObject({ ok: false, restart_blocked: true })
+      expect(result).not.toHaveProperty('interrupt_confirmation')
+      expect([t.interrupted, interrupt.mock.calls, t.installs(), auto.installs()]).toEqual([[], [], 0, 0])
+    })
+
+    it('refuses with fresh consent when the token is forged, expired, another operator\'s or another update\'s', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const refusedAgain = async (token: string, operator = 'operator-a', version?: string): Promise<void> => {
+        const result = await t.svc.apply('webui', null, undefined, { operator, interruptToken: token, ...(version ? { version } : {}) })
+        expect(result).toMatchObject({ ok: false, restart_blocked: true, interrupt_confirmation: { runs: 2 } })
+        expect((result.interrupt_confirmation as { token: string }).token).not.toBe(token)
+      }
+      await refusedAgain('f'.repeat(32))
+      await refusedAgain((await t.offer('operator-a')).token, 'operator-b')
+      await refusedAgain((await t.offer()).token, 'operator-a', '1.0.0')
+      const expiring = await t.offer()
+      t.work.clock += 121
+      await refusedAgain(expiring.token)
+      // Each offer replaces the operator's previous one.
+      const first = await t.offer()
+      await t.offer()
+      await refusedAgain(first.token)
+      expect(t.interrupted).toEqual([])
+      expect(t.installs()).toBe(0)
+    })
+
+    it('needs fresh consent when a chat it never named started, but interrupts a smaller set', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const named = await t.offer()
+      t.work.runs = ['r1', 'r3']
+      const changed = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: named.token })
+      expect(changed).toMatchObject({ ok: false, restart_blocked: true, interrupt_confirmation: { runs: 2 } })
+      expect(t.interrupted).toEqual([])
+      const fresh = changed.interrupt_confirmation as { token: string }
+      t.work.runs = ['r3']
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: fresh.token })).toMatchObject({ ok: true, restart_scheduled: true })
+      expect(t.interrupted).toEqual([['r3']])
+    })
+
+    it('keeps refusing without an offer while other work blocks, even after consent was given', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      t.work.other = true
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a' })).not.toHaveProperty('interrupt_confirmation')
+      t.work.other = false
+      const named = await t.offer()
+      t.work.other = true
+      const refused = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: named.token })
+      expect(refused).toMatchObject({ ok: false, restart_blocked: true, active_terminals: 1 })
+      expect(refused).not.toHaveProperty('interrupt_confirmation')
+      expect([t.interrupted, t.installs(), t.restarts]).toEqual([[], 0, []])
+    })
+
+    it('re-asks when a newer release was published after the operator confirmed', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const confirmed = await t.offer()
+      t.s.release.sourceRevision = 'c'.repeat(40)
+      const refused = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: confirmed.token })
+      expect(refused).toMatchObject({ ok: false, restart_blocked: true, interrupt_confirmation: { runs: 2 } })
+      expect((refused.interrupt_confirmation as { token: string }).token).not.toBe(confirmed.token)
+      expect([t.interrupted, t.installs(), t.restarts]).toEqual([[], 0, []])
+      expect(t.svc.blocksNewWork()).toBe(false)
+    })
+
+    it('binds a chosen Stable version without a prior check', async () => {
+      const t = blockedByChats(['r1'])
+      const named = await t.offer('operator-a', '2.0.0')
+      expect(named).toMatchObject({ runs: 1 })
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', version: '2.0.0', interruptToken: named.token })).toMatchObject({ ok: true, restart_scheduled: true })
+      expect(t.interrupted).toEqual([['r1']])
+    })
+
+    it('fails without installing or restarting when an interrupted chat could not be saved, and reopens admission', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      t.work.unsaved = ['r2']
+      const failed = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: (await t.offer()).token })
+      expect(failed).toMatchObject({ ok: false, interrupt_failed: true, message: '1 running chat could not be saved as interrupted, so Talaria Web was not updated.' })
+      expect([t.installs(), t.version(), t.restarts]).toEqual([0, '1.0.0', []])
+      expect(t.svc.blocksNewWork()).toBe(false)
+    })
+
+    it('interrupts once when the same confirmation is sent twice at once', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const { token } = await t.offer()
+      const [first, second] = await Promise.all([0, 1].map(() => t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: token })))
+      expect(first).toMatchObject({ ok: true, restart_scheduled: true })
+      expect(second).toMatchObject({ ok: false, restart_blocked: true })
+      expect(t.interrupted).toEqual([['r1', 'r2']])
+      expect(t.installs()).toBe(1)
+    })
+
+    it('reopens admission when the update fails after the chats were saved as interrupted', async () => {
+      const t = blockedByChats()
+      await t.svc.check(true, false, 'stable')
+      const { token } = await t.offer()
+      t.n.mode.outcome = 'failure'
+      const failed = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: token })
+      expect(failed).toMatchObject({ ok: false })
+      expect([t.interrupted, t.version(), t.restarts]).toEqual([[['r1', 'r2']], '1.0.0', []])
+      expect(t.svc.blocksNewWork()).toBe(false)
+    })
   })
 
   /** TAL-946: completed Stable sets for 2.0.0 (newest), 1.2.0 and 1.1.0 above an npm install of 1.0.0, each with its own source and package. */

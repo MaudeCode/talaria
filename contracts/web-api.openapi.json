@@ -104336,6 +104336,11 @@
                     "maxLength": 128,
                     "description": "TAL-946: a Stable `versions[].ref` of this target to install instead of the newest. Rejected when it is not listed or on Experimental."
                   },
+                  "interrupt_token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$",
+                    "description": "TAL-1629: the `interrupt_confirmation.token` a blocked Web update offered this operator. Sent once, with the same target, channel and version, it saves the named local chats as interrupted and updates; otherwise the update is refused again with fresh consent."
+                  },
                   "tab_id": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{8,64}$"
@@ -104470,6 +104475,34 @@
                     "gateway_restart": {
                       "type": "string",
                       "description": "TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway's running work; the update notification reports its outcome."
+                    },
+                    "interrupt_failed": {
+                      "type": "boolean",
+                      "description": "TAL-1629: a confirmed Update anyway stopped, but could not save every interrupted chat, so nothing was installed."
+                    },
+                    "interrupt_confirmation": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{32}$"
+                        },
+                        "runs": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "runs",
+                        "expires_at"
+                      ]
                     }
                   },
                   "additionalProperties": {}
@@ -104527,6 +104560,11 @@
                     "maxLength": 128,
                     "description": "TAL-946: a Stable `versions[].ref` of this target to install instead of the newest. Rejected when it is not listed or on Experimental."
                   },
+                  "interrupt_token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$",
+                    "description": "TAL-1629: the `interrupt_confirmation.token` a blocked Web update offered this operator. Sent once, with the same target, channel and version, it saves the named local chats as interrupted and updates; otherwise the update is refused again with fresh consent."
+                  },
                   "tab_id": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{8,64}$"
@@ -104661,6 +104699,34 @@
                     "gateway_restart": {
                       "type": "string",
                       "description": "TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway's running work; the update notification reports its outcome."
+                    },
+                    "interrupt_failed": {
+                      "type": "boolean",
+                      "description": "TAL-1629: a confirmed Update anyway stopped, but could not save every interrupted chat, so nothing was installed."
+                    },
+                    "interrupt_confirmation": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{32}$"
+                        },
+                        "runs": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "runs",
+                        "expires_at"
+                      ]
                     }
                   },
                   "additionalProperties": {}
@@ -104718,6 +104784,11 @@
                     "maxLength": 128,
                     "description": "TAL-946: a Stable `versions[].ref` of this target to install instead of the newest. Rejected when it is not listed or on Experimental."
                   },
+                  "interrupt_token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$",
+                    "description": "TAL-1629: the `interrupt_confirmation.token` a blocked Web update offered this operator. Sent once, with the same target, channel and version, it saves the named local chats as interrupted and updates; otherwise the update is refused again with fresh consent."
+                  },
                   "tab_id": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{8,64}$"
@@ -104852,6 +104923,34 @@
                     "gateway_restart": {
                       "type": "string",
                       "description": "TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway's running work; the update notification reports its outcome."
+                    },
+                    "interrupt_failed": {
+                      "type": "boolean",
+                      "description": "TAL-1629: a confirmed Update anyway stopped, but could not save every interrupted chat, so nothing was installed."
+                    },
+                    "interrupt_confirmation": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{32}$"
+                        },
+                        "runs": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "runs",
+                        "expires_at"
+                      ]
                     }
                   },
                   "additionalProperties": {}

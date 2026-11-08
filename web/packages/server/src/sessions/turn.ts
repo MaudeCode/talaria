@@ -62,6 +62,7 @@ const BACKGROUND_UNWIND_WAIT_MS = 30_000
 /** TAL-1628: a shutdown's interrupt waits this long for the Agent's checkpoint, inside the drain's settlement margin. */
 const SHUTDOWN_INTERRUPT_TIMEOUT_MS = 1_000
 export const SHUTTING_DOWN_MESSAGE = 'Web is shutting down. Retry after it restarts.'
+const UPDATING_MESSAGE = 'Web is updating. Retry after it restarts.'
 const SHUTDOWN_INTERRUPTED_MESSAGE = 'Talaria Web stopped before this reply finished.'
 const SHUTDOWN_INTERRUPTED_HINT = 'The partial reply was saved. Send a new message to continue.'
 
@@ -431,40 +432,72 @@ export class TurnRunner {
   }
 
   private async runDrain({ waitMs, settleMs }: DrainOptions): Promise<DrainResult> {
-    const timers: NodeJS.Timeout[] = []
-    const after = (ms: number): Promise<void> => new Promise((resolve) => { timers.push(setTimeout(resolve, ms)) })
+    let timer: NodeJS.Timeout | undefined
     const escalation = new Promise<void>((resolve) => { this.wakeDrain = resolve; if (this.drainEscalated) resolve() })
     const started = new Set(this.workers.keys())
     const idle = async (): Promise<void> => { while (this.workers.size || this.admissions.size) await Promise.race([...this.workers.values(), ...this.admissions.values()]) }
     try {
-      await Promise.race([idle(), after(waitMs), escalation])
-      const stops = new Map<string, Promise<boolean>>()
-      const stopRemaining = (): void => {
-        for (const streamId of this.workers.keys()) {
-          if (stops.has(streamId)) continue
-          this.drainOutcomes.set(streamId, 'pending')
-          stops.set(streamId, this.stop(streamId, 'shutdown').then((r) => r.cancelled, (error: unknown) => {
-            this.deps.log(`[webui] shutdown: interrupting ${streamId} failed: ${(error as Error).message}`)
-            return false
-          }))
-        }
+      await Promise.race([idle(), new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs) }), escalation])
+    } finally { clearTimeout(timer) }
+    const { stops, interrupted } = await this.stopAsInterrupted(() => [...this.workers.keys(), ...this.admissions.keys()], settleMs)
+    // An admission still persisting at the deadline never got a worker to stop; it stays unresolved and never launches.
+    this.drainFinished = true
+    const unresolved = [...[...stops.keys()].filter((streamId) => this.drainOutcomes.get(streamId) !== 'saved'), ...[...this.admissions.keys()].filter((streamId) => !stops.has(streamId))]
+    for (const streamId of unresolved) this.deps.log(`[webui] shutdown: run ${streamId} has no saved outcome; its session recovers from the run journal on next open`)
+    return { completed: [...started].filter((streamId) => !stops.has(streamId)).length, interrupted, unresolved }
+  }
+
+  /**
+   * TAL-1629: every live stream and active run, sorted, when each is this server's own local turn; null when any is other
+   * work (a Gateway-owned observation, a run of unknown ownership). Only these runs may be interrupted for a Web update.
+   */
+  interruptibleRuns(): string[] | null {
+    const ids = new Set([...this.registry.liveIds, ...this.registry.activeRuns.keys()])
+    for (const streamId of ids) if (!this.workers.has(streamId) && !this.admissions.has(streamId)) return null
+    return [...ids].sort()
+  }
+
+  /**
+   * TAL-1629: save `streamIds`, this server's own local runs, as interrupted through the drain's stop path within
+   * `settleMs`. The caller keeps new turns fenced meanwhile. Lists each run left without a saved outcome.
+   */
+  async interrupt(streamIds: readonly string[], settleMs: number): Promise<{ interrupted: number; unresolved: string[] }> {
+    const { stops, interrupted } = await this.stopAsInterrupted(() => streamIds, settleMs)
+    const unresolved = streamIds.filter((streamId) => stops.has(streamId) ? this.drainOutcomes.get(streamId) !== 'saved' : this.admissions.has(streamId))
+    for (const streamId of unresolved) this.deps.log(`[webui] update: run ${streamId} has no saved interrupted outcome`)
+    return { interrupted, unresolved }
+  }
+
+  /**
+   * The one interruption path (TAL-1628, TAL-1629): stop each of `candidates` that has a worker as interrupted, including a
+   * launch whose admission settles meanwhile, and wait up to `settleMs` for their outcomes to be saved.
+   */
+  private async stopAsInterrupted(candidates: () => readonly string[], settleMs: number): Promise<{ stops: Map<string, Promise<boolean>>; interrupted: number }> {
+    let timer: NodeJS.Timeout | undefined
+    const stops = new Map<string, Promise<boolean>>()
+    const stopRemaining = (): void => {
+      for (const streamId of candidates()) {
+        if (stops.has(streamId) || !this.workers.has(streamId)) continue
+        this.drainOutcomes.set(streamId, 'pending')
+        stops.set(streamId, this.stop(streamId, 'shutdown').then((r) => r.cancelled, (error: unknown) => {
+          this.deps.log(`[webui] shutdown: interrupting ${streamId} failed: ${(error as Error).message}`)
+          return false
+        }))
       }
-      const settle = async (): Promise<void> => {
-        stopRemaining()
-        // A launch past the fence (registered, no worker yet) gets its worker when its admission settles; it is stopped too.
-        await Promise.all(this.admissions.values())
-        stopRemaining()
-        await Promise.all(stops.values())
-        await Promise.all([...stops.keys()].map((streamId) => this.finished(streamId)))
-      }
-      await Promise.race([settle(), after(settleMs)])
-      const interrupted = (await Promise.all([...stops.values()].map((stop) => Promise.race([stop, Promise.resolve(false)])))).filter(Boolean).length
-      // An admission still persisting at the deadline never got a worker to stop; it stays unresolved and never launches.
-      this.drainFinished = true
-      const unresolved = [...[...stops.keys()].filter((streamId) => this.drainOutcomes.get(streamId) !== 'saved'), ...[...this.admissions.keys()].filter((streamId) => !stops.has(streamId))]
-      for (const streamId of unresolved) this.deps.log(`[webui] shutdown: run ${streamId} has no saved outcome; its session recovers from the run journal on next open`)
-      return { completed: [...started].filter((streamId) => !stops.has(streamId)).length, interrupted, unresolved }
-    } finally { for (const timer of timers) clearTimeout(timer) }
+    }
+    const settle = async (): Promise<void> => {
+      stopRemaining()
+      // A launch past the fence (registered, no worker yet) gets its worker when its admission settles; it is stopped too.
+      await Promise.all(candidates().map((streamId) => this.admissions.get(streamId) ?? Promise.resolve()))
+      stopRemaining()
+      await Promise.all(stops.values())
+      await Promise.all([...stops.keys()].map((streamId) => this.finished(streamId)))
+    }
+    try {
+      await Promise.race([settle(), new Promise<void>((resolve) => { timer = setTimeout(resolve, settleMs) })])
+    } finally { clearTimeout(timer) }
+    const interrupted = (await Promise.all([...stops.values()].map((stop) => Promise.race([stop, Promise.resolve(false)])))).filter(Boolean).length
+    return { stops, interrupted }
   }
 
   /** TAL-1628: a drained stream's stopped outcome; a skipped settlement only resolves one nothing reported yet. */
@@ -594,7 +627,7 @@ export class TurnRunner {
     if (this.draining) return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
     const readOnly = (await this.deps.service().readOnlyReason(s))
     if (readOnly) return { error: readOnly, _status: 403 }
-    if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
+    if (this.deps.updateInProgress?.()) return { error: UPDATING_MESSAGE, _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
     if (this.deps.workspaceBusy?.(opts.workspace)) return { error: WORKSPACE_BUSY_MESSAGE, _status: 409 }
     if (this.deps.checkpointStoreBusy?.(s.profile ?? null)) return { error: CHECKPOINT_STORE_BUSY_MESSAGE, _status: 409 }
@@ -617,6 +650,8 @@ export class TurnRunner {
     // TAL-1628: the fence again, synchronously before this admission mutates state and registers in `admissions`: a drain
     // that started meanwhile refuses it, and one that starts later sees it there.
     if (this.draining) return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
+    // TAL-1629: so does an update that started meanwhile, so the runs a confirmed update interrupts are exactly those it saw.
+    if (this.deps.updateInProgress?.()) return { error: UPDATING_MESSAGE, _status: 503 }
     closeChecks()
     const streamId = randomUUID().replace(/-/g, '')
     timing.identify(s.session_id, streamId)

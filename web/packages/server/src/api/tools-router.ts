@@ -309,6 +309,8 @@ async function applyWithNotification(
       onTransaction: (baseline: string, selected: string) => ctx.deps.updateNotifications.bindAgentOperation(notification.id, baseline, selected),
       onFailure: (detail: unknown, identity?: { revision: string | null; version: string | null }) => ctx.deps.updateNotifications.handoffAgentRecovery(notification.id, detail, identity),
       agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id),
+      // TAL-1629: an Update anyway confirmation belongs to the operator and profile it was offered to.
+      operator: principalHash(scope.owner, scope.profile), interruptToken: input.interrupt_token,
       // TAL-1429: the Updating dialog shows what the running update waits for; a lost refresh only delays that wording.
       onProgress: (detail: string) => { ctx.deps.updateNotifications.transition(notification.id, 'applying', null, undefined, detail).catch(() => undefined) } }
     const result = action === 'apply' ? await ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, options)

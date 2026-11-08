@@ -53,6 +53,8 @@ export function SystemSection() {
   const setAgentChannel = (v: string) => { setAgentChannelDraft(v); save.mutate({ agent_update_channel: v }, { onError: fail, onSettled: () => { setAgentChannelDraft(undefined); void qc.invalidateQueries({ queryKey: keys.updates.check }) } }) }
   const [agentConfirmation, setAgentConfirmation] = useState<{ result: z.infer<typeof UpdateApplySchema>; request: ApplyRequest } | null>(null)
   const acceptedAgentConfirmation = useRef(false)
+  // TAL-1629: the server's one-shot Update anyway for a Web update blocked only by this server's running chats.
+  const [webInterrupt, setWebInterrupt] = useState<{ token: string; runs: number; request: ApplyRequest } | null>(null)
   // The server reads persisted settings (channel, ignore-agent) for the forced check, so let every
   // in-flight settings save settle first; the cache then holds whatever actually persisted.
   const settledChannel = () => { const v = qc.getQueryData<Record<string, unknown>>(keys.settings)?.update_channel; return typeof v === 'string' ? v : undefined }
@@ -73,7 +75,7 @@ export function SystemSection() {
     mutationFn: async (request: ApplyRequest) => {
       await waitForSettings()
       const version = request.version ? { version: request.version } : {}
-      return target === 'webui' ? api.applyUpdates('apply', settledChannel() ?? channel, 'webui', version)
+      return target === 'webui' ? api.applyUpdates('apply', settledChannel() ?? channel, 'webui', { ...version, ...(request.interruptToken ? { interrupt_token: request.interruptToken } : {}) })
         : api.applyUpdates('apply', undefined, 'agent', { agent_channel: request.agentChannel ?? settledAgentChannel(), ...(request.confirmedRevision ? { confirmed_agent_revision: request.confirmedRevision } : {}), ...(request.refreshToken ? { agent_refresh_token: request.refreshToken } : {}), ...version })
     },
     onMutate: () => { progress?.begin(target) },
@@ -82,6 +84,9 @@ export function SystemSection() {
         progress?.dismiss()
         acceptedAgentConfirmation.current = false
         setAgentConfirmation({ result: r, request: { ...request, agentChannel: r.agent_channel } })
+      } else if (target === 'webui' && r.interrupt_confirmation) {
+        progress?.dismiss()
+        setWebInterrupt({ token: r.interrupt_confirmation.token, runs: r.interrupt_confirmation.runs, request })
       } else progress?.settle(target, r)
       void qc.invalidateQueries({ queryKey: keys.updates.check })
       void qc.invalidateQueries({ queryKey: keys.updateNotifications })
@@ -202,6 +207,8 @@ export function SystemSection() {
         </section>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
+      {/* Cancel sends nothing; the confirmation is sent once, with the same update. */}
+      <ConfirmDialog open={webInterrupt !== null} onOpenChange={(open) => { if (!open) setWebInterrupt(null) }} title={m.system_web_interrupt_title()} description={webInterrupt ? m.system_web_interrupt_warning({ n: webInterrupt.runs }) : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (webInterrupt) applyWeb.mutate({ ...webInterrupt.request, interruptToken: webInterrupt.token }) }} />
       <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.result.notification_id) void api.cancelUpdateNotification(pending.result.notification_id).catch(fail).finally(() => { void qc.invalidateQueries({ queryKey: keys.updateNotifications }) }) } }} title={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_title() : m.system_agent_unsupported_title()} description={agentConfirmation ? agentConfirmation.result.refresh_confirmation ? m.system_agent_refresh_warning({ services: agentConfirmation.result.refresh_confirmation.services.join(', '), revision: agentConfirmation.result.candidate_revision?.slice(0, 12) ?? '' }) : `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.result.supported_version ?? '—', supported: (agentConfirmation.result.supported_revision ?? '—').slice(0, 12), candidate: (agentConfirmation.result.candidate_revision ?? '').slice(0, 12) })}` : ''} confirmLabel={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_confirm() : m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); applyAgent.mutate({ ...pending.request, ...(pending.result.refresh_confirmation ? { refreshToken: pending.result.refresh_confirmation.token } : pending.result.candidate_revision ? { confirmedRevision: pending.result.candidate_revision } : {}) }) } }} />
     </div>
   )
@@ -230,7 +237,7 @@ const WEB = 'Talaria Web'
 const AGENT = 'Hermes Agent'
 type Target = z.infer<typeof UpdateTargetSchema>
 type UpdateVersion = z.infer<typeof UpdateVersionSchema>
-interface ApplyRequest { refreshToken?: string; version?: string; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental' }
+interface ApplyRequest { refreshToken?: string; version?: string; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental'; interruptToken?: string }
 type Tone = 'update' | 'ok' | 'warn' | 'quiet'
 interface Support { label: string; unchecked: boolean }
 

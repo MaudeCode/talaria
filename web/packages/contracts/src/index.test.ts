@@ -226,6 +226,18 @@ describe('contracts package', () => {
     expect(UpdateApplySchema.safeParse({ ...pending, refresh_confirmation: { token: 'not-a-token', services: [] } }).success).toBe(false)
   })
 
+  it('preserves the shared Web Update anyway offer, its absence and its outcomes (TAL-1629)', () => {
+    const fixture = shared('fixtures/web-update-interrupt.json') as Record<string, unknown>
+    const [offered, notOffered, failed, confirmed] = ['offered', 'not_offered', 'interrupt_failed', 'confirmed'].map((name) => UpdateApplySchema.parse(fixture[name]))
+    expect(offered?.interrupt_confirmation).toEqual({ token: 'd'.repeat(32), runs: 2, expires_at: '2026-11-08T12:02:00.000Z' })
+    expect(notOffered?.interrupt_confirmation).toBeUndefined()
+    expect(failed).toMatchObject({ ok: false, interrupt_failed: true })
+    expect(confirmed).toMatchObject({ ok: true, restart_scheduled: true })
+    for (const bad of [{ token: 'not-a-token', runs: 2, expires_at: '2026-11-08T12:02:00.000Z' }, { token: 'd'.repeat(32), runs: 0, expires_at: '2026-11-08T12:02:00.000Z' }]) {
+      expect(UpdateApplySchema.safeParse({ ...offered, interrupt_confirmation: bad }).success).toBe(false)
+    }
+  })
+
   it('preserves the shared Agent update hold and its separate recovery verdicts', () => {
     const hold = UpdateApplySchema.parse(shared('fixtures/agent-update-hold.json'))
     expect(hold.ok).toBe(false)

@@ -1205,6 +1205,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       transition: async (id, phase, expectedIdentity, verifiedIdentity, detail) => { (await updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail)) },
     },
     blockers: restartBlockers,
+    // TAL-1629: an Update anyway may interrupt only this server's own local chats; a terminal or cron run keeps refusing.
+    interruptibleRuns: () => { const b = restartBlockers(); return b.active_terminals || b.active_cron_jobs ? null : turns.interruptibleRuns() },
+    interruptRuns: (runs) => turns.interrupt(runs, RUN_SETTLE_MS),
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
     gatewayRestarting: () => deps.gatewayRestarts.restarting(),
     llm: async (system, user) => {
