@@ -97,14 +97,12 @@ export function AppearanceSection() {
           </Select>
         </FieldRow>
       </div>
-      <div className="settings-field">
-        <FieldRow label={m.settings_label_sidebar_density()} htmlFor="settingsSidebarDensity" inline>
-          <Select id="settingsSidebarDensity" value={density.str('sidebar_density', 'compact')} onValueChange={(v) => density.set({ sidebar_density: v })}>
-            <option value="compact">{m.settings_sidebar_density_compact()}</option>
-            <option value="detailed">{m.settings_sidebar_density_detailed()}</option>
-          </Select>
-        </FieldRow>
-      </div>
+      <FieldRow label={m.settings_label_sidebar_density()} htmlFor="settingsSidebarDensity" inline>
+        <Select id="settingsSidebarDensity" value={density.str('sidebar_density', 'compact')} onValueChange={(v) => density.set({ sidebar_density: v })}>
+          <option value="compact">{m.settings_sidebar_density_compact()}</option>
+          <option value="detailed">{m.settings_sidebar_density_detailed()}</option>
+        </Select>
+      </FieldRow>
     </div>
   )
 }

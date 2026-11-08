@@ -33,7 +33,7 @@ vi.mock('../../app/settings', async (importOriginal) => {
   }
 })
 import { SettingsSectionSchema, type SettingsSectionId } from '@maudecode/talaria-web-contracts'
-import { saveSettings, fetchAuxiliaryModels, fetchModels, fetchSettings, setDefaultModel } from '../../api/endpoints'
+import { saveSettings, fetchAuxiliaryModels, fetchModels, fetchSettings, setDefaultModel, fetchConnectorsAvailable } from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
@@ -191,4 +191,12 @@ it('offers device-local completion sound presets and explicit preview', async ()
   renderSection(<NotificationsSection />)
   expect(await screen.findByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Preview sound' })).toBeInTheDocument()
+})
+
+it('shows a failed connectors gate with a retry on the Connectors tab instead of loading forever (TAL-1691)', async () => {
+  vi.mocked(fetchConnectorsAvailable).mockRejectedValueOnce(new Error('gate down'))
+  renderSection(<AgentSection tab="connectors" />)
+  expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.queryByRole('tab', { name: 'Connectors' })).toBeNull()
 })
