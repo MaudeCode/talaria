@@ -4,7 +4,7 @@
  * redacted args, so the target never shows more than the arguments it came from.
  */
 import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { OutboundDraftRefSchema, type OutboundDraftRef } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, OutboundDraftRefSchema, type DecisionReviewRef, type OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -20,6 +20,12 @@ export function outboundDraftRef(name: unknown, raw: unknown): OutboundDraftRef 
   const match = /^::draft-card\{id="(d_[0-9a-f]{8})" v="([1-9][0-9]*)"\}$/.exec(value.card)
   if (!match || match[1] !== value.draft_id) return undefined
   return OutboundDraftRefSchema.safeParse({ draft_id: value.draft_id, card: Number(match[2]) }).data
+}
+
+/** TAL-1963: the transcript card's reference from a `decision_review_put` result (parsed JSON), or nothing. */
+export function decisionReviewRef(name: unknown, value: unknown): DecisionReviewRef | undefined {
+  if (name !== 'decision_review_put' || !isDict(value) || value.error) return undefined
+  return DecisionReviewRefSchema.safeParse({ review_id: value.review_id, title: value.title, progress: value.progress }).data
 }
 
 /** Ordered rules over whole `_`-separated name tokens (a substring match would read `merge` as `rg`). */

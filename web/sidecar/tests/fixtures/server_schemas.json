@@ -58,7 +58,8 @@
                         "type": "string",
                         "enum": [
                           "approval",
-                          "clarify"
+                          "clarify",
+                          "decision"
                         ]
                       },
                       "count": {
@@ -3184,6 +3185,915 @@
         }
       },
       "additionalProperties": {}
+    }
+  },
+  "server.decision_review_put": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "intro": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "example": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "current": {
+                "type": "string"
+              },
+              "recommendation": {
+                "type": "string"
+              },
+              "recommended_choice": {
+                "type": "string"
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "label",
+                    "effect"
+                  ]
+                }
+              },
+              "technical": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "detail": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sources": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "question",
+              "explanation",
+              "current",
+              "recommendation",
+              "recommended_choice",
+              "choices"
+            ]
+          }
+        },
+        "review_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "title",
+        "items"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "review_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "submitted",
+            "applied",
+            "cancelled"
+          ]
+        },
+        "progress": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "answered": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "deferred": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "needs_review": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "answered",
+            "deferred",
+            "needs_review"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "review_id",
+        "url",
+        "title",
+        "status",
+        "progress"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.decision_review_read": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "review_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "review_id": {
+          "type": "string",
+          "pattern": "^dr_[0-9a-f]{8}$"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "intro": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "submitted",
+            "applied",
+            "cancelled"
+          ]
+        },
+        "created_at": {
+          "type": "number"
+        },
+        "updated_at": {
+          "type": "number"
+        },
+        "submitted_at": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "answered": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "deferred": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "needs_review": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "answered",
+            "deferred",
+            "needs_review"
+          ],
+          "additionalProperties": false
+        },
+        "submit": {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "type": "boolean"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "nothing_answered",
+                    "not_open"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "allowed",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "example": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "current": {
+                "type": "string"
+              },
+              "recommendation": {
+                "type": "string"
+              },
+              "recommended_choice": {
+                "type": "string"
+              },
+              "choices": {
+                "minItems": 2,
+                "maxItems": 4,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "label",
+                    "effect"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "technical": {
+                "type": "object",
+                "properties": {
+                  "detail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "detail",
+                  "sources"
+                ],
+                "additionalProperties": false
+              },
+              "content_hash": {
+                "type": "string"
+              },
+              "fresh": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "changed",
+                  "carried"
+                ]
+              },
+              "needs_review": {
+                "type": "boolean"
+              },
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "label": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "effect": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "deferred": {
+                        "type": "boolean"
+                      },
+                      "custom": {
+                        "type": "boolean"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "updated_at": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "label",
+                      "effect",
+                      "notes",
+                      "deferred",
+                      "custom",
+                      "version",
+                      "updated_at"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "applied",
+                          "kept",
+                          "blocked",
+                          "reviewed",
+                          "planned"
+                        ]
+                      },
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "question",
+              "explanation",
+              "example",
+              "current",
+              "recommendation",
+              "recommended_choice",
+              "choices",
+              "technical",
+              "content_hash",
+              "fresh",
+              "needs_review",
+              "answer",
+              "outcome"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "review_id",
+        "session_id",
+        "profile",
+        "title",
+        "intro",
+        "status",
+        "created_at",
+        "updated_at",
+        "submitted_at",
+        "progress",
+        "submit",
+        "items"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.decision_review_record": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcomes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "kept",
+                  "blocked",
+                  "reviewed",
+                  "planned"
+                ]
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "state"
+            ]
+          }
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "review_id",
+        "outcomes"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "review_id": {
+          "type": "string",
+          "pattern": "^dr_[0-9a-f]{8}$"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "intro": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "submitted",
+            "applied",
+            "cancelled"
+          ]
+        },
+        "created_at": {
+          "type": "number"
+        },
+        "updated_at": {
+          "type": "number"
+        },
+        "submitted_at": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "answered": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "deferred": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "needs_review": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "answered",
+            "deferred",
+            "needs_review"
+          ],
+          "additionalProperties": false
+        },
+        "submit": {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "type": "boolean"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "nothing_answered",
+                    "not_open"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "allowed",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "example": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "current": {
+                "type": "string"
+              },
+              "recommendation": {
+                "type": "string"
+              },
+              "recommended_choice": {
+                "type": "string"
+              },
+              "choices": {
+                "minItems": 2,
+                "maxItems": 4,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "label",
+                    "effect"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "technical": {
+                "type": "object",
+                "properties": {
+                  "detail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "detail",
+                  "sources"
+                ],
+                "additionalProperties": false
+              },
+              "content_hash": {
+                "type": "string"
+              },
+              "fresh": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "changed",
+                  "carried"
+                ]
+              },
+              "needs_review": {
+                "type": "boolean"
+              },
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "label": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "effect": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "deferred": {
+                        "type": "boolean"
+                      },
+                      "custom": {
+                        "type": "boolean"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "updated_at": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "label",
+                      "effect",
+                      "notes",
+                      "deferred",
+                      "custom",
+                      "version",
+                      "updated_at"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "applied",
+                          "kept",
+                          "blocked",
+                          "reviewed",
+                          "planned"
+                        ]
+                      },
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "note"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "question",
+              "explanation",
+              "example",
+              "current",
+              "recommendation",
+              "recommended_choice",
+              "choices",
+              "technical",
+              "content_hash",
+              "fresh",
+              "needs_review",
+              "answer",
+              "outcome"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "review_id",
+        "session_id",
+        "profile",
+        "title",
+        "intro",
+        "status",
+        "created_at",
+        "updated_at",
+        "submitted_at",
+        "progress",
+        "submit",
+        "items"
+      ],
+      "additionalProperties": false
     }
   }
 }

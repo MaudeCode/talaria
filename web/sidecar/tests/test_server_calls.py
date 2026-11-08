@@ -11,7 +11,7 @@ import time
 import pytest
 
 from conftest import validate
-from talaria_sidecar import rpc, talaria_toolset
+from talaria_sidecar import harness_toolset, rpc, talaria_toolset
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.rpc import RpcServer
 
@@ -19,6 +19,7 @@ HERE = pathlib.Path(__file__).parent
 SCHEMAS = json.loads((HERE / "fixtures" / "server_schemas.json").read_text())
 SERVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "server.json").read_text())
 RECORDED = SERVER_FIXTURES["server.session_list"][0]
+DECISION_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "decisions.json").read_text())
 
 
 class Peer:
@@ -323,3 +324,55 @@ def test_session_update_sends_only_the_fields_given(monkeypatch) -> None:
         {"caller_session_id": "caller", "session_id": "s1", "pinned": False},
         {"caller_session_id": "caller", "session_id": "s1", "title": "Release", "project_id": None},
     ]
+
+
+@pytest.mark.parametrize(("tool", "method", "index"), [
+    ("decision_review_put", "server.decision_review_put", 0),
+    ("decision_review_put", "server.decision_review_put", 1),
+    ("decision_review_read", "server.decision_review_read", 0),
+    ("decision_review_record", "server.decision_review_record", 0),
+])
+def test_harness_decision_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, index) -> None:
+    """TAL-1963: each decision tool sends the calling Web session and its arguments to its ``server.decision_*`` method."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    recorded = DECISION_FIXTURES[method][index]
+    handler = getattr(harness_toolset, tool)
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261108_130000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(handler(args, session_id="20261108_130000_tip")) == recorded["result"]
+    assert sent == [(method, recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("item retention has 1 choices; each item has 2 to 4", condition="choices_count")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(handler(args, session_id="20261108_130000_tip")) == {"error": "item retention has 1 choices; each item has 2 to 4", "condition": "choices_count"}
+    assert json.loads(handler(args))["condition"] == "caller_unknown"
+    assert len(sent) == 1
+
+
+def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separate(monkeypatch) -> None:
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    registered: list[dict] = []
+    fake = ModuleType("tools.registry")
+    fake.registry = SimpleNamespace(register=lambda **kw: registered.append(kw))
+    monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
+    monkeypatch.setitem(sys.modules, "tools.registry", fake)
+    harness_toolset.register()
+    assert [(r["name"], r["toolset"], r["handler"].__name__) for r in registered] == [
+        ("decision_review_put", "harness", "decision_review_put"),
+        ("decision_review_read", "harness", "decision_review_read"),
+        ("decision_review_record", "harness", "decision_review_record"),
+    ]
+    assert all(r["schema"]["name"] == r["name"] for r in registered)
+    # The descriptions tell the agent when a review beats clarify.
+    assert "instead of clarify" in registered[0]["description"]

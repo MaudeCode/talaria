@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, GoalResponseSchema, PendingSteerSchema, ProfilesSchema, ProjectSchema, ProjectsSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema, WorkspacesSchema } from '../views.js'
 import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
 import { WorkspacesMutation } from '../routes/workspaces.js'
+import { DecisionItemInputSchema, DecisionOutcomeStateSchema, DecisionProgressSchema, DecisionReviewSchema, DecisionReviewStatusSchema } from '../decisions.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -16,9 +17,12 @@ export const SidecarRequestSchema = z.object({
 })
 export type SidecarRequest = z.infer<typeof SidecarRequestSchema>
 
-/** The sidebar attention summary the server computes for every `/api/sessions` row: approvals outrank questions. */
+/**
+ * The sidebar attention summary the server computes for every `/api/sessions` row: approvals outrank questions, and
+ * both outrank the session's open decision reviews (TAL-1963, `count` open reviews).
+ */
 export const SessionAttentionSchema = z.object({
-  kind: z.enum(['approval', 'clarify']),
+  kind: z.enum(['approval', 'clarify', 'decision']),
   count: z.number().int().positive(),
   severity: z.enum(['critical', 'question']),
 })
@@ -206,6 +210,27 @@ export const ServerWorkspaceRenameParamsSchema = ServerCallerParamsSchema.extend
  */
 export const ServerGoalSetParamsSchema = ServerQueueListParamsSchema.extend({ text: z.string().min(1) })
 
+/**
+ * TAL-1963: the `harness` toolset's decision reviews, each of the calling session (another session's review is
+ * `review_unknown`). `decision_review_put` creates a review, or revises the caller's `review_id`: a changed item keeps
+ * its answer and needs review, a removed item's answer stays in the review's history. The server validates the items
+ * against `DECISION_LIMITS` and refuses with the failed condition, writing nothing.
+ */
+export const ServerDecisionReviewPutParamsSchema = z.object({
+  caller_session_id: z.string().min(1),
+  title: z.string(),
+  intro: z.string().nullable().optional(),
+  items: z.array(DecisionItemInputSchema),
+  review_id: z.string().min(1).optional(),
+})
+/** `url` is the review's page path; `title` and `progress` let the transcript card show the review before it loads. */
+export const ServerDecisionReviewPutResultSchema = z.object({ review_id: z.string(), url: z.string(), title: z.string(), status: DecisionReviewStatusSchema, progress: DecisionProgressSchema })
+export const ServerDecisionReviewReadParamsSchema = z.object({ caller_session_id: z.string().min(1), review_id: z.string().min(1) })
+/** Every id must be an item of the review, or nothing is written (`unknown_item`); a review whose answered items all have an outcome is `applied` once submitted. */
+export const ServerDecisionReviewRecordParamsSchema = ServerDecisionReviewReadParamsSchema.extend({
+  outcomes: z.array(z.object({ id: z.string().min(1), state: DecisionOutcomeStateSchema, note: z.string().nullable().optional() })).min(1),
+})
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -238,6 +263,9 @@ export const SIDECAR_SERVER_METHODS = {
   'server.profile_list': { params: ServerCallerParamsSchema, result: ProfilesSchema },
   'server.goal_get': { params: ServerQueueListParamsSchema, result: GoalResponseSchema },
   'server.goal_set': { params: ServerGoalSetParamsSchema, result: GoalResponseSchema },
+  'server.decision_review_put': { params: ServerDecisionReviewPutParamsSchema, result: ServerDecisionReviewPutResultSchema },
+  'server.decision_review_read': { params: ServerDecisionReviewReadParamsSchema, result: DecisionReviewSchema },
+  'server.decision_review_record': { params: ServerDecisionReviewRecordParamsSchema, result: DecisionReviewSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

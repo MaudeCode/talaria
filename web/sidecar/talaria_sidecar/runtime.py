@@ -378,12 +378,13 @@ class AgentRuntime:
                 self.agent_dir = self.module_path.parent
             self.revision = read_agent_revision(self.agent_dir, self.module_path)
             self.loaded = True
-            try:
-                from .talaria_toolset import register
+            from . import harness_toolset, talaria_toolset
 
-                register()
-            except Exception:  # noqa: BLE001 - the Agent stays usable without Talaria's own tools
-                log.warning("talaria toolset registration failed", exc_info=True)
+            for toolset in (talaria_toolset, harness_toolset):
+                try:
+                    toolset.register()
+                except Exception:  # noqa: BLE001 - the Agent stays usable without Talaria's own tools
+                    log.warning("%s toolset registration failed", toolset.TOOLSET, exc_info=True)
 
     def _stop_handoff(self) -> None:
         _stop_profile_handoffs()

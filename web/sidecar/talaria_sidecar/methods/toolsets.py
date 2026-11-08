@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from ..home import profile_home_param, scoped_home
-from ..talaria_toolset import TOOLSET as TALARIA_TOOLSET, TOOLSET_DESCRIPTION as TALARIA_TOOLSET_DESCRIPTION
+from .. import harness_toolset, talaria_toolset
+
+# Registry-only toolsets the Agent would describe as "Plugin toolset: <name>".
+_OWN_DESCRIPTIONS = {talaria_toolset.TOOLSET: talaria_toolset.TOOLSET_DESCRIPTION, harness_toolset.TOOLSET: harness_toolset.TOOLSET_DESCRIPTION}
 
 
 def disabled_toolsets(cfg: dict | None = None) -> list[str]:
@@ -46,7 +49,7 @@ def catalog(override) -> dict:
         # A toolset an entry empties is disabled, whether or not the entry names it (legacy ``vision_tools``).
         wholly_disabled = name in disabled or (bool(stripped_tools) and set(resolve_toolset(name)) <= set(stripped_tools))
         rows.append({
-            'name': name, 'description': TALARIA_TOOLSET_DESCRIPTION if name == TALARIA_TOOLSET else str(definitions.get(name, {}).get('description') or ''),
+            'name': name, 'description': _OWN_DESCRIPTIONS.get(name) or str(definitions.get(name, {}).get('description') or ''),
             'available': available, 'selected': name in selected,
             'unavailable_reason': None if available else 'disabled' if wholly_disabled else 'unavailable',
             'stripped_tools': [] if wholly_disabled else list(stripped_tools),

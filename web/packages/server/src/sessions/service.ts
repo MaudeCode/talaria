@@ -183,6 +183,8 @@ export interface SessionServiceDeps {
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
     evictAgent: (sid: string, endSession?: boolean) => Promise<void>
     closeTerminal: (sid: string) => void
+    /** TAL-1963: remove the session's decision reviews, answers included. */
+    deleteDecisionReviews?: (sid: string) => Promise<void>
     /**
      * Python `delete_cli_session`: remove the session and its compression continuations from the profile's state.db in one
      * transaction; `ok` is false on failure, with `refused` when another Agent process holds any of them (TAL-792).
@@ -3211,6 +3213,7 @@ export class SessionService {
       // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
       try { (await this.deps.journal?.deleteSession(id)) } catch { /* ignore */ }
       this.deps.runtime.closeTerminal(id)
+      try { await this.deps.runtime.deleteDecisionReviews?.(id) } catch (error) { this.deps.log(`[webui] could not delete decision reviews of ${id}: ${(error as Error).message}`) }
     }
     this.publish('session_delete', eventProfile)
     // The session is gone but its unsent draft survived; a retried delete or cleanup removes it (TAL-1073).
