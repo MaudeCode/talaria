@@ -541,11 +541,10 @@ function profileAudio(ctx: RequestContext, event: SessionsChangedEvent): WebAudi
  * TAL-1954: completions published after the client's `Last-Event-ID` and before this connection subscribed, under the
  * live rules. No cursor or a malformed one replays nothing, and neither does one past `through` (another server process).
  */
-async function missedCompletions(ctx: RequestContext, through: number): Promise<WebAudioCompletion[]> {
-  const header = (ctx.header('last-event-id') ?? '').trim()
-  if (!/^\d+$/.test(header)) return []
+async function missedCompletions(ctx: RequestContext, resumeFrom: string, through: number): Promise<WebAudioCompletion[]> {
+  if (!/^\d+$/.test(resumeFrom)) return []
   const missed: WebAudioCompletion[] = []
-  for (const event of ctx.deps.events.completionsSince(Number(header), through)) {
+  for (const event of ctx.deps.events.completionsSince(Number(resumeFrom), through)) {
     if (await personMaySee(ctx, event)) missed.push(...profileAudio(ctx, event) ?? [])
   }
   return missed
@@ -568,9 +567,11 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   const gatewaySub = wantGateway && gatewayStatus?.ok === true && watcher ? watcher.subscribe() : null
   try {
     const cursor = String(sub.version)
-    const missed = await missedCompletions(ctx, sub.version)
+    const resumeFrom = (ctx.header('last-event-id') ?? '').trim()
+    const missed = await missedCompletions(ctx, resumeFrom, sub.version)
     sse.start()
-    sse.event('initial', { stream: 'sessions' }, cursor)
+    // While a replay is pending, `initial` keeps the client's cursor: only the frame carrying the sounds advances it.
+    sse.event('initial', { stream: 'sessions' }, missed.length ? resumeFrom : cursor)
     if (missed.length) sse.event('sessions_changed', { type: 'sessions_changed', version: sub.version, reason: 'web_completion', web_audio: missed, stream: 'sessions' }, cursor)
     if (wantGateway && gatewayStatus) sse.event('gateway_status', gatewayStatus)
     let lastWrite = Date.now()

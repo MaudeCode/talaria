@@ -286,7 +286,9 @@ integer. Gateway frames on the merged stream carry none.
   after `initial`, one `sessions_changed` frame (`reason: "web_completion"`)
   carrying the retained, unexpired completions newer than the cursor. The same
   profile and person rules as a live event apply, so another profile or person
-  never receives one.
+  never receives one. While that frame is pending, `initial` repeats the
+  client's cursor, so a connection lost between the two frames resumes from the
+  same place.
 - No cursor, a malformed one or a future one (from another server process)
   replays nothing, so a fresh tab never plays an old sound.
 - Clients still claim each completion by `scope` and `identity`, so a repeat

@@ -154,7 +154,10 @@ it('plays a completion published between connections to a client resuming with L
   const s = server = await bootTestServer()
   const first = await connectList(s)
   publishCompletion(s, 'missed')
-  const resumed = await connectList(s, resumeFrom(first))
+  // A resumed connection that drops after `initial`, before its replay frame, must not move the cursor past the sound.
+  const dropped = (await connectList(s, resumeFrom(first))).slice(0, 1)
+  expect(dropped.map((frame) => frame.event)).toEqual(['initial'])
+  const resumed = await connectList(s, resumeFrom(dropped))
   expect(played(resumed)).toEqual(['missed'])
   expect(played(await connectList(s, resumeFrom(resumed))), 'a completion at or below the cursor is not sent again').toEqual([])
 })
