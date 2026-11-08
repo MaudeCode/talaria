@@ -51,6 +51,8 @@ import { cancelSessionStream, sendSessionMessage, startSessionChat } from './ses
 import { JsonStorage } from './sessions/storage/json.js'
 import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
 import { SqliteStorage } from './sessions/storage/sqlite.js'
+import { PostgresStorage } from './sessions/storage/postgres.js'
+import { postgresOptions } from './sessions/storage/postgres-db.js'
 import type { StorageBackend } from './sessions/storage/backend.js'
 import { DraftStore } from './sessions/drafts.js'
 import { SessionEventBus } from './sessions/events.js'
@@ -98,7 +100,7 @@ export interface CreateDepsOptions extends LoadConfigOptions {
   version?: string
   home?: string
   /** Select an adapter in embedding and isolated conformance tests. */
-  storage?: (config: import('./config.js').ServerConfig) => StorageBackend
+  storage?: (config: import('./config.js').ServerConfig) => StorageBackend | Promise<StorageBackend>
   /** The Python sidecar (auxiliary completions, worktree creation); null runs without Agent-backed features. */
   sidecar?: SidecarLike | null
   /** Outbound HTTP (TTS proxies, dashboard probe, OpenRouter); tests inject a stub. */
@@ -134,7 +136,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   mkdirSync(config.stateDir, { recursive: true })
   mkdirSync(config.sessionDir, { recursive: true })
   const now = opts.now ?? (() => Date.now() / 1000)
-  const storage = opts.storage?.(config) ?? createStorage(config, now, (name) => profileHome(name))
+  const storage = await opts.storage?.(config) ?? await createStorage(config, now, (name) => profileHome(name), log)
   // TAL-1963: the sidebar attention summary reads its open-review index synchronously.
   const decisions = new DecisionReviews(storage.documents, () => deps, now)
   const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
@@ -1266,10 +1268,13 @@ function readActiveProfileFile(hermesHome: string, pattern: RegExp): string {
   }
 }
 
-export function createStorage(config: import('./config.js').ServerConfig, now = () => Date.now() / 1000, profileHome: (profile: string) => string = (name) => name === 'default' ? config.hermesHome : join(config.hermesHome, 'profiles', name)): StorageBackend {
+/** The backend `TALARIA_STORAGE` selects; a Postgres store is connected and migrated before this resolves. */
+export async function createStorage(config: import('./config.js').ServerConfig, now = () => Date.now() / 1000, profileHome: (profile: string) => string = (name) => name === 'default' ? config.hermesHome : join(config.hermesHome, 'profiles', name), log: (line: string) => void = () => undefined): Promise<StorageBackend> {
   const stampingSince = async (): Promise<number> => await recoveryStampingSince(storage.documents)
-  const storage: StorageBackend = config.storage === 'sqlite'
-    ? new SqliteStorage({ path: join(config.stateDir, 'talaria.db'), sessionDir: config.sessionDir, env: config.env, stampingSince })
-    : new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince })
+  const storage: StorageBackend = config.storage === 'postgres'
+    ? await PostgresStorage.open({ ...postgresOptions(config.env), sessionDir: config.sessionDir, env: config.env, stampingSince, log })
+    : config.storage === 'sqlite'
+      ? new SqliteStorage({ path: join(config.stateDir, 'talaria.db'), sessionDir: config.sessionDir, env: config.env, stampingSince })
+      : new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince })
   return storage
 }

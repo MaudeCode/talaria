@@ -3,23 +3,41 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { runStorage } from '../../cli/storage.js'
+import { dropTestSchema, startTestPostgres, testSchema, type TestPostgres } from '../../test/postgres.js'
 import type { StorageBackend } from './backend.js'
 import { copyStorage, verifyStorage } from './copy.js'
 import { JsonStorage } from './json.js'
+import { PostgresStorage } from './postgres.js'
 import { SqliteStorage } from './sqlite.js'
 
 const dirs: string[] = []
 const stores: StorageBackend[] = []
+const schemas: string[] = []
+let postgres: TestPostgres
+beforeAll(async () => { postgres = await startTestPostgres() }, 60_000)
+afterAll(async () => { await postgres.stop() })
 afterEach(async () => {
   for (const store of stores.splice(0)) await store.close()
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  for (const schema of schemas.splice(0)) await dropTestSchema(postgres.url, schema)
 })
 function tempDir(): string { const dir = mkdtempSync(join(tmpdir(), 'talaria-storage-copy-')); dirs.push(dir); return dir }
 const env = { HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT: '0' }
 function jsonStore(stateDir: string): JsonStorage { const store = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, env, now: () => Date.now() / 1000, stampingSince: () => 0 }); stores.push(store); return store }
 function sqliteStore(stateDir: string): SqliteStorage { const store = new SqliteStorage({ path: join(stateDir, 'talaria.db'), sessionDir: join(stateDir, 'sessions'), env, stampingSince: () => 0 }); stores.push(store); return store }
+async function postgresStore(schema = testSchema()): Promise<PostgresStorage> {
+  if (!schemas.includes(schema)) schemas.push(schema)
+  const store = await PostgresStorage.open({ url: postgres.url, schema, poolMax: 4, sessionDir: join(tempDir(), 'sessions'), env, stampingSince: () => 0 })
+  stores.push(store)
+  return store
+}
+/** A destination backend, and a direct edit of its stored rows behind the port. */
+const DESTINATIONS = [
+  { name: 'SQLite', open: () => Promise.resolve(sqliteStore(tempDir())), tamper: (store: StorageBackend, sql: string, ...params: string[]) => { (store as SqliteStorage).db.db.prepare(sql.replaceAll(/\$\d/g, '?')).run(...params); return Promise.resolve() } },
+  { name: 'Postgres', open: async () => await postgresStore(), tamper: async (store: StorageBackend, sql: string, ...params: string[]) => { const db = (store as PostgresStorage).db; await db.run(sql.replaceAll(/\b(messages|documents)\b/g, `${db.s}$1`), ...params) } },
+] as const
 const doc = (sid: string, extra: Record<string, unknown> = {}) => ({ session_id: sid, title: `Title ${sid}`, created_at: 10, updated_at: 20, message_count: 0, ...extra })
 const rows = (sid: string, count: number) => Array.from({ length: count }, (_, n) => ({ role: n % 2 ? 'assistant' : 'user', content: `${sid} É ${String(n)}`, timestamp: n }))
 
@@ -51,6 +69,7 @@ async function seed(store: StorageBackend): Promise<void> {
   // Both backends archive both; dropping one archive leaves the summary-only history an earlier release pruned.
   if (store instanceof JsonStorage) unlinkSync(join(store.directory, '_run_journal', 'alpha', '_archive', 'run-old.jsonl.gz'))
   else if (store instanceof SqliteStorage) store.db.db.prepare("DELETE FROM journal_archives WHERE stream_id = 'run-old'").run()
+  else if (store instanceof PostgresStorage) await store.db.run(`DELETE FROM ${store.db.s}journal_archives WHERE stream_id = 'run-old'`)
   const live = await journals.open('alpha', 'run-live', { durability: 'eager' })
   await live.append({ event: 'token', payload: { text: 'live' }, created_at: 3 }, { terminal: false })
   await live.close()
@@ -77,52 +96,54 @@ async function contents(store: StorageBackend) {
   return items
 }
 
-it('copies a JSON store to SQLite, verifies it, and copies nothing on a re-run', async () => {
-  const state = tempDir()
-  const json = jsonStore(state)
-  await seed(json)
-  const sqlite = sqliteStore(state)
-  const first = await copyStorage(json, sqlite)
-  expect(first.failures).toEqual([])
-  expect(first.copied).toBeGreaterThan(10)
-  expect(await verifyStorage(json, sqlite)).toEqual([])
-  const expected = await contents(json)
-  expect(expected['beta.bak']).toMatchObject({ messages: rows('beta', 5) })
-  expect(expected.pruned).toMatchObject({ journal_pruned: true, terminal: true })
-  expect((expected.archived as { rows: unknown[] }).rows, 'archived rows copy as rows').toHaveLength(2)
-  expect(await contents(sqlite)).toEqual(expected)
+describe.each(DESTINATIONS)('a copy to $name', ({ open, tamper }) => {
+  it('copies a JSON store, verifies it, and copies nothing on a re-run', async () => {
+    const state = tempDir()
+    const json = jsonStore(state)
+    await seed(json)
+    const destination = await open()
+    const first = await copyStorage(json, destination)
+    expect(first.failures).toEqual([])
+    expect(first.copied).toBeGreaterThan(10)
+    expect(await verifyStorage(json, destination)).toEqual([])
+    const expected = await contents(json)
+    expect(expected['beta.bak']).toMatchObject({ messages: rows('beta', 5) })
+    expect(expected.pruned).toMatchObject({ journal_pruned: true, terminal: true })
+    expect((expected.archived as { rows: unknown[] }).rows, 'archived rows copy as rows').toHaveLength(2)
+    expect(await contents(destination)).toEqual(expected)
 
-  expect(await copyStorage(json, sqlite)).toEqual({ copied: 0, unchanged: first.copied + first.unchanged, failures: [] })
+    expect(await copyStorage(json, destination)).toEqual({ copied: 0, unchanged: first.copied + first.unchanged, failures: [] })
 
-  // A destination row changed after the copy fails verification.
-  sqlite.db.db.prepare("UPDATE messages SET body = ? WHERE session_id = 'alpha' AND idx = 1").run(JSON.stringify({ role: 'assistant', content: 'tampered' }))
-  expect(await verifyStorage(json, sqlite)).toEqual(['session alpha'])
-  sqlite.db.db.prepare("UPDATE documents SET value = ? WHERE ns = 'settings'").run(JSON.stringify({ theme: 'light' }))
-  expect(await verifyStorage(json, sqlite)).toEqual(['session alpha', 'document settings/settings'])
+    // A destination row changed after the copy fails verification.
+    await tamper(destination, "UPDATE messages SET body = $1 WHERE session_id = 'alpha' AND idx = 1", JSON.stringify({ role: 'assistant', content: 'tampered' }))
+    expect(await verifyStorage(json, destination)).toEqual(['session alpha'])
+    await tamper(destination, "UPDATE documents SET value = $1 WHERE ns = 'settings'", JSON.stringify({ theme: 'light' }))
+    expect(await verifyStorage(json, destination)).toEqual(['session alpha', 'document settings/settings'])
+  })
+
+  it('mirrors the source: verification reports destination-only items and the copy removes them', async () => {
+    const json = jsonStore(tempDir())
+    await seed(json)
+    const destination = await open()
+    expect((await copyStorage(json, destination)).failures).toEqual([])
+    // State only the destination has, as after deleting a chat while running on it and copying back.
+    await destination.sessions.write('stale', { doc: doc('stale'), messages: { kind: 'replace', rows: rows('stale', 2) } }, null)
+    await destination.sessions.tombstones.add('extra-tombstone')
+    await destination.documents.put('drafts', 'stale', { text: 'stale draft', files: [] }, null)
+    const run = await destination.journals.open('stale', 'run-stale', { durability: 'eager' })
+    await run.append({ event: 'token', payload: {}, created_at: 5 }, { terminal: false })
+    await run.close()
+    expect(await verifyStorage(json, destination)).toEqual(['extra session stale', 'extra tombstone extra-tombstone', 'extra document drafts/stale', 'extra journal stale/run-stale'])
+    const report = await copyStorage(json, destination)
+    expect(report.failures).toEqual([])
+    expect(await verifyStorage(json, destination)).toEqual([])
+    expect(await destination.sessions.exists('stale')).toBe(false)
+    expect(await destination.sessions.tombstones.has('extra-tombstone')).toBe(false)
+    expect(await destination.documents.get('drafts', 'stale')).toBeNull()
+    expect(await destination.journals.streams('stale')).toEqual([])
+    expect(await contents(destination)).toEqual(await contents(json))
+    expect((await copyStorage(json, destination)).copied).toBe(0)
 })
-
-it('mirrors the source: verification reports destination-only items and the copy removes them', async () => {
-  const json = jsonStore(tempDir())
-  await seed(json)
-  const sqlite = sqliteStore(tempDir())
-  expect((await copyStorage(json, sqlite)).failures).toEqual([])
-  // State only the destination has, as after deleting a chat while running on it and copying back.
-  await sqlite.sessions.write('stale', { doc: doc('stale'), messages: { kind: 'replace', rows: rows('stale', 2) } }, null)
-  await sqlite.sessions.tombstones.add('extra-tombstone')
-  await sqlite.documents.put('drafts', 'stale', { text: 'stale draft', files: [] }, null)
-  const run = await sqlite.journals.open('stale', 'run-stale', { durability: 'eager' })
-  await run.append({ event: 'token', payload: {}, created_at: 5 }, { terminal: false })
-  await run.close()
-  expect(await verifyStorage(json, sqlite)).toEqual(['extra session stale', 'extra tombstone extra-tombstone', 'extra document drafts/stale', 'extra journal stale/run-stale'])
-  const report = await copyStorage(json, sqlite)
-  expect(report.failures).toEqual([])
-  expect(await verifyStorage(json, sqlite)).toEqual([])
-  expect(await sqlite.sessions.exists('stale')).toBe(false)
-  expect(await sqlite.sessions.tombstones.has('extra-tombstone')).toBe(false)
-  expect(await sqlite.documents.get('drafts', 'stale')).toBeNull()
-  expect(await sqlite.journals.streams('stale')).toEqual([])
-  expect(await contents(sqlite)).toEqual(await contents(json))
-  expect((await copyStorage(json, sqlite)).copied).toBe(0)
 })
 
 it('refuses to approve a copy while the source holds a backup without its session', async () => {
@@ -149,12 +170,12 @@ it('copies a SQLite store back to JSON', async () => {
   expect(await contents(json)).toEqual(expected)
 })
 
-async function cli(home: string, port: number, argv: string[]) {
+async function cli(home: string, port: number, argv: string[], extra: Record<string, string> = {}) {
   const out: string[] = []
   const err: string[] = []
   const webRoot = join(home, 'web')
   mkdirSync(webRoot, { recursive: true })
-  const code = await runStorage({ env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: join(home, 'webui'), HERMES_WEBUI_PORT: String(port), HERMES_WEBUI_CTL_ISOLATE_WORKTREE: '0', PATH: process.env.PATH }, webRoot, home, log: (line) => out.push(line), warn: (line) => err.push(line) }, argv)
+  const code = await runStorage({ env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: join(home, 'webui'), HERMES_WEBUI_PORT: String(port), HERMES_WEBUI_CTL_ISOLATE_WORKTREE: '0', PATH: process.env.PATH, ...extra }, webRoot, home, log: (line) => out.push(line), warn: (line) => err.push(line) }, argv)
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
 const listen = (server: Server): Promise<number> => new Promise((resolve) => { server.listen(0, '127.0.0.1', () => { resolve((server.address() as AddressInfo).port) }) })
@@ -178,5 +199,28 @@ it('talaria-web storage copy refuses while a server answers, then copies, verifi
   expect(again.out).toContain('Copied or removed 0 items')
   expect(await contents(sqliteStore(join(home, 'webui')))).toEqual(await contents(jsonStore(join(home, 'webui'))))
   expect((await cli(home, port, ['copy', '--from', 'json', '--to', 'json'])).code).toBe(2)
-  expect((await cli(home, port, ['copy', '--from', 'json', '--to', 'postgres'])).err).toContain('Unknown TALARIA_STORAGE="postgres"')
+  expect((await cli(home, port, ['copy', '--from', 'json', '--to', 'mysql'])).err).toContain('Unknown TALARIA_STORAGE="mysql"')
+})
+
+it('talaria-web storage copy moves a JSON install onto Postgres and copies nothing on a re-run', async () => {
+  const home = tempDir()
+  await seed(jsonStore(join(home, 'webui')))
+  for (const store of stores.splice(0)) await store.close()
+  const schema = testSchema()
+  schemas.push(schema)
+  const target = { TALARIA_STORAGE_URL: postgres.url, TALARIA_STORAGE_SCHEMA: schema }
+  // A port nothing answers on: the server is stopped, and the unreachable database below refuses connections.
+  const probe = createServer()
+  const port = await listen(probe)
+  await new Promise((resolve) => probe.close(resolve))
+  const copied = await cli(home, port, ['copy', '--from', 'json', '--to', 'postgres'], target)
+  expect(copied.err).toBe('')
+  expect(copied.code).toBe(0)
+  expect(copied.out.split('\n').at(-1)).toBe('TALARIA_STORAGE=postgres')
+  expect((await cli(home, port, ['copy', '--from', 'json', '--to', 'postgres'], target)).out).toContain('Copied or removed 0 items')
+  expect(await contents(await postgresStore(schema))).toEqual(await contents(jsonStore(join(home, 'webui'))))
+  const unreachable = await cli(home, port, ['copy', '--from', 'json', '--to', 'postgres'], { TALARIA_STORAGE_URL: `postgres://talaria:copy-secret@127.0.0.1:${String(port)}/postgres` })
+  expect(unreachable.code).toBe(1)
+  expect(unreachable.err).toMatch(/Postgres storage at postgres:\/\/talaria:\*+@127\.0\.0\.1:\d+\/postgres could not start/)
+  expect(unreachable.err).not.toContain('copy-secret')
 })

@@ -184,7 +184,8 @@ in-flight response cannot erase newly queued deletions. Invalid outbox state fai
 it. The separate started ledger retains its announcement semantics. This additive file is ignored by
 older Stable versions and remains available when returning to a version that supports replay.
 
-Web runtime persistence is selected by `TALARIA_STORAGE`: `json` (the default) or `sqlite`. Unknown values fail startup.
+Web runtime persistence is selected by `TALARIA_STORAGE`: `json` (the default), `sqlite` or `postgres`. Unknown values
+fail startup.
 The SQLite adapter (`sessions/storage/sqlite*.ts`) uses one `node:sqlite` connection to `<stateDir>/talaria.db` in WAL
 mode, with numbered schema migrations; a database from a newer schema refuses to open. Messages are rows keyed by
 `(session_id, idx)`, so range reads, appends and tail splices touch only their rows. An FTS5 trigram index over each
@@ -193,6 +194,17 @@ every result. Run-journal retention compacts a settled run's rows into one gzip 
 transaction that deletes them, with the JSON adapter's budgets and protections, so archived runs replay the same on
 both backends. `talaria-web storage copy` moves an install between backends through the `StorageBackend` port and
 verifies the copy, so a new adapter gets migration for free.
+The Postgres adapter (`sessions/storage/postgres*.ts`) has the SQLite adapter's logical schema in one schema
+(`TALARIA_STORAGE_SCHEMA`) of the database `TALARIA_STORAGE_URL` names, reached through a `pg` pool; every table is
+schema-qualified rather than found through `search_path`. Startup connects and applies the numbered migrations in one
+transaction under `pg_advisory_xact_lock`, so servers starting together migrate once; a newer schema refuses to open.
+Each write is one transaction, and a session or document write locks its row only while `expected` still names its
+revision, so a stale writer on any pool gets `RevisionConflict`. A GIN `pg_trgm` index over the JavaScript-lowercased
+search text serves content search: one `DISTINCT ON (session_id)` statement with escaped `LIKE` terms, decided by the
+shared matcher. `terminal-only` journal writers commit held rows as one multi-row insert; reads that depend on a run's
+archive and its live rows ask for both in one statement. Tests run it against PGlite over its wire protocol
+(`test/postgres.ts`), and `TALARIA_STORAGE=postgres` runs of the server suite share one embedded instance with a schema
+per booted server.
 `SessionStore` owns resident sessions, mutation locks, write serialization and index projection. Only its
 backend adapter accesses session files. Reads carry opaque revisions; stale writes raise
 `RevisionConflict`, reload the cache and preserve the committed document. Message changes are typed

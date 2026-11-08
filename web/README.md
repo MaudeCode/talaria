@@ -394,6 +394,15 @@ journals in one database, `talaria.db` in the Web state directory. To move an ex
 `talaria-web storage copy --from json --to sqlite`: it copies and verifies everything, leaves the JSON files untouched,
 and prints the `TALARIA_STORAGE` value to set. Other values fail startup.
 
+`TALARIA_STORAGE=postgres` keeps the same data in a Postgres database instead. Set `TALARIA_STORAGE_URL` to a
+`postgres://` connection string (TLS through its `sslmode` parameter); `TALARIA_STORAGE_SCHEMA` (default `talaria`)
+names the schema its tables live in, and `TALARIA_STORAGE_POOL_MAX` (default 10) caps its connections. Session search
+needs the `pg_trgm` extension: Talaria Web creates it when its role may, and otherwise names the one statement an
+administrator must run. Startup fails, never falling back to JSON, when the database cannot be reached; the URL's
+password never appears in logs or errors. `talaria-web storage copy --from json --to postgres` moves an install onto it
+the same way. One Talaria Web server per database: two servers sharing one would not lose writes, but could run
+conflicting turns.
+
 Chat attachments stay in `<state dir>/attachments` by default (`TALARIA_BLOB_STORAGE=local`). To keep them in an
 S3-compatible bucket (AWS S3, MinIO, a NAS S3 endpoint), set `TALARIA_BLOB_STORAGE=s3` with
 `TALARIA_BLOB_S3_BUCKET`, plus `TALARIA_BLOB_S3_ENDPOINT` for a non-AWS service, an optional
