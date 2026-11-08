@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from build import CONTRACTS, bundled_peers, experimental_component, require_bundled_contracts
-from experimental import MOVING, NIGHTLY, moves_forward, newest_published, pruned
+from experimental import MOVING, NIGHTLY, moves_forward, newest_published, pruned, publish_base
 from plan import git
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -184,6 +184,27 @@ class ExperimentalTests(unittest.TestCase):
         self.assertEqual(newest_published(self.root, third, published, third), third)
         self.assertEqual(newest_published(self.root, first, published, second), second)
         self.assertEqual(newest_published(self.root, side, [first, second], third), side)
+
+    def test_publish_decision_diffs_from_the_revision_experimental_names(self):
+        """TAL-1986: a Web change whose own CI failed ships with the next green commit, so the base is the published
+        revision rather than the push's; only a missing tag falls back to the push base."""
+        published, before = "a" * 40, "b" * 40
+
+        def fetched(returncode=0, stdout="", stderr=""):
+            return patch("experimental.subprocess.run", return_value=subprocess.CompletedProcess([], returncode, stdout, stderr))
+
+        manifest = json.dumps({"annotations": {"org.opencontainers.image.revision": published}})
+        with fetched(stdout=manifest) as run:
+            self.assertEqual(publish_base(before), published)
+        self.assertEqual(run.call_args.args[0], ["oras", "manifest", "fetch", f"ghcr.io/maudecode/talaria-web-experimental:{MOVING}"])
+        with fetched(1, stderr="Error: ghcr.io/maudecode/talaria-web-experimental:experimental: not found"):
+            self.assertEqual(publish_base(before), before)
+            self.assertEqual(publish_base(""), "")
+        # A registry outage or an unannotated tag stops the run rather than guessing a base.
+        with fetched(1, stderr="unauthorized"), self.assertRaisesRegex(ValueError, "could not read"):
+            publish_base(before)
+        with fetched(stdout="{}"), self.assertRaisesRegex(ValueError, "annotation"):
+            publish_base(before)
 
     def test_retention_keeps_the_newest_fifty_and_the_experimental_target(self):
         def versions(moving, nightly=None):

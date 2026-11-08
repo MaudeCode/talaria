@@ -68,6 +68,12 @@ def current_revision(moving):
     return revision
 
 
+def publish_base(fallback):
+    """The revision Experimental's publish decision diffs from: the one `experimental` names, so a Web change whose own
+    CI failed ships with the next green commit (TAL-1986). Only a missing tag falls back to the push's base."""
+    return current_revision(MOVING) or fallback
+
+
 def push(build):
     result = load(build / "build-result.json")
     source, version = result["sourceRevision"], result["version"]
@@ -110,12 +116,16 @@ def main():
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("push", help="Push the build as its immutable sha- tag.").add_argument(
         "build", type=Path, help="The build.py web --experimental output directory.")
+    commands.add_parser("base", help="Print the revision a publish decision diffs from.").add_argument(
+        "--fallback", default="", help="The push's base, used only while experimental is missing.")
     forward = commands.add_parser("advance", help="Move a tag forward to the newest build up to a source; experimental also prunes.")
     forward.add_argument("source")
     forward.add_argument("--tag", choices=(MOVING, NIGHTLY), default=MOVING)
     args = parser.parse_args()
     if args.action == "push":
         push(args.build)
+    elif args.action == "base":
+        print(publish_base(args.fallback))
     else:
         advance(args.source, args.tag)
 
