@@ -89,7 +89,7 @@ lands in at most one, so the test asserts each count's minimum across runs.
 | --- | --- | --- |
 | Reasoning-card derivation | 200 | 4 |
 | Streaming Markdown split | 200 | 0 |
-| Code highlighting | 100 | 0 |
+| Code highlighting | 0 | 0 |
 | Message list body | 200 | 4 |
 | Settled transcript row body | 0 | 0 |
 | Settled message bubble body | 0 | 0 |
@@ -97,7 +97,9 @@ lands in at most one, so the test asserts each count's minimum across runs.
 | Toolbar body | 0 | 4 |
 | Composer body | 0 | 212 |
 
-A tick splits the streaming reply once (TAL-853). A keystroke re-evaluates only the
+A tick splits the streaming reply once (TAL-853). Code blocks highlight on their own
+thread and settled results are cached, so no highlighting reaches the main thread (TAL-854;
+it counted 100 before). A keystroke re-evaluates only the
 composer; the chat's four passes follow the composer's height as the draft
 wraps. A change that removes a repeat lowers its count in the test and here.
 

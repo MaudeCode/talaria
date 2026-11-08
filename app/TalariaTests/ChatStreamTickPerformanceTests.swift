@@ -18,10 +18,11 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     private static let tickCount = 200
     private static let keystrokeCount = 200
 
-    /// Today's counts per phase. A settled row or bubble never re-renders, so their counts are absent. A keystroke
+    /// Today's counts per phase. A settled row or bubble never re-renders, and code is highlighted off the main thread
+    /// (TAL-854), so their counts are absent. A keystroke
     /// re-runs only the composer; the chat's four passes follow the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
-        "reasoningGroups": 200, "markdownSplit": 200, "highlight": 100, "messages": 200
+        "reasoningGroups": 200, "markdownSplit": 200, "messages": 200
     ]
     private static let expectedKeystrokeWork = [
         "reasoningGroups": 4, "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212
@@ -180,8 +181,8 @@ private struct ChatStreamTickHarness {
 
     /// Renders the change and runs the main-actor work it queued, without waiting on a clock.
     ///
-    /// Work a render queues can itself yield before it counts (a code block's highlight task yields once, and the next
-    /// tick would cancel it), so one hop is not enough: the main actor runs until the counted work has stayed unchanged
+    /// Work a render queues can itself yield before it counts (a code block's highlight task awaits its result, and the
+    /// next tick would cancel it), so one hop is not enough: the main actor runs until the counted work has stayed unchanged
     /// for `quietHops` consecutive hops, each of which also lets SwiftUI commit and start the tasks it queued.
     private func turn() async {
         await viewModel.awaitPendingStreamingScrollTriggerForTesting()

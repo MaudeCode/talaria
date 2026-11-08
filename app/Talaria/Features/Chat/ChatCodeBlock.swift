@@ -118,7 +118,8 @@ struct ChatCodeBlock: View {
 
     @ViewBuilder
     private var codeText: some View {
-        if let highlightedCode {
+        // A settled block highlighted before draws from the cache at once instead of flashing plain text (TAL-854).
+        if let highlightedCode = MarkdownCodeHighlighter.cachedHighlightedCode(for: highlightRequest) ?? highlightedCode {
             HighlightedCodeBlockText(content: highlightedCode, wraps: wrapsCodeBlockLines)
         } else {
             PlainCodeBlockText(
@@ -161,11 +162,7 @@ struct ChatCodeBlock: View {
     @MainActor
     private func updateHighlightedCode(for request: MarkdownCodeHighlightRequest) async {
         highlightedCode = nil
-        await Task.yield()
-
-        guard !Task.isCancelled else { return }
-
-        let result = MarkdownCodeHighlighter.highlightedCode(for: request)
+        let result = await MarkdownCodeHighlighter.highlightedCode(for: request)
         guard !Task.isCancelled else { return }
 
         switch result {

@@ -371,9 +371,8 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertEqual(decision, .highlight(language: "json", engine: .highlightr))
     }
 
-    @MainActor
-    func testMarkdownCodeHighlighterRendersSwiftCodeWithSplash() {
-        let result = MarkdownCodeHighlighter.highlightedCode(
+    func testMarkdownCodeHighlighterRendersSwiftCodeWithSplash() async {
+        let result = await MarkdownCodeHighlighter.highlightedCode(
             for: MarkdownCodeHighlightRequest(
                 code: "let value = 1",
                 language: "swift",
@@ -389,9 +388,8 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertEqual(highlightedCode.string, "let value = 1")
     }
 
-    @MainActor
-    func testMarkdownCodeHighlighterRendersNonSwiftCodeWithHighlightr() {
-        let result = MarkdownCodeHighlighter.highlightedCode(
+    func testMarkdownCodeHighlighterRendersNonSwiftCodeWithHighlightr() async {
+        let result = await MarkdownCodeHighlighter.highlightedCode(
             for: MarkdownCodeHighlightRequest(
                 code: #"{"value": 1}"#,
                 language: "json",
@@ -409,16 +407,11 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertTrue(renderedCode.contains("1"))
     }
 
-    @MainActor
-    func testMarkdownCodeHighlighterSkipsStreamingBlocks() {
-        let result = MarkdownCodeHighlighter.highlightedCode(
-            for: MarkdownCodeHighlightRequest(
-                code: #"{"value": 1}"#,
-                language: "json",
-                colorScheme: .light,
-                isStreaming: true
-            )
-        )
+    func testMarkdownCodeHighlighterSkipsAndNeverCachesStreamingBlocks() async {
+        let settled = Self.uniqueRequest(language: "json", colorScheme: .light)
+        let streaming = MarkdownCodeHighlightRequest(code: settled.code, language: "json", colorScheme: .light, isStreaming: true)
+
+        let result = await MarkdownCodeHighlighter.highlightedCode(for: streaming)
 
         guard case .plain(let reason, let normalizedLanguage) = result else {
             return XCTFail("Expected streaming code to render as plain text.")
@@ -426,6 +419,54 @@ final class MarkdownMathRendererTests: XCTestCase {
 
         XCTAssertEqual(reason, .streaming)
         XCTAssertEqual(normalizedLanguage, "json")
+        XCTAssertNil(MarkdownCodeHighlighter.cachedHighlightedCode(for: settled), "A streaming block wrote to the cache")
+    }
+
+    func testMarkdownCodeHighlighterServesASettledBlockFromTheCache() async throws {
+        let request = Self.uniqueRequest(language: "json", colorScheme: .light)
+        XCTAssertNil(MarkdownCodeHighlighter.cachedHighlightedCode(for: request))
+
+        let first = try Self.highlighted(await MarkdownCodeHighlighter.highlightedCode(for: request))
+        let second = try Self.highlighted(await MarkdownCodeHighlighter.highlightedCode(for: request))
+
+        XCTAssertTrue(second === first, "The second highlight should be the cached result")
+        XCTAssertTrue(MarkdownCodeHighlighter.cachedHighlightedCode(for: request) === first)
+    }
+
+    func testMarkdownCodeHighlighterCachesEachColorSchemeSeparately() async throws {
+        let light = Self.uniqueRequest(language: "swift", colorScheme: .light)
+        let dark = MarkdownCodeHighlightRequest(code: light.code, language: "swift", colorScheme: .dark, isStreaming: false)
+
+        let lightResult = try Self.highlighted(await MarkdownCodeHighlighter.highlightedCode(for: light))
+        XCTAssertNil(MarkdownCodeHighlighter.cachedHighlightedCode(for: dark))
+        let darkResult = try Self.highlighted(await MarkdownCodeHighlighter.highlightedCode(for: dark))
+
+        XCTAssertFalse(darkResult === lightResult)
+        XCTAssertFalse(darkResult.isEqual(to: lightResult), "Each scheme should colour the code differently")
+        XCTAssertTrue(MarkdownCodeHighlighter.cachedHighlightedCode(for: light) === lightResult)
+        XCTAssertTrue(MarkdownCodeHighlighter.cachedHighlightedCode(for: dark) === darkResult)
+    }
+
+    /// Splash recurses once per character of a token, which overflows a cooperative-pool thread's stack long before
+    /// the policy's line limit.
+    func testMarkdownCodeHighlighterHighlightsSwiftTokensUpToTheLineLimit() async throws {
+        let literal = String(repeating: "a", count: MarkdownHighlightPolicy.maxHighlightedCodeLineLength - 20)
+        let code = "let blob = \"\(literal)\""
+        let result = await MarkdownCodeHighlighter.highlightedCode(
+            for: MarkdownCodeHighlightRequest(code: code, language: "swift", colorScheme: .dark, isStreaming: false)
+        )
+
+        XCTAssertEqual(try Self.highlighted(result).string, code)
+    }
+
+    private static func uniqueRequest(language: String, colorScheme: ColorScheme) -> MarkdownCodeHighlightRequest {
+        let code = language == "json" ? #"{"id": "\#(UUID().uuidString)", "value": 1}"# : "let id = \"\(UUID().uuidString)\""
+        return MarkdownCodeHighlightRequest(code: code, language: language, colorScheme: colorScheme, isStreaming: false)
+    }
+
+    private static func highlighted(_ result: MarkdownCodeHighlightResult) throws -> NSAttributedString {
+        guard case .highlighted(let highlighted) = result else { return try XCTUnwrap(nil, "Expected highlighted code, got \(result)") }
+        return highlighted
     }
 
     func testMarkdownHighlightPolicyAllowsLargeCodeBlocksWithinMarkdownLimit() {

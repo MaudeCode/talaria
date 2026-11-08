@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria for iPhone scrolls and streams past code blocks more smoothly, because code is coloured off the main thread and a block coloured once stays coloured when you scroll back to it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

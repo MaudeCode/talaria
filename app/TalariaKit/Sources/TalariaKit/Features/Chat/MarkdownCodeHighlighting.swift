@@ -528,44 +528,87 @@ public struct MarkdownCodeHighlightRequest: Equatable, Sendable {
     }
 }
 
-public enum MarkdownCodeHighlightResult {
+/// `@unchecked Sendable`: nothing mutates a highlighted string after its engine returns it.
+public enum MarkdownCodeHighlightResult: @unchecked Sendable {
     case highlighted(NSAttributedString)
     case plain(reason: MarkdownHighlightFallbackReason, normalizedLanguage: String?)
 }
 
+/// Highlights chat code blocks on `CodeHighlighterStore`'s thread, never the main thread, and remembers each settled
+/// block's result so a rebuilt block (scrolled back into view, re-themed) draws coloured at once (TAL-854).
 public enum MarkdownCodeHighlighter: Sendable {
-    @MainActor
-    public static func highlightedCode(for request: MarkdownCodeHighlightRequest) -> MarkdownCodeHighlightResult {
-#if DEBUG
-        ChatBodyEvaluationRecorder.record("highlight")
-#endif
-        let decision = MarkdownHighlightPolicy.decision(
-            for: request.code,
-            language: request.language,
-            isStreaming: request.isStreaming
-        )
+    /// A settled block's earlier result, read synchronously so a rebuilt block never flashes plain text.
+    public static func cachedHighlightedCode(for request: MarkdownCodeHighlightRequest) -> NSAttributedString? {
+        guard case .highlight(let language, let engine) = decision(for: request) else { return nil }
+        return MarkdownCodeHighlightCache.object(for: request, language: language, engine: engine)
+    }
 
-        switch decision {
-        case .highlight(_, .splashSwift):
-            return .highlighted(
-                SplashSwiftCodeHighlighter.highlightedAttributedString(
-                    for: request.code,
-                    colorScheme: request.colorScheme
-                )
-            )
-        case .highlight(let normalizedLanguage, .highlightr):
-            guard let highlighted = StableHighlightrStore.shared.highlight(
-                request.code,
-                language: normalizedLanguage,
-                colorScheme: request.colorScheme
-            ) else {
-                return .plain(reason: .highlighterUnavailable, normalizedLanguage: normalizedLanguage)
-            }
-
-            return .highlighted(highlighted)
+    public static func highlightedCode(for request: MarkdownCodeHighlightRequest) async -> MarkdownCodeHighlightResult {
+        // A streaming block decides plain here, so token-by-token updates never reach the cache.
+        switch decision(for: request) {
         case .plain(let reason, let normalizedLanguage):
             return .plain(reason: reason, normalizedLanguage: normalizedLanguage)
+        case .highlight(let language, let engine):
+            if let cached = MarkdownCodeHighlightCache.object(for: request, language: language, engine: engine) {
+                return .highlighted(cached)
+            }
+            let result = await CodeHighlighterStore.shared.highlight(
+                request.code,
+                language: language,
+                engine: engine,
+                colorScheme: request.colorScheme
+            )
+            if case .highlighted(let highlighted) = result {
+                MarkdownCodeHighlightCache.store(highlighted, for: request, language: language, engine: engine)
+            }
+            return result
         }
+    }
+
+    private static func decision(for request: MarkdownCodeHighlightRequest) -> MarkdownHighlightDecision {
+        MarkdownHighlightPolicy.decision(for: request.code, language: request.language, isStreaming: request.isStreaming)
+    }
+}
+
+/// Settled highlight results keyed by code, language, colour scheme and engine, bounded by the code's UTF-16 length.
+enum MarkdownCodeHighlightCache {
+    /// About six of the largest blocks the policy highlights, or thousands of typical ones.
+    static let totalCostLimit = 500_000
+
+    /// `nonisolated(unsafe)`: `NSCache` serializes access with its own internal lock.
+    nonisolated(unsafe) private static let storage: NSCache<NSString, NSAttributedString> = {
+        let cache = NSCache<NSString, NSAttributedString>()
+        cache.totalCostLimit = totalCostLimit
+        return cache
+    }()
+
+    static func object(
+        for request: MarkdownCodeHighlightRequest,
+        language: String,
+        engine: MarkdownHighlightEngine
+    ) -> NSAttributedString? {
+        storage.object(forKey: key(for: request, language: language, engine: engine))
+    }
+
+    static func store(
+        _ highlighted: NSAttributedString,
+        for request: MarkdownCodeHighlightRequest,
+        language: String,
+        engine: MarkdownHighlightEngine
+    ) {
+        storage.setObject(
+            highlighted,
+            forKey: key(for: request, language: language, engine: engine),
+            cost: request.code.utf16.count
+        )
+    }
+
+    private static func key(
+        for request: MarkdownCodeHighlightRequest,
+        language: String,
+        engine: MarkdownHighlightEngine
+    ) -> NSString {
+        "\(engine) \(language) \(request.colorScheme == .dark ? "dark" : "light")\n\(request.code)" as NSString
     }
 }
 
@@ -582,9 +625,15 @@ enum SplashSwiftCodeHighlighter {
     }
 }
 
-@MainActor
-private final class StableHighlightrStore {
-    static let shared = StableHighlightrStore()
+/// Owns both engines. Highlightr's JavaScriptCore context stays confined to this actor, which runs on its own thread.
+private actor CodeHighlighterStore {
+    static let shared = CodeHighlighterStore()
+
+    private static let executor = DeepStackThreadExecutor()
+
+    nonisolated var unownedExecutor: UnownedSerialExecutor {
+        Self.executor.asUnownedSerialExecutor()
+    }
 
     private enum ThemeKey: Hashable {
         case light
@@ -595,8 +644,25 @@ private final class StableHighlightrStore {
 
     private init() {}
 
-    func highlight(_ code: String, language: String, colorScheme: ColorScheme) -> NSAttributedString? {
-        return highlightr(for: colorScheme)?.highlight(code, as: language, fastRender: true)
+    func highlight(
+        _ code: String,
+        language: String,
+        engine: MarkdownHighlightEngine,
+        colorScheme: ColorScheme
+    ) -> MarkdownCodeHighlightResult {
+#if DEBUG
+        // Counts only main-thread work, so the stream-tick budget (TAL-851) catches highlighting moving back there.
+        ChatBodyEvaluationRecorder.record("highlight")
+#endif
+        switch engine {
+        case .splashSwift:
+            return .highlighted(SplashSwiftCodeHighlighter.highlightedAttributedString(for: code, colorScheme: colorScheme))
+        case .highlightr:
+            guard let highlighted = highlightr(for: colorScheme)?.highlight(code, as: language, fastRender: true) else {
+                return .plain(reason: .highlighterUnavailable, normalizedLanguage: language)
+            }
+            return .highlighted(highlighted)
+        }
     }
 
     private func highlightr(for colorScheme: ColorScheme) -> Highlightr? {
@@ -612,6 +678,44 @@ private final class StableHighlightrStore {
         highlightr.setTheme(to: key == .dark ? "github-dark" : "xcode")
         highlightrs[key] = highlightr
         return highlightr
+    }
+}
+
+/// Runs `CodeHighlighterStore` on one thread with a deep stack. Splash recurses once per character of a token: a
+/// line at the policy's 4,000-character limit needs about 5 MB of stack in Release and 32 MB in Debug, where a
+/// cooperative-pool thread has 512 KB. The stack is reserved address space; only the pages a run touches are used.
+private final class DeepStackThreadExecutor: SerialExecutor, @unchecked Sendable {
+    static let stackSize = 64 << 20
+
+    private let condition = NSCondition()
+    private var jobs: [UnownedJob] = []
+
+    init() {
+        let thread = Thread { [self] in run() }
+        thread.name = "Talaria code highlighting"
+        thread.qualityOfService = .userInitiated
+        thread.stackSize = Self.stackSize
+        thread.start()
+    }
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        condition.lock()
+        jobs.append(job)
+        condition.signal()
+        condition.unlock()
+    }
+
+    private func run() -> Never {
+        while true {
+            condition.lock()
+            while jobs.isEmpty {
+                condition.wait()
+            }
+            let job = jobs.removeFirst()
+            condition.unlock()
+            job.runSynchronously(on: asUnownedSerialExecutor())
+        }
     }
 }
 
