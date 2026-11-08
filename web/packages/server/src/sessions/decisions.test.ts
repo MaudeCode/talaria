@@ -54,7 +54,7 @@ describe('decision reviews (TAL-1963)', () => {
   beforeEach(async () => {
     clock = 1_794_000_000
     sidecar = new FakeSidecar()
-    s = await bootTestServer({ sidecar, now: () => clock, storage: (config) => { const backend = createStorage(config, () => clock); documents = backend.documents; return backend } })
+    s = await bootTestServer({ sidecar, now: () => clock, storage: async (config) => { const backend = await createStorage(config, () => clock); documents = backend.documents; return backend } })
     await save(CALLER)
   })
   afterEach(async () => { await s.close() })

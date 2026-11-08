@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Self-hosted servers can keep chats in a Postgres database with TALARIA_STORAGE=postgres, and talaria-web storage copy moves an existing install onto it and verifies it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

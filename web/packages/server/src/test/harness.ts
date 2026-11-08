@@ -1,16 +1,18 @@
 /** Boot one isolated server on an ephemeral port with a temp state directory. */
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, vi } from 'vitest'
+import { afterEach, beforeEach, inject, vi } from 'vitest'
 import { createApp } from '../app.js'
 import type { Env } from '../config.js'
 import type { AppDeps } from '../http/context.js'
 import { createDeps } from '../runtime.js'
 import { startServer, type RunningServer } from '../server.js'
 import type { SidecarLike } from '../sidecar/client.js'
+import { dropTestSchema } from './postgres.js'
 
 export const WEB_ROOT = resolve(import.meta.dirname, '../../../..')
 
@@ -72,6 +74,18 @@ export interface BootOptions {
   drain?: import('../server.js').StartServerOptions['drain']
 }
 
+/**
+ * A Postgres-backed server (TAL-1067) uses the run's embedded Postgres, in a schema named for its state directory, so a
+ * restart on the same directory finds its data and every other server its own.
+ */
+function usePostgres(env: Env): string {
+  const url = env.TALARIA_STORAGE_URL ?? inject('talariaPostgresUrl')
+  if (!url) throw new Error('TALARIA_STORAGE=postgres tests need the embedded Postgres from vitest globalSetup')
+  const schema = `t_${createHash('sha256').update(resolve(env.HERMES_WEBUI_STATE_DIR ?? '')).digest('hex').slice(0, 24)}`
+  Object.assign(env, { TALARIA_STORAGE_URL: url, TALARIA_STORAGE_SCHEMA: env.TALARIA_STORAGE_SCHEMA ?? schema, TALARIA_STORAGE_POOL_MAX: env.TALARIA_STORAGE_POOL_MAX ?? '4' })
+  return env.TALARIA_STORAGE_SCHEMA ?? schema
+}
+
 export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer> {
   const state = mkdtempSync(join(tmpdir(), 'talaria-server-test-'))
   const logs: string[] = []
@@ -89,6 +103,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     ...(process.env.TALARIA_STORAGE ? { TALARIA_STORAGE: process.env.TALARIA_STORAGE } : {}),
     ...opts.env,
   }
+  const postgresSchema = env.TALARIA_STORAGE === 'postgres' ? usePostgres(env) : null
   const deps = await createDeps({ ...(opts.storage ? { storage: opts.storage } : {}), env, webRoot: WEB_ROOT, log: (line) => logs.push(line), version: 'web-v0.0.0-test', ...(opts.now ? { now: opts.now } : {}), ...(opts.sidecar !== undefined ? { sidecar: opts.sidecar } : {}), ...(opts.gatewayPollMs !== undefined ? { gatewayPollMs: opts.gatewayPollMs } : {}) })
   opts.deps?.(deps)
   const running = await startServer(createApp(deps), deps.config, { log: (line) => logs.push(line), signals: opts.signals ?? false, ...(opts.drain ? { drain: opts.drain } : {}) })
@@ -139,6 +154,8 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     }),
     close: async () => {
       await running.close()
+      // A test that names its own state directory may boot it again, like a SQLite database inside it.
+      if (postgresSchema && env.HERMES_WEBUI_STATE_DIR === state) await dropTestSchema(env.TALARIA_STORAGE_URL ?? '', postgresSchema)
       rmSync(state, { recursive: true, force: true })
     },
   }

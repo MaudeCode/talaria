@@ -11,11 +11,12 @@ afterEach(() => { vi.restoreAllMocks(); rmSync(home, { recursive: true, force: t
 
 it('selects JSON session storage by default, and each backend explicitly', () => {
   expect(loadConfig({ home, webRoot: home, env: {} }).storage).toBe('json')
-  for (const storage of ['json', 'sqlite']) expect(loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: storage } }).storage).toBe(storage)
+  const selected = (storage: string): string => { try { return loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: storage } }).storage } catch (error) { return (error as Error).message } }
+  for (const storage of ['json', 'sqlite', 'postgres']) expect(selected(storage)).toBe(storage)
 })
 
 it('rejects an unknown session storage backend without falling back', () => {
-  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: 'missing' } })).toThrow('Unknown TALARIA_STORAGE="missing"; supported backends: json, sqlite')
+  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: 'missing' } })).toThrow('Unknown TALARIA_STORAGE="missing"; supported backends: json, sqlite, postgres')
 })
 
 describe.each(['darwin', 'win32'])('Agent home on %s', (platform) => {

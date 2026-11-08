@@ -1,7 +1,7 @@
 /**
  * `talaria-web storage`, run while the server is stopped; a re-run copies only what is missing or different, and the
  * source is never modified:
- * - `copy --from <json|sqlite> --to <json|sqlite>` (TAL-1066) moves every session, backup, tombstone, document and run
+ * - `copy --from <json|sqlite|postgres> --to <json|sqlite|postgres>` (TAL-1066, TAL-1067) moves every session, backup, tombstone, document and run
  *   journal between storage backends, then verifies the copy.
  * - `copy-blobs --from <local|s3> --to <local|s3>` (TAL-1069) copies every chat attachment between blob stores,
  *   verifying each object by size and SHA-256.
@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { assertStorageKind, loadBlobConfig, loadConfig } from '../config.js'
 import { createStorage } from '../runtime.js'
+import type { StorageBackend } from '../sessions/storage/backend.js'
 import { copyStorage, verifyStorage } from '../sessions/storage/copy.js'
 import { ATTACHMENTS, createBlobStore, localAttachmentRoot, type BlobStore } from '../sessions/storage/blobs.js'
 import { guessMime } from '../workspace/upload.js'
@@ -20,7 +21,7 @@ import { loadStartupEnv } from './dotenv.js'
 
 export interface StorageCliContext { env: Record<string, string | undefined>; webRoot: string; home: string; log: (line: string) => void; warn: (line: string) => void }
 
-const COPY_USAGE = 'Usage: talaria-web storage copy --from <json|sqlite> --to <json|sqlite>'
+const COPY_USAGE = 'Usage: talaria-web storage copy --from <json|sqlite|postgres> --to <json|sqlite|postgres>'
 const USAGE = 'Usage: talaria-web storage copy-blobs --from <local|s3> --to <local|s3>'
 const KINDS = new Set(['local', 's3'])
 
@@ -72,9 +73,11 @@ async function copyStore(ctx: StorageCliContext, from: string, to: string): Prom
   const running = await serverRunning(ctx)
   if (running) { ctx.warn(`[storage] ${running}. Stop it first ('talaria-web ctl stop'); copying a store in use could miss its latest writes.`); return 1 }
   const config = loadConfig({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, warn: ctx.warn })
-  const source = createStorage({ ...config, storage: from })
+  let source: StorageBackend
+  try { source = await createStorage({ ...config, storage: from }) } catch (error) { ctx.warn(`[storage] ${(error as Error).message}`); return 1 }
   try {
-    const destination = createStorage({ ...config, storage: to })
+    let destination: StorageBackend
+    try { destination = await createStorage({ ...config, storage: to }) } catch (error) { ctx.warn(`[storage] ${(error as Error).message}`); return 1 }
     try {
       ctx.log(`[storage] Copying ${from} storage to ${to}`)
       const report = await copyStorage(source, destination)

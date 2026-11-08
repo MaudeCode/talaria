@@ -7,6 +7,8 @@ export default defineConfig({
     environment: 'node',
     // Shared CI runners stall individual HTTP tests past the 5 s default under two workers.
     testTimeout: 20_000,
+    // TALARIA_STORAGE=postgres runs share one embedded Postgres (TAL-1067).
+    globalSetup: ['src/test/postgres-global-setup.ts'],
     // Measure the event-loop budgets without another test file competing for the runner's CPU.
     projects: [
       { extends: true, test: { name: 'state-db-latency', include: stateDbLatencyTests, sequence: { groupOrder: 0 } } },

@@ -128,7 +128,7 @@ export function resolveDefaultWorkspace(raw: string | null | undefined, opts: { 
 }
 
 /** `TALARIA_STORAGE` values; `json` stays the default. */
-export const STORAGE_KINDS = ['json', 'sqlite'] as const
+export const STORAGE_KINDS = ['json', 'sqlite', 'postgres'] as const
 export type StorageKind = typeof STORAGE_KINDS[number]
 export function assertStorageKind(kind: string): asserts kind is StorageKind {
   if (!(STORAGE_KINDS as readonly string[]).includes(kind)) throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(kind)}; supported backends: ${STORAGE_KINDS.join(', ')}`)
