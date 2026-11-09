@@ -252,7 +252,7 @@ private final class ScriptedSessionServer: @unchecked Sendable {
 
 /// Stands in for the retry clock: returns at once for `allowed` ticks, then reports cancellation.
 @MainActor
-private final class RecordingRetryTicks {
+final class RecordingRetryTicks {
     private(set) var durations: [Duration] = []
     private let allowed: Int
 

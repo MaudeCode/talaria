@@ -3962,6 +3962,12 @@ private struct ChatLiveSync: ViewModifier {
                 guard scenePhase == .active else { return }
                 await viewModel.recoverWhenServerReturns(modelContext: modelContext, afterAttempt: reportLastError)
             }
+            // TAL-1761: a running subagent has no stream; the server says when to read its detail again. Closing the
+            // chat or leaving the app cancels the wait.
+            .task(id: scenePhase == .active && viewModel.serverRefreshAfter != nil) {
+                guard scenePhase == .active else { return }
+                await viewModel.followServerRefresh(modelContext: modelContext)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .talariaReturnedToForeground)) { _ in
                 Task {
                     await viewModel.syncWithServer(modelContext: modelContext)

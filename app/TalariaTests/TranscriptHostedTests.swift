@@ -557,6 +557,60 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertNotNil(expanded, "Expanding the row does not show the summary")
     }
 
+    /// TAL-1761: an open running subagent rereads its detail on the server's `refresh_after` until the settled scene
+    /// arrives, and a turn the reader collapsed meanwhile stays collapsed.
+    func testARunningSubagentUpdatesInPlaceAndKeepsTheReadersCollapsedTurn() async throws {
+        let fixture = try FixtureApp(for: self)
+        let running = try Self.subagentDetail("running")
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = running }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+
+        let earlier = try await requireElement(in: window, label: "Worked for 12s")
+        XCTAssertEqual(earlier.accessibilityHint, "Double tap to collapse work.", "The server opens the earlier turn")
+        let work = await awaitElement(in: window) { $0.accessibilityLabel?.contains("parser.swift") == true }
+        XCTAssertNotNil(work, "The running turn's work is not shown")
+        attachHostedScreenshot(window, name: "running-subagent-before")
+        HostedAccessibility.activate(earlier)
+        let collapsed = await awaitCondition {
+            HostedAccessibility.element(in: window, label: "Worked for 12s")?.accessibilityHint == "Double tap to expand work."
+        }
+        XCTAssertTrue(collapsed)
+
+        let settledDetail = try Self.subagentDetail("settled")
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = settledDetail }
+        _ = try await requireElement(in: window, label: "All fixed.", "The settled scene never replaced the running one")
+        XCTAssertEqual(HostedAccessibility.element(in: window, label: "Worked for 12s")?.accessibilityHint, "Double tap to expand work.",
+                       "The reread reopened the turn the reader collapsed")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "running-subagent-settled")
+    }
+
+    /// The shared fixture's `key` detail for the fixture chat: an earlier turn the server opens, then the last turn,
+    /// running or settled as `key` says.
+    private nonisolated static func subagentDetail(_ key: String) throws -> Data {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("running-subagent")) as? [String: Any])
+        var session = try XCTUnwrap(fixture[key] as? [String: Any])
+        session["session_id"] = UITestFixtureURLProtocol.sessionID
+        session["refresh_after"] = key == "running" ? 1 : NSNull()
+        let running = key == "running"
+        func tool(_ id: String, done: Bool) -> [String: Any] {
+            ["row_id": "tool:\(id)", "order_index": 0, "role": "tool",
+             "tool": ["id": id, "name": "read_file", "kind": "read", "target": "\(id).swift", "args": [:], "done": done, "is_error": false]]
+        }
+        session["messages"] = [
+            ["role": "user", "content": "Read the lexer", "message_id": "first-goal", "_turn_id": "first"],
+            ["role": "assistant", "content": "Lexer read.", "message_id": "first-reply", "_turn_id": "first",
+             "_anchor_activity_scene": ["version": "activity_scene_v1", "terminal_state": "completed", "final_answer": "Lexer read.",
+                                        "expanded_by_default": true, "turn_duration": 12, "activity_rows": [tool("lexer", done: true)]]],
+            ["role": "user", "content": "Fix the parser", "message_id": "second-goal", "_turn_id": "second"],
+            ["role": "assistant", "content": running ? "" : "All fixed.", "message_id": "second-reply", "_turn_id": "second",
+             "_anchor_activity_scene": ["version": "activity_scene_v1", "terminal_state": running ? "running" : "completed",
+                                        "final_answer": running ? "" : "All fixed.", "expanded_by_default": running, "turn_duration": 30,
+                                        "activity_rows": [tool("parser", done: !running)]]]
+        ]
+        return try JSONSerialization.data(withJSONObject: ["session": session])
+    }
+
     /// A branch links back to the chat it came from as one button, and that parent shows no such link (TAL-454). The
     /// link's session URL and its routing are unit tests (`LiveActivityTests`, `SessionListOpenTests`).
     func testTheBranchShowsItsParentLinkAndTheParentShowsNone() async throws {

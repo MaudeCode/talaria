@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A running subagent's transcript now keeps updating while you watch it, until the subagent ends.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "icon": "automation",
+        "title": "Background work, in full",
+        "description": "See and control subagents and processes, with their delivery status and live transcripts."
+      }
+    }
+  ]
+}

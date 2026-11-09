@@ -507,6 +507,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         cancelledMonitorStreamIDs = []
         backgroundDismissed.withLock { $0 = false }
         backgroundDelegationStatus.withLock { $0 = nil }
+        sessionDetail.withLock { $0 = nil }
         ownerSettledAdmissions.withLock { $0 = [] }
         ownerWorkStopped.withLock { $0 = [] }
         ownerWorkControls.withLock { $0 = [] }
@@ -750,6 +751,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
         case "/api/session/execution-modes" where servesExecutionModes:
             return executionModesResponse()
+        case "/api/session" where sessionDetail.withLock({ $0 }) != nil:
+            return sessionDetail.withLock { $0 } ?? Data()
         case "/api/session" where servesOwnerChat:
             return ownerSessionResponse()
         case "/api/chat/owner-action":
@@ -1156,6 +1159,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
     /// finished and the `/background` result is dismissed, so nothing is pinned and only the summary keeps Background Work
     /// reachable.
     static let backgroundDelegationStatus = OSAllocatedUnfairLock<Data?>(initialState: nil)
+
+    /// TAL-1761: a hosted test's whole session detail answer (JSON), which it changes to show the server moving on.
+    static let sessionDetail = OSAllocatedUnfairLock<Data?>(initialState: nil)
 
     /// TAL-372: a running delegation and a finished `/background` task the server pins, until the task is dismissed.
     private static func backgroundTasks() -> [[String: Any]] {
