@@ -108,4 +108,26 @@ final class ChatViewModelMergeDedupTests: XCTestCase {
         XCTAssertEqual(merged.first?.turnDuration, 12)
         XCTAssertEqual(merged.first?.turnTps, 8)
     }
+
+    /// TAL-1678: every load with a cache, a cache-first open and a finished run's reload merge the whole cached
+    /// transcript on the main actor, so the merge must stay linear in its length. Across this 4x span a linear merge
+    /// costs ~4x; looking each reply up by scanning the cache cost ~16x.
+    func testReloadMergeStaysLinearInCachedTranscriptLength() {
+        func fastestMerge(messageCount: Int) -> Double {
+            let messages = (0..<messageCount).map { index in
+                ChatMessage(role: index.isMultiple(of: 2) ? "user" : "assistant", content: "Message \(index)",
+                            timestamp: Double(index), messageId: "message-\(index)")
+            }
+            return (0..<5).map { _ in
+                let start = DispatchTime.now().uptimeNanoseconds
+                let merged = ChatViewModel.mergingLoadedMessages(messages, withCachedLocalOptimisticMessages: messages)
+                let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start)
+                XCTAssertEqual(merged.count, messageCount)
+                return elapsed
+            }.min()!
+        }
+
+        let growth = fastestMerge(messageCount: 4_000) / fastestMerge(messageCount: 1_000)
+        XCTAssertLessThan(growth, 8, "Merging 4x the cached messages cost \(String(format: "%.1f", growth))x")
+    }
 }
