@@ -3,7 +3,7 @@ import { call, implement } from '@orpc/server'
 import { proposalsContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, type ApiContext } from './router.js'
 import { HttpFailure } from '../sessions/service.js'
-import { mcpServerEntry, type ProposalApply } from '../sessions/proposals.js'
+import { mcpUpdateBody, type ProposalApply } from '../sessions/proposals.js'
 import type { RequestContext } from '../http/context.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { toolsRouter } from './tools-router.js'
@@ -36,7 +36,7 @@ const applyThrough = (ctx: RequestContext): ProposalApply => async (proposal) =>
       return `Installed ${done.key}, turned off until you enable it in Plugins.`
     }
     case 'mcp_server':
-      await call(toolsRouter.mcp.action, { name: proposal.payload.name, ...mcpServerEntry(proposal.payload) }, context)
+      await call(toolsRouter.mcp.action, { name: proposal.payload.name, ...mcpUpdateBody(proposal.payload) }, context)
       return `Saved MCP server ${proposal.payload.name} to the profile's config.`
     case 'setting':
       await call(settingsRouter.settings.save, { [proposal.payload.key]: proposal.payload.value }, context)

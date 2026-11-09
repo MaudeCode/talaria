@@ -140,6 +140,31 @@ describe('proposals (TAL-1967)', () => {
     await vi.waitFor(() => { expect(told()).toEqual([expect.stringContaining(`Proposal ${id} (Change MCP server notes) was approved but failed:`)]) })
   })
 
+  it('replaces an existing MCP server exactly as shown, masking its stored credentials and clearing what the proposal drops', async () => {
+    configs.set(s.state, { mcp_servers: {
+      notes: { command: 'old-notes', args: ['--verbose'], env: { API_TOKEN: 'plain-secret', HOST: '${HOST}' }, cwd: '/srv/notes', enabled: true },
+      remote: { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer header-secret' } },
+    } })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    const command = await propose('mcp_server', { name: 'notes', command: 'npx' })
+    const shown = await show(command.id)
+    expect(shown.diff).toEqual([
+      { kind: 'deletion', old_line: 1, new_line: null, text: '-command: old-notes' },
+      { kind: 'addition', old_line: null, new_line: 1, text: '+command: npx' },
+      { kind: 'context', old_line: 2, new_line: 2, text: ' cwd: /srv/notes' },
+      { kind: 'deletion', old_line: 3, new_line: null, text: '-args: ["--verbose"]' },
+      { kind: 'deletion', old_line: 4, new_line: null, text: '-env: {"API_TOKEN":"••••••","HOST":"${HOST}"}' },
+    ])
+    const remote = await propose('mcp_server', { name: 'remote', url: 'https://new.example/mcp' })
+    for (const id of [command.id, remote.id]) {
+      expect(JSON.stringify(await show(id))).not.toMatch(/plain-secret|header-secret/)
+      expect(JSON.stringify(await ask('server.proposal_read', { proposal_id: id }))).not.toMatch(/plain-secret|header-secret/)
+      expect((await approve(id)).body.status).toBe('applied')
+    }
+    // What the owner approved is what config.yaml holds: the dropped args, env and headers are gone.
+    expect(configs.get(s.state)?.mcp_servers).toEqual({ notes: { command: 'npx', cwd: '/srv/notes', enabled: true }, remote: { url: 'https://new.example/mcp' } })
+  })
+
   it('changes a setting through the settings route, showing its current and proposed value', async () => {
     const { id } = await propose('setting', { key: 'show_token_usage', value: true })
     expect(await show(id)).toMatchObject({ summary: 'Change setting show_token_usage', diff: [{ kind: 'deletion', text: '-show_token_usage: false' }, { kind: 'addition', text: '+show_token_usage: true' }], risk_notes: [] })

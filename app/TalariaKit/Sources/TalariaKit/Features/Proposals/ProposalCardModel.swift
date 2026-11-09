@@ -12,6 +12,8 @@ public final class ProposalCardModel {
     public private(set) var lastError: Error?
     private var confirmed: Proposal?
     private var decision: Proposal.Status?
+    /// The decision's outcome is unknown and its reconciling read failed: the next successful read decides it.
+    private var unresolved = false
     @ObservationIgnored private let client: APIClient
 
     public init(proposalID: String, client: APIClient) {
@@ -34,6 +36,11 @@ public final class ProposalCardModel {
     public func load() async -> Bool {
         do {
             confirmed = try await client.proposal(id: proposalID)
+            if unresolved {
+                unresolved = false
+                decision = nil
+                lastError = nil
+            }
             return true
         } catch {
             if !APIError.isCancellation(error), confirmed == nil { lastError = error }
@@ -53,6 +60,7 @@ public final class ProposalCardModel {
 
     private func decide(_ status: Proposal.Status, _ write: (APIClient) async throws -> Proposal) async {
         decision = status
+        unresolved = false
         lastError = nil
         do {
             confirmed = try await write(client)
@@ -69,6 +77,7 @@ public final class ProposalCardModel {
                 decision = nil
                 if confirmed?.status == .pending { lastError = error }
             } else {
+                unresolved = true
                 lastError = error
             }
         }

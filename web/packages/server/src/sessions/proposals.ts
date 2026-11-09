@@ -18,6 +18,7 @@ import { HttpFailure } from './service.js'
 import { sendSessionMessage } from './admission.js'
 import { agentApprovals, compressionPrepareAhead, maxTokensStatus } from '../config/agent-config.js'
 import { loadEnvFile } from '../providers/env-file.js'
+import { maskSecrets } from '../tools/mcp.js'
 
 const NAMESPACE = 'proposals'
 const LIMITS = { name: 64, text: 2000, title: 200, prompt: 20_000, list: 50, sources: 20 } as const
@@ -92,10 +93,38 @@ export const payloadHash = (kind: ProposalKind, payload: unknown, review: string
 /** What the server shows for a validated payload: summary, diff or field list, risk notes, and the reviewed preview. */
 interface Presentation { summary: string; diff: DiffLine[]; fields: Proposal['fields']; risk_notes: string[]; review: string }
 
-/** The MCP server entry the MCP action route writes for this payload; env values stay in `.env`. */
-export function mcpServerEntry(payload: Payload<'mcp_server'>): Record<string, unknown> {
+const envRefs = (names: string[]): Record<string, string> => Object.fromEntries(names.map((name) => [name, `\${${name}}`]))
+
+/**
+ * The MCP action route's body for this payload. A url server replaces the address and clears its headers, so no
+ * credential follows the server to a new host; a command server replaces its command, args and env, an empty list
+ * clearing the stored one. Env values stay in `.env`.
+ */
+export function mcpUpdateBody(payload: Payload<'mcp_server'>): Record<string, unknown> {
+  if (payload.url) return { url: payload.url, headers: null }
+  return { command: payload.command, args: payload.args.length ? payload.args : null, env: payload.env_names.length ? envRefs(payload.env_names) : null }
+}
+
+/** The transport fields the server has after the route applies `mcpUpdateBody` to `current`: what the card diffs. */
+function mcpTransport(current: Record<string, unknown> | null, payload: Payload<'mcp_server'>): Record<string, unknown> {
   if (payload.url) return { url: payload.url }
-  return { command: payload.command, ...(payload.args.length ? { args: payload.args } : {}), ...(payload.env_names.length ? { env: Object.fromEntries(payload.env_names.map((name) => [name, `\${${name}}`])) } : {}) }
+  return {
+    command: payload.command, ...(payload.args.length ? { args: payload.args } : {}), ...(payload.env_names.length ? { env: envRefs(payload.env_names) } : {}),
+    ...(current && 'cwd' in current ? { cwd: current.cwd } : {}),
+  }
+}
+
+/** A stored server's transport fields with credentials masked as the MCP page masks them; `${NAME}` references stay readable. */
+function maskedTransport(current: Record<string, unknown>): Record<string, unknown> {
+  const shown = pick(current, MCP_TRANSPORT_KEYS)
+  for (const key of ['headers', 'env']) {
+    const value = shown[key]
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const masked = maskSecrets(value) as Record<string, unknown>
+    for (const [name, raw] of Object.entries(value)) if (typeof raw === 'string' && /^\$\{[^}]+\}$/.test(raw)) masked[name] = raw
+    shown[key] = masked
+  }
+  return shown
 }
 
 /** The one-line message an approve or reject sends the owning session; the detail stays in the proposal. */
@@ -240,14 +269,13 @@ export class Proposals {
     if (url && (raw.args !== undefined || raw.env_names !== undefined)) throw invalid('args and env_names belong to a command server')
     const existing = (await this.deps().agentConfig.read(home)).mcp_servers
     const current = existing && typeof existing === 'object' && name in existing ? (existing as Record<string, Record<string, unknown>>)[name] ?? null : null
-    const entry = mcpServerEntry(payload)
     const env = payload.env_names.length ? loadEnvFile(join(home, '.env')) : {}
     const missing = payload.env_names.filter((envName) => !(envName in env))
     return {
       payload,
       presentation: {
         summary: `${current ? 'Change' : 'Add'} MCP server ${name}`,
-        diff: diffLines(current && pick(current, ['url', 'command', 'args', 'env']), entry), fields: [],
+        diff: diffLines(current && maskedTransport(current), mcpTransport(current, payload)), fields: [],
         risk_notes: [
           url ? `Connects to ${new URL(url).host} and gives the agent its tools.` : `Runs ${[command, ...payload.args].join(' ')} on this machine and gives the agent its tools.`,
           ...(payload.env_names.length ? [`Passes ${payload.env_names.join(', ')} from the profile's .env to it.`] : []),
@@ -344,4 +372,5 @@ export class Proposals {
 }
 
 const isScalar = (value: unknown): boolean => value === null || ['string', 'number', 'boolean'].includes(typeof value)
+const MCP_TRANSPORT_KEYS = ['url', 'headers', 'command', 'args', 'env', 'cwd']
 const pick = (value: Record<string, unknown>, keys: string[]): Record<string, unknown> => Object.fromEntries(keys.filter((key) => key in value).map((key) => [key, value[key]]))

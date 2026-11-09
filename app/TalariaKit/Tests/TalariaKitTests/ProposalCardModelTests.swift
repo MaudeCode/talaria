@@ -92,6 +92,31 @@ final class ProposalCardModelTests: XCTestCase {
         XCTAssertNil(model.lastError)
     }
 
+    func testADecisionWhoseOutcomeStaysUnknownGivesWayToTheNextSuccessfulRead() async throws {
+        let pending = try Self.fixture("proposal")
+        let applied = try Self.fixture("applied")
+        /// nil while the connection is down; otherwise what a read answers.
+        let reads = LockedTestValue<String?>(pending)
+        let model = model { request in
+            if Self.isApprove(request.request) {
+                reads.value = nil
+                request.fail(with: URLError(.networkConnectionLost))
+            } else if let body = reads.value {
+                request.complete(withJSON: body)
+            } else { request.fail(with: URLError(.notConnectedToInternet)) }
+        }
+        await model.load()
+        // The approval and its reconciling read both lose the connection: the decision stays shown.
+        await model.approve()
+        XCTAssertEqual(model.proposal?.status, .approved)
+        XCTAssertNotNil(model.lastError)
+        // The connection returns and the `proposal` event's read shows what the server did.
+        reads.value = applied
+        await model.load()
+        XCTAssertEqual(model.proposal?.status, .applied)
+        XCTAssertNil(model.lastError)
+    }
+
     func testANonOwnerCardSendsNoDecision() async throws {
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(Self.fixture("proposal").utf8)) as? [String: Any])
         root["actions"] = ["can_approve": false, "can_reject": false, "reason": "not_owner"]
