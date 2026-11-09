@@ -13,6 +13,7 @@ import { validProfileName, type AppDeps, type RequestContext } from '../http/con
 import { checkSameOriginBrowserRequest, csrfRejectionError, isBrowserUnsafeRequest, rawPeerIsTrustedProxy, type CsrfFailure } from '../http/origin.js'
 import type { AuthStatus } from '@maudecode/talaria-web-contracts'
 import { PREVIEW_PREFIX } from '../workspace/preview.js'
+import { SHOW_FRAME_PREFIX } from '../sessions/show.js'
 
 export const PUBLIC_PATHS = new Set([
   '/login', '/health', '/favicon.ico', '/sw.js',
@@ -49,6 +50,8 @@ export function isPublicPath(path: string): boolean {
     (path.startsWith('/api/share/') && path !== '/api/share/create' && path !== '/api/share/revoke') ||
     // The HTML preview frame is sandboxed and sends no cookie; its signed path grant authorizes it (TAL-566).
     path.startsWith(PREVIEW_PREFIX) ||
+    // TAL-1968: a `show` HTML frame is sandboxed and sends no cookie; its signed grant authorizes it.
+    path.startsWith(SHOW_FRAME_PREFIX) ||
     // The opaque extension frame's cookie-free assets carry a revocable static-only grant.
     path.startsWith('/agent-dashboard-plugins/') ||
     path.startsWith('/static/') ||

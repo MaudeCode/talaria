@@ -26,6 +26,7 @@ import { BackgroundActivity, BackgroundTaskStore, settledActivityPhase } from '.
 import { PromptQueues } from './sessions/prompt-queues.js'
 import { DecisionReviews } from './sessions/decisions.js'
 import { Proposals } from './sessions/proposals.js'
+import { ShowBlocks } from './sessions/show.js'
 import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
@@ -142,6 +143,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // TAL-1963: the sidebar attention summary reads its open-review index synchronously.
   const decisions = new DecisionReviews(storage.documents, () => deps, now)
   const proposals = new Proposals(storage.documents, () => deps, now)
+  const show = new ShowBlocks(storage.documents, () => deps, now)
   const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
   await settings.load()
   const passkeys = new PasskeyStore(storage.documents, now)
@@ -436,7 +438,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       evictAgent: async (sid, endSession) => { if (sidecar && (!endSession || !(await sessions.readOnlyReason(sid)))) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       openDecisionReview: (sid) => decisions.openRef(sid),
-      deleteAgentRequests: async (sid) => { await decisions.deleteForSession(sid); await proposals.deleteForSession(sid) },
+      deleteAgentRequests: async (sid) => { await decisions.deleteForSession(sid); await proposals.deleteForSession(sid); await show.deleteForSession(sid) },
       deleteCliSession: async (profile, sid) => {
         if (!sidecar) return { ok: false }
         const targetProfile = profile ?? activeProfile()
@@ -959,6 +961,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     // TAL-1967: the `harness` toolset's proposals, each of the calling session.
     'server.proposal_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => proposals.put(caller, params)),
     'server.proposal_read': ({ caller_session_id, proposal_id }) => asCaller(caller_session_id, (caller) => proposals.read(caller, proposal_id)),
+    // TAL-1968: the `harness` toolset's `show`, a block in the calling session.
+    'server.show_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => show.put(caller, params)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {
@@ -1017,6 +1021,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     promptQueues: new PromptQueues(storage.documents, () => deps),
     decisions,
     proposals,
+    show,
     connectorOffers: new ConnectorOffers(storage.documents),
     groups: new Groups(() => deps),
     streamSlots,

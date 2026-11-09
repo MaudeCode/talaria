@@ -40,6 +40,8 @@ export interface LiveToolCall {
   approvalOutcome?: ToolApprovalOutcome | undefined
   /** TAL-1169: another session's agent gave that answer. */
   approvalAnsweredBy?: ApprovalAnsweredBy | undefined
+  /** TAL-1968: its card stays in view (server `shows_card`). */
+  showsCard?: true
   startedAt: number
 }
 
@@ -232,7 +234,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const id = event.data.id
       const existing = t.tools[id]
       const progress = event.data.progress === undefined ? existing?.progress ?? null : event.data.progress
-      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now }
+      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now, ...(event.data.shows_card ? { showsCard: true as const } : {}) }
       const tools = { ...t.tools, [id]: existing ? { ...existing, progress, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, preview: event.data.preview ?? existing.preview } : call }
       const toolOrder = existing ? t.toolOrder : [...t.toolOrder, id]
       const segments = existing ? t.segments : [...t.segments, { kind: 'tool' as const, toolId: id }]

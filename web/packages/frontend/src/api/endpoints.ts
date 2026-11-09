@@ -116,6 +116,8 @@ export const submitDecisionReview = (review_id: string) => orpc().decisions.subm
 export const fetchProposal = (proposal_id: string, signal?: AbortSignal) => orpc().proposals.get({ proposal_id }, signal ? { signal } : {})
 export const approveProposal = (input: { proposal_id: string; payload_hash: string }) => orpc().proposals.approve(input)
 export const rejectProposal = (input: { proposal_id: string }) => orpc().proposals.reject(input)
+/** TAL-1968: a block an agent showed; the server owns its fields. */
+export const fetchShowBlock = (block_id: string, signal?: AbortSignal) => orpc().show.get({ block_id }, signal ? { signal } : {})
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const fetchSessionSkills = (id: SessionId) => orpc().session.skills({ session_id: id })

@@ -3,7 +3,7 @@
  * `pages`. The user's tab choice persists; when a session's panel first opens it shows Agents if agents are running or
  * need attention, else the last chosen page, and nothing switches it after that.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { readPersisted, writePersisted } from '../../lib/persisted'
 import { PanelPageHost, type PanelPage } from '../../shell/PanelPageHost'
@@ -11,6 +11,7 @@ import { FilesPage, type RestoredFiles } from '../workspace/FilesPage'
 import { CheckpointsPage } from '../workspace/CheckpointsPage'
 import { AgentsPage, useHasActiveAgents } from '../background/AgentsPage'
 import { SessionSkillsPage } from '../skills/SessionSkillsPage'
+import { onOpenFileRequest, peekOpenFileRequest } from '../workspace/openFileRequest'
 
 const PAGE_KEY = 'talaria-right-panel-page'
 
@@ -23,7 +24,9 @@ export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }:
   // TAL-571: the files the latest checkpoint restore rewrote; Files drops an unsaved draft of one.
   const [restored, setRestored] = useState<RestoredFiles | null>(null)
   // The first open picks this session's page once the agents are known, before its children render.
-  if (open && chosen === null && hasActiveAgents !== undefined) setChosen(hasActiveAgents ? 'agents' : fallback)
+  if (open && chosen === null && hasActiveAgents !== undefined) setChosen(peekOpenFileRequest(sessionId) ? 'files' : hasActiveAgents ? 'agents' : fallback)
+  // TAL-1968: a file a transcript block opens shows on Files.
+  useEffect(() => onOpenFileRequest(() => { if (peekOpenFileRequest(sessionId)) setChosen('files') }), [sessionId])
   const pages: PanelPage[] = [
     { id: 'files', label: m.ws_panel_files(), render: (active) => <FilesPage workspace={workspace} sessionId={sessionId} active={active} restored={restored} /> },
     { id: 'agents', label: m.panel_agents(), render: (active) => <AgentsPage sessionId={sessionId} active={active} /> },

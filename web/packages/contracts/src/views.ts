@@ -13,8 +13,9 @@ import { z } from 'zod'
 import { OutboundDraftRefSchema } from './outbound-drafts.js'
 import { DecisionReviewRefSchema } from './decisions.js'
 import { ProposalRefSchema } from './proposals.js'
+import { ShowBlockRefSchema } from './show.js'
 import { DiffLineSchema } from './diff-line.js'
-import { MeshyModelRefSchema } from './meshy.js'
+import { DisplayMediaSchema } from './display-media.js'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
 import { SpeedTierSchema } from './speed.js'
@@ -75,6 +76,7 @@ export type ApprovalAnsweredBy = z.infer<typeof ApprovalAnsweredBySchema>
 export const ToolDisplayFields = {
   progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
   focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
+  shows_card: z.literal(true).optional().describe('TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call.'),
   approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),
 }
 
@@ -84,7 +86,7 @@ export const ToolDisplayFields = {
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**
@@ -119,18 +121,7 @@ export const BackgroundLinkSchema = z.object({
 })
 export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
 
-/**
- * TAL-186: one local or remote media reference the server recognized in a message's Markdown (a `MEDIA:` token, a bare
- * `file://` URL or a local image destination), in content order. `url` is relative to the app root (`./api/media?path=…&session_id=…`)
- * for a local file the `/api/media` allow-list serves, or the remote `http(s)` URL as written. Clients render `image`
- * items inline from the display text and every other kind as a tile after it. A remote URL without a file
- * extension has no known kind and is a `file`.
- *
- * TAL-1514: a `::meshy-model{…}` directive paragraph becomes a `model` item with an empty `url` and an opaque `model.ref`;
- * its line leaves the display text. Clients fetch `GET /api/meshy/card` with that ref and render the shared model preview.
- */
-export const DisplayMediaSchema = z.object({ url: z.string(), name: z.string(), mime: z.string(), kind: z.enum(['image', 'audio', 'video', 'pdf', 'file', 'model']), model: MeshyModelRefSchema.optional() })
-export type DisplayMedia = z.infer<typeof DisplayMediaSchema>
+export { DisplayMediaSchema, type DisplayMedia } from './display-media.js'
 
 /** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
 export const ActivitySceneRowSchema = z.looseObject({

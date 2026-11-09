@@ -111,6 +111,11 @@ describe('toolDisplay', () => {
     expect(toolDisplay('subagent_progress', { task: 'Summarize' }).target).toBe('Summarize')
   })
 
+  it('marks a call whose transcript card the user must see, and no other (TAL-1968)', () => {
+    for (const name of ['show', 'propose', 'draft_card']) expect(toolDisplay(name, {}).shows_card).toBe(true)
+    for (const name of ['read_file', 'proposal_read', 'decision_review_put', 'showcase']) expect(toolDisplay(name, {})).not.toHaveProperty('shows_card')
+  })
+
   it('names a read or write call\'s workspace-relative file as its focus path (TAL-1458)', () => {
     expect(toolDisplay('read_file', { path: 'src/a.ts' }).focus_path).toBe('src/a.ts')
     expect(toolDisplay('write_file', { file_path: './web/b.ts', content: 'x' }).focus_path).toBe('web/b.ts')

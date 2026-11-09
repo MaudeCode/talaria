@@ -21,6 +21,7 @@ SERVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "f
 RECORDED = SERVER_FIXTURES["server.session_list"][0]
 DECISION_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "decisions.json").read_text())
 PROPOSAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "proposals.json").read_text())
+SHOW_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "show.json").read_text())
 
 
 class Peer:
@@ -375,6 +376,7 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("decision_review_record", "harness", "decision_review_record"),
         ("propose", "harness", "propose"),
         ("proposal_read", "harness", "proposal_read"),
+        ("show", "harness", "show"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
@@ -413,3 +415,33 @@ def test_harness_proposal_tools_forward_their_call_and_return_the_server_result_
         handler({**args, "payload": json.dumps(args["payload"])}, session_id="20261109_090000_tip")
         handler({"kind": args["kind"]}, session_id="20261109_090000_tip")
         assert [params["payload"] for _, params in sent[1:]] == [recorded["params"]["payload"], {}]
+
+
+def test_harness_show_forwards_its_call_and_returns_the_server_result_unchanged(monkeypatch) -> None:
+    """TAL-1968: ``show`` sends the kind and the payload as given to ``server.show_put`` and collects nothing else."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    recorded = SHOW_FIXTURES["server.show_put"][0]
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(harness_toolset.show(args, session_id="20261109_090000_tip")) == recorded["result"]
+    assert sent == [("server.show_put", recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS["server.show_put"]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS["server.show_put"]["result"]) == []
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("../secret.txt is outside this session's workspace", condition="path_outside_workspace")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(harness_toolset.show(args, session_id="20261109_090000_tip")) == {"error": "../secret.txt is outside this session's workspace", "condition": "path_outside_workspace"}
+    assert json.loads(harness_toolset.show(args))["condition"] == "caller_unknown"
+    assert len(sent) == 1
+    # A payload sent as JSON text is the same payload; an absent one reaches the server empty, which names what is missing.
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    harness_toolset.show({**args, "payload": json.dumps(args["payload"])}, session_id="20261109_090000_tip")
+    harness_toolset.show({"kind": "table"}, session_id="20261109_090000_tip")
+    assert [params["payload"] for _, params in sent[1:]] == [recorded["params"]["payload"], {}]

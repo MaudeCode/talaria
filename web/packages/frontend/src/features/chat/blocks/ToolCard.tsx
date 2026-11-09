@@ -1,4 +1,5 @@
 import { DecisionReviewResult, OutboundDraftResult, ProposalResult } from './OutboundDraftResult'
+import { ShowBlockResult } from './ShowBlockResult'
 import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
@@ -36,6 +37,8 @@ export interface ToolCardData {
   approvalOutcome?: ToolApprovalOutcome | undefined
   /** TAL-1169: another session's agent answered that approval (server field). */
   approvalAnsweredBy?: ApprovalAnsweredBy | undefined
+  /** TAL-1968: the call's card must stay in view, outside a folded run of calls (server field `shows_card`). */
+  showsCard?: true
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
@@ -97,6 +100,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       </button>
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
+      {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
       {open && (
         <div className="tool-card-detail border-t border-border-subtle px-2.5 py-2">

@@ -1,0 +1,169 @@
+{
+  "ref": {
+    "block_id": "sb_0a1b2c3d4e5f",
+    "kind": "table",
+    "title": "Latency by region"
+  },
+  "file_image": {
+    "block_id": "sb_100000000001",
+    "session_id": "20261109_090000_caller",
+    "title": "Signup funnel",
+    "created_at": 1794100000,
+    "kind": "file",
+    "file": {
+      "path": "reports/funnel.png",
+      "name": "funnel.png",
+      "size": 48213
+    },
+    "media": {
+      "url": "./api/file/raw?session_id=20261109_090000_caller&path=reports%2Ffunnel.png&inline=1",
+      "name": "funnel.png",
+      "mime": "image/png",
+      "kind": "image"
+    },
+    "focus_path": null
+  },
+  "file_text": {
+    "block_id": "sb_100000000002",
+    "session_id": "20261109_090000_caller",
+    "title": "notes.md",
+    "created_at": 1794100000,
+    "kind": "file",
+    "file": {
+      "path": "docs/notes.md",
+      "name": "notes.md",
+      "size": 812
+    },
+    "media": null,
+    "focus_path": "docs/notes.md"
+  },
+  "table": {
+    "block_id": "sb_0a1b2c3d4e5f",
+    "session_id": "20261109_090000_caller",
+    "title": "Latency by region",
+    "created_at": 1794100000,
+    "kind": "table",
+    "columns": [
+      "Region",
+      "p50 ms",
+      "p99 ms"
+    ],
+    "rows": [
+      [
+        "us-east",
+        "42",
+        "180"
+      ],
+      [
+        "eu-west",
+        "57",
+        "210"
+      ],
+      [
+        "ap-south",
+        "88",
+        "340"
+      ]
+    ],
+    "truncation": {
+      "total_rows": 812,
+      "total_columns": 3
+    },
+    "tsv": "Region\tp50 ms\tp99 ms\nus-east\t42\t180\neu-west\t57\t210\nap-south\t88\t340"
+  },
+  "chart": {
+    "block_id": "sb_100000000003",
+    "session_id": "20261109_090000_caller",
+    "title": "Requests per day",
+    "created_at": 1794100000,
+    "kind": "chart",
+    "chart": "bar",
+    "unit": null,
+    "series": [
+      {
+        "name": "Requests",
+        "points": [
+          {
+            "label": "Mon",
+            "value": 1200,
+            "display": "1,200"
+          },
+          {
+            "label": "Tue",
+            "value": 1850.5,
+            "display": "1,850.5"
+          },
+          {
+            "label": "Wed",
+            "value": 900,
+            "display": "900"
+          }
+        ],
+        "max_display": "1,850.5"
+      }
+    ]
+  },
+  "chart_line": {
+    "block_id": "sb_100000000004",
+    "session_id": "20261109_090000_caller",
+    "title": "Error rate",
+    "created_at": 1794100000,
+    "kind": "chart",
+    "chart": "line",
+    "unit": "%",
+    "series": [
+      {
+        "name": "API",
+        "points": [
+          {
+            "label": "Mon",
+            "value": 1.5,
+            "display": "1.5%"
+          },
+          {
+            "label": "Tue",
+            "value": 0.75,
+            "display": "0.75%"
+          },
+          {
+            "label": "Wed",
+            "value": 2,
+            "display": "2%"
+          }
+        ],
+        "max_display": "2%"
+      },
+      {
+        "name": "Web",
+        "points": [
+          {
+            "label": "Mon",
+            "value": 0.5,
+            "display": "0.5%"
+          },
+          {
+            "label": "Tue",
+            "value": 0.25,
+            "display": "0.25%"
+          },
+          {
+            "label": "Wed",
+            "value": 1,
+            "display": "1%"
+          }
+        ],
+        "max_display": "1%"
+      }
+    ]
+  },
+  "html": {
+    "block_id": "sb_100000000005",
+    "session_id": "20261109_090000_caller",
+    "title": "Release checklist",
+    "created_at": 1794100000,
+    "kind": "html",
+    "frame_url": "show-frame/c2JfMTAwMDAwMDAwMDA1.1794103200.0f3c",
+    "expires_at": 1794103200,
+    "bytes": 1532
+  }
+}

@@ -16,6 +16,7 @@ import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { Markdown } from '../chat/render/Markdown'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
+import { onOpenFileRequest, takeOpenFileRequest } from './openFileRequest'
 
 function joinPath(dir: string, name: string): string {
   return dir === '.' || dir === '' ? name : `${dir.replace(/\/$/, '')}/${name}`
@@ -56,6 +57,18 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
   const [drafts, setDrafts] = useState<Drafts>({})
   // TAL-571: a restore rewrote these files; a draft of one would put the pre-restore text back on Save, so it goes.
   const [seenRestore, setSeenRestore] = useState(restored?.seq)
+  // TAL-1968: the latest file a transcript block asked Files to show.
+  const [opened, setOpened] = useState<{ seq: number; path: string } | null>(null)
+  useEffect(() => {
+    const take = () => {
+      const request = takeOpenFileRequest(sessionId)
+      if (!request) return
+      setSource('workspace')
+      setOpened((o) => ({ seq: (o?.seq ?? 0) + 1, path: request.path }))
+    }
+    take()
+    return onOpenFileRequest(take)
+  }, [sessionId])
   if (restored && restored.seq !== seenRestore) {
     setSeenRestore(restored.seq)
     const rewritten = new Set(restored.paths.map((path) => draftKey(sessionId, 'workspace', restored.workspace, path)))
@@ -70,12 +83,12 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
     {sources.map((owner) => <div key={owner} hidden={source !== owner} className={cn('min-h-0 flex-1 flex-col', source === owner && 'flex')}>
       {owner === 'workspace' && !workspace
         ? <><div className="border-b border-border-subtle px-3 py-1">{sourceControl}</div><div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div></>
-        : <WorkspaceFiles key={owner === 'managed' ? sessionId : workspace} workspace={owner === 'managed' ? JSON.stringify(['managed', sessionId]) : workspace ?? ''} sessionId={sessionId} source={owner} sourceControl={sourceControl} active={active && source === owner} drafts={drafts} setDrafts={setDrafts} />}
+        : <WorkspaceFiles key={owner === 'managed' ? sessionId : workspace} workspace={owner === 'managed' ? JSON.stringify(['managed', sessionId]) : workspace ?? ''} sessionId={sessionId} source={owner} sourceControl={sourceControl} active={active && source === owner} drafts={drafts} setDrafts={setDrafts} opened={owner === 'workspace' ? opened : null} />}
     </div>)}
   </>
 }
 
-function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, drafts, setDrafts }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; drafts: Drafts; setDrafts: Dispatch<SetStateAction<Drafts>> }) {
+function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, drafts, setDrafts, opened }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; drafts: Drafts; setDrafts: Dispatch<SetStateAction<Drafts>>; opened: { seq: number; path: string } | null }) {
   const managed = source === 'managed'
   const sourceArgs: [] | ['managed'] = managed ? ['managed'] : []
   const qc = useQueryClient()
@@ -104,6 +117,15 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // TAL-1606: the tree has one tab stop, the row last focused in this folder. A refresh keeps it on that row; a removed
   // row passes it to the row now at its index. Opening a folder starts at its first row; Up returns to the folder left.
   const [cursor, setCursor] = useState({ dir: '.', path: '', index: 0 })
+  // TAL-1968: a file a transcript block opened, shown in its folder.
+  const [seenOpened, setSeenOpened] = useState(opened?.seq)
+  if (opened && opened.seq !== seenOpened) {
+    setSeenOpened(opened.seq)
+    const folder = opened.path.includes('/') ? opened.path.slice(0, opened.path.lastIndexOf('/')) : '.'
+    setDir(folder)
+    setCursor({ dir: folder, path: opened.path, index: 0 })
+    setFile(opened.path)
+  }
   const treeRef = useRef<HTMLDivElement>(null)
   // The row focus was last on, until focus moves to something outside the tree.
   const focusedRow = useRef<HTMLElement | null>(null)

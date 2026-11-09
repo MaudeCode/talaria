@@ -45,6 +45,23 @@ const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, o
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
+  it('keeps a call whose card the user must see out of a folded run, live and settled (TAL-1968)', () => {
+    const run = liveRun()
+    run.emit(tool('a'))
+    run.emit({ event: 'tool', data: { id: 's', name: 'show', kind: 'unknown', target: '', args: { kind: 'table' }, shows_card: true } })
+    run.emit(tool('b')); run.emit(tool('c'))
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    const shown = () => view.container.querySelector('[data-tool-id="s"]')
+    expect(shown()).toBeVisible()
+    expect(shown()?.closest('[data-activity-sequence-group]')).toBeNull()
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
+    cleanup()
+    const card = { row_id: 'tool:s', role: 'tool', tool: { id: 's', name: 'show', kind: 'unknown', target: '', preview: null, done: true, is_error: false, duration: null, cost_usd: null, shows_card: true } }
+    const settledView = render(<View activity={settled({ expanded_by_default: true, activity_rows: rows(toolRow('a'), toolRow('b'), card, toolRow('c'), toolRow('d')) })} />)
+    expect(settledView.container.querySelector('[data-tool-id="s"]')?.closest('[data-activity-sequence-group]')).toBeNull()
+    expect(settledView.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(2)
+  })
+
   it('clears retained reasoning titles and content when the server display choice hides reasoning (TAL-996)', () => {
     const run = liveRun()
     run.emit(tool('a'))

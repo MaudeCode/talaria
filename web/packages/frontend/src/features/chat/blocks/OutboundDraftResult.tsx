@@ -58,8 +58,8 @@ export function OutboundDraftResult({ sessionId, callId, reference }: { sessionI
   </ResultSection>
 }
 
-/** A typed result body under a tool card's header: outbound drafts, decision reviews and proposals. */
-function ResultSection({ label, children }: { label: string; children: ReactNode }) {
+/** A typed result body under a tool card's header: outbound drafts, decision reviews, proposals and (TAL-1968) shown blocks. */
+export function ResultSection({ label, children }: { label: string; children: ReactNode }) {
   return <section aria-label={label} className="tool-card-result [&_button]:min-h-11 border-t border-border-subtle px-2.5 py-3 text-[13px]">{children}</section>
 }
 
