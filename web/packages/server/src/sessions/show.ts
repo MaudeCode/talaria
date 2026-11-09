@@ -3,8 +3,12 @@
  * validates the payload, stores one immutable document per block in the `show-blocks` namespace and serves it on
  * `/api/show/{block_id}`. An `html` block's page is served cookie-free from `/show-frame/<grant>` with a CSP that gives
  * it scripts and nothing else. Every refusal names its condition and stores nothing.
+ *
+ * TAL-1971: `deliver` stores a `file` block too, for a file of any type, with the digest of its bytes at delivery; each
+ * read of the block says whether the live file still matches it.
  */
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { createReadStream, statSync } from 'node:fs'
 import { basename, isAbsolute, relative } from 'node:path'
 import {
   SHOW_KINDS, SHOW_LIMITS, ShowBlockIdSchema,
@@ -14,9 +18,9 @@ import type { AppDeps } from '../http/context.js'
 import type { DocumentBackend } from './storage/backend.js'
 import { HttpFailure } from './service.js'
 import { assetGrantValue, signAssetGrant } from '../auth/crypto.js'
-import { FileTooLargeError, NotFoundError, PathTraversalError, safeResolveWs } from '../workspace/fs.js'
+import { FileTooLargeError, NotFoundError, PathTraversalError, openAnchoredFd, safeResolveWs } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
-import { readFilePreview } from '../workspace/preview.js'
+import { readFilePreview, type FilePreview } from '../workspace/preview.js'
 import { mimeFor } from '../workspace/media.js'
 
 const NAMESPACE = 'show-blocks'
@@ -29,10 +33,19 @@ export const SHOW_FRAME_PREFIX = '/show-frame/'
 export const SHOW_FRAME_CSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 const GRANT_NAMESPACE = 'show'
 
-/** A block as stored: the agent-independent fields, and an `html` block's body in place of its frame URL. */
-type Stored = Exclude<ShowBlock, { kind: 'html' }> & { profile: string }
+/**
+ * What `deliver` records: the file's type, and at delivery its size, SHA-256 and signature (inode, mtime and ctime in ms).
+ * A write or replacement changes the ctime or inode even when it restores the mtime.
+ */
+interface StoredDelivery { mime: string; size: number; ino: number; mtime_ms: number; ctime_ms: number; digest: string }
+/**
+ * A block as stored: the agent-independent fields, a `file` block's delivery record in place of its view (absent on a
+ * `show` block), and an `html` block's body in place of its frame URL.
+ */
+type Stored = Exclude<ShowBlock, { kind: 'html' | 'file' }> & { profile: string }
+  | Omit<Extract<ShowBlock, { kind: 'file' }>, 'delivery'> & { profile: string; delivery?: StoredDelivery }
   | Omit<Extract<ShowBlock, { kind: 'html' }>, 'frame_url' | 'expires_at'> & { profile: string; body: string }
-type Fields<K extends ShowKind> = Omit<Extract<ShowBlock, { kind: K }>, 'block_id' | 'session_id' | 'title' | 'created_at' | 'kind'>
+type Fields<K extends ShowKind> = Omit<Extract<ShowBlock, { kind: K }>, 'block_id' | 'session_id' | 'title' | 'created_at' | 'kind' | 'delivery'>
 /** The session `show` acts for: the caller's own. */
 export interface ShowCaller { session_id: string; profile?: string | null; workspace?: string | null }
 
@@ -59,6 +72,29 @@ const NUMBER = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 })
 /** A value as the chart shows it: grouped digits, at most two decimals, and the unit (`%` attached, any other spaced). */
 export const chartDisplay = (value: number, unit: string | null): string => `${NUMBER.format(value)}${!unit ? '' : unit === '%' ? '%' : ` ${unit}`}`
 
+/** The SHA-256 of a workspace file's bytes, read through the anchored open. */
+async function fileDigest(workspace: string, target: string): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(target, { fd: openAnchoredFd(workspace, target, { wantDir: false }) })) hash.update(chunk as Buffer)
+  return hash.digest('hex')
+}
+
+const rawUrl = (sessionId: string, path: string, flag: 'inline' | 'download'): string => `./api/file/raw?${new URLSearchParams({ session_id: sessionId, path, [flag]: '1' }).toString()}`
+
+const TEXT_MIME: Partial<Record<string, string>> = { markdown: 'text/markdown', csv: 'text/csv' }
+
+/** How a workspace file renders: a media row for an image, audio, video, PDF or 3D model, the companion page for text. */
+function fileFields(sessionId: string, rel: string, preview: FilePreview | null): { mime: string; media: DisplayMedia | null; focus_path: string | null } {
+  const name = basename(rel)
+  const kind = preview?.preview
+  const mapped = mimeFor(rel)
+  // A file that decoded as text is text, whatever its extension's entry in the raw route's table says.
+  const mime = preview?.mime ?? (mapped === 'application/octet-stream' && kind && kind !== 'binary' ? TEXT_MIME[kind] ?? 'text/plain' : mapped)
+  const mediaKind = kind === 'image' || kind === 'audio' || kind === 'video' || kind === 'pdf' ? kind : mime.startsWith('model/') ? 'file' : null
+  if (mediaKind) return { mime, media: { url: rawUrl(sessionId, rel, 'inline'), name, mime, kind: mediaKind }, focus_path: null }
+  return { mime, media: null, focus_path: kind && kind !== 'binary' ? rel : null }
+}
+
 /** An `html` block's frame URL and when its grant expires (seconds), minted per request. */
 export function showFrame(key: Buffer, blockId: string, now = Date.now()): { frame_url: string; expires_at: number } {
   const grant = signAssetGrant(key, GRANT_NAMESPACE, blockId, now)
@@ -78,12 +114,36 @@ export class ShowBlocks {
     try { return ((await this.documents.get(NAMESPACE, id))?.value as Stored | undefined) ?? null } catch { return null }
   }
 
-  /** The block as clients read it: an `html` block's body becomes a frame URL minted now. */
-  private view(stored: Stored): ShowBlock {
+  /**
+   * The block as clients read it: a delivered file's record becomes its download URL and whether the file changed since,
+   * and an `html` block's body a frame URL minted now.
+   */
+  private async view(stored: Stored): Promise<ShowBlock> {
     const { profile: _profile, ...block } = stored
+    if (block.kind === 'file') {
+      const { delivery, ...rest } = block
+      return { ...rest, delivery: delivery ? { download_url: rawUrl(block.session_id, block.file.path, 'download'), mime: delivery.mime, changed: await this.changed(block.session_id, block.file.path, delivery) } : null }
+    }
     if (block.kind !== 'html') return block
     const { body: _body, ...rest } = block
     return { ...rest, ...showFrame(this.deps().auth.signingKey(), block.block_id) }
+  }
+
+  /**
+   * Whether the file the session's download serves differs from the delivered one: gone, another size, or (with another
+   * signature) another digest. An unchanged size and signature skip the hash.
+   */
+  private async changed(sessionId: string, rel: string, delivered: StoredDelivery): Promise<boolean> {
+    try {
+      const { workspace } = await this.deps().sessionStore.get(sessionId, { metadataOnly: true })
+      const target = safeResolveWs(workspace, rel)
+      const stat = statSync(target)
+      if (!stat.isFile() || stat.size !== delivered.size) return true
+      const same = stat.ino === delivered.ino && stat.mtimeMs === delivered.mtime_ms && stat.ctimeMs === delivered.ctime_ms
+      return !same && (await fileDigest(workspace, target)) !== delivered.digest
+    } catch {
+      return true
+    }
   }
 
   /** A deleted session takes its blocks with it. */
@@ -99,44 +159,79 @@ export class ShowBlocks {
     const kind = params.kind as ShowKind
     const raw = params.payload
     const { title, fields, note } = kind === 'file' ? this.file(caller, raw) : kind === 'table' ? table(raw) : kind === 'chart' ? chart(raw) : html(raw)
+    const id = await this.store(caller, kind, title, fields)
+    return { block_id: id, url: `/session/${encodeURIComponent(caller.session_id)}`, kind, title, note }
+  }
+
+  private async store(caller: ShowCaller, kind: ShowKind, title: string, fields: object): Promise<string> {
     const newId = (): string => `sb_${randomBytes(6).toString('hex')}`
     let id = newId()
     while (await this.documents.get(NAMESPACE, id)) id = newId()
     const stored = { block_id: id, session_id: caller.session_id, profile: this.profileName(caller.profile), kind, title, created_at: this.now(), ...fields } as Stored
     await this.documents.put(NAMESPACE, id, stored, null)
-    return { block_id: id, url: `/session/${encodeURIComponent(caller.session_id)}`, kind, title, note }
+    return id
+  }
+
+  /**
+   * TAL-1971 `deliver`: a file block for a workspace file of any type up to `SHOW_LIMITS.deliver_bytes`, with the
+   * file's digest recorded. A directory, a missing file and a path outside the workspace are refused, storing nothing.
+   */
+  async deliver(caller: ShowCaller, params: Omit<SidecarServerParams<'server.deliver'>, 'caller_session_id'>): Promise<SidecarServerResultInput<'server.deliver'>> {
+    const path = text(params.path, 'path', true, 4096)
+    const { workspace, rel, target } = this.workspaceFile(caller, path, 'outside_workspace')
+    const missing = () => refuse(404, 'file_not_found', `${path} is not a file in this session's workspace`)
+    let stat
+    try { stat = statSync(target) } catch { throw missing() }
+    if (stat.isDirectory()) throw refuse(400, 'is_directory', `${path} is a folder; deliver one file`)
+    if (!stat.isFile()) throw missing()
+    if (stat.size > SHOW_LIMITS.deliver_bytes) throw refuse(413, 'file_too_large', `${path} is ${stat.size} bytes; deliver hands over at most ${SHOW_LIMITS.deliver_bytes}`)
+    let preview: FilePreview | null
+    try { preview = readFilePreview(workspace, rel) } catch (error) {
+      if (error instanceof NotFoundError || (error as NodeJS.ErrnoException).code === 'ENOENT') throw missing()
+      if (!(error instanceof FileTooLargeError)) throw error
+      preview = null // too long to preview as text: a download only
+    }
+    const name = basename(rel)
+    const title = text(params.title, 'title', false) || name
+    const { mime, media, focus_path } = fileFields(caller.session_id, rel, preview)
+    const delivery: StoredDelivery = { mime, size: stat.size, ino: stat.ino, mtime_ms: stat.mtimeMs, ctime_ms: stat.ctimeMs, digest: await fileDigest(workspace, target).catch(() => { throw missing() }) }
+    const id = await this.store(caller, 'file', title, { file: { path: rel, name, size: stat.size }, media, focus_path, delivery })
+    return { block_id: id, url: `/session/${encodeURIComponent(caller.session_id)}`, kind: 'file', title, size: stat.size, media: media ?? { url: rawUrl(caller.session_id, rel, 'download'), name, mime, kind: 'file' } }
+  }
+
+  /** A path inside the caller's workspace by the `/api/file` rules (symlinks resolved), else `outside`. */
+  private workspaceFile(caller: ShowCaller, path: string, outside: string): { workspace: string; rel: string; target: string } {
+    const workspace = (caller.workspace ?? '').trim()
+    if (!workspace) throw refuse(400, 'no_workspace', 'this session has no workspace')
+    if (!this.deps().workspaces.profileSupportsLocalIo(caller.profile ?? null)) throw refuse(400, 'remote_workspace', 'this profile\'s workspace is not on this server')
+    try {
+      const target = safeResolveWs(workspace, path)
+      const rel = relative(resolvePathLikePython(workspace), target)
+      if (!rel || isAbsolute(rel)) throw new PathTraversalError(path)
+      return { workspace, rel, target }
+    } catch (error) {
+      if (error instanceof PathTraversalError) throw refuse(400, outside, `${path} is outside this session's workspace`)
+      throw error
+    }
   }
 
   /** `file`: a file inside the session's workspace, by the `/api/file` rules; a media file ships as a media row. */
   private file(caller: ShowCaller, raw: Record<string, unknown>): { title: string; fields: Fields<'file'>; note: null } {
     const path = text(raw.path, 'path', true, 4096)
-    const workspace = (caller.workspace ?? '').trim()
-    if (!workspace) throw refuse(400, 'no_workspace', 'this session has no workspace')
-    if (!this.deps().workspaces.profileSupportsLocalIo(caller.profile ?? null)) throw refuse(400, 'remote_workspace', 'this profile\'s workspace is not on this server')
-    let rel: string
-    let preview: ReturnType<typeof readFilePreview>
+    const { workspace, rel } = this.workspaceFile(caller, path, 'path_outside_workspace')
+    let preview: FilePreview
     try {
-      const target = safeResolveWs(workspace, path)
-      rel = relative(resolvePathLikePython(workspace), target)
-      if (!rel || isAbsolute(rel)) throw new PathTraversalError(path)
       preview = readFilePreview(workspace, rel)
     } catch (error) {
-      if (error instanceof PathTraversalError) throw refuse(400, 'path_outside_workspace', `${path} is outside this session's workspace`)
       if (error instanceof FileTooLargeError) throw refuse(400, 'file_too_large', error.message)
       if (error instanceof NotFoundError || (error as NodeJS.ErrnoException).code === 'ENOENT') throw refuse(404, 'file_not_found', `${path} is not a file in this session's workspace`)
       throw error
     }
     const name = basename(rel)
     const title = text(raw.title, 'title', false) || name
-    const file = { path: rel, name, size: preview.size }
-    const mime = preview.mime ?? mimeFor(rel)
-    const mediaKind = preview.preview === 'image' || preview.preview === 'audio' || preview.preview === 'video' || preview.preview === 'pdf' ? preview.preview : mime.startsWith('model/') ? 'file' : null
-    if (mediaKind) {
-      const media: DisplayMedia = { url: `./api/file/raw?${new URLSearchParams({ session_id: caller.session_id, path: rel, inline: '1' }).toString()}`, name, mime, kind: mediaKind }
-      return { title, fields: { file, media, focus_path: null }, note: null }
-    }
-    if (preview.preview === 'binary') throw refuse(400, 'media_unsupported', `${name} is neither text nor an image, audio, video, PDF or 3D model`)
-    return { title, fields: { file, media: null, focus_path: rel }, note: null }
+    const { media, focus_path } = fileFields(caller.session_id, rel, preview)
+    if (!media && !focus_path) throw refuse(400, 'media_unsupported', `${name} is neither text nor an image, audio, video, PDF or 3D model`)
+    return { title, fields: { file: { path: rel, name, size: preview.size }, media, focus_path }, note: null }
   }
 
   // ── routes ──────────────────────────────────────────────────────────────
@@ -146,7 +241,7 @@ export class ShowBlocks {
     const stored = await this.load(id)
     const deps = this.deps()
     if (!stored || !deps.profilesMatch(stored.profile, deps.activeProfile()) || !(await deps.sessions.personMaySeeSessionId(stored.session_id))) throw notFound(id)
-    return this.view(stored)
+    return await this.view(stored)
   }
 
   /** The HTML behind a frame grant, or null when the grant is forged or expired or its block is gone. */

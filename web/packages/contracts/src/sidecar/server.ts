@@ -5,6 +5,7 @@ import { WorkspacesMutation } from '../routes/workspaces.js'
 import { DecisionItemInputSchema, DecisionOutcomeStateSchema, DecisionProgressSchema, DecisionReviewSchema, DecisionReviewStatusSchema } from '../decisions.js'
 import { ProposalKindSchema, ProposalSchema, ProposalStatusSchema } from '../proposals.js'
 import { ShowBlockIdSchema, ShowKindSchema } from '../show.js'
+import { DisplayMediaSchema } from '../display-media.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -258,6 +259,18 @@ export const ServerShowPutParamsSchema = z.object({ caller_session_id: z.string(
 export const ServerShowPutResultSchema = z.object({ block_id: ShowBlockIdSchema, url: z.string(), kind: ShowKindSchema, title: z.string(), note: z.string().nullable() })
 
 /**
+ * TAL-1971: the `harness` toolset's `deliver`. The server stores a `file` show block for a file of the calling session's
+ * workspace, recording its digest, and refuses `outside_workspace` (a path the `/api/file` rules put outside the
+ * workspace, symlinks included), `is_directory`, `file_too_large` (over 200 MB) or `file_not_found`, storing nothing.
+ */
+export const ServerDeliverParamsSchema = z.object({ caller_session_id: z.string().min(1), path: z.string(), title: z.string().optional() })
+/**
+ * The block the transcript row renders, and the file as the user gets it: `media` is the detected media kind with its
+ * inline URL, or kind `file` with its download URL; `url` is the session's page.
+ */
+export const ServerDeliverResultSchema = z.object({ block_id: ShowBlockIdSchema, url: z.string(), kind: z.literal('file'), title: z.string(), size: z.number().int().nonnegative(), media: DisplayMediaSchema })
+
+/**
  * TAL-1969: the `harness` toolset's `request_secret`. The server refuses a malformed or reserved `env_name` before any
  * prompt; otherwise it queues an `agent_secret` vault prompt on the calling session and answers once the owner saves or
  * declines it or `timeout_seconds` passes (0 or less: no limit). A save writes the profile `.env`; the value is never in
@@ -336,6 +349,7 @@ export const SIDECAR_SERVER_METHODS = {
   'server.show_put': { params: ServerShowPutParamsSchema, result: ServerShowPutResultSchema },
   'server.secret_request': { params: ServerSecretRequestParamsSchema, result: ServerSecretRequestResultSchema },
   'server.notify': { params: ServerNotifyParamsSchema, result: ServerNotifyResultSchema },
+  'server.deliver': { params: ServerDeliverParamsSchema, result: ServerDeliverResultSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

@@ -1,6 +1,6 @@
 import Foundation
 
-/// TAL-1968: the transcript's reference from a `show` result (`ShowBlockRefSchema`); the block loads from
+/// TAL-1968: the transcript's reference from a `show` (or TAL-1971 `deliver`) result (`ShowBlockRefSchema`); the block loads from
 /// `GET /api/show/{block_id}`.
 public struct ShowBlockRef: Decodable, Equatable, Sendable {
     public let blockId: String
@@ -34,6 +34,14 @@ public struct ShowBlock: Decodable, Equatable, Sendable {
         public let name: String
         public let mime: String
         public let kind: String
+    }
+
+    /// TAL-1971: a file the agent delivered: its download URL (relative to the server root), its type, and whether the
+    /// live file no longer matches the one delivered, as the server checked it for this read.
+    public struct Delivery: Decodable, Equatable, Sendable {
+        public let downloadUrl: String
+        public let mime: String
+        public let changed: Bool
     }
 
     /// The agent's row and column counts when the server cut the table to its caps.
@@ -71,6 +79,8 @@ public struct ShowBlock: Decodable, Equatable, Sendable {
     public let media: Media?
     /// A text file's workspace path, the file its Open action shows.
     public let focusPath: String?
+    /// Set for a `deliver` block, nil for a `show` one.
+    public let delivery: Delivery?
     // `table`
     public let columns: [String]
     public let rows: [[String]]
@@ -85,7 +95,7 @@ public struct ShowBlock: Decodable, Equatable, Sendable {
     public let frameUrl: String?
 
     enum CodingKeys: String, CodingKey {
-        case blockId, sessionId, title, kind, file, media, focusPath, columns, rows, truncation, tsv, chart, series, frameUrl
+        case blockId, sessionId, title, kind, file, media, focusPath, delivery, columns, rows, truncation, tsv, chart, series, frameUrl
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,6 +107,7 @@ public struct ShowBlock: Decodable, Equatable, Sendable {
         file = try? container.decodeIfPresent(File.self, forKey: .file)
         media = try? container.decodeIfPresent(Media.self, forKey: .media)
         focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
+        delivery = try? container.decodeIfPresent(Delivery.self, forKey: .delivery)
         columns = container.decodeLossyArrayIfPresent(String.self, forKey: .columns) ?? []
         rows = (try? container.decodeIfPresent([[String]].self, forKey: .rows)) ?? []
         truncation = try? container.decodeIfPresent(Truncation.self, forKey: .truncation)

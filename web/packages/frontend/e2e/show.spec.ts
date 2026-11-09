@@ -111,3 +111,79 @@ test('renders every show block kind, and the HTML frame reaches neither the sess
     await server.close()
   }
 })
+
+// TAL-1971: the agent hands over files with the harness toolset's `deliver`; each row offers Download (and Open for a
+// viewable file), names the file's size and type, survives a reload as it was, and notes a file changed after delivery.
+test('renders delivered files with Download, and notes one that changed after delivery', async ({ page }, testInfo) => {
+  const sidecar = new FakeSidecar()
+  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const sid = '20261109_090000_delivery'
+  const now = Math.floor(Date.now() / 1000)
+  const shot = async (name: string) => { if (process.env.TAL1968_SHOTS) await page.screenshot({ path: `${process.env.TAL1968_SHOTS}/deliver-${name}-${testInfo.project.name}.png`, fullPage: true }) }
+  try {
+    const workspace = join(server.state, 'workspace')
+    mkdirSync(join(workspace, 'reports'), { recursive: true })
+    mkdirSync(join(workspace, 'dist'), { recursive: true })
+    writeFileSync(join(workspace, 'reports', 'week-45.md'), '# Week 45\n\nSignups up 12%.\n')
+    writeFileSync(join(workspace, 'reports', 'funnel.png'), PNG)
+    writeFileSync(join(workspace, 'dist', 'build.zip'), Buffer.from([0x50, 0x4b, 3, 4, 0, 0, 0, 0]))
+    await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'Weekly report', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
+    const calls: Record<string, unknown>[] = [{ path: 'reports/week-45.md', title: 'Weekly report' }, { path: 'reports/funnel.png', title: 'Signup funnel' }, { path: 'dist/build.zip' }]
+    const ids: string[] = []
+    const row = await server.deps.sessionStore.get(sid)
+    row.messages = [{ role: 'user', content: 'Send me the report and the build', timestamp: now - 60 }]
+    for (const [index, args] of calls.entries()) {
+      const reply = await sidecar.serverRequest('server.deliver', { caller_session_id: sid, ...args })
+      if (!('result' in reply)) throw new Error(JSON.stringify(reply))
+      const result = reply.result as { block_id: string }
+      ids.push(result.block_id)
+      row.messages.push(
+        { role: 'assistant', content: '', tool_calls: [{ id: `call-${String(index)}`, function: { name: 'deliver', arguments: JSON.stringify(args) } }], timestamp: now - 50 + index },
+        { role: 'tool', tool_call_id: `call-${String(index)}`, content: JSON.stringify(result), timestamp: now - 50 + index },
+      )
+    }
+    row.messages.push({ role: 'assistant', content: 'Both files are attached.', timestamp: now - 30 })
+    await server.deps.sessionStore.save(row)
+
+    await page.goto(`${server.base}/session/${sid}`)
+    await settle(page)
+    const block = (index: number) => page.locator(`[data-show-block="${ids[index]!}"]`)
+    await expect(block(0)).toContainText('week-45.md · 27 B · text/markdown')
+    await expect(block(1).locator('img[alt="Signup funnel"]')).toHaveJSProperty('naturalWidth', 16)
+    await expect(block(2)).toContainText('build.zip · 8 B · application/octet-stream')
+    await expect(block(2).getByRole('button', { name: 'Open' })).toHaveCount(0)
+    await expect(page.getByRole('note')).toHaveCount(0)
+    const rows = await Promise.all([0, 1, 2].map((index) => block(index).innerText()))
+    await shot('rows')
+
+    const download = page.waitForEvent('download')
+    await block(2).getByRole('button', { name: 'Download' }).click()
+    expect((await download).suggestedFilename()).toBe('build.zip')
+
+    // The agent rewrites the report: after a reload every row reads as before, and the report says it changed.
+    writeFileSync(join(workspace, 'reports', 'week-45.md'), '# Week 45\n\nSignups up 14%.\n')
+    await page.reload()
+    await settle(page)
+    await expect(block(0).getByRole('note')).toHaveText('Changed since delivered')
+    expect(await Promise.all([1, 2].map((index) => block(index).innerText()))).toEqual(rows.slice(1))
+    await shot('changed')
+
+    const original = page.viewportSize()
+    for (const [width, height] of WIDTHS) {
+      await page.setViewportSize({ width, height })
+      await block(0).scrollIntoViewIfNeeded()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no horizontal scroll at ${String(width)}px`).toBe(true)
+      await shot(`width-${String(width)}`)
+    }
+    if (original) await page.setViewportSize(original)
+
+    // Open on the text report shows it on the side panel's Files page.
+    await block(0).getByRole('button', { name: 'Open' }).click()
+    await expect(page.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Signups up 14%.')).toBeVisible()
+    await shot('open')
+  } finally {
+    await page.goto('about:blank')
+    await server.close()
+  }
+})

@@ -133457,6 +133457,32 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "delivery": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "download_url": {
+                                  "type": "string"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "changed": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "download_url",
+                                "mime",
+                                "changed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -133467,7 +133493,8 @@
                         "kind",
                         "file",
                         "media",
-                        "focus_path"
+                        "focus_path",
+                        "delivery"
                       ]
                     },
                     {

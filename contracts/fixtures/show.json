@@ -21,7 +21,8 @@
       "mime": "image/png",
       "kind": "image"
     },
-    "focus_path": null
+    "focus_path": null,
+    "delivery": null
   },
   "file_text": {
     "block_id": "sb_100000000002",
@@ -35,7 +36,27 @@
       "size": 812
     },
     "media": null,
-    "focus_path": "docs/notes.md"
+    "focus_path": "docs/notes.md",
+    "delivery": null
+  },
+  "file_delivered": {
+    "block_id": "sb_100000000006",
+    "session_id": "20261109_090000_caller",
+    "title": "Weekly report",
+    "created_at": 1794100000,
+    "kind": "file",
+    "file": {
+      "path": "reports/week-45.xlsx",
+      "name": "week-45.xlsx",
+      "size": 1843200
+    },
+    "media": null,
+    "focus_path": null,
+    "delivery": {
+      "download_url": "./api/file/raw?session_id=20261109_090000_caller&path=reports%2Fweek-45.xlsx&download=1",
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "changed": true
+    }
   },
   "table": {
     "block_id": "sb_0a1b2c3d4e5f",

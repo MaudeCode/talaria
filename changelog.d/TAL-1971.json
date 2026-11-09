@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The agent can hand you a file it made as a download in the chat: Download or open it on the web, share it or save it to Files in the app, with a note when the file changed after it was delivered.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Files from the agent",
+        "description": "The agent delivers reports, exports and builds to the chat for you to download or share.",
+        "icon": "attachment"
+      }
+    }
+  ]
+}
