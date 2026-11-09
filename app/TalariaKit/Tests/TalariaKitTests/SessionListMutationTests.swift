@@ -435,25 +435,6 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertTrue(cachedRow.isSessionReadOnly)
     }
 
-    /// An expired login on the detail load reaches the auth manager.
-    @MainActor
-    func testExpiredLoginOnTheDetailLoadIsSurfaced() async throws {
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            requestedPaths.append(request.url?.path ?? "nil")
-            return apiTestJSONResponse(#"{"error": "unauthorized"}"#, statusCode: 401, for: request)
-        }
-
-        let opened = await viewModel.sessionToOpen(for: SessionSummary(sessionId: "cli-1", isCliSession: true))
-
-        XCTAssertNil(opened)
-        XCTAssertEqual(requestedPaths, ["/api/session"])
-        let lastError = try XCTUnwrap(viewModel.lastError)
-        guard case APIError.unauthorized = lastError else {
-            return XCTFail("expected unauthorized, got \(lastError)")
-        }
-    }
-
     @MainActor
     func testOpeningWebUIRowSkipsTheDetailLoad() async throws {
         let viewModel = try makeViewModel { _ in
@@ -466,23 +447,24 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(opened?.sessionId, "webui-1")
     }
 
+    /// TAL-839: the opened chat shares this read and shows its failure with a retry, and forwards an expired login;
+    /// the list adds no alert over it.
     @MainActor
-    func testFailedDetailLoadStaysOnTheListWithActionableCopy() async throws {
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            requestedPaths.append(request.url?.path ?? "nil")
-            return apiTestJSONResponse(#"{"error": "Session not found"}"#, statusCode: 404, for: request)
+    func testFailedVerificationLeavesItsErrorToTheOpenedChat() async throws {
+        for status in [401, 404] {
+            var requestedPaths: [String] = []
+            let viewModel = try makeViewModel { request in
+                requestedPaths.append(request.url?.path ?? "nil")
+                return apiTestJSONResponse(#"{"error": "Session not found"}"#, statusCode: status, for: request)
+            }
+
+            let opened = await viewModel.sessionToOpen(for: SessionSummary(sessionId: "cli-1", isCliSession: true))
+
+            XCTAssertNil(opened)
+            XCTAssertEqual(requestedPaths, ["/api/session"])
+            XCTAssertNil(viewModel.actionErrorMessage, "\(status)")
+            XCTAssertNil(viewModel.lastError, "\(status)")
         }
-        let row = SessionSummary(sessionId: "cli-1", isCliSession: true)
-
-        let opened = await viewModel.sessionToOpen(for: row)
-
-        XCTAssertNil(opened)
-        XCTAssertEqual(requestedPaths, ["/api/session"])
-        XCTAssertEqual(
-            viewModel.actionErrorMessage,
-            "That session no longer exists on the server. Reopen another session or create a new one."
-        )
     }
 
     // MARK: Launch restore

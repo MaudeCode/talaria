@@ -163,7 +163,13 @@ final class DeferredMockURLProtocol: URLProtocol {
         onRequest(self)
     }
 
-    override func stopLoading() {}
+    private let stopped = LockedTestValue(false)
+    /// True once the client cancelled the request.
+    var isStopped: Bool { stopped.value }
+
+    override func stopLoading() {
+        stopped.value = true
+    }
 
     func complete(withJSON json: String, statusCode: Int = 200) {
         let response = HTTPURLResponse(
@@ -204,6 +210,49 @@ final class DeferredRequests: @unchecked Sendable {
         defer { lock.unlock() }
         return pending.count
     }
+}
+
+/// Holds every request and answers them one round trip at a time (TAL-839): a round trip is the requests that
+/// start together, so requests sent one after another take one round trip each.
+final class HeldRoundTrips: Sendable {
+    private let requests = DeferredRequests()
+    private let answered = LockedTestValue(0)
+
+    func hold(_ request: DeferredMockURLProtocol) {
+        _ = requests.append(request)
+    }
+
+    /// The requests that started since the last round trip: it waits for one, then until none starts for `quiet`.
+    /// Empty when none starts before `timeout`, or as soon as `isDone` while none is pending.
+    func nextRoundTrip(
+        quiet: Duration = .milliseconds(200),
+        timeout: Duration = .seconds(3),
+        isDone: @MainActor () -> Bool = { false }
+    ) async -> [DeferredMockURLProtocol] {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        let start = answered.value
+        var seen = requests.count
+        var lastStart = clock.now
+        while clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+            let count = requests.count
+            if count != seen {
+                seen = count
+                lastStart = clock.now
+            } else if count > start, clock.now - lastStart >= quiet {
+                break
+            } else if count == start, await isDone() {
+                break
+            }
+        }
+        answered.value = seen
+        return (start..<seen).map(requests.request(at:))
+    }
+}
+
+extension DeferredMockURLProtocol {
+    var path: String { request.url?.path ?? "" }
 }
 
 final class InMemoryKeychainStore: KeychainStoring {

@@ -4,9 +4,9 @@ import XCTest
 final class ChatComposerConfigLoaderTests: APIClientTestCase {
     func testLoadUsesSessionProfileDefaultAndRefreshesCommands() async throws {
         let openRouterModel = "deepseek/deepseek-chat-v3-0324:free"
-        var requestPaths: [String] = []
+        let requestPaths = LockedTestValue<[String]>([])
         let client = makeClient { request in
-            requestPaths.append(request.url?.path ?? "")
+            requestPaths.value.append(request.url?.path ?? "")
 
             switch request.url?.path {
             case "/api/profiles":
@@ -76,14 +76,9 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
         XCTAssertNil(result.state.supportsReasoningEffort)
         XCTAssertEqual(result.state.workspaceSuggestions, ["/tmp/workspace"])
         XCTAssertEqual(result.state.agentCommands.map(\.name), ["status"])
-        XCTAssertEqual(requestPaths, [
-            "/api/profiles",
-            "/api/profile/switch",
-            "/api/models",
-            "/api/reasoning",
-            "/api/workspaces",
-            "/api/commands"
-        ])
+        XCTAssertEqual(requestPaths.value.prefix(2), ["/api/profiles", "/api/profile/switch"])
+        XCTAssertEqual(requestPaths.value.dropFirst(2).sorted(),
+                       ["/api/commands", "/api/models", "/api/reasoning", "/api/workspaces"])
     }
 
     func testLoadKeepsSessionModelOverrideWhenProfileHasDifferentDefault() async throws {
@@ -167,9 +162,9 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
     }
 
     func testLoadReturnsPartialStateAndStillRefreshesCommandsWhenConfigurationFails() async throws {
-        var requestPaths: [String] = []
+        let requestPaths = LockedTestValue<[String]>([])
         let client = makeClient { request in
-            requestPaths.append(request.url?.path ?? "")
+            requestPaths.value.append(request.url?.path ?? "")
 
             switch request.url?.path {
             case "/api/profiles":
@@ -191,6 +186,9 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
                 return (try XCTUnwrap(response), Data(#"{"error":"models unavailable"}"#.utf8))
             case "/api/commands":
                 return apiTestJSONResponse(#"{"commands": [{"name": "status"}]}"#, for: request)
+            case "/api/workspaces":
+                // Requested alongside the models; a failed models load leaves the workspaces unapplied.
+                return apiTestJSONResponse(#"{"workspaces": [{"path": "/tmp/unapplied"}], "last": "/tmp/unapplied"}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -207,7 +205,9 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
         XCTAssertEqual(result.state.currentModel, "gpt-5.4")
         XCTAssertNil(result.state.currentModelProvider)
         XCTAssertEqual(result.state.agentCommands.map(\.name), ["status"])
-        XCTAssertEqual(requestPaths, ["/api/profiles", "/api/models", "/api/commands"])
+        XCTAssertNil(result.state.currentWorkspace)
+        XCTAssertEqual(requestPaths.value.first, "/api/profiles")
+        XCTAssertEqual(requestPaths.value.dropFirst().sorted(), ["/api/commands", "/api/models", "/api/workspaces"])
     }
 
     func testLoadStoresSingleProfileModeFromProfilesResponse() async throws {
@@ -243,6 +243,56 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
 
         XCTAssertNil(result.configurationError)
         XCTAssertTrue(result.state.isSingleProfileMode)
+    }
+
+    /// TAL-839: the profile and its switch settle first; then models, workspaces and commands load together and
+    /// reasoning follows the models it is scoped to.
+    func testLoadOverlapsModelsWorkspacesAndCommandsAfterTheProfileSwitch() async throws {
+        let host = "composer-\(UUID().uuidString.lowercased()).test"
+        let trips = HeldRoundTrips()
+        DeferredMockURLProtocol.setOnRequest(trips.hold, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let client = APIClient(baseURL: try XCTUnwrap(URL(string: "https://\(host)")), session: URLSession(configuration: configuration))
+
+        let load = Task {
+            await ChatComposerConfigLoader(client: client).loadConfiguration(from: ChatComposerConfigState(currentProfile: "work"))
+        }
+        var roundTrips: [[String]] = []
+        while true {
+            let trip = await trips.nextRoundTrip(timeout: .seconds(1))
+            guard !trip.isEmpty, roundTrips.count < 10 else { break }
+            roundTrips.append(trip.map(\.path).sorted())
+            for request in trip {
+                switch request.path {
+                case "/api/profiles":
+                    request.complete(withJSON: #"{"active": "default", "profiles": [{"name": "default"}, {"name": "work"}]}"#)
+                case "/api/profile/switch":
+                    request.complete(withJSON: #"{"active": "work", "profiles": [{"name": "default"}, {"name": "work", "is_active": true}]}"#)
+                case "/api/models":
+                    request.complete(withJSON: #"{"default_model": "gpt-5.4", "groups": []}"#)
+                case "/api/reasoning":
+                    request.complete(withJSON: #"{"reasoning_effort": "high"}"#)
+                case "/api/workspaces":
+                    request.complete(withJSON: #"{"workspaces": [{"path": "/tmp/workspace"}], "last": "/tmp/workspace"}"#)
+                default:
+                    request.complete(withJSON: #"{"commands": [{"name": "status"}]}"#)
+                }
+            }
+        }
+        let result = await load.value
+
+        XCTAssertEqual(roundTrips, [
+            ["/api/profiles"],
+            ["/api/profile/switch"],
+            ["/api/commands", "/api/models", "/api/workspaces"],
+            ["/api/reasoning"],
+        ])
+        XCTAssertNil(result.configurationError)
+        XCTAssertEqual(result.state.selectedReasoningEffort, "high")
+        XCTAssertEqual(result.state.currentWorkspace, "/tmp/workspace")
+        XCTAssertEqual(result.state.agentCommands.map(\.name), ["status"])
     }
 
     // TAL-314: the last good command catalog survives a failed fetch or an older server's rows.

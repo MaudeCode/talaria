@@ -61,6 +61,41 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "reasoning-live-after-hide")
     }
 
+    /// TAL-839: an external chat shows at once and stays read-only, saying why, until the server verifies it.
+    func testExternalChatChecksAccessUntilTheServerVerifiesIt() async throws {
+        let fixture = try FixtureApp(for: self)
+        let release = DispatchSemaphore(value: 0)
+        let summary = SessionSummary(sessionId: "cli-hosted", title: "CLI chat", isCliSession: true)
+        let model = try makeScriptedChatViewModel(streamClient: ScriptedSSEStreamingClient(), sessionSummary: summary) { request in
+            guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
+            XCTAssertEqual(release.wait(timeout: .now() + .seconds(10)), .success)
+            return apiTestJSONResponse("""
+            {"session":{"session_id":"cli-hosted","title":"CLI chat","is_cli_session":true,"read_only":false,
+             "messages":[{"role":"assistant","content":"Started in the terminal","message_id":"cli"}]}}
+            """, for: request)
+        }
+        defer {
+            release.signal()
+            model.suspendStreamForNavigation()
+            model.cleanupPollingTasks()
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in }, viewModel: model)
+        }.modelContainer(fixture.cache))
+
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Checking access") == true }
+        XCTAssertTrue(model.isComposerReadOnly)
+        attachHostedScreenshot(window, name: "external-chat-checking-access")
+
+        release.signal()
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Started in the terminal") == true }
+        let verified = await awaitCondition {
+            !model.isComposerReadOnly && !HostedAccessibility.labels(in: window).contains { $0.contains("Checking access") }
+        }
+        XCTAssertTrue(verified, "The verified chat must take input")
+        attachHostedScreenshot(window, name: "external-chat-verified")
+    }
+
     private struct FoldHost: View {
         let content: AnyView
         var division = CGRect(x: 430, y: -100, width: 40, height: 2000)

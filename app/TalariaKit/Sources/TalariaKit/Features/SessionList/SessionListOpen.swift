@@ -1,34 +1,41 @@
 import Foundation
 
-/// Resolves a session the list is about to open: a row tap, a restored selection,
-/// or a deep link that is loaded first.
+/// Resolves a session the list opens: a row tap, a restored selection, or a deep link
+/// that is loaded first.
 public enum SessionListOpen: Sendable {
     public enum Outcome: Equatable, Sendable {
-        case open(SessionSummary)
-        /// Loading or importing failed; the caller surfaces the view model's error.
+        /// The session is open; nothing else to do.
+        case opened
+        /// The server verified the opened session under another canonical identity: open that one in its place.
+        case replace(SessionSummary)
+        /// Loading failed; the caller surfaces the view model's error.
         case failed
-        /// The user chose a newer destination while this one resolved.
+        /// The user chose a newer destination meanwhile.
         case superseded
     }
 
-    /// External sessions are imported (or refreshed) server-side before navigation,
-    /// so the opened session carries the server's authoritative writability.
+    /// Opens the session as soon as it is loaded, then verifies it (TAL-839): an external
+    /// session's destination shows at once while the server confirms its identity and
+    /// writability, and the destination itself shows a failed verification.
     ///
-    /// The open begins before the first await: any destination chosen or open
-    /// started while the load or import was in flight — New Chat, a utility,
-    /// another row — is newer than this one and must not be replaced (TAL-153).
+    /// The open begins before the first await: any destination chosen or open started
+    /// while the load or the verification was in flight — New Chat, a utility, another
+    /// row, Back — is newer than this one and must not be replaced (TAL-153).
     @MainActor
     public static func resolve(
         beginOpen: () -> Int,
         openRevision: () -> Int,
         load: () async -> SessionSummary?,
-        importSession: (SessionSummary) async -> SessionSummary?
+        open: (SessionSummary) -> Void,
+        verify: (SessionSummary) async -> SessionSummary?
     ) async -> Outcome {
         let startRevision = beginOpen()
         guard let session = await load() else { return .failed }
         guard startRevision == openRevision() else { return .superseded }
-        guard let resolved = await importSession(session) else { return .failed }
-        guard startRevision == openRevision() else { return .superseded }
-        return .open(resolved)
+        open(session)
+        let openedRevision = openRevision()
+        guard let verified = await verify(session) else { return .opened }
+        guard openedRevision == openRevision() else { return .superseded }
+        return verified.sessionId == session.sessionId ? .opened : .replace(verified)
     }
 }

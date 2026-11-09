@@ -371,6 +371,7 @@ struct ChatView: View {
             isCancellingStream: prompt == nil && viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isSessionReadOnly: viewModel.isComposerReadOnly,
+            isVerifyingSessionAccess: viewModel.isVerifyingSessionAccess,
             ownerAttachment: viewModel.ownerAttachment,
             isChromeCompactWithoutDraft: isComposerChromeCompactWithoutDraft,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
@@ -2209,6 +2210,8 @@ struct ChatView: View {
         viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
         if loadsInitialMessages {
             viewModel.prepareInitialMessageLoad(modelContext: modelContext)
+            // The transcript request goes out while the chat appears; its response applies once it has (TAL-839).
+            viewModel.prefetchInitialMessages()
         }
     }
 
@@ -2338,7 +2341,7 @@ struct ChatView: View {
         let draftSettingsInteractionGeneration = viewModel.composerConfigurationInteractionGeneration
 
         if loadsInitialMessages {
-            await loadMessages(appliesInitialFocus: false, joinsLoadInFlight: true)
+            await loadMessages(appliesInitialFocus: false, isInitialLoad: true)
             guard !Task.isCancelled else { return }
         }
         acknowledgeViewedCompletions()
@@ -2346,15 +2349,11 @@ struct ChatView: View {
             isInitialComposerFocusContentReady = true
             applyInitialComposerFocusPolicyIfNeeded()
         }
-        await viewModel.loadComposerConfiguration()
-        guard !Task.isCancelled else { return }
-
-        await applyRestoredDraftSettingsIfNeeded(
-            expectedInteractionGeneration: draftSettingsInteractionGeneration
-        )
-        guard !Task.isCancelled else { return }
-
-        await viewModel.refreshApprovalBypassState()
+        await viewModel.loadComposerStartup {
+            await applyRestoredDraftSettingsIfNeeded(
+                expectedInteractionGeneration: draftSettingsInteractionGeneration
+            )
+        }
         guard !Task.isCancelled else { return }
 
         await uploadInitialAttachmentsIfNeeded()
@@ -2396,11 +2395,14 @@ struct ChatView: View {
         appliesInitialFocus: Bool = true,
         isUserRefresh: Bool = false,
         joinsLoadInFlight: Bool = false,
+        isInitialLoad: Bool = false,
         isRoutineReconciliation: Bool = false
     ) async {
         // A new chat has nothing to load until its session exists (TAL-636).
         guard viewModel.hasSession else { return }
-        if joinsLoadInFlight {
+        if isInitialLoad {
+            await viewModel.loadInitialMessages(modelContext: modelContext)
+        } else if joinsLoadInFlight {
             await viewModel.refreshSession(modelContext: modelContext, isUserRefresh: isUserRefresh)
         } else {
             await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh,

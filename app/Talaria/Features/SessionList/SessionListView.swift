@@ -2368,21 +2368,30 @@ struct SessionListView: View {
         await openSession(in: list) { session }
     }
 
-    /// A failed load or import stays on the list and surfaces through the
-    /// action-error alert; a destination chosen meanwhile is never replaced.
+    /// A failed load stays on the list and surfaces through the action-error alert; a
+    /// failed verification shows in the opened chat. A destination chosen meanwhile is
+    /// never replaced.
     private func openSession(in list: AppSection = .chats,
                              load: () async -> SessionSummary?) async {
         let trace = sessionOpenTrace.begin()
+        var didOpen = false
         let outcome = await SessionListOpen.resolve(
             beginOpen: { navigationState.beginOpen() },
             openRevision: { navigationState.openRevision },
             load: load,
-            importSession: { await viewModel.sessionToOpen(for: $0, modelContext: modelContext) }
+            open: { session in
+                didOpen = true
+                sessionOpenTrace.resolve(trace, to: session.sessionId)
+                // Sidebar rows replace the root; section-owned lists push a chat above their list.
+                selectSession(session, in: list)
+            },
+            verify: { await viewModel.sessionToOpen(for: $0, modelContext: modelContext) }
         )
         switch outcome {
-        case let .open(session):
+        case .opened:
+            break
+        case let .replace(session):
             sessionOpenTrace.resolve(trace, to: session.sessionId)
-            // Sidebar rows replace the root; section-owned lists push a chat above their list.
             selectSession(session, in: list)
         case .failed:
             sessionOpenTrace.cancel(trace)
@@ -2391,7 +2400,8 @@ struct SessionListView: View {
             // every other network-backed session-list action does.
             handleLastError()
         case .superseded:
-            sessionOpenTrace.cancel(trace, .replaced)
+            // An opened chat ends its own trace when it leaves.
+            if !didOpen { sessionOpenTrace.cancel(trace, .replaced) }
         }
     }
 
