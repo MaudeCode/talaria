@@ -592,6 +592,7 @@ struct ChatView: View {
             let frames = layoutInputs.frames(in: geometry, width: targetChatLayoutWidth)
             // Both transcript and composer take their destination width before the column moves.
             let composerFrame = frames.composer
+            let showsComposer = didCompleteInitialAppearance && hasMeasuredComposer && composerFrame.width > 0 && composerFrame.height > 0
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if viewModel.isViewingCachedData {
@@ -629,8 +630,12 @@ struct ChatView: View {
                 .frame(width: composerFrame.width, height: frames.isTabletop ? composerFrame.height : nil, alignment: .bottom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 // Measure the live pane and composer before its first visible layout; never fade in a provisional size.
-                .opacity(didCompleteInitialAppearance && hasMeasuredComposer && composerFrame.width > 0 && composerFrame.height > 0 ? 1 : 0)
+                .opacity(showsComposer ? 1 : 0)
                 .animation(nil, value: didCompleteInitialAppearance && hasMeasuredComposer)
+                // A new chat loads nothing: the composer's first visible frame is its root (TAL-1412).
+                .onChange(of: showsComposer, initial: true) { _, shows in
+                    if shows, !viewModel.hasSession { traceTranscriptReady(.composer) }
+                }
 
                 if let approvalPrompt = viewModel.approvalPrompt {
                     ApprovalRequestOverlay(
@@ -2213,8 +2218,6 @@ struct ChatView: View {
     }
 
     private func handleInitialAppearanceTask() async {
-        // A new chat loads nothing: its empty state and composer are the frame (TAL-1412).
-        if !viewModel.hasSession { traceTranscriptReady(.composer) }
         await hydrateDraftIfNeeded()
         guard !resumesLoadedChat else {
             traceTranscriptReady(.retained)
@@ -2224,10 +2227,12 @@ struct ChatView: View {
             applyInitialComposerFocusPolicyIfNeeded()
             return
         }
+        // Rows before the cache paint are the kept chat's; rows only after it are the device cache's.
+        let hadRows = !viewModel.messages.isEmpty
         prepareInitialAppearance()
         if !viewModel.messages.isEmpty {
             DisplayPhaseTrace.chatVisible(sessionID: session.sessionId, in: sessionOpenTrace,
-                                          retained == nil ? .cache : .retained, rows: viewModel.messages.count)
+                                          hadRows ? .retained : .cache, rows: viewModel.messages.count)
         }
 
         // The appearance flip cancels this task and starts a fresh one; a cancelled task that
