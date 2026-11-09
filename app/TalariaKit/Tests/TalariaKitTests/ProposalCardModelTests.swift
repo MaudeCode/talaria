@@ -32,6 +32,7 @@ final class ProposalCardModelTests: XCTestCase {
         XCTAssertEqual(proposal.status, .pending)
         XCTAssertEqual(proposal.diff.map(\.kind), [.addition, .addition, .addition])
         XCTAssertEqual(proposal.diff.first?.text, "+command: npx")
+        XCTAssertEqual(proposal.diff.map(\.gutterLabel), ["1", "2", "3"], "The server's line numbers fill the diff gutter")
         XCTAssertEqual(proposal.riskNotes.count, 2)
         XCTAssertEqual(proposal.actions, Proposal.Actions(canApprove: true, canReject: true))
     }

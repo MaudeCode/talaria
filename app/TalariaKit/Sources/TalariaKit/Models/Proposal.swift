@@ -65,7 +65,12 @@ public struct Proposal: Decodable, Equatable, Sendable {
         proposalId = try container.decode(String.self, forKey: .proposalId)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId) ?? ""
         summary = container.decodeLossyStringIfPresent(forKey: .summary) ?? ""
-        diff = (container.decodeLossyArrayIfPresent(DiffLine.self, forKey: .diff) ?? []).enumerated().map { index, line in
+        // `DiffLine` names its snake-case keys itself, so it decodes without the key conversion this model uses.
+        let rawLines = (try? container.decodeIfPresent([JSONValue].self, forKey: .diff)) ?? nil
+        let lines = (rawLines ?? []).compactMap { raw in
+            (try? JSONEncoder().encode(raw)).flatMap { try? JSONDecoder().decode(DiffLine.self, from: $0) }
+        }
+        diff = lines.enumerated().map { index, line in
             var line = line
             line.id = index
             return line
