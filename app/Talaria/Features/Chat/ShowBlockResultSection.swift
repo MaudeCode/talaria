@@ -7,12 +7,18 @@ import WebKit
 /// TAL-1968: a file, table, chart or HTML page an agent showed, under its transcript row, rendered from the server's
 /// block: an image inline or a file row whose Open shows the file, a table with the server's truncation note and Copy
 /// (TSV), the chart with the server's formatted values and a values list, or the sandboxed page. It collects no input.
+/// TAL-1971: a delivered file adds its name, size and type, the server's "changed since delivered" note, and Share and
+/// Save to Files, which fetch it through the authenticated raw route.
 struct ShowBlockResultSection: View {
     let reference: ShowBlockRef
     @Environment(\.chatShowBlockModel) private var makeModel
     @Environment(\.chatOpenWorkspaceFile) private var openFile
     @Environment(\.openURL) private var openURL
     @State private var model: ShowBlockCardModel?
+    @State private var fetching = false
+    @State private var shareItem: SessionExportShareItem?
+    @State private var exportPayload: FileExportPayload?
+    @State private var errorMessage: String?
 
     var body: some View {
         let block = model?.block
@@ -31,6 +37,8 @@ struct ShowBlockResultSection: View {
                                 .buttonStyle(.bordered)
                                 .accessibilityIdentifier("show-block-\(action.id)-\(reference.blockId)")
                         }
+                        // TAL-1971: a delivered file downloading for Share or Save to Files.
+                        if fetching { ProgressView() }
                     }
                     .frame(minHeight: 44)
                 }
@@ -52,6 +60,32 @@ struct ShowBlockResultSection: View {
             if model == nil { model = makeModel?(reference.blockId) }
             await model?.load()
         }
+        .sheet(item: $shareItem) { item in
+            SessionExportShareSheet(fileURL: item.fileURL)
+                .presentationDetents([.medium, .large])
+                .ignoresSafeArea()
+                // The file sits in its own temporary directory; it goes once the sheet does.
+                .onDisappear { try? FileManager.default.removeItem(at: item.fileURL.deletingLastPathComponent()) }
+        }
+        .fileExporter(payload: $exportPayload, errorTitle: "Download Failed", errorMessage: $errorMessage)
+    }
+
+    /// Fetches the delivered file once at a time, then hands it to `use`; a failure shows in the download alert.
+    private func fetchDelivered(_ model: ShowBlockCardModel, then use: @escaping (FileExportPayload) throws -> Void) {
+        guard !fetching else { return }
+        fetching = true
+        Task {
+            defer { fetching = false }
+            do { try use(try await model.deliveredFile()) } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func share(_ payload: FileExportPayload) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(payload.filename)
+        try payload.data.write(to: url)
+        shareItem = SessionExportShareItem(fileURL: url)
     }
 
     private struct Action {
@@ -64,8 +98,12 @@ struct ShowBlockResultSection: View {
     private func actions(_ block: ShowBlock, _ model: ShowBlockCardModel) -> [Action] {
         switch block.kind {
         case .file:
-            guard let path = block.file?.path, let openFile else { return [] }
-            return [Action(id: "open", label: String(localized: "Open")) { openFile(path) }]
+            let save = block.delivery == nil ? [] : [
+                Action(id: "share", label: String(localized: "Share")) { fetchDelivered(model, then: share) },
+                Action(id: "save", label: String(localized: "Save to Files")) { fetchDelivered(model) { exportPayload = $0 } },
+            ]
+            guard let path = block.file?.path, let openFile else { return save }
+            return save + [Action(id: "open", label: String(localized: "Open")) { openFile(path) }]
         case .table:
             return [Action(id: "copy", label: String(localized: "Copy table")) { UIPasteboard.general.string = block.tsv }]
         case .chart:
@@ -80,13 +118,24 @@ struct ShowBlockResultSection: View {
     private func content(_ block: ShowBlock, _ model: ShowBlockCardModel) -> some View {
         switch block.kind {
         case .file:
+            if let delivery = block.delivery, let file = block.file {
+                Text([file.name, ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file), delivery.mime].joined(separator: " · "))
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+                if delivery.changed {
+                    Text(String(localized: "Changed since delivered"))
+                        .font(AppFont.caption())
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("show-block-changed-\(block.blockId)")
+                }
+            }
             if let data = model.imageData, let image = UIImage(data: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: 240, alignment: .leading)
                     .accessibilityLabel(Text(block.title))
-            } else if let file = block.file {
+            } else if block.delivery == nil, let file = block.file {
                 Text(file.path)
                     .font(AppFont.caption().monospaced())
                     .foregroundStyle(.secondary)

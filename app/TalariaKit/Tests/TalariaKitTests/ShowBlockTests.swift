@@ -58,4 +58,31 @@ final class ShowBlockTests: XCTestCase {
         let view = try XCTUnwrap(ToolResultView(.object(["block": try JSONDecoder().decode(JSONValue.self, from: Data(Self.fixture("ref").utf8))])))
         XCTAssertEqual(view.block, ShowBlockRef(blockId: "sb_0a1b2c3d4e5f", kind: "table", title: "Latency by region"))
     }
+
+    @MainActor
+    func testADeliveredFileComesThroughTheAuthenticatedRawRouteNamedAndTyped() async throws {
+        let host = "deliver-\(UUID().uuidString).test"
+        let body = try Self.fixture("file_delivered")
+        let requests = LockedTestValue<[URL]>([])
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let url = try! XCTUnwrap(request.request.url)
+            requests.value.append(url)
+            request.complete(withJSON: url.path.hasPrefix("/talaria/api/show/") ? body : "PK-sheet")
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DeferredMockURLProtocol.self]
+        let model = ShowBlockCardModel(blockID: "sb_100000000006", client: APIClient(baseURL: URL(string: "https://\(host)/talaria")!, session: URLSession(configuration: config)))
+        await model.load()
+        let delivery = try XCTUnwrap(model.block?.delivery)
+        XCTAssertEqual([delivery.mime, delivery.downloadUrl], ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "./api/file/raw?session_id=20261109_090000_caller&path=reports%2Fweek-45.xlsx&download=1"])
+        XCTAssertTrue(delivery.changed)
+        let payload = try await model.deliveredFile()
+        XCTAssertEqual(String(decoding: payload.data, as: UTF8.self), "PK-sheet")
+        XCTAssertEqual(payload.filename, "week-45.xlsx")
+        XCTAssertEqual(payload.contentType.preferredFilenameExtension, "xlsx")
+        let raw = try XCTUnwrap(requests.value.last)
+        XCTAssertEqual(raw.path, "/talaria/api/file/raw")
+        XCTAssertEqual(URLComponents(url: raw, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value, "reports/week-45.xlsx")
+    }
 }

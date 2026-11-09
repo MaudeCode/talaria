@@ -72,6 +72,19 @@ final class ShowBlockHostedTests: XCTestCase {
         XCTAssertEqual(opened, ["docs/notes.md"])
         attachHostedScreenshot(window, name: "show-files-page-phone")
     }
+
+    func testADeliveredFileOffersShareAndSaveToFilesWithItsSizeTypeAndChangedNote() throws {
+        for (name, size) in [("phone", HostedSize.phone), ("duo-outer", HostedSize.duoOuter), ("duo-inner", HostedSize.duoInner)] {
+            let window = try hostWindow(transcript(["file_delivered"]), size: size)
+            XCTAssertTrue(waitUntil { HostedAccessibility.element(in: window, identifier: "show-block-share-sb_100000000006") != nil }, name)
+            XCTAssertNotNil(HostedAccessibility.element(in: window, identifier: "show-block-save-sb_100000000006"), name)
+            XCTAssertNotNil(HostedAccessibility.element(in: window, identifier: "show-block-changed-sb_100000000006"), name)
+            for label in ["Weekly report", "week-45.xlsx · 1.8 MB · application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Changed since delivered"] {
+                XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: label).isEmpty, "\(name): \(label)")
+            }
+            attachHostedScreenshot(window, name: "deliver-file-\(name)")
+        }
+    }
 }
 
 private extension UIView {
