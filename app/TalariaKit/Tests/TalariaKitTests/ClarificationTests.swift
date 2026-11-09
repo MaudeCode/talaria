@@ -1091,6 +1091,32 @@ final class ClarificationTests: APIClientTestCase {
         }
     }
 
+    /// TAL-1969: the shared `agent_secret` example decodes with the server's name, purpose and replace flag; a viewer the
+    /// server marks unable to answer gets no input, and an older server's prompt without `can_answer` stays answerable.
+    func testAgentSecretPromptDecodesItsSecretAndWhoMayAnswer() throws {
+        let vault = try XCTUnwrap(vaultFixture("agent_secret").pending?.vault)
+        XCTAssertEqual(vault.kind, .agentSecret)
+        let secret = try XCTUnwrap(vault.secret)
+        XCTAssertEqual(secret.envName, "FOO_API_KEY")
+        XCTAssertEqual(secret.purpose, "Read your Foo dashboards to build the weekly report.")
+        XCTAssertFalse(secret.optional)
+        XCTAssertTrue(secret.existedBefore)
+        XCTAssertEqual(vault.fields.map(\.key), [.secret])
+        XCTAssertTrue(vault.canAnswer)
+        XCTAssertTrue(try XCTUnwrap(vaultFixture("skill_secret").pending?.vault).canAnswer)
+
+        var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: vaultFixtureData("agent_secret")) as? [String: Any])
+        var pending = try XCTUnwrap(envelope["pending"] as? [String: Any])
+        var raw = try XCTUnwrap(pending["vault"] as? [String: Any])
+        raw["fields"] = []
+        raw["can_answer"] = false
+        pending["vault"] = raw
+        envelope["pending"] = pending
+        let readOnly = try XCTUnwrap(JSONDecoder().decode(ClarificationPendingResponse.self, from: JSONSerialization.data(withJSONObject: envelope)).pending?.vault)
+        XCTAssertFalse(readOnly.canAnswer)
+        XCTAssertEqual(readOnly.fields, [])
+    }
+
     /// One shared contract example from `contracts/fixtures/vault-prompts.json`.
     private func vaultFixtureData(_ name: String) throws -> Data {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()

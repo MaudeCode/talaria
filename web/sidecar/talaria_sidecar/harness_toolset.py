@@ -5,6 +5,9 @@ transcript card, and the server applies an approved one through the route that o
 
 TAL-1968 adds ``show``: a workspace file, table, chart or HTML page the server stores and the transcript renders.
 
+TAL-1969 adds ``request_secret``: the user types a credential into a secure field, the server saves it to the profile
+``.env``, and the agent learns only whether it was saved.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -13,7 +16,9 @@ the server with ``talaria_toolset._tool`` and returns the server's result unchan
 from __future__ import annotations
 
 import json
+import threading
 
+from . import rpc
 from .talaria_toolset import _tool
 
 TOOLSET = "harness"
@@ -21,7 +26,7 @@ TOOLSET = "harness"
 TOOLSET_DESCRIPTION = (
     "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; "
     "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
-    "page in the chat."
+    "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat."
 )
 
 _WHEN = (
@@ -193,6 +198,30 @@ SHOW_SCHEMA = {
 }
 
 
+REQUEST_SECRET_SCHEMA = {
+    "name": "request_secret",
+    "description": (
+        "Ask the user for an API key, token or password your work needs, by the environment variable it is saved under. "
+        "The user types it into a secure field in Talaria; the server saves it to this profile's .env and you never see "
+        "it, so never ask for a secret in chat. Waits like clarify until the user saves or declines it or the clarify "
+        "timeout passes. Returns {env_name, outcome: saved, declined or timed_out, existed_before} and, when saved, "
+        "runtime_application: applied means your next tool call can read the variable, restart_required means it takes "
+        "effect in a new session. env_name is 3 to 64 capital letters, digits or underscores starting with a letter; "
+        "Talaria's, the Agent's and system names are refused before the user is asked. purpose is shown to the user as "
+        "written: say which service it is for and what you will do with it."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "env_name": {"type": "string", "description": "The .env name, such as FOO_API_KEY."},
+            "purpose": {"type": "string", "description": "One or two sentences the user reads before answering."},
+            "optional": {"type": "boolean", "description": "True when you can continue without it."},
+        },
+        "required": ["env_name", "purpose"],
+    },
+}
+
+
 def _payload(args: dict, params: dict) -> None:
     """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
@@ -219,6 +248,47 @@ propose = _tool("server.proposal_put", "propose", ("kind",), _proposal)
 proposal_read = _tool("server.proposal_read", "proposal_read", ("proposal_id",))
 show = _tool("server.show_put", "show", ("kind",), _payload)
 
+
+def _secret(args: dict, params: dict) -> float:
+    """``optional`` and the session's clarify timeout; the call outlasts the prompt (no limit when the timeout is 0 or less)."""
+    from .methods import chat  # chat imports this module
+
+    params["optional"] = args.get("optional") is True
+    timeout = chat._clarify_timeout({})
+    params["timeout_seconds"] = timeout
+    return timeout + rpc.SERVER_CALL_TIMEOUT if timeout > 0 else threading.TIMEOUT_MAX
+
+
+_secret_request = _tool("server.secret_request", "request_secret", ("env_name", "purpose"), _secret)
+
+
+def _apply_saved(env_name: str) -> str:
+    """Let this turn's next tool call read a value the server just saved: the turn's secret scope is a copy taken when
+    it started, so add the profile ``.env``'s value to it. ``applied`` only once the Agent's own resolver returns it."""
+    try:
+        from agent.secret_scope import current_secret_scope, get_secret
+        from hermes_cli.config import load_env
+
+        value = load_env().get(env_name)
+        if not value:
+            return "restart_required"
+        scope = current_secret_scope()
+        if isinstance(scope, dict):
+            scope[env_name] = value
+        return "applied" if get_secret(env_name) == value else "restart_required"
+    except Exception:  # noqa: BLE001 - an older Agent, or a scope that refuses the read; never expose the value
+        return "restart_required"
+
+
+def request_secret(args: dict, session_id: str | None = None) -> str:
+    raw = _secret_request(args, session_id)
+    result = json.loads(raw)
+    if isinstance(result, dict) and result.get("outcome") == "saved":
+        result["runtime_application"] = _apply_saved(str(result.get("env_name")))
+        return json.dumps(result)
+    return raw
+
+
 _TOOLS = (
     (DECISION_REVIEW_PUT_SCHEMA, decision_review_put, "🗳️"),
     (DECISION_REVIEW_READ_SCHEMA, decision_review_read, "📋"),
@@ -226,6 +296,7 @@ _TOOLS = (
     (PROPOSE_SCHEMA, propose, "🔐"),
     (PROPOSAL_READ_SCHEMA, proposal_read, "📨"),
     (SHOW_SCHEMA, show, "🖼️"),
+    (REQUEST_SECRET_SCHEMA, request_secret, "🔑"),
 )
 
 

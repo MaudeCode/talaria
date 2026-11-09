@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When the agent needs an API key or password, it asks for it by name: you type it into a secure field in the chat, Talaria saves it to the profile's .env, and the value never enters the conversation.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Hand the agent a key safely",
+        "description": "The agent asks for credentials in a secure field and never sees them.",
+        "icon": "security"
+      }
+    }
+  ]
+}

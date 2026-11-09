@@ -11,7 +11,8 @@ import type { RequestContext } from '../http/context.js'
 import { parseRunJournalEventId, PromptReplayFilter, runRowsAfter, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal, type RunSummary } from '../sessions/journal.js'
 import type { SessionJournalReplay } from '../sessions/storage/backend.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
-import { nextPendingItem } from '../sessions/pending.js'
+import { nextPendingItem, pendingForViewer } from '../sessions/pending.js'
+import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import type { Session } from '../sessions/session.js'
 import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
@@ -205,12 +206,19 @@ function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number
   return { afterSeq: null, requested: true }
 }
 
+/** TAL-1969: whether each streaming request is the server owner, settled before its first frame; unknown reads as not. */
+const serverOwners = new WeakMap<RequestContext, boolean>()
+async function settleServerOwner(ctx: RequestContext): Promise<void> {
+  serverOwners.set(ctx, await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))
+}
+
 /**
  * A frame's payload as it may cross the SSE boundary: a tool frame produced unredacted (before this server redacted them,
  * or while redaction was off, then journaled or buffered for a late subscriber) is redacted under the current policy and
  * stamped on the way out.
  */
 function publicFramePayload(ctx: RequestContext, event: string, payload: unknown, redacted: boolean | undefined): unknown {
+  if (event === 'clarify') return pendingForViewer(payload, serverOwners.get(ctx) === true)
   const tool = (event === 'tool' || event === 'tool_complete' || event === 'tool_progress') && redacted !== true && payload && typeof payload === 'object' && !Array.isArray(payload)
   return tool ? publicToolFrame(payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : payload
 }
@@ -374,6 +382,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const resolved = await resolveStreamOwner(ctx, streamId, sessionHint)
   const { owner } = resolved
   if (!(await streamVisibleToRequest(ctx, streamId, resolved))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
+  await settleServerOwner(ctx)
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {
@@ -648,6 +657,7 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
 /** `/api/sessions/{sid}/events`: per-session journal relay with snapshot fallback. */
 export async function handleSessionJournalStream(ctx: RequestContext, sessionId: string): Promise<void> {
   if (!(await ctx.deps.sessions.sessionIdVisible(sessionId))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
+  await settleServerOwner(ctx)
   let session: Session
   try { session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const resumeEventId = (ctx.header('last-event-id') ?? '').trim() || (ctx.query.get('after_event_id') ?? '').trim() || null
@@ -751,24 +761,32 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
 async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) { (await ctx.json({ error: 'session_id is required' }, { status: 400 })); return }
+  const owner = kind === 'clarify' && await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
+  const view = <T,>(item: T): T => kind === 'clarify' ? viewEnvelope(item, owner) : item
   const [sub, initial] = kind === 'approval' ? ctx.deps.pending.subscribeApprovals(sid) : ctx.deps.pending.subscribeClarifies(sid)
   const release = (): void => { if (kind === 'approval') ctx.deps.pending.unsubscribeApprovals(sid, sub); else ctx.deps.pending.unsubscribeClarifies(sid, sub) }
   const sse = (await claimOrReject(ctx, true, null))
   if (!sse) { release(); return }
   try {
     sse.start()
-    sse.event('initial', initial)
+    sse.event('initial', view(initial))
     for (;;) {
       if (!(await sse.ready())) return
       const item = await nextPendingItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
-      sse.event(kind, item)
+      sse.event(kind, view(item))
     }
   } finally {
     release()
     sse.end()
   }
+}
+
+/** A prompt feed's `{pending, pending_count}` envelope as one viewer sees it. */
+function viewEnvelope<T>(envelope: T, owner: boolean): T {
+  const { pending } = envelope as { pending?: unknown }
+  return pending ? { ...envelope, pending: pendingForViewer(pending, owner) } : envelope
 }
 
 export const handleApprovalStream = async (ctx: RequestContext): Promise<void> => { await promptStream(ctx, 'approval'); }

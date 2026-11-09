@@ -342,6 +342,8 @@
 	"vault_skip": "Skip",
 	"skill_secret_heading": "Set up {name}",
 	"vault_field_secret": "Secret",
+	"agent_secret_heading": "Set {name}",
+	"agent_secret_replaces": "Saving replaces the current value.",
 	"session_attention_approval": [
 		{
 			"declarations": [

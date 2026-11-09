@@ -89,6 +89,8 @@ struct ChatView: View {
     private let composerAccessoryVerticalSpacing: CGFloat = 8
 
     @State private var modelSwitchAlert: ModelSwitchConfirmation?
+    /// TAL-1969: a vault prompt this viewer cannot answer and closed; the server's queue still holds it.
+    @State private var closedVaultPromptID: String?
     @State private var completionAcknowledger = ViewedCompletionAcknowledger()
     @Environment(\.acknowledgeViewedCompletionsForTesting) private var acknowledgeViewedCompletionsForTesting
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1199,16 +1201,22 @@ struct ChatView: View {
                 .presentationDragIndicator(.visible)
             }
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
-            // TAL-887: the Agent's password-manager prompt; it closes when the server's queue moves on.
-            .sheet(item: Binding(get: { viewModel.vaultPrompt }, set: { _ in })) { prompt in
+            // TAL-887: the Agent's password-manager prompt; it closes when the server's queue moves on. One this viewer
+            // cannot answer (TAL-1969) may also be closed here.
+            .sheet(item: Binding(
+                get: { viewModel.vaultPrompt.flatMap { $0.id == closedVaultPromptID ? nil : $0 } },
+                set: { if $0 == nil, viewModel.vaultPrompt?.pending.vault?.canAnswer == false { closedVaultPromptID = viewModel.vaultPrompt?.id } }
+            )) { prompt in
                 if let vault = prompt.pending.vault {
                     VaultPromptSheet(
                         vault: vault,
                         isResponding: viewModel.isRespondingToClarification,
-                        errorMessage: viewModel.clarificationErrorMessage
-                    ) { values in
-                        Task { await viewModel.respondToVaultPrompt(values, promptID: prompt.id) }
-                    }
+                        errorMessage: viewModel.clarificationErrorMessage,
+                        onRespond: { values in
+                            Task { await viewModel.respondToVaultPrompt(values, promptID: prompt.id) }
+                        },
+                        onClose: { closedVaultPromptID = prompt.id }
+                    )
                 }
             }
             .alert(item: $gitAlert, content: gitAlertPresentation)

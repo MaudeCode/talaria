@@ -257,6 +257,21 @@ export const ServerShowPutParamsSchema = z.object({ caller_session_id: z.string(
 /** `url` is the session's page, where the block shows; `note` tells the agent what the server cut (a table past its caps), else null. */
 export const ServerShowPutResultSchema = z.object({ block_id: ShowBlockIdSchema, url: z.string(), kind: ShowKindSchema, title: z.string(), note: z.string().nullable() })
 
+/**
+ * TAL-1969: the `harness` toolset's `request_secret`. The server refuses a malformed or reserved `env_name` before any
+ * prompt; otherwise it queues an `agent_secret` vault prompt on the calling session and answers once the owner saves or
+ * declines it or `timeout_seconds` passes (0 or less: no limit). A save writes the profile `.env`; the value is never in
+ * the result. A refused write is an error with its reason, and nothing stays written.
+ */
+export const ServerSecretRequestParamsSchema = z.object({
+  caller_session_id: z.string().min(1),
+  env_name: z.string(),
+  purpose: z.string(),
+  optional: z.boolean().optional(),
+  timeout_seconds: z.number().int().optional(),
+})
+export const ServerSecretRequestResultSchema = z.object({ env_name: z.string(), outcome: z.enum(['saved', 'declined', 'timed_out']), existed_before: z.boolean() })
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -295,6 +310,7 @@ export const SIDECAR_SERVER_METHODS = {
   'server.proposal_put': { params: ServerProposalPutParamsSchema, result: ServerProposalPutResultSchema },
   'server.proposal_read': { params: ServerProposalReadParamsSchema, result: ProposalSchema },
   'server.show_put': { params: ServerShowPutParamsSchema, result: ServerShowPutResultSchema },
+  'server.secret_request': { params: ServerSecretRequestParamsSchema, result: ServerSecretRequestResultSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

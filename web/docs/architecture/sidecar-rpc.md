@@ -1,5 +1,18 @@
 # Sidecar RPC (TAL-245)
 
+RPC v91 adds the `harness` toolset's `request_secret` (TAL-1969,
+`server.secret_request`). The agent names an `.env` variable (`^[A-Z][A-Z0-9_]{2,63}$`,
+not a Talaria, Agent or system name the server reserves) and a purpose; the server
+refuses a bad name with `env_name_invalid` or `env_name_reserved` before any prompt,
+then queues an `agent_secret` vault prompt on the calling session and answers once the
+server owner saves or declines it, the turn ends, or `timeout_seconds` (the session's
+clarify timeout; 0 or less never expires) passes: `{env_name, outcome: saved | declined
+| timed_out, existed_before}`. A save goes through the plugin settings secret write
+(TAL-806), so a refused write leaves the `.env` and the running sidecar as they were and
+the call fails with the write's reason. The value is never in the result; the tool adds
+`runtime_application: applied | restart_required` after a save, `applied` once the
+turn's own secret resolver returns it.
+
 RPC v90 adds the `harness` toolset's `show` (TAL-1968, `server.show_put`). The
 agent names a kind and its payload: `file {path, title?}` (a file of the
 session's workspace, resolved as `/api/file` resolves it), `table {title?,

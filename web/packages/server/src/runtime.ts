@@ -26,6 +26,7 @@ import { BackgroundActivity, BackgroundTaskStore, settledActivityPhase } from '.
 import { PromptQueues } from './sessions/prompt-queues.js'
 import { DecisionReviews } from './sessions/decisions.js'
 import { Proposals } from './sessions/proposals.js'
+import { SecretRequests } from './sessions/secret-requests.js'
 import { ShowBlocks } from './sessions/show.js'
 import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
@@ -144,6 +145,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const decisions = new DecisionReviews(storage.documents, () => deps, now)
   const proposals = new Proposals(storage.documents, () => deps, now)
   const show = new ShowBlocks(storage.documents, () => deps, now)
+  const secrets = new SecretRequests(storage.documents, () => deps, now)
   const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
   await settings.load()
   const passkeys = new PasskeyStore(storage.documents, now)
@@ -963,6 +965,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.proposal_read': ({ caller_session_id, proposal_id }) => asCaller(caller_session_id, (caller) => proposals.read(caller, proposal_id)),
     // TAL-1968: the `harness` toolset's `show`, a block in the calling session.
     'server.show_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => show.put(caller, params)),
+    // TAL-1969: the `harness` toolset's `request_secret`, a vault prompt on the calling session.
+    'server.secret_request': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => secrets.request(caller, params)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {
@@ -1022,6 +1026,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     decisions,
     proposals,
     show,
+    secrets,
     connectorOffers: new ConnectorOffers(storage.documents),
     groups: new Groups(() => deps),
     streamSlots,
@@ -1282,6 +1287,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
 
   await deps.promptQueues.initialize()
   await decisions.initialize()
+  // TAL-1969: values saved through `request_secret` stay masked across restarts.
+  await secrets.load().catch((error: unknown) => { log(`[secrets] could not restore saved secret names for redaction: ${str((error as Error).message)}`) })
 
   return deps
 }

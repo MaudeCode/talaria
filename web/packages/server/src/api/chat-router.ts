@@ -13,6 +13,8 @@ import type { Session } from '../sessions/session.js'
 import { isSafeSessionId } from '../sessions/session.js'
 import { messageText } from '../sessions/merge.js'
 import { str } from '../util.js'
+import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { pendingForViewer } from '../sessions/pending.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { StartTurnOptions, TurnFailure } from '../sessions/turn.js'
 
@@ -46,9 +48,11 @@ export async function sessionBackgroundTasks(deps: AppDeps, s: Session, kind?: B
 }
 
 /** TAL-1168: the oldest pending approval or clarify of `sid` and the queue's depth, as its pending route answers them. */
-export async function pendingPrompt(deps: AppDeps, sid: string, kind: 'approval' | 'clarify'): Promise<{ pending: Record<string, unknown> | null; pending_count: number }> {
+export async function pendingPrompt(deps: AppDeps, sid: string, kind: 'approval' | 'clarify', owner = false): Promise<{ pending: Record<string, unknown> | null; pending_count: number }> {
   if (await deps.sessions.owner?.isOwned(sid)) return deps.sessions.owner!.pending(sid, kind)
-  return kind === 'approval' ? deps.pending.approvalPending(sid) : deps.pending.clarifyPending(sid)
+  if (kind === 'approval') return deps.pending.approvalPending(sid)
+  const { pending, pending_count } = deps.pending.clarifyPending(sid)
+  return { pending: pendingForViewer(pending, owner), pending_count }
 }
 
 /** `/api/clarify/respond`'s answer to `reply`, or its refusal; the `clarify_respond` tool shares it (TAL-1168). */
@@ -274,7 +278,7 @@ export const chatRouter = os.router({
     })),
   },
   clarify: {
-    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(() => pendingPrompt(ctx.deps, str(input.session_id), 'clarify'))),
+    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(async () => pendingPrompt(ctx.deps, str(input.session_id), 'clarify', await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))))),
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -282,6 +286,14 @@ export const chatRouter = os.router({
       // takes a decline (TAL-887).
       const reply = input.decline === true ? null : input.answers ?? str(input.response ?? input.answer ?? input.choice).trim()
       if (reply === '') throw new HttpError(400, 'response is required')
+      // TAL-1969: the server answers an agent's secret request itself, and only for the server owner.
+      if (ctx.deps.secrets.owns(str(input.clarify_id))) {
+        if (!(await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))) throw new HttpError(403, 'Only the server owner can answer a secret request.', { ok: false, code: 'not_owner' })
+        const value = reply === null ? null : typeof reply === 'object' && typeof reply.secret === 'string' ? reply.secret : undefined
+        if (value === undefined) throw new HttpError(400, 'answers must carry the secret', { ok: false })
+        await ctx.deps.secrets.answer(sid, str(input.clarify_id), value)
+        return { ok: true as const }
+      }
       return clarifyRespond(ctx.deps, sid, str(input.clarify_id), reply)
     })),
   },

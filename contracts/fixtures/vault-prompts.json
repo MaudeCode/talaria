@@ -70,5 +70,39 @@
       "expires_at": 1800000120
     },
     "pending_count": 1
+  },
+  "agent_secret": {
+    "pending": {
+      "clarify_id": "contract-agent-secret",
+      "session_id": "contract-session",
+      "kind": "agent_secret",
+      "steps": [],
+      "vault": {
+        "kind": "agent_secret",
+        "backend": null,
+        "display_name": null,
+        "origin": null,
+        "site": null,
+        "hint": null,
+        "secret": {
+          "env_name": "FOO_API_KEY",
+          "purpose": "Read your Foo dashboards to build the weekly report.",
+          "optional": false,
+          "existed_before": true
+        },
+        "fields": [
+          {
+            "key": "secret",
+            "secure": true
+          }
+        ],
+        "can_answer": true,
+        "timeout_at": 1800003600
+      },
+      "requested_at": 1800000000,
+      "timeout_seconds": 3600,
+      "expires_at": 1800003600
+    },
+    "pending_count": 1
   }
 }

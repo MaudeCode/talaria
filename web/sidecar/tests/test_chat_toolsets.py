@@ -286,7 +286,7 @@ def test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it
     run = subprocess.run([AGENT_PYTHON, '-c', HARNESS_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    decision_tools = {"decision_review_put", "decision_review_read", "decision_review_record", "propose", "proposal_read", "show"}
+    decision_tools = {"decision_review_put", "decision_review_read", "decision_review_record", "propose", "proposal_read", "show", "request_secret"}
     assert 'harness' in out['default']['enabled'] and decision_tools <= set(out['default']['tools']), out['default']
     assert decision_tools <= set(out['override']['tools'])
     assert 'harness' not in out['disabled']['enabled'] and not decision_tools & set(out['disabled']['tools']), out['disabled']

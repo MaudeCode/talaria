@@ -2113,7 +2113,8 @@
                               "vault_unlock",
                               "vault_save_login",
                               "vault_code",
-                              "skill_secret"
+                              "skill_secret",
+                              "agent_secret"
                             ]
                           },
                           "backend": {
@@ -2182,6 +2183,35 @@
                             ],
                             "additionalProperties": false
                           },
+                          "secret": {
+                            "description": "The environment secret the agent asks for (`agent_secret`).",
+                            "type": "object",
+                            "properties": {
+                              "env_name": {
+                                "type": "string",
+                                "description": "The profile `.env` name the answer is saved under."
+                              },
+                              "purpose": {
+                                "type": "string",
+                                "description": "Why the agent asks, as it sent it."
+                              },
+                              "optional": {
+                                "type": "boolean",
+                                "description": "The agent can continue without it."
+                              },
+                              "existed_before": {
+                                "type": "boolean",
+                                "description": "The name already has a value, which a save replaces."
+                              }
+                            },
+                            "required": [
+                              "env_name",
+                              "purpose",
+                              "optional",
+                              "existed_before"
+                            ],
+                            "additionalProperties": false
+                          },
                           "fields": {
                             "type": "array",
                             "items": {
@@ -2206,7 +2236,12 @@
                                 "secure"
                               ],
                               "additionalProperties": false
-                            }
+                            },
+                            "description": "The inputs to show; empty when this viewer cannot answer."
+                          },
+                          "can_answer": {
+                            "description": "False when this viewer may not answer: only the server owner answers an `agent_secret`. Absent means true.",
+                            "type": "boolean"
                           },
                           "timeout_at": {
                             "type": "number",
@@ -5264,6 +5299,63 @@
         "kind",
         "title",
         "note"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.secret_request": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "env_name": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "env_name",
+        "purpose"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "env_name": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "saved",
+            "declined",
+            "timed_out"
+          ]
+        },
+        "existed_before": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "env_name",
+        "outcome",
+        "existed_before"
       ],
       "additionalProperties": false
     }

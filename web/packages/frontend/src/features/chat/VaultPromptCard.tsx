@@ -22,16 +22,18 @@ const HEADING: Record<VaultPrompt['kind'], (vault: VaultPrompt) => string> = {
   vault_save_login: (vault) => m.vault_save_login_heading({ site: vault.site ?? '' }),
   vault_code: (vault) => m.vault_code_heading({ site: vault.site ?? '' }),
   skill_secret: (vault) => m.skill_secret_heading({ name: vault.skill?.skill_name ?? '' }),
+  agent_secret: (vault) => m.agent_secret_heading({ name: vault.secret?.env_name ?? '' }),
 }
-const SUBMIT: Record<VaultPrompt['kind'], () => string> = { vault_unlock: m.vault_unlock_submit, vault_save_login: m.vault_save_login_submit, vault_code: m.vault_code_submit, skill_secret: m.vault_save_login_submit }
+const SUBMIT: Record<VaultPrompt['kind'], () => string> = { vault_unlock: m.vault_unlock_submit, vault_save_login: m.vault_save_login_submit, vault_code: m.vault_code_submit, skill_secret: m.vault_save_login_submit, agent_secret: m.vault_save_login_submit }
 const LABEL: Record<VaultPromptField['key'], () => string> = { master_password: m.vault_field_master_password, identifier: m.vault_field_identifier, password: m.vault_field_password, code: m.vault_field_code, secret: m.vault_field_secret }
 // The answers are for another site or a password manager, never Talaria's own login: ask the browser and password
 // managers for nothing they keep for this origin. A one-time code may be read from the message the site sent.
 const AUTOCOMPLETE: Record<VaultPromptField['key'], string> = { master_password: 'off', identifier: 'off', password: 'off', code: 'one-time-code', secret: 'off' }
 
 /**
- * The Agent asks for a master password, a login to save, or a one-time code. The answer goes to the server once and
- * is dropped here; Skip, an empty submit, or the deadline leave the Agent unanswered.
+ * The Agent asks for a master password, a login to save, a one-time code, or an environment secret. The answer goes to
+ * the server once and is dropped here; Skip, an empty submit, or the deadline leave the Agent unanswered. A viewer the
+ * server lets read but not answer the prompt (`can_answer: false`) gets no input and no buttons.
  */
 export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: string; clarifyId: string; vault: VaultPrompt }) {
   const [values, setValues] = useState<Record<string, string>>({})
@@ -69,10 +71,12 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
           <span className="text-xs font-normal tabular-nums text-muted">{remaining}s</span>
         </div>
         {vault.hint && <div className="mt-1 text-[13px] text-muted">{vault.hint}</div>}
+        {vault.secret && <div className="mt-1 text-[13px] text-muted">{vault.secret.purpose}</div>}
+        {vault.secret?.existed_before && <div className="mt-1 text-[13px] text-warning">{m.agent_secret_replaces()}</div>}
         <div className="mt-2 flex flex-col gap-2">
           {vault.fields.map((field, i) => (
             <label key={field.key} className="flex flex-col gap-1 text-xs text-muted">
-              {field.key === 'secret' ? vault.skill?.env_var || LABEL[field.key]() : LABEL[field.key]()}
+              {field.key === 'secret' ? vault.skill?.env_var || vault.secret?.env_name || LABEL[field.key]() : LABEL[field.key]()}
               <TextInput
                 type={field.secure ? 'password' : 'text'}
                 name={field.key}
@@ -89,10 +93,12 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
             </label>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={vault.fields.some((f) => !(values[f.key] ?? '').trim())}>{SUBMIT[vault.kind]()}</Button>
-          <Button onClick={() => { respond(true) }}>{m.vault_skip()}</Button>
-        </div>
+        {vault.can_answer !== false && (
+          <div className="mt-3 flex items-center gap-2">
+            <Button type="submit" variant="primary" disabled={vault.fields.some((f) => !(values[f.key] ?? '').trim())}>{SUBMIT[vault.kind]()}</Button>
+            <Button onClick={() => { respond(true) }}>{m.vault_skip()}</Button>
+          </div>
+        )}
       </div>
     </form>
   )

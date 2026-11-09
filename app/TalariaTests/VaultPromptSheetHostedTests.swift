@@ -84,11 +84,52 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         XCTAssertEqual(responses, [["secret": "synthetic-skill-secret"], nil])
     }
 
-    private func vault(_ name: String) throws -> VaultPrompt {
+    /// TAL-1969: an agent's secret request names its variable and purpose, says a save replaces the current value, and
+    /// sends the masked value once.
+    func testAgentSecretShowsItsPurposeAndReplacementAndSendsTheValue() async throws {
+        var responses: [[String: String]?] = []
+        let window = try hostWindow(VaultPromptSheet(vault: try vault("agent_secret"), isResponding: false, errorMessage: nil) { responses.append($0) })
+        for label in ["Set FOO_API_KEY", "Read your Foo dashboards to build the weekly report.", "Saving replaces the current value.", "FOO_API_KEY", "Skip"] {
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: label), "\(label): \(HostedAccessibility.labels(in: window))")
+        }
+        let fields = textFields(in: window)
+        XCTAssertEqual(fields.map(\.isSecureTextEntry), [true])
+        type("synthetic-agent-secret", into: try XCTUnwrap(fields.first))
+        let save = await awaitElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "vault-prompt-submit" && !$0.accessibilityTraits.contains(.notEnabled)
+        }
+        HostedAccessibility.activate(try XCTUnwrap(save, "Save never enabled after typing"))
+        settle()
+        XCTAssertEqual(responses, [["secret": "synthetic-agent-secret"]])
+    }
+
+    /// TAL-1969: a viewer the server lets read but not answer the request sees it without an input, Save or Skip, and
+    /// can only close the sheet.
+    func testAgentSecretForAViewerWhoCannotAnswerOnlyCloses() throws {
+        var responses: [[String: String]?] = []
+        var closed = 0
+        let window = try hostWindow(VaultPromptSheet(vault: try vault("agent_secret", fields: [], canAnswer: false), isResponding: false, errorMessage: nil, onRespond: { responses.append($0) }, onClose: { closed += 1 }))
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Read your Foo dashboards to build the weekly report."))
+        XCTAssertEqual(textFields(in: window), [])
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Skip"))
+        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "vault-prompt-submit"))
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Close")))
+        XCTAssertEqual(closed, 1)
+        XCTAssertEqual(responses, [])
+    }
+
+    private func vault(_ name: String, fields: [Any]? = nil, canAnswer: Bool? = nil) throws -> VaultPrompt {
         // app/TalariaTests/<file> -> repository root
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/vault-prompts.json"))) as? [String: Any])
-        let envelope = try JSONDecoder().decode(ClarificationPendingResponse.self, from: JSONSerialization.data(withJSONObject: XCTUnwrap(fixture[name])))
+        var entry = try XCTUnwrap(fixture[name] as? [String: Any])
+        var pending = try XCTUnwrap(entry["pending"] as? [String: Any])
+        var raw = try XCTUnwrap(pending["vault"] as? [String: Any])
+        if let fields { raw["fields"] = fields }
+        if let canAnswer { raw["can_answer"] = canAnswer }
+        pending["vault"] = raw
+        entry["pending"] = pending
+        let envelope = try JSONDecoder().decode(ClarificationPendingResponse.self, from: JSONSerialization.data(withJSONObject: entry))
         return try XCTUnwrap(envelope.pending?.vault)
     }
 
