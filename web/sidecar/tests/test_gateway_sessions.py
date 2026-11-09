@@ -51,7 +51,7 @@ def run_owner_peer(request, tmp_path, script, modes, timeout=200):
 def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
     # Compatible modes share one owner, so they repeat neither its boot nor its first-turn warmup (TAL-1780).
     run_owner_peer(request, tmp_path, "gateway_session_peer.py",
-                   ["shared", "batch", "approval", "approval-tell", "clarify", "detail", "queued-controls", "model", "voice-stop", "connections"], timeout=400)
+                   ["shared", "batch", "approval", "approval-tell", "clarify", "detail", "queued-controls", "model", "voice-stop", "connections", "work"], timeout=400)
 
 
 @requires_agent
@@ -989,3 +989,116 @@ def test_connection_verbs_are_closed(tmp_path, native_owner_stub, params):
     from talaria_sidecar.errors import InvalidParams
     with pytest.raises(InvalidParams):
         native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", **params})
+
+
+NATIVE_WORK = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/web-native-work.json").read_text())
+
+
+@pytest.fixture
+def work_owner(native_owner_stub, monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    native_owner_stub.work = {**NATIVE_WORK["owner"]}
+    connect = adapter._connect
+
+    @asynccontextmanager
+    async def connected(home, endpoint):
+        async with connect(home, endpoint) as (client, events):
+            inner = client.rpc
+
+            async def rpc(method, **params):
+                if method in {"process.list", "subagent.list", "subagent.tail", "process.kill", "process.stop", "subagent.interrupt", "subagent.steer", "delegation.pause"}:
+                    native_owner_stub.calls.append((method, params))
+                    value = native_owner_stub.work.get(method)
+                    if method == "subagent.tail" and isinstance(value, dict):
+                        value = value.get(params["subagent_id"])
+                    if isinstance(value, Exception):
+                        raise value
+                    return value
+                return await inner(method, **params)
+            yield SimpleNamespace(rpc=rpc), events
+    monkeypatch.setattr(adapter, "_connect", connected)
+    return native_owner_stub
+
+
+def test_work_list_projects_both_rosters_without_resuming_the_session(work_owner):
+    result = work_owner.run(None, {"session_id": "native", "action": "work_list"})
+    assert result == {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "work": NATIVE_WORK["work"]}
+    methods = [method for method, _ in work_owner.calls]
+    # Reading never adopts a cold session or opens a subscription.
+    assert "session.resume" not in methods and "session.detach" not in methods
+    assert methods == ["runtime.describe", "process.list", "subagent.list", "subagent.tail", "subagent.tail"]
+    assert ("subagent.tail", {"session_id": "native", "subagent_id": "sa-rebuilt"}) in work_owner.calls
+
+
+def test_work_list_reads_a_cold_session_as_empty_and_a_managed_worker_as_unsupported(work_owner):
+    # A session the owner has not adopted is not_found on every ancillary read.
+    work_owner.work["process.list"] = work_owner.work["subagent.list"] = RuntimeError("not_found")
+    assert work_owner.run(None, {"session_id": "native", "action": "work_list"})["work"] == {"authority_epoch": 1, "processes": [], "subagents": []}
+    work_owner.work["process.list"] = RuntimeError("unsupported_projection")
+    assert work_owner.run(None, {"session_id": "native", "action": "work_list"}) == {
+        "state": "refused", "reason": "unsupported_projection", "snapshot": None, "receipt": None}
+
+
+def test_work_list_keeps_the_rest_when_one_child_ends_mid_read(work_owner):
+    tails = dict(NATIVE_WORK["owner"]["subagent.tail"])
+    tails["sa-resident"] = RuntimeError("not_found")
+    work_owner.work["subagent.tail"] = tails
+    work = work_owner.run(None, {"session_id": "native", "action": "work_list"})["work"]
+    assert work["processes"] == NATIVE_WORK["work"]["processes"]
+    assert [(a["subagent_id"], a["resident"]) for a in work["subagents"]] == [("sa-resident", False), ("sa-rebuilt", False)]
+
+
+@pytest.mark.parametrize("kind,reply,method,outcome", [
+    ("process", {"status": "killed", "session_id": "proc_server"}, "process.kill", "stopped"),
+    ("process", {"status": "already_exited"}, "process.kill", "not_running"),
+    ("process", RuntimeError("process_not_found"), "process.kill", "not_found"),
+    ("subagent", {"found": True, "subagent_id": "sa-resident"}, "subagent.interrupt", "stopped"),
+    ("subagent", {"found": False, "subagent_id": "sa-resident"}, "subagent.interrupt", "not_found"),
+])
+def test_work_stop_reaches_exactly_one_row_with_its_owner_verdict(work_owner, kind, reply, method, outcome):
+    work_owner.work[method] = reply
+    native = "proc_server" if kind == "process" else "sa-resident"
+    result = work_owner.run(None, {"session_id": "native", "action": "work_stop", "work_kind": kind, "work_id": native, "authority_epoch": 1})
+    assert result["state"] == "attached" and result["work_outcome"] == outcome
+    key = "process_id" if kind == "process" else "subagent_id"
+    controls = [call for call in work_owner.calls if call[0] in {"process.kill", "process.stop", "subagent.interrupt", "delegation.pause"}]
+    # One row, never the session-wide process.stop or the owner-wide delegation.pause.
+    assert controls == [(method, {"session_id": "native", key: native})]
+
+
+@pytest.mark.parametrize("status,outcome", [("queued", "queued"), ("rejected", "rejected")])
+def test_work_steer_returns_the_owner_verdict(work_owner, status, outcome):
+    work_owner.work["subagent.steer"] = {"status": status, "subagent_id": "sa-resident", "text": "Look"}
+    result = work_owner.run(None, {"session_id": "native", "action": "work_steer", "work_kind": "subagent", "work_id": "sa-resident", "authority_epoch": 1, "text": "Look"})
+    assert result["work_outcome"] == outcome
+    assert [call for call in work_owner.calls if call[0] == "subagent.steer"] == [("subagent.steer", {"session_id": "native", "subagent_id": "sa-resident", "text": "Look"})]
+
+
+def test_work_tail_serves_a_resident_child(work_owner):
+    result = work_owner.run(None, {"session_id": "native", "action": "work_tail", "work_kind": "subagent", "work_id": "sa-resident", "authority_epoch": 1})
+    assert result["work_tail"] == {"available": True, "text": "read_file logs/app.log\n", "truncated": False}
+
+
+@pytest.mark.parametrize("action", ["work_stop", "work_steer", "work_tail"])
+def test_work_controls_refuse_another_owner_authority_before_sending(work_owner, action):
+    result = work_owner.run(None, {"session_id": "native", "action": action, "work_kind": "subagent", "work_id": "sa-resident", "authority_epoch": 2, "text": "Look"})
+    assert result == {"state": "refused", "reason": "owner_changed", "snapshot": None, "receipt": None}
+    assert [method for method, _ in work_owner.calls] == ["runtime.describe"]
+
+
+@pytest.mark.parametrize("params", [
+    {"action": "work_stop", "work_kind": "process", "work_id": "proc_server"},
+    {"action": "work_stop", "work_kind": "delegation", "work_id": "x", "authority_epoch": 1},
+    {"action": "work_stop", "work_kind": "process", "work_id": "", "authority_epoch": 1},
+    {"action": "work_steer", "work_kind": "process", "work_id": "proc_server", "authority_epoch": 1, "text": "x"},
+    {"action": "work_steer", "work_kind": "subagent", "work_id": "sa", "authority_epoch": 1},
+    {"action": "work_tail", "work_kind": "process", "work_id": "proc_server", "authority_epoch": 1},
+])
+def test_work_controls_validate_closed_inputs_before_connecting(tmp_path, work_owner, params):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        work_owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", **params})
+    assert work_owner.calls == []

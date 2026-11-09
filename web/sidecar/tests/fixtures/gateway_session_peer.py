@@ -39,6 +39,8 @@ def unsupported(mode):
         return "this supported Agent does not consume typed voice stops"
     if mode == "approval-tell" and "'session.steer'" not in source("gateway/session_busy_controls.py"):
         return "this supported Agent does not steer a native session's running turn"
+    if mode == "work" and "'subagent.tail'" not in source("gateway/session_ancillary.py"):
+        return "this supported Agent does not project a session's processes and subagents"
     # Only releases publishing these verbs can establish their execution semantics.
     if mode == "queued-controls" and not any("prompt.steer_queued" in p.read_text() for p in (agent / "gateway").rglob("*.py")):
         return "this supported Agent does not expose queued controls"
@@ -267,6 +269,31 @@ async def probe_queued_controls(home, peer, desc):
             assert "REPLACED_QUEUED" in json.dumps(final["snapshot"]["messages"]), final
     finally:
         peer.release.set()
+        sidecar.close()
+
+
+async def probe_work(home, peer, desc):
+    """TAL-1336: the owner's session-scoped process and subagent verbs, as Web calls them, against the installed owner.
+    A row the owner does not hold is its own verdict, never a success."""
+    sidecar = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="work-create", source="cli", toolsets=[])
+            sid = created["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            # Make the session live on its owner; an ancillary read never adopts a cold session itself.
+            assert (await asyncio.to_thread(call, "snapshot"))["state"] == "attached"
+            listed = await asyncio.to_thread(call, "work_list")
+            assert listed["state"] == "attached" and listed["work"]["processes"] == [] and listed["work"]["subagents"] == [], listed
+            epoch = listed["work"]["authority_epoch"]
+            stop = await asyncio.to_thread(call, "work_stop", work_kind="process", work_id="proc_absent", authority_epoch=epoch)
+            interrupt = await asyncio.to_thread(call, "work_stop", work_kind="subagent", work_id="sa-absent", authority_epoch=epoch)
+            steer = await asyncio.to_thread(call, "work_steer", work_kind="subagent", work_id="sa-absent", authority_epoch=epoch, text="Look")
+            tail = await asyncio.to_thread(call, "work_tail", work_kind="subagent", work_id="sa-absent", authority_epoch=epoch)
+            assert (stop["work_outcome"], interrupt["work_outcome"], steer["work_outcome"]) == ("not_found", "not_found", "rejected"), (stop, interrupt, steer)
+            assert tail["work_tail"]["available"] is False, tail
+    finally:
         sidecar.close()
 
 
@@ -1223,6 +1250,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_batch(home, peer, desc)
     if mode == "connections":
         return probe_connections(home, peer, desc)
+    if mode == "work":
+        return probe_work(home, peer, desc)
     return probe(home, peer, desc, require_gap=mode == "replay")
 
 

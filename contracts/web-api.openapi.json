@@ -82488,6 +82488,9 @@
                           "can_stop": {
                             "type": "boolean"
                           },
+                          "can_steer": {
+                            "type": "boolean"
+                          },
                           "active": {
                             "type": "boolean"
                           }
@@ -82576,6 +82579,14 @@
                         "visible",
                         "refresh"
                       ]
+                    },
+                    "owner_work": {
+                      "enum": [
+                        "available",
+                        "unsupported",
+                        "unavailable"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -82686,6 +82697,70 @@
                       "enum": [
                         "stopped",
                         "not_running",
+                        "not_found"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "outcome"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background/steer": {
+      "post": {
+        "operationId": "background.steer",
+        "summary": "Send a steering message to one native-owner subagent that offers `can_steer` (TAL-1336).",
+        "tags": [
+          "chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                  },
+                  "task_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "task_id",
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "queued",
+                        "rejected",
                         "not_found"
                       ],
                       "type": "string"
@@ -82872,6 +82947,9 @@
                           "type": "boolean"
                         },
                         "can_stop": {
+                          "type": "boolean"
+                        },
+                        "can_steer": {
                           "type": "boolean"
                         },
                         "active": {

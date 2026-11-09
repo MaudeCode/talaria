@@ -73,7 +73,13 @@ export async function approvalRespond(deps: AppDeps, sid: string, choice: string
 /** A session this request's profile may see (TAL-372 background work never crosses owners). */
 async function visibleSession(ctx: RequestContext, sid: string): Promise<Session> {
   if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
-  return (await getSession(ctx.deps, sid, true))
+  try { return await ctx.deps.sessionStore.get(sid, { metadataOnly: true }) } catch { /* a native-owner chat keeps no Web document */ }
+  // TAL-1336: an owner chat's state.db row stands in, read without its transcript and never stored.
+  if (await ctx.deps.sessions.owner?.owns(sid)) {
+    const synth = (await ctx.deps.sessions.claimOrSynthesizeCliSession(sid, undefined, undefined, { transcript: false }).catch(() => null))?.session
+    if (synth) return synth
+  }
+  throw new HttpError(404, 'Session not found')
 }
 
 async function getSession(deps: AppDeps, sid: string, metadataOnly = false): Promise<Session> {
@@ -327,11 +333,15 @@ export const chatRouter = os.router({
     })),
     stop: os.background.stop.handler(({ input, context: { ctx } }) => run(async () => {
       const s = await visibleSession(ctx, input.session_id)
-      await ctx.deps.sessions.assertWritable(s)
-      try { return await ctx.deps.background.stop(s.session_id, s.profile, input.task_id) } catch (error) {
+      try { return await ctx.deps.background.stop(s.session_id, s.profile, input.task_id, () => ctx.deps.sessions.assertWritable(s)) } catch (error) {
         if (!(error instanceof SidecarError)) throw error
         throw new HttpError(error.condition === 'sidecar_unavailable' ? 503 : 502, error.message)
       }
+    })),
+    steer: os.background.steer.handler(({ input, context: { ctx } }) => run(async () => {
+      // Only owner rows take a steer, and their owner authorizes it.
+      const s = await visibleSession(ctx, input.session_id)
+      return ctx.deps.background.steer(s.session_id, s.profile, input.task_id, input.text)
     })),
     dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))

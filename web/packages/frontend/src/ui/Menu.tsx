@@ -190,7 +190,7 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
 }
 
 /** One action of a row: the row shows it as its own control, and `RowContextMenu` offers it as a menu item. */
-export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean }
+export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean; /** A disclosure's state, for its visible control. */ expanded?: boolean }
 
 /** A row's right-click and long-press menu, with the same actions as its visible controls; a row with none keeps the browser's menu. */
 export function RowContextMenu({ label, actions, trigger }: { label: string; actions: RowAction[]; trigger: ReactElement }) {

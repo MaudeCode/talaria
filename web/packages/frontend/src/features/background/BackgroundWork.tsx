@@ -2,7 +2,7 @@
  * TAL-372: the session's background work, as the server records it. The composer's chip opens what the server pins:
  * running work, and a finished `/background` result until someone dismisses it. Every client reads the same records.
  */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
 import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
@@ -11,6 +11,7 @@ import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
 import { showErrorToast } from '../toast/errorToast'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
@@ -93,42 +94,85 @@ export function StatusIcon({ status }: { status: BackgroundTask['status'] | Back
   return <AlertTriangle size={13} className="shrink-0 text-warning" aria-hidden="true" />
 }
 
-/** One action slot for a background row in the composer and Agents page. */
-export function BackgroundTaskAction({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
+/**
+ * TAL-1336: a steering message for an owner subagent the server marks `can_steer`, on its own line under the row. The
+ * owner decides whether a running child takes it, so Send stays busy until it answers; a refusal keeps the text.
+ */
+export function SteerForm({ sessionId, task, onClose }: { sessionId: string; task: BackgroundTask; onClose: () => void }) {
   const qc = useQueryClient()
-  const stopping = Boolean(task.can_stop)
+  const [text, setText] = useState('')
+  const steer = useMutation({
+    mutationFn: (message: string) => api.steerBackgroundTask(sessionId, task.task_id, message),
+    onSuccess: (result) => { if (result.outcome === 'queued') onClose(); void qc.invalidateQueries({ queryKey: keys.background(sessionId) }) },
+  })
+  const refused = steer.data && steer.data.outcome !== 'queued'
+  return (
+    <form className="flex min-w-0 flex-wrap items-center gap-1.5 pl-5" onSubmit={(e) => { e.preventDefault(); if (text.trim()) steer.mutate(text) }}>
+      <input className="min-w-0 flex-1 rounded-md border border-border-subtle bg-surface px-2 py-1 text-[13px]" aria-label={m.bg_steer_label()} value={text} autoFocus
+        onChange={(e) => { setText(e.target.value); steer.reset() }} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }} />
+      <button type="submit" className="composer-notice-action" disabled={steer.isPending || !text.trim()}>{m.bg_steer_send()}</button>
+      {(refused || steer.isError) && <span role="alert" className="basis-full text-warning">{steer.isError ? steer.error.message : m.bg_steer_rejected()}</span>}
+    </form>
+  )
+}
+
+/** One background row's heading: its title, then status and actions as one group that wraps under a long title. */
+export function TaskHeading({ task, title, titleBasis = 'basis-24', children }: { task: BackgroundTask; title: ReactNode; titleBasis?: 'basis-24' | 'basis-36'; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+      <StatusIcon status={task.status} />
+      <span className={`min-w-0 flex-1 ${titleBasis} truncate`} title={task.title}>{title}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-1.5">{children}</span>
+    </div>
+  )
+}
+
+/**
+ * One background row's actions, defined once: its visible controls and its right-click and long-press menu show the same
+ * list. Dismiss removes a result from view; Stop waits for the Agent's completion; Steer opens the row's message field.
+ */
+export function useTaskActions(sessionId: string, task: BackgroundTask, opts: { onSteer?: (() => void) | undefined; result?: { open: boolean; toggle: () => void } }): { actions: RowAction[]; error: string | null } {
+  const qc = useQueryClient()
   const stop = useMutation({
     mutationFn: () => api.stopBackgroundTask(sessionId, task.task_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }),
   })
-  // Dismiss removes a result from view; Stop waits for the Agent's completion.
   const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showErrorToast(e) })
-  const action = stopping ? stop : dismiss
-  if (!stopping && !task.dismissible) return null
+  const actions: RowAction[] = []
+  if (opts.result && task.result_available) actions.push({ label: opts.result.open ? m.bg_hide_result() : m.bg_show_result(), run: opts.result.toggle, expanded: opts.result.open })
+  if (task.can_stop) actions.push({ label: m.bg_stop(), run: () => stop.mutate(), busy: stop.isPending })
+  else if (task.dismissible) actions.push({ label: m.notice_dismiss(), run: () => dismiss.mutate(), busy: dismiss.isPending })
+  if (task.can_steer && opts.onSteer) actions.push({ label: m.bg_steer(), run: opts.onSteer })
+  const failed = task.can_stop ? stop : dismiss
+  return { actions, error: failed.isError ? failed.error.message : null }
+}
+
+/** A row's actions as its own controls, beside its status. */
+export function TaskActionButtons({ actions, error }: { actions: RowAction[]; error: string | null }) {
   return <>
-    <button type="button" className="composer-notice-action" disabled={action.isPending} onClick={() => action.mutate()}>{stopping ? m.bg_stop() : m.notice_dismiss()}</button>
-    {action.isError && <span role="alert" className="text-warning">{action.error.message}</span>}
+    {actions.map(({ label, run, busy, expanded }) => <button key={label} type="button" className="composer-notice-action" disabled={busy === true} {...(expanded === undefined ? {} : { 'aria-expanded': expanded })} onClick={run}>{label}</button>)}
+    {error && <span role="alert" className="text-warning">{error}</span>}
   </>
 }
 
 function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
   const [open, setOpen] = useState(false)
+  const [steering, setSteering] = useState(false)
   const result = useQuery({ queryKey: keys.backgroundResult(sessionId, task.task_id), queryFn: () => api.fetchBackgroundResult(sessionId, task.task_id), enabled: open && task.result_available })
+  const { actions, error } = useTaskActions(sessionId, task, { onSteer: steering ? undefined : () => setSteering(true), result: { open, toggle: () => setOpen((o) => !o) } })
   return (
-    <li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <StatusIcon status={task.status} />
-        <span className="min-w-0 flex-1 truncate" title={task.title}><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</span>
-        <span className="shrink-0 text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
-        {task.result_available && <button type="button" className="composer-notice-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
-        <BackgroundTaskAction sessionId={sessionId} task={task} />
-      </div>
+    <RowContextMenu label={task.title} actions={actions} trigger={<li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
+      <TaskHeading task={task} titleBasis="basis-36" title={<><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</>}>
+        <span className="text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
+        <TaskActionButtons actions={actions} error={error} />
+      </TaskHeading>
+      {steering && task.can_steer && <SteerForm sessionId={sessionId} task={task} onClose={() => setSteering(false)} />}
       {open && (
         <div className="bg-work-result max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
           {result.data ? <Markdown text={result.data.text} /> : result.isError ? <span className="text-muted">{m.bg_result_unavailable()}</span> : <span className="text-muted">{m.loading()}</span>}
         </div>
       )}
-    </li>
+    </li>} />
   )
 }
 

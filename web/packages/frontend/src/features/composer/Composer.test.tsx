@@ -372,6 +372,14 @@ describe('Composer', () => {
     await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: native.session_id, message: 'Continue with the same Agent', submission_id: expect.stringMatching(/^[a-f0-9]{32}$/) })))
   })
 
+  it('shows an attached owner\'s background work behind the chip (TAL-1336)', async () => {
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, owner_work: 'available', tasks: [{ task_id: 'owner-work-1', kind: 'process', status: 'running', title: 'npm run dev', started_at: 1, updated_at: 1, completed_at: null, result_available: true, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, can_stop: true, active: true }] })
+    renderComposer({ ...writable, is_streaming: false, read_only: true, owner_attachment: owner })
+    await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1'))
+    expect(await screen.findByRole('button', { name: 'Background work · 1' })).toBeInTheDocument()
+  })
+
   it.each([
     ['offers', ['set', 'reset'], true],
     ['hides', [], false],

@@ -1098,6 +1098,25 @@ path settles the row. The HTTP server publishes `can_stop` only for confirmed ru
 owned work, and both Background work and Agents reuse the same Stop/Dismiss action.
 Native owner controls are outside this direct-sidecar API.
 
+### Native owner work
+
+RPC v88 adds the closed `gateway.session` actions `work_list`, `work_tail`, `work_stop`
+and `work_steer` (TAL-1336). `work_list` reads the session's `process.list` and
+`subagent.list` from its owner without resuming it, and marks a subagent `resident`
+when the owner serves its `subagent.tail`: a child of a rebuilt parent stays listed
+read-only. A cold session reads as empty; a managed worker the owner cannot project
+is refused `unsupported_projection`. The controls carry the listed `authority_epoch`
+and are refused `owner_changed` for another owner before anything is sent. Stop is
+`process.kill` for one process or `subagent.interrupt` for one child, never the
+session-wide `process.stop` or the owner-wide `delegation.pause`; the owner's
+`not_found`, exited and rejected verdicts are returned as they are. The HTTP server
+lists these rows beside the session's own work under opaque ids bound to the profile
+home, session and owner authority, stores nothing for them, and publishes `can_stop`,
+`can_steer` and `result_available` from the owner's answer. `owner_work` on
+`/api/background/tasks` says whether the owner's work could be read. An open owner
+observation announces `subagent.start`, `subagent.complete` and `background.complete`
+so clients reread; nothing opens an observation for Background Work.
+
 ### Context inspection
 
 `chat.context_detail` reads a matching resident Agent in the requested profile,

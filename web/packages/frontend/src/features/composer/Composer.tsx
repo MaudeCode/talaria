@@ -800,7 +800,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     animation.onfinish = () => { if (restAnimation.current === animation) restAnimation.current = null }
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
-  const backgroundTasks = useBackgroundTasks(session && !session.owner_attachment ? sessionId : null).data?.tasks ?? EMPTY_TASKS
+  // TAL-1336: an owner chat's server reads its processes and subagents from that owner.
+  const backgroundTasks = useBackgroundTasks(session ? sessionId : null).data?.tasks ?? EMPTY_TASKS
   const admissions = session?.owner_attachment?.admissions ?? EMPTY_ADMISSIONS
   // TAL-1043: an owner input with an unknown outcome blocks sending until it is retried or discarded, so its chip says so.
   const outcomeUnknown = admissions.some((a) => a.status === 'unknown')

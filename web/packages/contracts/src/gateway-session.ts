@@ -56,6 +56,20 @@ export const ModelChangeSchema = z.object({
   reasoning: z.string().optional().describe('The level chosen with this model; a confirmed resend carries it again.'),
 })
 export type ModelChange = z.infer<typeof ModelChangeSchema>
+/**
+ * TAL-1336: the work an attached owner runs for one session, as its process and subagent rosters report it. A subagent is
+ * `resident` when its owner can still tail and control it; a parent rebuilt since dispatch keeps its children readable only.
+ */
+export const OwnerWorkSchema = z.object({
+  authority_epoch: z.number().int(),
+  processes: z.array(z.object({ process_id: z.string().min(1), command: z.string(), running: z.boolean(), exit_code: z.number().int().nullable(),
+    started_at: z.number().nullable(), exited_at: z.number().nullable(), completion_reason: z.string().nullable(), output_tail: z.string() })),
+  subagents: z.array(z.object({ subagent_id: z.string().min(1), goal: z.string(), status: z.string(), started_at: z.number().nullable(),
+    accepting_steer: z.boolean(), resident: z.boolean() })),
+})
+export type OwnerWork = z.infer<typeof OwnerWorkSchema>
+/** TAL-1336: the owner's verdict on one work control. `found: false` and an exited process are distinct from a refusal. */
+export const OwnerWorkOutcomeSchema = z.enum(['stopped', 'not_running', 'not_found', 'queued', 'rejected'])
 export const GatewaySessionResultSchema = z.object({
   state: z.enum(['attached', 'stopped', 'unavailable', 'incompatible', 'refused']), reason: z.string().nullable(),
   replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: z.union([
@@ -72,6 +86,9 @@ export const GatewaySessionResultSchema = z.object({
   connection: ConnectorOperationSnapshotSchema.optional().describe('`connection_status`, `connection_retry`: the operation as the owner holds it.'),
   connection_settled: z.boolean().optional().describe('`connection_respond`: the answer settled the operation, which the owner then closed.'),
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
+  work: OwnerWorkSchema.optional().describe('`work_list`: the session\'s processes and subagents on its owner.'),
+  work_tail: z.object({ available: z.boolean(), text: z.string(), truncated: z.boolean() }).optional().describe('`work_tail`: a resident subagent\'s live transcript tail.'),
+  work_outcome: OwnerWorkOutcomeSchema.optional().describe('`work_stop`, `work_steer`: what the owner did with this one row.'),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
 })
@@ -89,7 +106,7 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_stop', 'work_steer']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
@@ -106,6 +123,8 @@ export const GatewaySessionParamsSchema = z.object({
   op_id: z.string().min(1).optional().describe('`connection_*`: the operation; bound by the owner to this session, and by `authority_epoch` to this owner.'),
   connection_answer: ConnectionAnswerSchema.optional(),
   connector: z.string().min(1).optional().describe('`connection_retry`: the target to run again.'),
+  work_kind: z.enum(['process', 'subagent']).optional().describe('`work_tail`, `work_stop`, `work_steer`: the roster `work_id` comes from; bound by `authority_epoch` to this owner.'),
+  work_id: z.string().min(1).optional(),
 })
 /**
  * TAL-1040: how a fresh chat's Agent runs, frozen at creation. `ignore_config` runs explicit settings without the profile's
