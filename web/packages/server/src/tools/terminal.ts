@@ -6,6 +6,8 @@
 import { accessSync, chmodSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { randomBytes } from 'node:crypto'
+import { stripVTControlCharacters } from 'node:util'
 import { str } from '../util.js'
 
 export interface TerminalItem { seq: number; event: 'output' | 'terminal_closed' | 'terminal_error'; data: Record<string, unknown>; /** UTF-8 size of the output text. */ bytes: number }
@@ -101,7 +103,23 @@ export class TerminalItemQueue {
   }
 }
 
+/** TAL-1974: one `terminal_read` slice of a terminal's output backlog (`server.terminal_read`). */
+export interface TerminalSlice { output: string; lines: number; next_event_id: number; truncated: boolean }
+
+/**
+ * Output as a reader sees the screen, one entry per line: escape sequences removed, text after a carriage return written
+ * over the line from its start as a terminal does (a trailing one erases nothing), and the empty remainder after a final
+ * newline is no line.
+ */
+function plainLines(text: string): string[] {
+  const lines = stripVTControlCharacters(text).replace(/\r+\n/g, '\n').split('\n').map((line) => line.split('\r').reduce((shown, over) => over + shown.slice(over.length)))
+  if (lines.at(-1) === '') lines.pop()
+  return lines
+}
+
 export class TerminalSession {
+  /** TAL-1974: this terminal's id; a restart starts another terminal under the same session with a new id. */
+  readonly id = `term_${randomBytes(8).toString('hex')}`
   rows = 24
   cols = 80
   closed = false
@@ -139,6 +157,38 @@ export class TerminalSession {
       this.subscribers.delete(onItem)
       if (!this.subscribers.size) this.unwatchedSince = this.now()
     }
+  }
+
+  /**
+   * TAL-1974: the output events after `afterSeq`, whole events up to `maxLines` lines (the first event cut to the cap when
+   * it alone is longer). A read counts as watching, so a terminal the agent follows is not reaped as idle.
+   */
+  read(afterSeq: number, maxLines: number): TerminalSlice {
+    if (this.unwatchedSince !== null) this.unwatchedSince = this.now()
+    const after = [...this.backlog.values()].filter((item) => item.seq > afterSeq)
+    // The backlog dropped output this cursor had not read yet.
+    let truncated = (after[0]?.seq ?? this.nextSeq) > afterSeq + 1
+    const chunks: string[] = []
+    let newlines = 0
+    let partial = false
+    let next = afterSeq
+    for (const item of after) {
+      const text = item.event === 'output' ? str(item.data.text) : ''
+      // Counted on the raw text, so the cap costs one pass: an escape sequence never holds a newline.
+      const added = text.split('\n').length - 1
+      const ends: boolean = text ? !text.endsWith('\n') : partial
+      if (newlines + added + (ends ? 1 : 0) > maxLines) {
+        truncated = true
+        if (next === afterSeq) { chunks.push(text); next = item.seq }
+        break
+      }
+      chunks.push(text)
+      newlines += added
+      partial = ends
+      next = item.seq
+    }
+    const lines = plainLines(chunks.join('')).slice(0, maxLines)
+    return { output: lines.join('\n'), lines: lines.length, next_event_id: next, truncated }
   }
 
   /** The oldest output is gone, so a replay starts mid-screen. */

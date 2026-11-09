@@ -6,6 +6,7 @@ import { DecisionItemInputSchema, DecisionOutcomeStateSchema, DecisionProgressSc
 import { ProposalKindSchema, ProposalSchema, ProposalStatusSchema } from '../proposals.js'
 import { ShowBlockIdSchema, ShowKindSchema } from '../show.js'
 import { DisplayMediaSchema } from '../display-media.js'
+import { TerminalIdSchema } from '../terminal.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -270,6 +271,31 @@ export const ServerDeliverParamsSchema = z.object({ caller_session_id: z.string(
  */
 export const ServerDeliverResultSchema = z.object({ block_id: ShowBlockIdSchema, url: z.string(), kind: z.literal('file'), title: z.string(), size: z.number().int().nonnegative(), media: DisplayMediaSchema })
 
+/** TAL-1974: the most output lines one `terminal_read` returns, and its default. */
+export const TERMINAL_READ_MAX_LINES = 400
+/**
+ * TAL-1974: the `harness` toolset's `terminal_open`. The server starts the Web host PTY of the calling session in its
+ * workspace, as `/api/terminal/start` does, and types `command` once, followed by Enter. Only a session whose turns
+ * have the `terminal` toolset may (`terminal_toolset_disabled`). One live terminal per session: a
+ * running one is `limit_reached`. A command of more than 8192 characters is `command_too_long` and one with a control
+ * character (a tab or a second line included) `invalid_command`, starting nothing.
+ */
+export const ServerTerminalOpenParamsSchema = z.object({ caller_session_id: z.string().min(1), command: z.string().optional(), title: z.string().optional() })
+/** `url` is the session's page, where the user opens the terminal pane; `title` defaults to the command, else "Terminal". */
+export const ServerTerminalOpenResultSchema = z.object({ terminal_id: TerminalIdSchema, url: z.string(), title: z.string(), command: z.string().nullable() })
+/**
+ * TAL-1974: the `harness` toolset's `terminal_read`, the output the terminal's SSE backlog keeps after `after_event_id`
+ * (from the start without one), with escape sequences removed. A terminal of another session, a replaced one or one
+ * retired after it closed is `terminal_not_found`.
+ */
+export const ServerTerminalReadParamsSchema = z.object({ caller_session_id: z.string().min(1), terminal_id: z.string().min(1), after_event_id: z.number().int().nonnegative().optional(), max_lines: z.number().int().positive().optional() })
+/**
+ * At most `max_lines` lines (`TERMINAL_READ_MAX_LINES` by default and at most); `next_event_id` is the cursor for the next
+ * read. `truncated` is true when output after the cursor is missing from `output`: still unread past `next_event_id`, cut
+ * from one event longer than the cap, or already gone from the backlog. `exit_code` is the shell's once it exited.
+ */
+export const ServerTerminalReadResultSchema = z.object({ terminal_id: TerminalIdSchema, output: z.string(), lines: z.number().int().nonnegative(), next_event_id: z.number().int().nonnegative(), truncated: z.boolean(), running: z.boolean(), exit_code: z.number().int().nullable() })
+
 /**
  * TAL-1969: the `harness` toolset's `request_secret`. The server refuses a malformed or reserved `env_name` before any
  * prompt; otherwise it queues an `agent_secret` vault prompt on the calling session and answers once the owner saves or
@@ -350,6 +376,8 @@ export const SIDECAR_SERVER_METHODS = {
   'server.secret_request': { params: ServerSecretRequestParamsSchema, result: ServerSecretRequestResultSchema },
   'server.notify': { params: ServerNotifyParamsSchema, result: ServerNotifyResultSchema },
   'server.deliver': { params: ServerDeliverParamsSchema, result: ServerDeliverResultSchema },
+  'server.terminal_open': { params: ServerTerminalOpenParamsSchema, result: ServerTerminalOpenResultSchema },
+  'server.terminal_read': { params: ServerTerminalReadParamsSchema, result: ServerTerminalReadResultSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

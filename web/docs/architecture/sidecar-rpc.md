@@ -1,5 +1,28 @@
 # Sidecar RPC (TAL-245)
 
+RPC v94 adds the `harness` toolset's `terminal_open` and `terminal_read` (TAL-1974,
+`server.terminal_open`, `server.terminal_read`). The sidecar first runs the Agent's own
+pre-exec guard (`tools.approval.check_all_command_guards`, as its terminal tool does) on the
+command: a refused one returns `approval_denied` (or `approval_pending`) and the server is
+never asked. The server opens a terminal only for a session whose turns have the
+`terminal` toolset (`terminal_toolset_disabled` otherwise), so `harness` adds no shell access.
+`terminal_open` starts the calling
+session's Web host PTY through the start path `/api/terminal/start` uses (trusted
+workspace, workspace-busy refusal), 160 columns wide, and types `command` once with
+Enter after the shell's startup output goes quiet (at most 3 s). It answers the
+`terminal_id`, the session's `url`, the `title` (the command, else "Terminal") and the
+`command`; the transcript card is `result_view.terminal`, whose Open opens and focuses
+the session's terminal pane: `/api/terminal/start` with that `terminal_id` attaches to
+that terminal, closed or not, instead of starting a shell, or answers 404 once it is gone.
+One live terminal per session: a running one is
+`limit_reached`. A command over 8192 characters is `command_too_long` and one with a tab or a
+control character `invalid_command`. `terminal_read` returns the backlog the output SSE
+keeps after `after_event_id`, escape sequences removed, at most `max_lines` (400 by
+default and at most) with `next_event_id`, `truncated`, `running` and the shell's
+`exit_code` once it exited; a read counts as watching for the idle reaper. Another
+session's, a replaced or a retired terminal is `terminal_not_found`. The agent has no
+input or close tool.
+
 RPC v93 adds the `harness` toolset's `deliver` (TAL-1971, `server.deliver`). The agent
 names one file of the session's workspace (`path`, relative or absolute inside it) and
 an optional `title`; the server stores a `file` show block for it with a `delivery`

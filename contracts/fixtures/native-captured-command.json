@@ -23,6 +23,7 @@
     "mode": "web_pty",
     "session_id": "web-terminal",
     "workspace": "/workspace/web",
-    "running": true
+    "running": true,
+    "terminal_id": "term_0123456789abcdef"
   }
 }

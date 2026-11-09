@@ -1,0 +1,51 @@
+{
+  "server.terminal_open": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "command": "npm test",
+        "title": "Unit tests"
+      },
+      "result": {
+        "terminal_id": "term_0123456789abcdef",
+        "url": "/session/20261109_090000_caller",
+        "title": "Unit tests",
+        "command": "npm test"
+      }
+    }
+  ],
+  "server.terminal_read": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "terminal_id": "term_0123456789abcdef"
+      },
+      "result": {
+        "terminal_id": "term_0123456789abcdef",
+        "output": "$ npm test\n> vitest run\n ✓ src/sum.test.ts (3 tests)",
+        "lines": 3,
+        "next_event_id": 3,
+        "truncated": false,
+        "running": true,
+        "exit_code": null
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "terminal_id": "term_0123456789abcdef",
+        "after_event_id": 3,
+        "max_lines": 2
+      },
+      "result": {
+        "terminal_id": "term_0123456789abcdef",
+        "output": " Test Files  1 passed (1)\n      Tests  3 passed (3)",
+        "lines": 2,
+        "next_event_id": 4,
+        "truncated": true,
+        "running": false,
+        "exit_code": 0
+      }
+    }
+  ]
+}

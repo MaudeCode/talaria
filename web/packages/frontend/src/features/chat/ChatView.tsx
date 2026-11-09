@@ -33,6 +33,7 @@ import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
 import { setWatchingRun } from '../presence/presence'
 import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
+import { onOpenTerminalRequest, peekOpenTerminalRequest } from '../terminal/openTerminalRequest'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
@@ -100,6 +101,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [dismissedApproval, setDismissedApproval] = useState<string | undefined>()
   const onToggleTerminal = () => setTerminalOpen((t) => !t)
+  // TAL-1974: a `terminal_open` card opens this session's pane; the pane takes the request and focuses itself.
+  useEffect(() => onOpenTerminalRequest(() => { if (sessionId && peekOpenTerminalRequest(sessionId)) setTerminalOpen(true) }), [sessionId])
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(composerStateId(session))
   const onQueue = (entry: QueuedTurn) => setQueued((q) => [...q, entry])

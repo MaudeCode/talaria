@@ -7281,6 +7281,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -7721,6 +7748,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -8813,6 +8867,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -12811,6 +12892,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -13251,6 +13359,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -14343,6 +14478,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -17097,6 +17259,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -17537,6 +17726,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -18629,6 +18845,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -24414,6 +24657,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -24854,6 +25124,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -25946,6 +26243,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -31073,6 +31397,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -31513,6 +31864,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -32605,6 +32983,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -38364,6 +38769,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -38804,6 +39236,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -39896,6 +40355,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -42599,6 +43085,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -43039,6 +43552,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -44131,6 +44671,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -46896,6 +47463,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -47336,6 +47930,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -48428,6 +49049,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -51191,6 +51839,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -51631,6 +52306,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -52723,6 +53425,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -55288,6 +56017,33 @@
                                           "title"
                                         ]
                                       },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -56213,6 +56969,33 @@
                             "block_id",
                             "kind",
                             "title"
+                          ]
+                        },
+                        "terminal": {
+                          "type": "object",
+                          "properties": {
+                            "terminal_id": {
+                              "type": "string",
+                              "pattern": "^term_[0-9a-f]{16}$"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "terminal_id",
+                            "title",
+                            "command"
                           ]
                         },
                         "text": {
@@ -66446,6 +67229,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -66886,6 +67696,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -67978,6 +68815,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -70733,6 +71597,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -71173,6 +72064,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -72265,6 +73183,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -75706,6 +76651,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -76146,6 +77118,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {
@@ -77238,6 +78237,33 @@
                                           "block_id",
                                           "kind",
                                           "title"
+                                        ]
+                                      },
+                                      "terminal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "terminal_id": {
+                                            "type": "string",
+                                            "pattern": "^term_[0-9a-f]{16}$"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "command": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "terminal_id",
+                                          "title",
+                                          "command"
                                         ]
                                       },
                                       "text": {
@@ -80549,6 +81575,33 @@
                                                     "title"
                                                   ]
                                                 },
+                                                "terminal": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "terminal_id": {
+                                                      "type": "string",
+                                                      "pattern": "^term_[0-9a-f]{16}$"
+                                                    },
+                                                    "title": {
+                                                      "type": "string"
+                                                    },
+                                                    "command": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "terminal_id",
+                                                    "title",
+                                                    "command"
+                                                  ]
+                                                },
                                                 "text": {
                                                   "type": "string"
                                                 },
@@ -80912,6 +81965,14 @@
                                                             "block_id": {},
                                                             "kind": {},
                                                             "title": {}
+                                                          }
+                                                        },
+                                                        "terminal": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "terminal_id": {},
+                                                            "title": {},
+                                                            "command": {}
                                                           }
                                                         },
                                                         "text": {
@@ -81987,6 +83048,33 @@
                                               "block_id",
                                               "kind",
                                               "title"
+                                            ]
+                                          },
+                                          "terminal": {
+                                            "type": "object",
+                                            "properties": {
+                                              "terminal_id": {
+                                                "type": "string",
+                                                "pattern": "^term_[0-9a-f]{16}$"
+                                              },
+                                              "title": {
+                                                "type": "string"
+                                              },
+                                              "command": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "terminal_id",
+                                              "title",
+                                              "command"
                                             ]
                                           },
                                           "text": {
@@ -124503,7 +125591,7 @@
     "/api/terminal/start": {
       "post": {
         "operationId": "terminal.start",
-        "summary": "Open the Web host PTY or select captured commands for a native owner (local origin when auth is off).",
+        "summary": "Open the Web host PTY or select captured commands for a native owner (local origin when auth is off). With terminal_id, attach to that terminal of the session, closed or not, or answer 404 when it is gone (TAL-1974).",
         "tags": [
           "automation"
         ],
@@ -124519,7 +125607,10 @@
                   },
                   "rows": {},
                   "cols": {},
-                  "restart": {}
+                  "restart": {},
+                  "terminal_id": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -124549,6 +125640,10 @@
                         },
                         "running": {
                           "type": "boolean"
+                        },
+                        "terminal_id": {
+                          "type": "string",
+                          "pattern": "^term_[0-9a-f]{16}$"
                         }
                       },
                       "required": [
@@ -124556,7 +125651,8 @@
                         "mode",
                         "session_id",
                         "workspace",
-                        "running"
+                        "running",
+                        "terminal_id"
                       ]
                     },
                     {
@@ -126256,6 +127352,33 @@
                                                 "title"
                                               ]
                                             },
+                                            "terminal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "terminal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^term_[0-9a-f]{16}$"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "command": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "terminal_id",
+                                                "title",
+                                                "command"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -126696,6 +127819,33 @@
                                                         "block_id",
                                                         "kind",
                                                         "title"
+                                                      ]
+                                                    },
+                                                    "terminal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "terminal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^term_[0-9a-f]{16}$"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "command": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "terminal_id",
+                                                        "title",
+                                                        "command"
                                                       ]
                                                     },
                                                     "text": {

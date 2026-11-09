@@ -95,6 +95,7 @@ import { agentHealth, dashboardStatus, gatewayRestartBlockers, liveGateways } fr
 import { gatewayLifecycle } from './tools/gateway-lifecycle.js'
 import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
+import { terminalOpen, terminalRead } from './tools/agent-terminal.js'
 import { personIdentity, personIsolationActive, personIsolationEnabled } from './auth/person.js'
 import { sessionCanManageServer } from './auth/gate.js'
 
@@ -834,7 +835,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     if (yoloSessions.has(target.session_id) && !yoloSessions.has(caller.session_id)) throw refuse('YOLO is on')
     if (JSON.stringify(target.enabled_toolsets) === JSON.stringify(caller.enabled_toolsets)) return
     const allowed = await effectiveToolsets(caller)
-    // TAL-1963: `harness` acts only on the target's own Talaria state, so it adds no access the caller could enlist.
+    // TAL-1963: `harness` acts only on the target's own Talaria state, so it adds no access the caller could enlist;
+    // TAL-1974: its `terminal_open` runs only for a session that has `terminal` itself.
     const extra = [...(await effectiveToolsets(target))].filter((name) => !allowed.has(name) && name !== 'harness')
     if (extra.length) throw refuse(`toolsets: ${extra.join(', ')}`)
   }
@@ -971,6 +973,13 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.notify': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => notifications.notify(caller, params)),
     // TAL-1971: the `harness` toolset's `deliver`, a workspace file handed to the user as a download on a show block.
     'server.deliver': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => show.deliver(caller, params)),
+    // TAL-1974: the `harness` toolset's `terminal_open` and `terminal_read`, the calling session's Web host PTY.
+    // It runs a shell command, so only a session whose turns have the `terminal` toolset may: `harness` adds no access.
+    'server.terminal_open': ({ caller_session_id, ...params }) => asCaller(caller_session_id, async (caller) => {
+      if (!(await effectiveToolsets(caller)).has('terminal')) throw new SidecarServerError('this session runs without the terminal toolset, so it cannot open a terminal', 'terminal_toolset_disabled')
+      return terminalOpen(deps, caller, params)
+    }),
+    'server.terminal_read': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => Promise.resolve(terminalRead(deps, caller, params))),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {

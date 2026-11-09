@@ -286,9 +286,30 @@ def test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it
     run = subprocess.run([AGENT_PYTHON, '-c', HARNESS_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    decision_tools = {"decision_review_put", "decision_review_read", "decision_review_record", "propose", "proposal_read", "show", "request_secret", "notify", "deliver"}
+    decision_tools = {"decision_review_put", "decision_review_read", "decision_review_record", "propose", "proposal_read", "show", "request_secret", "notify", "deliver", "terminal_open", "terminal_read"}
     assert 'harness' in out['default']['enabled'] and decision_tools <= set(out['default']['tools']), out['default']
     assert decision_tools <= set(out['override']['tools'])
     assert 'harness' not in out['disabled']['enabled'] and not decision_tools & set(out['disabled']['tools']), out['disabled']
     assert not decision_tools & set(out['disabled_override']['tools']), out['disabled_override']
     assert 'read_file' in out['disabled_override']['tools']
+
+
+TERMINAL_GUARD_PROBE = r'''
+import json, sys
+sys.path.append(sys.argv[1])
+from talaria_sidecar import harness_toolset, rpc
+sent = []
+rpc.call_server = lambda method, params, timeout=None: sent.append(method)
+print(json.dumps({"result": json.loads(harness_toolset.terminal_open({"command": "rm -rf /"}, session_id="20261109_090000_tip")), "sent": sent}))
+'''
+
+
+@requires_agent
+def test_terminal_open_runs_the_agent_command_guard(tmp_path) -> None:
+    """TAL-1974: the real Agent guard refuses a hardline command before ``server.terminal_open`` is asked."""
+    root = tmp_path / '.hermes'
+    root.mkdir()
+    run = subprocess.run([AGENT_PYTHON, '-c', TERMINAL_GUARD_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    assert out["sent"] == [] and out["result"]["condition"] == "approval_denied" and "BLOCKED" in out["result"]["error"], out

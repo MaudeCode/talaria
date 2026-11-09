@@ -1,6 +1,7 @@
 import { CapturedCommandSchema, CapturedCommandResultSchema } from '../gateway-session.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { TerminalIdSchema } from '../terminal.js'
 import { PromptQueueRunSchema, PromptQueueCardsSchema, PromptQueueActionSchema } from '../prompt-queue.js'
 import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanInspectionSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema } from '../views.js'
 import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar-shared.js'
@@ -23,7 +24,8 @@ const CardWriteInput = z.object({ task_id: z.string(), confirm_running_exit: z.b
 const TerminalBody = z.object({ session_id: z.string().optional() })
 
 export const TerminalStartSchema = z.discriminatedUnion('mode', [
-  z.object({ ok: z.literal(true), mode: z.literal('web_pty'), session_id: z.string(), workspace: z.string(), running: z.boolean() }),
+  /** TAL-1974: `terminal_id` names the terminal attached, so a `terminal_open` card reopens that one or learns it is gone. */
+  z.object({ ok: z.literal(true), mode: z.literal('web_pty'), session_id: z.string(), workspace: z.string(), running: z.boolean(), terminal_id: TerminalIdSchema }),
   z.object({ ok: z.literal(true), mode: z.literal('owner_command'), session_id: z.string(), workspace: z.string(), running: z.literal(false), target_key: z.string().min(1) }),
 ])
 
@@ -94,7 +96,7 @@ export const automationContract = {
   },
   terminal: {
     exec: oc.route({ method: 'POST', path: '/api/terminal/exec', tags, summary: 'Execute one explicit captured command on the selected native owner. Unknown outcomes must never be replayed.' }).input(z.object({ session_id: z.string().min(1), mode: z.literal('owner_command'), target_key: z.string().min(1), command: CapturedCommandSchema })).output(CapturedCommandResultSchema),
-    start: oc.route({ method: 'POST', path: '/api/terminal/start', tags, summary: 'Open the Web host PTY or select captured commands for a native owner (local origin when auth is off).' }).input(TerminalBody.extend({ rows: Json.optional(), cols: Json.optional(), restart: Json.optional() })).output(TerminalStartSchema),
+    start: oc.route({ method: 'POST', path: '/api/terminal/start', tags, summary: 'Open the Web host PTY or select captured commands for a native owner (local origin when auth is off). With terminal_id, attach to that terminal of the session, closed or not, or answer 404 when it is gone (TAL-1974).' }).input(TerminalBody.extend({ rows: Json.optional(), cols: Json.optional(), restart: Json.optional(), terminal_id: z.string().optional() })).output(TerminalStartSchema),
     input: oc.route({ method: 'POST', path: '/api/terminal/input', tags }).input(TerminalBody.extend({ data: z.string().optional() })).output(Ok),
     resize: oc.route({ method: 'POST', path: '/api/terminal/resize', tags }).input(TerminalBody.extend({ rows: Json.optional(), cols: Json.optional() })).output(Ok),
     close: oc.route({ method: 'POST', path: '/api/terminal/close', tags }).input(TerminalBody).output(z.object({ ok: z.literal(true), closed: z.boolean() })),

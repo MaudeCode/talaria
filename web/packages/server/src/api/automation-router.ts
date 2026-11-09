@@ -13,9 +13,9 @@ import { dashboardScope, isAgentDashboardId } from '../tools/dashboard-plugins.j
 import { ExtensionError } from '../tools/extensions.js'
 import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, withStatsTotals } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
+import { sessionTerminal, startSessionTerminal, TerminalRefused } from '../tools/agent-terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
-import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { str } from '../util.js'
 
 const os = implement(automationContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -174,14 +174,14 @@ export const automationRouter = os.router({
         return { ok: true as const, mode: 'owner_command' as const, session_id: sid, workspace: str(native.snap.info.cwd), running: false as const, target_key: native.key }
       }
       const { workspace, profile } = (await terminalSession(ctx, sid))
-      let cwd: string
-      // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
-      try { cwd = (await ctx.deps.workspaces.resolveTrusted(workspace, profile)) } catch (error) { throw new HttpError(400, (error as Error).message) }
-      if (ctx.deps.git.workspaceBusy(cwd)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
-        const term = ctx.deps.terminals.start(sid, cwd, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) })
-        return { ok: true as const, mode: 'web_pty' as const, session_id: sid, workspace: term.workspace, running: term.isAlive }
+        // TAL-1974: a `terminal_open` card attaches to its own terminal, keeping a closed one's output, and never starts another.
+        const attach = input.terminal_id ?? null
+        const term = attach === null ? await startSessionTerminal(ctx.deps, { session_id: sid, workspace, profile }, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) }) : sessionTerminal(ctx.deps.terminals, sid, attach)
+        if (attach !== null) term.setSize(input.rows, input.cols)
+        return { ok: true as const, mode: 'web_pty' as const, session_id: sid, workspace: term.workspace, running: term.isAlive, terminal_id: term.id }
       } catch (error) {
+        if (error instanceof TerminalRefused) throw new HttpError(error.status, error.message)
         const message = str((error as Error).message)
         // Python: `int()` failures and other ValueErrors → 400 with the text; unexpected errors → 500 sanitised.
         throw new HttpError(/not a directory|required|capacity|invalid literal|cannot convert/.test(message) ? 400 : 500, message.includes('not supported') ? message : sanitizeError(error))

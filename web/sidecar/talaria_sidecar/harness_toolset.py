@@ -12,6 +12,9 @@ TAL-1970 adds ``notify``: an alert about this session on the user's devices, thr
 
 TAL-1971 adds ``deliver``: a workspace file handed to the user as a download row in the chat.
 
+TAL-1974 adds ``terminal_open`` and ``terminal_read``: a long command runs in the session's embedded terminal, where the user
+watches it live, while the agent reads its output in slices. The agent types only the first command and cannot close it.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -31,7 +34,8 @@ TOOLSET_DESCRIPTION = (
     "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; "
     "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
     "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's "
-    "devices that something is ready or needs them; deliver a file you made as a download."
+    "devices that something is ready or needs them; deliver a file you made as a download; run a long command in a terminal "
+    "the user watches and read its output."
 )
 
 _WHEN = (
@@ -270,6 +274,48 @@ DELIVER_SCHEMA = {
 }
 
 
+TERMINAL_OPEN_SCHEMA = {
+    "name": "terminal_open",
+    "description": (
+        "Run a long command, such as a build, a test run or a deploy, in this session's embedded terminal, where the user "
+        "watches the output live in the terminal pane, instead of running it in the background. Starts the session's "
+        "terminal in its workspace, types command once followed by Enter, and returns at once with terminal_id and the url "
+        "of this chat; read the output with terminal_read. You cannot type into it again or close it: further commands go "
+        "through your own tools, and the user closes it. One live terminal per session: while one runs this is refused "
+        "with limit_reached; a session without the terminal toolset is refused with terminal_toolset_disabled. A command must be one line without tabs of at most 8192 characters, and it passes the same command approval as your terminal tool: a denied one is "
+        "refused with approval_denied and nothing starts."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "The one command to type, such as \"npm test\"; omit to open an empty terminal."},
+            "title": {"type": "string", "description": "What it runs, shown on the chat's card; defaults to the command."},
+        },
+    },
+}
+
+TERMINAL_READ_SCHEMA = {
+    "name": "terminal_read",
+    "description": (
+        "Read a terminal you opened with terminal_open: its output after after_event_id (from the start without it), with "
+        "colors and cursor codes removed, at most max_lines lines (400 by default and at most). Pass next_event_id as "
+        "after_event_id to read on; truncated means output after the cursor is not in this read, usually because more "
+        "follows. The terminal keeps running after your command finishes, so watch the output for its end; exit_code is "
+        "set only once the shell itself exited, and running is false then. A terminal of another session, or one the user "
+        "closed or restarted, is refused with terminal_not_found."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "terminal_id": {"type": "string", "description": "The terminal_id terminal_open returned."},
+            "after_event_id": {"type": "integer", "description": "The next_event_id of your previous read."},
+            "max_lines": {"type": "integer", "description": "At most this many lines, up to 400."},
+        },
+        "required": ["terminal_id"],
+    },
+}
+
+
 def _payload(args: dict, params: dict) -> None:
     """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
@@ -299,6 +345,33 @@ show = _tool("server.show_put", "show", ("kind",), _payload)
 
 notify = _tool("server.notify", "notify", ("title", "body"), _passed("level"))
 deliver = _tool("server.deliver", "deliver", ("path",), _passed("title"))
+_terminal_open = _tool("server.terminal_open", "terminal_open", (), _passed("command", "title"))
+
+
+def _command_refusal(command: str) -> str | None:
+    """The Agent's own pre-exec guard on a command for the host terminal, as its terminal tool runs it on this turn's
+    thread: hardline floors, allowlists, approval mode and, with someone there to answer, the approval card. The tool's
+    refusal JSON, or None when the command may run."""
+    from tools.approval import check_all_command_guards
+
+    approval = check_all_command_guards(command, "local")
+    if approval.get("approved"):
+        return None
+    description = approval.get("description") or "command flagged"
+    if approval.get("status") == "pending_approval":
+        return json.dumps({"error": f"The command needs the user's approval ({description}); call terminal_open again once they approve it.", "condition": "approval_pending"})
+    return json.dumps({"error": approval.get("message") or f"Command denied: {description}.", "condition": "approval_denied"})
+
+
+def terminal_open(args: dict, session_id: str | None = None) -> str:
+    """Types nothing the Agent's command guard has not passed; the server checks everything else."""
+    command = args.get("command") if isinstance(args, dict) else None
+    if session_id and isinstance(command, str) and command.strip():
+        refusal = _command_refusal(command.strip())
+        if refusal is not None:
+            return refusal
+    return _terminal_open(args, session_id)
+terminal_read = _tool("server.terminal_read", "terminal_read", ("terminal_id",), _passed("after_event_id", "max_lines"))
 
 
 def _secret(args: dict, params: dict) -> float:
@@ -351,6 +424,8 @@ _TOOLS = (
     (REQUEST_SECRET_SCHEMA, request_secret, "🔑"),
     (NOTIFY_SCHEMA, notify, "🔔"),
     (DELIVER_SCHEMA, deliver, "📎"),
+    (TERMINAL_OPEN_SCHEMA, terminal_open, "🖥️"),
+    (TERMINAL_READ_SCHEMA, terminal_read, "📟"),
 )
 
 
