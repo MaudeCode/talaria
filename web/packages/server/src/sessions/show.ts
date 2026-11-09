@@ -33,8 +33,11 @@ export const SHOW_FRAME_PREFIX = '/show-frame/'
 export const SHOW_FRAME_CSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 const GRANT_NAMESPACE = 'show'
 
-/** What `deliver` records: the file's type, and its size, mtime (ms) and SHA-256 at delivery. */
-interface StoredDelivery { mime: string; size: number; mtime_ms: number; digest: string }
+/**
+ * What `deliver` records: the file's type, and at delivery its size, SHA-256 and signature (inode, mtime and ctime in ms).
+ * A write or replacement changes the ctime or inode even when it restores the mtime.
+ */
+interface StoredDelivery { mime: string; size: number; ino: number; mtime_ms: number; ctime_ms: number; digest: string }
 /**
  * A block as stored: the agent-independent fields, a `file` block's delivery record in place of its view (absent on a
  * `show` block), and an `html` block's body in place of its frame URL.
@@ -127,8 +130,8 @@ export class ShowBlocks {
   }
 
   /**
-   * Whether the file the session's download serves differs from the delivered one: gone, another size, or (with a new
-   * mtime) another digest. An unchanged size and mtime skip the hash.
+   * Whether the file the session's download serves differs from the delivered one: gone, another size, or (with another
+   * signature) another digest. An unchanged size and signature skip the hash.
    */
   private async changed(sessionId: string, rel: string, delivered: StoredDelivery): Promise<boolean> {
     try {
@@ -136,7 +139,8 @@ export class ShowBlocks {
       const target = safeResolveWs(workspace, rel)
       const stat = statSync(target)
       if (!stat.isFile() || stat.size !== delivered.size) return true
-      return stat.mtimeMs !== delivered.mtime_ms && (await fileDigest(workspace, target)) !== delivered.digest
+      const same = stat.ino === delivered.ino && stat.mtimeMs === delivered.mtime_ms && stat.ctimeMs === delivered.ctime_ms
+      return !same && (await fileDigest(workspace, target)) !== delivered.digest
     } catch {
       return true
     }
@@ -190,7 +194,7 @@ export class ShowBlocks {
     const name = basename(rel)
     const title = text(params.title, 'title', false) || name
     const { mime, media, focus_path } = fileFields(caller.session_id, rel, preview)
-    const delivery: StoredDelivery = { mime, size: stat.size, mtime_ms: stat.mtimeMs, digest: await fileDigest(workspace, target).catch(() => { throw missing() }) }
+    const delivery: StoredDelivery = { mime, size: stat.size, ino: stat.ino, mtime_ms: stat.mtimeMs, ctime_ms: stat.ctimeMs, digest: await fileDigest(workspace, target).catch(() => { throw missing() }) }
     const id = await this.store(caller, 'file', title, { file: { path: rel, name, size: stat.size }, media, focus_path, delivery })
     return { block_id: id, url: `/session/${encodeURIComponent(caller.session_id)}`, kind: 'file', title, size: stat.size, media: media ?? { url: rawUrl(caller.session_id, rel, 'download'), name, mime, kind: 'file' } }
   }

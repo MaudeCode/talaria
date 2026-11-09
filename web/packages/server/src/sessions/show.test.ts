@@ -190,6 +190,9 @@ describe('show blocks (TAL-1968)', () => {
     it('says the file changed since delivery when its bytes differ or it is gone, and not when only its mtime moved', async () => {
       const file = join(workspace, 'notes.md')
       writeFileSync(file, '# Notes\n')
+      // A whole-second mtime, so a timestamp-preserving write below can restore it exactly.
+      const stamp = 1_794_000_000
+      utimesSync(file, stamp, stamp)
       const { reply, block: first } = await delivered({ path: 'notes.md' })
       expect(first).toMatchObject({ title: 'notes.md', media: null, focus_path: 'notes.md', delivery: { mime: 'text/markdown', changed: false } })
       const changed = async () => ((await block(reply.block_id)).body.delivery as { changed: boolean }).changed
@@ -197,6 +200,10 @@ describe('show blocks (TAL-1968)', () => {
       expect(await changed(), 'Same bytes under a new mtime').toBe(false)
       writeFileSync(file, '# Nopes\n')
       expect(await changed(), 'Same size, new bytes').toBe(true)
+      // Same size, new bytes, and the delivery's mtime restored (an archive restore or a timestamp-preserving copy).
+      writeFileSync(file, '# Other\n')
+      utimesSync(file, stamp, stamp)
+      expect(await changed(), 'New bytes under the delivered mtime').toBe(true)
       writeFileSync(file, '# Notes, longer\n')
       expect(await changed(), 'New size').toBe(true)
       writeFileSync(file, '# Notes\n')
