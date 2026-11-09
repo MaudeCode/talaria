@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See, stop and steer the commands and subagents a gateway-owned chat runs, from Background tasks.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Background work in gateway chats",
+        "description": "Follow a gateway chat's commands and subagents, read their output, and stop or steer them.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

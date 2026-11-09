@@ -1176,8 +1176,11 @@ struct ChatView: View {
             .sheet(isPresented: $showsBackgroundWorkSheet) {
                 BackgroundWorkSheet(
                     tasks: viewModel.pinnedBackgroundTasks,
+                    ownerWork: viewModel.backgroundOwnerWork,
                     loadResult: { await viewModel.backgroundResult(taskID: $0) },
-                    dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) }
+                    dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) },
+                    stop: { await viewModel.stopBackgroundTask(taskID: $0) },
+                    steer: { await viewModel.steerBackgroundTask(taskID: $0, text: $1) }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)

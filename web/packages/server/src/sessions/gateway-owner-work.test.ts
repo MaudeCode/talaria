@@ -14,6 +14,7 @@ import { attached, bootOwnerAttachment, fixture, ownerHelpers, sid, snapshot } f
 
 const native = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-work.json', import.meta.url), 'utf8')) as {
   work: OwnerWork; owner: { 'subagent.tail': Record<string, NonNullable<GatewaySessionResult['work_tail']>> }
+  background_tasks: Record<'available' | 'settled_after_unconfirmed_stop' | 'unsupported' | 'unavailable', { tasks: BackgroundTask[] }> & { stop_unconfirmed: { status: number; body: unknown } }
 }
 const otherSid = fixture.sessions.tui!
 const bare = { reason: null, snapshot: null, receipt: null }
@@ -187,6 +188,27 @@ describe('native owner background work (TAL-1336)', () => {
     expect(await task('npm run dev')).toMatchObject({ task_id: server.task_id, status: 'cancelled', can_stop: false, active: false })
     expect(ownerCalls('work_stop')).toHaveLength(1)
     expect(directStops()).toHaveLength(0)
+  })
+
+  it('answers exactly the shared fixture the App renders (TAL-1337)', async () => {
+    // task_id, updated_at and session_id vary per server; everything else is the App's contract.
+    const comparable = (body: unknown) => {
+      const { session_id: _sid, tasks, ...rest } = body as { session_id: string; tasks: BackgroundTask[] }
+      for (const t of tasks) expect(t.task_id).toMatch(/^owner-work-[0-9a-f]{32}$/)
+      return { ...rest, tasks: tasks.map(({ task_id: _id, updated_at: _at, ...t }) => t) }
+    }
+    const shared = native.background_tasks
+    expect(comparable(await read())).toEqual(comparable(shared.available))
+    const server = await task('npm run dev')
+    control = () => ({ state: 'unavailable', ...bare, reason: 'owner_connection_lost' })
+    const lost = await stop(server.task_id)
+    expect({ status: lost.status, body: await lost.json() }).toEqual(shared.stop_unconfirmed)
+    roster = { ...native.work, processes: native.work.processes.map((p) => p.process_id === 'proc_server' ? { ...p, running: false, exited_at: 1700000100, completion_reason: 'killed', exit_code: -15 } : p) }
+    expect(comparable(await read())).toEqual(comparable(shared.settled_after_unconfirmed_stop))
+    roster = 'unsupported'
+    expect(comparable(await read())).toEqual(comparable(shared.unsupported))
+    roster = 'lost'
+    expect(comparable(await read())).toEqual(comparable(shared.unavailable))
   })
 
   it('announces owner work changes through an open observation without opening one', async () => {

@@ -42,7 +42,47 @@ extension UITestFixtureURLProtocol {
 
     static var servesOwnerChat: Bool {
         let arguments = ProcessInfo.processInfo.arguments
-        return arguments.contains(ownerChatArgument) || arguments.contains(ownerChatBatchArgument) || servesNativeNotices
+        return arguments.contains(ownerChatArgument) || arguments.contains(ownerChatBatchArgument) || servesNativeNotices || servesOwnerWork
+    }
+
+    /// TAL-1337: `--ui-test-owner-work` is the owner chat with its owner's work in Background Work, as
+    /// `contracts/fixtures/web-native-work.json` lists it: a resident child the owner lets the user stop and steer, a
+    /// rebuilt parent's child listed read-only, and a running process. Stop settles its row; Steer queues, or is
+    /// refused for a message that says "refuse".
+    static let ownerWorkArgument = "--ui-test-owner-work"
+    static var servesOwnerWork: Bool { ProcessInfo.processInfo.arguments.contains(ownerWorkArgument) }
+    static let ownerWorkStopped = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+    /// Every control the fixture owner received, in order: `stop:<task>` or `steer:<task>:<text>`.
+    static let ownerWorkControls = OSAllocatedUnfairLock<[String]>(initialState: [])
+
+    static func ownerWorkTasksResponse() -> Data {
+        let stopped = ownerWorkStopped.withLock { $0 }
+        func row(_ id: String, kind: String, title: String, stop: Bool, steer: Bool, result: Bool) -> [String: Any] {
+            let running = !stopped.contains(id)
+            return ["task_id": id, "kind": kind, "status": running ? "running" : "cancelled", "title": title,
+                    "started_at": 2_000_000_000, "updated_at": 2_000_000_010, "completed_at": running ? NSNull() : 2_000_000_010,
+                    "result_available": result, "child_sessions": [], "exit_code": NSNull(),
+                    "agents": kind == "delegation" ? ["total": 1, "completed": 0, "failed": 0, "running": running ? 1 : 0] : NSNull(),
+                    "pinned": running, "dismissible": false, "can_stop": running && stop, "can_steer": running && steer, "active": running]
+        }
+        return json(["session_id": sessionID, "agent_available": true, "agents_working": true, "owner_work": "available", "tasks": [
+            row("owner-work-rebuilt", kind: "delegation", title: "Check the tests", stop: false, steer: false, result: false),
+            row("owner-work-resident", kind: "delegation", title: "Read the logs", stop: true, steer: true, result: true),
+            row("owner-work-server", kind: "process", title: "npm run dev", stop: true, steer: false, result: true)
+        ]])
+    }
+
+    static func ownerWorkControlResponse(_ request: URLRequest, path: String) -> Data {
+        let body = requestJSON(request)
+        let taskID = body["task_id"] as? String ?? ""
+        if path == "/api/background/stop" {
+            ownerWorkControls.withLock { $0.append("stop:\(taskID)") }
+            ownerWorkStopped.withLock { _ = $0.insert(taskID) }
+            return json(["outcome": "stopped"])
+        }
+        let text = body["text"] as? String ?? ""
+        ownerWorkControls.withLock { $0.append("steer:\(taskID):\(text)") }
+        return json(["outcome": text.contains("refuse") ? "rejected" : "queued"])
     }
 
     static func ownerSessionResponse() -> Data {

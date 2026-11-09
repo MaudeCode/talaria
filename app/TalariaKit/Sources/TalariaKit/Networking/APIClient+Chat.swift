@@ -215,13 +215,25 @@ extension APIClient {
     }
 
     public func dismissBackgroundTask(sessionID: String, taskID: String) async throws -> BackgroundDismissResponse {
-        try await send(endpoint: .backgroundDismiss, method: "POST", body: BackgroundDismissRequest(sessionId: sessionID, taskId: taskID))
+        try await send(endpoint: .backgroundDismiss, method: "POST", body: BackgroundTaskRequest(sessionId: sessionID, taskId: taskID))
+    }
+
+    /// TAL-1172/TAL-1336: stops one row the server marked `can_stop`; an owner chat's row stops through its owner.
+    public func stopBackgroundTask(sessionID: String, taskID: String) async throws -> BackgroundControlResponse {
+        try await send(endpoint: .backgroundStop, method: "POST", body: BackgroundTaskRequest(sessionId: sessionID, taskId: taskID))
+    }
+
+    /// TAL-1336: a steering message for one owner subagent the server marked `can_steer`.
+    public func steerBackgroundTask(sessionID: String, taskID: String, text: String) async throws -> BackgroundControlResponse {
+        try await send(endpoint: .backgroundSteer, method: "POST", body: BackgroundTaskRequest(sessionId: sessionID, taskId: taskID, text: text))
     }
 }
 
-private struct BackgroundDismissRequest: Encodable {
+/// The shared body of Dismiss, Stop and Steer: the row, and Steer's message.
+private struct BackgroundTaskRequest: Encodable {
     let sessionId: String
     let taskId: String
+    var text: String?
 }
 
 private struct ChatStartRequest: Encodable {

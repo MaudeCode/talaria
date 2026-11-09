@@ -688,6 +688,11 @@ public final class ChatViewModel {
     private var activeBtwAnswer = ""
     /// TAL-372: the session's background work, as the server records it for every client.
     public private(set) var backgroundTasks: [BackgroundWorkTask] = []
+    /// TAL-1337: on an owner chat, whether its owner's work could be read (`BackgroundTasksResponse.ownerWork`).
+    public private(set) var backgroundOwnerWork: BackgroundTasksResponse.OwnerWork?
+    /// Background reads started and the latest one shown: a slower, older read never replaces a newer one.
+    private var backgroundReadsStarted = 0
+    private var backgroundReadShown = 0
     /// What the card above the composer shows: the records the server pins.
     public var pinnedBackgroundTasks: [BackgroundWorkTask] { backgroundTasks.filter(\.pinned) }
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
@@ -5935,24 +5940,52 @@ public final class ChatViewModel {
         backgroundPollTask = nil
         if clearTrackedPrompts {
             backgroundTasks = []
+            backgroundOwnerWork = nil
+            // A read still in flight belongs to what was just cleared.
+            backgroundReadShown = backgroundReadsStarted
         }
     }
 
     /// TAL-372: reload the session's background records. A failed read keeps what is shown; reading consumes nothing.
     public func refreshBackgroundTasks() async {
         guard let sessionID, !isViewingCachedData else { return }
-        do {
-            let generation = streamCoordinator.sessionActivityGeneration
-            let response = try await client.backgroundTasks(sessionID: sessionID)
-            guard streamCoordinator.sessionActivityGeneration == generation, self.sessionID == sessionID else { return }
-            streamCoordinator.applySessionActivityPhase(response.activityPhase)
-            backgroundTasks = response.tasks
-        } catch {
-            return
-        }
+        let read = beginBackgroundRead()
+        guard let response = try? await client.backgroundTasks(sessionID: sessionID), applyBackgroundRead(response, read) else { return }
         if backgroundTasks.contains(where: { $0.active }) {
             startBackgroundPollingIfNeeded()
         }
+    }
+
+    /// TAL-1337: the chat and profile a Background Work read or control was sent for. An owner fences its rows the same
+    /// way, so a reply for another scope never reaches what is shown.
+    private struct BackgroundWorkScope: Equatable {
+        let sessionID: String?
+        let profile: String?
+    }
+
+    private struct BackgroundRead {
+        let scope: BackgroundWorkScope
+        let sequence: Int
+        let activityGeneration: Int
+    }
+
+    private var backgroundWorkScope: BackgroundWorkScope { BackgroundWorkScope(sessionID: sessionID, profile: currentProfile) }
+
+    private func beginBackgroundRead() -> BackgroundRead {
+        backgroundReadsStarted &+= 1
+        return BackgroundRead(scope: backgroundWorkScope, sequence: backgroundReadsStarted, activityGeneration: streamCoordinator.sessionActivityGeneration)
+    }
+
+    /// Shows one read unless a newer one is already shown (an owner that restarted between them lists other rows), the
+    /// chat or profile changed, or a run started since: false when it kept what is shown.
+    private func applyBackgroundRead(_ response: BackgroundTasksResponse, _ read: BackgroundRead) -> Bool {
+        guard read.sequence > backgroundReadShown, read.scope == backgroundWorkScope,
+              read.activityGeneration == streamCoordinator.sessionActivityGeneration else { return false }
+        backgroundReadShown = read.sequence
+        streamCoordinator.applySessionActivityPhase(response.activityPhase)
+        backgroundTasks = response.tasks
+        backgroundOwnerWork = response.ownerWork
+        return true
     }
 
     /// The full result of a finished task, from the server.
@@ -5973,6 +6006,32 @@ public final class ChatViewModel {
         await refreshBackgroundTasks()
     }
 
+    /// TAL-1337: stops one row the server offers Stop on. Nil when the answer arrived for another chat or profile.
+    public func stopBackgroundTask(taskID: String) async -> BackgroundControlOutcome? {
+        await controlBackgroundTask { try await self.client.stopBackgroundTask(sessionID: $0, taskID: taskID) }
+    }
+
+    /// TAL-1337: a steering message for one owner subagent the server offers Steer on.
+    public func steerBackgroundTask(taskID: String, text: String) async -> BackgroundControlOutcome? {
+        await controlBackgroundTask { try await self.client.steerBackgroundTask(sessionID: $0, taskID: taskID, text: text) }
+    }
+
+    /// Sends one control once. Only the owner knows what it did, so every answer, a lost one included, rereads the
+    /// roster; nothing is resent and no row changes before that read.
+    private func controlBackgroundTask(_ send: (String) async throws -> BackgroundControlResponse) async -> BackgroundControlOutcome? {
+        guard let sessionID else { return nil }
+        let scope = backgroundWorkScope
+        let outcome: BackgroundControlOutcome
+        do {
+            outcome = BackgroundControlOutcome(serverOutcome: try await send(sessionID).outcome)
+        } catch {
+            outcome = APIError.isDefinitiveWriteFailure(error) ? .failed(error.localizedDescription) : .unconfirmed
+        }
+        guard scope == backgroundWorkScope else { return nil }
+        await refreshBackgroundTasks()
+        return outcome
+    }
+
     /// While work runs, the card refreshes quietly; it stops once nothing is running.
     private func startBackgroundPollingIfNeeded() {
         guard backgroundPollTask == nil else { return }
@@ -5984,7 +6043,7 @@ public final class ChatViewModel {
                 try? await sleep(pollingInterval)
                 guard !Task.isCancelled, let self else { break pollingLoop }
                 guard let sessionID = self.sessionID else { continue }
-                let generation = self.streamCoordinator.sessionActivityGeneration
+                let read = self.beginBackgroundRead()
                 let response: BackgroundTasksResponse
                 do {
                     response = try await self.client.backgroundTasks(sessionID: sessionID)
@@ -5995,9 +6054,7 @@ public final class ChatViewModel {
                     continue
                 }
                 guard !Task.isCancelled, self.sessionID == sessionID else { break pollingLoop }
-                guard self.streamCoordinator.sessionActivityGeneration == generation else { continue }
-                self.streamCoordinator.applySessionActivityPhase(response.activityPhase)
-                self.backgroundTasks = response.tasks
+                guard self.applyBackgroundRead(response, read) else { continue }
                 guard self.backgroundTasks.contains(where: { $0.active }) else { break pollingLoop }
             }
 

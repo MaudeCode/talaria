@@ -1539,6 +1539,76 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(remaining, "Dismiss removed running work")
     }
 
+    /// TAL-1337: an owner chat's work lists in the same sheet with only the controls its owner allows: Stop and Steer on
+    /// the resident child, Stop on the process, none on a rebuilt parent's child. Stop settles from the owner's next
+    /// roster; a refused Steer says so and keeps the message for another try.
+    func testOwnerWorkOffersOnlyTheControlsItsOwnerAllows() async throws {
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerWorkArgument])
+        let containing: (String) -> (NSObject) -> Bool = { text in { $0.accessibilityLabel?.contains(text) == true } }
+        func actions(_ title: String) -> [UIAccessibilityCustomAction] {
+            HostedAccessibility.elements(in: window).filter(containing(title)).flatMap { $0.accessibilityCustomActions ?? [] }
+        }
+        func run(_ name: String, on title: String) throws {
+            let action = try XCTUnwrap(actions(title).first { $0.name == name }, "\(title) offers no \(name)")
+            XCTAssertTrue(action.actionHandler?(action) ?? false, "\(name) did not run")
+        }
+        func alert() -> UIAlertController? {
+            var controller = window.rootViewController
+            while let presented = controller?.presentedViewController { controller = presented }
+            return controller as? UIAlertController
+        }
+        func steer(_ text: String) async throws {
+            try run("Steer", on: "Read the logs")
+            let asked = await awaitCondition { alert()?.textFields?.isEmpty == false }
+            XCTAssertTrue(asked, "Steer asked for no message")
+            let field = try XCTUnwrap(alert()?.textFields?.first)
+            XCTAssertEqual(field.placeholder, "Message for this agent")
+            field.becomeFirstResponder()
+            field.text = ""
+            field.insertText(text)
+            settle(0.3)
+            attachHostedScreenshot(window, name: "owner-work-steer-\(text.count)")
+            XCTAssertTrue(HostedAccessibility.tap("Send", in: try XCTUnwrap(alert())))
+        }
+
+        let chip = await awaitElement(in: window, where: containing("Background tasks · 3"))
+        HostedAccessibility.activate(try XCTUnwrap(chip, "The owner's running work has no background tasks chip"))
+        _ = await awaitElement(in: window, where: containing("Read the logs"))
+        XCTAssertEqual(Set(actions("Read the logs").map(\.name)), ["Stop", "Steer"])
+        XCTAssertEqual(actions("npm run dev").map(\.name), ["Stop"])
+        XCTAssertEqual(actions("Check the tests").map(\.name), [], "A rebuilt parent's child is read-only")
+        XCTAssertNotNil(HostedAccessibility.elements(in: window).first { containing("Check the tests")($0) && containing("Running")($0) })
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-work-sheet")
+
+        try await steer("Look at stderr too")
+        let queued = await awaitCondition { UITestFixtureURLProtocol.ownerWorkControls.withLock { $0 } == ["steer:owner-work-resident:Look at stderr too"] }
+        XCTAssertTrue(queued, "The steer did not reach the owner once")
+        let closed = await awaitCondition { alert() == nil }
+        XCTAssertTrue(closed, "A queued steer left a dialog up")
+
+        try await steer("please refuse this")
+        let refused = await awaitCondition { alert()?.title == "The agent didn’t take the message." }
+        XCTAssertTrue(refused, "A refused steer did not say so")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-work-steer-refused")
+        XCTAssertTrue(HostedAccessibility.tap("OK", in: try XCTUnwrap(alert())))
+        _ = await awaitCondition { alert() == nil }
+        try run("Steer", on: "Read the logs")
+        let kept = await awaitCondition { alert()?.textFields?.first?.text == "please refuse this" }
+        XCTAssertTrue(kept, "The refused message was not kept")
+        XCTAssertTrue(HostedAccessibility.tap("Cancel", in: try XCTUnwrap(alert())))
+        _ = await awaitCondition { alert() == nil }
+
+        try run("Stop", on: "npm run dev")
+        let stopped = await awaitNoElement(in: window, where: containing("npm run dev"))
+        XCTAssertTrue(stopped, "The owner's roster after Stop still pins the process")
+        XCTAssertEqual(UITestFixtureURLProtocol.ownerWorkControls.withLock { $0 }.filter { $0.hasPrefix("stop:") }, ["stop:owner-work-server"])
+        XCTAssertNotNil(HostedAccessibility.elements(in: window).first(where: containing("Read the logs")), "Stop reached other work")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-work-after-stop")
+    }
+
     /// TAL-1043: an owner chat lists the owner's inputs with only the server's actions. An input with an unknown
     /// outcome blocks sending until Retry returns its text to the composer; nothing resends on its own.
     func testOwnerChatRecoversAnUnknownInputOnPhone() async throws {
