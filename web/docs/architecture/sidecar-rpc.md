@@ -1,7 +1,10 @@
 # Sidecar RPC (TAL-245)
 
 RPC v94 adds the `harness` toolset's `terminal_open` and `terminal_read` (TAL-1974,
-`server.terminal_open`, `server.terminal_read`). `terminal_open` starts the calling
+`server.terminal_open`, `server.terminal_read`). The sidecar first runs the Agent's own
+pre-exec guard (`tools.approval.check_all_command_guards`, as its terminal tool does) on the
+command: a refused one returns `approval_denied` (or `approval_pending`) and the server is
+never asked. `terminal_open` starts the calling
 session's Web host PTY through the start path `/api/terminal/start` uses (trusted
 workspace, workspace-busy refusal), 160 columns wide, and types `command` once with
 Enter after the shell's startup output goes quiet (at most 3 s). It answers the

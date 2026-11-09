@@ -282,7 +282,8 @@ TERMINAL_OPEN_SCHEMA = {
         "terminal in its workspace, types command once followed by Enter, and returns at once with terminal_id and the url "
         "of this chat; read the output with terminal_read. You cannot type into it again or close it: further commands go "
         "through your own tools, and the user closes it. One live terminal per session: while one runs this is refused "
-        "with limit_reached. A command must be one line of at most 8192 characters."
+        "with limit_reached. A command must be one line of at most 8192 characters, and it passes the same command approval as your terminal tool: a denied one is "
+        "refused with approval_denied and nothing starts."
     ),
     "parameters": {
         "type": "object",
@@ -344,7 +345,32 @@ show = _tool("server.show_put", "show", ("kind",), _payload)
 
 notify = _tool("server.notify", "notify", ("title", "body"), _passed("level"))
 deliver = _tool("server.deliver", "deliver", ("path",), _passed("title"))
-terminal_open = _tool("server.terminal_open", "terminal_open", (), _passed("command", "title"))
+_terminal_open = _tool("server.terminal_open", "terminal_open", (), _passed("command", "title"))
+
+
+def _command_refusal(command: str) -> str | None:
+    """The Agent's own pre-exec guard on a command for the host terminal, as its terminal tool runs it on this turn's
+    thread: hardline floors, allowlists, approval mode and, with someone there to answer, the approval card. The tool's
+    refusal JSON, or None when the command may run."""
+    from tools.approval import check_all_command_guards
+
+    approval = check_all_command_guards(command, "local")
+    if approval.get("approved"):
+        return None
+    description = approval.get("description") or "command flagged"
+    if approval.get("status") == "pending_approval":
+        return json.dumps({"error": f"The command needs the user's approval ({description}); call terminal_open again once they approve it.", "condition": "approval_pending"})
+    return json.dumps({"error": approval.get("message") or f"Command denied: {description}.", "condition": "approval_denied"})
+
+
+def terminal_open(args: dict, session_id: str | None = None) -> str:
+    """Types nothing the Agent's command guard has not passed; the server checks everything else."""
+    command = args.get("command") if isinstance(args, dict) else None
+    if session_id and isinstance(command, str) and command.strip():
+        refusal = _command_refusal(command.strip())
+        if refusal is not None:
+            return refusal
+    return _terminal_open(args, session_id)
 terminal_read = _tool("server.terminal_read", "terminal_read", ("terminal_id",), _passed("after_event_id", "max_lines"))
 
 

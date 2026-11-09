@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import sys
 import threading
 import time
 
@@ -568,12 +569,15 @@ def test_harness_terminal_tools_forward_their_call_and_return_the_server_result_
     from talaria_sidecar.methods import chat
 
     monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    guarded: list[str] = []
+    _agent_guard(monkeypatch, lambda command, env_type: guarded.append(command) or {"approved": True, "message": None})
     sent: list[tuple[str, dict]] = []
     monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
     handler = getattr(harness_toolset, tool)
     args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
     assert json.loads(handler(args, session_id="20261109_090000_tip")) == recorded["result"]
     assert sent == [(method, recorded["params"])]
+    assert guarded == ([recorded["params"]["command"]] if tool == "terminal_open" else [])
     assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
     assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
 
@@ -582,3 +586,33 @@ def test_harness_terminal_tools_forward_their_call_and_return_the_server_result_
 
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(handler(args, session_id="20261109_090000_tip")) == {"error": "This session already has a live terminal", "condition": "limit_reached"}
+
+
+def _agent_guard(monkeypatch, guard) -> None:
+    """Stand in for the Agent's ``tools.approval`` command guard, which the fast layer runs without an Agent."""
+    from types import ModuleType
+
+    tools = ModuleType("tools")
+    approval = ModuleType("tools.approval")
+    approval.check_all_command_guards = guard
+    tools.approval = approval
+    monkeypatch.setitem(sys.modules, "tools", tools)
+    monkeypatch.setitem(sys.modules, "tools.approval", approval)
+
+
+@pytest.mark.parametrize(
+    ("verdict", "condition"),
+    [
+        ({"approved": False, "message": "BLOCKED: rm -rf / is on the blocklist"}, "approval_denied"),
+        ({"approved": False, "status": "pending_approval", "description": "recursive delete"}, "approval_pending"),
+    ],
+    ids=["denied", "pending"],
+)
+def test_harness_terminal_open_types_nothing_the_agent_command_guard_refuses(monkeypatch, verdict, condition) -> None:
+    """TAL-1974: the command passes the Agent's own terminal approval before the server starts or types anything."""
+    _agent_guard(monkeypatch, lambda command, env_type: verdict)
+    sent: list = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append(m))
+    result = json.loads(harness_toolset.terminal_open({"command": "rm -rf /"}, session_id="20261109_090000_tip"))
+    assert result["condition"] == condition and result["error"]
+    assert sent == []
