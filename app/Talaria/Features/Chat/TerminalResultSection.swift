@@ -62,7 +62,9 @@ struct TerminalOutputView: View {
             .accessibilityIdentifier("terminal-output")
         }
         .scrollPosition($position)
-        .defaultScrollAnchor(.bottom)
+        // Output shorter than the screen starts at the top, as a terminal's does; longer output opens at its newest line.
+        .defaultScrollAnchor(.top, for: .alignment)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 24
         } action: { _, atEnd in

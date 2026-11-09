@@ -48,6 +48,8 @@ final class TerminalHostedTests: XCTestCase {
             XCTAssertTrue(HostedAccessibility.activate(open), name)
             XCTAssertTrue(waitUntil { !HostedAccessibility.elements(in: window, labelContaining: "40%").isEmpty }, name)
             XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: "Running").isEmpty, name)
+            let first = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "> vitest run").first, name)
+            XCTAssertLessThan(first.accessibilityFrame.minY, window.bounds.height / 3, "\(name): short output starts at the top")
             attachHostedScreenshot(window, name: "terminal-running-\(name)")
 
             XCTAssertTrue(waitUntil { !stream.startedURLs.isEmpty }, name)
