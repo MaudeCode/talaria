@@ -25,6 +25,8 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
     }
     /// Queued and outcome-unknown inputs, oldest first.
     public let admissions: [OwnerAdmission]
+    /// TAL-1531: how many inputs `admissions` shows, as the server counts them. Nil from a server older than the field.
+    public let queuedInputCount: Int?
     /// TAL-1321: the owner's open connection operation. Null when it holds none; absent when the server read no owner
     /// snapshot, which says nothing either way. Outside `CodingKeys`, so the offline copy never holds it.
     public let connection: ConnectorOperationView?
@@ -34,14 +36,14 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
     public var hasUnknownAdmission: Bool { admissions.contains(where: \.isOutcomeUnknown) }
 
     enum CodingKeys: String, CodingKey {
-        case state, reason, canSubmit, canInterrupt, canAttach, revision, executionGeneration, modelChange, admissions
+        case state, reason, canSubmit, canInterrupt, canAttach, revision, executionGeneration, modelChange, admissions, queuedInputCount
     }
 
     private enum LiveCodingKeys: String, CodingKey {
         case connection
     }
 
-    public init(state: String, reason: String? = nil, canSubmit: Bool, canInterrupt: Bool, canAttach: Bool, admissions: [OwnerAdmission] = [], revision: Int? = nil, executionGeneration: Int? = nil) {
+    public init(state: String, reason: String? = nil, canSubmit: Bool, canInterrupt: Bool, canAttach: Bool, admissions: [OwnerAdmission] = [], queuedInputCount: Int? = nil, revision: Int? = nil, executionGeneration: Int? = nil) {
         self.state = state
         self.reason = reason
         self.canSubmit = canSubmit
@@ -51,6 +53,7 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
         self.executionGeneration = executionGeneration
         self.modelChange = nil
         self.admissions = admissions
+        self.queuedInputCount = queuedInputCount
         self.connection = nil
         self.statesConnection = false
     }
@@ -70,6 +73,7 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
         executionGeneration = container.decodeLossyIntIfPresent(forKey: .executionGeneration)
         modelChange = try? container.decodeIfPresent(ModelChange.self, forKey: .modelChange)
         admissions = container.decodeLossyArrayIfPresent(OwnerAdmission.self, forKey: .admissions) ?? []
+        queuedInputCount = container.decodeLossyIntIfPresent(forKey: .queuedInputCount).flatMap { $0 >= 0 ? $0 : nil }
         let live = try decoder.container(keyedBy: LiveCodingKeys.self)
         statesConnection = live.contains(.connection)
         connection = try? live.decodeIfPresent(ConnectorOperationView.self, forKey: .connection)

@@ -123,8 +123,10 @@ public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
     public let agentAvailable: Bool
     public let activityPhase: String?
     public let ownerWork: OwnerWork?
+    /// TAL-1531: how many of `tasks` the server pins. Nil from a server older than the field.
+    public let pinnedCount: Int?
 
-    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase, ownerWork }
+    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase, ownerWork, pinnedCount }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -132,6 +134,7 @@ public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
         activityPhase = container.decodeLossyStringIfPresent(forKey: .activityPhase)
         agentAvailable = container.decodeLossyBoolIfPresent(forKey: .agentAvailable) ?? true
         ownerWork = container.decodeLossyStringIfPresent(forKey: .ownerWork).flatMap(OwnerWork.init(rawValue:))
+        pinnedCount = container.decodeLossyIntIfPresent(forKey: .pinnedCount).flatMap { $0 >= 0 ? $0 : nil }
     }
 }
 

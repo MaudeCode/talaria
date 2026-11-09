@@ -2802,6 +2802,8 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('process.background_list', () => ({ delegations: [], processes: [] }))
     sidecar.respond('process.delegation_status', () => ({ ledger: 'available', running_count: 0, awaiting_delivery_count: 0, memory_live: false }))
     expect((await json(await s.get(`/api/background/tasks?session_id=${quiet}`))).delegation_status).toEqual(summary({ visible: false }))
+    // TAL-1531: nothing pinned counts zero, explicitly.
+    expect((await json(await s.get(`/api/background/tasks?session_id=${quiet}`))).pinned_count).toBe(0)
     sidecar.respond('process.delegation_status', () => ({ ledger: 'unknown', running_count: null, awaiting_delivery_count: null, memory_live: null }))
     expect((await json(await s.get(`/api/background/tasks?session_id=${quiet}`))).delegation_status).toEqual({ ...unknown, visible: false })
     sidecar.respond('process.delegation_status', undefined)
@@ -2829,6 +2831,8 @@ describe('chat turns through the sidecar', () => {
     expect(first.agent_available).toBe(true)
     // TAL-373: the side panel opens on Agents while a delegation runs or needs attention; the server says so.
     expect(first.agents_working).toBe(true)
+    // TAL-1531: the server counts what it pins, so no client recounts the records.
+    expect(first.pinned_count).toBe(7)
     let byId = await tasks()
     expect(Object.keys(byId).sort()).toEqual([String(bg.task_id), 'call-1-1', 'call-1-2', 'd-a', 'd-b', 'd-lost', 'proc_1'].sort())
     expect(byId['d-lost']).toMatchObject({ status: 'unknown', pinned: true, dismissible: true, active: true })
@@ -2841,6 +2845,8 @@ describe('chat turns through the sidecar', () => {
     const agents = (await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).tasks as Json[]
     expect(agents.map((t) => t.task_id)).toEqual(((await read()).tasks as Json[]).filter((t) => t.kind === 'delegation').map((t) => t.task_id))
     expect(new Set(agents.map((t) => t.kind))).toEqual(new Set(['delegation']))
+    // The count covers the narrowed selection it answers with.
+    expect((await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).pinned_count).toBe(5)
     expect((await s.get(`/api/background/tasks?session_id=${sid}&kind=nope`)).status).toBe(400)
 
     // Reading never consumes: every later read still sees the result.
@@ -2857,11 +2863,14 @@ describe('chat turns through the sidecar', () => {
     expect(byId['d-a']).toMatchObject({ status: 'completed', result_available: true, pinned: false })
     expect(byId.proc_1).toMatchObject({ status: 'failed', exit_code: 2, result_available: true })
     expect(Object.keys(byId)).toHaveLength(7)
+    // Settled work leaves the pinned count; the finished `/background` result stays until dismissed.
+    expect((await read()).pinned_count).toBe(5)
     expect(str((await json(await s.get(`/api/background/result?session_id=${sid}&task_id=d-a`))).text)).toContain('all fine')
 
     // Dismissing is read state: the finished `/background` task leaves the tray and stays in the history.
     expect((await json(await post(s, '/api/background/dismiss', { session_id: sid, task_id: bg.task_id }))).task).toMatchObject({ status: 'completed', pinned: false, dismissible: false })
     expect((await tasks())[String(bg.task_id)]).toMatchObject({ status: 'completed', pinned: false })
+    expect((await read()).pinned_count).toBe(4)
 
     // The Agent cannot be asked: its running work shows unknown, settled records stay as they are.
     sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })

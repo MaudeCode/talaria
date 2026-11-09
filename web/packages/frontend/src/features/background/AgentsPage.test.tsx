@@ -17,7 +17,7 @@ const done: BackgroundTask = {
   task_id: 'd1', kind: 'delegation', status: 'completed', title: 'Fix CI', started_at: 1, updated_at: Date.now() / 1000, completed_at: 2,
   result_available: true, child_sessions: [], exit_code: null, agents: null, pinned: false, dismissible: false, active: false,
 }
-const response = (delegation_status?: DelegationStatus, sessionId = 's1') => ({ session_id: sessionId, agent_available: true, tasks: [done], ...(delegation_status ? { delegation_status } : {}) })
+const response = (delegation_status?: DelegationStatus, sessionId = 's1') => ({ session_id: sessionId, agent_available: true, tasks: [done], pinned_count: done.pinned ? 1 : 0, ...(delegation_status ? { delegation_status } : {}) })
 
 let qc: QueryClient
 const renderPage = (sessionId = 's1') => render(<QueryClientProvider client={qc}><AgentsPage sessionId={sessionId} active /></QueryClientProvider>)

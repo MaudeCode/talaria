@@ -41,7 +41,7 @@ test('native queued prompts use owner controls and confirmed snapshots', async (
   let admissions = [queued('editable', 'Check the backup logs too', ['cancel', 'steer', 'edit']), queued('legacy', 'Summarize the backup', ['cancel'])]
   const session = () => ({ session_id: sid, title: 'Back up the cluster', read_only: true, active_stream_id: null, is_streaming: false,
     messages: [{ role: 'user', content: 'Back up the cluster' }, { role: 'assistant', content: 'Inspecting the backup logs.' }],
-    owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions } })
+    owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions, queued_input_count: admissions.length } })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: session() } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: false, stream_id: null, replay_available: false } }))
   await page.route('**/api/chat/owner-action', async (route) => {

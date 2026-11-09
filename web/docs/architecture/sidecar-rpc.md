@@ -1,5 +1,8 @@
 # Sidecar RPC (TAL-245)
 
+RPC v89 adds `pinned_count` to the `server.background_list` result (TAL-1531): how
+many of its `tasks` are pinned.
+
 RPC v88 adds the `harness` toolset's proposals (TAL-1967): `propose` and
 `proposal_read` (`server.proposal_put`, `server.proposal_read`). `propose`
 names a kind (`plugin_install`, `mcp_server`, `setting` or `cron_job`) and its

@@ -11,7 +11,7 @@ test(`${grouped ? 'grouped ' : ''}canonical reactions render and update optimist
   const view = fixture.message.reaction_view!
   let state = view.state
   const session = () => ({ session_id: sid, title: 'Release review', read_only: true, message_count: grouped ? 3 : 2,
-    owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] },
+    owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 },
     messages: [{ role: 'user', message_id: 'question', content: 'Is the change ready for review?' },
       ...(grouped ? [{ ...fixture.message, message_id: 'earlier-answer', row_id: 41, content: 'I checked the contracts and both consumers.', _turn_id: 'owner-reply', reaction_view: { ...view, row_id: 41, state } }] : []),
       { ...fixture.message, message_id: 'answer', _turn_id: 'owner-reply', reaction_view: grouped ? view : { ...view, state } }],

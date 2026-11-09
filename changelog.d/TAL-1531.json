@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Background tasks and Queued messages counts on toolbar badges and composer chips now match on every device, because the server counts them for the App and Talaria Web.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

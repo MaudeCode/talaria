@@ -181,6 +181,7 @@ export const OwnerAttachmentSchema = z.object({
   model_change: ModelChangeSchema.optional(),
   active_admission: GatewayAdmissionSchema.nullable().optional(),
   admissions: z.array(GatewayAdmissionSchema.extend({ actions: z.array(z.enum(['cancel', 'steer', 'edit', 'retry', 'discard'])) })),
+  queued_input_count: z.number().int().nonnegative().describe('TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers.'),
   connection: ConnectorOperationViewSchema.nullable().optional().describe("TAL-1317: the owner's open connection operation, restored on attach. Absent outside a session view."),
   reasoning_control: OwnerReasoningSchema.optional().describe('Absent when the owner reports no level (an older owner or server) or outside a session view: the chat offers no picker.'),
 })

@@ -621,6 +621,8 @@ describe('canonical owner attachment', () => {
       { admission_id: 'legacy', actions: ['cancel'] },
     ])
     expect(result.owner_attachment?.active_admission).toMatchObject({ admission_id: 'running', steering: false })
+    // TAL-1531: the shown inputs are counted; active ones are not.
+    expect(result.owner_attachment?.queued_input_count).toBe(2)
     expect(result.messages).toEqual([expect.objectContaining({ content: 'Original task', message_id: 'running' })])
   })
 

@@ -53,6 +53,8 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(unknown.canSubmit, "An input with an unknown outcome blocks new input")
         XCTAssertEqual(unknown.admissions, [OwnerAdmission(admissionId: "unknown-input", status: "unknown", text: "Inspect uncertain work", executionGeneration: 1, actions: [.retry, .discard])])
         XCTAssertTrue(unknown.hasUnknownAdmission)
+        // TAL-1531: the server counts the inputs it shows; zero is said, never inferred.
+        XCTAssertEqual([normal.queuedInputCount, unknown.queuedInputCount], [0, 1])
 
         XCTAssertEqual(try attachment("batch").reason, "native_clarify_batch_unavailable")
         XCTAssertEqual(try attachment("served").reason, "served_profile_sessions_unavailable")
@@ -60,6 +62,27 @@ extension ChatViewModelSendTests {
 
         let queued = try decoder.decode(OwnerAttachment.self, from: Data(Self.queuedAttachment.utf8))
         XCTAssertEqual(queued.admissions.first?.actions, [.cancel], "An action this build does not know is not offered")
+        XCTAssertNil(queued.queuedInputCount, "A server older than the count sends none")
+    }
+
+    /// TAL-1531: the Queued messages badge and chip show the owner's count as the server sends it, even when it differs
+    /// from the inputs listed; a server older than the count leaves the listed inputs to count.
+    func testOwnerQueuedInputCountIsTheServersCount() async throws {
+        let log = OwnerRequestLog()
+        let counted = try Self.ownerAttachmentJSON("unknown").replacingOccurrences(of: #""queued_input_count":1"#, with: #""queued_input_count":4,"future_count":9"#)
+        var attachment = counted
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: attachment) })
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.ownerAttachment?.admissions.count, 1)
+        XCTAssertEqual(viewModel.queuedMessageCount, 4)
+
+        attachment = try Self.ownerAttachmentJSON("normal")
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.queuedMessageCount, 0)
+
+        attachment = Self.queuedAttachment
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.queuedMessageCount, 1)
     }
 
     func testOwnerPickersSendFencedMutationsAndApplyTheReturnedSession() async throws {
@@ -261,6 +284,7 @@ extension ChatViewModelSendTests {
         let admission = try XCTUnwrap(viewModel.ownerAttachment?.admissions.first)
         XCTAssertEqual(viewModel.ownerAttachment?.canSubmit, false)
         XCTAssertEqual(admission.actions, [.retry, .discard])
+        XCTAssertEqual(viewModel.queuedMessageCount, 1)
 
         await viewModel.performOwnerAction(.retry, on: admission)
 
@@ -272,6 +296,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.takeReturnedComposerTexts(), ["Inspect uncertain work"], "Retry puts the text back to review")
         XCTAssertNil(log.bodies["/api/chat/start"], "Retry never resends on its own")
         XCTAssertEqual(viewModel.ownerAttachment?.canSubmit, true)
+        XCTAssertEqual(viewModel.queuedMessageCount, 0, "The server's answer settles the count with the input")
     }
 
     func testDiscardAndCancelAreDistinctServerActions() async throws {

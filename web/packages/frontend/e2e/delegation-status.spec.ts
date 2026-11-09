@@ -17,7 +17,7 @@ test('the Agents page words every delegation summary the server sends', async ({
   } } }))
   await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, agents_working: false,
     tasks: [{ task_id: 'd1', kind: 'delegation', title: 'Review the logs', status: 'completed', can_stop: false, started_at: 1770000100, updated_at: 1770000110, completed_at: 1770000110,
-      result_available: true, child_sessions: [], exit_code: null, agents: null, pinned: false, dismissible: false, active: false }],
+      result_available: true, child_sessions: [], exit_code: null, agents: null, pinned: false, dismissible: false, active: false }], pinned_count: 0,
     ...(state ? { delegation_status: states[state] } : {}) } }))
   await page.route('**/api/git-info?**', (route) => route.fulfill({ json: { git: { is_git: false } } }))
   await page.route('**/api/list?**', (route) => route.fulfill({ json: { path: '.', entries: [] } }))

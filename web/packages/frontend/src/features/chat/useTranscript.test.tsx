@@ -468,7 +468,7 @@ it('fetches once for a background completion and its legacy twin, then refreshes
 })
 
 it('refreshes reactions on already loaded owner history when another viewer changes them', async () => {
-  const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
+  const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
   const tail = sessionFixture({ session_id: 'older-reactions', owner_attachment: owner, messages: [{ id: 241, role: 'user', content: 'latest' }], message_count: 241, _messages_offset: 240, _messages_truncated: true })
   let selected: '👍' | '🎉' = '👍'
   vi.mocked(api.fetchSession).mockImplementation((_sid, options) => Promise.resolve({ session: options?.msg_before
@@ -485,7 +485,7 @@ it('refreshes reactions on already loaded owner history when another viewer chan
 })
 
 it('keeps all loaded owner history when reaction readback crosses the server window cap', async () => {
-  const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
+  const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
   const tail = sessionFixture({ session_id: 'bounded-reactions', owner_attachment: owner, messages: [{ id: 840, role: 'user', content: 'latest' }], message_count: 841, _messages_offset: 840, _messages_truncated: true })
   let selected: '👍' | '🎉' = '👍'
   vi.mocked(api.fetchSession).mockImplementation((_sid, options) => {

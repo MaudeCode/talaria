@@ -39,7 +39,7 @@ beforeEach(() => {
 
 describe('Background work card (TAL-372)', () => {
   it('lists only the work the server pins, with each status and the subagent counts', async () => {
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, pinned_count: 3, tasks: [
       task({ task_id: 'd1', kind: 'delegation', status: 'attention', title: 'Fix CI' }),
       task({ task_id: 'd2', kind: 'delegation', status: 'running', title: '2 subagents: Docs; Tests', agents: { total: 2, completed: 1, failed: 0, running: 1 } }),
       task({ task_id: 'p1', kind: 'process', status: 'unknown', title: 'make test' }),
@@ -56,7 +56,7 @@ describe('Background work card (TAL-372)', () => {
   })
 
   it('shows a finished /background result from the server, and Dismiss asks the server', async () => {
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [task({ task_id: 'bg1', status: 'failed', result_available: true, dismissible: true })] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, pinned_count: 1, tasks: [task({ task_id: 'bg1', status: 'failed', result_available: true, dismissible: true })] })
     vi.mocked(api.fetchBackgroundResult).mockResolvedValue({ task_id: 'bg1', text: '(background task failed)' })
     vi.mocked(api.dismissBackgroundTask).mockResolvedValue({ ok: true, task: task({ task_id: 'bg1', status: 'failed', pinned: false }) })
     renderCard()
@@ -65,7 +65,7 @@ describe('Background work card (TAL-372)', () => {
     await userEvent.click(card.getByRole('button', { name: 'Show result' }))
     expect(await card.findByText('(background task failed)')).toBeInTheDocument()
     expect(api.fetchBackgroundResult).toHaveBeenCalledWith('sess-1', 'bg1')
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [task({ task_id: 'bg1', status: 'failed', pinned: false })] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, pinned_count: 0, tasks: [task({ task_id: 'bg1', status: 'failed', pinned: false })] })
     await userEvent.click(card.getByRole('button', { name: 'Dismiss' }))
     expect(api.dismissBackgroundTask).toHaveBeenCalledWith('sess-1', 'bg1')
     await waitFor(() => { expect(screen.queryByRole('region', { name: 'Background work' })).not.toBeInTheDocument() })
@@ -87,7 +87,7 @@ describe('Delegation row (TAL-372)', () => {
 
 describe('Stop background work (TAL-1172)', () => {
   it('uses only can_stop and waits for the server completion before changing status', async () => {
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, pinned_count: 2, tasks: [
       task({ task_id: 'owned', kind: 'process', can_stop: true }),
       task({ task_id: 'unknown', kind: 'process', can_stop: false }),
     ] })
@@ -102,7 +102,7 @@ describe('Stop background work (TAL-1172)', () => {
 })
 
 it('shows Stop failures without inventing a terminal state', async () => {
-  vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [task({ kind: 'delegation', can_stop: true })] })
+  vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, pinned_count: 1, tasks: [task({ kind: 'delegation', can_stop: true })] })
   vi.mocked(api.stopBackgroundTask).mockRejectedValue(new Error('Could not interrupt subagent'))
   renderCard()
   await userEvent.click(await screen.findByRole('button', { name: 'Stop' }))
@@ -113,7 +113,7 @@ it('shows Stop failures without inventing a terminal state', async () => {
 describe('Background dismiss (TAL-1179)', () => {
   it('removes a dismissed result at once and brings it back when refused', async () => {
     let refuse!: (error: unknown) => void
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [task({ task_id: 'done', status: 'completed', title: 'Finished work', active: false, dismissible: true })] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, pinned_count: 1, tasks: [task({ task_id: 'done', status: 'completed', title: 'Finished work', active: false, dismissible: true })] })
     vi.mocked(api.dismissBackgroundTask).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
     renderCard()
     await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
@@ -126,7 +126,7 @@ describe('Background dismiss (TAL-1179)', () => {
 describe('Steer an owner subagent (TAL-1336)', () => {
   beforeEach(() => {
     vi.mocked(api.steerBackgroundTask).mockReset()
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, owner_work: 'available', tasks: [
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, owner_work: 'available', pinned_count: 2, tasks: [
       task({ task_id: 'resident', kind: 'delegation', title: 'Read the logs', can_stop: true, can_steer: true }),
       task({ task_id: 'rebuilt', kind: 'delegation', title: 'Check the tests', can_stop: false, can_steer: false }),
     ] })
