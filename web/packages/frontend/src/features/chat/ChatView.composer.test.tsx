@@ -147,7 +147,7 @@ it('renders the composer once for a draft while only its status pill follows thr
 
 it.each(['high', 'default'])('routes native /reasoning %s with the current conversation and never retries globally', async (effort) => {
   const session = sessionFixture({ session_id: 'native-reasoning', model: 'native-model', model_provider: 'openai', read_only: true,
-    owner_attachment: { state: 'attached', reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } })
+    owner_attachment: { state: 'attached', reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 } })
   const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': () => [409, { error: 'Reasoning changes are unavailable for this conversation', code: 'reasoning_unsupported' }] } })
   configureClient({ transport: adapter })
   const ownerAction = vi.spyOn(api, 'ownerAction')

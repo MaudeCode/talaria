@@ -29,7 +29,7 @@ const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
   task_id: 'd', kind: 'delegation', status: 'running', title: 'Fix CI', started_at: 1, updated_at: Date.now() / 1000, completed_at: null,
   result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
 })
-const tasks = (list: BackgroundTask[], agent_available = true) => ({ session_id: 's1', agent_available, tasks: list, agents_working: list.some((t) => t.status === 'running' || t.status === 'attention') })
+const tasks = (list: BackgroundTask[], agent_available = true) => ({ session_id: 's1', agent_available, tasks: list, pinned_count: list.filter((t) => t.pinned).length, agents_working: list.some((t) => t.status === 'running' || t.status === 'attention') })
 
 let qc: QueryClient
 function Panel({ workspace = '/repo', sessionId = 's1', open = true }: { workspace?: string | null; sessionId?: string; open?: boolean }) {

@@ -263,7 +263,7 @@ describe('Composer', () => {
     await waitFor(() => expect(api.uploadFile).toHaveBeenCalled())
     if (completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
     view.rerenderSession({ ...writable, session_id: replacement === 'session' ? 'other' : 'loading', composer_state_key: replacement === 'capability refusal' ? 'original-owner' : 'replacement-owner',
-      ...(replacement.endsWith('refusal') ? { owner_attachment: { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } } : {}) })
+      ...(replacement.endsWith('refusal') ? { owner_attachment: { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 } } : {}) })
     if (!completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
     expect(document.querySelector('.attach-tray')).toBeNull()
     // Another chat or owner never shows the file; it stays staged for its own identity (TAL-1074). A refusal drops it.
@@ -282,7 +282,7 @@ describe('Composer', () => {
     const view = renderComposer({ ...writable, session_id: 'loading', composer_state_key: 'same-owner' })
     fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: ['one.png', 'two.png', 'three.png'].map((name) => new File(['x'], name, { type: 'image/png', lastModified: 1 })) } })
     await waitFor(() => expect(document.querySelectorAll('.attach-tray [data-status="done"]')).toHaveLength(2))
-    view.rerenderSession({ ...writable, session_id: 'loading', composer_state_key: 'same-owner', owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } })
+    view.rerenderSession({ ...writable, session_id: 'loading', composer_state_key: 'same-owner', owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 } })
     expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['completed-one', 'completed-two'])
     await act(async () => { late.resolve({ filename: 'three.png', path: '/synthetic/three.png', size: 1, mime: 'image/png', rollback_token: 'late-three' }); await late.promise })
     expect(api.rollbackUpload).toHaveBeenNthCalledWith(2, 'loading', ['late-three'])
@@ -355,7 +355,7 @@ describe('Composer', () => {
     const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: session_id })
     await userEvent.type(screen.getByRole('textbox'), 'Early typing')
     view.rerenderSession({ ...writable, session_id, composer_state_key: 'owner-complete-identity', owner_attachment: {
-      state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } })
+      state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 } })
     expect(screen.getByRole('textbox')).toHaveValue('Early typing')
     fireEvent(window, new Event('pagehide'))
     expect(JSON.parse(localStorage.getItem('hermes-draft:owner-complete-identity')!).text).toBe('Early typing')
@@ -363,7 +363,7 @@ describe('Composer', () => {
   })
 
   it('continues an attached owner without offering unsupported local controls or file uploads', async () => {
-    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
     const native = { ...writable, read_only: true, owner_attachment: owner }
     vi.mocked(api.startChat).mockResolvedValue({ session: native, owner_attachment: owner })
     renderComposer(native)
@@ -372,26 +372,34 @@ describe('Composer', () => {
     await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: native.session_id, message: 'Continue with the same Agent', submission_id: expect.stringMatching(/^[a-f0-9]{32}$/) })))
   })
 
-  it('shows an attached owner\'s background work behind the chip (TAL-1336)', async () => {
-    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, owner_work: 'available', tasks: [{ task_id: 'owner-work-1', kind: 'process', status: 'running', title: 'npm run dev', started_at: 1, updated_at: 1, completed_at: null, result_available: true, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, can_stop: true, active: true }] })
+  it('shows an attached owner\'s background work behind the chip, counted by the server (TAL-1336, TAL-1531)', async () => {
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
+    // A count unlike the rows sent: the chip shows the server's number, never a recount.
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, owner_work: 'available', pinned_count: 3, tasks: [{ task_id: 'owner-work-1', kind: 'process', status: 'running', title: 'npm run dev', started_at: 1, updated_at: 1, completed_at: null, result_available: true, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, can_stop: true, active: true }] })
     renderComposer({ ...writable, is_streaming: false, read_only: true, owner_attachment: owner })
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1'))
-    expect(await screen.findByRole('button', { name: 'Background work · 1' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Background work · 3' })).toBeInTheDocument()
+  })
+
+  it('counts an owner\'s queued inputs as the server does (TAL-1531)', async () => {
+    const admission = { admission_id: 'a1', sequence: 1, status: 'queued' as const, outcome: null, authority_epoch: 1, text: 'next', execution_generation: 1, actions: ['cancel' as const] }
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [admission], queued_input_count: 3 }
+    renderComposer({ ...writable, read_only: true, owner_attachment: owner })
+    expect(await screen.findByRole('button', { name: '3 queued' })).toBeInTheDocument()
   })
 
   it.each([
     ['offers', ['set', 'reset'], true],
     ['hides', [], false],
   ] as const)('%s the reasoning picker as the owner\'s server-sent actions allow (TAL-1319)', (_, actions, shown) => {
-    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [],
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0,
       reasoning_control: { reasoning_effort: 'high', supported_efforts: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: [...actions], deferred: null } }
     renderComposer({ ...writable, read_only: true, owner_attachment: owner })
     expect(document.querySelector('#composerReasoningChip') !== null).toBe(shown)
   })
 
   it('explains an unsupported native CLI batch without offering a send', () => {
-    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, restarting: false, revision: null, execution_generation: null, admissions: [] } })
+    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, restarting: false, revision: null, execution_generation: null, admissions: [], queued_input_count: 0 } })
     expect(screen.getByText(/Continue in its native client/)).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -404,7 +412,7 @@ describe('Composer', () => {
     vi.mocked(api.rollbackUpload).mockReset().mockResolvedValue({ ok: true } as never)
     vi.mocked(api.fetchSession).mockReset().mockResolvedValue({ session: { ...writable, is_streaming: false, messages: [] } })
     vi.mocked(api.fetchStreamStatus).mockReset().mockResolvedValue({ active: false, stream_id: 'run', blocking_stream_id: null })
-    vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [], pinned_count: 0 })
     vi.mocked(api.fetchCommands).mockReset().mockResolvedValue({ commands: [] })
     vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
     vi.mocked(api.fetchDraft).mockReset().mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
@@ -677,7 +685,7 @@ describe('Composer', () => {
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
     expect(screen.queryByRole('region', { name: 'Background work' })).not.toBeInTheDocument()
     // The server records the task once it starts; the refresh after the start shows it.
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, pinned_count: 1, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
     await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
     await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
     expect(api.startChat).not.toHaveBeenCalled()
@@ -689,7 +697,7 @@ describe('Composer', () => {
   it('shows a /background launch at once and puts the prompt back when the server refuses it (TAL-1384)', async () => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.startBackground).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [], pinned_count: 0 })
     renderComposer({ ...writable, is_streaming: false })
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
     await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
@@ -706,11 +714,11 @@ describe('Composer', () => {
     ['never started', false],
   ] as const)('rereads background work after a lost /background answer and restores the prompt only if nothing started: %s (TAL-1384)', async (_, started) => {
     vi.mocked(api.startBackground).mockRejectedValue(new ApiError({ kind: 'network', path: '/x', message: 'Network down' }))
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [], pinned_count: 0 })
     renderComposer({ ...writable, is_streaming: false })
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
     const reads = vi.mocked(api.fetchBackgroundTasks).mock.calls.length
-    if (started) vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg9', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
+    if (started) vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, pinned_count: 1, tasks: [{ task_id: 'bg9', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
     await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
     await waitFor(() => expect(vi.mocked(api.fetchBackgroundTasks).mock.calls.length).toBeGreaterThan(reads))
     if (started) {
@@ -726,13 +734,13 @@ describe('Composer', () => {
   it('adopts the started background task in place of its provisional chip, without a duplicate (TAL-1384)', async () => {
     let start!: (value: { ok: true; task_id: string; stream_id: string; session_id: string }) => void
     vi.mocked(api.startBackground).mockReturnValue(new Promise((resolve) => { start = resolve }) as never)
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [], pinned_count: 0 })
     renderComposer({ ...writable, is_streaming: false })
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
     await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
     expect(await screen.findByRole('button', { name: 'Background work · 1' })).toBeInTheDocument()
     const reads = vi.mocked(api.fetchBackgroundTasks).mock.calls.length
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, pinned_count: 1, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
     await act(async () => { start({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' }); await Promise.resolve() })
     await waitFor(() => expect(vi.mocked(api.fetchBackgroundTasks).mock.calls.length).toBeGreaterThan(reads))
     await userEvent.click(await screen.findByRole('button', { name: 'Background work · 1' }))

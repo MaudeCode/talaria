@@ -14,7 +14,7 @@ import { useResourceEffects } from '../sessions/useResourceMutation'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const refresh = vi.fn(() => Promise.resolve())
 const body = { model: 'contributor', model_provider: 'custom' }
-const nativeOwner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [] }
+const nativeOwner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [], queued_input_count: 0 }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
 let client = new QueryClient()
 function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1]; ownerPayload?: { model: string; provider?: string; reasoning?: string } }) {

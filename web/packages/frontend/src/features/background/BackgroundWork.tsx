@@ -56,7 +56,12 @@ export function useBackgroundTasks(sessionId: string | null | undefined) {
   return useQuery({
     queryKey: keys.background(sessionId ?? ''),
     queryFn: () => api.fetchBackgroundTasks(sessionId ?? ''),
-    select: (data) => ({ ...data, tasks: withCreated(withEffects(data.tasks, (task) => backgroundResource(sessionId ?? '', task.task_id), effects), launchKind(sessionId ?? ''), effects) }),
+    select: (data) => {
+      const tasks = withCreated(withEffects(data.tasks, (task) => backgroundResource(sessionId ?? '', task.task_id), effects), launchKind(sessionId ?? ''), effects)
+      // TAL-1531: the server counts what it pins; the user's own pending launch or dismiss moves that count until the reread.
+      const pinned = (rows: readonly BackgroundTask[]) => rows.filter((task) => task.pinned).length
+      return { ...data, tasks, pinned_count: Math.max(0, data.pinned_count + pinned(tasks) - pinned(data.tasks)) }
+    },
     enabled: Boolean(sessionId),
     refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })

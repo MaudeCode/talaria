@@ -801,11 +801,13 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
   // TAL-1336: an owner chat's server reads its processes and subagents from that owner.
-  const backgroundTasks = useBackgroundTasks(session ? sessionId : null).data?.tasks ?? EMPTY_TASKS
+  const background = useBackgroundTasks(session ? sessionId : null).data
+  const backgroundTasks = background?.tasks ?? EMPTY_TASKS
+  const pinnedCount = background?.pinned_count ?? 0
   const admissions = session?.owner_attachment?.admissions ?? EMPTY_ADMISSIONS
+  const ownerInputs = session?.owner_attachment?.queued_input_count ?? 0
   // TAL-1043: an owner input with an unknown outcome blocks sending until it is retried or discarded, so its chip says so.
   const outcomeUnknown = admissions.some((a) => a.status === 'unknown')
-  const pinnedCount = backgroundTasks.filter((t) => t.pinned).length
   // The chips over the card: the running turn first, then runtime notices and this message's state.
   const chipNotices: ComposerNotice[] = [
     ...(busy && !liveStatusHidden ? [{ id: 'live', content: <LiveStatusPill sessionId={sessionId} background={session?.active_turn_origin === 'background' && session.active_stream_id === streamId} /> }] : []),
@@ -817,7 +819,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && pinnedCount ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> } }] : []),
-    ...(sessionId && (queued.length > 0 || admissions.length) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + admissions.length })}</span></>, detail: { title: admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
+    ...(sessionId && (queued.length > 0 || ownerInputs) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + ownerInputs })}</span></>, detail: { title: ownerInputs ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
   const busyLabel = nativeOwner ? m.composer_send() : intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()

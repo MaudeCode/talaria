@@ -425,7 +425,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     const owner = shownSession.owner_attachment
     const admissions = owner && withEffects(owner.admissions, (admission) => admissionResource(shownSession.session_id, admission.admission_id), resourceEffects)
     if (!confirming && (!owner || admissions?.length === owner.admissions.length && admissions.every((a, i) => a === owner.admissions[i]))) return shownSession
-    return { ...shownSession, ...(confirming ? chosenFields(confirming) : {}), ...(owner && admissions ? { owner_attachment: { ...owner, admissions } } : {}) }
+    // TAL-1531: an input the user's pending action removed leaves the server's count with its row.
+    return { ...shownSession, ...(confirming ? chosenFields(confirming) : {}), ...(owner && admissions ? { owner_attachment: { ...owner, admissions, queued_input_count: Math.max(0, owner.queued_input_count - (owner.admissions.length - admissions.length)) } } : {}) }
   })()
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined

@@ -176,7 +176,7 @@ it('re-renders no settled row when a notices frame updates the cached session (T
 })
 
 it('locks sending and shows the server restart state on a gateway-owned session', async () => {
-  const owner = { state: 'attached' as const, reason: null, restarting: true, can_submit: false, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1, admissions: [] }
+  const owner = { state: 'attached' as const, reason: null, restarting: true, can_submit: false, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 }
   const session = sessionFixture({ session_id: 'owner-chat', read_only: true, owner_attachment: owner })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   vi.mocked(api.fetchSession).mockResolvedValue({ session })
@@ -204,7 +204,7 @@ it('updates row controls when the server changes read-only and branching capabil
   expect(screen.getByRole('button', { name: 'Branch from here' })).toBeInTheDocument()
 })
 
-interface ComposerProps { onModelChange: (model: string, provider: string | null) => void; session: { model?: string | null; enabled_toolsets?: string[] | null; personality?: string | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
+interface ComposerProps { onModelChange: (model: string, provider: string | null) => void; session: { model?: string | null; enabled_toolsets?: string[] | null; personality?: string | null; owner_attachment?: { admissions: { admission_id: string }[]; queued_input_count?: number } } | null; yolo: boolean; reasoning: string | null
   onToolsetsChange: (t: string[] | null) => void; onToggleYolo: () => void; onReasoningChange: (level: string | null) => void
   onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>; onOwnerAction: (request: object) => Promise<void> }
 const lastComposer = () => composer.mock.calls.at(-1)![0] as ComposerProps
@@ -258,7 +258,7 @@ it('reads and writes reasoning per chat, and a late answer never reaches the nex
 })
 
 describe('an owner chat\'s reasoning level (TAL-1319)', () => {
-  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [] }
+  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
   const control = { reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: ['set' as const, 'reset' as const], deferred: null }
   const open = (attachment: object) => {
     const session = sessionFixture({ session_id: 'owner-chat', read_only: true, owner_attachment: attachment as never, messages: [{ id: 1, role: 'assistant', content: 'Owner answer' }] })
@@ -410,9 +410,10 @@ it('rereads YOLO after an unknown outcome and shows what the server kept, withou
   vi.mocked(api.fetchSessionYolo).mockResolvedValue({ yolo_enabled: false })
 })
 
-it('brings a refused owner-input discard back with the error (TAL-1384)', async () => {
+it('brings a refused owner-input discard back with the error, its count with it (TAL-1384, TAL-1531)', async () => {
+  // The server's count differs from the rows it sent, so the composer can only show it by trusting the field.
   const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,
-    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }] }
+    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }], queued_input_count: 5 }
   const session = sessionFixture({ session_id: 'owner-chat', owner_attachment: owner as never })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   vi.mocked(api.fetchSession).mockResolvedValue({ session })
@@ -423,8 +424,10 @@ it('brings a refused owner-input discard back with the error (TAL-1384)', async 
   await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions).toHaveLength(2))
   const result = lastComposer().onOwnerAction({ session_id: 'owner-chat', action: 'discard', admission_id: 'a1', execution_generation: 1 }).catch(() => 'refused')
   await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a2']))
+  expect(lastComposer().session?.owner_attachment?.queued_input_count).toBe(4)
   await act(async () => { refuse(refusal()); await Promise.resolve() })
   await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a1', 'a2']))
+  expect(lastComposer().session?.owner_attachment?.queued_input_count).toBe(5)
   await expect(result).resolves.toBe('refused')
   expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
 })
@@ -446,7 +449,7 @@ it('brings the last exchange back when /undo is refused (TAL-1384)', async () =>
 
 it('drops a discarded owner input from the composer at once (TAL-1384)', async () => {
   const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,
-    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }] }
+    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }], queued_input_count: 2 }
   const session = sessionFixture({ session_id: 'owner-chat', owner_attachment: owner as never })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   vi.mocked(api.fetchSession).mockResolvedValue({ session })
