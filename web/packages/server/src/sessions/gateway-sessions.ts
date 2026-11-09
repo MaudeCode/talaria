@@ -772,7 +772,13 @@ export class GatewaySessions {
     const target = await this.target(sid, profile)
     if (!target) return null
     const result = await this.call(target, { action: 'work_list' })
-    if (result.state === 'attached' && result.work) return { home: target.home, state: 'available', work: result.work }
+    if (result.state === 'attached' && result.work) {
+      // Display text follows the redaction policy; process and subagent ids stay native, since controls address them.
+      const redact = (text: string) => redactString(text, this.deps.redactEnabled())
+      const work = { ...result.work, processes: result.work.processes.map((p) => ({ ...p, command: redact(p.command), output_tail: redact(p.output_tail) })),
+        subagents: result.work.subagents.map((a) => ({ ...a, goal: redact(a.goal) })) }
+      return { home: target.home, state: 'available', work }
+    }
     return { home: target.home, state: result.reason === 'unsupported_projection' ? 'unsupported' : 'unavailable', work: null }
   }
 
@@ -781,7 +787,7 @@ export class GatewaySessions {
     const target = await this.target(sid, profile)
     if (!target) return null
     const result = await this.call(target, { action: 'work_tail', work_kind: ref.kind, work_id: ref.id, authority_epoch: ref.epoch })
-    return result.state === 'attached' && result.work_tail?.available ? result.work_tail.text : null
+    return result.state === 'attached' && result.work_tail?.available ? redactString(result.work_tail.text, this.deps.redactEnabled()) : null
   }
 
   /**

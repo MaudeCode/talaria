@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { BackgroundTask } from '@maudecode/talaria-web-contracts'
@@ -142,6 +142,18 @@ describe('Steer an owner subagent (TAL-1336)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(api.steerBackgroundTask).toHaveBeenCalledWith('sess-1', 'resident', 'Look at stderr too')
     await waitFor(() => { expect(screen.queryByRole('textbox', { name: 'Message for this agent' })).toBeNull() })
+  })
+
+  it('offers exactly the row\'s controls on right-click, and nothing on a row without any', async () => {
+    renderCard()
+    const row = (await screen.findByText('Read the logs')).closest('li')!
+    fireEvent.contextMenu(row)
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Stop', 'Steer'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Steer' }))
+    expect(await screen.findByRole('textbox', { name: 'Message for this agent' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    fireEvent.contextMenu(screen.getByText('Check the tests').closest('li')!)
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0)
   })
 
   it('keeps the message and says so when the agent did not take it', async () => {

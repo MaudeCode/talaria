@@ -1802,6 +1802,9 @@
               "can_stop": {
                 "type": "boolean"
               },
+              "can_steer": {
+                "type": "boolean"
+              },
               "active": {
                 "type": "boolean"
               }
@@ -1888,6 +1891,14 @@
             "refresh"
           ],
           "additionalProperties": false
+        },
+        "owner_work": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unsupported",
+            "unavailable"
+          ]
         }
       },
       "required": [

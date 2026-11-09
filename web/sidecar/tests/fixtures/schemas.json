@@ -11145,6 +11145,156 @@
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
         "type": "boolean"
       },
+      "work": {
+        "description": "`work_list`: the session's processes and subagents on its owner.",
+        "type": "object",
+        "properties": {
+          "authority_epoch": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "processes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "process_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "command": {
+                  "type": "string"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "exit_code": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "started_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "exited_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "completion_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "output_tail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "process_id",
+                "command",
+                "running",
+                "exit_code",
+                "started_at",
+                "exited_at",
+                "completion_reason",
+                "output_tail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subagents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subagent_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "goal": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "started_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "accepting_steer": {
+                  "type": "boolean"
+                },
+                "resident": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "subagent_id",
+                "goal",
+                "status",
+                "started_at",
+                "accepting_steer",
+                "resident"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "authority_epoch",
+          "processes",
+          "subagents"
+        ],
+        "additionalProperties": false
+      },
+      "work_tail": {
+        "description": "`work_tail`: a resident subagent's live transcript tail.",
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "text",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "work_outcome": {
+        "description": "`work_stop`, `work_steer`: what the owner did with this one row.",
+        "type": "string",
+        "enum": [
+          "stopped",
+          "not_running",
+          "not_found",
+          "queued",
+          "rejected"
+        ]
+      },
       "lock": {
         "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",
         "type": "object",
@@ -12303,6 +12453,156 @@
       "restarting": {
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
         "type": "boolean"
+      },
+      "work": {
+        "description": "`work_list`: the session's processes and subagents on its owner.",
+        "type": "object",
+        "properties": {
+          "authority_epoch": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "processes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "process_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "command": {
+                  "type": "string"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "exit_code": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "started_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "exited_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "completion_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "output_tail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "process_id",
+                "command",
+                "running",
+                "exit_code",
+                "started_at",
+                "exited_at",
+                "completion_reason",
+                "output_tail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subagents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subagent_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "goal": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "started_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "accepting_steer": {
+                  "type": "boolean"
+                },
+                "resident": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "subagent_id",
+                "goal",
+                "status",
+                "started_at",
+                "accepting_steer",
+                "resident"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "authority_epoch",
+          "processes",
+          "subagents"
+        ],
+        "additionalProperties": false
+      },
+      "work_tail": {
+        "description": "`work_tail`: a resident subagent's live transcript tail.",
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "text",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "work_outcome": {
+        "description": "`work_stop`, `work_steer`: what the owner did with this one row.",
+        "type": "string",
+        "enum": [
+          "stopped",
+          "not_running",
+          "not_found",
+          "queued",
+          "rejected"
+        ]
       },
       "lock": {
         "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",

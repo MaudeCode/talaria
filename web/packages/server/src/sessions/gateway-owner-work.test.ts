@@ -81,6 +81,24 @@ describe('native owner background work (TAL-1336)', () => {
     expect(ownerCalls('work_tail')).toHaveLength(1)
   })
 
+  it('redacts owner commands, goals, output and tails while controls keep the native identity', async () => {
+    const secret = 'sk-synthetic-owner-work-secret-1234567890abcdef'
+    roster = { ...native.work, processes: native.work.processes.map((p) => ({ ...p, command: `OPENAI_API_KEY=${secret} npm run dev`, output_tail: `token ${secret}\n` })),
+      subagents: native.work.subagents.map((a) => ({ ...a, goal: `Use OPENAI_API_KEY=${secret}` })) }
+    sidecar.respond('gateway.session', (params) => params.action === 'work_list' ? { state: 'attached', ...bare, work: roster as OwnerWork }
+      : params.action === 'work_tail' ? { state: 'attached', ...bare, work_tail: { available: true, text: `OPENAI_API_KEY=${secret}`, truncated: false } }
+      : params.action === 'work_stop' ? { state: 'attached', ...bare, work_outcome: 'stopped' } : attached(snapshot()))
+    const listed = await (await s.get(`/api/background/tasks?session_id=${sid}`)).text()
+    expect(listed).not.toContain(secret)
+    const tasks = (JSON.parse(listed) as { tasks: BackgroundTask[] }).tasks
+    for (const t of tasks.filter((t) => t.result_available)) {
+      expect(await (await s.get(`/api/background/result?session_id=${sid}&task_id=${encodeURIComponent(t.task_id)}`)).text()).not.toContain(secret)
+    }
+    const server = tasks.find((t) => t.kind === 'process' && t.can_stop)!
+    expect(await (await stop(server.task_id)).json()).toEqual({ outcome: 'stopped' })
+    expect(ownerCalls('work_stop')).toEqual([expect.objectContaining({ work_kind: 'process', work_id: 'proc_server' })])
+  })
+
   it('stops exactly one native row through its owner and never the sidecar\'s own registry', async () => {
     const server = await task('npm run dev')
     expect(await (await stop(server.task_id)).json()).toEqual({ outcome: 'stopped' })

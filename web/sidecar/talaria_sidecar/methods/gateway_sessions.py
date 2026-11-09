@@ -323,13 +323,22 @@ async def _work_action(client, params: dict, described: dict) -> dict:
     result = {"state": "attached", "reason": None, "snapshot": None, "receipt": None}
     if action != "work_list" and described["authority_epoch"] != params["authority_epoch"]:
         return _refused("refused", "owner_changed")
+    async def read(method, **fields):
+        """One roster read. A row the owner no longer holds is absent from it, never proof the rest is gone."""
+        try:
+            return await client.rpc(method, session_id=sid, **fields) or {}
+        except GatewayRPCError as exc:
+            if str(exc) not in _WORK_GONE:
+                raise
+            return {}
+
     try:
         if action == "work_list":
-            processes = (await client.rpc("process.list", session_id=sid) or {}).get("processes")
-            listed = (await client.rpc("subagent.list", session_id=sid) or {}).get("subagents")
+            processes = (await read("process.list")).get("processes")
+            listed = (await read("subagent.list")).get("subagents")
             subagents = [row for row in listed if isinstance(row, dict) and isinstance(row.get("subagent_id"), str) and row["subagent_id"]] \
                 if isinstance(listed, list) else []
-            tails = [await client.rpc("subagent.tail", session_id=sid, subagent_id=row["subagent_id"]) for row in subagents]
+            tails = [await read("subagent.tail", subagent_id=row["subagent_id"]) for row in subagents]
             return {**result, "work": _work(described, processes, subagents, tails)}
         native = params["work_id"]
         if action == "work_tail":
@@ -352,8 +361,6 @@ async def _work_action(client, params: dict, described: dict) -> dict:
     except GatewayRPCError as exc:
         if str(exc) not in _WORK_GONE:
             raise
-        if action == "work_list":
-            return {**result, "work": _work(described, [], [], [])}
         if action == "work_tail":
             return {**result, "work_tail": {"available": False, "text": "", "truncated": False}}
         return {**result, "work_outcome": "not_found"}

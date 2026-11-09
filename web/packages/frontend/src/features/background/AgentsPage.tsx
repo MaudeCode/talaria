@@ -11,7 +11,8 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { relativeTime } from '../sessions/SessionListPanel'
 import { m } from '../../paraglide/messages.js'
 import { useState } from 'react'
-import { BackgroundTaskAction, SteerForm, TaskHeading, agentsSummary, statusLabel } from './BackgroundWork'
+import { SteerForm, TaskActionButtons, TaskHeading, agentsSummary, statusLabel, useTaskActions } from './BackgroundWork'
+import { RowContextMenu } from '../../ui/Menu'
 
 const LIVE_REFRESH_MS = 10_000
 
@@ -75,11 +76,12 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
 
 function AgentEntry({ sessionId, task: t }: { sessionId: string; task: BackgroundTask }) {
   const [steering, setSteering] = useState(false)
+  const { actions, error } = useTaskActions(sessionId, t, { onSteer: steering ? undefined : () => setSteering(true) })
   return (
-    <li className="agents-entry flex flex-col gap-0.5 border-b border-border-subtle px-3 py-2" data-task-id={t.task_id} data-status={t.status}>
+    <RowContextMenu label={t.title} actions={actions} trigger={<li className="agents-entry flex flex-col gap-0.5 border-b border-border-subtle px-3 py-2" data-task-id={t.task_id} data-status={t.status}>
       <TaskHeading task={t} title={<span className="text-[13px] text-text">{t.title}</span>}>
         <span className="text-[11px] text-muted">{statusLabel(t.status)}</span>
-        <BackgroundTaskAction sessionId={sessionId} task={t} onSteer={steering ? undefined : () => setSteering(true)} />
+        <TaskActionButtons actions={actions} error={error} />
       </TaskHeading>
       {steering && t.can_steer && <SteerForm sessionId={sessionId} task={t} onClose={() => setSteering(false)} />}
       <div className="flex min-w-0 items-center gap-2 pl-5 text-[11px] text-muted">
@@ -96,6 +98,6 @@ function AgentEntry({ sessionId, task: t }: { sessionId: string; task: Backgroun
           ))}
         </div>
       )}
-    </li>
+    </li>} />
   )
 }

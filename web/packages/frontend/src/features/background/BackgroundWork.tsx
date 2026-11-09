@@ -11,6 +11,7 @@ import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
 import { showErrorToast } from '../toast/errorToast'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
@@ -126,22 +127,31 @@ export function TaskHeading({ task, title, titleBasis = 'basis-24', children }: 
   )
 }
 
-/** One action slot for a background row in the composer and Agents page. */
-export function BackgroundTaskAction({ sessionId, task, onSteer }: { sessionId: string; task: BackgroundTask; onSteer?: (() => void) | undefined }) {
+/**
+ * One background row's actions, defined once: its visible controls and its right-click and long-press menu show the same
+ * list. Dismiss removes a result from view; Stop waits for the Agent's completion; Steer opens the row's message field.
+ */
+export function useTaskActions(sessionId: string, task: BackgroundTask, opts: { onSteer?: (() => void) | undefined; result?: { open: boolean; toggle: () => void } }): { actions: RowAction[]; error: string | null } {
   const qc = useQueryClient()
-  const stopping = Boolean(task.can_stop)
   const stop = useMutation({
     mutationFn: () => api.stopBackgroundTask(sessionId, task.task_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }),
   })
-  // Dismiss removes a result from view; Stop waits for the Agent's completion.
   const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showErrorToast(e) })
-  const action = stopping ? stop : dismiss
-  if (!stopping && !task.dismissible) return null
+  const actions: RowAction[] = []
+  if (opts.result && task.result_available) actions.push({ label: opts.result.open ? m.bg_hide_result() : m.bg_show_result(), run: opts.result.toggle, expanded: opts.result.open })
+  if (task.can_stop) actions.push({ label: m.bg_stop(), run: () => stop.mutate(), busy: stop.isPending })
+  else if (task.dismissible) actions.push({ label: m.notice_dismiss(), run: () => dismiss.mutate(), busy: dismiss.isPending })
+  if (task.can_steer && opts.onSteer) actions.push({ label: m.bg_steer(), run: opts.onSteer })
+  const failed = task.can_stop ? stop : dismiss
+  return { actions, error: failed.isError ? failed.error.message : null }
+}
+
+/** A row's actions as its own controls, beside its status. */
+export function TaskActionButtons({ actions, error }: { actions: RowAction[]; error: string | null }) {
   return <>
-    <button type="button" className="composer-notice-action" disabled={action.isPending} onClick={() => action.mutate()}>{stopping ? m.bg_stop() : m.notice_dismiss()}</button>
-    {action.isError && <span role="alert" className="text-warning">{action.error.message}</span>}
-    {task.can_steer && onSteer && <button type="button" className="composer-notice-action" onClick={onSteer}>{m.bg_steer()}</button>}
+    {actions.map(({ label, run, busy, expanded }) => <button key={label} type="button" className="composer-notice-action" disabled={busy === true} {...(expanded === undefined ? {} : { 'aria-expanded': expanded })} onClick={run}>{label}</button>)}
+    {error && <span role="alert" className="text-warning">{error}</span>}
   </>
 }
 
@@ -149,12 +159,12 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
   const [open, setOpen] = useState(false)
   const [steering, setSteering] = useState(false)
   const result = useQuery({ queryKey: keys.backgroundResult(sessionId, task.task_id), queryFn: () => api.fetchBackgroundResult(sessionId, task.task_id), enabled: open && task.result_available })
+  const { actions, error } = useTaskActions(sessionId, task, { onSteer: steering ? undefined : () => setSteering(true), result: { open, toggle: () => setOpen((o) => !o) } })
   return (
-    <li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
+    <RowContextMenu label={task.title} actions={actions} trigger={<li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
       <TaskHeading task={task} titleBasis="basis-36" title={<><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</>}>
         <span className="text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
-        {task.result_available && <button type="button" className="composer-notice-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
-        <BackgroundTaskAction sessionId={sessionId} task={task} onSteer={steering ? undefined : () => setSteering(true)} />
+        <TaskActionButtons actions={actions} error={error} />
       </TaskHeading>
       {steering && task.can_steer && <SteerForm sessionId={sessionId} task={task} onClose={() => setSteering(false)} />}
       {open && (
@@ -162,7 +172,7 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
           {result.data ? <Markdown text={result.data.text} /> : result.isError ? <span className="text-muted">{m.bg_result_unavailable()}</span> : <span className="text-muted">{m.loading()}</span>}
         </div>
       )}
-    </li>
+    </li>} />
   )
 }
 

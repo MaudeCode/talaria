@@ -1034,11 +1034,21 @@ def test_work_list_projects_both_rosters_without_resuming_the_session(work_owner
 
 
 def test_work_list_reads_a_cold_session_as_empty_and_a_managed_worker_as_unsupported(work_owner):
-    work_owner.work["process.list"] = RuntimeError("not_found")
+    # A session the owner has not adopted is not_found on every ancillary read.
+    work_owner.work["process.list"] = work_owner.work["subagent.list"] = RuntimeError("not_found")
     assert work_owner.run(None, {"session_id": "native", "action": "work_list"})["work"] == {"authority_epoch": 1, "processes": [], "subagents": []}
     work_owner.work["process.list"] = RuntimeError("unsupported_projection")
     assert work_owner.run(None, {"session_id": "native", "action": "work_list"}) == {
         "state": "refused", "reason": "unsupported_projection", "snapshot": None, "receipt": None}
+
+
+def test_work_list_keeps_the_rest_when_one_child_ends_mid_read(work_owner):
+    tails = dict(NATIVE_WORK["owner"]["subagent.tail"])
+    tails["sa-resident"] = RuntimeError("not_found")
+    work_owner.work["subagent.tail"] = tails
+    work = work_owner.run(None, {"session_id": "native", "action": "work_list"})["work"]
+    assert work["processes"] == NATIVE_WORK["work"]["processes"]
+    assert [(a["subagent_id"], a["resident"]) for a in work["subagents"]] == [("sa-resident", False), ("sa-rebuilt", False)]
 
 
 @pytest.mark.parametrize("kind,reply,method,outcome", [
