@@ -99,6 +99,8 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     activityExpiresAt: state.activityExpiresAt,
     alertEligible: state.alertEligible,
     approvalHeadId: state.approvalHeadId,
+    decisionReviewId: state.decisionReviewId,
+    decisionReviewTitle: state.decisionReviewTitle,
   };
 }
 
@@ -214,6 +216,7 @@ async function enqueueJob(
     sourcePublisherId?: string;
     sourceSessionId?: string;
     sourceApprovalHeadId?: string;
+    sourceDecisionReviewId?: string;
     kind: "live_activity_update" | "live_activity_end" | "live_activity_start" | "notification";
     request: ApnsRequest;
     aggregate?: ActivityAggregate;
@@ -240,6 +243,7 @@ async function enqueueJob(
     sourcePublisherId: input.sourcePublisherId,
     sourceSessionId: input.sourceSessionId,
     sourceApprovalHeadId: input.sourceApprovalHeadId,
+    sourceDecisionReviewId: input.sourceDecisionReviewId,
     kind: input.kind,
     expectedToken: input.request.token,
     stateFingerprint: input.stateFingerprint,
@@ -300,6 +304,7 @@ export const recompute = internalMutation({
       sessionId: v.string(),
       previousPhase: v.optional(sessionPhaseValidator),
       previousApprovalHeadId: v.optional(v.string()),
+      previousDecisionReviewId: v.optional(v.string()),
       state: v.optional(storedSessionStateValidator),
     }))),
   },
@@ -361,12 +366,12 @@ export const recompute = internalMutation({
           candidate.publisherId === transition.publisherId &&
           candidate.sessionId === transition.sessionId,
       );
-      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId }] : [];
+      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId, previousDecisionReviewId: transition.previousDecisionReviewId }] : [];
     });
     // The alerts a device's preferences and publisher subscriptions allow for this run's transitions.
-    const alertsFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousPhase, previousApprovalHeadId }) => {
+    const alertsFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId }) => {
       if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
-      const alert = alertForTransition(previousPhase ?? null, state, device.preferences, previousApprovalHeadId);
+      const alert = alertForTransition(previousPhase ?? null, state, device.preferences, previousApprovalHeadId, previousDecisionReviewId);
       return alert ? [{ alert, state }] : [];
     });
     const changedState = changed[0]?.state ?? null;
@@ -395,8 +400,9 @@ export const recompute = internalMutation({
       // it, so heartbeats, retention, and idle recomputes cannot alert for the suppressed event.
       const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
       const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
-      const eligibleTransition = visibleChanges.some(({ state, previousPhase, previousApprovalHeadId }) =>
-        (previousPhase === undefined || isAttentionTransition(previousPhase, previousApprovalHeadId, state))
+      const eligibleTransition = visibleChanges.some(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId }) =>
+        (previousPhase === undefined || isAttentionTransition(previousPhase, previousApprovalHeadId, state)
+          || (!!state.decisionReviewId && state.decisionReviewId !== previousDecisionReviewId))
           && state.alertEligible !== false,
       );
       const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(activityPhase(state)));
@@ -582,7 +588,9 @@ export const recompute = internalMutation({
           const { alert, state: notificationState } = changedAlert;
           // An approval alert is keyed by its queue head rather than the snapshot that revealed it, so a later
           // snapshot of the same head neither drops a retrying delivery nor queues a second alert.
-          const approvalHeadId = activityPhase(notificationState) === "waiting_for_approval"
+          // TAL-1966: a decision review alert is keyed by its review, so it is queued once whichever snapshot carried it.
+          const decisionReviewId = alert.deepLink !== undefined ? notificationState.decisionReviewId : undefined;
+          const approvalHeadId = decisionReviewId === undefined && activityPhase(notificationState) === "waiting_for_approval"
             ? notificationState.approvalHeadId
             : undefined;
           await enqueueJob(ctx, {
@@ -592,6 +600,7 @@ export const recompute = internalMutation({
             sourcePublisherId: notificationState.publisherId,
             sourceSessionId: notificationState.sessionId,
             sourceApprovalHeadId: approvalHeadId,
+            sourceDecisionReviewId: decisionReviewId,
             request: makeNotification({
               token: device.pushToken,
               bundleId: device.bundleId,
@@ -601,7 +610,9 @@ export const recompute = internalMutation({
               // The relay keys a chat by publisher and session (one sessionStates row each); base64url SHA-256 fits APNs' 64-byte limit.
               threadId: await sha256(JSON.stringify(["alert", notificationState.publisherId, notificationState.sessionId])),
             }),
-            stateFingerprint: approvalHeadId === undefined
+            stateFingerprint: decisionReviewId !== undefined
+              ? `notification:decision:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, notificationState.decisionReviewId])}:${device.deviceId}`
+              : approvalHeadId === undefined
               ? `notification:${notificationState.eventId}:${device.deviceId}`
               : `notification:approval:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, approvalHeadId])}:${device.deviceId}`,
             now,
@@ -783,10 +794,12 @@ export const claimJob = internalMutation({
           !state ||
           state.deleted ||
           state.alertEligible === false ||
-          (job.kind === "notification" && !alertForState(state, device.preferences)) ||
-          (job.sourceApprovalHeadId === undefined
-            ? !job.stateFingerprint.includes(`:${state.eventId}:`)
-            : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId)
+          (job.sourceDecisionReviewId !== undefined
+            ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
+            : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
+              (job.sourceApprovalHeadId === undefined
+                ? !job.stateFingerprint.includes(`:${state.eventId}:`)
+                : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };

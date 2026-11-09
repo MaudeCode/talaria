@@ -180,6 +180,9 @@ export default defineSchema({
     alertEligible: v.optional(v.boolean()),
     // The latest approval queue head this run made visible; it outlives the approval phase within the run.
     approvalHeadId: v.optional(v.string()),
+    // TAL-1966: the session's newest open decision review; a review the state did not hold before alerts once.
+    decisionReviewId: v.optional(v.string()),
+    decisionReviewTitle: v.optional(v.string()),
     receivedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])
@@ -248,6 +251,8 @@ export default defineSchema({
     sourceSessionId: v.optional(v.string()),
     // An approval alert stays deliverable, through retries, while this head is still the session's head.
     sourceApprovalHeadId: v.optional(v.string()),
+    // TAL-1966: a decision review alert stays deliverable while the session still holds this review.
+    sourceDecisionReviewId: v.optional(v.string()),
     kind: v.union(
       v.literal("live_activity_update"),
       v.literal("live_activity_end"),

@@ -299,6 +299,140 @@
         "notify_on_failure": true
       },
       "expected": "failure"
+    },
+    {
+      "name": "new decision review alerts",
+      "previous": "running",
+      "next": "running",
+      "alertEligible": true,
+      "previousDecisionReviewId": null,
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "decision"
+    },
+    {
+      "name": "new decision review wins over the phase change",
+      "previous": "running",
+      "next": "completed",
+      "alertEligible": true,
+      "previousDecisionReviewId": null,
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "decision"
+    },
+    {
+      "name": "a newer decision review alerts",
+      "previous": "completed",
+      "next": "running",
+      "alertEligible": true,
+      "previousDecisionReviewId": "dr_00000001",
+      "decisionReviewId": "dr_00000002",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "decision"
+    },
+    {
+      "name": "held decision review never alerts again",
+      "previous": "running",
+      "next": "running",
+      "alertEligible": true,
+      "previousDecisionReviewId": "dr_00000001",
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "held decision review leaves the phase rule",
+      "previous": "running",
+      "next": "completed",
+      "alertEligible": true,
+      "previousDecisionReviewId": "dr_00000001",
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "completion"
+    },
+    {
+      "name": "first publication with a decision review never alerts",
+      "previous": null,
+      "next": "running",
+      "alertEligible": true,
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "ineligible decision review",
+      "previous": "running",
+      "next": "running",
+      "alertEligible": false,
+      "previousDecisionReviewId": null,
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "decision review with input disabled",
+      "previous": "running",
+      "next": "running",
+      "alertEligible": true,
+      "previousDecisionReviewId": null,
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": false,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "decision review with input disabled leaves the phase rule",
+      "previous": "running",
+      "next": "completed",
+      "alertEligible": true,
+      "previousDecisionReviewId": null,
+      "decisionReviewId": "dr_00000001",
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": false,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "completion"
     }
   ]
 }

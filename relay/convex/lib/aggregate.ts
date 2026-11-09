@@ -140,10 +140,33 @@ export function alertForTransition(
   next: SessionState,
   preferences: NotificationPreferences,
   previousApprovalHeadId?: string,
+  previousDecisionReviewId?: string | null,
 ): ActivityAlert | null {
   const previousPhase = typeof previous === "string" ? previous : previous ? activityPhase(previous) : null;
-  if (!previousPhase || !isAttentionTransition(previousPhase, previousApprovalHeadId, next)) return null;
+  if (!previousPhase) return null;
+  const decision = decisionAlert(next, preferences, previousDecisionReviewId);
+  if (decision) return decision;
+  if (!isAttentionTransition(previousPhase, previousApprovalHeadId, next)) return null;
   return alertForState(next, preferences);
+}
+
+/**
+ * TAL-1966: a decision review the state did not hold before alerts once under the input preference, whatever the phase
+ * did, and opens the review. Its own level makes it a standalone notification rather than a Live Activity alert.
+ */
+export function decisionAlert(
+  next: SessionState,
+  preferences: NotificationPreferences,
+  previousDecisionReviewId: string | null | undefined,
+): ActivityAlert | null {
+  if (!next.decisionReviewId || next.decisionReviewId === previousDecisionReviewId) return null;
+  if (next.alertEligible === false || !preferences.notifyOnInput) return null;
+  return {
+    title: "Decision review ready",
+    body: next.decisionReviewTitle || next.title,
+    interruptionLevel: "active",
+    deepLink: `/decisions/${next.decisionReviewId}`,
+  };
 }
 
 /**

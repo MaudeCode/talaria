@@ -184,7 +184,7 @@ export function makeNotification(input: {
       },
       publisherId: input.row.publisherId,
       sessionId: input.row.sessionId,
-      deepLink: input.row.deepLink,
+      deepLink: input.alert.deepLink ?? input.row.deepLink,
     },
   };
 }

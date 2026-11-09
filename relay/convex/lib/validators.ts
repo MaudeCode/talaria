@@ -68,6 +68,8 @@ export const sessionStateContentValidator = v.object({
   deepLink: v.string(),
   alertEligible: v.optional(v.boolean()),
   approvalHeadId: v.optional(v.string()),
+  decisionReviewId: v.optional(v.string()),
+  decisionReviewTitle: v.optional(v.string()),
 });
 
 export const sessionStateInputValidator = v.object({
@@ -96,6 +98,8 @@ export const storedSessionStateValidator = v.object({
   activityExpiresAt: v.optional(v.number()),
   alertEligible: v.optional(v.boolean()),
   approvalHeadId: v.optional(v.string()),
+  decisionReviewId: v.optional(v.string()),
+  decisionReviewTitle: v.optional(v.string()),
   receivedAt: v.number(),
 });
 

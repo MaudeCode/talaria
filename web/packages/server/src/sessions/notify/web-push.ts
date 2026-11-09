@@ -21,7 +21,7 @@ const MAX_SUBSCRIPTIONS = 64
 const MAX_TRIES = 3
 const REQUEST_TIMEOUT_MS = 10_000
 const LOCAL_SUBJECT = 'mailto:talaria-web@localhost'
-const BODY: Record<AlertKind, string> = { approval: 'Approval needed', input: 'Input needed', completion: 'Completed', failure: 'Failed' }
+const BODY: Record<AlertKind, string> = { approval: 'Approval needed', input: 'Input needed', completion: 'Completed', failure: 'Failed', decision: 'Decision review ready' }
 
 export class WebPushRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
@@ -79,8 +79,8 @@ function decodedLength(value: string): number { return /^[A-Za-z0-9_-]+={0,2}$/.
 
 export class WebPushChannel implements NotificationChannel {
   readonly id = 'web-push'
-  /** profile → session → effective phase last seen. */
-  private readonly lastPhase = new Map<string, Map<string, string>>()
+  /** profile → session → effective phase and open decision review last seen. */
+  private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null }>>()
   private readonly inFlight = new Set<Promise<void>>()
   private dirty = false
   private running: Promise<void> | null = null
@@ -198,14 +198,15 @@ export class WebPushChannel implements NotificationChannel {
     for (const profile of profiles) {
       const rows = await this.deps.activity.states(profile, () => { this.changed() })
       const previous = this.lastPhase.get(profile)
-      const next = new Map<string, string>()
+      const next = new Map<string, { phase: string; decision: string | null }>()
       for (const row of rows) {
         const phase = row.activityPhase ?? row.phase
-        next.set(row.sessionId, phase)
+        next.set(row.sessionId, { phase, decision: row.decisionReviewId ?? null })
         if (!previous) continue
+        const seen = previous.get(row.sessionId)
         for (const sub of subs) {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
-          const kind = alertForTransition(previous.get(row.sessionId) ?? null, { phase, alertEligible: row.alertEligible }, sub.preferences)
+          const kind = alertForTransition(seen?.phase ?? null, { phase, alertEligible: row.alertEligible, decisionReviewId: row.decisionReviewId }, sub.preferences, seen?.decision)
           if (kind) this.track(this.deliver(sub, row, kind))
         }
       }
@@ -233,7 +234,10 @@ export class WebPushChannel implements NotificationChannel {
   private async deliver(sub: Subscription, row: ActivityState, kind: AlertKind): Promise<void> {
     const vapid = VapidSchema.parse((await this.deps.documents.get('web-push', 'vapid'))?.value)
     // The Relay deep link is the app's route; the browser opens the Web chat, resolved against the worker's mount scope.
-    const payload = JSON.stringify({ title: row.title, body: BODY[kind], tag: row.sessionId, url: `/session/${encodeURIComponent(row.sessionId)}` })
+    // TAL-1966: a decision review alert opens the review and keeps its own tag, so the run's later alert never replaces it.
+    const payload = JSON.stringify(kind === 'decision' && row.decisionReviewId
+      ? { title: BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
+      : { title: row.title, body: BODY[kind], tag: row.sessionId, url: `/session/${encodeURIComponent(row.sessionId)}` })
     const details = webpush.generateRequestDetails({ endpoint: sub.endpoint, keys: sub.keys }, payload, {
       vapidDetails: { subject: this.subject(sub), publicKey: vapid.publicKey, privateKey: vapid.privateKey },
       TTL: 3600, urgency: kind === 'approval' || kind === 'input' ? 'high' : 'normal', contentEncoding: 'aes128gcm',
