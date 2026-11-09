@@ -323,6 +323,7 @@ public final class ChatViewModel {
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, connectionChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
         if let session {
+            serverRefreshAfter = session.refreshAfter
             ownerAttachment = session.ownerAttachment
             if let sessionID {
                 pendingActionCoordinator.applyOwnerConnection(session.ownerAttachment, sessionID: sessionID, changesAtFetch: connectionChangesAtFetch)
@@ -5708,6 +5709,21 @@ public final class ChatViewModel {
             if !isViewingCachedData, !Task.isCancelled {
                 await refreshBackgroundTasks()
             }
+        }
+    }
+
+    /// TAL-1761: seconds until the server wants this detail read again (a running delegated child has no stream of its
+    /// own); nil when it does not.
+    public private(set) var serverRefreshAfter: Int?
+
+    /// Rereads the detail after each delay the server sets, until a detail clears it. Runs until cancelled, so the caller
+    /// scopes it to an active scene and the visible chat.
+    public func followServerRefresh(
+        modelContext: ModelContext? = nil,
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) async {
+        while !Task.isCancelled, let after = serverRefreshAfter, (try? await sleep(.seconds(after))) != nil, !Task.isCancelled {
+            await syncWithServer(modelContext: modelContext, joinsLoadInFlight: false, isRoutineReconciliation: true)
         }
     }
 

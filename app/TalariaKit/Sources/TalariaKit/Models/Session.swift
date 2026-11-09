@@ -934,6 +934,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public let outputTokens: Int?
     public let estimatedCost: Double?
     public let activityPhase: String?
+    /// TAL-1761: seconds until the server wants this detail read again, set only while a read-only delegated child runs;
+    /// nil once it ends or from an older server.
+    public let refreshAfter: Int?
     public let activeStreamId: String?
     let isStreaming: Bool?
     /// Who started the running turn (TAL-460): `background` when a background result did; nil while idle or on older servers.
@@ -1025,7 +1028,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         case inputTokens
         case outputTokens
         case estimatedCost
-        case activityPhase, activeStreamId
+        case activityPhase, refreshAfter, activeStreamId
         case isStreaming
         case activeTurnOrigin
         case pendingSteers
@@ -1099,6 +1102,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
         estimatedCost = container.decodeLossyDoubleIfPresent(forKey: .estimatedCost)
         activityPhase = container.decodeLossyStringIfPresent(forKey: .activityPhase)
+        refreshAfter = container.decodeLossyIntIfPresent(forKey: .refreshAfter)
         activeStreamId = container.decodeLossyStringIfPresent(forKey: .activeStreamId)
         isStreaming = container.decodeLossyBoolIfPresent(forKey: .isStreaming)
         activeTurnOrigin = container.decodeLossyStringIfPresent(forKey: .activeTurnOrigin)
