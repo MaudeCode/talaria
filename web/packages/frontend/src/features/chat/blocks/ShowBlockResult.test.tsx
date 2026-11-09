@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ShowBlock } from '@maudecode/talaria-web-contracts'
@@ -51,6 +51,21 @@ it('draws each chart series through the Insights chart with the server\'s format
   expect(line.getByRole('table', { name: 'Error rate · Web' })).toHaveTextContent('Tue0.25%')
 })
 
+it('plots negative values below a zero line and names the server\'s peak', async () => {
+  const signed = (chart: 'bar' | 'line'): ShowBlock => ({ ...fixture.chart, chart, series: [{ name: 'Delta', points: [{ label: 'a', value: -3, display: '-3' }, { label: 'b', value: -1, display: '-1' }, { label: 'c', value: 2, display: '2' }], max_display: '2', peak: { label: 'server peak', display: 'as sent' } }] } as ShowBlock)
+  const bars = await mount(signed('bar'))
+  expect(await bars.findByRole('img', { name: 'Requests per day: peak as sent at server peak' })).toBeInTheDocument()
+  const style = (label: string) => (bars.getByTitle(`${label}: ${label === 'a' ? '-3' : label === 'b' ? '-1' : '2'}`).firstElementChild as HTMLElement).style
+  // The scale runs from 2 down to -3: zero sits 40% from the top; -3 hangs to the bottom, -1 a third of that, 2 rises to the top.
+  expect([style('a').top, style('a').height]).toEqual(['40%', '60%'])
+  expect([style('b').top, style('b').height]).toEqual(['40%', '20%'])
+  expect([style('c').top, style('c').height]).toEqual(['0%', '40%'])
+  cleanup()
+  const line = await mount(signed('line'))
+  const points = (await line.findByRole('img', { name: /peak as sent/ })).querySelector('polyline')?.getAttribute('points')?.split(' ').map((point) => point.split(',')[1])
+  expect(points).toEqual(['100', '60', '0'])
+})
+
 it('frames an HTML block with scripts only, and opens its page', async () => {
   const open = vi.spyOn(window, 'open').mockReturnValue(null)
   const card = await mount(fixture.html)
@@ -60,6 +75,12 @@ it('frames an HTML block with scripts only, and opens its page', async () => {
   expect(frame.getAttribute('src')).toMatch(/\/show-frame\/c2JfMTAwMDAwMDAwMDA1\.1794103200\.0f3c$/)
   await userEvent.click(card.getByRole('button', { name: 'Open' }))
   expect(open).toHaveBeenCalledWith(frame.getAttribute('src'), '_blank', 'noopener,noreferrer')
+  // The page's own load keeps the frame; a second load means the page navigated itself away, and the frame closes.
+  fireEvent.load(frame)
+  expect(card.getByTitle('Release checklist')).toBe(frame)
+  fireEvent.load(frame)
+  expect(card.queryByTitle('Release checklist')).toBeNull()
+  expect(card.getByRole('status')).toHaveTextContent('The page tried to leave its frame and was closed')
 })
 
 it('shows an image file inline and opens a text file on the side panel\'s Files page', async () => {

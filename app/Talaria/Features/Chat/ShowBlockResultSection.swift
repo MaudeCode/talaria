@@ -203,7 +203,7 @@ private struct ShowChartView: View {
     }
 
     private var peakSummary: String {
-        guard let peak = series.points.max(by: { $0.value < $1.value }) else { return String(localized: "No data") }
+        guard let peak = series.peak else { return series.name }
         return String(localized: "peak \(peak.display) at \(peak.label)")
     }
 }

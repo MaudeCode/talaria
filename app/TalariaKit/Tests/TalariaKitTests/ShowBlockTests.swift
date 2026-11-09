@@ -39,6 +39,7 @@ final class ShowBlockTests: XCTestCase {
         XCTAssertEqual(line.series.map(\.name), ["API", "Web"])
         XCTAssertEqual(line.series[1].points.map(\.display), ["0.5%", "0.25%", "1%"])
         XCTAssertEqual(line.series[0].maxDisplay, "2%")
+        XCTAssertEqual(line.series[1].peak, ShowBlock.Peak(label: "Wed", display: "1%"))
     }
 
     func testFilesAndPagesNameTheirServerURLsUnderTheBasePath() async throws {

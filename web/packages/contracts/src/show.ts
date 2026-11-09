@@ -42,8 +42,11 @@ export const ShowTableBlockSchema = ShowBase.extend({
 
 /** One point of a chart series, with its value as the server formatted it (`unit` included). */
 export const ShowChartPointSchema = z.object({ label: z.string(), value: z.number(), display: z.string() })
-/** `max_display` is the series' largest value (0 when none is positive) as the chart's scale label shows it. */
-export const ShowChartSeriesSchema = z.object({ name: z.string(), points: z.array(ShowChartPointSchema), max_display: z.string() })
+/**
+ * `max_display` is the series' largest value (0 when none is positive) as the chart's scale label shows it; `peak` is
+ * its largest point (the first of equal ones), which the chart's accessibility summary names.
+ */
+export const ShowChartSeriesSchema = z.object({ name: z.string(), points: z.array(ShowChartPointSchema), max_display: z.string(), peak: z.object({ label: z.string(), display: z.string() }) })
 export const ShowChartBlockSchema = ShowBase.extend({
   kind: z.literal('chart'),
   chart: z.enum(['bar', 'line']),

@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { ShowBlock, ShowBlockRef } from '@maudecode/talaria-web-contracts'
 import * as api from '../../../api/endpoints'
@@ -48,12 +49,23 @@ function BlockBody({ block }: { block: ShowBlock }) {
       </>
     case 'chart':
       return <div className="mt-2 flex flex-col gap-4">
-        {block.series.map((series, index) => <BarChart key={index} id={`show-${block.block_id}-${String(index)}`} variant={block.chart} title={block.series.length > 1 ? `${block.title} · ${series.name}` : block.title} maxDisplay={series.max_display} rows={series.points.map((point) => ({ label: point.label, value: point.value, display: point.display }))} />)}
+        {block.series.map((series, index) => <BarChart key={index} id={`show-${block.block_id}-${String(index)}`} variant={block.chart} title={block.series.length > 1 ? `${block.title} · ${series.name}` : block.title} maxDisplay={series.max_display} peak={series.peak} rows={series.points.map((point) => ({ label: point.label, value: point.value, display: point.display }))} />)}
       </div>
     case 'html':
-      // `allow-scripts` only: an opaque origin, so the page gets no cookie and its own CSP gives it no network.
-      return <iframe src={href(block.frame_url)} title={block.title} sandbox="allow-scripts" referrerPolicy="no-referrer" className="mt-2 h-96 w-full rounded border border-border-subtle bg-white" />
+      return <ShowFrame key={block.frame_url} block={block} />
   }
+}
+
+/**
+ * The page in a frame with `allow-scripts` only: an opaque origin, so it gets no cookie, and its CSP gives it no fetch.
+ * A CSP cannot stop the frame navigating itself, so a second load (the page left its grant URL) closes the frame: the
+ * page it went to never shows, and nothing typed afterwards reaches it. The App's web view refuses that navigation.
+ */
+function ShowFrame({ block }: { block: Extract<ShowBlock, { kind: 'html' }> }) {
+  const loads = useRef(0)
+  const [left, setLeft] = useState(false)
+  if (left) return <p role="status" className="mt-2 text-muted">{m.show_frame_left()}</p>
+  return <iframe src={href(block.frame_url)} title={block.title} sandbox="allow-scripts" referrerPolicy="no-referrer" onLoad={() => { loads.current += 1; if (loads.current > 1) setLeft(true) }} className="mt-2 h-96 w-full rounded border border-border-subtle bg-white" />
 }
 
 /**

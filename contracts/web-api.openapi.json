@@ -133580,12 +133580,28 @@
                               },
                               "max_display": {
                                 "type": "string"
+                              },
+                              "peak": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "display": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "display"
+                                ]
                               }
                             },
                             "required": [
                               "name",
                               "points",
-                              "max_display"
+                              "max_display",
+                              "peak"
                             ]
                           }
                         }

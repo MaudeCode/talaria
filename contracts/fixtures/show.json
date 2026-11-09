@@ -99,7 +99,11 @@
             "display": "900"
           }
         ],
-        "max_display": "1,850.5"
+        "max_display": "1,850.5",
+        "peak": {
+          "label": "Tue",
+          "display": "1,850.5"
+        }
       }
     ]
   },
@@ -131,7 +135,11 @@
             "display": "2%"
           }
         ],
-        "max_display": "2%"
+        "max_display": "2%",
+        "peak": {
+          "label": "Wed",
+          "display": "2%"
+        }
       },
       {
         "name": "Web",
@@ -152,7 +160,11 @@
             "display": "1%"
           }
         ],
-        "max_display": "1%"
+        "max_display": "1%",
+        "peak": {
+          "label": "Wed",
+          "display": "1%"
+        }
       }
     ]
   },

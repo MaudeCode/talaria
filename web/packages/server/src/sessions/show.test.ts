@@ -1,10 +1,12 @@
-import { mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SIDECAR_SERVER_METHODS, ShowBlockSchema } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { Session } from './session.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { createStorage } from '../runtime.js'
+import type { DocumentBackend } from './storage/backend.js'
 import { toolOutcome } from './merge.js'
 import { SHOW_FRAME_CSP } from './show.js'
 
@@ -17,6 +19,7 @@ describe('show blocks (TAL-1968)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
   let workspace: string
+  let documents: DocumentBackend
   const clock = 1_794_100_000
   const put = async (kind: string, payload: Json, caller = CALLER) => {
     const reply = await sidecar.serverRequest('server.show_put', { caller_session_id: caller, kind, payload })
@@ -34,7 +37,7 @@ describe('show blocks (TAL-1968)', () => {
 
   beforeEach(async () => {
     sidecar = new FakeSidecar()
-    s = await bootTestServer({ sidecar, now: () => clock })
+    s = await bootTestServer({ sidecar, now: () => clock, storage: async (config) => { const backend = await createStorage(config, () => clock); documents = backend.documents; return backend } })
     workspace = join(s.state, 'workspace')
     mkdirSync(join(workspace, 'reports'), { recursive: true })
     await s.deps.sessionStore.save(new Session({ session_id: CALLER, title: CALLER, profile: 'default', workspace, updated_at: clock, messages: [{ role: 'user', content: 'hi', timestamp: clock }] }, { workspace, model: null }))
@@ -82,7 +85,7 @@ describe('show blocks (TAL-1968)', () => {
     expect(await put('file', { path: 'missing.md' })).toMatchObject({ condition: 'file_not_found' })
     expect(await put('file', { path: 'blob.bin' })).toMatchObject({ condition: 'media_unsupported' })
     expect(await put('file', {})).toMatchObject({ condition: 'payload_invalid', message: 'path is required' })
-    expect(readdirSync(join(s.state, 'show-blocks')), 'Only the table was stored').toHaveLength(1)
+    expect(await documents.list('show-blocks'), 'Only the table was stored').toHaveLength(1)
   })
 
   it('cuts a table to its caps and says so, and formats cells as text', async () => {
@@ -103,9 +106,9 @@ describe('show blocks (TAL-1968)', () => {
 
   it('formats chart values with the unit and refuses a malformed series', async () => {
     const { block: chart } = await shown('chart', { title: 'Error rate', kind: 'line', unit: '%', series: [{ name: 'API', points: [{ label: 'Mon', value: 1.5 }, { label: 'Tue', value: 1234.567 }] }] })
-    expect(chart).toMatchObject({ chart: 'line', unit: '%', series: [{ name: 'API', points: [{ label: 'Mon', value: 1.5, display: '1.5%' }, { label: 'Tue', value: 1234.567, display: '1,234.57%' }], max_display: '1,234.57%' }] })
+    expect(chart).toMatchObject({ chart: 'line', unit: '%', series: [{ name: 'API', points: [{ label: 'Mon', value: 1.5, display: '1.5%' }, { label: 'Tue', value: 1234.567, display: '1,234.57%' }], max_display: '1,234.57%', peak: { label: 'Tue', display: '1,234.57%' } }] })
     const bar = await shown('chart', { title: 'Latency', kind: 'bar', unit: 'ms', series: [{ points: [{ label: 'a', value: -3 }] }] })
-    expect(bar.block).toMatchObject({ series: [{ name: 'Latency', points: [{ display: '-3 ms' }], max_display: '0 ms' }] })
+    expect(bar.block).toMatchObject({ series: [{ name: 'Latency', points: [{ display: '-3 ms' }], max_display: '0 ms', peak: { label: 'a', display: '-3 ms' } }] })
     expect(await put('chart', { title: 'x', kind: 'pie', series: [] })).toMatchObject({ condition: 'payload_invalid', message: 'kind must be bar or line' })
     expect(await put('chart', { title: 'x', kind: 'bar', series: [{ points: [{ label: 'a', value: 'NaN' }] }] })).toMatchObject({ condition: 'payload_invalid' })
     expect(await put('chart', { title: 'x', kind: 'bar', series: [{ points: [{ label: 'a', value: 1 }, { label: 'a', value: 2 }] }] })).toMatchObject({ condition: 'payload_invalid', message: 'series[0] repeats the label a' })

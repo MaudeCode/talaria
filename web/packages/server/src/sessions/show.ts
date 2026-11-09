@@ -194,7 +194,8 @@ function chart(raw: Record<string, unknown>): { title: string; fields: Fields<'c
       if (typeof point.value !== 'number' || !Number.isFinite(point.value)) throw invalid(`series[${s}].points[${p}].value must be a finite number`)
       return { label, value: point.value, display: chartDisplay(point.value, unit) }
     })
-    return { name, points, max_display: chartDisplay(Math.max(0, ...points.map((point) => point.value)), unit) }
+    const peak = points.reduce((best, point) => (point.value > best.value ? point : best))
+    return { name, points, max_display: chartDisplay(Math.max(0, ...points.map((point) => point.value)), unit), peak: { label: peak.label, display: peak.display } }
   })
   return { title, fields: { chart: kind, unit, series }, note: null }
 }

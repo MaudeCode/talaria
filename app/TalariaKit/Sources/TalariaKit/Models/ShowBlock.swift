@@ -49,10 +49,17 @@ public struct ShowBlock: Decodable, Equatable, Sendable {
         public let display: String
     }
 
+    /// The point the server chose as the series' peak, for its accessibility summary.
+    public struct Peak: Decodable, Equatable, Sendable {
+        public let label: String
+        public let display: String
+    }
+
     public struct Series: Decodable, Equatable, Sendable {
         public let name: String
         public let points: [Point]
         public let maxDisplay: String
+        public let peak: Peak?
     }
 
     public let blockId: String

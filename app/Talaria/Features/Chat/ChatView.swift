@@ -2020,7 +2020,7 @@ struct ChatView: View {
         if companionPageIsBeside {
             viewModel.pinCompanionFile(path)
         } else {
-            openedFileLink = WorkspaceFileLink.parse("./\(path)", workspaceRoot: viewModel.selectedWorkspacePath)
+            openedFileLink = WorkspaceFileLink(path: path)
         }
     }
 
