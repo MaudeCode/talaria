@@ -51,25 +51,50 @@ struct NoticeChip: View {
 
 /// TAL-372: the session's background work the server pins (running work, and a finished `/background` result until
 /// dismissed), opened from the composer's background tasks chip (TAL-1001): each task's status, the full result on
-/// request, and Dismiss where the server offers it. The sheet closes once nothing is pinned.
+/// request, and the actions the server offers on it. An owner chat's processes and subagents list here too, with Stop and
+/// Steer only where their owner allows them (TAL-1337). The sheet closes once nothing is pinned and the owner has
+/// nothing to explain.
 struct BackgroundWorkSheet: View {
     let tasks: [BackgroundWorkTask]
+    var ownerWork: BackgroundTasksResponse.OwnerWork?
     let loadResult: (String) async -> String?
     let dismiss: (String) async -> Void
+    var stop: (String) async -> BackgroundControlOutcome? = { _ in nil }
+    var steer: (_ taskID: String, _ text: String) async -> BackgroundControlOutcome? = { _, _ in nil }
 
     @Environment(\.dismiss) private var close
+    /// Rows whose Stop or Steer awaits its owner's answer: the owner produces the result, so only that row waits.
+    @State private var controlling: Set<String> = []
+    @State private var refusal: String?
+    @State private var steering: BackgroundWorkTask?
+    /// Each row's unsent steering message, kept when the owner does not take it.
+    @State private var steerDrafts: [String: String] = [:]
+
+    private enum RowAction: Hashable { case stop, steer, dismiss }
 
     var body: some View {
         NavigationStack {
-            List(tasks) { task in
-                row(task)
-                    .swipeActions(edge: .trailing) {
-                        if task.dismissible {
-                            Button(role: .destructive) { Task { await dismiss(task.taskId) } } label: {
-                                Label("Dismiss", systemImage: "xmark")
+            List {
+                Section {
+                    ForEach(tasks) { task in
+                        let actions = controlling.contains(task.taskId) ? [] : Self.actions(task)
+                        row(task)
+                            // A full swipe never stops running work by accident.
+                            .swipeActions(edge: .trailing, allowsFullSwipe: !task.canStop) {
+                                ForEach(actions, id: \.self) { actionButton($0, task: task) }
                             }
-                        }
+                            .contextMenu {
+                                ForEach(actions, id: \.self) { actionButton($0, task: task) }
+                            }
                     }
+                } header: {
+                    if let notice = Self.ownerNotice(ownerWork) {
+                        Text(notice)
+                            .font(AppFont.caption())
+                            .textCase(nil)
+                            .accessibilityIdentifier("background-work-owner-notice")
+                    }
+                }
             }
             .navigationTitle(String(localized: "Background tasks"))
             .navigationBarTitleDisplayMode(.inline)
@@ -85,9 +110,20 @@ struct BackgroundWorkSheet: View {
                     Button("Done") { close() }
                 }
             }
+            .alert(refusal ?? "", isPresented: Binding(get: { refusal != nil }, set: { if !$0 { refusal = nil } })) {
+                Button("OK", role: .cancel) {}
+            }
+            .alert(String(localized: "Steer"), isPresented: Binding(get: { steering != nil }, set: { if !$0 { steering = nil } }), presenting: steering) { task in
+                TextField(String(localized: "Message for this agent"), text: steerDraft(task.taskId))
+                Button(String(localized: "Send")) { send(steerDrafts[task.taskId] ?? "", to: task) }
+                Button("Cancel", role: .cancel) {}
+            } message: { task in
+                Text(task.title)
+            }
         }
-        // Initially too: the work can finish and be dismissed between the chip's tap and the sheet appearing.
-        .onChange(of: tasks.isEmpty, initial: true) { _, isEmpty in
+        // Initially too: the work can finish and be dismissed between the chip's tap and the sheet appearing. An owner
+        // lost while its work is open keeps the sheet, which says why the rows went.
+        .onChange(of: tasks.isEmpty && Self.ownerNotice(ownerWork) == nil, initial: true) { _, isEmpty in
             if isEmpty { close() }
         }
     }
@@ -107,13 +143,102 @@ struct BackgroundWorkSheet: View {
                     .font(AppFont.footnote())
                     .foregroundStyle(.secondary)
             }
+            if controlling.contains(task.taskId) {
+                Spacer(minLength: 0)
+                ProgressView()
+                    .controlSize(.small)
+            }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("background-task-row-\(task.taskId)")
         if task.resultAvailable {
             NavigationLink(value: task.taskId) { label }
                 .accessibilityHint(String(localized: "Show result"))
         } else {
             label
+        }
+    }
+
+    /// The row's actions, as the server offers them: Stop on work it may stop, else Dismiss on a finished result, and
+    /// Steer on an owner subagent that takes a message now. A listed row without any is read-only.
+    private static func actions(_ task: BackgroundWorkTask) -> [RowAction] {
+        var actions: [RowAction] = []
+        if task.canStop {
+            actions.append(.stop)
+        } else if task.dismissible {
+            actions.append(.dismiss)
+        }
+        if task.canSteer {
+            actions.append(.steer)
+        }
+        return actions
+    }
+
+    @ViewBuilder
+    private func actionButton(_ action: RowAction, task: BackgroundWorkTask) -> some View {
+        switch action {
+        case .stop:
+            Button(role: .destructive) {
+                control(task) { await stop(task.taskId) }
+            } label: {
+                Label(String(localized: "Stop"), systemImage: "stop.circle")
+            }
+        case .steer:
+            Button {
+                steering = task
+            } label: {
+                Label(String(localized: "Steer"), systemImage: "arrow.turn.down.right")
+            }
+            .tint(.accentColor)
+        case .dismiss:
+            Button(role: .destructive) { Task { await dismiss(task.taskId) } } label: {
+                Label("Dismiss", systemImage: "xmark")
+            }
+        }
+    }
+
+    private func steerDraft(_ taskID: String) -> Binding<String> {
+        Binding(get: { steerDrafts[taskID] ?? "" }, set: { steerDrafts[taskID] = $0 })
+    }
+
+    private func send(_ text: String, to task: BackgroundWorkTask) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        control(task) {
+            let outcome = await steer(task.taskId, text)
+            if outcome == .queued { steerDrafts[task.taskId] = nil }
+            return outcome
+        }
+    }
+
+    /// Runs one Stop or Steer. Its answer only explains itself when the owner did not do it; the rows show the
+    /// owner's roster read after every answer. A nil answer belongs to another chat or profile.
+    private func control(_ task: BackgroundWorkTask, _ run: @escaping () async -> BackgroundControlOutcome?) {
+        controlling.insert(task.taskId)
+        Task {
+            let outcome = await run()
+            controlling.remove(task.taskId)
+            if let outcome { refusal = Self.refusalMessage(outcome) }
+        }
+    }
+
+    static func refusalMessage(_ outcome: BackgroundControlOutcome) -> String? {
+        switch outcome {
+        case .stopped, .queued: nil
+        case .notRunning: String(localized: "This work had already stopped.")
+        case .notFound: String(localized: "This work is no longer running here.")
+        case .rejected: String(localized: "The agent didn’t take the message.")
+        case .unconfirmed: String(localized: "Couldn’t confirm what happened. The list shows the current state.")
+        case let .failed(message): message
+        }
+    }
+
+    /// An owner chat whose work the owner cannot show, or could not be read now.
+    static func ownerNotice(_ ownerWork: BackgroundTasksResponse.OwnerWork?) -> String? {
+        switch ownerWork {
+        case .unsupported: String(localized: "This chat’s agents run in a worker Talaria can’t show")
+        case .unavailable: String(localized: "The agent can’t report status right now.")
+        case .available, nil: nil
         }
     }
 

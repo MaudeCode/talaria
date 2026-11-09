@@ -507,6 +507,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
         cancelledMonitorStreamIDs = []
         backgroundDismissed.withLock { $0 = false }
         ownerSettledAdmissions.withLock { $0 = [] }
+        ownerWorkStopped.withLock { $0 = [] }
+        ownerWorkControls.withLock { $0 = [] }
+        ownerWorkUnavailable.withLock { $0 = false }
         nativeNoticePhase.withLock { $0 = 0 }
         nativeNoticeStreams.withLock { $0.removeAll() }
         sessionCreationFailureLock.withLock {
@@ -756,6 +759,12 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return UITestChatScenario.current == nil ? sessionResponse(url) : chatSessionResponse()
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
             return url.query?.contains(".mp3") == true ? transcriptMediaAudio : transcriptMediaImage
+        case "/api/background/tasks" where servesOwnerWork:
+            return ownerWorkTasksResponse()
+        case "/api/background/stop" where servesOwnerWork, "/api/background/steer" where servesOwnerWork:
+            return ownerWorkControlResponse(request, path: url.path)
+        case "/api/background/result" where servesOwnerWork:
+            return json(["task_id": "owner-work-resident", "text": "read_file logs/app.log"])
         case "/api/background/tasks" where UITestFixtureEnvironment.hasBackgroundUpdates:
             return json(["session_id": sessionID, "agent_available": true, "tasks": Self.backgroundTasks()])
         case "/api/background/result" where UITestFixtureEnvironment.hasBackgroundUpdates:

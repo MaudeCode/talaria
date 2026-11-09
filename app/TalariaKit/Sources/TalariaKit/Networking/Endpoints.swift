@@ -71,6 +71,8 @@ public enum Endpoint: Sendable {
     case backgroundTasks(sessionID: String)
     case backgroundResult(sessionID: String, taskID: String)
     case backgroundDismiss
+    case backgroundStop
+    case backgroundSteer
     case workspaces
     case workspaceSuggestions(prefix: String)
     case workspaceAdd
@@ -309,6 +311,10 @@ public enum Endpoint: Sendable {
             return "/api/background/result"
         case .backgroundDismiss:
             return "/api/background/dismiss"
+        case .backgroundStop:
+            return "/api/background/stop"
+        case .backgroundSteer:
+            return "/api/background/steer"
         case .workspaces:
             return "/api/workspaces"
         case .workspaceSuggestions:

@@ -29,5 +29,55 @@
       { "subagent_id": "sa-resident", "goal": "Read the logs", "status": "running", "started_at": 1700000001, "accepting_steer": true, "resident": true },
       { "subagent_id": "sa-rebuilt", "goal": "Check the tests", "status": "running", "started_at": 1700000002, "accepting_steer": true, "resident": false }
     ]
+  },
+  "background_tasks": {
+    "description": "TAL-1337: GET /api/background/tasks for this owner chat as the server answers it (task_id, updated_at and session_id vary per server and are not compared), and the 503 a stop whose outcome was lost answers.",
+    "available": {
+      "tasks": [
+        {"task_id": "owner-work-1e47063479c7c3eab65d1435273aaf48", "kind": "delegation", "status": "running", "title": "Check the tests", "started_at": 1700000002, "updated_at": 1700000200, "completed_at": null, "result_available": false, "child_sessions": [], "exit_code": null, "agents": {"total": 1, "completed": 0, "failed": 0, "running": 1}, "pinned": true, "dismissible": false, "can_stop": false, "can_steer": false, "active": true},
+        {"task_id": "owner-work-bb83e33e45c2ed60a87052e5983598e5", "kind": "delegation", "status": "running", "title": "Read the logs", "started_at": 1700000001, "updated_at": 1700000200, "completed_at": null, "result_available": true, "child_sessions": [], "exit_code": null, "agents": {"total": 1, "completed": 0, "failed": 0, "running": 1}, "pinned": true, "dismissible": false, "can_stop": true, "can_steer": true, "active": true},
+        {"task_id": "owner-work-271bc3285aa81c19961e5ebd32bc2af4", "kind": "process", "status": "running", "title": "npm run dev", "started_at": 1700000000.5, "updated_at": 1700000200, "completed_at": null, "result_available": true, "child_sessions": [], "exit_code": null, "agents": null, "pinned": true, "dismissible": false, "can_stop": true, "active": true},
+        {"task_id": "owner-work-fe2d5b8431bd7d9870ad9669b420afc5", "kind": "process", "status": "completed", "title": "make build", "started_at": 1699999990, "updated_at": 1700000200, "completed_at": 1699999999, "result_available": true, "child_sessions": [], "exit_code": 0, "agents": null, "pinned": false, "dismissible": false, "can_stop": false, "active": false}
+      ],
+      "activity_phase": "running",
+      "session_id": "session-abc",
+      "agent_available": true,
+      "agents_working": true,
+      "delegation_status": {"availability": "unsupported", "running_count": null, "awaiting_delivery_count": null, "memory_live": null, "visible": true, "refresh": false},
+      "owner_work": "available"
+    },
+    "settled_after_unconfirmed_stop": {
+      "tasks": [
+        {"task_id": "owner-work-1e47063479c7c3eab65d1435273aaf48", "kind": "delegation", "status": "running", "title": "Check the tests", "started_at": 1700000002, "updated_at": 1700000200, "completed_at": null, "result_available": false, "child_sessions": [], "exit_code": null, "agents": {"total": 1, "completed": 0, "failed": 0, "running": 1}, "pinned": true, "dismissible": false, "can_stop": false, "can_steer": false, "active": true},
+        {"task_id": "owner-work-bb83e33e45c2ed60a87052e5983598e5", "kind": "delegation", "status": "running", "title": "Read the logs", "started_at": 1700000001, "updated_at": 1700000200, "completed_at": null, "result_available": true, "child_sessions": [], "exit_code": null, "agents": {"total": 1, "completed": 0, "failed": 0, "running": 1}, "pinned": true, "dismissible": false, "can_stop": true, "can_steer": true, "active": true},
+        {"task_id": "owner-work-271bc3285aa81c19961e5ebd32bc2af4", "kind": "process", "status": "cancelled", "title": "npm run dev", "started_at": 1700000000.5, "updated_at": 1700000200, "completed_at": 1700000100, "result_available": true, "child_sessions": [], "exit_code": -15, "agents": null, "pinned": false, "dismissible": false, "can_stop": false, "active": false},
+        {"task_id": "owner-work-fe2d5b8431bd7d9870ad9669b420afc5", "kind": "process", "status": "completed", "title": "make build", "started_at": 1699999990, "updated_at": 1700000200, "completed_at": 1699999999, "result_available": true, "child_sessions": [], "exit_code": 0, "agents": null, "pinned": false, "dismissible": false, "can_stop": false, "active": false}
+      ],
+      "activity_phase": "running",
+      "session_id": "session-abc",
+      "agent_available": true,
+      "agents_working": true,
+      "delegation_status": {"availability": "unsupported", "running_count": null, "awaiting_delivery_count": null, "memory_live": null, "visible": true, "refresh": false},
+      "owner_work": "available"
+    },
+    "unsupported": {
+      "tasks": [],
+      "activity_phase": "stale",
+      "session_id": "session-abc",
+      "agent_available": true,
+      "agents_working": false,
+      "delegation_status": {"availability": "unsupported", "running_count": null, "awaiting_delivery_count": null, "memory_live": null, "visible": false, "refresh": false},
+      "owner_work": "unsupported"
+    },
+    "unavailable": {
+      "tasks": [],
+      "activity_phase": "stale",
+      "session_id": "session-abc",
+      "agent_available": true,
+      "agents_working": false,
+      "delegation_status": {"availability": "unsupported", "running_count": null, "awaiting_delivery_count": null, "memory_live": null, "visible": false, "refresh": false},
+      "owner_work": "unavailable"
+    },
+    "stop_unconfirmed": {"status": 503, "body": {"error": "Could not confirm what the owning Agent did. Background Work shows its current state.", "outcome_unknown": true}}
   }
 }

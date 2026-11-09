@@ -1176,8 +1176,11 @@ struct ChatView: View {
             .sheet(isPresented: $showsBackgroundWorkSheet) {
                 BackgroundWorkSheet(
                     tasks: viewModel.pinnedBackgroundTasks,
+                    ownerWork: viewModel.backgroundOwnerWork,
                     loadResult: { await viewModel.backgroundResult(taskID: $0) },
-                    dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) }
+                    dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) },
+                    stop: { await viewModel.stopBackgroundTask(taskID: $0) },
+                    steer: { await viewModel.steerBackgroundTask(taskID: $0, text: $1) }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -1649,6 +1652,10 @@ struct ChatView: View {
             if showsWorkChips, !viewModel.pinnedBackgroundTasks.isEmpty {
                 backgroundTasksChip(viewModel.pinnedBackgroundTasks)
             }
+            if let ownerWorkNotice {
+                StatusChip(label: ownerWorkNotice, icon: .symbol("info.circle"))
+                    .accessibilityIdentifier("background-work-owner-notice-chip")
+            }
             if let goalChipPresentation {
                 StatusChip(label: goalChipPresentation.label, icon: .symbol(goalChipPresentation.symbol))
             }
@@ -1686,7 +1693,13 @@ struct ChatView: View {
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private var showsSheetChipRow: Bool {
-        (showsWorkChips && !viewModel.pinnedBackgroundTasks.isEmpty) || showsQueuedMessagesChip
+        (showsWorkChips && !viewModel.pinnedBackgroundTasks.isEmpty) || ownerWorkNotice != nil || showsQueuedMessagesChip
+    }
+
+    /// TAL-1337: an owner chat whose owner cannot show or report its work has no rows to open, so the reason stands on
+    /// its own, beside the Duo's bar too.
+    private var ownerWorkNotice: String? {
+        viewModel.pinnedBackgroundTasks.isEmpty ? BackgroundWorkSheet.ownerNotice(viewModel.backgroundOwnerWork) : nil
     }
 
     /// The Duo's vertical bar already shows background tasks and queued messages as badged items, so their chips step
