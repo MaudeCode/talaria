@@ -114,7 +114,7 @@ runner_connected() {
     grep -q testSuiteStarted "$result_stream" && return 0
     local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log(N))
     (( ${#session_logs} )) || return 1
-    grep -Fq 'Test runner started executing tests.' "${session_logs[@]}"
+    grep -Fq -e 'Test runner is ready with capabilities:' -e 'Test runner started executing tests.' "${session_logs[@]}"
 }
 attempt=1
 while true; do

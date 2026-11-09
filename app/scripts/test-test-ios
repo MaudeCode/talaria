@@ -120,9 +120,11 @@ if [[ "${selectors[1]:-}" == *NeverConnects* ]] || [[ "${selectors[1]:-}" == *Co
     exec sleep 30
 fi
 # Xcode acknowledges the connected test host before bundle warm-up finishes and the first suite is reported.
-if [[ "${selectors[1]:-}" == *ConnectedBeforeSuite* ]]; then
+if [[ "${selectors[1]:-}" == *ConnectedBeforeSuite* || "${selectors[1]:-}" == *ReadyBeforeExecution* ]]; then
     mkdir -p "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner"
-    print -r -- 'xcodebuild[123:456] Test runner started executing tests.' > "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner/Session-Connected.log"
+    acknowledgement='Test runner started executing tests.'
+    [[ "${selectors[1]:-}" != *ReadyBeforeExecution* ]] || acknowledgement='Test runner is ready with capabilities: <XCTCapabilities: fixture>'
+    print -r -- "xcodebuild[123:456] $acknowledgement" > "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner/Session-Connected.log"
     sleep 2
 fi
 # The runner connects and reports its first suite.
@@ -256,7 +258,7 @@ runs_for() { grep -c -- "$1" "$state/runs" || true; }
 [[ $(runs_for TalariaTests/Failure) == 1 ]]  # A real failure never retries.
 
 # A connected host can spend longer than the connection budget warming up before its first suite.
-for selector expected_status in ConnectedBeforeSuite 0 ConnectedBeforeSuiteFailure 42; do
+for selector expected_status in ConnectedBeforeSuite 0 ConnectedBeforeSuiteFailure 42 ReadyBeforeExecution 0 ReadyBeforeExecutionFailure 42; do
     if TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
         observed_status=0
     else
@@ -275,6 +277,7 @@ done
 stale_session="$repo/.codex-tmp/xctest/results/previous.xcresult/Staging/1_Test/Diagnostics/Session-Stale.log"
 mkdir -p "${stale_session:h}"
 print -r -- 'xcodebuild[123:456] Test runner started executing tests.' > "$stale_session"
+print -r -- 'xcodebuild[123:456] Test runner is ready with capabilities: <XCTCapabilities: fixture>' >> "$stale_session"
 started=$SECONDS
 if TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" TalariaTests/NeverConnects > "$state/never-connects.log" 2>&1; then
     print -u2 "Expected a runner that never connects to fail the run."
