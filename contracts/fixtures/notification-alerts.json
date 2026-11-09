@@ -434,5 +434,73 @@
       },
       "expected": "completion"
     }
+  ],
+  "agentNotify": [
+    {
+      "name": "a new info notice alerts",
+      "previousAgentNotifyId": null,
+      "agentNotify": {
+        "id": "an_0000000000000001",
+        "title": "Report ready",
+        "body": "reports/week-45.md is done.",
+        "level": "info"
+      },
+      "alertEligible": true,
+      "expected": true
+    },
+    {
+      "name": "a new attention notice alerts",
+      "previousAgentNotifyId": null,
+      "agentNotify": {
+        "id": "an_0000000000000001",
+        "title": "Need your login",
+        "body": "The import stopped at the bank's sign-in.",
+        "level": "attention"
+      },
+      "alertEligible": true,
+      "expected": true
+    },
+    {
+      "name": "a notice the publisher let through alerts while a tab mutes run alerts",
+      "previousAgentNotifyId": null,
+      "agentNotify": {
+        "id": "an_0000000000000001",
+        "title": "Need your login",
+        "body": "The import stopped at the bank's sign-in.",
+        "level": "attention"
+      },
+      "alertEligible": false,
+      "expected": true
+    },
+    {
+      "name": "a newer notice alerts",
+      "previousAgentNotifyId": "an_0000000000000001",
+      "agentNotify": {
+        "id": "an_0000000000000002",
+        "title": "Report ready",
+        "body": "reports/week-45.md is done.",
+        "level": "info"
+      },
+      "alertEligible": true,
+      "expected": true
+    },
+    {
+      "name": "a held notice never alerts again",
+      "previousAgentNotifyId": "an_0000000000000001",
+      "agentNotify": {
+        "id": "an_0000000000000001",
+        "title": "Report ready",
+        "body": "reports/week-45.md is done.",
+        "level": "info"
+      },
+      "alertEligible": true,
+      "expected": false
+    },
+    {
+      "name": "no notice never alerts",
+      "previousAgentNotifyId": "an_0000000000000001",
+      "alertEligible": true,
+      "expected": false
+    }
   ]
 }

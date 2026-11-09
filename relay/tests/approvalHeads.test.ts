@@ -5,8 +5,9 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
-import { defaultNotificationPreferences, type SessionPhase } from "../convex/lib/model";
+import { defaultNotificationPreferences, type AgentNotify, type SessionPhase } from "../convex/lib/model";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
@@ -49,7 +50,7 @@ async function seed() {
     }
   };
   // Every snapshot is a fresh signed event with a new revision, as Talaria Web's heartbeat publishes them.
-  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string } = {}) => {
+  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string; notice?: AgentNotify } = {}) => {
     revision += 1;
     const path = `/v1/publishers/${encodeURIComponent(publisherId)}/profiles/${options.profileId ?? "profile-1"}/snapshot`;
     const body = JSON.stringify({
@@ -60,6 +61,7 @@ async function seed() {
         ...(options.alertEligible === undefined ? {} : { alertEligible: options.alertEligible }),
         ...(head === undefined ? {} : { approvalHeadId: head }),
         ...(options.decision === undefined ? {} : { decisionReviewId: options.decision, decisionReviewTitle: "Release choices" }),
+        ...(options.notice === undefined ? {} : { agentNotify: options.notice }),
       }],
     });
     const timestamp = String(now / 1000);
@@ -122,6 +124,44 @@ describe("decision reviews (TAL-1966)", () => {
     const [queued] = await notifications();
     await publish("running");
     expect(await backend.mutation(internal.delivery.claimJob, { jobId: queued!.id, now })).toEqual({ status: "stale" });
+  });
+});
+
+describe("agent notices (TAL-1970)", () => {
+  // The workpool may already have run a queued job in the background; claim it again from queued to check its state alone.
+  const claim = async (backend: Awaited<ReturnType<typeof seed>>["backend"], jobId: Id<"deliveryJobs">) => {
+    await backend.run(async (ctx) => { await ctx.db.patch(jobId, { status: "queued" }); });
+    return backend.mutation(internal.delivery.claimJob, { jobId, now });
+  };
+  const info: AgentNotify = { id: "an_0000000000000001", title: "Report ready", body: "reports/week-45.md is done.", level: "info" };
+  const attention: AgentNotify = { id: "an_0000000000000002", title: "Need your login", body: "The import stopped at the bank's sign-in.", level: "attention" };
+
+  it("alerts once per notice with the agent's words, opening the session, beside the run's own alert", async () => {
+    const { backend, publish, notifications } = await seed();
+    await publish("running");
+    await publish("running", undefined, { notice: info });
+    await publish("running", undefined, { notice: info });
+    await publish("completed", undefined, { notice: info });
+    const delivered = await notifications();
+    // The run's completion still alerts on its own.
+    expect(delivered.map(({ payload }) => payload.deepLink)).toEqual(["/sessions/session-1", "/sessions/session-1"]);
+    expect((delivered[1]!.payload.aps.alert as { body: string }).body.startsWith("Completed on ")).toBe(true);
+    expect(delivered[0]!.payload.aps).toMatchObject({ alert: { title: info.title, body: info.body }, "interruption-level": "active" });
+
+    expect(await claim(backend, delivered[0]!.id)).toMatchObject({ status: "ready" });
+
+    // An attention notice breaks through Focus even while a Talaria tab mutes the run's alerts, and a newer notice
+    // leaves the queued one deliverable.
+    await publish("running", undefined, { notice: attention, alertEligible: false });
+    const latest = (await notifications()).at(-1)!;
+    expect(latest.payload.aps).toMatchObject({ alert: { title: attention.title, body: attention.body }, "interruption-level": "time-sensitive" });
+    expect(await claim(backend, latest.id)).toMatchObject({ status: "ready" });
+    expect(await claim(backend, delivered[0]!.id)).toMatchObject({ status: "ready" });
+  });
+
+  it("refuses a malformed notice", async () => {
+    const { publish } = await seed();
+    await expect(publish("running", undefined, { notice: { ...info, title: "x".repeat(81) } })).rejects.toThrow();
   });
 });
 

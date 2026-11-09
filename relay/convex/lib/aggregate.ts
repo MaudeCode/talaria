@@ -170,6 +170,23 @@ export function decisionAlert(
 }
 
 /**
+ * TAL-1970: an agent notice the state did not hold before alerts once with the agent's title and body, whatever the phase,
+ * `alertEligible` or the run preferences say: the publisher drops an `info` notice while a Talaria tab is open before it
+ * reaches the state, and the agent asked for the alert. `attention` breaks through Focus; both arrive as a standalone
+ * notification that opens the session.
+ */
+export function agentNotifyAlert(next: SessionState, previousAgentNotifyId: string | null | undefined): ActivityAlert | null {
+  const notice = next.agentNotify;
+  if (!notice || notice.id === previousAgentNotifyId) return null;
+  return {
+    title: notice.title,
+    body: notice.body,
+    interruptionLevel: notice.level === "attention" ? "time-sensitive" : "active",
+    agentNotifyId: notice.id,
+  };
+}
+
+/**
  * When both sides name an approval queue head, the head decides: a head the relay already saw never alerts again,
  * even after the row went stale, and a new head alerts while the phase stays the same. Otherwise the phase decides.
  */

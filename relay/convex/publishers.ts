@@ -94,6 +94,15 @@ function decisionReviewChanged(current: Doc<"sessionStates"> | null | undefined,
   return next.decisionReviewId !== undefined && next.decisionReviewId !== previousDecisionReviewFor(current);
 }
 
+// TAL-1970: the agent notice a session held, across runs; a notice it did not hold is a transition of its own.
+function previousAgentNotifyFor(current: Doc<"sessionStates"> | null | undefined): string | undefined {
+  return current && !current.deleted ? current.agentNotify?.id : undefined;
+}
+
+function agentNotifyChanged(current: Doc<"sessionStates"> | null | undefined, next: { agentNotify?: { id: string } }): boolean {
+  return next.agentNotify !== undefined && next.agentNotify.id !== previousAgentNotifyFor(current);
+}
+
 // The phase a delivery transition starts from. A first publication, a re-created session, or a new run that begins in
 // the same phase has none: it never alerts, but it still carries eligibility to delivery.
 function previousPhaseFor(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string }): SessionPhase | undefined {
@@ -136,6 +145,7 @@ function exposedState(state: Doc<"sessionStates">) {
     approvalHeadId: state.approvalHeadId,
     decisionReviewId: state.decisionReviewId,
     decisionReviewTitle: state.decisionReviewTitle,
+    agentNotify: state.agentNotify,
     receivedAt: state.receivedAt,
   };
 }
@@ -307,6 +317,7 @@ export const acceptState = internalMutation({
               publisherId: args.publisherId, sessionId: args.sessionId, previousPhase,
               previousApprovalHeadId: sameRun(existing, args.state) ? existing.approvalHeadId : undefined,
               previousDecisionReviewId: previousDecisionReviewFor(existing),
+              previousAgentNotifyId: previousAgentNotifyFor(existing),
               state: exposedState(next as Doc<"sessionStates">),
             }]
           : previousPhase === undefined ? [] : [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase }],
@@ -347,6 +358,7 @@ export const acceptSnapshot = internalMutation({
         previousPhase?: SessionPhase;
         previousApprovalHeadId?: string;
         previousDecisionReviewId?: string;
+        previousAgentNotifyId?: string;
         state: ReturnType<typeof exposedState>;
       }[] = [];
       for (const state of args.states) {
@@ -377,7 +389,7 @@ export const acceptSnapshot = internalMutation({
         // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
         // record the deferral and revalidate any queued alert for it. A new approval head is a transition of its own.
         if (!current || activityPhase(current) !== activityPhase(state) || current.streamId !== state.streamId
-          || approvalHeadChanged(current, state) || decisionReviewChanged(current, state)
+          || approvalHeadChanged(current, state) || decisionReviewChanged(current, state) || agentNotifyChanged(current, state)
           || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
@@ -385,6 +397,7 @@ export const acceptSnapshot = internalMutation({
             previousPhase: previousPhaseFor(current, state),
             previousApprovalHeadId: sameRun(current, state) ? current.approvalHeadId : undefined,
             previousDecisionReviewId: previousDecisionReviewFor(current),
+            previousAgentNotifyId: previousAgentNotifyFor(current),
             state: exposedState(next as Doc<"sessionStates">),
           });
         }

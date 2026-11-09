@@ -35,6 +35,15 @@ export interface SessionState {
   approvalHeadId?: string;
   decisionReviewId?: string;
   decisionReviewTitle?: string;
+  agentNotify?: AgentNotify;
+}
+
+/** TAL-1970: the session's newest agent notice; one the stored state did not hold alerts once. */
+export interface AgentNotify {
+  id: string;
+  title: string;
+  body: string;
+  level: "info" | "attention";
 }
 
 export interface PublishedSessionState {
@@ -52,6 +61,7 @@ export interface PublishedSessionState {
   approvalHeadId?: string;
   decisionReviewId?: string;
   decisionReviewTitle?: string;
+  agentNotify?: AgentNotify;
 }
 
 export interface AggregateRow {
@@ -98,6 +108,8 @@ export interface ActivityAlert {
   interruptionLevel?: "time-sensitive" | "active";
   // TAL-1966: where the notification opens when it is not the session's own deep link.
   deepLink?: string;
+  // TAL-1970: the agent notice this alert announces; it is queued once per notice and device.
+  agentNotifyId?: string;
 }
 
 export const defaultNotificationPreferences: NotificationPreferences = {

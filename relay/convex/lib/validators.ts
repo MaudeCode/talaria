@@ -57,6 +57,14 @@ export const aggregateValidator = v.object({
 
 export const alertValidator = v.object({ title: v.string(), body: v.string() });
 
+// TAL-1970: a Talaria Web agent notice, as the publisher stamped it on the session's state.
+export const agentNotifyValidator = v.object({
+  id: v.string(),
+  title: v.string(),
+  body: v.string(),
+  level: v.union(v.literal("info"), v.literal("attention")),
+});
+
 export const sessionStateContentValidator = v.object({
   sessionId: v.string(),
   streamId: v.optional(v.string()),
@@ -70,6 +78,7 @@ export const sessionStateContentValidator = v.object({
   approvalHeadId: v.optional(v.string()),
   decisionReviewId: v.optional(v.string()),
   decisionReviewTitle: v.optional(v.string()),
+  agentNotify: v.optional(agentNotifyValidator),
 });
 
 export const sessionStateInputValidator = v.object({
@@ -100,6 +109,7 @@ export const storedSessionStateValidator = v.object({
   approvalHeadId: v.optional(v.string()),
   decisionReviewId: v.optional(v.string()),
   decisionReviewTitle: v.optional(v.string()),
+  agentNotify: v.optional(agentNotifyValidator),
   receivedAt: v.number(),
 });
 
