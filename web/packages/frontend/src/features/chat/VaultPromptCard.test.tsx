@@ -8,7 +8,7 @@ import type { ClarifyPending } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 
 // The shared contract examples every client renders (TAL-887).
-const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/vault-prompts.json'), 'utf8')) as Record<'unlock' | 'save_login' | 'code' | 'skill_secret', { pending: ClarifyPending }>
+const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/vault-prompts.json'), 'utf8')) as Record<'unlock' | 'save_login' | 'code' | 'skill_secret' | 'agent_secret', { pending: ClarifyPending }>
 let head: ClarifyPending | null = null
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()), fetchClarifyPending: vi.fn(() => Promise.resolve({ pending: head, pending_count: head ? 1 : 0 })), respondClarify: vi.fn(() => Promise.resolve({ ok: true })),
@@ -86,6 +86,28 @@ describe('password-manager prompts (TAL-887)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-skill-secret', answers: { secret: 'unique-skill-secret' } })
     expect(container.innerHTML).not.toContain('unique-skill-secret')
+  })
+
+  it('asks for an agent secret by its name and purpose, says it replaces the current value, and sends it once (TAL-1969)', async () => {
+    const { container } = renderHead(fixture.agent_secret.pending)
+    expect(await screen.findByRole('dialog', { name: 'Set FOO_API_KEY' })).toBeTruthy()
+    expect(screen.getByText('Read your Foo dashboards to build the weekly report.')).toBeTruthy()
+    expect(screen.getByText('Saving replaces the current value.')).toBeTruthy()
+    const input = screen.getByLabelText('FOO_API_KEY')
+    expect(input.getAttribute('type')).toBe('password')
+    await userEvent.type(input, 'unique-agent-secret')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-agent-secret', answers: { secret: 'unique-agent-secret' } })
+    expect(container.innerHTML).not.toContain('unique-agent-secret')
+  })
+
+  it('shows a viewer who cannot answer the prompt without an input or buttons (TAL-1969)', async () => {
+    const pending = fixture.agent_secret.pending
+    renderHead({ ...pending, vault: { ...pending.vault!, fields: [], can_answer: false } })
+    expect(await screen.findByRole('dialog', { name: 'Set FOO_API_KEY' })).toBeTruthy()
+    expect(screen.getByText('Read your Foo dashboards to build the weekly report.')).toBeTruthy()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('takes a one-time code as typed, and Skip declines without an answer', async () => {

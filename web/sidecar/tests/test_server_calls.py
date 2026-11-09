@@ -22,6 +22,7 @@ RECORDED = SERVER_FIXTURES["server.session_list"][0]
 DECISION_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "decisions.json").read_text())
 PROPOSAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "proposals.json").read_text())
 SHOW_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "show.json").read_text())
+SECRET_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "secrets.json").read_text())
 
 
 class Peer:
@@ -377,6 +378,7 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("propose", "harness", "propose"),
         ("proposal_read", "harness", "proposal_read"),
         ("show", "harness", "show"),
+        ("request_secret", "harness", "request_secret"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
@@ -445,3 +447,54 @@ def test_harness_show_forwards_its_call_and_returns_the_server_result_unchanged(
     harness_toolset.show({**args, "payload": json.dumps(args["payload"])}, session_id="20261109_090000_tip")
     harness_toolset.show({"kind": "table"}, session_id="20261109_090000_tip")
     assert [params["payload"] for _, params in sent[1:]] == [recorded["params"]["payload"], {}]
+
+
+def test_harness_request_secret_forwards_its_call_and_never_returns_the_value(monkeypatch) -> None:
+    """TAL-1969: ``request_secret`` sends the name, purpose and clarify timeout to ``server.secret_request``, outlasts the
+    prompt, and on a save adds the value to this turn's secret scope from the profile ``.env``, reporting ``applied``
+    once the Agent's resolver returns it. The value never reaches the result."""
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    recorded = SECRET_FIXTURES["server.secret_request"][0]
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    monkeypatch.setattr(chat, "_clarify_timeout", lambda params: 3600)
+    sent: list[tuple[str, dict, float | None]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params, timeout)) or dict(recorded["result"]))
+    scope: dict[str, str] = {}
+    secret_scope = ModuleType("agent.secret_scope")
+    secret_scope.current_secret_scope = lambda: scope
+    secret_scope.get_secret = lambda name: scope.get(name)
+    config = ModuleType("hermes_cli.config")
+    config.load_env = lambda: {"FOO_API_KEY": "sk-foo-correct-horse"}
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", secret_scope)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
+
+    args = {"env_name": "FOO_API_KEY", "purpose": recorded["params"]["purpose"], "optional": False}
+    raw = harness_toolset.request_secret(args, session_id="20261109_090000_tip")
+    assert json.loads(raw) == {**recorded["result"], "runtime_application": "applied"}
+    assert "sk-foo-correct-horse" not in raw
+    assert scope == {"FOO_API_KEY": "sk-foo-correct-horse"}
+    assert sent == [("server.secret_request", recorded["params"], 3600 + rpc.SERVER_CALL_TIMEOUT)]
+    assert validate(sent[0][1], SCHEMAS["server.secret_request"]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS["server.secret_request"]["result"]) == []
+
+    # A resolver that cannot see the value (no scope bound, a foreign profile) means the next session picks it up.
+    secret_scope.current_secret_scope = lambda: None
+    secret_scope.get_secret = lambda name: None
+    assert json.loads(harness_toolset.request_secret(args, session_id="20261109_090000_tip"))["runtime_application"] == "restart_required"
+
+    # A decline or a timeout returns the server's answer unchanged; a clarify timeout of 0 never times the call out.
+    monkeypatch.setattr(chat, "_clarify_timeout", lambda params: 0)
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params, timeout)) or {**recorded["result"], "outcome": "declined"})
+    assert json.loads(harness_toolset.request_secret(args, session_id="20261109_090000_tip")) == {**recorded["result"], "outcome": "declined"}
+    assert sent[-1][2] == threading.TIMEOUT_MAX and sent[-1][1]["timeout_seconds"] == 0
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("HERMES_HOME is reserved for Talaria, the Agent or the system; ask for a name of the service's own", condition="env_name_reserved")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(harness_toolset.request_secret({**args, "env_name": "HERMES_HOME"}, session_id="20261109_090000_tip"))["condition"] == "env_name_reserved"
+    assert json.loads(harness_toolset.request_secret({"env_name": "FOO_API_KEY"}, session_id="20261109_090000_tip")) == {"error": "purpose is required", "condition": "invalid_params"}

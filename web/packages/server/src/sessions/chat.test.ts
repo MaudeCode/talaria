@@ -1425,7 +1425,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(res)).toEqual({ ok: true })
 
     ;[pending, res, seen] = await respond(seen, { answers: { identifier: ' me@example.com ', password: secrets.password } })
-    expect(pending.vault).toEqual({ kind: 'vault_save_login', backend: null, display_name: null, origin: 'https://login.example.com', site: 'login.example.com', hint: null, fields: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }], timeout_at: 1800000180 })
+    expect(pending.vault).toEqual({ kind: 'vault_save_login', backend: null, display_name: null, origin: 'https://login.example.com', site: 'login.example.com', hint: null, fields: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }], can_answer: true, timeout_at: 1800000180 })
     expect(await json(res)).toEqual({ ok: true })
 
     const secret = 'unique-skill-setup-secret'

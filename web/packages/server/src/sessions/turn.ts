@@ -19,7 +19,7 @@ import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
+import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type VaultPrompt, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
@@ -2740,6 +2740,8 @@ export class TurnRunner {
     // TAL-887: a password-manager answer goes to the Agent and nowhere else; `null` (a decline) is its empty reply.
     const vault = isVaultPrompt(entry)
     if (vault && typeof reply === 'string') return { ok: false, invalid: true }
+    // TAL-1969: only the respond route answers an agent's secret request, through the server's own waiter.
+    if ((entry.vault as VaultPrompt | undefined)?.kind === 'agent_secret') return { ok: false, invalid: true }
     const response = vault ? vaultReply(entry, reply as ClarifyAnswers | null) : reply === null ? null : clarifyReply(entry, reply)
     if (response === null) return { ok: false, invalid: true }
     // A test-hook prompt has no parked Agent waiter: it is answered here.

@@ -66,9 +66,13 @@ export async function prepareRuntimeCredentialEdit(deps: RuntimeEnvDeps, rootPro
 // ponytail: global chain; per-credential locks only if credential edits ever contend for throughput.
 let credentialEdits: Promise<unknown> = Promise.resolve()
 
-/** Write one credential to `<profileHome>/.env`; a root-profile edit keeps the sidecar and process in step. */
-export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, profileHome: string, envVar: string, apiKey: string | null): Promise<void> {
+/**
+ * Write one credential to `<profileHome>/.env`; a root-profile edit keeps the sidecar and process in step. `precondition`
+ * runs inside the serialized edit, before anything changes, and may throw to refuse it.
+ */
+export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, profileHome: string, envVar: string, apiKey: string | null, precondition?: () => void): Promise<void> {
   const run = credentialEdits.then(async () => {
+    precondition?.()
     const edit = await prepareRuntimeCredentialEdit(deps, rootProfile, envVar, apiKey)
     try {
       await writeProfileEnv(deps.sidecar(), profileHome, { [envVar]: apiKey })

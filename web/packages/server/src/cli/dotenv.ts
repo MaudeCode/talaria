@@ -41,7 +41,12 @@ const HOME_ENV_KEYS: ReadonlySet<string> = new Set([
   'HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION',
 ])
 const CREDENTIAL_KEY_RE = /_(?:KEY|TOKEN|SECRET)$/
-const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || (!key.startsWith('HERMES_WEBUI_') && CREDENTIAL_KEY_RE.test(key))
+/**
+ * A credential's name: what the agent-writable home `.env` may hand the server, and the only names an agent may ask the
+ * user for (TAL-1969). Loader, shell and launch hooks (`BASH_ENV`, `NODE_OPTIONS`, `GIT_SSH_COMMAND`) never match.
+ */
+export const credentialEnvName = (key: string): boolean => !key.startsWith('HERMES_WEBUI_') && CREDENTIAL_KEY_RE.test(key)
+const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || credentialEnvName(key)
 
 function unescapeDouble(raw: string): string {
   let out = ''

@@ -598,19 +598,28 @@ export const VaultPromptFieldSchema = z.object({ key: z.enum(['master_password',
 export type VaultPromptField = z.infer<typeof VaultPromptFieldSchema>
 /**
  * TAL-887: the Agent asks for a password manager's master password (`vault_unlock`), a login to save for the page it is
- * on (`vault_save_login`), a one-time code (`vault_code`), or a skill environment secret (`skill_secret`). Clients answer through
- * `/api/clarify/respond` with keyed `answers`, or `decline`; an empty answer, a decline, a cancel and `timeout_at` all
- * resolve it unanswered. Answers never enter chat, logs, streams, or responses. Skill secrets are saved only to the invoking profile.
+ * on (`vault_save_login`), a one-time code (`vault_code`), a skill environment secret (`skill_secret`), or, through the
+ * `harness` toolset's `request_secret`, any profile environment secret the agent names (`agent_secret`, TAL-1969). Clients
+ * answer through `/api/clarify/respond` with keyed `answers`, or `decline`; an empty answer, a decline, a cancel and
+ * `timeout_at` all resolve it unanswered. Answers never enter chat, logs, streams, or responses. Skill and agent secrets are
+ * saved only to the invoking profile; the server writes an agent secret itself, so the Agent never holds the answer.
  */
 export const VaultPromptSchema = z.object({
-  kind: z.enum(['vault_unlock', 'vault_save_login', 'vault_code', 'skill_secret']),
+  kind: z.enum(['vault_unlock', 'vault_save_login', 'vault_code', 'skill_secret', 'agent_secret']),
   backend: z.string().nullable().describe('The password manager (`vault_unlock`).'),
   display_name: z.string().nullable().describe('Its display name (`vault_unlock`).'),
   origin: z.string().nullable().describe('The page origin the login is saved for (`vault_save_login`).'),
   site: z.string().nullable().describe('The site, by host (`vault_save_login`, `vault_code`).'),
   hint: z.string().nullable().describe('Where the code was sent, when the Agent says (`vault_code`).'),
   skill: z.object({ env_var: z.string(), skill_name: z.string(), help: z.string().nullable(), required_for: z.string().nullable() }).optional().describe('Profile-local environment setup metadata (`skill_secret`).'),
-  fields: z.array(VaultPromptFieldSchema),
+  secret: z.object({
+    env_name: z.string().describe('The profile `.env` name the answer is saved under.'),
+    purpose: z.string().describe('Why the agent asks, as it sent it.'),
+    optional: z.boolean().describe('The agent can continue without it.'),
+    existed_before: z.boolean().describe('The name already has a value, which a save replaces.'),
+  }).optional().describe('The environment secret the agent asks for (`agent_secret`).'),
+  fields: z.array(VaultPromptFieldSchema).describe('The inputs to show; empty when this viewer cannot answer.'),
+  can_answer: z.boolean().optional().describe('False when this viewer may not answer: only the server owner answers an `agent_secret`. Absent means true.'),
   timeout_at: z.number().describe('Unix seconds when the Agent stops waiting.'),
 })
 export type VaultPrompt = z.infer<typeof VaultPromptSchema>

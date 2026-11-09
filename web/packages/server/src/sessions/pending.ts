@@ -124,6 +124,7 @@ const VAULT_FIELDS: Record<VaultPrompt['kind'], VaultPromptField[]> = {
   vault_save_login: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }],
   vault_code: [{ key: 'code', secure: false }],
   skill_secret: [{ key: 'secret', secure: true }],
+  agent_secret: [{ key: 'secret', secure: true }],
 }
 
 const vaultKind = (kind: unknown): VaultPrompt['kind'] | null => typeof kind === 'string' && Object.hasOwn(VAULT_FIELDS, kind) ? kind as VaultPrompt['kind'] : null
@@ -133,7 +134,18 @@ function vaultPrompt(item: Record<string, unknown>, kind: VaultPrompt['kind']): 
   const text = (key: string): string | null => typeof item[key] === 'string' ? item[key] : null
   return { kind, backend: text('backend'), display_name: text('display_name'), origin: text('origin'), site: text('site'), hint: text(kind === 'skill_secret' ? 'prompt' : 'hint') || null,
     ...(kind === 'skill_secret' ? { skill: { env_var: text('env_var') ?? '', skill_name: text('skill_name') ?? '', help: text('help'), required_for: text('required_for') } } : {}),
-    fields: VAULT_FIELDS[kind], timeout_at: Number(item.expires_at) }
+    ...(kind === 'agent_secret' ? { secret: { env_name: text('env_name') ?? '', purpose: text('purpose') ?? '', optional: item.optional === true, existed_before: item.existed_before === true } } : {}),
+    fields: VAULT_FIELDS[kind], can_answer: true, timeout_at: Number(item.expires_at) }
+}
+
+/**
+ * TAL-1969: a clarify frame as one viewer sees it. Only the server owner answers an `agent_secret`; anyone else sees the
+ * prompt without its input and cannot answer it.
+ */
+export function pendingForViewer<T>(payload: T, owner: boolean): T {
+  if (owner || !payload || typeof payload !== 'object') return payload
+  const vault = (payload as { vault?: VaultPrompt }).vault
+  return vault?.kind === 'agent_secret' ? { ...payload, vault: { ...vault, fields: [], can_answer: false } } : payload
 }
 
 /**
@@ -179,6 +191,8 @@ class Queue {
 export class PendingPrompts {
   private readonly approvals = new Map<string, Queue>()
   private readonly clarifies = new Map<string, Queue>()
+  /** Callbacks for clarifies the server answers itself, called once the entry leaves the queue for any reason. */
+  private readonly removals = new Map<string, () => void>()
 
   constructor(private readonly events: SessionEventBus, private readonly now: () => number = () => Date.now() / 1000) {}
 
@@ -316,6 +330,7 @@ export class PendingPrompts {
       item.vault = vaultPrompt(item, vault)
       delete item.backend; delete item.display_name; delete item.origin; delete item.site; delete item.hint
       delete item.env_var; delete item.skill_name; delete item.prompt; delete item.help; delete item.required_for
+      delete item.env_name; delete item.purpose; delete item.optional; delete item.existed_before
     } else item.kind = 'clarify'
     // The server owns the batch shape: the normalized list (iOS reads it) and the steps every client renders.
     const batch = normalizeQuestions(item.questions)
@@ -359,6 +374,7 @@ export class PendingPrompts {
     if (index < 0) return { entry: null, head: null }
     const [entry] = q.entries.splice(index, 1)
     q.commandIds.delete(str(entry?.clarify_id))
+    this.removed(entry)
     this.prune(this.clarifies, sid, q)
     this.notify(q)
     this.events.publish('attention_resolved')
@@ -371,13 +387,26 @@ export class PendingPrompts {
     let n = 0
     for (let index = q.entries.length - 1; index >= 0; index -= 1) {
       if (q.commandIds.has(str(q.entries[index]?.clarify_id))) continue
-      q.entries.splice(index, 1)
+      this.removed(q.entries.splice(index, 1)[0])
       n += 1
     }
     this.prune(this.clarifies, sid, q)
     this.notify(q)
     if (n) this.events.publish('attention_resolved')
     return n
+  }
+
+  /** Call `fn` once when the clarify `clarifyId` leaves its queue: answered, expired, cleared with its turn, or dropped. */
+  onClarifyRemoved(clarifyId: string, fn: () => void): void {
+    this.removals.set(clarifyId, fn)
+  }
+
+  private removed(entry: Record<string, unknown> | undefined): void {
+    const id = str(entry?.clarify_id)
+    const fn = this.removals.get(id)
+    if (!fn) return
+    this.removals.delete(id)
+    fn()
   }
 
   hasPendingClarify(sid: string): boolean {

@@ -1,15 +1,18 @@
 import SwiftUI
 import TalariaKit
 
-/// The Agent asks for a password manager's master password, a login to save, a one-time code (TAL-887), or a skill's
-/// missing environment secret (TAL-1046). Every field comes from the server's `vault` prompt; the typed values live
-/// only in this view until they are sent.
+/// The Agent asks for a password manager's master password, a login to save, a one-time code (TAL-887), a skill's
+/// missing environment secret (TAL-1046), or an environment secret by name (TAL-1969). Every field comes from the
+/// server's `vault` prompt; the typed values live only in this view until they are sent. A viewer the server lets read
+/// but not answer the prompt gets no input and no Save or Skip, and may close the sheet.
 struct VaultPromptSheet: View {
     let vault: VaultPrompt
     let isResponding: Bool
     let errorMessage: String?
     /// The typed values keyed by field, or `nil` to decline.
     let onRespond: ([String: String]?) -> Void
+    /// Closes a prompt this viewer cannot answer.
+    var onClose: () -> Void = {}
 
     @State private var values: [VaultPrompt.Field.Key: String] = [:]
     @FocusState private var focused: VaultPrompt.Field.Key?
@@ -30,6 +33,13 @@ struct VaultPromptSheet: View {
                     VStack(alignment: .leading, spacing: 4) {
                         if let hint = vault.hint, !hint.isEmpty {
                             Text(hint)
+                        }
+                        if let secret = vault.secret {
+                            Text(secret.purpose)
+                            if secret.existedBefore {
+                                Text("Saving replaces the current value.")
+                                    .foregroundStyle(.orange)
+                            }
                         }
                         if let help = vault.skill?.help, !help.isEmpty {
                             Text(help)
@@ -55,19 +65,26 @@ struct VaultPromptSheet: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Skip") { send(nil) }
-                        .disabled(isResponding)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(submitTitle) { send(answers) }
-                        .disabled(isResponding || !isComplete)
-                        .accessibilityIdentifier("vault-prompt-submit")
+                if vault.canAnswer {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Skip") { send(nil) }
+                            .disabled(isResponding)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(submitTitle) { send(answers) }
+                            .disabled(isResponding || !isComplete)
+                            .accessibilityIdentifier("vault-prompt-submit")
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", action: onClose)
+                            .accessibilityIdentifier("vault-prompt-close")
+                    }
                 }
             }
             .onAppear { focused = vault.fields.first?.key }
         }
-        .interactiveDismissDisabled()
+        .interactiveDismissDisabled(vault.canAnswer)
     }
 
     @ViewBuilder
@@ -105,13 +122,14 @@ struct VaultPromptSheet: View {
         case .saveLogin: String(localized: "Save Login")
         case .code: String(localized: "Verification Code")
         case .skillSecret: String(localized: "Set Up \(vault.skill?.skillName ?? "")")
+        case .agentSecret: String(localized: "Set \(vault.secret?.envName ?? "")")
         }
     }
 
     private var submitTitle: String {
         switch vault.kind {
         case .unlock: String(localized: "Unlock")
-        case .saveLogin, .skillSecret: String(localized: "Save")
+        case .saveLogin, .skillSecret, .agentSecret: String(localized: "Save")
         case .code: String(localized: "Enter")
         }
     }
@@ -122,7 +140,7 @@ struct VaultPromptSheet: View {
         case .identifier: String(localized: "Email or Username")
         case .password: String(localized: "Password")
         case .code: String(localized: "Code")
-        case .secret: vault.skill.map(\.envVar).flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Secret")
+        case .secret: [vault.skill?.envVar, vault.secret?.envName].compactMap { $0 }.first { !$0.isEmpty } ?? String(localized: "Secret")
         }
     }
 }

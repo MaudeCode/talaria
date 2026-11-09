@@ -84245,7 +84245,8 @@
                                     "vault_unlock",
                                     "vault_save_login",
                                     "vault_code",
-                                    "skill_secret"
+                                    "skill_secret",
+                                    "agent_secret"
                                   ],
                                   "type": "string"
                                 },
@@ -84342,6 +84343,34 @@
                                   ],
                                   "description": "Profile-local environment setup metadata (`skill_secret`)."
                                 },
+                                "secret": {
+                                  "type": "object",
+                                  "properties": {
+                                    "env_name": {
+                                      "type": "string",
+                                      "description": "The profile `.env` name the answer is saved under."
+                                    },
+                                    "purpose": {
+                                      "type": "string",
+                                      "description": "Why the agent asks, as it sent it."
+                                    },
+                                    "optional": {
+                                      "type": "boolean",
+                                      "description": "The agent can continue without it."
+                                    },
+                                    "existed_before": {
+                                      "type": "boolean",
+                                      "description": "The name already has a value, which a save replaces."
+                                    }
+                                  },
+                                  "required": [
+                                    "env_name",
+                                    "purpose",
+                                    "optional",
+                                    "existed_before"
+                                  ],
+                                  "description": "The environment secret the agent asks for (`agent_secret`)."
+                                },
                                 "fields": {
                                   "type": "array",
                                   "items": {
@@ -84365,7 +84394,12 @@
                                       "key",
                                       "secure"
                                     ]
-                                  }
+                                  },
+                                  "description": "The inputs to show; empty when this viewer cannot answer."
+                                },
+                                "can_answer": {
+                                  "type": "boolean",
+                                  "description": "False when this viewer may not answer: only the server owner answers an `agent_secret`. Absent means true."
                                 },
                                 "timeout_at": {
                                   "type": "number",

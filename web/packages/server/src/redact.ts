@@ -2140,7 +2140,29 @@ const DISCORD_RE = /<@!?\d{17,20}>/
 const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source)
 const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
+/**
+ * TAL-1969: values saved through `request_secret`, masked wherever they appear verbatim. A value shorter than
+ * `KNOWN_SECRET_MIN_LENGTH` is not tracked: masking every occurrence of a short string would garble ordinary text.
+ */
+const knownSecrets = new Set<string>()
+export const KNOWN_SECRET_MIN_LENGTH = 8
+
+/** Mask `value` in every later redaction. */
+export function addKnownSecret(value: string): void {
+  if (value.length < KNOWN_SECRET_MIN_LENGTH || knownSecrets.has(value)) return
+  knownSecrets.add(value)
+  cache.clear()
+  cacheBytes = 0
+}
+
+function maskKnownSecrets(text: string): string {
+  let out = text
+  for (const value of knownSecrets) if (out.includes(value)) out = out.split(value).join('***')
+  return out
+}
+
 export function mightContainSensitiveText(text: string): boolean {
+  if ([...knownSecrets].some((value) => text.includes(value))) return true
   if (mightContainBuiltinSensitiveText(text)) return true
   for (const { prefix } of pluginPatterns.values()) {
     if (SPLIT_VIEWS.some((gaps) => text.replace(gaps, '').includes(prefix))) return true
@@ -2198,7 +2220,8 @@ export function redactText(text: unknown, enabled: boolean): unknown {
     return hit
   }
   // A plugin-only match needs no shell/assignment scan of an otherwise ordinary (possibly very large) payload.
-  const out = mightContainBuiltinSensitiveText(text) ? redactSensitive(text) : redactPluginPatterns(text)
+  const known = maskKnownSecrets(text)
+  const out = mightContainBuiltinSensitiveText(known) ? redactSensitive(known) : redactPluginPatterns(known)
   // Count both strings conservatively as UTF-16, even when V8 stores them as Latin-1.
   const bytes = 2 * (key.length + out.length)
   if (bytes > CACHE_MAX_BYTES) return out

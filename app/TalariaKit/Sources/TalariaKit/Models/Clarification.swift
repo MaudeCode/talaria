@@ -128,14 +128,16 @@ public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable
 }
 
 /// The Agent asks for a password manager's master password, a login to save, a one-time code (TAL-887), or a skill's
-/// missing environment secret (TAL-1046). The server owns every field; the answers go back once, keyed by field, and
-/// are never kept. An unknown kind or field fails the whole prompt's decode, so it renders nothing.
+/// missing environment secret (TAL-1046), or an environment secret the agent asks for by name (TAL-1969). The server owns
+/// every field; the answers go back once, keyed by field, and are never kept. An unknown kind or field fails the whole
+/// prompt's decode, so it renders nothing.
 public struct VaultPrompt: Decodable, Equatable, Sendable {
     public enum Kind: String, Decodable, Sendable {
         case unlock = "vault_unlock"
         case saveLogin = "vault_save_login"
         case code = "vault_code"
         case skillSecret = "skill_secret"
+        case agentSecret = "agent_secret"
     }
 
     public struct Field: Decodable, Equatable, Identifiable, Sendable {
@@ -156,8 +158,26 @@ public struct VaultPrompt: Decodable, Equatable, Sendable {
     public let hint: String?
     /// The skill setup a `skill_secret` prompt is for.
     public let skill: Skill?
+    /// The environment secret an `agent_secret` prompt asks for.
+    public let secret: Secret?
+    /// Empty when this viewer cannot answer.
     public let fields: [Field]
+    /// False when only the server owner may answer and this viewer is not them; an older server omits it.
+    public let canAnswer: Bool
     public let timeoutAt: Double
+
+    public struct Secret: Decodable, Equatable, Sendable {
+        public let envName: String
+        public let purpose: String
+        public let optional: Bool
+        public let existedBefore: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case purpose, optional
+            case envName = "env_name"
+            case existedBefore = "existed_before"
+        }
+    }
 
     public struct Skill: Decodable, Equatable, Sendable {
         public let envVar: String
@@ -174,9 +194,24 @@ public struct VaultPrompt: Decodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case kind, backend, site, hint, skill, fields
+        case kind, backend, site, hint, skill, secret, fields
         case displayName = "display_name"
+        case canAnswer = "can_answer"
         case timeoutAt = "timeout_at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        backend = try container.decodeIfPresent(String.self, forKey: .backend)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        site = try container.decodeIfPresent(String.self, forKey: .site)
+        hint = try container.decodeIfPresent(String.self, forKey: .hint)
+        skill = try container.decodeIfPresent(Skill.self, forKey: .skill)
+        secret = try container.decodeIfPresent(Secret.self, forKey: .secret)
+        fields = try container.decode([Field].self, forKey: .fields)
+        canAnswer = try container.decodeIfPresent(Bool.self, forKey: .canAnswer) ?? true
+        timeoutAt = try container.decode(Double.self, forKey: .timeoutAt)
     }
 }
 
