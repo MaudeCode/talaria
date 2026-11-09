@@ -407,3 +407,9 @@ def test_harness_proposal_tools_forward_their_call_and_return_the_server_result_
     assert json.loads(handler(args, session_id="20261109_090000_tip")) == {"error": "_set_password is not a setting a proposal can change", "condition": "setting_unknown"}
     assert json.loads(handler(args))["condition"] == "caller_unknown"
     assert len(sent) == 1
+    if tool == "propose":
+        # A payload sent as JSON text is the same payload; an absent one reaches the server empty, which names what is missing.
+        monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+        handler({**args, "payload": json.dumps(args["payload"])}, session_id="20261109_090000_tip")
+        handler({"kind": args["kind"]}, session_id="20261109_090000_tip")
+        assert [params["payload"] for _, params in sent[1:]] == [recorded["params"]["payload"], {}]

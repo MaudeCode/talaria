@@ -10,6 +10,8 @@ the server with ``talaria_toolset._tool`` and returns the server's result unchan
 
 from __future__ import annotations
 
+import json
+
 from .talaria_toolset import _tool
 
 TOOLSET = "harness"
@@ -170,8 +172,14 @@ def _proposal(args: dict, params: dict) -> None:
     """The agent's payload as given, and the session's clarify timeout, which the proposal expires with."""
     from .methods import chat  # chat imports this module
 
-    if isinstance(args.get("payload"), dict):
-        params["payload"] = args["payload"]
+    payload = args.get("payload")
+    if isinstance(payload, str):  # a model that sends the object as JSON text
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            pass
+    # The server names each missing field of an absent or malformed payload.
+    params["payload"] = payload if isinstance(payload, dict) else {}
     params["timeout_seconds"] = chat._clarify_timeout({})
 
 

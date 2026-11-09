@@ -241,7 +241,8 @@ export class Proposals {
     const existing = (await this.deps().agentConfig.read(home)).mcp_servers
     const current = existing && typeof existing === 'object' && name in existing ? (existing as Record<string, Record<string, unknown>>)[name] ?? null : null
     const entry = mcpServerEntry(payload)
-    const missing = payload.env_names.filter((envName) => !(envName in loadEnvFile(join(home, '.env'))))
+    const env = payload.env_names.length ? loadEnvFile(join(home, '.env')) : {}
+    const missing = payload.env_names.filter((envName) => !(envName in env))
     return {
       payload,
       presentation: {
