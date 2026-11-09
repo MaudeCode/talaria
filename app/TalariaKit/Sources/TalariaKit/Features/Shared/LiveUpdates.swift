@@ -13,6 +13,9 @@ extension Notification.Name {
     /// TAL-1965: a decision review changed on the server, from its session's `decision_review` event. The object is the
     /// `DecisionReviewEvent`; the review's transcript card and open screen reread it.
     public static let talariaDecisionReviewChanged = Notification.Name("talariaDecisionReviewChanged")
+    /// TAL-1967: a proposal changed on the server, from its session's `proposal` event. The object is the `ProposalEvent`;
+    /// the proposal's transcript card rereads it.
+    public static let talariaProposalChanged = Notification.Name("talariaProposalChanged")
 }
 
 /// A change the server announced, or a resync after the subscription reconnected and may have

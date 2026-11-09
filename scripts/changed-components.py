@@ -26,7 +26,7 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
     "tooling": {"whats-new.json"},
-    "app": {"connectors.json", "decision-review.json", "execution-modes.json", "speech-prepare.json", "vault-prompts.json"},
+    "app": {"connectors.json", "decision-review.json", "execution-modes.json", "proposal.json", "speech-prepare.json", "vault-prompts.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json",
               "relay-approval-alert.json", "relay-snapshot.json"},

@@ -50,6 +50,11 @@ struct ToolCallCardView: View {
                 DecisionReviewResultSection(reference: reference)
             }
 
+            // TAL-1967: so does a proposal, with its Approve and Reject.
+            if let reference = toolCall.resultView?.proposal {
+                ProposalResultSection(reference: reference)
+            }
+
             if isExpanded {
                 expandedContent(statusDisplay: statusDisplay)
                     .padding(.leading, 24)
@@ -320,5 +325,122 @@ extension EnvironmentValues {
     var chatFullToolResultLoader: ChatFullToolResultLoader? {
         get { self[ChatFullToolResultLoaderKey.self] }
         set { self[ChatFullToolResultLoaderKey.self] = newValue }
+    }
+}
+
+/// TAL-1967: a change the agent proposed, as the server shows it: summary and status, the diff or field list, the risk
+/// notes, the outcome, and Approve and Reject for the server owner. The decision shows at once and rolls back when the
+/// server refuses it; the session's `proposal` events reread the rest.
+struct ProposalResultSection: View {
+    let reference: ProposalRef
+    @Environment(\.chatProposalModel) private var makeModel
+    @State private var model: ProposalCardModel?
+
+    var body: some View {
+        let proposal = model?.proposal
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(proposal?.summary ?? reference.summary)
+                    .font(AppFont.callout(weight: .semibold))
+                Spacer(minLength: 6)
+                if let proposal {
+                    Text(Self.statusLabel(proposal.status))
+                        .font(AppFont.caption())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            if let proposal, let model {
+                details(proposal)
+                if let error = model.lastError {
+                    Text(error.localizedDescription)
+                        .font(AppFont.caption())
+                        .foregroundStyle(.red)
+                }
+                if proposal.actions.canApprove || proposal.actions.canReject {
+                    HStack(spacing: 12) {
+                        if proposal.actions.canApprove {
+                            Button(String(localized: "Approve")) { Task { await model.approve() } }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("proposal-approve-\(reference.proposalId)")
+                        }
+                        if proposal.actions.canReject {
+                            Button(String(localized: "Reject")) { Task { await model.reject() } }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("proposal-reject-\(reference.proposalId)")
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
+            }
+        }
+        .padding(.leading, 24)
+        .task(id: reference.proposalId) {
+            if model == nil { model = makeModel?(reference.proposalId) }
+            await model?.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .talariaProposalChanged)) { notification in
+            guard (notification.object as? ProposalEvent)?.proposalId == reference.proposalId else { return }
+            Task { await model?.load() }
+        }
+    }
+
+    @ViewBuilder
+    private func details(_ proposal: Proposal) -> some View {
+        if !proposal.diff.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(proposal.diff) { DiffLineRow(line: $0) }
+            }
+            .textSelection(.enabled)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .forcedLeftToRight()
+        }
+        ForEach(Array(proposal.fields.enumerated()), id: \.offset) { _, field in
+            VStack(alignment: .leading, spacing: 1) {
+                Text(field.label)
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+                Text(field.value)
+                    .font(AppFont.callout())
+                    .textSelection(.enabled)
+            }
+            .accessibilityElement(children: .combine)
+        }
+        ForEach(Array(proposal.riskNotes.enumerated()), id: \.offset) { _, note in
+            Text(note)
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+        }
+        if let text = proposal.outcome.error ?? proposal.outcome.text {
+            Text(text)
+                .font(AppFont.caption())
+                .foregroundStyle(proposal.outcome.error == nil ? Color.green : Color.red)
+        }
+    }
+
+    static func statusLabel(_ status: Proposal.Status) -> String {
+        switch status {
+        case .pending: String(localized: "Waiting for approval")
+        case .approved: String(localized: "Approved")
+        case .rejected: String(localized: "Rejected")
+        case .applied: String(localized: "Applied")
+        case .failed: String(localized: "Failed")
+        case .expired: String(localized: "Expired")
+        }
+    }
+}
+
+/// TAL-1967: the card model for a proposal id; the chat screen supplies it with its session's client.
+typealias ChatProposalModel = ChatEnvironmentAction<String, ProposalCardModel>
+
+private struct ChatProposalModelKey: EnvironmentKey {
+    static var defaultValue: ChatProposalModel? { nil }
+}
+
+extension EnvironmentValues {
+    var chatProposalModel: ChatProposalModel? {
+        get { self[ChatProposalModelKey.self] }
+        set { self[ChatProposalModelKey.self] = newValue }
     }
 }

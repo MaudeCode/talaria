@@ -169,6 +169,10 @@ public enum Endpoint: Sendable {
     case decisionReview(id: String)
     case decisionAnswer(reviewID: String, itemID: String)
     case decisionSubmit(reviewID: String)
+    /// TAL-1967: one proposal, and the owner's approval or rejection of it.
+    case proposal(id: String)
+    case proposalApprove(id: String)
+    case proposalReject(id: String)
     case feedbackDiagnostics
     case feedbackSubmit
     case feedbackOptions
@@ -496,6 +500,12 @@ public enum Endpoint: Sendable {
             return "/api/decisions/\(reviewID)/answers/\(itemID)"
         case let .decisionSubmit(reviewID):
             return "/api/decisions/\(reviewID)/submit"
+        case let .proposal(id):
+            return "/api/proposals/\(id)"
+        case let .proposalApprove(id):
+            return "/api/proposals/\(id)/approve"
+        case let .proposalReject(id):
+            return "/api/proposals/\(id)/reject"
         case .feedbackDiagnostics:
             return "/api/feedback/diagnostics"
         case .feedbackSubmit:
@@ -773,6 +783,12 @@ public enum Endpoint: Sendable {
             url = segmentsURL(relativeTo: baseURL, root: "/api/decisions", segments: [reviewID, "answers", itemID])
         case let .decisionSubmit(reviewID):
             url = segmentsURL(relativeTo: baseURL, root: "/api/decisions", segments: [reviewID, "submit"])
+        case let .proposal(id):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/proposals", segments: [id])
+        case let .proposalApprove(id):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/proposals", segments: [id, "approve"])
+        case let .proposalReject(id):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/proposals", segments: [id, "reject"])
         default:
             url = baseURL.appending(path: path)
         }
