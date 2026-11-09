@@ -104,7 +104,8 @@ export function decisionMessage(proposal: Pick<StoredProposal, 'proposal_id' | '
   const result = proposal.status === 'applied' ? `was approved and applied: ${oneLine(proposal.outcome.text ?? '')}`
     : proposal.status === 'failed' ? `was approved but failed: ${oneLine(proposal.outcome.error ?? '')}`
       : 'was rejected'
-  return `${head} ${result}. Call proposal_read with proposal_id ${proposal.proposal_id} for details.`
+  // The route's text usually ends its own sentence.
+  return `${head} ${result}${/[.!?]$/.test(result) ? '' : '.'} Call proposal_read with proposal_id ${proposal.proposal_id} for details.`
 }
 
 export class Proposals {

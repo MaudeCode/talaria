@@ -450,7 +450,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   const terminalState = opts.running ? 'running' : terminalStateOf(last, finalAnswer)
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
-    expanded_by_default: opts.running === true || rows.some((row) => row.tool?.result_view?.outbound_draft) || (EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0), turn_duration: anchorSceneMessageTurnDuration(last),
+    expanded_by_default: opts.running === true || rows.some((row) => row.tool?.result_view?.outbound_draft || row.tool?.result_view?.proposal) || (EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0), turn_duration: anchorSceneMessageTurnDuration(last),
     file_changes: turnFileChanges(rows),
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }

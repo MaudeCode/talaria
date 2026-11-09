@@ -96,7 +96,7 @@ describe('proposals (TAL-1967)', () => {
     const approved = await approve(id)
     expect(approved).toMatchObject({ status: 200, body: { status: 'applied', outcome: { text: 'Installed probe, turned off until you enable it in Plugins.', error: null }, actions: { can_approve: false, reason: 'closed' } } })
     expect(installs.slice(1)).toEqual([{ profile_home: s.deps.profileHome('default'), name: 'probe' }, { profile_home: s.deps.profileHome('default'), name: 'probe', consent_token: 'token-2' }])
-    await vi.waitFor(() => { expect(told()).toEqual([`Proposal ${id} (Install plugin Probe) was approved and applied: Installed probe, turned off until you enable it in Plugins.. Call proposal_read with proposal_id ${id} for details.`]) })
+    await vi.waitFor(() => { expect(told()).toEqual([`Proposal ${id} (Install plugin Probe) was approved and applied: Installed probe, turned off until you enable it in Plugins. Call proposal_read with proposal_id ${id} for details.`]) })
   })
 
   it('fails a plugin approval, installing nothing, when the preview no longer matches what was reviewed', async () => {
