@@ -1844,6 +1844,8 @@ export class ProviderCatalog {
 
     } else {
       sources = previous.filter((s) => !requested || s.source_id === requested).map((s) => this.staleQuotaSource(s))
+      // TAL-1973: a cached read answers the same stale projection until a confirmed read replaces it.
+      if (prior && prior.sequence <= sequence) this.lastQuotaSources.set(cacheKey, { ...prior, sequence, unconfirmed: true })
     }
     const currentSource = this.sourceFingerprint(profileHome)
     if (currentSource !== source) { poolUnknown = true; sources = [] }
@@ -1858,10 +1860,12 @@ export class ProviderCatalog {
    */
   async cachedQuotaSources(profileHome: string, profile: string): Promise<QuotaSourceRow[] | null> {
     const cached = this.lastQuotaSources.get(`${profileHome}\0${await this.quotaProfileScopeId(profile)}`)
-    return cached?.source === this.sourceFingerprint(profileHome) ? cached.sources.map(withQuotaDisplay) : null
+    if (cached?.source !== this.sourceFingerprint(profileHome)) return null
+    return cached.sources.map((row) => withQuotaDisplay(cached.unconfirmed ? this.staleQuotaSource(row) : row))
   }
 
-  private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()
+  /** `unconfirmed` marks a snapshot the latest read could not confirm, which `quotas` answered stale. */
+  private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number>; unconfirmed?: boolean }>()
 
   private staleQuotaSource(source: QuotaSourceRow, reason = 'Provider data is temporarily unavailable. Showing last-confirmed data.'): QuotaSourceRow {
     return { ...source, ...(source.plan_usage ? { plan_stale: true } : {}), status: 'stale', unavailable_reason: reason, message: reason, urgency: { remaining: 'stale', pace: 'stale' } }

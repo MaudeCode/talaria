@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { Session } from './session.js'
 
@@ -100,6 +101,20 @@ describe('usage_read (TAL-1973)', () => {
     expect(result).toMatchObject({ provider: 'zai', quota: null, quota_reason: zai.status_message })
     expect(result!.quota_reason).toMatch(/No verified server-side quota/)
     record(1, { caller_session_id: ZAI_CALLER }, result)
+  })
+
+  it('answers the stale rows the sidebar shows when a later quota read could not confirm them', async () => {
+    await seed('anthropic')
+    await s.get('/api/provider/quotas')
+    const fail = () => { throw new SidecarError('Agent update recovery is incomplete.', { condition: 'agent_runtime_stale', data: {} }) }
+    for (const method of ['usage.pool', 'usage.pool_providers', 'providers.auth_status', 'plugins.providers'] as const) sidecar.respond(method, fail)
+    const quotas = (await (await s.get('/api/provider/quotas?refresh=1')).json()) as { availability: { authoritative: boolean }; sources: Json[] }
+    expect(quotas.availability.authoritative).toBe(false)
+    const sidebar = quotas.sources.find((q) => q.provider_id === 'anthropic')!
+    expect(sidebar.status).toBe('stale')
+    const source = ((await read()).result!.quota as { sources: Json[] }).sources[0]!
+    expect(source).toMatchObject({ status: 'stale', level: sidebar.display_level, message: sidebar.status_message })
+    expect((source.windows as Json[]).map((w) => w.level)).toEqual((sidebar.windows as Json[]).map((w) => w.display_level))
   })
 
   it('reads only a stored caller session', async () => {
