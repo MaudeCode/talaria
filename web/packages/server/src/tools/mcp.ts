@@ -10,7 +10,7 @@ import { isCredentialKey, redactString } from '../redact.js'
 import { str } from '../util.js'
 import type { McpHealthProber } from './mcp-health.js'
 
-const MASK = '••••••'
+export const MASK = '••••••'
 const STDIO_LIFECYCLE_KEYS = ['idle_timeout_seconds', 'max_lifetime_seconds']
 
 export function maskSecrets(obj: unknown): unknown {

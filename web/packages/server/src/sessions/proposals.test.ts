@@ -142,7 +142,7 @@ describe('proposals (TAL-1967)', () => {
 
   it('replaces an existing MCP server exactly as shown, masking its stored credentials and clearing what the proposal drops', async () => {
     configs.set(s.state, { mcp_servers: {
-      notes: { command: 'old-notes', args: ['--verbose'], env: { API_TOKEN: 'plain-secret', HOST: '${HOST}' }, cwd: '/srv/notes', enabled: true },
+      notes: { command: 'old-notes', args: ['--verbose'], env: { API_TOKEN: 'plain-secret', DB_URL: 'postgres://notes:url-secret@db', HOST: '${HOST}' }, cwd: '/srv/notes', enabled: true },
       remote: { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer header-secret' } },
     } })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
@@ -153,12 +153,12 @@ describe('proposals (TAL-1967)', () => {
       { kind: 'addition', old_line: null, new_line: 1, text: '+command: npx' },
       { kind: 'context', old_line: 2, new_line: 2, text: ' cwd: /srv/notes' },
       { kind: 'deletion', old_line: 3, new_line: null, text: '-args: ["--verbose"]' },
-      { kind: 'deletion', old_line: 4, new_line: null, text: '-env: {"API_TOKEN":"••••••","HOST":"${HOST}"}' },
+      { kind: 'deletion', old_line: 4, new_line: null, text: '-env: {"API_TOKEN":"••••••","DB_URL":"••••••","HOST":"${HOST}"}' },
     ])
     const remote = await propose('mcp_server', { name: 'remote', url: 'https://new.example/mcp' })
     for (const id of [command.id, remote.id]) {
-      expect(JSON.stringify(await show(id))).not.toMatch(/plain-secret|header-secret/)
-      expect(JSON.stringify(await ask('server.proposal_read', { proposal_id: id }))).not.toMatch(/plain-secret|header-secret/)
+      expect(JSON.stringify(await show(id))).not.toMatch(/plain-secret|url-secret|header-secret/)
+      expect(JSON.stringify(await ask('server.proposal_read', { proposal_id: id }))).not.toMatch(/plain-secret|url-secret|header-secret/)
       expect((await approve(id)).body.status).toBe('applied')
     }
     // What the owner approved is what config.yaml holds: the dropped args, env and headers are gone.

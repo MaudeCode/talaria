@@ -18,7 +18,7 @@ import { HttpFailure } from './service.js'
 import { sendSessionMessage } from './admission.js'
 import { agentApprovals, compressionPrepareAhead, maxTokensStatus } from '../config/agent-config.js'
 import { loadEnvFile } from '../providers/env-file.js'
-import { maskSecrets } from '../tools/mcp.js'
+import { MASK } from '../tools/mcp.js'
 
 const NAMESPACE = 'proposals'
 const LIMITS = { name: 64, text: 2000, title: 200, prompt: 20_000, list: 50, sources: 20 } as const
@@ -114,15 +114,16 @@ function mcpTransport(current: Record<string, unknown> | null, payload: Payload<
   }
 }
 
-/** A stored server's transport fields with credentials masked as the MCP page masks them; `${NAME}` references stay readable. */
+/**
+ * A stored server's transport fields with every header and env value masked: the agent reads the proposal before the
+ * owner decides, so no stored value reaches it, whatever its name. `${NAME}` references stay readable.
+ */
 function maskedTransport(current: Record<string, unknown>): Record<string, unknown> {
   const shown = pick(current, MCP_TRANSPORT_KEYS)
   for (const key of ['headers', 'env']) {
     const value = shown[key]
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-    const masked = maskSecrets(value) as Record<string, unknown>
-    for (const [name, raw] of Object.entries(value)) if (typeof raw === 'string' && /^\$\{[^}]+\}$/.test(raw)) masked[name] = raw
-    shown[key] = masked
+    shown[key] = Object.fromEntries(Object.entries(value).map(([name, raw]) => [name, typeof raw === 'string' && /^\$\{[^}]+\}$/.test(raw) ? raw : MASK]))
   }
   return shown
 }
