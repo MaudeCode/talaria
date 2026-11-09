@@ -11,7 +11,7 @@ function ownerChat(page: Page, attachment: Record<string, unknown> | null) {
   const state = { attachment, writes: [] as Record<string, unknown>[], profileReads: 0, refuse: false, hold: Promise.resolve(), apply: () => undefined as unknown }
   const session = () => ({ session_id: sid, title: 'Back up the cluster', read_only: true, active_stream_id: null, is_streaming: false, model: 'native-model', model_provider: 'custom',
     messages: [{ role: 'user', content: 'Back up the cluster' }, { role: 'assistant', content: 'Inspecting the backup logs.' }],
-    owner_attachment: { state: 'attached', reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [], ...state.attachment } })
+    owner_attachment: { state: 'attached', reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0, ...state.attachment } })
   return { state, ready: Promise.all([
     page.route('**/api/session?**', (route) => route.fulfill({ json: { session: session() } })),
     page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: false, stream_id: null, replay_available: false } })),

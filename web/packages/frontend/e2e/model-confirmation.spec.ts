@@ -53,7 +53,7 @@ test('native model outcomes keep the committed selection and require the owner c
   let change: Record<string, unknown> | undefined
   let committed = 'old-model'
   const owner = () => ({ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false,
-    revision: 8, execution_generation: 3, admissions: [], ...(change ? { model_change: change } : {}) })
+    revision: 8, execution_generation: 3, admissions: [], queued_input_count: 0, ...(change ? { model_change: change } : {}) })
   await page.route('**/api/session?*', async (route) => {
     const response = await route.fetch()
     const body = await response.json() as { session: Record<string, unknown> }

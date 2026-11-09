@@ -21,7 +21,7 @@ test('the right panel shows Agents and Files as tabs that keep their state', asy
       agent({ task_id: 'call-1-2', title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 1, failed: 0, running: 1 } }),
       agent({ task_id: 'd-stall', title: 'Fix CI', status: 'attention' }),
     ]
-    return route.fulfill({ json: { session_id: sid, agent_available: true, agents_working: true, tasks: kind === 'delegation' ? tasks : [] } })
+    return route.fulfill({ json: { session_id: sid, agent_available: true, agents_working: true, tasks: kind === 'delegation' ? tasks : [], pinned_count: kind === 'delegation' ? tasks.filter((t) => t.pinned).length : 0 } })
   })
   await page.route('**/api/list?**', (route) => {
     const path = new URL(route.request().url()).searchParams.get('path') ?? '.'

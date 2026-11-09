@@ -8,7 +8,7 @@ const sid = 'touch-footers'
 const at = 1767225600
 const session = {
   session_id: sid, title: 'Touch footers', read_only: true, message_count: 4,
-  owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] },
+  owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 },
   messages: [
     { role: 'user', message_id: 'q1', content: 'First question', timestamp: at },
     { role: 'assistant', message_id: 'a1', content: 'First answer', timestamp: at + 5, _usedModel: 'model-one', _turnDuration: 3 },

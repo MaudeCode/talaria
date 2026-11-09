@@ -28,7 +28,7 @@ export const test = base.extend<{ errors: string[] }>({
     // TAL-567: the Kanban page holds an event stream; by default it says hello and reconnects each second, so the page
     // still reaches network idle. A spec that tests live refresh routes its own.
     await page.route('**/api/kanban/events/stream**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 1000\n\nevent: hello\ndata: {}\n\n' }))
-    await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: new URL(route.request().url()).searchParams.get('session_id') ?? '', agent_available: true, tasks: [] } }))
+    await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: new URL(route.request().url()).searchParams.get('session_id') ?? '', agent_available: true, tasks: [], pinned_count: 0 } }))
     // TAL-564: likewise the composer's server draft reads empty and accepts saves; draft-sync.spec.ts unroutes this.
     await page.route('**/api/session/draft**', (route) => route.fulfill({ json: { ok: true, draft: { text: '', files: [] }, draft_version: null } }))
     page.on('console', onConsole)

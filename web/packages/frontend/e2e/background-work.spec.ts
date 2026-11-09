@@ -23,7 +23,7 @@ test('the background card shows the server\'s records with their result and Dism
       } },
     ],
   } } }))
-  await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, tasks: [
+  await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, pinned_count: dismissed ? 1 : 2, tasks: [
     task({ task_id: 'd1', kind: 'delegation', title: 'Fix CI' }),
     task({ task_id: 'bg1', status: 'completed', title: 'Summarize the repo', result_available: true, pinned: !dismissed, dismissible: !dismissed, active: false }),
   ] } }))
@@ -76,7 +76,7 @@ test('background work the Agent starts during a turn shows on the chip when the 
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `${base}/chat${new URL(route.request().url()).search}` }))
   await page.route('**/api/sessions/events*', (route) => route.continue({ url: `${base}/sessions` }))
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
-  await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, tasks: started ? [task({ task_id: 'call_d', kind: 'delegation', title: 'Check logs' })] : [] } }))
+  await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, pinned_count: started ? 1 : 0, tasks: started ? [task({ task_id: 'call_d', kind: 'delegation', title: 'Check logs' })] : [] } }))
   try {
     await page.goto(`/session/${sid}`)
     await expect(page.locator('.composer-notices [data-notice="live"]')).toContainText('Working')

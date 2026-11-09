@@ -11,7 +11,7 @@ test('native terminal requires Run, displays captured output, and never opens a 
   const sid = fixture.target.session_id
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Native workspace', workspace: fixture.target.workspace, messages: [],
-    owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] },
+    owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 },
   } } }))
   await page.route('**/api/terminal/**', async (route) => {
     const path = new URL(route.request().url()).pathname

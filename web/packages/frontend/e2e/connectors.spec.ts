@@ -248,7 +248,7 @@ test('an MCP row keeps a long command in a bounded box with every argument reach
   const sid = native.owner!.session_id
   const target = ['npx -y mcp-linear', ...Array.from({ length: 120 }, (_, index) => `--include=/workspace/project/${String(index)}`), `'two  spaces'`, '--last-argument'].join(' ')
   const view: ConnectorOperationView = { ...native, targets: native.targets.map((row) => row.name === 'linear' ? { ...row, launch: { ...row.launch!, target } } : row) }
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Native owner chat', workspace: '/workspace/native', read_only: true, read_only_reason: 'canonical_session', messages: [{ role: 'user', content: 'Connect my apps' }], owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], connection: view } } } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Native owner chat', workspace: '/workspace/native', read_only: true, read_only_reason: 'canonical_session', messages: [{ role: 'user', content: 'Connect my apps' }], owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0, connection: view } } } }))
   await page.route('**/api/connectors/operations/op-native**', (route) => route.fulfill({ json: view }))
   await page.goto(`/session/${sid}`)
   await settle(page)
@@ -280,7 +280,7 @@ test('a canonical owner\'s connection card restores on attach and answers throug
   const reads: string[] = []
   let answer: () => void = () => undefined
   const ownerAnswers = new Promise<void>((resolve) => { answer = resolve })
-  const owner_attachment = () => ({ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], connection: current })
+  const owner_attachment = () => ({ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0, connection: current })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Native owner chat', workspace: '/workspace/native', read_only: true, read_only_reason: 'canonical_session', messages: [{ role: 'user', content: 'Connect my apps' }], owner_attachment: owner_attachment() } } }))
   await page.route('**/api/connectors/operations/op-native**', async (route) => {
     const request = route.request()

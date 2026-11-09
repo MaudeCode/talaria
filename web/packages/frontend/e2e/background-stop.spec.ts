@@ -19,8 +19,8 @@ test('Stop uses the shared action in Background work and Agents and waits for co
   } } }))
   await page.route('**/api/background/tasks?**', (route) => {
     const tasks = [row('d1', 'delegation', 'Review the logs'), row('proc_1', 'process', 'Run the tests')]
-    return route.fulfill({ json: { session_id: sid, agent_available: true, agents_working: !completed,
-      tasks: new URL(route.request().url()).searchParams.get('kind') === 'delegation' ? tasks.slice(0, 1) : tasks } })
+    const shown = new URL(route.request().url()).searchParams.get('kind') === 'delegation' ? tasks.slice(0, 1) : tasks
+    return route.fulfill({ json: { session_id: sid, agent_available: true, agents_working: !completed, tasks: shown, pinned_count: shown.filter((t) => t.pinned).length } })
   })
   await page.route('**/api/background/stop', async (route) => {
     expect(route.request().postDataJSON()).toEqual({ session_id: sid, task_id: requested })
