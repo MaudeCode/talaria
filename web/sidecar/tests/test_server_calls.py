@@ -28,6 +28,7 @@ NOTIFY_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "f
 DELIVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "deliver.json").read_text())
 TERMINAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "terminal.json").read_text())
 REPORT_ISSUE_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "report-issue.json").read_text())
+USAGE_READ_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "usage-read.json").read_text())
 
 
 class Peer:
@@ -389,6 +390,7 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("terminal_open", "harness", "terminal_open"),
         ("terminal_read", "harness", "terminal_read"),
         ("report_issue", "harness", "report_issue"),
+        ("usage_read", "harness", "usage_read"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
@@ -643,3 +645,22 @@ def test_harness_report_issue_forwards_its_call_and_returns_the_server_result_un
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(harness_toolset.report_issue(args, session_id="20261109_090000_tip")) == {"error": "Too many feedback reports were sent from this server recently", "condition": "rate_limited", "retry_after_seconds": 42}
     assert json.loads(harness_toolset.report_issue({"summary": "x"}, session_id="20261109_090000_tip")) == {"error": "detail is required", "condition": "invalid_params"}
+
+
+@pytest.mark.parametrize("recorded", USAGE_READ_FIXTURES["server.usage_read"], ids=["with_quota", "without_quota"])
+def test_harness_usage_read_forwards_its_call_and_returns_the_server_result_unchanged(monkeypatch, recorded) -> None:
+    """TAL-1973: ``usage_read`` sends only the caller to ``server.usage_read`` and returns its JSON as sent; outside a
+    Talaria session it answers caller_unknown without a call."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    assert json.loads(harness_toolset.usage_read({}, session_id="20261109_090000_tip")) == recorded["result"]
+    assert sent == [("server.usage_read", recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS["server.usage_read"]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS["server.usage_read"]["result"]) == []
+    assert json.loads(harness_toolset.usage_read({})) == {"error": "usage_read runs only inside a Talaria chat session", "condition": "caller_unknown"}
+    assert len(sent) == 1

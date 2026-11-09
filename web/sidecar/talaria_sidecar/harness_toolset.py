@@ -18,6 +18,9 @@ watches it live, while the agent reads its output in slices. The agent types onl
 TAL-1972 adds ``report_issue``: a Talaria misbehaviour the agent ran into, filed as feedback marked as the agent's, so it
 reaches the Inbox like a user's report.
 
+TAL-1973 adds ``usage_read``: the calling session's tokens, cost, turns and context, and its provider's quota windows from
+the server's cache, so a long task can plan around a limit.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -38,7 +41,8 @@ TOOLSET_DESCRIPTION = (
     "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
     "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's "
     "devices that something is ready or needs them; deliver a file you made as a download; run a long command in a terminal "
-    "the user watches and read its output; report a Talaria problem you ran into as feedback."
+    "the user watches and read its output; report a Talaria problem you ran into as feedback; read this session's usage, "
+    "cost, context and provider quota."
 )
 
 _WHEN = (
@@ -342,6 +346,20 @@ REPORT_ISSUE_SCHEMA = {
 }
 
 
+USAGE_READ_SCHEMA = {
+    "name": "usage_read",
+    "description": (
+        "Read what this session has used so far, to plan a long task around its limits: input, output and cache-read "
+        "tokens, estimated cost, turns, how full the context window is and the threshold where it is compressed, and the "
+        "quota windows of this session's provider as the user's sidebar shows them (percent used and left, when each "
+        "resets, and its level: healthy, warning, critical, stale or unavailable). Every number comes with text to quote. "
+        "Quota is the server's last reading, with fetched_at; this call never asks the provider. quota is null, with "
+        "quota_reason, when the provider reports no quota or none was read yet. Token and cost figures cover finished turns."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+
 def _payload(args: dict, params: dict) -> None:
     """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
@@ -399,6 +417,7 @@ def terminal_open(args: dict, session_id: str | None = None) -> str:
     return _terminal_open(args, session_id)
 terminal_read = _tool("server.terminal_read", "terminal_read", ("terminal_id",), _passed("after_event_id", "max_lines"))
 report_issue = _tool("server.report_issue", "report_issue", ("summary", "detail"), _passed("include_diagnostics"))
+usage_read = _tool("server.usage_read", "usage_read", ())
 
 
 def _secret(args: dict, params: dict) -> float:
@@ -454,6 +473,7 @@ _TOOLS = (
     (TERMINAL_OPEN_SCHEMA, terminal_open, "🖥️"),
     (TERMINAL_READ_SCHEMA, terminal_read, "📟"),
     (REPORT_ISSUE_SCHEMA, report_issue, "🐞"),
+    (USAGE_READ_SCHEMA, usage_read, "📊"),
 )
 
 

@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The agent can check how many tokens and how much money its chat has used, how full its context is, and how much of your provider quota is left, so it can plan a long task around those limits.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "icon": "sparkles",
+        "title": "Agent tools in chat",
+        "description": "Agents can show tables and charts, ask for a secret safely, notify you and hand you files."
+      }
+    }
+  ]
+}

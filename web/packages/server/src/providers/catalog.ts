@@ -30,7 +30,7 @@ import {
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
-interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
+export interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
 interface CatalogLookup<T> { value: T | null; authoritative: boolean }
 export interface ModelGroup {
   availability?: CatalogAvailability
@@ -1850,6 +1850,15 @@ export class ProviderCatalog {
     const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
     const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
     return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: sources.map(withQuotaDisplay) }
+  }
+
+  /**
+   * TAL-1973: the sources the last `quotas` read of this profile confirmed, as `/api/provider/quotas` shows them, without
+   * reading any provider; null when no read has run since the provider configuration last changed.
+   */
+  async cachedQuotaSources(profileHome: string, profile: string): Promise<QuotaSourceRow[] | null> {
+    const cached = this.lastQuotaSources.get(`${profileHome}\0${await this.quotaProfileScopeId(profile)}`)
+    return cached?.source === this.sourceFingerprint(profileHome) ? cached.sources.map(withQuotaDisplay) : null
   }
 
   private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()
