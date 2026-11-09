@@ -143,7 +143,7 @@ describe('proposals (TAL-1967)', () => {
   it('replaces an existing MCP server exactly as shown, masking its stored credentials and clearing what the proposal drops', async () => {
     configs.set(s.state, { mcp_servers: {
       notes: { command: 'old-notes', args: ['--verbose'], env: { API_TOKEN: 'plain-secret', DB_URL: 'postgres://notes:url-secret@db', HOST: '${HOST}' }, cwd: '/srv/notes', enabled: true },
-      remote: { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer header-secret' } },
+      remote: { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer header-secret' }, oauth: { client_id: 'notes-app', client_secret: 'oauth-secret' }, client_cert: '/certs/notes.pem', trust: 'pinned', enabled: true },
     } })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     const command = await propose('mcp_server', { name: 'notes', command: 'npx' })
@@ -156,13 +156,22 @@ describe('proposals (TAL-1967)', () => {
       { kind: 'deletion', old_line: 4, new_line: null, text: '-env: {"API_TOKEN":"••••••","DB_URL":"••••••","HOST":"${HOST}"}' },
     ])
     const remote = await propose('mcp_server', { name: 'remote', url: 'https://new.example/mcp' })
+    // A new host takes none of the old one's credentials, TLS identity or trust, and the card says so.
+    expect((await show(remote.id)).diff).toEqual([
+      { kind: 'deletion', old_line: 1, new_line: null, text: '-url: https://old.example/mcp' },
+      { kind: 'addition', old_line: null, new_line: 1, text: '+url: https://new.example/mcp' },
+      { kind: 'deletion', old_line: 2, new_line: null, text: '-headers: {"Authorization":"••••••"}' },
+      { kind: 'deletion', old_line: 3, new_line: null, text: '-oauth: {"client_id":"••••••","client_secret":"••••••"}' },
+      { kind: 'deletion', old_line: 4, new_line: null, text: '-client_cert: ••••••' },
+      { kind: 'deletion', old_line: 5, new_line: null, text: '-trust: ••••••' },
+    ])
     for (const id of [command.id, remote.id]) {
-      expect(JSON.stringify(await show(id))).not.toMatch(/plain-secret|url-secret|header-secret/)
-      expect(JSON.stringify(await ask('server.proposal_read', { proposal_id: id }))).not.toMatch(/plain-secret|url-secret|header-secret/)
+      expect(JSON.stringify(await show(id))).not.toMatch(/plain-secret|url-secret|header-secret|oauth-secret/)
+      expect(JSON.stringify(await ask('server.proposal_read', { proposal_id: id }))).not.toMatch(/plain-secret|url-secret|header-secret|oauth-secret/)
       expect((await approve(id)).body.status).toBe('applied')
     }
     // What the owner approved is what config.yaml holds: the dropped args, env and headers are gone.
-    expect(configs.get(s.state)?.mcp_servers).toEqual({ notes: { command: 'npx', cwd: '/srv/notes', enabled: true }, remote: { url: 'https://new.example/mcp' } })
+    expect(configs.get(s.state)?.mcp_servers).toEqual({ notes: { command: 'npx', cwd: '/srv/notes', enabled: true }, remote: { url: 'https://new.example/mcp', enabled: true } })
   })
 
   it('changes a setting through the settings route, showing its current and proposed value', async () => {

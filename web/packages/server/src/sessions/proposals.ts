@@ -18,7 +18,7 @@ import { HttpFailure } from './service.js'
 import { sendSessionMessage } from './admission.js'
 import { agentApprovals, compressionPrepareAhead, maxTokensStatus } from '../config/agent-config.js'
 import { loadEnvFile } from '../providers/env-file.js'
-import { MASK } from '../tools/mcp.js'
+import { MASK, MCP_HOST_BOUND_KEYS } from '../tools/mcp.js'
 
 const NAMESPACE = 'proposals'
 const LIMITS = { name: 64, text: 2000, title: 200, prompt: 20_000, list: 50, sources: 20 } as const
@@ -96,12 +96,12 @@ interface Presentation { summary: string; diff: DiffLine[]; fields: Proposal['fi
 const envRefs = (names: string[]): Record<string, string> => Object.fromEntries(names.map((name) => [name, `\${${name}}`]))
 
 /**
- * The MCP action route's body for this payload. A url server replaces the address and clears its headers, so no
- * credential follows the server to a new host; a command server replaces its command, args and env, an empty list
+ * The MCP action route's body for this payload. A url server replaces the address and clears its headers, auth, OAuth,
+ * TLS identity and trust, so no credential follows the server to a new host; a command server replaces its command, args and env, an empty list
  * clearing the stored one. Env values stay in `.env`.
  */
 export function mcpUpdateBody(payload: Payload<'mcp_server'>): Record<string, unknown> {
-  if (payload.url) return { url: payload.url, headers: null }
+  if (payload.url) return { url: payload.url, ...Object.fromEntries(MCP_HOST_BOUND_KEYS.map((key) => [key, null])) }
   return { command: payload.command, args: payload.args.length ? payload.args : null, env: payload.env_names.length ? envRefs(payload.env_names) : null }
 }
 
@@ -115,17 +115,23 @@ function mcpTransport(current: Record<string, unknown> | null, payload: Payload<
 }
 
 /**
- * A stored server's transport fields with every header and env value masked: the agent reads the proposal before the
- * owner decides, so no stored value reaches it, whatever its name. `${NAME}` references stay readable.
+ * A stored server's transport and host-bound fields with every value of its headers, env, auth and other settings
+ * masked: the agent reads the proposal before the owner decides, so no stored value reaches it, whatever its name.
+ * `${NAME}` references stay readable.
  */
 function maskedTransport(current: Record<string, unknown>): Record<string, unknown> {
   const shown = pick(current, MCP_TRANSPORT_KEYS)
-  for (const key of ['headers', 'env']) {
-    const value = shown[key]
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-    shown[key] = Object.fromEntries(Object.entries(value).map(([name, raw]) => [name, typeof raw === 'string' && /^\$\{[^}]+\}$/.test(raw) ? raw : MASK]))
+  for (const [key, value] of Object.entries(shown)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) shown[key] = maskValues(value as Record<string, unknown>)
+    else if (typeof value === 'string' && MCP_HOST_BOUND_KEYS.includes(key) && !/^\$\{[^}]+\}$/.test(value)) shown[key] = MASK
   }
   return shown
+}
+
+/** Every string inside a stored object masked, nested ones included; a `${NAME}` reference stays readable. */
+function maskValues(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).map(([name, raw]) => [name,
+    typeof raw === 'string' ? (/^\$\{[^}]+\}$/.test(raw) ? raw : MASK) : raw && typeof raw === 'object' && !Array.isArray(raw) ? maskValues(raw as Record<string, unknown>) : raw]))
 }
 
 /** The one-line message an approve or reject sends the owning session; the detail stays in the proposal. */
@@ -373,5 +379,5 @@ export class Proposals {
 }
 
 const isScalar = (value: unknown): boolean => value === null || ['string', 'number', 'boolean'].includes(typeof value)
-const MCP_TRANSPORT_KEYS = ['url', 'headers', 'command', 'args', 'env', 'cwd']
+const MCP_TRANSPORT_KEYS = ['url', 'command', 'args', 'env', 'cwd', ...MCP_HOST_BOUND_KEYS]
 const pick = (value: Record<string, unknown>, keys: string[]): Record<string, unknown> => Object.fromEntries(keys.filter((key) => key in value).map((key) => [key, value[key]]))
