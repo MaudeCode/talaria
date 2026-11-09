@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Opening a chat requests its messages while the chat is still appearing and loads the model, reasoning, workspace and command controls together, so an uncached chat and its composer are ready sooner.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

@@ -120,6 +120,25 @@ O(response²) on the main actor.
 armed replay keeps matching in order, keyed on the received UTF-8 length so any
 other rewrite of the streaming message falls back to the exact comparison.
 
+## Chat open: serial round trips to a ready composer
+
+`ChatViewModelSendTests/testChatOpenSendsTheTranscriptBeforeItAppearsAndReachesAReadyComposerInFourRoundTrips`
+holds every request and answers them one round trip at a time, so requests
+sent together share a round trip and requests that wait for one another take
+one each. It opens an uncached chat the way `ChatView` does and counts the
+round trips until the composer's controls and approval state are loaded
+(TAL-839).
+
+| | Before the appearance completes | After it, to a ready composer |
+| --- | --- | --- |
+| Before | nothing | 8: transcript, background work, profiles, models, reasoning, workspaces, commands, approval |
+| After | transcript | 4: background work, profiles with approval, models with workspaces and commands, reasoning |
+
+A session on another profile adds one round trip, the profile switch, after
+the profiles in both. Models and workspaces are profile-scoped, so the switch
+settles first; reasoning is scoped to the resolved model, so it follows the
+models. The prefetched transcript applies only once the chat has appeared.
+
 ## Comparing a run
 
 Every CI run uploads a `performance-metrics` artifact (`performance-metrics.json`

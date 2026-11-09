@@ -102,6 +102,9 @@ struct ChatComposerConfigLoader {
         nonEmpty(currentProfile) ?? nonEmpty(profiles.active) ?? profiles.effectiveDefaultProfileName
     }
 
+    /// Profiles and any profile switch come first, because models and workspaces are profile-scoped. Then models,
+    /// workspaces and commands load together; reasoning waits for models, whose resolved model it is scoped to
+    /// (TAL-839). An error reports the first failed step in that order: profiles, models, reasoning, workspaces.
     func loadConfiguration(from initialState: ChatComposerConfigState) async -> ChatComposerConfigLoadResult {
         var state = initialState
         var configurationError: Error?
@@ -130,7 +133,14 @@ struct ChatComposerConfigLoader {
                     state.currentModel = Self.nonEmpty(switchResponse.defaultModel)
                 }
             }
+        } catch {
+            configurationError = error
+        }
 
+        async let commandsResponse = client.commands(caching: cache?.entry(ResponseCache.Kind.commands))
+        if configurationError == nil {
+            async let modelsResponse = client.models(caching: cache?.entry(ResponseCache.Kind.models))
+            async let workspacesResponse = client.workspaces(caching: cache?.entry(ResponseCache.Kind.workspaces))
             let selectedProfile = Self.profileSummary(
                 matching: state.selectedProfileName,
                 in: state.profileOptions
@@ -138,47 +148,21 @@ struct ChatComposerConfigLoader {
             if state.currentModel == nil {
                 state.currentModel = Self.nonEmpty(selectedProfile?.model)
             }
-
-            let modelsResponse = try await client.models(caching: cache?.entry(ResponseCache.Kind.models))
-            state.modelCatalogGroups = modelsResponse.catalogGroups
-            if state.currentModel == nil {
-                state.currentModel = modelsResponse.defaultModel
-                state.currentModelOptionID = modelsResponse.defaultOptionID
-            } else if state.currentModelOptionID == nil,
-                      state.currentModel == (modelsResponse.defaultBareID ?? modelsResponse.defaultModel),
-                      state.currentModelProvider == nil || state.currentModelProvider == modelsResponse.defaultProviderID {
-                // A profile default (profile switch, profile row) is the
-                // server's default selection: take its entry.
-                state.currentModelOptionID = modelsResponse.defaultOptionID
+            do {
+                try await applyModelsAndReasoning(try await modelsResponse, selectedProfile: selectedProfile, to: &state)
+                let workspaceResponse = try await workspacesResponse
+                state.workspaceRoots = workspaceResponse.workspaces ?? []
+                if state.currentWorkspace == nil {
+                    state.currentWorkspace = workspaceResponse.last ?? state.workspaceRoots.compactMap(\.path).first
+                }
+                state.workspaceSuggestions = state.workspaceRoots.compactMap(\.path)
+            } catch {
+                configurationError = error
             }
-            if Self.nonEmpty(state.currentModelProvider) == nil {
-                state.currentModelProvider = Self.nonEmpty(selectedProfile?.provider)
-                    ?? Self.uniqueProvider(for: state.currentModel, in: state.modelCatalogGroups)
-            }
-
-            // Scope the query to the session's resolved model/provider so the
-            // gating fields are model-accurate (issue #18); the seeded effort is
-            // the server's already-coerced value for that model.
-            let reasoningResponse = try await client.reasoning(
-                model: Self.nonEmpty(state.currentModel),
-                provider: Self.nonEmpty(state.currentModelProvider)
-            )
-            state.selectedReasoningEffort = reasoningResponse.effectiveEffort
-            state.supportedReasoningEfforts = reasoningResponse.normalizedSupportedEfforts
-            state.supportsReasoningEffort = reasoningResponse.supportsReasoningEffort
-
-            let workspaceResponse = try await client.workspaces(caching: cache?.entry(ResponseCache.Kind.workspaces))
-            state.workspaceRoots = workspaceResponse.workspaces ?? []
-            if state.currentWorkspace == nil {
-                state.currentWorkspace = workspaceResponse.last ?? state.workspaceRoots.compactMap(\.path).first
-            }
-            state.workspaceSuggestions = state.workspaceRoots.compactMap(\.path)
-        } catch {
-            configurationError = error
         }
 
         // TAL-314: a failed fetch or an older server's rows (no catalog fields) keep the last good catalog.
-        if let commands = try? await client.commands(caching: cache?.entry(ResponseCache.Kind.commands)).commands,
+        if let commands = try? await commandsResponse.commands,
            commands.contains(where: \.isCatalogEntry) || !state.agentCommands.contains(where: \.isCatalogEntry) {
             state.agentCommands = commands
         }
@@ -187,6 +171,39 @@ struct ChatComposerConfigLoader {
             state: state,
             configurationError: configurationError
         )
+    }
+
+    private func applyModelsAndReasoning(
+        _ modelsResponse: ModelsResponse,
+        selectedProfile: ProfileSummary?,
+        to state: inout ChatComposerConfigState
+    ) async throws {
+        state.modelCatalogGroups = modelsResponse.catalogGroups
+        if state.currentModel == nil {
+            state.currentModel = modelsResponse.defaultModel
+            state.currentModelOptionID = modelsResponse.defaultOptionID
+        } else if state.currentModelOptionID == nil,
+                  state.currentModel == (modelsResponse.defaultBareID ?? modelsResponse.defaultModel),
+                  state.currentModelProvider == nil || state.currentModelProvider == modelsResponse.defaultProviderID {
+            // A profile default (profile switch, profile row) is the
+            // server's default selection: take its entry.
+            state.currentModelOptionID = modelsResponse.defaultOptionID
+        }
+        if Self.nonEmpty(state.currentModelProvider) == nil {
+            state.currentModelProvider = Self.nonEmpty(selectedProfile?.provider)
+                ?? Self.uniqueProvider(for: state.currentModel, in: state.modelCatalogGroups)
+        }
+
+        // Scope the query to the session's resolved model/provider so the
+        // gating fields are model-accurate (issue #18); the seeded effort is
+        // the server's already-coerced value for that model.
+        let reasoningResponse = try await client.reasoning(
+            model: Self.nonEmpty(state.currentModel),
+            provider: Self.nonEmpty(state.currentModelProvider)
+        )
+        state.selectedReasoningEffort = reasoningResponse.effectiveEffort
+        state.supportedReasoningEfforts = reasoningResponse.normalizedSupportedEfforts
+        state.supportsReasoningEffort = reasoningResponse.supportsReasoningEffort
     }
 
     private static func profileSummary(

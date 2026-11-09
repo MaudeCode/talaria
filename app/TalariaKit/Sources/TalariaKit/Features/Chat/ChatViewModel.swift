@@ -47,6 +47,12 @@ public final class ChatViewModel {
     @ObservationIgnored private var activeSessionLoadRequestGenerations: Set<Int> = []
     @ObservationIgnored private var sessionLoadWaiters: [SessionLoadWaiter] = []
     @ObservationIgnored private var joinableSessionLoad: Task<Void, Never>?
+    /// TAL-839: the transcript request a chat open sends before its appearance completes, kept for its first load.
+    private struct InitialTranscriptPrefetch: Sendable {
+        let task: Task<SessionResponse, Error>
+        let streamIDs: [String?]
+    }
+    @ObservationIgnored private var initialTranscriptPrefetch: InitialTranscriptPrefetch?
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     public private(set) var isSendingVoiceNote = false
@@ -859,6 +865,7 @@ public final class ChatViewModel {
         pendingStreamingContentFlushTask?.cancel()
         listenPreparationTask?.cancel()
         listenPlaybackTicker?.cancel()
+        initialTranscriptPrefetch?.task.cancel()
     }
 
     public func setShowsLiveActivityResponseExcerpts(_ shows: Bool) {
@@ -1189,6 +1196,15 @@ public final class ChatViewModel {
 
     public func refreshApprovalBypassState() async {
         await pendingActionCoordinator.refreshApprovalBypassState()
+    }
+
+    /// A chat open's composer controls (TAL-839): the configuration, then `afterConfiguration` (restored draft
+    /// settings, which need it), alongside the approval bypass state, which needs neither.
+    public func loadComposerStartup(afterConfiguration: () async -> Void = {}) async {
+        async let approvalBypassState: Void = refreshApprovalBypassState()
+        await loadComposerConfiguration()
+        await afterConfiguration()
+        await approvalBypassState
     }
 
     private var isModelOrWorkspaceSelectionBlockedByStream: Bool {
@@ -1779,11 +1795,74 @@ public final class ChatViewModel {
         isUserRefresh: Bool = false,
         isRoutineReconciliation: Bool = false
     ) async {
+        await loadSession(modelContext: modelContext, waitsForPendingMessageSend: waitsForPendingMessageSend,
+                          isUserRefresh: isUserRefresh, isRoutineReconciliation: isRoutineReconciliation)
+    }
+
+    /// Sends the first load's transcript request while the chat is still appearing (TAL-839). Only
+    /// `loadInitialMessages` takes its response, so it is applied once the appearance completes; any other load,
+    /// leaving the chat, or a run starting meanwhile discards it.
+    public func prefetchInitialMessages() {
+        guard initialTranscriptPrefetch == nil, sessionLoadRequestGeneration == 0, let sessionID else { return }
+        initialTranscriptPrefetch = InitialTranscriptPrefetch(
+            task: Task { [client] in try await Self.requestSessionLoad(sessionID, client: client) },
+            streamIDs: prefetchStreamIDs
+        )
+    }
+
+    /// The chat open's first load: it takes the prefetched response and, like `refreshSession`, joins a load
+    /// already in flight.
+    public func loadInitialMessages(modelContext: ModelContext? = nil) async {
+        if let joinableSessionLoad {
+            await joinableSessionLoad.value
+            return
+        }
+        let load = Task { await loadSession(modelContext: modelContext, adoptsInitialPrefetch: true) }
+        joinableSessionLoad = load
+        await load.value
+        joinableSessionLoad = nil
+    }
+
+    /// This chat's run and its list row's, which a prefetched response must not predate.
+    private var prefetchStreamIDs: [String?] {
+        [activeStreamID, sessionListOwner?.sessions.first { $0.sessionId == sessionID }?.activeStreamId]
+    }
+
+    private func takeInitialTranscriptPrefetch(adopting: Bool) -> Task<SessionResponse, Error>? {
+        guard let prefetch = initialTranscriptPrefetch else { return nil }
+        initialTranscriptPrefetch = nil
+        // A response read before a run started would look as if that run had already ended.
+        guard adopting, prefetch.streamIDs == prefetchStreamIDs else {
+            prefetch.task.cancel()
+            return nil
+        }
+        return prefetch.task
+    }
+
+    private static func requestSessionLoad(_ sessionID: String, client: APIClient) async throws -> SessionResponse {
+        try await client.session(
+            id: sessionID,
+            includeMessages: true,
+            messageLimit: messagePageLimit,
+            // Cold load only: widen the window to renderable-dense (upstream #3790) so a
+            // tool-heavy session opens populated. "Load earlier" keeps the raw cap.
+            expandRenderable: true
+        )
+    }
+
+    private func loadSession(
+        modelContext: ModelContext? = nil,
+        waitsForPendingMessageSend: Bool = true,
+        isUserRefresh: Bool = false,
+        isRoutineReconciliation: Bool = false,
+        adoptsInitialPrefetch: Bool = false
+    ) async {
         if let modelContext { runStatusCacheContext = modelContext }
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return
         }
+        let prefetch = takeInitialTranscriptPrefetch(adopting: adoptsInitialPrefetch)
         // A read issued during `/clear` would otherwise return the rows being cleared.
         if let clear = clearConversationTask { _ = await clear.value }
 
@@ -1840,14 +1919,12 @@ public final class ChatViewModel {
         let connectionChangesAtFetch = pendingActionCoordinator.connectionChangeCount
 
         do {
-            let response = try await client.session(
-                id: sessionID,
-                includeMessages: true,
-                messageLimit: Self.messagePageLimit,
-                // Cold load only: widen the window to renderable-dense (upstream #3790) so a
-                // tool-heavy session opens populated. "Load earlier" keeps the raw cap.
-                expandRenderable: true
-            )
+            let response: SessionResponse
+            if let prefetch {
+                response = try await withTaskCancellationHandler { try await prefetch.value } onCancel: { prefetch.cancel() }
+            } else {
+                response = try await Self.requestSessionLoad(sessionID, client: client)
+            }
             let session = response.session
             let loadedMessages = session?.messages ?? []
             let loadedActiveStreamID = session?.activeStreamId?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5627,6 +5704,7 @@ public final class ChatViewModel {
     }
 
     public func suspendStreamForNavigation() {
+        _ = takeInitialTranscriptPrefetch(adopting: false)
         sendOwnershipGeneration &+= 1
         cancelModelSwitch()
         suspendMediaPreparation()

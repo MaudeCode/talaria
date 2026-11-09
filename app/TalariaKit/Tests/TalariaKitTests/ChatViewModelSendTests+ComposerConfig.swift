@@ -10,12 +10,12 @@ extension ChatViewModelSendTests {
     func testComposerConfigurationUsesSessionProfileDefaultBeforeSending() async throws {
         let openRouterModel = "deepseek/deepseek-chat-v3-0324:free"
         let streamClient = SpySSEStreamingClient()
-        var requestPaths: [String] = []
+        let requestPaths = LockedTestValue<[String]>([])
         let viewModel = try makeViewModel(
             streamClient: streamClient,
             sessionSummary: makeSession(model: nil, modelProvider: nil, profile: "work")
         ) { request in
-            requestPaths.append(request.url?.path ?? "")
+            requestPaths.value.append(request.url?.path ?? "")
 
             switch request.url?.path {
             case "/api/profiles":
@@ -86,15 +86,11 @@ extension ChatViewModelSendTests {
 
         XCTAssertTrue(didStart)
         XCTAssertEqual(streamClient.startedURLs.count, 1)
-        XCTAssertEqual(requestPaths, [
-            "/api/profiles",
-            "/api/profile/switch",
-            "/api/models",
-            "/api/reasoning",
-            "/api/workspaces",
-            "/api/commands",
-            "/api/chat/start"
-        ])
+        // The configuration's own request order is `ChatComposerConfigLoaderTests`' (TAL-839).
+        XCTAssertEqual(requestPaths.value.prefix(2), ["/api/profiles", "/api/profile/switch"])
+        XCTAssertEqual(requestPaths.value.dropFirst(2).dropLast().sorted(),
+                       ["/api/commands", "/api/models", "/api/reasoning", "/api/workspaces"])
+        XCTAssertEqual(requestPaths.value.last, "/api/chat/start")
     }
 
     @MainActor
