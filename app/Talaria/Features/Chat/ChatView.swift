@@ -807,7 +807,7 @@ struct ChatView: View {
                 let sessionID = session.sessionId
                 let sessionOpenTrace = sessionOpenTrace
                 let release: @MainActor () -> Void = {
-                    DisplayPhaseTrace.chatLeft(sessionID: sessionID, in: sessionOpenTrace)
+                    sessionOpenTrace?.leave(sessionID: sessionID)
                     // Only a real leave: a view the navigation rebuilt keeps the queue live (TAL-850).
                     Task {
                         await chat.moveQueuedMessagesToDraft(in: draftStore, for: draftKey)

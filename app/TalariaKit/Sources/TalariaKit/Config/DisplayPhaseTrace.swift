@@ -177,7 +177,8 @@ public final class SessionOpenTrace {
         pending = nil
     }
 
-    /// The chat closed before its open finished.
+    /// The chat closed before its open finished. A launch is not ended here: a root replaced before it showed, such
+    /// as New Chat under a deep link, hands the launch to the next root.
     public func leave(sessionID: String?) {
         if let operation = operation(for: sessionID) { cancel(operation) }
     }
@@ -212,11 +213,5 @@ public enum DisplayPhaseTrace {
     public static func chatReady(sessionID: String?, in scene: SessionOpenTrace?, _ outcome: DisplayPhaseOutcome, rows: Int) {
         launch?.markReady(outcome, rows: rows)
         scene?.markReady(sessionID: sessionID, outcome, rows: rows)
-    }
-
-    /// A chat the user left: whatever it had not shown yet is not reached.
-    public static func chatLeft(sessionID: String?, in scene: SessionOpenTrace?) {
-        launch?.cancel(.cancelled)
-        scene?.leave(sessionID: sessionID)
     }
 }
