@@ -42,6 +42,36 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(open.chat.canBranch)
     }
 
+    func testExternalChatStaysLockedWhenTheServerNamesAnotherSession() async throws {
+        let open = try await makeExternalOpen()
+        let load = Task { await open.chat.loadInitialMessages(modelContext: open.context) }
+        open.verification.complete(withJSON: Self.externalDetail(readOnly: false, sessionID: "cli-2"))
+        let verified = await open.verify.value
+        await load.value
+
+        XCTAssertEqual(verified?.sessionId, "cli-2", "The list opens the canonical session in its place")
+        XCTAssertTrue(open.chat.isVerifyingSessionAccess)
+        XCTAssertTrue(open.chat.isComposerReadOnly, "The chat under the old id must not take input")
+        XCTAssertFalse(open.chat.canBranch)
+    }
+
+    func testExternalChatTakesAVerificationThatAnsweredBeforeItsPrefetch() async throws {
+        let open = try await makeExternalOpen(prefetches: false)
+        open.verification.complete(withJSON: Self.externalDetail(readOnly: false))
+        _ = await open.verify.value
+
+        open.chat.prepareInitialMessageLoad(modelContext: open.context)
+        open.chat.prefetchInitialMessages()
+        let load = Task { await open.chat.loadInitialMessages(modelContext: open.context) }
+        let extra = await open.trips.nextRoundTrip(timeout: .milliseconds(500))
+        extra.forEach { $0.complete(withJSON: Self.externalDetail(readOnly: false)) }
+        await load.value
+
+        XCTAssertEqual(extra.map(\.path), [], "The chat must take the row's answered read instead of sending another")
+        XCTAssertFalse(open.chat.isComposerReadOnly)
+        XCTAssertEqual(open.chat.messages.compactMap(\.content), ["From the CLI"])
+    }
+
     func testFailedVerificationShowsInTheChatAndItsRetryUnlocksIt() async throws {
         let open = try await makeExternalOpen()
         let (list, chat, trips) = (open.list, open.chat, open.trips)
@@ -155,9 +185,9 @@ extension ChatViewModelSendTests {
         }
     }
 
-    private static func externalDetail(readOnly: Bool) -> String {
+    private static func externalDetail(readOnly: Bool, sessionID: String = "cli-1") -> String {
         """
-        {"session": {"session_id": "cli-1", "title": "CLI chat", "is_cli_session": true, "read_only": \(readOnly),
+        {"session": {"session_id": "\(sessionID)", "title": "CLI chat", "is_cli_session": true, "read_only": \(readOnly),
          "can_branch": \(!readOnly), "messages": [{"role": "assistant", "content": "From the CLI", "message_id": "cli"}]}}
         """
     }

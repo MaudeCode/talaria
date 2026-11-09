@@ -137,8 +137,9 @@ public final class SessionListViewModel {
     private var projectsGeneration = 0
     private var activeProfileGeneration = 0
     private var openGeneration = 0
-    /// TAL-839: the opened external row's detail read, which its chat takes as its first transcript request.
-    private var openVerification: (sessionID: String, task: Task<SessionResponse, Error>)?
+    /// TAL-839: the opened external row's detail read, which its chat takes as its first transcript request, kept
+    /// once it has answered until that chat takes it or a newer open replaces it.
+    private var openVerification: (sessionID: String, task: Task<SessionResponse, Error>, isAnswered: Bool)?
     /// Counts local claims on list rows: a detail that refreshed an opened row, or a
     /// row the list inserted itself. A claim is stamped with the value at the moment
     /// it is made — not when its request began — so a list load that started while
@@ -827,14 +828,17 @@ public final class SessionListViewModel {
         guard !isViewingCachedData,
               session.isExternalSourceSession,
               let sessionId = Self.nonEmpty(session.sessionId)
-        else { return session }
+        else {
+            openVerification = nil
+            return session
+        }
 
         let version = resourceReadVersion(for: sessionId)
-        // A second tap on the row joins the read already verifying it.
-        let task = openVerification.flatMap { $0.sessionID == sessionId ? $0.task : nil }
+        // A second tap on the row joins the read still verifying it.
+        let task = openVerification.flatMap { $0.sessionID == sessionId && !$0.isAnswered ? $0.task : nil }
             ?? Task { [client] in try await ChatViewModel.requestSessionLoad(sessionId, client: client) }
-        openVerification = (sessionId, task)
-        defer { if openVerification?.task == task { openVerification = nil } }
+        openVerification = (sessionId, task, false)
+        defer { if openVerification?.task == task { openVerification?.isAnswered = true } }
 
         do {
             guard let detail = try await task.value.session else {

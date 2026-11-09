@@ -328,8 +328,9 @@ public final class ChatViewModel {
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, connectionChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
-        // A detail naming another session leaves this one locked: the list opens that session instead.
-        if let session, let rowAccess = accessPendingVerification, session.sessionId == nil || session.sessionId == sessionID {
+        if let session, let rowAccess = accessPendingVerification {
+            // A detail naming another session leaves this one locked: the list opens that session instead.
+            guard session.sessionId == nil || session.sessionId == sessionID else { return }
             accessPendingVerification = nil
             isSessionReadOnly = rowAccess.readOnly
             canBranch = rowAccess.canBranch
