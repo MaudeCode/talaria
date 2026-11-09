@@ -328,6 +328,12 @@ public final class ChatViewModel {
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, connectionChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
+        // A detail naming another session leaves this one locked: the list opens that session instead.
+        if let session, let rowAccess = accessPendingVerification, session.sessionId == nil || session.sessionId == sessionID {
+            accessPendingVerification = nil
+            isSessionReadOnly = rowAccess.readOnly
+            canBranch = rowAccess.canBranch
+        }
         if let session {
             serverRefreshAfter = session.refreshAfter
             ownerAttachment = session.ownerAttachment
@@ -575,6 +581,10 @@ public final class ChatViewModel {
     /// An owner chat stays `read_only` for Talaria's own writers (edit, regenerate, branch), but its owner takes new
     /// input while attached (TAL-1043).
     public var isComposerReadOnly: Bool { isSessionReadOnly && ownerAttachment?.isAttached != true }
+    /// TAL-839: an external chat opens before the server has confirmed its identity and writability. Until a detail
+    /// confirms them it is read-only and does not branch; this keeps the row's own values for a detail that omits them.
+    private var accessPendingVerification: (readOnly: Bool, canBranch: Bool)?
+    public var isVerifyingSessionAccess: Bool { accessPendingVerification != nil }
     /// TAL-1043: the Agent runtime that owns this chat, its capabilities and pending inputs; nil for a chat Talaria
     /// runs itself. Refreshed from every applied `SessionDetail`, admission and refusal; the offline cache keeps the last one.
     public private(set) var ownerAttachment: OwnerAttachment? {
@@ -789,8 +799,14 @@ public final class ChatViewModel {
         currentModelOptionID = session.modelOptionID
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
-        isSessionReadOnly = session.isSessionReadOnly
-        canBranch = session.canBranch == true
+        if session.isExternalSourceSession {
+            accessPendingVerification = (session.isSessionReadOnly, session.canBranch == true)
+            isSessionReadOnly = true
+            canBranch = false
+        } else {
+            isSessionReadOnly = session.isSessionReadOnly
+            canBranch = session.canBranch == true
+        }
         selectedRowIsStreaming = session.isStreaming
         selectedRowActiveStreamID = Self.nonEmpty(session.activeStreamId)
         self.server = server
@@ -1804,10 +1820,10 @@ public final class ChatViewModel {
     /// leaving the chat, or a run starting meanwhile discards it.
     public func prefetchInitialMessages() {
         guard initialTranscriptPrefetch == nil, sessionLoadRequestGeneration == 0, let sessionID else { return }
-        initialTranscriptPrefetch = InitialTranscriptPrefetch(
-            task: Task { [client] in try await Self.requestSessionLoad(sessionID, client: client) },
-            streamIDs: prefetchStreamIDs
-        )
+        // An external row's open already sent this read to verify the chat; it is reused, not repeated.
+        let task = sessionListOwner?.takeOpenVerification(for: sessionID)
+            ?? Task { [client] in try await Self.requestSessionLoad(sessionID, client: client) }
+        initialTranscriptPrefetch = InitialTranscriptPrefetch(task: task, streamIDs: prefetchStreamIDs)
     }
 
     /// The chat open's first load: it takes the prefetched response and, like `refreshSession`, joins a load
@@ -1839,7 +1855,7 @@ public final class ChatViewModel {
         return prefetch.task
     }
 
-    private static func requestSessionLoad(_ sessionID: String, client: APIClient) async throws -> SessionResponse {
+    static func requestSessionLoad(_ sessionID: String, client: APIClient) async throws -> SessionResponse {
         try await client.session(
             id: sessionID,
             includeMessages: true,

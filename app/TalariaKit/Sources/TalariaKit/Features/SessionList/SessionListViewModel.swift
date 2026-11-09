@@ -137,6 +137,8 @@ public final class SessionListViewModel {
     private var projectsGeneration = 0
     private var activeProfileGeneration = 0
     private var openGeneration = 0
+    /// TAL-839: the opened external row's detail read, which its chat takes as its first transcript request.
+    private var openVerification: (sessionID: String, task: Task<SessionResponse, Error>)?
     /// Counts local claims on list rows: a detail that refreshed an opened row, or a
     /// row the list inserted itself. A claim is stamped with the value at the moment
     /// it is made — not when its request began — so a list load that started while
@@ -805,15 +807,16 @@ public final class SessionListViewModel {
         }
     }
 
-    /// Resolves the session a tapped row should actually open.
+    /// Verifies the session an opened row shows.
     ///
-    /// External rows (CLI/TUI bridges and messaging channels) reload their detail
-    /// first: `GET /api/session` is the server's authority on whether the session is
-    /// writable, and the server claims a CLI session on its first send. WebUI rows and
-    /// cached (offline) browsing skip the request and open directly.
+    /// External rows (CLI/TUI bridges and messaging channels) open at once and reload
+    /// their detail alongside: `GET /api/session` is the server's authority on the
+    /// session's canonical identity and whether it is writable, and the server claims a
+    /// CLI session on its first send. The read is the opened chat's first transcript
+    /// request (`takeOpenVerification`), and the chat shows a failure with its retry.
+    /// WebUI rows and cached (offline) browsing skip the request.
     ///
-    /// Returns nil when the load failed — the caller stays on the list and the row is
-    /// left in place — or when a later tap superseded this one.
+    /// Returns nil when the load failed or a later tap superseded this one.
     public func sessionToOpen(
         for session: SessionSummary,
         modelContext: ModelContext? = nil
@@ -827,15 +830,14 @@ public final class SessionListViewModel {
         else { return session }
 
         let version = resourceReadVersion(for: sessionId)
-        actionErrorMessage = nil
-        lastError = nil
+        // A second tap on the row joins the read already verifying it.
+        let task = openVerification.flatMap { $0.sessionID == sessionId ? $0.task : nil }
+            ?? Task { [client] in try await ChatViewModel.requestSessionLoad(sessionId, client: client) }
+        openVerification = (sessionId, task)
+        defer { if openVerification?.task == task { openVerification = nil } }
 
         do {
-            guard let detail = try await client.session(
-                id: sessionId,
-                includeMessages: false,
-                messageLimit: nil
-            ).session else {
+            guard let detail = try await task.value.session else {
                 throw APIError.http(statusCode: -1, body: nil)
             }
             guard generation == openGeneration, version == resourceReadVersion(for: sessionId) else { return nil }
@@ -849,12 +851,15 @@ public final class SessionListViewModel {
             refreshRow(with: loadedSession, modelContext: modelContext)
             return loadedSession
         } catch {
-            guard !APIError.isCancellation(error), generation == openGeneration, version == resourceReadVersion(for: sessionId) else { return nil }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    /// The opened chat's first transcript request, when its row's open already sent it.
+    func takeOpenVerification(for sessionID: String) -> Task<SessionResponse, Error>? {
+        guard let verification = openVerification, verification.sessionID == sessionID else { return nil }
+        openVerification = nil
+        return verification.task
     }
 
     /// Keeps the list row in step with what the detail authoritatively reported.
@@ -1758,6 +1763,8 @@ public final class SessionListViewModel {
             metadataVersions = [:]
             resourceCacheContext = UUID()
             resourceCacheVersions = [:]
+            // A read from the other profile cannot verify a chat opened after the switch.
+            openVerification = nil
             dismissArchiveUndo()
             loadGeneration += 1
             projectsGeneration += 1

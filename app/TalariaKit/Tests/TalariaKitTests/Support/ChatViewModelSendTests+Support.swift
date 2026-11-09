@@ -85,6 +85,7 @@ extension ChatViewModelSendTests {
         server: URL = URL(string: "https://example.test")!,
         protocolClasses: [AnyClass] = [MockURLProtocol.self],
         responseCache: ResponseCache? = nil,
+        sessionListOwner: SessionListViewModel? = nil,
         spokenText: ((String) -> String)? = { $0 },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
@@ -131,7 +132,8 @@ extension ChatViewModelSendTests {
             draftAttachmentStore: draftAttachmentStore,
             // Test-owned state: a fresh suite unless the test passes its own.
             userDefaults: try userDefaults ?? makeEphemeralUserDefaults(),
-            responseCache: responseCache
+            responseCache: responseCache,
+            sessionListOwner: sessionListOwner
         )
 
         if let spyStreamClient = resolvedStreamClient as? SpySSEStreamingClient {

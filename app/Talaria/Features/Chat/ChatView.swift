@@ -371,6 +371,7 @@ struct ChatView: View {
             isCancellingStream: prompt == nil && viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isSessionReadOnly: viewModel.isComposerReadOnly,
+            isVerifyingSessionAccess: viewModel.isVerifyingSessionAccess,
             ownerAttachment: viewModel.ownerAttachment,
             isChromeCompactWithoutDraft: isComposerChromeCompactWithoutDraft,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,

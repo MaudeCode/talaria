@@ -41,6 +41,8 @@ struct MessageComposerView: View {
     /// transcript, or an external source the server imported read-only), so the
     /// composer stays disabled even while online.
     let isSessionReadOnly: Bool
+    /// TAL-839: an external chat waits, read-only, for the server to confirm it.
+    var isVerifyingSessionAccess = false
     /// TAL-1043: the Agent runtime that owns this chat; its capabilities gate sending, stopping, attaching and the
     /// session settings it freezes. Nil for a chat Talaria runs itself.
     let ownerAttachment: OwnerAttachment?
@@ -1118,7 +1120,7 @@ struct MessageComposerView: View {
         if isOfflineReadOnly {
             return (String(localized: "Reconnect to send messages."), false, false)
         } else if isSessionReadOnly {
-            return (readOnlyStatusText, false, false)
+            return (isVerifyingSessionAccess ? String(localized: "Checking access...") : readOnlyStatusText, false, false)
         } else if let ownerAttachment, !ownerAttachment.canSubmit {
             return (ownerAttachment.hasUnknownAdmission
                 ? String(localized: "Retry or discard the unknown input first.")

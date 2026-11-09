@@ -2,11 +2,12 @@
   "entries": [
     {
       "category": "Changed",
-      "summary": "Opening a chat requests its messages while the chat is still appearing and loads the model, reasoning, workspace and command controls together, so an uncached chat and its composer are ready sooner.",
+      "summary": "Chats open faster: a chat requests its messages while it is still appearing, loads its model, reasoning, workspace and command controls together, and a CLI or messaging chat opens at once while the server confirms you can write to it.",
       "highlight": false,
       "components": [
         "app"
-      ]
+      ],
+      "announce": false
     }
   ]
 }
