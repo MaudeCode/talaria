@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Launch, opening a chat, and loading earlier messages can now be timed with Apple's profiling tools, without recording any chat content.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

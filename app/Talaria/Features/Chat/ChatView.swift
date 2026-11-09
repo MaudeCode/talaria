@@ -21,6 +21,8 @@ extension EnvironmentValues {
 extension EnvironmentValues {
     /// Replaces the relay acknowledgement of the chat's viewed completions in hosted tests.
     @Entry var acknowledgeViewedCompletionsForTesting: ViewedCompletionAcknowledger.Acknowledge? = nil
+    /// The window's pending session open, which this chat's first frames end (TAL-1412).
+    @Entry var sessionOpenTrace: SessionOpenTrace? = nil
 }
 
 private enum GitChatAlert: Identifiable {
@@ -93,6 +95,7 @@ struct ChatView: View {
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sessionOpenTrace) private var sessionOpenTrace
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     /// The chat's frame, bars included: the size the companion page's split rule reads (TAL-1458).
@@ -589,6 +592,7 @@ struct ChatView: View {
             let frames = layoutInputs.frames(in: geometry, width: targetChatLayoutWidth)
             // Both transcript and composer take their destination width before the column moves.
             let composerFrame = frames.composer
+            let showsComposer = didCompleteInitialAppearance && hasMeasuredComposer && composerFrame.width > 0 && composerFrame.height > 0
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if viewModel.isViewingCachedData {
@@ -626,8 +630,12 @@ struct ChatView: View {
                 .frame(width: composerFrame.width, height: frames.isTabletop ? composerFrame.height : nil, alignment: .bottom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 // Measure the live pane and composer before its first visible layout; never fade in a provisional size.
-                .opacity(didCompleteInitialAppearance && hasMeasuredComposer && composerFrame.width > 0 && composerFrame.height > 0 ? 1 : 0)
+                .opacity(showsComposer ? 1 : 0)
                 .animation(nil, value: didCompleteInitialAppearance && hasMeasuredComposer)
+                // A new chat loads nothing: the composer's first visible frame is its root (TAL-1412).
+                .onChange(of: showsComposer, initial: true) { _, shows in
+                    if shows, !viewModel.hasSession { traceTranscriptReady(.composer) }
+                }
 
                 if let approvalPrompt = viewModel.approvalPrompt {
                     ApprovalRequestOverlay(
@@ -796,7 +804,10 @@ struct ChatView: View {
                 let modelContext = modelContext
                 let draftStore = draftStore
                 let draftKey = draftKey
+                let sessionID = session.sessionId
+                let sessionOpenTrace = sessionOpenTrace
                 let release: @MainActor () -> Void = {
+                    sessionOpenTrace?.leave(sessionID: sessionID)
                     // Only a real leave: a view the navigation rebuilt keeps the queue live (TAL-850).
                     Task {
                         await chat.moveQueuedMessagesToDraft(in: draftStore, for: draftKey)
@@ -2209,13 +2220,20 @@ struct ChatView: View {
     private func handleInitialAppearanceTask() async {
         await hydrateDraftIfNeeded()
         guard !resumesLoadedChat else {
+            traceTranscriptReady(.retained)
             // The chat is loaded and its work runs already; nothing is fetched again (TAL-1477).
             acknowledgeViewedCompletions()
             isInitialComposerFocusContentReady = true
             applyInitialComposerFocusPolicyIfNeeded()
             return
         }
+        // Rows before the cache paint are the kept chat's; rows only after it are the device cache's.
+        let hadRows = !viewModel.messages.isEmpty
         prepareInitialAppearance()
+        if !viewModel.messages.isEmpty {
+            DisplayPhaseTrace.chatVisible(sessionID: session.sessionId, in: sessionOpenTrace,
+                                          hadRows ? .retained : .cache, rows: viewModel.messages.count)
+        }
 
         // The appearance flip cancels this task and starts a fresh one; a cancelled task that
         // went on would replace that task's Git probe with one whose load fails as cancelled.
@@ -2390,6 +2408,7 @@ struct ChatView: View {
         }
         // The chat closed meanwhile; its cleanup already suspended the stream and polling.
         guard !Task.isCancelled else { return }
+        traceTranscriptReady(viewModel.lastError == nil ? .server : .failed)
         await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
         await viewModel.refreshBackgroundTasks()
         if appliesInitialFocus {
@@ -2399,6 +2418,11 @@ struct ChatView: View {
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
+    }
+
+    /// Only the first call ends anything: the launch and this window's open each end once.
+    private func traceTranscriptReady(_ outcome: DisplayPhaseOutcome) {
+        DisplayPhaseTrace.chatReady(sessionID: session.sessionId, in: sessionOpenTrace, outcome, rows: viewModel.messages.count)
     }
 
     private func loadOlderMessages(beforePrepend: @MainActor () -> Void) async -> Bool {

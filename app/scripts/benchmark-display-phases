@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Compare the display phases of two or more selected Talaria builds on a leased, disposable pool simulator.
+
+  scripts/benchmark-display-phases [--rounds 4] [--per-install 3] [--wait 6] BUILD.app [BUILD.app ...]
+
+Each build must be a Debug simulator build with the `.xctest` bundle suffix (`scripts/run-ios` makes one under
+.codex-tmp/run-ios/derived-data; copy it aside before rebuilding another revision). Every launch runs the synthetic
+`--ui-test-fixture` server and rows, so no account, credential or live profile is involved.
+
+Each round installs every build in turn, discards one cold launch, then measures `--per-install` cold launches, so
+warm-up and drift favour no build. Each launch opens the fixture session through the deep-link route
+(`--ui-test-open-session`, which skips the system's "Open in" prompt that `simctl openurl` raises), so it records
+`Launch` and `Session Open` (first visible transcript) and `Launch Ready` and `Session Open Ready` (the server's
+transcript). Intervals come from the app's `Performance` signposts (TalariaKit DisplayPhaseTrace). An interval that
+never ended, or ended as not reached, is a miss.
+"""
+
+import argparse
+from datetime import datetime
+import json
+import os
+from pathlib import Path
+import plistlib
+import statistics
+import subprocess
+import sys
+import time
+
+PHASES = ("Launch", "Launch Ready", "Session Open", "Session Open Ready")
+NOT_REACHED = {"onboarding", "replaced", "cancelled", "failed"}
+FIXTURE_ARGUMENTS = ("--ui-test-fixture", "--ui-test-open-session")
+REQUIRED_BUNDLE_ID = "dev.kil.talaria.xctest"
+
+
+def run(*args, check=True):
+    return subprocess.run(args, check=check, capture_output=True, text=True).stdout
+
+
+def intervals(events, pid):
+    """Durations in ms and outcomes of the `Performance` intervals one process ended, by name: [(ms, outcome)]."""
+    begins = {}
+    found = {}
+    for event in events:
+        if event.get("processID") != pid:
+            continue
+        name = event.get("signpostName")
+        key = (name, event.get("signpostID"))
+        kind = event.get("signpostType")
+        stamp = event.get("timestamp", "")
+        if kind == "begin":
+            begins[key] = stamp
+        elif kind == "end" and key in begins:
+            outcome = dict(part.split("=", 1) for part in event.get("eventMessage", "").split() if "=" in part)
+            found.setdefault(name, []).append((elapsed_ms(begins.pop(key), stamp), outcome.get("outcome", "")))
+    return found
+
+
+def elapsed_ms(begin, end):
+    # `log show` timestamps look like "2026-11-09 07:10:11.123456-0800".
+    parse = lambda stamp: datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S.%f%z")
+    return (parse(end) - parse(begin)).total_seconds() * 1000
+
+
+def signpost_events(udid, bundle, since):
+    out = run("xcrun", "simctl", "spawn", udid, "log", "show", "--signpost", "--style", "ndjson", "--start", since,
+              "--predicate", f'subsystem == "{bundle}" AND category == "Performance"', check=False)
+    events = []
+    for line in out.splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def measure_once(udid, bundle, wait):
+    # A simulator keeps the host's clock.
+    since = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run("xcrun", "simctl", "terminate", udid, bundle, check=False)
+    time.sleep(1)
+    pid = int(run("xcrun", "simctl", "launch", udid, bundle, *FIXTURE_ARGUMENTS).rsplit(":", 1)[1])
+    time.sleep(wait)
+    return intervals(signpost_events(udid, bundle, since), pid)
+
+
+def summarize(results):
+    """Per build and phase: (median, minimum, maximum, count, misses), with None timings when every run missed."""
+    summary = {}
+    for build, runs in results.items():
+        summary[build] = {}
+        for phase in PHASES:
+            reached = [ms for found in runs for ms, outcome in found.get(phase, [])[:1] if outcome not in NOT_REACHED]
+            misses = len(runs) - len(reached)
+            timing = (statistics.median(reached), min(reached), max(reached)) if reached else (None, None, None)
+            summary[build][phase] = (*timing, len(reached), misses)
+    return summary
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("builds", nargs="+", type=Path)
+    parser.add_argument("--rounds", type=int, default=4)
+    parser.add_argument("--per-install", type=int, default=3)
+    parser.add_argument("--wait", type=float, default=8, help="seconds to wait for each launch")
+    args = parser.parse_args()
+
+    script = Path(sys.argv[0]).resolve()
+    if os.environ.get("TALARIA_BENCHMARK_LEASED") != "1":
+        # The pool leases a disposable simulator for the whole run and erases it on release.
+        pool = script.parent / "ios-simulator-pool"
+        os.execv(pool, [str(pool), "/usr/bin/env", "TALARIA_BENCHMARK_LEASED=1", str(script), *sys.argv[1:]])
+    udid = os.environ["IOS_SIMULATOR_ID"]
+
+    for build in args.builds:
+        info = plistlib.loads((build / "Info.plist").read_bytes())
+        if info.get("CFBundleIdentifier") != REQUIRED_BUNDLE_ID:
+            sys.exit(f"{build} must be a fixture build ({REQUIRED_BUNDLE_ID}); scripts/run-ios builds one.")
+
+    results = {build: [] for build in args.builds}
+    for round_index in range(args.rounds):
+        for build in args.builds:
+            run("xcrun", "simctl", "install", udid, str(build))
+            measure_once(udid, REQUIRED_BUNDLE_ID, args.wait)
+            for _ in range(args.per_install):
+                found = measure_once(udid, REQUIRED_BUNDLE_ID, args.wait)
+                results[build].append(found)
+                line = ", ".join(
+                    f"{phase} {found[phase][0][1]} {found[phase][0][0]:.0f} ms" if phase in found else f"{phase} miss"
+                    for phase in PHASES
+                )
+                print(f"round {round_index} {build.name}: {line}", flush=True)
+
+    for build, phases in summarize(results).items():
+        print(build)
+        for phase, (median, low, high, count, misses) in phases.items():
+            timing = f"median {median:.0f} ms, range {low:.0f}-{high:.0f}" if count else "no results"
+            print(f"  {phase:<20} {timing}, n={count}, misses={misses}")
+
+
+if __name__ == "__main__":
+    main()

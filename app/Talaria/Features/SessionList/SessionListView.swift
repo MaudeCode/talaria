@@ -42,6 +42,8 @@ struct SessionListView: View {
     }
     @State private var removedSessionNavigation: [String: RemovedSessionNavigation] = [:]
     @State private var navigationState: SessionNavigationState
+    /// This window's pending session open; its chat ends the interval (TAL-1412).
+    @State private var sessionOpenTrace = SessionOpenTrace()
     @State private var conversationRootHasAppeared = false
     @State private var isPresentingSettings = false
     @State private var isSessionEventStreamLive = false
@@ -247,6 +249,7 @@ struct SessionListView: View {
     private var sessionListWithPresentations: some View {
         sidebarLayout
             .environment(\.sessionActions, sessionActionContext)
+            .environment(\.sessionOpenTrace, sessionOpenTrace)
             .onReceive(NotificationCenter.default.publisher(for: .talariaSessionRemovalsChanged, object: viewModel)) { notification in
                 guard let ids = notification.userInfo?[SessionListViewModel.removalSessionIDsKey] as? Set<String> else { return }
                 reconcileRemovedSessionNavigation(ids)
@@ -2369,6 +2372,7 @@ struct SessionListView: View {
     /// action-error alert; a destination chosen meanwhile is never replaced.
     private func openSession(in list: AppSection = .chats,
                              load: () async -> SessionSummary?) async {
+        let trace = sessionOpenTrace.begin()
         let outcome = await SessionListOpen.resolve(
             beginOpen: { navigationState.beginOpen() },
             openRevision: { navigationState.openRevision },
@@ -2377,15 +2381,17 @@ struct SessionListView: View {
         )
         switch outcome {
         case let .open(session):
+            sessionOpenTrace.resolve(trace, to: session.sessionId)
             // Sidebar rows replace the root; section-owned lists push a chat above their list.
             selectSession(session, in: list)
         case .failed:
+            sessionOpenTrace.cancel(trace)
             guard !Task.isCancelled else { return }
             // Forwards an expired session/cookie to the auth manager the same way
             // every other network-backed session-list action does.
             handleLastError()
         case .superseded:
-            break
+            sessionOpenTrace.cancel(trace, .replaced)
         }
     }
 

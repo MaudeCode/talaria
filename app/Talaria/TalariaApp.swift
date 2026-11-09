@@ -122,6 +122,7 @@ struct TalariaApp: App {
     #endif
 
     init() {
+        DisplayPhaseTrace.beginLaunch()
         PlatformBridges.install()
         AppConfig.logReleaseIdentity()
         let arguments = ProcessInfo.processInfo.arguments
