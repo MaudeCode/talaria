@@ -700,6 +700,19 @@ public final class ChatViewModel {
     /// What the Background tasks toolbar badge, chip and sheet entry show. The recount covers a server older than
     /// `pinned_count`; delete it once the minimum supported server sends the field.
     public var pinnedBackgroundTaskCount: Int { backgroundPinnedCount ?? pinnedBackgroundTasks.count }
+    /// TAL-1580: the server's delegation summary with the chat and profile it was read for. Another chat or profile
+    /// never shows it, and a server older than the summary leaves it nil.
+    private var backgroundDelegationRead: (scope: BackgroundWorkScope, status: DelegationStatus)?
+    private var backgroundDelegationStatus: DelegationStatus? {
+        backgroundDelegationRead.flatMap { $0.scope == backgroundWorkScope ? $0.status : nil }
+    }
+    /// What Background Work shows above its rows, while the server says to show it.
+    public var backgroundDelegationSummary: DelegationStatus? { backgroundDelegationStatus.flatMap { $0.visible ? $0 : nil } }
+    /// The toolbar item and chip open Background Work while the server pins work or its summary is still changing, so a
+    /// completion awaiting delivery stays reachable after its row finishes.
+    public var showsBackgroundWorkEntry: Bool { pinnedBackgroundTaskCount > 0 || backgroundDelegationSummary?.refresh == true }
+    /// Reads continue while any record is unsettled or the server's summary asks for them.
+    private var backgroundWorkNeedsRefresh: Bool { backgroundTasks.contains(where: \.active) || backgroundDelegationStatus?.refresh == true }
     /// What the Queued messages toolbar badge and chip show: this device's unsent queue plus the owner's inputs as the
     /// server counts them. An owner chat queues nothing here, so neither side counts the other's rows. The recount
     /// covers a server older than `queued_input_count`; delete it once the minimum supported server sends the field.
@@ -5953,6 +5966,7 @@ public final class ChatViewModel {
             backgroundTasks = []
             backgroundPinnedCount = nil
             backgroundOwnerWork = nil
+            backgroundDelegationRead = nil
             // A read still in flight belongs to what was just cleared.
             backgroundReadShown = backgroundReadsStarted
         }
@@ -5963,7 +5977,7 @@ public final class ChatViewModel {
         guard let sessionID, !isViewingCachedData else { return }
         let read = beginBackgroundRead()
         guard let response = try? await client.backgroundTasks(sessionID: sessionID), applyBackgroundRead(response, read) else { return }
-        if backgroundTasks.contains(where: { $0.active }) {
+        if backgroundWorkNeedsRefresh {
             startBackgroundPollingIfNeeded()
         }
     }
@@ -5998,6 +6012,7 @@ public final class ChatViewModel {
         backgroundTasks = response.tasks
         backgroundPinnedCount = response.pinnedCount
         backgroundOwnerWork = response.ownerWork
+        backgroundDelegationRead = response.delegationStatus.map { (read.scope, $0) }
         return true
     }
 
@@ -6045,7 +6060,7 @@ public final class ChatViewModel {
         return outcome
     }
 
-    /// While work runs, the card refreshes quietly; it stops once nothing is running.
+    /// While work runs or a completion awaits delivery, the card refreshes quietly; it stops once nothing changes.
     private func startBackgroundPollingIfNeeded() {
         guard backgroundPollTask == nil else { return }
 
@@ -6068,7 +6083,7 @@ public final class ChatViewModel {
                 }
                 guard !Task.isCancelled, self.sessionID == sessionID else { break pollingLoop }
                 guard self.applyBackgroundRead(response, read) else { continue }
-                guard self.backgroundTasks.contains(where: { $0.active }) else { break pollingLoop }
+                guard self.backgroundWorkNeedsRefresh else { break pollingLoop }
             }
 
             if !Task.isCancelled {

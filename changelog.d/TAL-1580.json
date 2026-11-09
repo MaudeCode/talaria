@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Background tasks now shows how many delegated tasks are still running and how many finished results haven't reached the chat yet, and stays open while a result is on its way.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

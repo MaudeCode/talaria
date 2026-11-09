@@ -1639,6 +1639,44 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "owner-work-unavailable-chip")
     }
 
+    /// TAL-1580: once the delegation's row has finished, the server's summary of what still runs and what awaits delivery
+    /// keeps Background Work open from the composer, and the sheet shows it above the finished work.
+    func testTheServersDelegationSummaryStaysReachableAfterTheRowsFinish() async throws {
+        let fixture = try FixtureApp(["--ui-test-background-updates"], for: self)
+        let summary = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("delegation-status")) as? [String: Any])
+        let status = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summary["running_and_awaiting"]))
+        UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = status }
+        let window = try hostWindow(fixture.chat(try await fixture.session(UITestFixtureURLProtocol.sessionID)), size: HostedSize.phone)
+
+        let chip = try await requireElement(in: window, label: "1 running · 3 awaiting delivery", "Nothing pinned, and the summary has no way in")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Background tasks · 0"))
+        settle(0.3)
+        attachHostedScreenshot(window, name: "delegation-summary-chip")
+        HostedAccessibility.activate(chip)
+        _ = try await requireElement(in: window, label: "1 running, 3 awaiting delivery", "The sheet does not read the summary")
+        settle(0.5)
+        XCTAssertNotNil(window.rootViewController?.presentedViewController, "The sheet closed although the server shows the summary")
+        attachHostedScreenshot(window, name: "delegation-summary-sheet")
+    }
+
+    func testDeliverySummaryWordsEachSharedFixture() throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("delegation-status")) as? [String: Any])
+        func words(_ key: String) throws -> [String] {
+            let data = try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture[key]))
+            return BackgroundWorkSheet.deliverySummary(try APIClient.responseDecoder().decode(DelegationStatus.self, from: data))
+        }
+        XCTAssertEqual(try words("running"), ["2 running"])
+        XCTAssertEqual(try words("awaiting_delivery"), ["1 awaiting delivery"], "A completion awaiting delivery is neither failed nor delivered")
+        XCTAssertEqual(try words("running_and_awaiting"), ["1 running", "3 awaiting delivery"])
+        XCTAssertEqual(try words("available_zero"), ["Nothing running or awaiting delivery"])
+        XCTAssertEqual(try words("unknown"), ["Delivery status unavailable"], "Counts the server could not read are not zero")
+        XCTAssertEqual(try words("unsupported"), ["This chat’s owner doesn’t report delivery status"])
+        let dispatching = DelegationStatus(availability: .available, runningCount: 0, awaitingDeliveryCount: 0, memoryLive: true, visible: true, refresh: true)
+        XCTAssertEqual(BackgroundWorkSheet.deliverySummary(dispatching), ["Running"])
+        let future = DelegationStatus(availability: .unrecognized("paused"), runningCount: 4, awaitingDeliveryCount: 0, memoryLive: nil, visible: true, refresh: false)
+        XCTAssertEqual(BackgroundWorkSheet.deliverySummary(future), ["Delivery status unavailable"])
+    }
+
     /// TAL-1043: an owner chat lists the owner's inputs with only the server's actions. An input with an unknown
     /// outcome blocks sending until Retry returns its text to the composer; nothing resends on its own.
     func testOwnerChatRecoversAnUnknownInputOnPhone() async throws {

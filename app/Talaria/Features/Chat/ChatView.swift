@@ -943,7 +943,7 @@ struct ChatView: View {
                 }
 
                 if #available(iOS 26, *) {
-                    if viewModel.pinnedBackgroundTaskCount > 0 {
+                    if viewModel.showsBackgroundWorkEntry {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: backgroundTasksAction) {
                                 Label("Background tasks", systemImage: "square.3.layers.3d")
@@ -1177,6 +1177,7 @@ struct ChatView: View {
                 BackgroundWorkSheet(
                     tasks: viewModel.pinnedBackgroundTasks,
                     ownerWork: viewModel.backgroundOwnerWork,
+                    delegationSummary: viewModel.backgroundDelegationSummary,
                     loadResult: { await viewModel.backgroundResult(taskID: $0) },
                     dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) },
                     stop: { await viewModel.stopBackgroundTask(taskID: $0) },
@@ -1648,8 +1649,8 @@ struct ChatView: View {
             ForEach(visibleSessionNotices, id: \.self) { notice in
                 NoticeChip(text: notice.text, level: notice.level) { dismissedSessionNotices.insert(notice) }
             }
-            if showsWorkChips, viewModel.pinnedBackgroundTaskCount > 0 {
-                backgroundTasksChip(count: viewModel.pinnedBackgroundTaskCount)
+            if showsWorkChips, viewModel.showsBackgroundWorkEntry {
+                backgroundTasksChip
             }
             if let ownerWorkNotice {
                 StatusChip(label: ownerWorkNotice, icon: .symbol("info.circle"))
@@ -1692,7 +1693,7 @@ struct ChatView: View {
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private var showsSheetChipRow: Bool {
-        (showsWorkChips && viewModel.pinnedBackgroundTaskCount > 0) || ownerWorkNotice != nil || showsQueuedMessagesChip
+        (showsWorkChips && viewModel.showsBackgroundWorkEntry) || ownerWorkNotice != nil || showsQueuedMessagesChip
     }
 
     /// TAL-1337: an owner chat whose owner cannot show or report its work has no rows to open, so the reason stands on
@@ -1739,9 +1740,12 @@ struct ChatView: View {
         .accessibilityIdentifier("decision-review-chip")
     }
 
-    private func backgroundTasksChip(count: Int) -> some View {
-        Button(action: backgroundTasksAction) {
-            StatusChip(label: String(localized: "Background tasks · \(count)"), icon: .symbol("square.stack.3d.up"))
+    /// The pinned count, or with nothing pinned, the server's delegation summary that keeps Background Work open (TAL-1580).
+    private var backgroundTasksChip: some View {
+        let count = viewModel.pinnedBackgroundTaskCount
+        let label = count == 0 ? viewModel.backgroundDelegationSummary.map { BackgroundWorkSheet.deliverySummary($0).joined(separator: " · ") } : nil
+        return Button(action: backgroundTasksAction) {
+            StatusChip(label: label ?? String(localized: "Background tasks · \(count)"), icon: .symbol("square.stack.3d.up"))
                 .frame(minHeight: 44)
                 .contentShape(.rect)
         }
