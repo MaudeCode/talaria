@@ -43,13 +43,26 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const screenReaderPref = useRef(screenReader)
   const applyScreenReader = () => { if (term.current) term.current.options.screenReaderMode = mode.current === 'owner_command' || screenReaderPref.current }
 
-  // TAL-1974: a `terminal_open` card's request focuses the terminal once it is attached; focus scrolls it into view.
-  useEffect(() => {
-    if (status !== 'running') return
-    const take = () => { if (takeOpenTerminalRequest(sessionId)) term.current?.focus() }
-    take()
-    return onOpenTerminalRequest(take)
-  }, [status, sessionId])
+  /** TAL-1974: the agent terminal this pane shows, so a `terminal_open` card for it only focuses it. */
+  const attached = useRef<string | null>(null)
+
+  // TAL-1974: a `terminal_open` card attaches the pane to its own terminal (closed or not) and focuses it; focus scrolls
+  // it into view. A card whose terminal is gone says so and leaves the pane as it was.
+  useEffect(() => onOpenTerminalRequest(() => {
+    const request = takeOpenTerminalRequest(sessionId)
+    if (!request) return
+    if (request.terminalId === attached.current) { term.current?.focus(); return }
+    void (async () => {
+      try {
+        const res = await post('api/terminal/start', { session_id: sessionId, workspace, terminal_id: request.terminalId, cols: term.current?.cols, rows: term.current?.rows }, StartSchema, { retries: 0 })
+        dropInput.current()
+        applyStart.current?.(res, true)
+        term.current?.focus()
+      } catch (e) {
+        showErrorToast(e)
+      }
+    })()
+  }), [sessionId, workspace])
 
   useEffect(() => {
     mode.current = null
@@ -78,6 +91,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       if (cancelled) return
       stream.current?.close(); stream.current = null
       mode.current = null
+      attached.current = res.mode === 'web_pty' ? res.terminal_id : null
       if (restart) t.clear()
       if (res.mode === 'owner_command') {
         mode.current = 'owner_command'
@@ -95,8 +109,11 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     applyStart.current = started
     void (async () => {
       try {
-        const res = await post('api/terminal/start', { session_id: sessionId, workspace, cols: t.cols, rows: t.rows }, StartSchema, { retries: 0, timeoutMs: 20_000 })
+        // TAL-1974: opened from a `terminal_open` card, the pane attaches to that terminal and takes focus.
+        const request = takeOpenTerminalRequest(sessionId)
+        const res = await post('api/terminal/start', { session_id: sessionId, workspace, cols: t.cols, rows: t.rows, ...(request ? { terminal_id: request.terminalId } : {}) }, StartSchema, { retries: 0, timeoutMs: 20_000 })
         started(res)
+        if (request) t.focus()
       } catch (e) {
         if (cancelled) return
         setStatus('error')

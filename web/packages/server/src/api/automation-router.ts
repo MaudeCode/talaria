@@ -13,7 +13,7 @@ import { dashboardScope, isAgentDashboardId } from '../tools/dashboard-plugins.j
 import { ExtensionError } from '../tools/extensions.js'
 import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, withStatsTotals } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
-import { startSessionTerminal, TerminalStartRefused } from '../tools/agent-terminal.js'
+import { sessionTerminal, startSessionTerminal, TerminalRefused } from '../tools/agent-terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
 import { str } from '../util.js'
@@ -175,10 +175,13 @@ export const automationRouter = os.router({
       }
       const { workspace, profile } = (await terminalSession(ctx, sid))
       try {
-        const term = await startSessionTerminal(ctx.deps, { session_id: sid, workspace, profile }, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) })
-        return { ok: true as const, mode: 'web_pty' as const, session_id: sid, workspace: term.workspace, running: term.isAlive }
+        // TAL-1974: a `terminal_open` card attaches to its own terminal, keeping a closed one's output, and never starts another.
+        const attach = input.terminal_id ?? null
+        const term = attach === null ? await startSessionTerminal(ctx.deps, { session_id: sid, workspace, profile }, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) }) : sessionTerminal(ctx.deps.terminals, sid, attach)
+        if (attach !== null) term.setSize(input.rows, input.cols)
+        return { ok: true as const, mode: 'web_pty' as const, session_id: sid, workspace: term.workspace, running: term.isAlive, terminal_id: term.id }
       } catch (error) {
-        if (error instanceof TerminalStartRefused) throw new HttpError(error.status, error.message)
+        if (error instanceof TerminalRefused) throw new HttpError(error.status, error.message)
         const message = str((error as Error).message)
         // Python: `int()` failures and other ValueErrors → 400 with the text; unexpected errors → 500 sanitised.
         throw new HttpError(/not a directory|required|capacity|invalid literal|cannot convert/.test(message) ? 400 : 500, message.includes('not supported') ? message : sanitizeError(error))

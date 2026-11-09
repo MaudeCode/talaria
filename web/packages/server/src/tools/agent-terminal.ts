@@ -14,8 +14,8 @@ const COMMAND_MAX = 8192
 /** A C0 or C1 control character other than tab: a second line, an interrupt or an escape the user never typed. */
 const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/
 
-/** A refusal of the shared start path; `/api/terminal/start` answers its status and message, the agent its condition. */
-export class TerminalStartRefused extends HttpFailure {
+/** A refusal of the shared terminal paths; `/api/terminal/start` answers its status and message, the agent its condition. */
+export class TerminalRefused extends HttpFailure {
   constructor(status: number, readonly condition: string, message: string) { super(status, message) }
 }
 
@@ -27,10 +27,20 @@ export class TerminalStartRefused extends HttpFailure {
 export async function startSessionTerminal(deps: Pick<AppDeps, 'workspaces' | 'git' | 'terminals'>, session: { session_id: string; workspace: string; profile: string | null }, opts: { rows?: unknown; cols?: unknown; restart?: boolean; refuseLive?: boolean } = {}): Promise<TerminalSession> {
   let cwd: string
   // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
-  try { cwd = await deps.workspaces.resolveTrusted(session.workspace, session.profile) } catch (error) { throw new TerminalStartRefused(400, 'workspace_untrusted', (error as Error).message) }
-  if (deps.git.workspaceBusy(cwd)) throw new TerminalStartRefused(409, 'workspace_busy', WORKSPACE_BUSY_MESSAGE)
-  if (opts.refuseLive && deps.terminals.get(session.session_id)?.isAlive) throw new TerminalStartRefused(409, 'limit_reached', 'This session already has a live terminal; the user closes it from the terminal pane.')
+  try { cwd = await deps.workspaces.resolveTrusted(session.workspace, session.profile) } catch (error) { throw new TerminalRefused(400, 'workspace_untrusted', (error as Error).message) }
+  if (deps.git.workspaceBusy(cwd)) throw new TerminalRefused(409, 'workspace_busy', WORKSPACE_BUSY_MESSAGE)
+  if (opts.refuseLive && deps.terminals.get(session.session_id)?.isAlive) throw new TerminalRefused(409, 'limit_reached', 'This session already has a live terminal; the user closes it from the terminal pane.')
   return deps.terminals.start(session.session_id, cwd, opts)
+}
+
+/**
+ * TAL-1974: the session's terminal with this id, closed or not, as `terminal_read` reads it and a `terminal_open` card
+ * reattaches to it; a terminal of another session, a replaced or a retired one is `terminal_not_found`.
+ */
+export function sessionTerminal(terminals: AppDeps['terminals'], sessionId: string, terminalId: string): TerminalSession {
+  const term = terminals.get(sessionId)
+  if (term?.id !== terminalId) throw new TerminalRefused(404, 'terminal_not_found', 'This terminal is no longer available.')
+  return term
 }
 
 /** The width the agent's terminal starts at, before any pane sets its own. */
@@ -70,7 +80,7 @@ export async function terminalOpen(deps: AppDeps, caller: Caller, params: Omit<S
     // Wide, so the shell's line editor keeps a long command on one line; the pane resizes it to fit once the user opens it.
     term = await startSessionTerminal(deps, { session_id: caller.session_id, workspace: caller.workspace ?? '', profile }, { cols: AGENT_COLS, refuseLive: true })
   } catch (error) {
-    if (error instanceof TerminalStartRefused) throw refuse(error.status, error.condition, error.message)
+    if (error instanceof TerminalRefused) throw refuse(error.status, error.condition, error.message)
     throw refuse(500, 'terminal_unavailable', (error as Error).message)
   }
   // Typed once, as the user's Enter would send it, after the prompt: earlier, the terminal echoes it and the shell's
@@ -81,9 +91,11 @@ export async function terminalOpen(deps: AppDeps, caller: Caller, params: Omit<S
 }
 
 export function terminalRead(deps: AppDeps, caller: Caller, params: Omit<SidecarServerParams<'server.terminal_read'>, 'caller_session_id'>): SidecarServerResultInput<'server.terminal_read'> {
-  // Terminals are keyed by session, so another session's terminal, a replaced one or a retired one never matches.
-  const term = deps.terminals.get(caller.session_id)
-  if (term?.id !== params.terminal_id) throw refuse(404, 'terminal_not_found', `no terminal ${params.terminal_id} in this session`)
+  let term: TerminalSession
+  try { term = sessionTerminal(deps.terminals, caller.session_id, params.terminal_id) } catch (error) {
+    if (error instanceof TerminalRefused) throw refuse(error.status, error.condition, error.message)
+    throw error
+  }
   const slice = term.read(params.after_event_id ?? 0, Math.min(params.max_lines ?? TERMINAL_READ_MAX_LINES, TERMINAL_READ_MAX_LINES))
   return { terminal_id: term.id, ...slice, running: term.isAlive, exit_code: term.closed ? term.exitCode : null }
 }

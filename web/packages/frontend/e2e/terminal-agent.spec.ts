@@ -75,3 +75,41 @@ test('a terminal the agent opened shows its card, and Open focuses the live pane
     await server.close()
   }
 })
+
+// TAL-1974: a command that ends the shell leaves its terminal closed; Open shows that terminal's output and exit as it
+// stood, and starts no new shell in its place.
+test('Open on a terminal whose shell already exited shows its output closed and keeps it', async ({ page }) => {
+  const sidecar = new FakeSidecar()
+  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1', SHELL: '/bin/sh' } })
+  const sid = '20261109_090000_exited'
+  const now = Math.floor(Date.now() / 1000)
+  try {
+    const workspace = join(server.state, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'One-shot', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
+    const args = { command: 'echo DONE-AND-EXIT; exit 3' }
+    const reply = await sidecar.serverRequest('server.terminal_open', { caller_session_id: sid, ...args })
+    if (!('result' in reply)) throw new Error(JSON.stringify(reply))
+    const opened = reply.result as { terminal_id: string }
+    const read = async () => { const r = await sidecar.serverRequest('server.terminal_read', { caller_session_id: sid, terminal_id: opened.terminal_id }); return 'result' in r ? r.result as { running: boolean; exit_code: number | null } : null }
+    await expect.poll(read).toMatchObject({ running: false, exit_code: 3 })
+    const row = await server.deps.sessionStore.get(sid)
+    row.messages = [
+      { role: 'user', content: 'Run it once', timestamp: now - 60 },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call-0', function: { name: 'terminal_open', arguments: JSON.stringify(args) } }], timestamp: now - 50 },
+      { role: 'tool', tool_call_id: 'call-0', content: JSON.stringify(opened), timestamp: now - 50 },
+    ]
+    await server.deps.sessionStore.save(row)
+    await page.goto(`${server.base}/session/${sid}`)
+    await settle(page)
+    await page.locator(`[data-terminal-card="${opened.terminal_id}"]`).getByRole('button', { name: 'Open terminal' }).click()
+    const panel = page.locator('#composerTerminalPanel')
+    await expect(panel.locator('.xterm-rows')).toContainText('DONE-AND-EXIT')
+    await expect(panel).toHaveAttribute('data-status', 'closed')
+    expect(await read(), 'the pane attached to the closed terminal instead of replacing it').toMatchObject({ running: false, exit_code: 3 })
+  } finally {
+    await page.goto('about:blank')
+    server.deps.terminals.closeAll()
+    await server.close()
+  }
+})

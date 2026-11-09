@@ -12,7 +12,7 @@ const SESSION = '20261109_090000_caller'
 
 afterEach(() => { cleanup(); takeOpenTerminalRequest(SESSION) })
 
-it('shows the title and the command, and Open asks this session\'s terminal pane to open and focus', async () => {
+it('shows the title and the command, and Open, from the button or the context menu, asks for its own terminal in this session\'s pane', async () => {
   render(<TerminalResult sessionId={SESSION} reference={{ terminal_id: opened.terminal_id, title: opened.title, command: opened.command }} />)
   const card = within(screen.getByRole('region', { name: 'Terminal' }))
   expect(card.getByText('Unit tests')).toBeInTheDocument()
@@ -23,6 +23,9 @@ it('shows the title and the command, and Open asks this session\'s terminal pane
   stop()
   expect(heard).toBe(1)
   expect(takeOpenTerminalRequest('another_session')).toBeNull()
-  expect(takeOpenTerminalRequest(SESSION)).toEqual({ sessionId: SESSION })
+  expect(takeOpenTerminalRequest(SESSION)).toEqual({ sessionId: SESSION, terminalId: opened.terminal_id })
   expect(takeOpenTerminalRequest(SESSION), 'A request is taken once').toBeNull()
+  await userEvent.pointer({ keys: '[MouseRight]', target: card.getByText('npm test') })
+  await userEvent.click(within(await screen.findByRole('menu', { name: 'Unit tests' })).getByRole('menuitem', { name: 'Open terminal' }))
+  expect(takeOpenTerminalRequest(SESSION)).toEqual({ sessionId: SESSION, terminalId: opened.terminal_id })
 })

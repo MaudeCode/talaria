@@ -90,12 +90,13 @@ export function DecisionReviewResult({ reference }: { reference: DecisionReviewR
  * session's terminal pane and focuses it; the pane replays the output from the start and follows it live.
  */
 export function TerminalResult({ sessionId, reference }: { sessionId: string; reference: TerminalRef }) {
+  const open: RowAction = { label: m.terminal_open(), run: () => { requestOpenTerminal({ sessionId, terminalId: reference.terminal_id }) } }
   return <ResultSection label={m.terminal_title()}>
-    <div data-terminal-card={reference.terminal_id}>
+    <RowContextMenu label={reference.title} actions={[open]} trigger={<div data-terminal-card={reference.terminal_id}>
       <strong>{reference.title}</strong>
       {reference.command && <p className="mt-1 break-all font-mono text-xs text-muted">{reference.command}</p>}
-      <Button className="mt-2" onClick={() => { requestOpenTerminal(sessionId) }}>{m.terminal_open()}</Button>
-    </div>
+      <Button className="mt-2" onClick={open.run}>{open.label}</Button>
+    </div>} />
   </ResultSection>
 }
 

@@ -120,4 +120,24 @@ describe('terminal_open and terminal_read (TAL-1974)', () => {
     expect(next).not.toBe(id)
     expect(await call('server.terminal_read', { terminal_id: id })).toMatchObject({ condition: 'terminal_not_found' })
   })
+
+  it('a card reattaches the pane to its own terminal, keeping a closed one\'s output, and never starts another', async () => {
+    const start = async (body: Json) => { const res = await s.get('/api/terminal/start', { method: 'POST', body: JSON.stringify({ session_id: CALLER, ...body }), headers: { 'content-type': 'application/json' } }); return { status: res.status, body: await res.json() as Json } }
+    const id = String((await call('server.terminal_open', { command: 'npm test; exit' })).result?.terminal_id)
+    spawned[0]!.proc.emit('PASS\r\n')
+    spawned[0]!.proc.exit(0)
+    // The shell exited before the user opened the card: the pane attaches to it as it stands, closed with its output.
+    expect(await start({ terminal_id: id, rows: 30, cols: 100 })).toEqual({ status: 200, body: { ok: true, mode: 'web_pty', session_id: CALLER, workspace: realpathSync(workspace), running: false, terminal_id: id } })
+    expect(spawned).toHaveLength(1)
+    expect((await call('server.terminal_read', { terminal_id: id })).result).toMatchObject({ output: '$ PASS', running: false, exit_code: 0 })
+    // The terminal pane's own start replaces the closed shell; the old card's terminal is gone and says so.
+    const fresh = await start({})
+    expect(fresh.body.terminal_id).not.toBe(id)
+    expect(spawned).toHaveLength(2)
+    expect(await start({ terminal_id: id })).toEqual({ status: 404, body: { error: 'This terminal is no longer available.' } })
+    // Another session cannot attach to it.
+    const other = await s.get('/api/terminal/start', { method: 'POST', body: JSON.stringify({ session_id: OTHER, terminal_id: fresh.body.terminal_id }), headers: { 'content-type': 'application/json' } })
+    expect(other.status).toBe(404)
+    expect(spawned).toHaveLength(2)
+  })
 })

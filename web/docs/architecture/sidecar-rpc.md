@@ -7,7 +7,9 @@ workspace, workspace-busy refusal), 160 columns wide, and types `command` once w
 Enter after the shell's startup output goes quiet (at most 3 s). It answers the
 `terminal_id`, the session's `url`, the `title` (the command, else "Terminal") and the
 `command`; the transcript card is `result_view.terminal`, whose Open opens and focuses
-the session's terminal pane. One live terminal per session: a running one is
+the session's terminal pane: `/api/terminal/start` with that `terminal_id` attaches to
+that terminal, closed or not, instead of starting a shell, or answers 404 once it is gone.
+One live terminal per session: a running one is
 `limit_reached`. A command over 8192 characters is `command_too_long` and one with a
 control character `invalid_command`. `terminal_read` returns the backlog the output SSE
 keeps after `after_event_id`, escape sequences removed, at most `max_lines` (400 by
