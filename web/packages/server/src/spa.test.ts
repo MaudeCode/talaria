@@ -12,7 +12,7 @@ vi.mock('node:zlib', async (importOriginal) => {
 })
 
 describe('SPA allowlist', () => {
-  it.each(['/', '/index.html', '/session/abc123', '/tasks', '/tasks/job-1', '/kanban', '/skills', '/skills/foo', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs', '/settings', '/settings/providers', '/ext/desktop-companion', '/onboarding', '/login', '/share', '/share/tok', '/decisions/dr_0a1b2c3d'])('%s receives the shell', (path) => {
+  it.each(['/', '/index.html', '/session/abc123', '/tasks', '/tasks/job-1', '/kanban', '/skills', '/skills/foo', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs', '/settings', '/settings/providers', '/ext/desktop-companion', '/onboarding', '/login', '/share', '/share/tok', '/decisions', '/decisions/dr_0a1b2c3d'])('%s receives the shell', (path) => {
     expect(isSpaPath(path)).toBe(true)
   })
 

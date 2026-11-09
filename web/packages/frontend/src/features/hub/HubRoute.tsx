@@ -7,6 +7,7 @@ import { MemoryPage } from '../memory/MemoryPage'
 import { WorkspacesPage } from '../workspaces/WorkspacesPage'
 import { ProfilesPage } from '../profiles/ProfilesPage'
 import { TodosPage } from '../todos/TodosPage'
+import { DecisionsPage } from '../decisions/DecisionsPage'
 import { InsightsPage } from '../insights/InsightsPage'
 import { LogsPage } from '../logs/LogsPage'
 
@@ -19,6 +20,7 @@ const PAGES: Record<HubPanel, () => ReactNode> = {
   workspaces: () => <WorkspacesPage />,
   profiles: () => <ProfilesPage />,
   todos: () => <TodosPage />,
+  decisions: () => <DecisionsPage />,
   insights: () => <InsightsPage />,
   logs: () => <LogsPage />,
 }

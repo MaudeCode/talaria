@@ -3230,5 +3230,11 @@
   "decision_outcome_planned": "Planned",
   "decision_row_menu": "Decision actions",
   "decision_clear": "Clear answer",
-  "decision_filter_empty": "Nothing to show"
+  "decision_filter_empty": "Nothing to show",
+  "tab_decisions": "Decisions",
+  "decisions_list": "Decision reviews",
+  "decisions_empty_none": "No decision reviews yet",
+  "decisions_empty_closed": "Every decision review is applied or cancelled",
+  "decisions_row_menu": "Decision review actions",
+  "decisions_open_chat": "Open chat"
 }

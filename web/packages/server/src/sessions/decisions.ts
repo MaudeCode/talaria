@@ -6,7 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
   DECISION_LIMITS, DecisionReviewIdSchema,
-  type DecisionAnswer, type DecisionAnswerInput, type DecisionItem, type DecisionReviewRef, type DecisionItemInput, type DecisionProgress, type DecisionReview,
+  type DecisionAnswer, type DecisionAnswerInput, type DecisionItem, type DecisionReviewList, type DecisionReviewRef, type DecisionItemInput, type DecisionProgress, type DecisionReview,
   type SidecarServerParams, type SidecarServerResultInput,
 } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
@@ -275,15 +275,27 @@ export class DecisionReviews {
 
   // ── routes ──────────────────────────────────────────────────────────────
 
-  /** `GET /api/decisions`: the request profile's open and submitted reviews, newest first. */
+  /** `GET /api/decisions`: the request profile's open and submitted reviews, newest first, and why none are listed. */
   // ponytail: reads every stored review per call; index by profile and status when the Decisions hub lists many.
-  async list(): Promise<{ reviews: DecisionReview[] }> {
+  async list(): Promise<DecisionReviewList> {
     const reviews: StoredReview[] = []
+    let closed = false
     for (const { key } of await this.documents.list(NAMESPACE)) {
       const review = await this.load(key)
-      if (review && (review.status === 'open' || review.status === 'submitted') && await this.visible(review)) reviews.push(review)
+      if (!review || !(await this.visible(review))) continue
+      if (review.status === 'open' || review.status === 'submitted') reviews.push(review)
+      else closed = true
     }
-    return { reviews: reviews.sort((a, b) => b.created_at - a.created_at).map(reviewView) }
+    const rows = await Promise.all(reviews.sort((a, b) => b.created_at - a.created_at).map(async (review) => ({
+      review_id: review.review_id, session_id: review.session_id, session_title: await this.sessionTitle(review.session_id),
+      title: review.title, status: review.status, created_at: review.created_at, progress: progressOf(review),
+    })))
+    return { reviews: rows, empty: rows.length ? null : closed ? 'closed' : 'none' }
+  }
+
+  /** The owning session's title, or null when it has none or cannot be read. */
+  private async sessionTitle(sid: string): Promise<string | null> {
+    try { return (await this.deps().sessionStore.get(sid, { metadataOnly: true, promote: false })).title.trim() || null } catch { return null }
   }
 
   async get(id: string): Promise<DecisionReview> {

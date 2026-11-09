@@ -1,7 +1,7 @@
-import { CalendarCheck, Columns3, FileText, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, Settings, TrendingUp, UserRound, Users, FolderOpen, Brain, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, Columns3, Scale, FileText, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, Settings, TrendingUp, UserRound, Users, FolderOpen, Brain, type LucideIcon } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 
-export type PanelId = 'chat' | 'tasks' | 'kanban' | 'skills' | 'memory' | 'workspaces' | 'groups' | 'profiles' | 'todos' | 'insights' | 'logs' | 'settings'
+export type PanelId = 'chat' | 'tasks' | 'kanban' | 'skills' | 'memory' | 'workspaces' | 'groups' | 'profiles' | 'todos' | 'decisions' | 'insights' | 'logs' | 'settings'
 
 export interface NavItem {
   id: PanelId
@@ -21,6 +21,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'groups', to: '/groups', icon: Users, label: () => m.group_discussions() },
   { id: 'profiles', to: '/profiles', icon: UserRound, label: () => m.tab_profiles() },
   { id: 'todos', to: '/todos', icon: ListChecks, label: () => m.tab_todos() },
+  { id: 'decisions', to: '/decisions', icon: Scale, label: () => m.tab_decisions() },
   { id: 'insights', to: '/insights', icon: TrendingUp, label: () => m.tab_insights() },
   { id: 'logs', to: '/logs', icon: FileText, label: () => m.tab_logs() },
   { id: 'settings', to: '/settings', icon: Settings, label: () => m.tab_settings() },
@@ -32,7 +33,7 @@ export const FIXED_TABS: ReadonlySet<PanelId> = new Set(['chat', 'settings'])
 export type SidebarSlot = PanelId | 'dashboard' | 'extensions'
 /** Expanded: the App's order, above the `More` disclosure. */
 export const SIDEBAR_PRIMARY: readonly SidebarSlot[] = ['tasks', 'kanban', 'skills', 'memory', 'insights']
-export const SIDEBAR_MORE: readonly SidebarSlot[] = ['workspaces', 'groups', 'todos', 'profiles', 'logs', 'extensions', 'dashboard']
+export const SIDEBAR_MORE: readonly SidebarSlot[] = ['workspaces', 'groups', 'todos', 'decisions', 'profiles', 'logs', 'extensions', 'dashboard']
 /** One row in both states: `shell.css` lays it out as a labelled row, or as an icon over its caption on the rail. */
 export const SIDEBAR_ROW = 'sidebar-row relative flex w-full min-h-8 flex-none items-center gap-2.5 rounded-(--rail-btn-radius) border-0 bg-transparent px-2.5 text-left text-sm text-muted no-underline cursor-pointer transition-[color,background] duration-(--dur) ease-(--ease) max-[641px]:min-h-11 hover:text-text hover:bg-hover [&.active]:text-(--rail-active-fg) [&.active]:bg-(--rail-active-bg) [&.active]:shadow-(--rail-active-shadow) [&.active]:[font-weight:var(--rail-active-weight)] [&.active_svg]:text-(--rail-active-icon-fg) [&_svg]:shrink-0 [&_svg]:size-[18px]'
 

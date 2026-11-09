@@ -65,6 +65,7 @@ export const keys = {
   kanban: { boards: ['kanban', 'boards'] as const, inspection: ['kanban', 'inspection'] as const, board: (slug: string | undefined) => ['kanban', 'board', slug ?? ''] as const },
   insights: (days: number) => ['insights', days] as const,
   /** TAL-1964: one decision review; its session's `decision_review` events refresh it. */
+  decisionReviews: ['decision-reviews'] as const,
   decisionReview: (id: string) => ['decision-review', id] as const,
   logs: (file: string, tail: number) => ['logs', file, tail] as const,
   onboarding: ['onboarding'] as const,
