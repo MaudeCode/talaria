@@ -27,6 +27,7 @@ SECRET_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "f
 NOTIFY_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "notify.json").read_text())
 DELIVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "deliver.json").read_text())
 TERMINAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "terminal.json").read_text())
+REPORT_ISSUE_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "report-issue.json").read_text())
 
 
 class Peer:
@@ -387,6 +388,7 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("deliver", "harness", "deliver"),
         ("terminal_open", "harness", "terminal_open"),
         ("terminal_read", "harness", "terminal_read"),
+        ("report_issue", "harness", "report_issue"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
@@ -616,3 +618,28 @@ def test_harness_terminal_open_types_nothing_the_agent_command_guard_refuses(mon
     result = json.loads(harness_toolset.terminal_open({"command": "rm -rf /"}, session_id="20261109_090000_tip"))
     assert result["condition"] == condition and result["error"]
     assert sent == []
+
+
+@pytest.mark.parametrize("recorded", REPORT_ISSUE_FIXTURES["server.report_issue"], ids=["with_diagnostics", "without_diagnostics"])
+def test_harness_report_issue_forwards_its_call_and_returns_the_server_result_unchanged(monkeypatch, recorded) -> None:
+    """TAL-1972: ``report_issue`` sends its arguments to ``server.report_issue`` and returns its JSON, or its refusal with the
+    refusal's data, as sent."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(harness_toolset.report_issue(args, session_id="20261109_090000_tip")) == recorded["result"]
+    assert sent == [("server.report_issue", recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS["server.report_issue"]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS["server.report_issue"]["result"]) == []
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("Too many feedback reports were sent from this server recently", condition="rate_limited", data={"retry_after_seconds": 42})
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(harness_toolset.report_issue(args, session_id="20261109_090000_tip")) == {"error": "Too many feedback reports were sent from this server recently", "condition": "rate_limited", "retry_after_seconds": 42}
+    assert json.loads(harness_toolset.report_issue({"summary": "x"}, session_id="20261109_090000_tip")) == {"error": "detail is required", "condition": "invalid_params"}

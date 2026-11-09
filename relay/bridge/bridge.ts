@@ -46,6 +46,8 @@ type FeedbackReport = {
     client: { platform: "web" | "ios"; appVersion?: string; osVersion?: string; deviceModel?: string };
     server: { webVersion: string; agentVersion?: string };
     diagnostics?: string;
+    source?: "agent";
+    agent?: { sessionId: string; agentVersion?: string; model?: string };
   };
   attachments?: QueuedAttachment[];
 };
@@ -174,6 +176,8 @@ function description(report: FeedbackReport, outcomes: Outcome[]): string {
     ["Web version", payload.server.webVersion],
     ["Agent version", payload.server.agentVersion],
     ["Received at", new Date(report.createdAt).toISOString()],
+    // TAL-1972: an agent filed this from a Web session, rather than a person.
+    ...(payload.agent ? [["Source", "agent"], ["Session ID", payload.agent.sessionId], ["Model", payload.agent.model]] as Array<[string, string | undefined]> : []),
   ];
   // Metadata is user-controlled too. Entities keep it inside a single literal table cell.
   const literal = (text: string) => text.replace(/[&<>|`\[\]\\\r\n]/g, (char) => `&#${char.charCodeAt(0)};`);

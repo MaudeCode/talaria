@@ -722,6 +722,13 @@ a quota marker for one hour. Expired entries are removed on the next admission.
 Concurrent calls for one request ID serialize through send and compaction. Submission
 logs contain only the request UUID and outcome.
 
+The `harness` toolset's `report_issue` (sidecar `server.report_issue`) files an agent's
+report through the same service: kind `bug`, no attachments, and `source: "agent"` with
+`agent` (`sessionId`, `agentVersion`, `model`) in the Relay payload. It counts against
+the same principal limit, and its receipt also keys the session and summary, so the same
+summary from the same session within an hour is `duplicate` unless the earlier report
+was refused.
+
 ### Feedback attachments
 
 `GET /api/feedback/options` publishes what clients may attach. Attachments are

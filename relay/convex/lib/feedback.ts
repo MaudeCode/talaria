@@ -57,7 +57,7 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
 
 /** Exactly the v1 report fields, each bounded: an extra field is rejected rather than ignored. */
 export function parseFeedbackReport(value: unknown): FeedbackPayload | null {
-  const report = record(value, ["requestId", "installId", "kind", "title", "body", "client", "server", "diagnostics", "attachments"]);
+  const report = record(value, ["requestId", "installId", "kind", "title", "body", "client", "server", "diagnostics", "attachments", "source", "agent"]);
   const client = report && record(report.client, ["platform", "appVersion", "osVersion", "deviceModel"]);
   const server = report && record(report.server, ["webVersion", "agentVersion"]);
   if (!report || !client || !server) return null;
@@ -74,10 +74,11 @@ export function parseFeedbackReport(value: unknown): FeedbackPayload | null {
   const webVersion = text(server, "webVersion", 64);
   const agentVersion = text(server, "agentVersion", 64, true);
   const attachments = "attachments" in report ? parseAttachments(report.attachments) : undefined;
+  const agent = parseAgent(report);
   if (
     !requestId || !uuidPattern.test(requestId) || !installId || !uuidPattern.test(installId) || !kind || !title || !body
     || diagnostics === null || !platform || appVersion === null || osVersion === null || deviceModel === null
-    || !webVersion || agentVersion === null || attachments === null
+    || !webVersion || agentVersion === null || attachments === null || agent === null
   ) {
     return null;
   }
@@ -96,7 +97,20 @@ export function parseFeedbackReport(value: unknown): FeedbackPayload | null {
     server: { webVersion, ...(agentVersion === undefined ? {} : { agentVersion }) },
     ...(diagnostics === undefined ? {} : { diagnostics }),
     ...(attachments === undefined ? {} : { attachments }),
+    ...(agent === undefined ? {} : { source: "agent" as const, agent }),
   };
+}
+
+/** TAL-1972: `source: "agent"` and its `agent` provenance come together or not at all; `undefined` for a person's report. */
+function parseAgent(report: Fields): NonNullable<FeedbackPayload["agent"]> | undefined | null {
+  if (!("source" in report) && !("agent" in report)) return undefined;
+  const agent = record(report.agent, ["sessionId", "agentVersion", "model"]);
+  if (report.source !== "agent" || !agent) return null;
+  const sessionId = text(agent, "sessionId", 128);
+  const agentVersion = text(agent, "agentVersion", 64, true);
+  const model = text(agent, "model", 128, true);
+  if (!sessionId || agentVersion === null || model === null) return null;
+  return { sessionId, ...(agentVersion === undefined ? {} : { agentVersion }), ...(model === undefined ? {} : { model }) };
 }
 
 /** 1–5 entries of exactly `{contentType, bytes, sha256}` within the per-type size, with at most one video. */

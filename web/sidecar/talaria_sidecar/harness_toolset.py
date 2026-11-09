@@ -15,6 +15,9 @@ TAL-1971 adds ``deliver``: a workspace file handed to the user as a download row
 TAL-1974 adds ``terminal_open`` and ``terminal_read``: a long command runs in the session's embedded terminal, where the user
 watches it live, while the agent reads its output in slices. The agent types only the first command and cannot close it.
 
+TAL-1972 adds ``report_issue``: a Talaria misbehaviour the agent ran into, filed as feedback marked as the agent's, so it
+reaches the Inbox like a user's report.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -35,7 +38,7 @@ TOOLSET_DESCRIPTION = (
     "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
     "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's "
     "devices that something is ready or needs them; deliver a file you made as a download; run a long command in a terminal "
-    "the user watches and read its output."
+    "the user watches and read its output; report a Talaria problem you ran into as feedback."
 )
 
 _WHEN = (
@@ -316,6 +319,29 @@ TERMINAL_READ_SCHEMA = {
 }
 
 
+REPORT_ISSUE_SCHEMA = {
+    "name": "report_issue",
+    "description": (
+        "Report a problem with Talaria itself, the app and server you are running in, as feedback the maintainers triage: "
+        "a tool result you cannot parse, a refusal that names no reason, a card that lost its state. Not for problems in "
+        "the user's project or a model mistake. The report is marked as yours, with this session's id, the Agent version "
+        "and your model. Returns report_id once it is filed. summary is at most 120 characters and detail at most 4000; a "
+        "longer one is refused, nothing is cut. The same summary twice from this session within an hour is refused with "
+        "duplicate; too many reports from this server is rate_limited with retry_after_seconds. Reports carry no files: "
+        "hand one over with deliver first and name it in detail."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "One line, at most 120 characters: what went wrong."},
+            "detail": {"type": "string", "description": "At most 4000 characters: what you did, what you expected and what happened instead."},
+            "include_diagnostics": {"type": "boolean", "description": "True to attach the server's redacted diagnostics: versions, enabled providers and recent errors."},
+        },
+        "required": ["summary", "detail", "include_diagnostics"],
+    },
+}
+
+
 def _payload(args: dict, params: dict) -> None:
     """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
@@ -372,6 +398,7 @@ def terminal_open(args: dict, session_id: str | None = None) -> str:
             return refusal
     return _terminal_open(args, session_id)
 terminal_read = _tool("server.terminal_read", "terminal_read", ("terminal_id",), _passed("after_event_id", "max_lines"))
+report_issue = _tool("server.report_issue", "report_issue", ("summary", "detail"), _passed("include_diagnostics"))
 
 
 def _secret(args: dict, params: dict) -> float:
@@ -426,6 +453,7 @@ _TOOLS = (
     (DELIVER_SCHEMA, deliver, "📎"),
     (TERMINAL_OPEN_SCHEMA, terminal_open, "🖥️"),
     (TERMINAL_READ_SCHEMA, terminal_read, "📟"),
+    (REPORT_ISSUE_SCHEMA, report_issue, "🐞"),
 )
 
 

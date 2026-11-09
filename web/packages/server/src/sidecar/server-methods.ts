@@ -11,7 +11,8 @@ export type SidecarServerHandlers = { [M in SidecarServerMethodName]?: (params: 
 
 /** A refusal the sidecar's tool reports as its error; `condition` names it for the agent. */
 export class SidecarServerError extends Error {
-  constructor(message: string, readonly condition: string) {
+  /** `data` adds fields to the error's data beside `condition`, such as `retry_after_seconds` (TAL-1972). */
+  constructor(message: string, readonly condition: string, readonly data: Record<string, unknown> = {}) {
     super(message)
     this.name = 'SidecarServerError'
   }
@@ -24,7 +25,7 @@ export async function answerSidecarRequest(handlers: SidecarServerHandlers, mess
   const request = SidecarRequestSchema.safeParse(message)
   if (!request.success) return null
   const { id, method, params } = request.data
-  const error = (code: number, text: string, condition: string): SidecarReply => ({ jsonrpc: '2.0', id, error: { code, message: text, data: { condition } } })
+  const error = (code: number, text: string, condition: string, data: Record<string, unknown> = {}): SidecarReply => ({ jsonrpc: '2.0', id, error: { code, message: text, data: { ...data, condition } } })
   const definition = Object.hasOwn(SIDECAR_SERVER_METHODS, method) ? SIDECAR_SERVER_METHODS[method as SidecarServerMethodName] : undefined
   const handler = definition ? handlers[method as SidecarServerMethodName] : undefined
   if (!definition || !handler) return error(RPC_ERROR_CODES.methodNotFound, `unknown method ${method}`, 'method_not_found')
@@ -33,7 +34,7 @@ export async function answerSidecarRequest(handlers: SidecarServerHandlers, mess
   try {
     return { jsonrpc: '2.0', id, result: definition.result.parse(await (handler as (p: unknown) => Promise<unknown>)(parsed.data)) }
   } catch (caught) {
-    if (caught instanceof SidecarServerError) return error(RPC_ERROR_CODES.application, caught.message, caught.condition)
+    if (caught instanceof SidecarServerError) return error(RPC_ERROR_CODES.application, caught.message, caught.condition, caught.data)
     return error(RPC_ERROR_CODES.internal, `${method} failed: ${(caught as Error).message}`, 'server_error')
   }
 }

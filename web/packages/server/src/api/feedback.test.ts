@@ -3,15 +3,19 @@ import { createServer, type Server } from 'node:http'
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { saveRelayConfig } from '../sessions/relay.js'
 import { JsonDocuments } from '../test/storage.js'
 import { stageFeedbackAttachment, submitFeedback as sendFeedback } from '../feedback.js'
 import { FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
+import { readFileSync } from 'node:fs'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { Session } from '../sessions/session.js'
 
 type Payload = Record<string, unknown>
 let s: TestServer
+let sidecar: FakeSidecar
 let relay: Server
 let url: string
 let status: number
@@ -79,7 +83,8 @@ beforeEach(async () => {
   }
   await new Promise<void>((resolve) => { relay.listen(0, '127.0.0.1', resolve) })
   url = `http://127.0.0.1:${(relay.address() as import('node:net').AddressInfo).port}`
-  s = await bootTestServer({ env: { HOME: '/synthetic-home', HERMES_WEBUI_TALARIA_RELAY_URL: url } })
+  sidecar = new FakeSidecar()
+  s = await bootTestServer({ env: { HOME: '/synthetic-home', HERMES_WEBUI_TALARIA_RELAY_URL: url }, sidecar })
   vi.spyOn(s.deps.catalog, 'providers').mockResolvedValue({ providers: [{ id: 'openai', has_key: true, api_key: 'provider-secret', base_url: 'https://private.example', account_id: 'private-account' }, { id: 'disabled', has_key: false }], active_provider: 'openai', availability: { status: 'available', authoritative: true } } as never)
 })
 afterEach(async () => { vi.restoreAllMocks(); await s.close(); await new Promise<void>((resolve, reject) => { relay.close((e) => { if (e) reject(e); else resolve() }) }) })
@@ -509,4 +514,53 @@ it('lets one request claim a staged file and returns the claim when admission re
   const spare = await staged('image/png', png())
   expect((await submit({ ...input(), body: '\u0000'.repeat(8000), attachmentIds: [spare] })).status).toBe(400)
   expect(await (await submit({ ...input(), attachmentIds: [spare] })).json()).toMatchObject({ status: 'sent', attachments: [{ attachmentId: spare, status: 'sent' }] })
+})
+
+describe('report_issue (TAL-1972)', () => {
+  const agentReport = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/feedback-report-agent.json', import.meta.url), 'utf8')) as Payload & { agent: Payload }
+  const CALLER = '20261109_090000_caller'
+  const report = async (params: Payload, caller = CALLER) => {
+    const reply = await sidecar.serverRequest('server.report_issue', { caller_session_id: caller, summary: 'deliver answered file_not_found', detail: 'ls lists report.csv; deliver refused it.', include_diagnostics: false, ...params })
+    return 'error' in reply ? { error: reply.error.data } : { result: reply.result }
+  }
+  beforeEach(async () => {
+    for (const sid of [CALLER, '20261109_090000_other']) await s.deps.sessionStore.save(new Session({ session_id: sid, title: sid, profile: 'default', model: 'claude-opus-5-5', updated_at: 1, messages: [] }, { workspace: s.state, model: null }))
+  })
+
+  it('files one bug report marked as the agent\'s, with the redacted diagnostics when asked', async () => {
+    s.deps.log('[webui] ERROR synthetic failure API_KEY=sk-syntheticsecret')
+    const preview = await (await s.get('/api/feedback/diagnostics')).json() as { text: string }
+    expect(await report({ summary: '  deliver answered file_not_found  ', include_diagnostics: true })).toEqual({ result: { report_id: 'report-1' } })
+    expect(calls).toHaveLength(1)
+    const payload = calls[0]!.payload
+    expect(payload).toMatchObject({ kind: 'bug', title: 'deliver answered file_not_found', body: 'ls lists report.csv; deliver refused it.', client: { platform: 'web' }, diagnostics: preview.text, source: 'agent', agent: { sessionId: CALLER, agentVersion: s.deps.agentVersion(), model: 'claude-opus-5-5' } })
+    // The shared fixture is the report Relay parses: the same fields, nothing more.
+    expect(Object.keys(payload).sort()).toEqual(Object.keys(agentReport).sort())
+    expect(Object.keys(payload.agent as Payload).sort()).toEqual(Object.keys(agentReport.agent).sort())
+  })
+
+  it('omits diagnostics on false and refuses a blank or over-long summary or detail before sending', async () => {
+    expect(await report({})).toEqual({ result: { report_id: 'report-1' } })
+    expect(calls[0]!.payload).not.toHaveProperty('diagnostics')
+    expect(await report({ summary: 'x'.repeat(121) })).toMatchObject({ error: { condition: 'summary_too_long' } })
+    expect(await report({ detail: 'x'.repeat(4001) })).toMatchObject({ error: { condition: 'detail_too_long' } })
+    expect(await report({ detail: '   ' })).toMatchObject({ error: { condition: 'invalid_params' } })
+    expect(calls).toHaveLength(1)
+  })
+
+  it('refuses the same summary from the same session within an hour as duplicate', async () => {
+    status = 400
+    expect(await report({})).toMatchObject({ error: { condition: 'invalid' } })
+    status = 202
+    // A refused report was never filed, so filing it again is no repeat.
+    expect(await report({})).toEqual({ result: { report_id: 'report-1' } })
+    expect(await report({ detail: 'Different detail, same summary.' })).toMatchObject({ error: { condition: 'duplicate' } })
+    expect(await report({}, '20261109_090000_other')).toEqual({ result: { report_id: 'report-1' } })
+    expect(calls).toHaveLength(3)
+  })
+
+  it.each([[429, 'rate_limited'], [404, 'feedback_unavailable'], [503, 'relay_unreachable']])('answers Relay %s with the route\'s condition', async (relayStatus, condition) => {
+    status = relayStatus
+    expect(await report({})).toEqual({ error: { condition, ...(condition === 'rate_limited' ? { retry_after_seconds: 42 } : {}) } })
+  })
 })

@@ -5686,5 +5686,45 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.report_issue": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "include_diagnostics": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "summary",
+        "detail"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "report_id"
+      ],
+      "additionalProperties": false
+    }
   }
 }

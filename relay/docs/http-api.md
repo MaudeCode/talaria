@@ -331,6 +331,9 @@ a tracker credential. Every feedback route answers 404 until the deployment sets
 | `attachments[].contentType` | `image/png`, `image/jpeg`, `image/heic`, `image/webp`, `video/mp4`, `video/quicktime`, or `video/webm` |
 | `attachments[].bytes` | integer, 1 to 10,000,000 for images or 20,000,000 for video; at most one video per report |
 | `attachments[].sha256` | SHA-256 of the file, 64 lowercase hex characters |
+| `source`, `agent` | optional and together: `source` is `agent` and `agent` exactly `{sessionId, agentVersion?, model?}` for a report an agent filed from a Web session (`contracts/fixtures/feedback-report-agent.json`) |
+| `agent.sessionId`, `agent.model` | 1–128 characters; `model` optional |
+| `agent.agentVersion` | optional, 1–64 characters |
 
 `contracts/fixtures/feedback-attachment-limits.json` is the single table of
 attachment types, sizes, counts, the 120-second video limit (enforced by the

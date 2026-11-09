@@ -349,7 +349,8 @@ def _ask(method: str, params: dict, timeout: float | None = None) -> str:
     try:
         return json.dumps(rpc.call_server(method, params, timeout=timeout), ensure_ascii=False)
     except RpcError as exc:
-        return json.dumps({"error": str(exc), "condition": exc.data.get("condition")}, ensure_ascii=False)
+        # TAL-1972: data beside the condition, such as retry_after_seconds, reaches the agent too.
+        return json.dumps({**exc.data, "error": str(exc), "condition": exc.data.get("condition")}, ensure_ascii=False)
 
 
 def session_list(args: dict, session_id: str | None = None) -> str:
