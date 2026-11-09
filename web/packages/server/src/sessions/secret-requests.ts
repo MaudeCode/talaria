@@ -137,11 +137,14 @@ export class SecretRequests {
   private async write(waiter: Waiter, value: string): Promise<void> {
     const deps = this.deps()
     const home = this.home(waiter.profile)
-    // The card said whether it replaces a value; a value set since then is not replaced unannounced.
-    if (!waiter.existedBefore && Object.hasOwn(loadEnvFile(join(home, '.env')), waiter.envName)) {
-      throw refuse(409, 'env_name_changed', `${waiter.envName} was set after the prompt said it was new, so it was not replaced; ask again`)
+    // The card said whether it replaces a value; a value set since then is not replaced unannounced. Checked inside the
+    // serialized credential edit, so an overlapping save of the same name cannot slip in between.
+    const unchanged = (): void => {
+      if (!waiter.existedBefore && Object.hasOwn(loadEnvFile(join(home, '.env')), waiter.envName)) {
+        throw refuse(409, 'env_name_changed', `${waiter.envName} was set after the prompt said it was new, so it was not replaced; ask again`)
+      }
     }
-    await writeRuntimeCredential({ env: deps.config.env, sidecar: deps.sidecar, log: deps.log }, deps.isRootProfile(waiter.profile), home, waiter.envName, value)
+    await writeRuntimeCredential({ env: deps.config.env, sidecar: deps.sidecar, log: deps.log }, deps.isRootProfile(waiter.profile), home, waiter.envName, value, unchanged)
     addKnownSecret(value)
     await updateDocument(this.documents, NAMESPACE, waiter.profile, (stored) => {
       const names = Array.isArray(stored) ? stored.filter((name): name is string => typeof name === 'string') : []

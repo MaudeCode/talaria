@@ -79,6 +79,21 @@ describe('request_secret (TAL-1969)', () => {
     expect(env().BAR_API_KEY).toBe('set-meanwhile')
   })
 
+  it('keeps the first of two overlapping saves of a new name and refuses the second', async () => {
+    const other = '20261109_090000_other'
+    const workspace = join(s.state, 'workspace')
+    await s.deps.sessionStore.save(new Session({ session_id: other, title: 'Other', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
+    const first = ask()
+    const second = sidecar.serverRequest('server.secret_request', { ...fixture.params, caller_session_id: other })
+    const [a, b] = [await prompted(), await vi.waitFor(() => { const head = s.deps.pending.clarifyPending(other).pending; expect(head).not.toBeNull(); return head! })]
+    const post = (sid: string, clarifyId: unknown, secret: string) => s.get('/api/clarify/respond', { method: 'POST', body: JSON.stringify({ session_id: sid, clarify_id: clarifyId, answers: { secret } }), headers: { 'content-type': 'application/json' } })
+    const statuses = (await Promise.all([post(CALLER, a.clarify_id, SECRET), post(other, b.clarify_id, 'Yt7uW3kQ9zR5mP2xL6')])).map((res) => res.status)
+    expect(statuses).toEqual([200, 409])
+    expect(await first).toMatchObject({ result: { outcome: 'saved' } })
+    expect(condition(await second)).toBe('env_name_changed')
+    expect(env().FOO_API_KEY).toBe(SECRET)
+  })
+
   it('refuses a malformed or reserved name before any prompt', async () => {
     for (const [name, refused] of [['foo_key', 'env_name_invalid'], ['AB', 'env_name_invalid'], ['HERMES_HOME', 'env_name_reserved'], ['TERMINAL_ENV', 'env_name_reserved'], ['PATH', 'env_name_reserved'], ['TELEGRAM_ALLOWED_USERS', 'env_name_reserved']] as const) {
       expect(condition(await ask({ env_name: name })), name).toBe(refused)
