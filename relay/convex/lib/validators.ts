@@ -78,7 +78,7 @@ export const sessionStateContentValidator = v.object({
   approvalHeadId: v.optional(v.string()),
   decisionReviewId: v.optional(v.string()),
   decisionReviewTitle: v.optional(v.string()),
-  agentNotify: v.optional(agentNotifyValidator),
+  agentNotices: v.optional(v.array(agentNotifyValidator)),
 });
 
 export const sessionStateInputValidator = v.object({
@@ -109,7 +109,7 @@ export const storedSessionStateValidator = v.object({
   approvalHeadId: v.optional(v.string()),
   decisionReviewId: v.optional(v.string()),
   decisionReviewTitle: v.optional(v.string()),
-  agentNotify: v.optional(agentNotifyValidator),
+  agentNotices: v.optional(v.array(agentNotifyValidator)),
   receivedAt: v.number(),
 });
 

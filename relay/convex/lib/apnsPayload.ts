@@ -167,6 +167,8 @@ export function makeNotification(input: {
   row: AggregateRow;
   // One ID per chat: groups its alerts and lets the newest replace the previous one.
   threadId: string;
+  // TAL-1970: an alert that must never replace or be replaced by the chat's others collapses under its own ID.
+  collapseId?: string;
 }): ApnsRequest {
   return {
     token: input.token,
@@ -174,7 +176,7 @@ export function makeNotification(input: {
     environment: input.environment,
     pushType: "alert",
     priority: "10",
-    collapseId: input.threadId,
+    collapseId: input.collapseId ?? input.threadId,
     payload: {
       aps: {
         alert: notificationAlertText(input.alert),

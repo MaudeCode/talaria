@@ -50,7 +50,7 @@ async function seed() {
     }
   };
   // Every snapshot is a fresh signed event with a new revision, as Talaria Web's heartbeat publishes them.
-  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string; notice?: AgentNotify } = {}) => {
+  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string; notices?: AgentNotify[] } = {}) => {
     revision += 1;
     const path = `/v1/publishers/${encodeURIComponent(publisherId)}/profiles/${options.profileId ?? "profile-1"}/snapshot`;
     const body = JSON.stringify({
@@ -61,7 +61,7 @@ async function seed() {
         ...(options.alertEligible === undefined ? {} : { alertEligible: options.alertEligible }),
         ...(head === undefined ? {} : { approvalHeadId: head }),
         ...(options.decision === undefined ? {} : { decisionReviewId: options.decision, decisionReviewTitle: "Release choices" }),
-        ...(options.notice === undefined ? {} : { agentNotify: options.notice }),
+        ...(options.notices === undefined ? {} : { agentNotices: options.notices }),
       }],
     });
     const timestamp = String(now / 1000);
@@ -139,9 +139,9 @@ describe("agent notices (TAL-1970)", () => {
   it("alerts once per notice with the agent's words, opening the session, beside the run's own alert", async () => {
     const { backend, publish, notifications } = await seed();
     await publish("running");
-    await publish("running", undefined, { notice: info });
-    await publish("running", undefined, { notice: info });
-    await publish("completed", undefined, { notice: info });
+    await publish("running", undefined, { notices: [info] });
+    await publish("running", undefined, { notices: [info] });
+    await publish("completed", undefined, { notices: [info] });
     const delivered = await notifications();
     // The run's completion still alerts on its own.
     expect(delivered.map(({ payload }) => payload.deepLink)).toEqual(["/sessions/session-1", "/sessions/session-1"]);
@@ -152,16 +152,30 @@ describe("agent notices (TAL-1970)", () => {
 
     // An attention notice breaks through Focus even while a Talaria tab mutes the run's alerts, and a newer notice
     // leaves the queued one deliverable.
-    await publish("running", undefined, { notice: attention, alertEligible: false });
+    await publish("running", undefined, { notices: [info, attention], alertEligible: false });
     const latest = (await notifications()).at(-1)!;
     expect(latest.payload.aps).toMatchObject({ alert: { title: attention.title, body: attention.body }, "interruption-level": "time-sensitive" });
     expect(await claim(backend, latest.id)).toMatchObject({ status: "ready" });
     expect(await claim(backend, delivered[0]!.id)).toMatchObject({ status: "ready" });
   });
 
+  it("alerts for every notice a snapshot first carries, none collapsing into another or into the run's alert", async () => {
+    const { backend, publish } = await seed();
+    await publish("running");
+    await publish("completed", undefined, { notices: [info, attention] });
+    const jobs = (await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect()))
+      .filter((job) => job.userId === "user-1" && job.kind === "notification");
+    const titles = jobs.map((job) => ((JSON.parse(job.request.payloadJson) as { aps: { alert: { title: string } } }).aps.alert.title));
+    expect(titles.slice(0, 2)).toEqual([info.title, attention.title]);
+    expect(jobs).toHaveLength(3);
+    // One chat thread, three collapse identities.
+    expect(new Set(jobs.map((job) => JSON.parse(job.request.payloadJson).aps["thread-id"] as string)).size).toBe(1);
+    expect(new Set(jobs.map((job) => job.request.collapseId)).size).toBe(3);
+  });
+
   it("refuses a malformed notice", async () => {
     const { publish } = await seed();
-    await expect(publish("running", undefined, { notice: { ...info, title: "x".repeat(81) } })).rejects.toThrow();
+    await expect(publish("running", undefined, { notices: [{ ...info, title: "x".repeat(81) }] })).rejects.toThrow();
   });
 });
 

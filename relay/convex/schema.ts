@@ -184,8 +184,8 @@ export default defineSchema({
     // TAL-1966: the session's newest decision review by creation; a review the state did not hold before alerts once.
     decisionReviewId: v.optional(v.string()),
     decisionReviewTitle: v.optional(v.string()),
-    // TAL-1970: the session's newest agent notice; one the state did not hold before alerts once.
-    agentNotify: v.optional(agentNotifyValidator),
+    // TAL-1970: the session's recent agent notices; each one the state did not hold before alerts once.
+    agentNotices: v.optional(v.array(agentNotifyValidator)),
     receivedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])

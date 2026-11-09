@@ -31,9 +31,9 @@ export function alertForTransition(previous: string | null, next: { phase: strin
 }
 
 /**
- * TAL-1970: an agent notice the row did not carry before alerts once, whatever the phase, the presence mute or the run
- * preferences did: the server muted an `info` notice before it reached the row, and the agent asked for this alert.
+ * TAL-1970: each agent notice the row did not carry before alerts once, in order, whatever the phase, the presence mute
+ * or the run preferences did: the server muted an `info` notice before it reached the row, and the agent asked for it.
  */
-export function agentNotifyAlert(previousAgentNotifyId: string | null | undefined, next: { agentNotifyId?: string | undefined }): boolean {
-  return Boolean(next.agentNotifyId) && next.agentNotifyId !== previousAgentNotifyId
+export function agentNotifyAlerts<T extends { id: string }>(previousIds: readonly string[] | null | undefined, next: readonly T[] | undefined): T[] {
+  return (next ?? []).filter((notice) => !previousIds?.includes(notice.id))
 }

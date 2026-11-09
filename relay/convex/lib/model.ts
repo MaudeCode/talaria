@@ -35,10 +35,10 @@ export interface SessionState {
   approvalHeadId?: string;
   decisionReviewId?: string;
   decisionReviewTitle?: string;
-  agentNotify?: AgentNotify;
+  agentNotices?: AgentNotify[];
 }
 
-/** TAL-1970: the session's newest agent notice; one the stored state did not hold alerts once. */
+/** TAL-1970: an agent notice the session carries; one the stored state did not hold alerts once. */
 export interface AgentNotify {
   id: string;
   title: string;
@@ -61,7 +61,7 @@ export interface PublishedSessionState {
   approvalHeadId?: string;
   decisionReviewId?: string;
   decisionReviewTitle?: string;
-  agentNotify?: AgentNotify;
+  agentNotices?: AgentNotify[];
 }
 
 export interface AggregateRow {

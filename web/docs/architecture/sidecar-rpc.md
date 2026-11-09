@@ -8,7 +8,9 @@ session's limits (5 per 10 minutes, one `attention` per minute) and otherwise an
 `rate_limited` with `retry_after_seconds`. An accepted notice goes on the session's
 activity row, where every notification channel alerts once for a notice it has not
 seen: Web Push sends the agent's title and body and opens `/session/<id>`, and the
-Relay forwards it to the App (`agentNotify`, relay/docs/http-api.md). While a Talaria
+Relay forwards it to the App (`agentNotices`, relay/docs/http-api.md). A row carries every
+unmuted notice of the session's last 15 minutes, so two calls before a channel's pass both
+alert. While a Talaria
 tab is attached to the profile an `info` notice is muted and never reaches the row;
 `attention` always does. Under person isolation only the owner's subscriptions get it,
 and the Relay never does, as with run alerts. The result names each channel's outcome,

@@ -9,7 +9,7 @@ import { internalMutation, internalQuery, type MutationCtx } from "./_generated/
 import {
   aggregateFingerprint,
   alertForState,
-  agentNotifyAlert,
+  agentNotifyAlerts,
   alertForTransition,
   isAttentionTransition,
   makeAggregate,
@@ -102,7 +102,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     approvalHeadId: state.approvalHeadId,
     decisionReviewId: state.decisionReviewId,
     decisionReviewTitle: state.decisionReviewTitle,
-    agentNotify: state.agentNotify,
+    agentNotices: state.agentNotices,
   };
 }
 
@@ -309,7 +309,7 @@ export const recompute = internalMutation({
       previousPhase: v.optional(sessionPhaseValidator),
       previousApprovalHeadId: v.optional(v.string()),
       previousDecisionReviewId: v.optional(v.string()),
-      previousAgentNotifyId: v.optional(v.string()),
+      previousAgentNotifyIds: v.optional(v.array(v.string())),
       state: v.optional(storedSessionStateValidator),
     }))),
   },
@@ -371,7 +371,7 @@ export const recompute = internalMutation({
           candidate.publisherId === transition.publisherId &&
           candidate.sessionId === transition.sessionId,
       );
-      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId, previousDecisionReviewId: transition.previousDecisionReviewId, previousAgentNotifyId: transition.previousAgentNotifyId }] : [];
+      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId, previousDecisionReviewId: transition.previousDecisionReviewId, previousAgentNotifyIds: transition.previousAgentNotifyIds }] : [];
     });
     // The alerts a device's preferences and publisher subscriptions allow for this run's transitions.
     const alertsFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId }) => {
@@ -381,11 +381,10 @@ export const recompute = internalMutation({
     });
     // TAL-1970: agent notices a device's publisher subscriptions allow; each is its own notification, never a Live
     // Activity alert, so it neither replaces nor is replaced by the transition's phase alert.
-    const noticesFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousAgentNotifyId }) => {
-      if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
-      const alert = agentNotifyAlert(state, previousAgentNotifyId);
-      return alert ? [{ alert, state }] : [];
-    });
+    const noticesFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousAgentNotifyIds }) =>
+      exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)
+        ? []
+        : agentNotifyAlerts(state, previousAgentNotifyIds).map((alert) => ({ alert, state })));
     const changedState = changed[0]?.state ?? null;
     const alertedDevices = new Set<string>();
 
@@ -607,6 +606,8 @@ export const recompute = internalMutation({
                 alert,
                 row: rowForState(noticeState),
                 threadId: await sha256(JSON.stringify(["alert", noticeState.publisherId, noticeState.sessionId])),
+                // Grouped with the chat, but never collapsed into its phase alerts or another notice.
+                collapseId: await sha256(JSON.stringify(["agent", noticeState.publisherId, noticeState.sessionId, alert.agentNotifyId])),
               }),
               stateFingerprint: `notification:agent:${JSON.stringify([noticeState.publisherId, noticeState.sessionId, alert.agentNotifyId])}:${device.deviceId}`,
               now,

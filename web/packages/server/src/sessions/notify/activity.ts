@@ -22,8 +22,10 @@ export const TERMINAL_PHASES = ['completed', 'failed', 'cancelled'] as const
 const NOTICE_LIMIT = 5
 const NOTICE_WINDOW_S = 10 * 60
 const ATTENTION_GAP_S = 60
+// The rate limit allows at most 10 notices in a finished run's retention; a row never carries more.
+const NOTICES_SHOWN = 10
 
-/** TAL-1970: what the agent's `notify` asked to tell the user; a row carries the session's newest unmuted one. */
+/** TAL-1970: what the agent's `notify` asked to tell the user; a row carries the session's recent unmuted ones. */
 export interface AgentNotice { id: string; title: string; body: string; level: AgentNotifyLevel }
 
 export interface ActivityDeps {
@@ -54,8 +56,8 @@ export interface ActivityState {
   /** TAL-1966: the session's newest decision review by creation and its title; its alert opens the review. */
   decisionReviewId?: string
   decisionReviewTitle?: string
-  /** TAL-1970: the session's newest unmuted agent notice; one a channel has not seen alerts once. */
-  agentNotice?: AgentNotice
+  /** TAL-1970: the session's unmuted agent notices, oldest first, until they expire; each one a channel has not seen alerts once. */
+  agentNotices?: AgentNotice[]
   /** TAL-48: the session's person under person isolation; channels never send it, they filter by it. */
   ownerPersonId: string | null
 }
@@ -76,8 +78,8 @@ export function approvalHeadId(sid: string, approvalId: string): string {
 /** Python `build_states` without the Relay's revision numbering. */
 export class ActivityStates {
   private readonly terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
-  /** TAL-1970: per session, when each notice of the window was accepted, and the newest unmuted one with its time. */
-  private readonly notices = new Map<string, { sent: { at: number; level: AgentNotifyLevel }[]; latest: { notice: AgentNotice; at: number } | null }>()
+  /** TAL-1970: per session, when each notice of the window was accepted, and the unmuted ones the rows carry, with their time. */
+  private readonly notices = new Map<string, { sent: { at: number; level: AgentNotifyLevel }[]; shown: { notice: AgentNotice; at: number }[] }>()
 
   constructor(private readonly deps: ActivityDeps) {}
 
@@ -94,14 +96,14 @@ export class ActivityStates {
   noteAgentNotice(sid: string, input: Omit<AgentNotice, 'id'>, muted: boolean): { notice: AgentNotice } | { retryAfter: number } {
     const now = this.deps.now()
     this.pruneNotices(now)
-    const entry = this.notices.get(sid) ?? { sent: [], latest: null }
+    const entry = this.notices.get(sid) ?? { sent: [], shown: [] }
     let retryAt = entry.sent.length >= NOTICE_LIMIT ? entry.sent[entry.sent.length - NOTICE_LIMIT]!.at + NOTICE_WINDOW_S : 0
     const attention = entry.sent.findLast((sent) => sent.level === 'attention')
     if (input.level === 'attention' && attention) retryAt = Math.max(retryAt, attention.at + ATTENTION_GAP_S)
     if (retryAt > now) return { retryAfter: Math.max(1, Math.ceil(retryAt - now)) }
     const notice: AgentNotice = { id: `an_${randomBytes(8).toString('hex')}`, ...input }
     entry.sent.push({ at: now, level: input.level })
-    if (!muted) entry.latest = { notice, at: now }
+    if (!muted) entry.shown = [...entry.shown, { notice, at: now }].slice(-NOTICES_SHOWN)
     this.notices.delete(sid)
     if (this.notices.size >= TERMINAL_MAX) this.notices.delete(this.notices.keys().next().value!)
     this.notices.set(sid, entry)
@@ -119,12 +121,15 @@ export class ActivityStates {
     return (await this.deps.background?.sessionIds())?.includes(sid) ? sid : null
   }
 
-  /** A notice stays on its row as long as a finished run's row lasts, so every channel's next pass sees it. */
+  /**
+   * A notice stays on its row as long as a finished run's row lasts, beside the later ones, so a channel that passes or
+   * publishes late still sees every notice it has not alerted for.
+   */
   private pruneNotices(now: number): void {
     for (const [sid, entry] of this.notices) {
       entry.sent = entry.sent.filter((sent) => sent.at > now - NOTICE_WINDOW_S)
-      if (entry.latest && entry.latest.at < now - TERMINAL_RETENTION_S) entry.latest = null
-      if (!entry.sent.length && !entry.latest) this.notices.delete(sid)
+      entry.shown = entry.shown.filter((shown) => shown.at >= now - TERMINAL_RETENTION_S)
+      if (!entry.sent.length && !entry.shown.length) this.notices.delete(sid)
     }
   }
 
@@ -194,8 +199,8 @@ export class ActivityStates {
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
       const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
       const review = this.deps.decisionReview?.(sid)
-      const notice = this.notices.get(sid)?.latest?.notice
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notice ? { agentNotice: notice } : {}), ownerPersonId: session.owner_person_id })
+      const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     return states
   }

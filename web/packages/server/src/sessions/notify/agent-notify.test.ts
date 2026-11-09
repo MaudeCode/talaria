@@ -29,11 +29,11 @@ describe('the notify agent tool (TAL-1970)', () => {
   }
   const settle = async (): Promise<void> => { s.deps.notifications.changed(); await s.deps.webPush.idle() }
   const opened = (sent: Push) => keys.decrypt(Buffer.from(sent.init.body as Uint8Array))
-  /** The agent notice the Relay's next snapshot carries for the caller, and the row's deep link. */
+  /** The agent notices the Relay's next snapshot carries for the caller, and the row's deep link. */
   const relayed = async () => {
     await s.deps.relay.current()!.publishSnapshot()
     const state = (relay.snapshots().at(-1)!.body.states as Json[]).find((candidate) => candidate.sessionId === CALLER)!
-    return { agentNotify: state.agentNotify, deepLink: state.deepLink }
+    return { agentNotices: state.agentNotices as Json[] | undefined, deepLink: state.deepLink }
   }
 
   beforeEach(async () => {
@@ -60,10 +60,21 @@ describe('the notify agent tool (TAL-1970)', () => {
     expect(push.pushes).toHaveLength(1)
     expect(push.pushes[0]!.init.headers).toMatchObject({ Urgency: 'high' })
     expect(opened(push.pushes[0]!)).toEqual({ title: fixture.params.title, body: fixture.params.body, tag: `notify:${String(result.notice_id)}`, url: `/session/${CALLER}` })
-    expect(await relayed()).toEqual({ agentNotify: { id: result.notice_id, title: fixture.params.title, body: fixture.params.body, level: 'attention' }, deepLink: `/sessions/${CALLER}` })
+    expect(await relayed()).toEqual({ agentNotices: [{ id: result.notice_id, title: fixture.params.title, body: fixture.params.body, level: 'attention' }], deepLink: `/sessions/${CALLER}` })
     // Later passes and snapshots carry the same notice, which never alerts again.
     await settle()
     expect(push.pushes).toHaveLength(1)
+  })
+
+  it('delivers every notice accepted before a channel passes, oldest first, and keeps each on the row until it expires', async () => {
+    const first = await notify({ level: 'attention' })
+    const second = await notify({ level: 'info', title: 'Second' })
+    await settle()
+    expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([`notify:${String(first.notice_id)}`, `notify:${String(second.notice_id)}`])
+    expect((await relayed()).agentNotices?.map((notice) => notice.id)).toEqual([first.notice_id, second.notice_id])
+    // A finished run's row lasts 15 minutes; its notices leave with that retention, never to alert again.
+    clock += 15 * 60 + 1
+    expect((await relayed()).agentNotices).toBeUndefined()
   })
 
   it('mutes info while a Talaria tab is attached to the profile, and delivers attention anyway', async () => {
@@ -71,13 +82,13 @@ describe('the notify agent tool (TAL-1970)', () => {
     expect(await notify({ level: 'info' })).toMatchObject({ status: 'sent', level: 'info', channels: { relay: 'muted', 'web-push': 'muted' } })
     await settle()
     expect(push.pushes).toHaveLength(0)
-    expect((await relayed()).agentNotify).toBeUndefined()
+    expect((await relayed()).agentNotices).toBeUndefined()
 
     const attention = await notify({ level: 'attention' })
     expect(attention).toMatchObject({ status: 'sent', channels: { relay: 'sent', 'web-push': 'sent' } })
     await settle()
     expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([`notify:${String(attention.notice_id)}`])
-    expect((await relayed()).agentNotify).toMatchObject({ id: attention.notice_id, level: 'attention' })
+    expect((await relayed()).agentNotices).toMatchObject([{ id: attention.notice_id, level: 'attention' }])
   })
 
   it('refuses a sixth notice within 10 minutes and a second attention within a minute, sending nothing', async () => {
@@ -90,13 +101,13 @@ describe('the notify agent tool (TAL-1970)', () => {
     }
     await settle()
     const delivered = push.pushes.length
-    const shown = (await relayed()).agentNotify
+    const shown = (await relayed()).agentNotices
     clock += 10
     // The first of the five went out 280 seconds ago; the window frees it 320 seconds from now.
     expect(await notify({ level: 'info' })).toMatchObject({ status: 'rate_limited', retry_after_seconds: 320 })
     await settle()
     expect(push.pushes).toHaveLength(delivered)
-    expect((await relayed()).agentNotify).toEqual(shown)
+    expect((await relayed()).agentNotices).toEqual(shown)
     clock += 320
     expect(await notify({ level: 'info' })).toMatchObject({ status: 'sent' })
   })
@@ -109,7 +120,7 @@ describe('the notify agent tool (TAL-1970)', () => {
     expect(child).toMatchObject({ status: 'sent', url: `/session/${CALLER}`, channels: { relay: 'sent', 'web-push': 'sent' } })
     await settle()
     expect(opened(push.pushes.at(-1)!)).toMatchObject({ tag: `notify:${String(child.notice_id)}`, url: `/session/${CALLER}` })
-    expect((await relayed()).agentNotify).toMatchObject({ id: child.notice_id })
+    expect((await relayed()).agentNotices).toMatchObject([{ id: child.notice_id }])
 
     s.deps.registry.activeRuns.delete('stream-child')
     s.deps.registry.activeRuns.delete('stream-notify')

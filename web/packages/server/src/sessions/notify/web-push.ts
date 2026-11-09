@@ -13,7 +13,7 @@ import { vettedAddresses, type DnsLookup, type PinnedFetch } from '../../http/pi
 import type { DocumentBackend } from '../storage/backend.js'
 import { readDocument, updateDocument } from '../storage/document.js'
 import type { ActivityState, ActivityStates, AgentNotice } from './activity.js'
-import { agentNotifyAlert, alertForTransition, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
+import { agentNotifyAlerts, alertForTransition, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
 import type { NotificationChannel } from './channel.js'
 import { personMaySee, type PersonAccess } from '../../auth/person.js'
 
@@ -80,7 +80,7 @@ function decodedLength(value: string): number { return /^[A-Za-z0-9_-]+={0,2}$/.
 export class WebPushChannel implements NotificationChannel {
   readonly id = 'web-push'
   /** profile → session → effective phase, decision review and agent notice last seen. */
-  private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null; notice: string | null }>>()
+  private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null; notices: string[] }>>()
   private readonly inFlight = new Set<Promise<void>>()
   private dirty = false
   private running: Promise<void> | null = null
@@ -208,17 +208,17 @@ export class WebPushChannel implements NotificationChannel {
     for (const profile of profiles) {
       const rows = await this.deps.activity.states(profile, () => { this.changed() })
       const previous = this.lastPhase.get(profile)
-      const next = new Map<string, { phase: string; decision: string | null; notice: string | null }>()
+      const next = new Map<string, { phase: string; decision: string | null; notices: string[] }>()
       for (const row of rows) {
         const phase = row.activityPhase ?? row.phase
-        next.set(row.sessionId, { phase, decision: row.decisionReviewId ?? null, notice: row.agentNotice?.id ?? null })
+        next.set(row.sessionId, { phase, decision: row.decisionReviewId ?? null, notices: (row.agentNotices ?? []).map((notice) => notice.id) })
         if (!previous) continue
         const seen = previous.get(row.sessionId)
         for (const sub of subs) {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
           const kind = alertForTransition(seen?.phase ?? null, { phase, alertEligible: row.alertEligible, decisionReviewId: row.decisionReviewId }, sub.preferences, seen?.decision)
           if (kind) this.track(this.deliver(sub, row, kind))
-          if (row.agentNotice && agentNotifyAlert(seen?.notice, { agentNotifyId: row.agentNotice.id })) this.track(this.deliver(sub, row, row.agentNotice))
+          for (const notice of agentNotifyAlerts(seen?.notices, row.agentNotices)) this.track(this.deliver(sub, row, notice))
         }
       }
       this.lastPhase.set(profile, next)

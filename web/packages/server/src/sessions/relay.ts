@@ -228,7 +228,7 @@ export interface RelayPublisherDeps {
 /** Per relay profile scope: sessions started before `floor` (first tracking) are never announced. */
 type StartedLedger = Map<string, { floor: number; sessions: Map<string, { startedAt: number; sent: boolean }> }>
 
-export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; deepLink: string; alertEligible?: false; approvalHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotify?: AgentNotice }
+export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; deepLink: string; alertEligible?: false; approvalHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotices?: AgentNotice[] }
 
 /** Python `TalariaRelayPublisher`: coalesces changes into signed complete snapshots with capped backoff. */
 export class RelayPublisher {
@@ -409,7 +409,7 @@ export class RelayPublisher {
   /** Python `build_states`: the shared activity rows, numbered with this relay's revisions. */
   async buildStates(profile: string): Promise<RelayState[]> {
     const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() })).filter((row) => this.publishesOwner(row.ownerPersonId)).map((row) => {
-      const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotice ? { agentNotify: row.agentNotice } : {}) }
+      const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
       if (this.alertEligibilitySupported && !row.alertEligible) state.alertEligible = false
       return state
     })
