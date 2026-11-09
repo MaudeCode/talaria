@@ -259,6 +259,11 @@ public final class ChatViewModel {
         }
     }
 
+    /// TAL-1997: the read-only view of a `terminal_open` card's terminal in this session; nil before a session loads.
+    public func terminalFollowModel(_ reference: TerminalRef) -> TerminalFollowModel? {
+        sessionID.map { TerminalFollowModel(sessionID: $0, reference: reference, client: client) }
+    }
+
     /// TAL-331: the whole result of a scene tool row the server clipped (`ToolCall.resultTruncated`).
     public func fullToolResult(toolCallID: String) async throws -> ToolResultView {
         // A clipped row only comes from a loaded session; without one there is no result to fetch.

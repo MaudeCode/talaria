@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On iPhone, a command the agent runs in the terminal shows as a card in the chat; Open follows its output live until it finishes and shows the exit code.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Watch the agent's commands on iPhone",
+        "description": "Open a running build or test from the chat and follow its output live.",
+        "icon": "automation"
+      }
+    }
+  ]
+}
