@@ -27,8 +27,8 @@ export interface ActivityDeps {
   background?: BackgroundActivity
   activitySummary?: (session: Session) => ReturnType<SessionPrefixIndex['activitySummary']>
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
-  /** TAL-1966: the session's newest open decision review, which alerts once when a row first holds it. */
-  decisionReview?: (sid: string) => Promise<DecisionReviewRef | null>
+  /** TAL-1966: the session's newest decision review by creation, which alerts once when a row first holds it. */
+  decisionReview?: (sid: string) => Pick<DecisionReviewRef, 'review_id' | 'title'> | null
   now: () => number
 }
 
@@ -44,7 +44,7 @@ export interface ActivityState {
   alertEligible: boolean
   /** The approval at the head of the queue while the session waits for one, as an opaque digest (TAL-59). */
   approvalHeadId?: string
-  /** TAL-1966: the session's newest open decision review and its title; its alert opens the review. */
+  /** TAL-1966: the session's newest decision review by creation and its title; its alert opens the review. */
   decisionReviewId?: string
   decisionReviewTitle?: string
   /** TAL-48: the session's person under person isolation; channels never send it, they filter by it. */
@@ -134,7 +134,7 @@ export class ActivityStates {
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
       const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
-      const review = await this.deps.decisionReview?.(sid).catch(() => null)
+      const review = this.deps.decisionReview?.(sid)
       states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ownerPersonId: session.owner_person_id })
     }
     return states

@@ -23,7 +23,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstub
 function mountWithCache() {
   const qc = new QueryClient()
   const list = keys.sessions.list({})
-  for (const key of [list, keys.sessions.detail('a'), keys.sessions.detail('b'), keys.sessions.status('a'), keys.background('b')]) qc.setQueryData(key, {})
+  for (const key of [list, keys.sessions.detail('a'), keys.sessions.detail('b'), keys.sessions.status('a'), keys.background('b'), keys.decisionReviews]) qc.setQueryData(key, {})
   const { unmount } = renderHook(() => { useSessionListStream() }, { wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider> })
   const invalidated = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated
   return { qc, unmount, list, invalidated, emit: (name: string, data: unknown) => { act(() => { sources[0]?.emit(name, data) }) } }
@@ -45,6 +45,14 @@ describe('useSessionListStream invalidation (TAL-1209)', () => {
     emit('initial', {})
     expect(invalidated(list)).toBe(true)
     expect(invalidated(keys.sessions.detail('a'))).toBe(false)
+  })
+
+  it('refreshes the Decisions list when a review opens or closes, and only then (TAL-1966)', () => {
+    const { invalidated, emit } = mountWithCache()
+    emit('sessions_changed', { type: 'sessions_changed', version: 2, reason: 'title', session_id: 'b' })
+    expect(invalidated(keys.decisionReviews)).toBe(false)
+    emit('sessions_changed', { type: 'sessions_changed', version: 3, reason: 'decision_review', session_id: 'b' })
+    expect(invalidated(keys.decisionReviews)).toBe(true)
   })
 
   it('refreshes every session for an event that names none, such as a delete from another tab', () => {

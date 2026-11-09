@@ -153,10 +153,19 @@ describe('Web Push channel', () => {
       await settle()
       expect(push.pushes).toHaveLength(before + 1)
 
-      expect((await send(s, 'POST', '/api/talaria/presence', { tab_id: 'tab_00000002', active: true, seq: 1 })).status).toBe(200)
-      await s.deps.decisions.put({ session_id: sid }, { title: 'Storage choices', items: [item] })
+      // A newer review alerts; closing it leaves the older review open, which never alerts again.
+      const { review_id: newer } = await s.deps.decisions.put({ session_id: sid }, { title: 'Storage choices', items: [item] })
       await settle()
-      expect(push.pushes).toHaveLength(before + 1)
+      expect(push.pushes).toHaveLength(before + 2)
+      expect(keys.decrypt(Buffer.from(push.pushes.at(-1)!.init.body as Uint8Array))).toMatchObject({ url: `/decisions/${newer}` })
+      await s.deps.decisions.cancel(newer)
+      await settle()
+      expect(push.pushes).toHaveLength(before + 2)
+
+      expect((await send(s, 'POST', '/api/talaria/presence', { tab_id: 'tab_00000002', active: true, seq: 1 })).status).toBe(200)
+      await s.deps.decisions.put({ session_id: sid }, { title: 'Theme choices', items: [item] })
+      await settle()
+      expect(push.pushes).toHaveLength(before + 2)
     } finally {
       await send(s, 'POST', '/api/talaria/presence', { tab_id: 'tab_00000002', active: false, seq: 2 })
       s.deps.registry.activeRuns.delete('stream-decision')
