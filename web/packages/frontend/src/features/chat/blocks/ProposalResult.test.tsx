@@ -31,7 +31,7 @@ function mount(proposal: Proposal) {
 it('renders the server\'s change and shows an approval at once, then the outcome the server applied', async () => {
   mount(pending())
   const card = within(await screen.findByRole('region', { name: 'Proposal' }))
-  expect(await card.findByRole('status')).toHaveTextContent('Waiting for approval')
+  await waitFor(() => { expect(card.getByRole('status')).toHaveTextContent('Waiting for approval') })
   expect(card.getByLabelText('Change')).toHaveTextContent('-show_token_usage: false+show_token_usage: true')
   const reply = deferred<Proposal>()
   vi.mocked(api.approveProposal).mockReturnValue(reply.promise)
@@ -44,6 +44,18 @@ it('renders the server\'s change and shows an approval at once, then the outcome
   await act(async () => { reply.resolve(applied); await reply.promise })
   await waitFor(() => { expect(card.getByRole('status')).toHaveTextContent('Applied') })
   expect(card.getByText('Set show_token_usage to true.')).toBeInTheDocument()
+})
+
+it('offers the same decisions on a right-click or long-press of the card', async () => {
+  mount(pending())
+  await screen.findByRole('button', { name: 'Approve' })
+  vi.mocked(api.rejectProposal).mockReturnValue(deferred<Proposal>().promise)
+  await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByText('Change setting show_token_usage') })
+  const menu = await screen.findByRole('menu', { name: 'Change setting show_token_usage' })
+  expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Approve', 'Reject'])
+  await userEvent.click(within(menu).getByRole('menuitem', { name: 'Reject' }))
+  expect(api.rejectProposal).toHaveBeenCalledWith({ proposal_id: ID })
+  expect(within(screen.getByRole('region', { name: 'Proposal' })).getByRole('status')).toHaveTextContent('Rejected')
 })
 
 it('rolls a refused rejection back to the proposal as it was', async () => {
@@ -61,7 +73,7 @@ it('rolls a refused rejection back to the proposal as it was', async () => {
 it('offers no action the server withholds, and follows a `proposal` event to the new status', async () => {
   const client = mount({ ...pending(), actions: { can_approve: false, can_reject: false, reason: 'not_owner' } })
   const card = within(await screen.findByRole('region', { name: 'Proposal' }))
-  expect(await card.findByRole('status')).toHaveTextContent('Waiting for approval')
+  await waitFor(() => { expect(card.getByRole('status')).toHaveTextContent('Waiting for approval') })
   expect(card.queryByRole('button')).not.toBeInTheDocument()
   vi.mocked(api.fetchProposal).mockResolvedValue({ ...pending(), status: 'failed', outcome: { text: null, error: 'This Agent does not offer prepared compaction.' }, actions: { can_approve: false, can_reject: false, reason: 'not_owner' } })
   await act(async () => { await client.invalidateQueries({ queryKey: keys.proposal(ID) }) })

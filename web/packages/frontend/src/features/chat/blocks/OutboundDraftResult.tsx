@@ -11,6 +11,7 @@ import { m } from '../../../paraglide/messages.js'
 import { useResourceEffects, useResourceMutation, withEffect } from '../../sessions/useResourceMutation'
 import { showErrorToast } from '../../toast/errorToast'
 import { cn } from '../../../ui/cn'
+import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 
 const stateLabel = (state: OutboundDraft['state']) => ({ draft: m.outbound_draft_status_draft, approved: m.outbound_draft_status_approved, sent: m.outbound_draft_status_sent, saved: m.outbound_draft_status_saved, failed: m.outbound_draft_status_failed, discarded: m.outbound_draft_status_discarded, superseded: m.outbound_draft_status_superseded, unavailable: m.outbound_draft_status_unavailable })[state]()
 
@@ -106,8 +107,13 @@ export function ProposalResult({ reference }: { reference: ProposalRef }) {
     mutationFn: ({ approve, shown }: ProposalDecision) => approve ? api.approveProposal({ proposal_id: shown.proposal_id, payload_hash: shown.payload_hash }) : api.rejectProposal({ proposal_id: shown.proposal_id }),
     onSuccess: (result) => qc.setQueryData(queryKey, result), onError: showErrorToast,
   })
+  // One list for the inline buttons and the right-click and long-press menu, as the server permits them.
+  const actions: (RowAction & { primary?: boolean })[] = !proposal ? [] : [
+    ...(proposal.actions.can_approve ? [{ label: m.proposal_approve(), primary: true, run: () => { decide.mutate({ approve: true, shown: proposal }) } }] : []),
+    ...(proposal.actions.can_reject ? [{ label: m.proposal_reject(), run: () => { decide.mutate({ approve: false, shown: proposal }) } }] : []),
+  ]
   return <ResultSection label={m.proposal_heading()}>
-    <div data-proposal={reference.proposal_id} data-proposal-status={proposal?.status}>
+    <RowContextMenu label={proposal?.summary ?? reference.summary} actions={actions} trigger={<div data-proposal={reference.proposal_id} data-proposal-status={proposal?.status}>
       <ResultHeader title={proposal?.summary ?? reference.summary} status={proposal ? proposalStatus(proposal.status) : m.loading()} />
       {proposal && <>
         {proposal.diff.length > 0 && <pre aria-label={m.proposal_change()} className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-md bg-code-bg p-2 font-mono text-[12px]">
@@ -120,12 +126,11 @@ export function ProposalResult({ reference }: { reference: ProposalRef }) {
           {proposal.risk_notes.map((note, index) => <li key={index} className="break-words">{note}</li>)}
         </ul>}
         {(proposal.outcome.text ?? proposal.outcome.error) && <p className={cn('mt-2 break-words', proposal.outcome.error ? 'text-error' : 'text-success')}>{proposal.outcome.error ?? proposal.outcome.text}</p>}
-        {(proposal.actions.can_approve || proposal.actions.can_reject) && <div className="mt-3 flex flex-wrap gap-2">
-          {proposal.actions.can_approve && <Button variant="primary" onClick={() => { decide.mutate({ approve: true, shown: proposal }) }}>{m.proposal_approve()}</Button>}
-          {proposal.actions.can_reject && <Button onClick={() => { decide.mutate({ approve: false, shown: proposal }) }}>{m.proposal_reject()}</Button>}
+        {actions.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
+          {actions.map((action) => <Button key={action.label} {...(action.primary ? { variant: 'primary' as const } : {})} onClick={action.run}>{action.label}</Button>)}
         </div>}
       </>}
-    </div>
+    </div>} />
   </ResultSection>
 }
 

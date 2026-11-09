@@ -38,9 +38,13 @@ const applyThrough = (ctx: RequestContext): ProposalApply => async (proposal) =>
     case 'mcp_server':
       await call(toolsRouter.mcp.action, { name: proposal.payload.name, ...mcpUpdateBody(proposal.payload) }, context)
       return `Saved MCP server ${proposal.payload.name} to the profile's config.`
-    case 'setting':
-      await call(settingsRouter.settings.save, { [proposal.payload.key]: proposal.payload.value }, context)
-      return `Set ${proposal.payload.key} to ${JSON.stringify(proposal.payload.value)}.`
+    case 'setting': {
+      const { key, value } = proposal.payload
+      const saved = await call(settingsRouter.settings.save, { [key]: value }, context)
+      // The store drops a value outside its own rules without refusing; only the saved value proves the change.
+      if (JSON.stringify(saved[key]) !== JSON.stringify(value)) throw new Error(`The settings kept ${key} at ${JSON.stringify(saved[key])}, not ${JSON.stringify(value)}.`)
+      return `Set ${key} to ${JSON.stringify(value)}.`
+    }
     case 'cron_job': {
       const { title, schedule, prompt, context_sources } = proposal.payload
       const created = await call(automationRouter.crons.create, { name: title, schedule, prompt, ...(context_sources.length ? { context_from: context_sources } : {}) }, context)

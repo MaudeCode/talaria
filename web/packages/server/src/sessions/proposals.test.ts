@@ -181,6 +181,12 @@ describe('proposals (TAL-1967)', () => {
     expect((await http('GET', '/api/settings')).body).toEqual(before)
   })
 
+  it('fails a setting the store does not take, rather than reporting it applied', async () => {
+    const { id } = await propose('setting', { key: 'pinned_sessions_limit', value: 0 })
+    expect((await approve(id)).body).toMatchObject({ status: 'failed', outcome: { text: null, error: 'The settings kept pinned_sessions_limit at 3, not 0.' } })
+    expect((await http('GET', '/api/settings')).body.pinned_sessions_limit).toBe(3)
+  })
+
   it('schedules a task through the crons route', async () => {
     sidecar.respond('cron.list', () => ({ jobs: [{ id: 'job-0', name: 'Inbox sweep', prompt: 'Sweep.', schedule: 'every 1h', enabled: true, profile: 'default', toast_notifications: true, monitor: '', continuity: false }] as never[] }))
     const { id } = await propose('cron_job', { title: 'Morning digest', schedule: 'every day at 08:00', prompt: 'Summarize the inbox.', context_sources: ['job-0'] })

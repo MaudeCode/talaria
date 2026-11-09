@@ -359,21 +359,13 @@ struct ProposalResultSection: View {
                         .foregroundStyle(.red)
                 }
                 if proposal.actions.canApprove || proposal.actions.canReject {
-                    HStack(spacing: 12) {
-                        if proposal.actions.canApprove {
-                            Button(String(localized: "Approve")) { Task { await model.approve() } }
-                                .buttonStyle(.borderedProminent)
-                                .accessibilityIdentifier("proposal-approve-\(reference.proposalId)")
-                        }
-                        if proposal.actions.canReject {
-                            Button(String(localized: "Reject")) { Task { await model.reject() } }
-                                .buttonStyle(.bordered)
-                                .accessibilityIdentifier("proposal-reject-\(reference.proposalId)")
-                        }
-                    }
-                    .frame(minHeight: 44)
+                    HStack(spacing: 12) { decisionButtons(proposal, model) }
+                        .frame(minHeight: 44)
                 }
             }
+        }
+        .contextMenu {
+            if let proposal, let model { decisionButtons(proposal, model) }
         }
         .padding(.leading, 24)
         .task(id: reference.proposalId) {
@@ -383,6 +375,21 @@ struct ProposalResultSection: View {
         .onReceive(NotificationCenter.default.publisher(for: .talariaProposalChanged)) { notification in
             guard (notification.object as? ProposalEvent)?.proposalId == reference.proposalId else { return }
             Task { await model?.load() }
+        }
+    }
+
+    /// The decisions the server permits, as the card's buttons and as its context menu's items (a menu ignores the styles).
+    @ViewBuilder
+    private func decisionButtons(_ proposal: Proposal, _ model: ProposalCardModel) -> some View {
+        if proposal.actions.canApprove {
+            Button(String(localized: "Approve")) { Task { await model.approve() } }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("proposal-approve-\(reference.proposalId)")
+        }
+        if proposal.actions.canReject {
+            Button(String(localized: "Reject")) { Task { await model.reject() } }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("proposal-reject-\(reference.proposalId)")
         }
     }
 
