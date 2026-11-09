@@ -39,6 +39,7 @@
         {"task_id": "owner-work-271bc3285aa81c19961e5ebd32bc2af4", "kind": "process", "status": "running", "title": "npm run dev", "started_at": 1700000000.5, "updated_at": 1700000200, "completed_at": null, "result_available": true, "child_sessions": [], "exit_code": null, "agents": null, "pinned": true, "dismissible": false, "can_stop": true, "active": true},
         {"task_id": "owner-work-fe2d5b8431bd7d9870ad9669b420afc5", "kind": "process", "status": "completed", "title": "make build", "started_at": 1699999990, "updated_at": 1700000200, "completed_at": 1699999999, "result_available": true, "child_sessions": [], "exit_code": 0, "agents": null, "pinned": false, "dismissible": false, "can_stop": false, "active": false}
       ],
+      "pinned_count": 3,
       "activity_phase": "running",
       "session_id": "session-abc",
       "agent_available": true,
@@ -53,6 +54,7 @@
         {"task_id": "owner-work-271bc3285aa81c19961e5ebd32bc2af4", "kind": "process", "status": "cancelled", "title": "npm run dev", "started_at": 1700000000.5, "updated_at": 1700000200, "completed_at": 1700000100, "result_available": true, "child_sessions": [], "exit_code": -15, "agents": null, "pinned": false, "dismissible": false, "can_stop": false, "active": false},
         {"task_id": "owner-work-fe2d5b8431bd7d9870ad9669b420afc5", "kind": "process", "status": "completed", "title": "make build", "started_at": 1699999990, "updated_at": 1700000200, "completed_at": 1699999999, "result_available": true, "child_sessions": [], "exit_code": 0, "agents": null, "pinned": false, "dismissible": false, "can_stop": false, "active": false}
       ],
+      "pinned_count": 2,
       "activity_phase": "running",
       "session_id": "session-abc",
       "agent_available": true,
@@ -62,6 +64,7 @@
     },
     "unsupported": {
       "tasks": [],
+      "pinned_count": 0,
       "activity_phase": "stale",
       "session_id": "session-abc",
       "agent_available": true,
@@ -71,6 +74,7 @@
     },
     "unavailable": {
       "tasks": [],
+      "pinned_count": 0,
       "activity_phase": "stale",
       "session_id": "session-abc",
       "agent_available": true,

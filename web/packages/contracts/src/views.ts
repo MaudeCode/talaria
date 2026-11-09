@@ -701,7 +701,9 @@ export type DelegationStatus = z.infer<typeof DelegationStatusSchema>
  * processes and subagents are in `tasks` (`available`), run in a worker the owner cannot project (`unsupported`), or could
  * not be read now (`unavailable`).
  */
-export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional(), owner_work: z.enum(['available', 'unsupported', 'unavailable']).optional() })
+export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema),
+  pinned_count: z.number().int().nonnegative().describe('TAL-1531: how many of `tasks` are pinned; every client shows this count. Absent from older servers.'),
+  agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional(), owner_work: z.enum(['available', 'unsupported', 'unavailable']).optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
 export const BackgroundStopResponseSchema = z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) })

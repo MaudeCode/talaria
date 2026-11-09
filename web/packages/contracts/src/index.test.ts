@@ -211,7 +211,17 @@ describe('contracts package', () => {
     expect(Object.values(states).map((s) => s.availability).sort()).toEqual(['available', 'available', 'available', 'available', 'available', 'unknown', 'unsupported'])
     for (const name of ['unknown', 'unsupported']) expect(states[name]).toMatchObject({ running_count: null, awaiting_delivery_count: null, memory_live: null })
     expect(DelegationStatusSchema.safeParse({ ...states.available_zero, running_count: -1 }).success).toBe(false)
-    expect(BackgroundTasksResponseSchema.parse({ session_id: 's', tasks: [], agent_available: true }).delegation_status).toBeUndefined()
+    expect(BackgroundTasksResponseSchema.parse({ session_id: 's', tasks: [], pinned_count: 0, agent_available: true }).delegation_status).toBeUndefined()
+  })
+
+  it('carries the server-counted pinned work and queued owner inputs in every shared fixture (TAL-1531)', () => {
+    const work = (shared('fixtures/web-native-work.json') as { background_tasks: Record<string, unknown> }).background_tasks
+    const counts = Object.fromEntries(['available', 'settled_after_unconfirmed_stop', 'unavailable'].map((name) => [name, BackgroundTasksResponseSchema.parse(work[name]).pinned_count]))
+    expect(counts).toEqual({ available: 3, settled_after_unconfirmed_stop: 2, unavailable: 0 })
+    const owner = shared('fixtures/gateway-owner.json') as Record<string, unknown>
+    expect(OwnerAttachmentSchema.parse(owner.unknown).queued_input_count).toBe(1)
+    expect(OwnerAttachmentSchema.parse(owner.normal).queued_input_count).toBe(0)
+    expect(OwnerAttachmentSchema.safeParse({ ...(owner.normal as object), queued_input_count: -1 }).success).toBe(false)
   })
 
   it('preserves every shared Send now outcome and the legacy delivery boolean', () => {

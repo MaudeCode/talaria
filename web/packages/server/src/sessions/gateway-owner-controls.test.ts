@@ -218,11 +218,11 @@ describe('canonical owner attachment', () => {
       return { ...attached(snap), receipt: params.action === 'discard' ? admission('terminal') : null }
     })
     const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
-    expect(row.session.owner_attachment).toMatchObject({ can_submit: false, admissions: [{ actions: ['retry', 'discard'] }] })
+    expect(row.session.owner_attachment).toMatchObject({ can_submit: false, admissions: [{ actions: ['retry', 'discard'] }], queued_input_count: 1 })
     expect((await post('/api/chat/start', { session_id: sid, message: 'retry automatically', submission_id: 'different' })).status).toBe(409)
     const result = await post('/api/chat/owner-action', { session_id: sid, action: 'retry', admission_id: 'native-input', execution_generation: 1 })
     expect(result.status, await result.clone().text()).toBe(200)
-    expect(await result.json()).toMatchObject({ draft, session: { owner_attachment: { can_submit: true } } })
+    expect(await result.json()).toMatchObject({ draft, session: { owner_attachment: { can_submit: true, queued_input_count: 0 } } })
     expect(sidecar.calls.some((c) => c.method === 'chat.start' || c.method === 'gateway.session' && (c.params as { action: string }).action === 'submit')).toBe(false)
   })
 

@@ -368,6 +368,7 @@
             "active": true
           }
         ],
+        "pinned_count": 1,
         "agent_available": true,
         "agents_working": false,
         "delegation_status": {

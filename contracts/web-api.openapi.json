@@ -2062,6 +2062,12 @@
                                   ]
                                 }
                               },
+                              "queued_input_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                              },
                               "connection": {
                                 "anyOf": [
                                   {
@@ -2354,7 +2360,8 @@
                               "restarting",
                               "revision",
                               "execution_generation",
-                              "admissions"
+                              "admissions",
+                              "queued_input_count"
                             ]
                           },
                           "can_branch": {
@@ -3187,6 +3194,12 @@
                                   ]
                                 }
                               },
+                              "queued_input_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                              },
                               "connection": {
                                 "anyOf": [
                                   {
@@ -3479,7 +3492,8 @@
                               "restarting",
                               "revision",
                               "execution_generation",
-                              "admissions"
+                              "admissions",
+                              "queued_input_count"
                             ]
                           },
                           "can_branch": {
@@ -4151,6 +4165,12 @@
                                   ]
                                 }
                               },
+                              "queued_input_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                              },
                               "connection": {
                                 "anyOf": [
                                   {
@@ -4443,7 +4463,8 @@
                               "restarting",
                               "revision",
                               "execution_generation",
-                              "admissions"
+                              "admissions",
+                              "queued_input_count"
                             ]
                           },
                           "can_branch": {
@@ -5416,6 +5437,12 @@
                                   ]
                                 }
                               },
+                              "queued_input_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                              },
                               "connection": {
                                 "anyOf": [
                                   {
@@ -5708,7 +5735,8 @@
                               "restarting",
                               "revision",
                               "execution_generation",
-                              "admissions"
+                              "admissions",
+                              "queued_input_count"
                             ]
                           },
                           "can_branch": {
@@ -9753,6 +9781,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -10045,7 +10079,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -10722,6 +10757,12 @@
                             ]
                           }
                         },
+                        "queued_input_count": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                        },
                         "connection": {
                           "anyOf": [
                             {
@@ -11014,7 +11055,8 @@
                         "restarting",
                         "revision",
                         "execution_generation",
-                        "admissions"
+                        "admissions",
+                        "queued_input_count"
                       ]
                     },
                     "message_count": {
@@ -15179,6 +15221,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -15471,7 +15519,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -19368,6 +19417,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -19660,7 +19715,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -20449,6 +20505,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -20741,7 +20803,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -21461,6 +21524,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -21753,7 +21822,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -22480,6 +22550,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -22772,7 +22848,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -26567,6 +26644,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -26859,7 +26942,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -27681,6 +27765,12 @@
                                     ]
                                   }
                                 },
+                                "queued_input_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                                },
                                 "connection": {
                                   "anyOf": [
                                     {
@@ -27973,7 +28063,8 @@
                                 "restarting",
                                 "revision",
                                 "execution_generation",
-                                "admissions"
+                                "admissions",
+                                "queued_input_count"
                               ]
                             },
                             "can_branch": {
@@ -28723,6 +28814,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -29015,7 +29112,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -33115,6 +33213,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -33407,7 +33511,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -34407,6 +34512,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -34699,7 +34810,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -35417,6 +35529,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -35709,7 +35827,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -40295,6 +40414,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -40587,7 +40712,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -44433,6 +44559,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -44725,7 +44857,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -48633,6 +48766,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -48925,7 +49064,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -52831,6 +52971,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -53123,7 +53269,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -56343,6 +56490,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -56635,7 +56788,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -57352,6 +57506,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -57644,7 +57804,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -67919,6 +68080,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -68211,7 +68378,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -72109,6 +72277,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -72401,7 +72575,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -73155,6 +73330,12 @@
                             ]
                           }
                         },
+                        "queued_input_count": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                        },
                         "connection": {
                           "anyOf": [
                             {
@@ -73447,7 +73628,8 @@
                         "restarting",
                         "revision",
                         "execution_generation",
-                        "admissions"
+                        "admissions",
+                        "queued_input_count"
                       ]
                     },
                     "admission_id": {
@@ -76978,6 +77160,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -77270,7 +77458,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "can_branch": {
@@ -77917,6 +78106,12 @@
                                 ]
                               }
                             },
+                            "queued_input_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                            },
                             "connection": {
                               "anyOf": [
                                 {
@@ -78209,7 +78404,8 @@
                             "restarting",
                             "revision",
                             "execution_generation",
-                            "admissions"
+                            "admissions",
+                            "queued_input_count"
                           ]
                         },
                         "admission_id": {
@@ -81641,6 +81837,12 @@
                                     ]
                                   }
                                 },
+                                "queued_input_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "description": "TAL-1531: how many inputs `admissions` shows, outcome-unknown ones included; every client shows this count. Absent from older servers."
+                                },
                                 "connection": {
                                   "anyOf": [
                                     {
@@ -81933,7 +82135,8 @@
                                 "restarting",
                                 "revision",
                                 "execution_generation",
-                                "admissions"
+                                "admissions",
+                                "queued_input_count"
                               ]
                             },
                             "can_branch": {
@@ -83561,6 +83764,12 @@
                         ]
                       }
                     },
+                    "pinned_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-1531: how many of `tasks` are pinned; every client shows this count. Absent from older servers."
+                    },
                     "agent_available": {
                       "type": "boolean"
                     },
@@ -83640,6 +83849,7 @@
                   "required": [
                     "session_id",
                     "tasks",
+                    "pinned_count",
                     "agent_available"
                   ]
                 }

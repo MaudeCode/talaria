@@ -79,7 +79,8 @@
         "revision": 1,
         "execution_generation": 0,
         "active_admission": null,
-        "admissions": []
+        "admissions": [],
+        "queued_input_count": 0
       },
       "can_branch": false,
       "can_pin": false,
@@ -116,7 +117,8 @@
         "revision": 1,
         "execution_generation": 0,
         "active_admission": null,
-        "admissions": []
+        "admissions": [],
+        "queued_input_count": 0
       },
       "can_branch": false,
       "can_pin": false,

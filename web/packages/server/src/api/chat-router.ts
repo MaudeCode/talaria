@@ -41,7 +41,8 @@ export async function sessionBackgroundTasks(deps: AppDeps, s: Session, kind?: B
   const owner = deps.sessions.owner
   const owned = owner ? await owner.ownership(s.session_id, s.profile ?? undefined).catch(() => null) : false
   const delegation_status = await deps.background.delegationStatus(s.session_id, s.profile, { owned, tasks: snapshot.tasks })
-  return { session_id: s.session_id, ...snapshot, delegation_status, tasks: kind ? snapshot.tasks.filter((t) => t.kind === kind) : snapshot.tasks }
+  const tasks = kind ? snapshot.tasks.filter((t) => t.kind === kind) : snapshot.tasks
+  return { session_id: s.session_id, ...snapshot, delegation_status, tasks, pinned_count: tasks.filter((t) => t.pinned).length }
 }
 
 /** TAL-1168: the oldest pending approval or clarify of `sid` and the queue's depth, as its pending route answers them. */

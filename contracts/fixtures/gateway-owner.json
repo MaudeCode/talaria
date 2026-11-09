@@ -9,7 +9,8 @@
     "revision": 2,
     "execution_generation": 1,
     "active_admission": null,
-    "admissions": []
+    "admissions": [],
+    "queued_input_count": 0
   },
   "unknown": {
     "state": "attached",
@@ -36,7 +37,8 @@
           "discard"
         ]
       }
-    ]
+    ],
+    "queued_input_count": 1
   },
   "batch": {
     "state": "incompatible",
@@ -48,7 +50,8 @@
     "revision": null,
     "execution_generation": null,
     "active_admission": null,
-    "admissions": []
+    "admissions": [],
+    "queued_input_count": 0
   },
   "served": {
     "state": "incompatible",
@@ -60,7 +63,8 @@
     "revision": null,
     "execution_generation": null,
     "active_admission": null,
-    "admissions": []
+    "admissions": [],
+    "queued_input_count": 0
   },
   "restarting": {
     "state": "attached",
@@ -72,7 +76,8 @@
     "revision": 2,
     "execution_generation": 1,
     "active_admission": null,
-    "admissions": []
+    "admissions": [],
+    "queued_input_count": 0
   },
   "voice_stop_receipt": {
     "voice_stopped": true
@@ -92,7 +97,8 @@
       "revision": 2,
       "execution_generation": 1,
       "active_admission": null,
-      "admissions": []
+      "admissions": [],
+      "queued_input_count": 0
     },
     "session": {
       "session_id": "session-abc",
@@ -108,7 +114,8 @@
         "revision": 2,
         "execution_generation": 1,
         "active_admission": null,
-        "admissions": []
+        "admissions": [],
+        "queued_input_count": 0
       },
       "messages": [
         {
@@ -150,6 +157,7 @@
         "execution_generation": 1,
         "active_admission": null,
         "admissions": [],
+        "queued_input_count": 0,
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [
@@ -183,6 +191,7 @@
         "execution_generation": 1,
         "active_admission": null,
         "admissions": [],
+        "queued_input_count": 0,
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [
@@ -216,6 +225,7 @@
         "execution_generation": 1,
         "active_admission": null,
         "admissions": [],
+        "queued_input_count": 0,
         "reasoning_control": {
           "reasoning_effort": null,
           "supported_efforts": [
@@ -249,6 +259,7 @@
         "execution_generation": 1,
         "active_admission": null,
         "admissions": [],
+        "queued_input_count": 0,
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [
@@ -284,6 +295,7 @@
         "execution_generation": 1,
         "active_admission": null,
         "admissions": [],
+        "queued_input_count": 0,
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [

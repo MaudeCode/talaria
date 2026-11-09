@@ -533,17 +533,18 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const unknown = snapshot?.pending.some((p) => p.status === 'unknown') ?? false
     const restarting = result.restarting === true
+    const admissions = (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p,
+      actions: p.status === 'queued' ? ['cancel' as const, ...(p.controls?.includes('steer') ? ['steer' as const] : []), ...(p.controls?.includes('replace') ? ['edit' as const] : [])]
+        : p.execution_generation === null ? []
+        : retryText(p) === null ? ['discard' as const] : ['retry' as const, 'discard' as const],
+    }))
     const value: OwnerAttachment = {
       state: result.state, reason: result.reason, restarting, can_submit: result.state === 'attached' && snapshot !== null && !unknown && !restarting,
       can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach: false,
       revision: snapshot?.revision ?? null, execution_generation: snapshot?.execution_generation ?? null,
       ...(result.model_change ? { model_change: result.model_change } : {}),
       active_admission: snapshot ? runningAdmission(snapshot) ?? null : null,
-      admissions: (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p,
-        actions: p.status === 'queued' ? ['cancel', ...(p.controls?.includes('steer') ? ['steer' as const] : []), ...(p.controls?.includes('replace') ? ['edit' as const] : [])]
-          : p.execution_generation === null ? []
-          : retryText(p) === null ? ['discard'] : ['retry', 'discard'],
-      })),
+      admissions, queued_input_count: admissions.length,
     }
     return redactNestedMessageContainers(value, this.deps.redactEnabled()) as OwnerAttachment
   }
