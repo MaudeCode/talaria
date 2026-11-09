@@ -1,8 +1,9 @@
 # Sidecar RPC (TAL-245)
 
 RPC v91 adds the `harness` toolset's `request_secret` (TAL-1969,
-`server.secret_request`). The agent names an `.env` variable (`^[A-Z][A-Z0-9_]{2,63}$`,
-not a Talaria, Agent or system name the server reserves) and a purpose; the server
+`server.secret_request`). The agent names an `.env` variable (`^[A-Z][A-Z0-9_]{2,63}$`
+and a credential's name by the launcher's own rule, `*_KEY`, `*_TOKEN` or `*_SECRET`, outside
+`HERMES_`, `TALARIA_`, `TERMINAL_` and `API_SERVER_`) and a purpose; the server
 refuses a bad name with `env_name_invalid` or `env_name_reserved` before any prompt,
 then queues an `agent_secret` vault prompt on the calling session and answers once the
 server owner saves or declines it, the turn ends, or `timeout_seconds` (the session's

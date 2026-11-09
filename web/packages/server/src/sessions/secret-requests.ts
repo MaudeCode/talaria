@@ -15,25 +15,20 @@ import { CLARIFY_DEFAULT_TIMEOUT_SECONDS } from './pending.js'
 import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { writeRuntimeCredential } from '../providers/runtime-env.js'
 import { addKnownSecret } from '../redact.js'
+import { credentialEnvName } from '../cli/dotenv.js'
 import { str } from '../util.js'
 
 export const AGENT_SECRET_ENV_NAME_RE = /^[A-Z][A-Z0-9_]{2,63}$/
 export const AGENT_SECRET_PURPOSE_MAX = 500
 
 /**
- * Names an agent may not ask for: Talaria's and the Agent's own settings, the terminal policy the profile `.env` holds,
- * gateway access lists, and what a process reads to find code, certificates or proxies.
+ * An agent asks only for a credential's name (`credentialEnvName`, the launcher's rule): anything else in the profile `.env`
+ * can load code or steer the shell, the terminal or a launch. Talaria's, the Agent's and the terminal's own credentials
+ * and the gateway API server's key stay the owner's to set.
  */
-const RESERVED_PREFIXES = ['HERMES_', 'TALARIA_', 'TERMINAL_', 'API_SERVER_', 'LD_', 'DYLD_', 'PYTHON', 'NODE_', 'NPM_CONFIG_', 'GIT_', 'SSH_', 'LC_', 'XDG_', 'UV_', 'PIP_']
-const RESERVED_SUFFIXES = ['_ALLOWED_USERS', '_ALLOW_ALL_USERS']
-const RESERVED_NAMES = new Set([
-  'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TZ', 'PWD', 'TMPDIR', 'TERM', 'EDITOR', 'VISUAL', 'PAGER', 'BROWSER', 'DISPLAY',
-  'VIRTUAL_ENV', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
-  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ALL_PROXY', 'SUDO_PASSWORD', 'MESSAGING_CWD', 'GATEWAY_ALLOW_ALL_USERS',
-])
+const RESERVED_PREFIXES = ['HERMES_', 'TALARIA_', 'TERMINAL_', 'API_SERVER_']
 
-export const reservedEnvName = (name: string): boolean =>
-  RESERVED_NAMES.has(name) || RESERVED_PREFIXES.some((prefix) => name.startsWith(prefix)) || RESERVED_SUFFIXES.some((suffix) => name.endsWith(suffix))
+export const requestableEnvName = (name: string): boolean => credentialEnvName(name) && !RESERVED_PREFIXES.some((prefix) => name.startsWith(prefix))
 
 /** The session `request_secret` acts for: the caller's own. */
 export interface SecretCaller { session_id: string; profile?: string | null }
@@ -81,7 +76,7 @@ export class SecretRequests {
   request(caller: SecretCaller, params: Params): Promise<Result> {
     const envName = params.env_name.trim()
     if (!AGENT_SECRET_ENV_NAME_RE.test(envName)) return Promise.reject(refuse(400, 'env_name_invalid', `env_name must be 3 to 64 capital letters, digits or underscores, starting with a letter; got ${JSON.stringify(envName.slice(0, 80))}`))
-    if (reservedEnvName(envName)) return Promise.reject(refuse(400, 'env_name_reserved', `${envName} is reserved for Talaria, the Agent or the system; ask for a name of the service's own`))
+    if (!requestableEnvName(envName)) return Promise.reject(refuse(400, 'env_name_reserved', `${envName} is not a credential name you may ask for: use the service's own name ending in _KEY, _TOKEN or _SECRET, outside HERMES_, TALARIA_, TERMINAL_ and API_SERVER_`))
     const purpose = params.purpose.trim()
     if (!purpose) return Promise.reject(refuse(400, 'purpose_required', 'purpose is required: say what the secret is for'))
     if (purpose.length > AGENT_SECRET_PURPOSE_MAX) return Promise.reject(refuse(400, 'purpose_too_long', `purpose is longer than ${AGENT_SECRET_PURPOSE_MAX} characters`))

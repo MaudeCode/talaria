@@ -95,8 +95,11 @@ describe('request_secret (TAL-1969)', () => {
   })
 
   it('refuses a malformed or reserved name before any prompt', async () => {
-    for (const [name, refused] of [['foo_key', 'env_name_invalid'], ['AB', 'env_name_invalid'], ['HERMES_HOME', 'env_name_reserved'], ['TERMINAL_ENV', 'env_name_reserved'], ['PATH', 'env_name_reserved'], ['TELEGRAM_ALLOWED_USERS', 'env_name_reserved']] as const) {
-      expect(condition(await ask({ env_name: name })), name).toBe(refused)
+    for (const [name, refused] of [['foo_key', 'env_name_invalid'], ['AB', 'env_name_invalid'], ['HERMES_API_KEY', 'env_name_reserved'], ['TERMINAL_SSH_KEY', 'env_name_reserved'], ['API_SERVER_KEY', 'env_name_reserved'], ['HERMES_WEBUI_SECRET', 'env_name_reserved'],
+      // Only a credential's name: never a loader, shell or launch hook, a path, a password prompt or an access list.
+      ['BASH_ENV', 'env_name_reserved'], ['NODE_OPTIONS', 'env_name_reserved'], ['GIT_SSH_COMMAND', 'env_name_reserved'], ['PATH', 'env_name_reserved'], ['SUDO_PASSWORD', 'env_name_reserved'], ['TELEGRAM_ALLOWED_USERS', 'env_name_reserved']] as const) {
+      // A name the server accepted would show a prompt that times out; a refused one never prompts.
+      expect(condition(await ask({ env_name: name, timeout_seconds: 1 })), name).toBe(refused)
     }
     expect(condition(await ask({ purpose: '  ' }))).toBe('purpose_required')
     expect(head()).toBeNull()

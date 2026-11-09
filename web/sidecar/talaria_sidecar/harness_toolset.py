@@ -206,8 +206,9 @@ REQUEST_SECRET_SCHEMA = {
         "it, so never ask for a secret in chat. Waits like clarify until the user saves or declines it or the clarify "
         "timeout passes. Returns {env_name, outcome: saved, declined or timed_out, existed_before} and, when saved, "
         "runtime_application: applied means your next tool call can read the variable, restart_required means it takes "
-        "effect in a new session. env_name is 3 to 64 capital letters, digits or underscores starting with a letter; "
-        "Talaria's, the Agent's and system names are refused before the user is asked. purpose is shown to the user as "
+        "effect in a new session. env_name is the service's credential name: 3 to 64 capital letters, digits or "
+        "underscores, ending in _KEY, _TOKEN or _SECRET, outside HERMES_, TALARIA_, TERMINAL_ and API_SERVER_; any other "
+        "name is refused before the user is asked. purpose is shown to the user as "
         "written: say which service it is for and what you will do with it."
     ),
     "parameters": {
