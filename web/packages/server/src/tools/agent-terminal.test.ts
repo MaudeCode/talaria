@@ -84,6 +84,20 @@ describe('terminal_open and terminal_read (TAL-1974)', () => {
     expect(proc.written, 'The agent types nothing after the command').toEqual(['npm test\r'])
   })
 
+  it('keeps a line a carriage return has not yet written over, and writes later text over it from the start', async () => {
+    const id = String((await call('server.terminal_open', {})).result?.terminal_id)
+    const { proc } = spawned[0]!
+    proc.emit(' Tests: 3 passed\r')
+    expect((await call('server.terminal_read', { terminal_id: id, after_event_id: 1 })).result).toMatchObject({ output: ' Tests: 3 passed', lines: 1, next_event_id: 2 })
+    // The newline that ends that line arrives in the next event, as an empty line.
+    proc.emit('\n')
+    expect((await call('server.terminal_read', { terminal_id: id, after_event_id: 2 })).result).toMatchObject({ output: '', lines: 1, next_event_id: 3 })
+    proc.emit(' 40%\r 80%\r100% done\r\n')
+    expect((await call('server.terminal_read', { terminal_id: id, after_event_id: 3 })).result).toMatchObject({ output: '100% done', lines: 1 })
+    proc.emit('abcdef\rXY\n')
+    expect((await call('server.terminal_read', { terminal_id: id, after_event_id: 4 })).result).toMatchObject({ output: 'XYcdef' })
+  })
+
   it('reads at most 400 lines, whole events first, and says when the backlog dropped unread output', async () => {
     const id = String((await call('server.terminal_open', {})).result?.terminal_id)
     const { proc } = spawned[0]!
@@ -112,6 +126,7 @@ describe('terminal_open and terminal_read (TAL-1974)', () => {
     expect(await call('server.terminal_read', { terminal_id: id }, OTHER)).toMatchObject({ condition: 'terminal_not_found' })
     expect(await call('server.terminal_read', { terminal_id: 'term_0000000000000000' })).toMatchObject({ condition: 'terminal_not_found' })
     expect(await call('server.terminal_open', { command: 'echo a\nrm -rf ~' }, OTHER)).toMatchObject({ condition: 'invalid_command' })
+    expect(await call('server.terminal_open', { command: 'echo ok\tmore' }, OTHER), 'A tab would complete, not separate').toMatchObject({ condition: 'invalid_command' })
     expect(await call('server.terminal_open', { command: 'x'.repeat(8193) }, OTHER)).toMatchObject({ condition: 'command_too_long' })
     expect(spawned).toHaveLength(1)
     // Once the shell exits the session may open another, with a new id; the old one is gone.

@@ -277,7 +277,7 @@ export const TERMINAL_READ_MAX_LINES = 400
  * TAL-1974: the `harness` toolset's `terminal_open`. The server starts the Web host PTY of the calling session in its
  * workspace, as `/api/terminal/start` does, and types `command` once, followed by Enter. One live terminal per session: a
  * running one is `limit_reached`. A command of more than 8192 characters is `command_too_long` and one with a control
- * character (a second line included) `invalid_command`, starting nothing.
+ * character (a tab or a second line included) `invalid_command`, starting nothing.
  */
 export const ServerTerminalOpenParamsSchema = z.object({ caller_session_id: z.string().min(1), command: z.string().optional(), title: z.string().optional() })
 /** `url` is the session's page, where the user opens the terminal pane; `title` defaults to the command, else "Terminal". */

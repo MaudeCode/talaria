@@ -107,11 +107,12 @@ export class TerminalItemQueue {
 export interface TerminalSlice { output: string; lines: number; next_event_id: number; truncated: boolean }
 
 /**
- * Output as a reader sees the screen, one entry per line: escape sequences removed, a line a carriage return rewrote keeps
- * its last text, and the empty remainder after a final newline is no line.
+ * Output as a reader sees the screen, one entry per line: escape sequences removed, text after a carriage return written
+ * over the line from its start as a terminal does (a trailing one erases nothing), and the empty remainder after a final
+ * newline is no line.
  */
 function plainLines(text: string): string[] {
-  const lines = stripVTControlCharacters(text).replace(/\r+\n/g, '\n').split('\n').map((line) => line.slice(line.lastIndexOf('\r') + 1))
+  const lines = stripVTControlCharacters(text).replace(/\r+\n/g, '\n').split('\n').map((line) => line.split('\r').reduce((shown, over) => over + shown.slice(over.length)))
   if (lines.at(-1) === '') lines.pop()
   return lines
 }

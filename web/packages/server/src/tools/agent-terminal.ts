@@ -11,8 +11,8 @@ import type { TerminalSession } from './terminal.js'
 
 /** The longest command `/api/terminal/input` takes in one write, and so the longest `terminal_open` types. */
 const COMMAND_MAX = 8192
-/** A C0 or C1 control character other than tab: a second line, an interrupt or an escape the user never typed. */
-const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/
+/** A C0 or C1 control character: a second line, an interrupt, an escape, or a tab the shell would take as completion. */
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/
 
 /** A refusal of the shared terminal paths; `/api/terminal/start` answers its status and message, the agent its condition. */
 export class TerminalRefused extends HttpFailure {
@@ -72,7 +72,7 @@ const refuse = (status: number, condition: string, message: string): HttpFailure
 export async function terminalOpen(deps: AppDeps, caller: Caller, params: Omit<SidecarServerParams<'server.terminal_open'>, 'caller_session_id'>): Promise<SidecarServerResultInput<'server.terminal_open'>> {
   const command = params.command?.trim() ? params.command.trim() : null
   if (command !== null && command.length > COMMAND_MAX) throw refuse(400, 'command_too_long', `command is ${String(command.length)} characters; at most ${String(COMMAND_MAX)}`)
-  if (command !== null && CONTROL.test(command)) throw refuse(400, 'invalid_command', 'command must be one line without control characters')
+  if (command !== null && CONTROL.test(command)) throw refuse(400, 'invalid_command', 'command must be one line without tabs or control characters')
   const profile = caller.profile ?? null
   if (!deps.workspaces.profileSupportsLocalIo(profile)) throw refuse(400, 'remote_terminal_backend_unsupported', 'Embedded terminal is only supported for local terminal backends.')
   let term: TerminalSession

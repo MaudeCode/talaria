@@ -13,7 +13,7 @@ Enter after the shell's startup output goes quiet (at most 3 s). It answers the
 the session's terminal pane: `/api/terminal/start` with that `terminal_id` attaches to
 that terminal, closed or not, instead of starting a shell, or answers 404 once it is gone.
 One live terminal per session: a running one is
-`limit_reached`. A command over 8192 characters is `command_too_long` and one with a
+`limit_reached`. A command over 8192 characters is `command_too_long` and one with a tab or a
 control character `invalid_command`. `terminal_read` returns the backlog the output SSE
 keeps after `after_event_id`, escape sequences removed, at most `max_lines` (400 by
 default and at most) with `next_event_id`, `truncated`, `running` and the shell's
