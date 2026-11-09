@@ -207,7 +207,8 @@ describe('proposals (TAL-1967)', () => {
     expect((await show(id)).status).toBe('pending')
     expect((await approve(id)).body.status).toBe('applied')
     expect(await approve(id)).toMatchObject({ status: 409, body: { code: 'proposal_closed' } })
-    expect(told()).toHaveLength(1)
+    // The handoff turn starts asynchronously; the refused second approval adds none.
+    await vi.waitFor(() => { expect(told()).toHaveLength(1) })
 
     const late = await propose('setting', { key: 'show_tps', value: true })
     clock += 600
