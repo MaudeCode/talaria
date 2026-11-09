@@ -176,6 +176,31 @@ scripts/run-ios
 
 If the configured simulator is not installed, choose a nearby available iPhone simulator and update `../.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
 
+## Display-phase signposts
+
+The app marks the waits users feel as `os_signpost` intervals in every build
+(`TalariaKit/Sources/TalariaKit/Config/DisplayPhaseTrace.swift`). In Instruments'
+os_signpost instrument, or `log show --signpost`, filter by the app's bundle
+identifier and category `Performance`:
+
+- `Launch` and `Launch Ready`: from app start to the first root (the restored
+  chat's first transcript, cached rows or empty state, or the New Chat
+  composer), and to its first server-backed frame. A launch into onboarding
+  ends both as `outcome=onboarding`.
+- `Session Open` and `Session Open Ready`: from a session-list open to the
+  chat's first transcript frame, and to its server transcript.
+- `Load Earlier`: from an older-history request to the prepended rows' layout.
+
+Each interval ends once with `outcome=<cache|server|composer|retained|failed|…>
+rows=<count>`; replaced, failed or abandoned operations end as not reached.
+No session ID, title, path or text is recorded.
+
+`scripts/benchmark-display-phases A.app B.app` compares fixture builds on a
+leased pool simulator, alternating cold launches that open the fixture session
+through the deep-link route, and reports each interval's median, range and
+misses. Build each with
+`scripts/run-ios` and copy its `Talaria.app` aside before building the next.
+
 ## Local Script Environment
 
 Configurable commands under `scripts/` load the optional `app/.env` and then

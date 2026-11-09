@@ -676,13 +676,18 @@ struct ChatTranscriptView: View {
 
     @discardableResult
     private func loadOlderMessagesPreservingPosition(proxy: ScrollViewProxy) async -> Bool {
+        let trace = DisplayPhaseOperation(.loadEarlier)
+        let rowsBefore = displayedTranscriptMessages.count
         var renderID: String?
         var capturedExactPosition = false
+        var didPrepend = false
         defer {
             // Read UIKit's compensated coordinate before allowing a new window.
             if let top = scrollPositionController.viewportTop { rowViewportTop = top }
             isAdmittingHistory = false
             releaseUnownedRowPins()
+            // A refused or failed page shows nothing new.
+            if didPrepend { trace.markReady(.server, rows: rowsBefore) } else { trace.cancel(.cancelled) }
         }
         // A fling can keep moving while the page is in flight; snapshot immediately before the prepend.
         let didLoad = await onLoadOlderMessages {
@@ -699,6 +704,7 @@ struct ChatTranscriptView: View {
             scrollPositionController.cancelPreservation()
             return false
         }
+        didPrepend = true
 
         if capturedExactPosition {
             await scrollPositionController.waitForPrependLayout()

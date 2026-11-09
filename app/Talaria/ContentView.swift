@@ -33,6 +33,11 @@ struct ContentView: View {
         self.whatsNew = whatsNew ?? WhatsNewPresenter(pending: nil)
         self.appLock = appLock ?? .shared
         _intentRouter = State(initialValue: intentRouter ?? .shared)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.openSessionArgument) {
+            _pendingDeepLinkedSessionID = State(initialValue: UITestFixtureURLProtocol.sessionID)
+        }
+        #endif
     }
 
     /// No sign-in, import, deep link or App Intent is waiting to take the screen, so What's New can be offered
@@ -167,8 +172,10 @@ struct ContentView: View {
         switch authManager.state {
         case .unconfigured:
             OnboardingView(authManager: authManager)
+                .onAppear { DisplayPhaseTrace.launchNotReached(.onboarding) }
         case .loggedOut(let server):
             OnboardingView(authManager: authManager, savedServer: server)
+                .onAppear { DisplayPhaseTrace.launchNotReached(.onboarding) }
         case .loggedIn(let server):
             SessionListView(
                 authManager: authManager,

@@ -70,6 +70,9 @@ struct UITestFixtureEnvironment {
     nonisolated static let tentHingeArgument = "--ui-test-tent-hinge"
     /// Holds `/api/chat/cancel` until the test releases it, so a test sees a stop before the server answers (TAL-1460).
     nonisolated static let holdChatCancelArgument = "--ui-test-hold-chat-cancel"
+    /// Opens the fixture session through the deep-link route at launch, as `simctl openurl` would without the system's
+    /// confirmation prompt (TAL-1412's `scripts/benchmark-display-phases`).
+    nonisolated static let openSessionArgument = "--ui-test-open-session"
 
     /// The fixture's response-cache directory, emptied once per launch.
     nonisolated static let responseCacheRoot: URL? = {
