@@ -1,0 +1,43 @@
+{
+  "server.deliver": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "path": "reports/week-45.pdf",
+        "title": "Weekly report"
+      },
+      "result": {
+        "block_id": "sb_0a1b2c3d4e60",
+        "url": "/session/20261109_090000_caller",
+        "kind": "file",
+        "title": "Weekly report",
+        "size": 31,
+        "media": {
+          "url": "./api/file/raw?session_id=20261109_090000_caller&path=reports%2Fweek-45.pdf&inline=1",
+          "name": "week-45.pdf",
+          "mime": "application/pdf",
+          "kind": "pdf"
+        }
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "path": "dist/build.zip"
+      },
+      "result": {
+        "block_id": "sb_0a1b2c3d4e61",
+        "url": "/session/20261109_090000_caller",
+        "kind": "file",
+        "title": "build.zip",
+        "size": 6,
+        "media": {
+          "url": "./api/file/raw?session_id=20261109_090000_caller&path=dist%2Fbuild.zip&download=1",
+          "name": "build.zip",
+          "mime": "application/octet-stream",
+          "kind": "file"
+        }
+      }
+    }
+  ]
+}

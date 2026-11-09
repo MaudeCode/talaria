@@ -8,6 +8,7 @@ import { copyWithToast } from '../../../lib/clipboard'
 import { m } from '../../../paraglide/messages.js'
 import { Button } from '../../../ui/Button'
 import { RowContextMenu, type RowAction } from '../../../ui/Menu'
+import { formatBytes } from '../../../ui/States'
 import { BarChart } from '../../insights/BarChart'
 import { requestOpenFile } from '../../workspace/openFileRequest'
 import { MediaTiles } from './MediaTiles'
@@ -15,14 +16,25 @@ import { ResultSection } from './OutboundDraftResult'
 
 const href = (url: string): string => appUrl(url.replace(/^\.\//, '')).href
 
-/** The block's Open and Copy, for its visible controls and its right-click and long-press menu alike. */
+/** TAL-1971: save a delivered file through a download link, as the session export does. */
+function download(url: string): void {
+  const a = document.createElement('a')
+  a.href = href(url)
+  a.download = ''
+  a.rel = 'noopener'
+  a.click()
+}
+
+/** The block's Download, Open and Copy, for its visible controls and its right-click and long-press menu alike. */
 function blockActions(block: ShowBlock): RowAction[] {
   const open = (url: string) => () => { window.open(href(url), '_blank', 'noopener,noreferrer') }
   switch (block.kind) {
     case 'file': {
       const path = block.focus_path
-      if (path !== null) return [{ label: m.show_open(), run: () => { requestOpenFile({ sessionId: block.session_id, path }) } }]
-      return block.media ? [{ label: m.show_open(), run: open(block.media.url) }] : []
+      const delivery = block.delivery
+      const save: RowAction[] = delivery ? [{ label: m.deliver_download(), run: () => { download(delivery.download_url) } }] : []
+      if (path !== null) return [...save, { label: m.show_open(), run: () => { requestOpenFile({ sessionId: block.session_id, path }) } }]
+      return block.media ? [...save, { label: m.show_open(), run: open(block.media.url) }] : save
     }
     case 'table': return [{ label: m.show_copy_table(), run: () => { copyWithToast(block.tsv) } }]
     case 'chart': return []
@@ -33,9 +45,12 @@ function blockActions(block: ShowBlock): RowAction[] {
 function BlockBody({ block }: { block: ShowBlock }) {
   switch (block.kind) {
     case 'file':
-      if (block.media?.kind === 'image') return <img src={href(block.media.url)} alt={block.title} loading="lazy" className="mt-2 max-h-80 max-w-full rounded" />
-      if (block.media) return <div className="mt-2"><MediaTiles media={[block.media]} sessionId={block.session_id} /></div>
-      return <p className="mt-1 break-all font-mono text-xs text-muted">{block.file.path}</p>
+      return <>
+        {block.delivery && <DeliveryLine block={block} />}
+        {block.media?.kind === 'image' ? <img src={href(block.media.url)} alt={block.title} loading="lazy" className="mt-2 max-h-80 max-w-full rounded" />
+          : block.media ? <div className="mt-2"><MediaTiles media={[block.media]} sessionId={block.session_id} /></div>
+          : !block.delivery && <p className="mt-1 break-all font-mono text-xs text-muted">{block.file.path}</p>}
+      </>
     case 'table':
       return <>
         <div className="mt-2 max-h-96 overflow-auto">
@@ -56,6 +71,14 @@ function BlockBody({ block }: { block: ShowBlock }) {
   }
 }
 
+/** TAL-1971: a delivered file's name, size and type, and the server's note when the file changed after delivery. */
+function DeliveryLine({ block }: { block: Extract<ShowBlock, { kind: 'file' }> }) {
+  return <>
+    <p className="mt-1 break-all text-xs text-muted">{[block.file.name, formatBytes(block.file.size), block.delivery?.mime].join(' · ')}</p>
+    {block.delivery?.changed && <p role="note" className="mt-1 text-xs text-warning">{m.deliver_changed()}</p>}
+  </>
+}
+
 /**
  * The page in a frame with `allow-scripts` only: an opaque origin, so it gets no cookie, and its CSP gives it no fetch.
  * A CSP cannot stop the frame navigating itself, so a second load (the page left its grant URL) closes the frame: the
@@ -71,13 +94,14 @@ function ShowFrame({ block }: { block: Extract<ShowBlock, { kind: 'html' }> }) {
 /**
  * TAL-1968: a file, table, chart or HTML page an agent showed, rendered from the server's block: a media row or a file
  * row whose Open shows it on the side panel's Files page, a table with the server's truncation note and Copy (TSV),
- * the Insights chart with the server's formatted values, or a sandboxed frame. It collects no input.
+ * the Insights chart with the server's formatted values, or a sandboxed frame. It collects no input. TAL-1971: a
+ * delivered file adds Download, its name, size and type, and the server's "changed since delivered" note.
  */
 export function ShowBlockResult({ reference }: { reference: ShowBlockRef }) {
   const query = useQuery({ queryKey: keys.showBlock(reference.block_id), queryFn: ({ signal }) => api.fetchShowBlock(reference.block_id, signal), retry: false })
   const block = query.data
   const actions = block ? blockActions(block) : []
-  return <ResultSection label={m.show_heading()}>
+  return <ResultSection label={block?.kind === 'file' && block.delivery ? m.deliver_heading() : m.show_heading()}>
     <RowContextMenu label={block?.title ?? reference.title} actions={actions} trigger={<div data-show-block={reference.block_id} data-kind={reference.kind}>
       {/* A chart's caption carries its title. */}
       {reference.kind !== 'chart' && <strong>{block?.title ?? reference.title}</strong>}

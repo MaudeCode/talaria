@@ -1,5 +1,19 @@
 # Sidecar RPC (TAL-245)
 
+RPC v93 adds the `harness` toolset's `deliver` (TAL-1971, `server.deliver`). The agent
+names one file of the session's workspace (`path`, relative or absolute inside it) and
+an optional `title`; the server stores a `file` show block for it with a `delivery`
+record (the file's type, size, mtime and SHA-256) and answers with the `block_id`, the
+`size` and a `media` entry: the detected media kind with its inline `/api/file/raw` URL,
+or kind `file` with its download URL. A path the `/api/file` rules put outside the
+workspace (symlinks out of it included) is refused with `outside_workspace`, a folder
+with `is_directory`, a missing file with `file_not_found` and one over 200 MB with
+`file_too_large`, storing nothing. Escape grants are short-lived tokens the browser
+holds, so a transcript row cannot keep one; deliver refuses a path through one. The
+transcript row is the `show` block (`result_view.block`, `GET /api/show/{block_id}`):
+each read compares the live file with the record and sets `delivery.changed` when it
+is gone, another size or (after an mtime change) another digest.
+
 RPC v92 adds the `harness` toolset's `notify` (TAL-1970, `server.notify`). The agent
 sends a `title` (at most 80 characters), a `body` (at most 300) and a `level`, `info`
 (the default) or `attention`; a longer one is refused with `title_too_long` or

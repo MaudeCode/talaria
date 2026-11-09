@@ -10,6 +10,8 @@ TAL-1969 adds ``request_secret``: the user types a credential into a secure fiel
 
 TAL-1970 adds ``notify``: an alert about this session on the user's devices, through Web Push and the Relay.
 
+TAL-1971 adds ``deliver``: a workspace file handed to the user as a download row in the chat.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -29,7 +31,7 @@ TOOLSET_DESCRIPTION = (
     "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; "
     "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
     "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's "
-    "devices that something is ready or needs them."
+    "devices that something is ready or needs them; deliver a file you made as a download."
 )
 
 _WHEN = (
@@ -248,6 +250,26 @@ NOTIFY_SCHEMA = {
 }
 
 
+DELIVER_SCHEMA = {
+    "name": "deliver",
+    "description": (
+        "Hand the user a file you made in the session's workspace (a report, an export, a build) as an attachment row in "
+        "this chat that they can download, open or share. Returns at once with its block_id, size and media. The row "
+        "points at the live file and says when it changed after delivery. One file of at most 200 MB: a path outside the "
+        "workspace is refused with outside_workspace, a folder with is_directory, a larger file with file_too_large, and "
+        "nothing shows."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "The file, relative to the workspace or absolute inside it."},
+            "title": {"type": "string", "description": "What the file is, such as \"Weekly report\"; defaults to its name."},
+        },
+        "required": ["path"],
+    },
+}
+
+
 def _payload(args: dict, params: dict) -> None:
     """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
@@ -276,6 +298,7 @@ show = _tool("server.show_put", "show", ("kind",), _payload)
 
 
 notify = _tool("server.notify", "notify", ("title", "body"), _passed("level"))
+deliver = _tool("server.deliver", "deliver", ("path",), _passed("title"))
 
 
 def _secret(args: dict, params: dict) -> float:
@@ -327,6 +350,7 @@ _TOOLS = (
     (SHOW_SCHEMA, show, "🖼️"),
     (REQUEST_SECRET_SCHEMA, request_secret, "🔑"),
     (NOTIFY_SCHEMA, notify, "🔔"),
+    (DELIVER_SCHEMA, deliver, "📎"),
 )
 
 

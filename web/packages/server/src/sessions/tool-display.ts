@@ -34,9 +34,9 @@ export function proposalRef(name: unknown, value: unknown): ProposalRef | undefi
   return ProposalRefSchema.safeParse({ proposal_id: value.proposal_id, kind: value.kind, summary: value.summary }).data
 }
 
-/** TAL-1968: the transcript block's reference from a `show` result (parsed JSON), or nothing. */
+/** TAL-1968: the transcript block's reference from a `show` or (TAL-1971) `deliver` result (parsed JSON), or nothing. */
 export function showBlockRef(name: unknown, value: unknown): ShowBlockRef | undefined {
-  if (name !== 'show' || !isDict(value) || value.error) return undefined
+  if ((name !== 'show' && name !== 'deliver') || !isDict(value) || value.error) return undefined
   return ShowBlockRefSchema.safeParse({ block_id: value.block_id, kind: value.kind, title: value.title }).data
 }
 
@@ -162,7 +162,7 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
 }
 
 /** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
-const CARD_TOOLS = new Set(['show', 'propose', 'draft_card'])
+const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card'])
 
 const FOCUS_KEYS = ['path', 'file_path', 'file', 'target']
 

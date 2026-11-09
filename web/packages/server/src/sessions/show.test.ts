@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SIDECAR_SERVER_METHODS, ShowBlockSchema } from '@maudecode/talaria-web-contracts'
@@ -12,6 +12,7 @@ import { SHOW_FRAME_CSP } from './show.js'
 
 type Json = Record<string, unknown>
 const fixtures = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/show.json'), 'utf8')) as Record<'server.show_put', { params: Json; result: Json }[]>
+const deliverFixtures = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/deliver.json'), 'utf8')) as Record<'server.deliver', { params: Json; result: Json }[]>
 const CALLER = '20261109_090000_caller'
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4440000000049454e44ae426082', 'hex')
 
@@ -64,14 +65,14 @@ describe('show blocks (TAL-1968)', () => {
     const image = await shown('file', { path: 'reports/funnel.png', title: 'Signup funnel' })
     expect(image.block).toEqual({
       block_id: image.reply.block_id, session_id: CALLER, kind: 'file', title: 'Signup funnel', created_at: clock, file: { path: 'reports/funnel.png', name: 'funnel.png', size: PNG.length },
-      media: { url: `./api/file/raw?session_id=${CALLER}&path=reports%2Ffunnel.png&inline=1`, name: 'funnel.png', mime: 'image/png', kind: 'image' }, focus_path: null,
+      media: { url: `./api/file/raw?session_id=${CALLER}&path=reports%2Ffunnel.png&inline=1`, name: 'funnel.png', mime: 'image/png', kind: 'image' }, focus_path: null, delivery: null,
     })
     const raw = await s.get((image.block as { media: { url: string } }).media.url.slice(1))
     expect(raw.status).toBe(200)
     expect(Buffer.from(await raw.arrayBuffer())).toEqual(PNG)
     // An absolute path inside the workspace is the same file.
     const text = await shown('file', { path: join(workspace, 'notes.md') })
-    expect(text.block).toMatchObject({ title: 'notes.md', file: { path: 'notes.md', name: 'notes.md', size: 8 }, media: null, focus_path: 'notes.md' })
+    expect(text.block).toMatchObject({ title: 'notes.md', file: { path: 'notes.md', name: 'notes.md', size: 8 }, media: null, focus_path: 'notes.md', delivery: null })
   })
 
   it('refuses a file outside the workspace, a missing one, a symlink out of it and an unsupported binary, storing nothing', async () => {
@@ -144,5 +145,79 @@ describe('show blocks (TAL-1968)', () => {
     const deleted = await s.get('/api/session/delete', { method: 'POST', body: JSON.stringify({ session_id: CALLER }), headers: { 'content-type': 'application/json' } })
     expect(deleted.status).toBe(200)
     expect((await block(reply.block_id)).status).toBe(404)
+  })
+
+  describe('deliver (TAL-1971)', () => {
+    const deliver = async (params: Json, caller = CALLER) => {
+      const reply = await sidecar.serverRequest('server.deliver', { caller_session_id: caller, ...params })
+      return 'error' in reply ? { condition: (reply.error as { data?: { condition?: string } }).data?.condition, message: reply.error.message } : { result: reply.result as Json & { block_id: string } }
+    }
+    const delivered = async (params: Json) => {
+      const reply = await deliver(params)
+      if (!reply.result) throw new Error(`refused: ${String(reply.condition)} ${reply.message}`)
+      return { reply: reply.result, block: (await block(reply.result.block_id)).body }
+    }
+
+    it('records the server.deliver fixtures from the real handler as a file block with its download, and the row replays', async () => {
+      const [pdf, zip] = deliverFixtures['server.deliver']
+      mkdirSync(join(workspace, 'dist'))
+      writeFileSync(join(workspace, 'reports', 'week-45.pdf'), '%PDF-1.4\n% weekly report\n%%EOF\n')
+      writeFileSync(join(workspace, 'dist', 'build.zip'), Buffer.from([0x50, 0x4b, 3, 4, 0, 0]))
+      for (const recorded of [pdf!, zip!]) {
+        const { caller_session_id: _caller, ...params } = recorded.params
+        const reply = await deliver(params)
+        expect(reply).toEqual({ result: { ...recorded.result, block_id: reply.result!.block_id } })
+        expect(SIDECAR_SERVER_METHODS['server.deliver'].result.parse(reply.result)).toEqual(reply.result)
+      }
+      const { reply, block: shownPdf } = await delivered({ path: 'reports/week-45.pdf', title: 'Weekly report' })
+      expect(ShowBlockSchema.parse(shownPdf)).toEqual({
+        block_id: reply.block_id, session_id: CALLER, kind: 'file', title: 'Weekly report', created_at: clock, file: { path: 'reports/week-45.pdf', name: 'week-45.pdf', size: 31 },
+        media: { url: `./api/file/raw?session_id=${CALLER}&path=reports%2Fweek-45.pdf&inline=1`, name: 'week-45.pdf', mime: 'application/pdf', kind: 'pdf' }, focus_path: null,
+        delivery: { download_url: `./api/file/raw?session_id=${CALLER}&path=reports%2Fweek-45.pdf&download=1`, mime: 'application/pdf', changed: false },
+      })
+      const download = await s.get((shownPdf.delivery as { download_url: string }).download_url.slice(1))
+      expect(download.status).toBe(200)
+      expect(download.headers.get('content-disposition')).toMatch(/^attachment;/)
+      expect(await download.text()).toBe('%PDF-1.4\n% weekly report\n%%EOF\n')
+      // A file of no media or text type is a download only.
+      const build = await delivered({ path: 'dist/build.zip' })
+      expect(build.block).toMatchObject({ title: 'build.zip', media: null, focus_path: null, delivery: { mime: 'application/octet-stream', changed: false } })
+      // The persisted result projects the same reference live and after reload; a refusal projects none.
+      expect(toolOutcome(JSON.stringify(reply), 'deliver').result_view.block).toEqual({ block_id: reply.block_id, kind: 'file', title: 'Weekly report' })
+      expect(toolOutcome(JSON.stringify({ error: 'nope', condition: 'outside_workspace' }), 'deliver').result_view.block).toBeUndefined()
+    })
+
+    it('says the file changed since delivery when its bytes differ or it is gone, and not when only its mtime moved', async () => {
+      const file = join(workspace, 'notes.md')
+      writeFileSync(file, '# Notes\n')
+      const { reply, block: first } = await delivered({ path: 'notes.md' })
+      expect(first).toMatchObject({ title: 'notes.md', media: null, focus_path: 'notes.md', delivery: { mime: 'text/markdown', changed: false } })
+      const changed = async () => ((await block(reply.block_id)).body.delivery as { changed: boolean }).changed
+      utimesSync(file, new Date(), new Date(Date.now() + 5000))
+      expect(await changed(), 'Same bytes under a new mtime').toBe(false)
+      writeFileSync(file, '# Nopes\n')
+      expect(await changed(), 'Same size, new bytes').toBe(true)
+      writeFileSync(file, '# Notes, longer\n')
+      expect(await changed(), 'New size').toBe(true)
+      writeFileSync(file, '# Notes\n')
+      expect(await changed(), 'The delivered bytes again').toBe(false)
+      rmSync(file)
+      expect(await changed(), 'Gone').toBe(true)
+    })
+
+    it('refuses a path outside the workspace, a folder, a missing file and one over 200 MB, storing nothing', async () => {
+      writeFileSync(join(s.state, 'secret.txt'), 'outside')
+      symlinkSync(join(s.state, 'secret.txt'), join(workspace, 'link.txt'))
+      writeFileSync(join(workspace, 'huge.bin'), '')
+      truncateSync(join(workspace, 'huge.bin'), 200 * 1024 * 1024 + 1)
+      expect(await deliver({ path: '../secret.txt' })).toMatchObject({ condition: 'outside_workspace' })
+      expect(await deliver({ path: join(s.state, 'secret.txt') })).toMatchObject({ condition: 'outside_workspace' })
+      expect(await deliver({ path: 'link.txt' })).toMatchObject({ condition: 'outside_workspace' })
+      expect(await deliver({ path: 'reports' })).toMatchObject({ condition: 'is_directory' })
+      expect(await deliver({ path: 'missing.md' })).toMatchObject({ condition: 'file_not_found' })
+      expect(await deliver({ path: 'huge.bin' })).toMatchObject({ condition: 'file_too_large' })
+      expect(await deliver({ path: '' })).toMatchObject({ condition: 'payload_invalid', message: 'path is required' })
+      expect(await documents.list('show-blocks')).toHaveLength(0)
+    })
   })
 })
