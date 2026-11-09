@@ -1,0 +1,153 @@
+{
+  "server.usage_read": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller"
+      },
+      "result": {
+        "session_id": "20261109_090000_caller",
+        "model": "claude-sonnet-4-6",
+        "provider": "anthropic",
+        "input_tokens": {
+          "tokens": 123456,
+          "text": "123,456"
+        },
+        "output_tokens": {
+          "tokens": 7890,
+          "text": "7,890"
+        },
+        "cache_read_tokens": {
+          "tokens": 98765,
+          "text": "98,765"
+        },
+        "cost": {
+          "usd": 1.234,
+          "text": "$1.23"
+        },
+        "turns": {
+          "count": 2,
+          "text": "2"
+        },
+        "context": {
+          "used_tokens": {
+            "tokens": 50000,
+            "text": "50,000"
+          },
+          "context_length": {
+            "tokens": 200000,
+            "text": "200,000"
+          },
+          "threshold_tokens": {
+            "tokens": 160000,
+            "text": "160,000"
+          },
+          "percent_used": {
+            "percent": 25,
+            "text": "25%"
+          }
+        },
+        "quota": {
+          "provider": "anthropic",
+          "sources": [
+            {
+              "name": "Anthropic",
+              "status": "available",
+              "level": "warning",
+              "message": "Anthropic account limits loaded.",
+              "fetched_at": {
+                "at": "2026-11-09T11:57:00.000Z",
+                "text": "3m ago"
+              },
+              "credits": null,
+              "windows": [
+                {
+                  "label": "Session",
+                  "used_percent": {
+                    "percent": 42.4,
+                    "text": "42%"
+                  },
+                  "remaining_percent": {
+                    "percent": 57.6,
+                    "text": "58%"
+                  },
+                  "resets_at": {
+                    "at": "2026-11-09T14:05:00.000Z",
+                    "text": "in 2h 5m"
+                  },
+                  "level": "healthy"
+                },
+                {
+                  "label": "Weekly",
+                  "used_percent": {
+                    "percent": 61,
+                    "text": "61%"
+                  },
+                  "remaining_percent": {
+                    "percent": 39,
+                    "text": "39%"
+                  },
+                  "resets_at": {
+                    "at": "2026-11-12T12:00:00.000Z",
+                    "text": "in 3d"
+                  },
+                  "level": "warning"
+                }
+              ]
+            }
+          ]
+        },
+        "quota_reason": null
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_zai"
+      },
+      "result": {
+        "session_id": "20261109_090000_zai",
+        "model": "claude-sonnet-4-6",
+        "provider": "zai",
+        "input_tokens": {
+          "tokens": 123456,
+          "text": "123,456"
+        },
+        "output_tokens": {
+          "tokens": 7890,
+          "text": "7,890"
+        },
+        "cache_read_tokens": {
+          "tokens": 98765,
+          "text": "98,765"
+        },
+        "cost": {
+          "usd": 1.234,
+          "text": "$1.23"
+        },
+        "turns": {
+          "count": 2,
+          "text": "2"
+        },
+        "context": {
+          "used_tokens": {
+            "tokens": 50000,
+            "text": "50,000"
+          },
+          "context_length": {
+            "tokens": 200000,
+            "text": "200,000"
+          },
+          "threshold_tokens": {
+            "tokens": 160000,
+            "text": "160,000"
+          },
+          "percent_used": {
+            "percent": 25,
+            "text": "25%"
+          }
+        },
+        "quota": null,
+        "quota_reason": "No verified server-side quota or balance endpoint is available for Z.AI / GLM."
+      }
+    }
+  ]
+}

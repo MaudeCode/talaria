@@ -30,7 +30,7 @@ import {
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
-interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
+export interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
 interface CatalogLookup<T> { value: T | null; authoritative: boolean }
 export interface ModelGroup {
   availability?: CatalogAvailability
@@ -1844,6 +1844,8 @@ export class ProviderCatalog {
 
     } else {
       sources = previous.filter((s) => !requested || s.source_id === requested).map((s) => this.staleQuotaSource(s))
+      // TAL-1973: a cached read answers the same stale projection until a confirmed read replaces it.
+      if (prior && prior.sequence <= sequence) this.lastQuotaSources.set(cacheKey, { ...prior, sequence, unconfirmed: true })
     }
     const currentSource = this.sourceFingerprint(profileHome)
     if (currentSource !== source) { poolUnknown = true; sources = [] }
@@ -1852,7 +1854,18 @@ export class ProviderCatalog {
     return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: sources.map(withQuotaDisplay) }
   }
 
-  private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()
+  /**
+   * TAL-1973: the sources the last `quotas` read of this profile confirmed, as `/api/provider/quotas` shows them, without
+   * reading any provider; null when no read has run since the provider configuration last changed.
+   */
+  async cachedQuotaSources(profileHome: string, profile: string): Promise<QuotaSourceRow[] | null> {
+    const cached = this.lastQuotaSources.get(`${profileHome}\0${await this.quotaProfileScopeId(profile)}`)
+    if (cached?.source !== this.sourceFingerprint(profileHome)) return null
+    return cached.sources.map((row) => withQuotaDisplay(cached.unconfirmed ? this.staleQuotaSource(row) : row))
+  }
+
+  /** `unconfirmed` marks a snapshot the latest read could not confirm, which `quotas` answered stale. */
+  private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number>; unconfirmed?: boolean }>()
 
   private staleQuotaSource(source: QuotaSourceRow, reason = 'Provider data is temporarily unavailable. Showing last-confirmed data.'): QuotaSourceRow {
     return { ...source, ...(source.plan_usage ? { plan_stale: true } : {}), status: 'stale', unavailable_reason: reason, message: reason, urgency: { remaining: 'stale', pace: 'stale' } }

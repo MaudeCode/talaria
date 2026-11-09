@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, GoalResponseSchema, PendingSteerSchema, ProfilesSchema, ProjectSchema, ProjectsSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema, WorkspacesSchema } from '../views.js'
+import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksResponseSchema, CancelResponseSchema, ClarifyPendingSchema, ClarifyRespondResponseSchema, GoalResponseSchema, PendingSteerSchema, ProfilesSchema, ProjectSchema, ProjectsSchema, QuotaLevelSchema, SessionActivityPhaseSchema, SessionRowSchema, SteerSendNowResponseSchema, SteerWithdrawResponseSchema, WorkspacesSchema } from '../views.js'
 import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
 import { WorkspacesMutation } from '../routes/workspaces.js'
 import { DecisionItemInputSchema, DecisionOutcomeStateSchema, DecisionProgressSchema, DecisionReviewSchema, DecisionReviewStatusSchema } from '../decisions.js'
@@ -307,6 +307,34 @@ export const ServerReportIssueParamsSchema = z.object({ caller_session_id: z.str
 /** `report_id` is the Relay's receipt for the report. */
 export const ServerReportIssueResultSchema = z.object({ report_id: z.string().min(1) })
 
+/** TAL-1973: a figure `usage_read` ships with the text the agent quotes (`12,345`, `$1.23`, `42%`, `in 2h 5m`). */
+const UsageTokensSchema = z.object({ tokens: z.number().int().nonnegative(), text: z.string() })
+const UsagePercentSchema = z.object({ percent: z.number(), text: z.string() })
+const UsageUsdSchema = z.object({ usd: z.number().nullable(), text: z.string() })
+const UsageTimeSchema = z.object({ at: z.string().describe('ISO-8601 UTC.'), text: z.string().describe('Relative to the read: `in 2h 5m`, `3m ago`.') })
+/** One quota window as the sidebar meter shows it: the server's percents and its level word. */
+const UsageQuotaWindowSchema = z.object({ label: z.string(), used_percent: UsagePercentSchema.nullable(), remaining_percent: UsagePercentSchema.nullable(), resets_at: UsageTimeSchema.nullable(), level: QuotaLevelSchema })
+const UsageQuotaSourceSchema = z.object({
+  name: z.string(), status: z.string(), level: QuotaLevelSchema, message: z.string().nullable(),
+  fetched_at: UsageTimeSchema.nullable().describe('When the server last read this source from the provider.'),
+  credits: UsageUsdSchema.nullable().describe('Credits left (OpenRouter), else null.'), windows: z.array(UsageQuotaWindowSchema),
+})
+/**
+ * TAL-1973: the `harness` toolset's `usage_read`, for the calling session only. The tokens, cost and model are
+ * `/api/session/usage`'s; the context figures are the session row's (`context_used_tokens`, `context_window_tokens`,
+ * `threshold_tokens`, `context_usage_percent`); `turns` counts the session's user messages. `quota` is the cached
+ * `/api/provider/quotas` rows of the session's provider, as the sidebar shows them; the read never asks the provider. It
+ * is null, with `quota_reason`, when no cached row of that provider has a window or credits.
+ */
+export const ServerUsageReadResultSchema = z.object({
+  session_id: z.string(), model: z.string().nullable(), provider: z.string().nullable(),
+  input_tokens: UsageTokensSchema, output_tokens: UsageTokensSchema, cache_read_tokens: UsageTokensSchema, cost: UsageUsdSchema,
+  turns: z.object({ count: z.number().int().nonnegative(), text: z.string() }),
+  context: z.object({ used_tokens: UsageTokensSchema.nullable(), context_length: UsageTokensSchema.nullable(), threshold_tokens: UsageTokensSchema.nullable(), percent_used: UsagePercentSchema.nullable() }),
+  quota: z.object({ provider: z.string(), sources: z.array(UsageQuotaSourceSchema).min(1) }).nullable(),
+  quota_reason: z.string().nullable(),
+})
+
 /**
  * TAL-1969: the `harness` toolset's `request_secret`. The server refuses a malformed or reserved `env_name` before any
  * prompt; otherwise it queues an `agent_secret` vault prompt on the calling session and answers once the owner saves or
@@ -390,6 +418,7 @@ export const SIDECAR_SERVER_METHODS = {
   'server.terminal_open': { params: ServerTerminalOpenParamsSchema, result: ServerTerminalOpenResultSchema },
   'server.terminal_read': { params: ServerTerminalReadParamsSchema, result: ServerTerminalReadResultSchema },
   'server.report_issue': { params: ServerReportIssueParamsSchema, result: ServerReportIssueResultSchema },
+  'server.usage_read': { params: ServerCallerParamsSchema, result: ServerUsageReadResultSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

@@ -4,6 +4,7 @@
  */
 import { applyRedactionPolicy } from './redact.js'
 import { redactFeedbackText, reportIssue } from './feedback.js'
+import { usageRead } from './sessions/usage-read.js'
 import { SESSION_WAIT_DEFAULT_S, SIDECAR_METHODS, type ContextWindowSource, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
@@ -982,6 +983,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.terminal_read': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => Promise.resolve(terminalRead(deps, caller, params))),
     // TAL-1972: the `harness` toolset's `report_issue`, a feedback report the agent files from this session.
     'server.report_issue': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => reportIssue(deps, caller, params)),
+    // TAL-1973: the `harness` toolset's `usage_read`, the calling session's usage and its provider's cached quota.
+    'server.usage_read': ({ caller_session_id }) => asCaller(caller_session_id, (caller) => usageRead(deps, caller)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {

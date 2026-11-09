@@ -5726,5 +5726,476 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.usage_read": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "input_tokens": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tokens",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "output_tokens": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tokens",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "cache_read_tokens": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tokens",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "usd": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "usd",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "turns": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "count",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "context": {
+          "type": "object",
+          "properties": {
+            "used_tokens": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "tokens",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context_length": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "tokens",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "threshold_tokens": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "tokens",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "percent_used": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "percent": {
+                      "type": "number"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "percent",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "used_tokens",
+            "context_length",
+            "threshold_tokens",
+            "percent_used"
+          ],
+          "additionalProperties": false
+        },
+        "quota": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string"
+                },
+                "sources": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "healthy",
+                          "warning",
+                          "critical",
+                          "stale",
+                          "unavailable"
+                        ]
+                      },
+                      "message": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string",
+                                "description": "ISO-8601 UTC."
+                              },
+                              "text": {
+                                "type": "string",
+                                "description": "Relative to the read: `in 2h 5m`, `3m ago`."
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the server last read this source from the provider."
+                      },
+                      "credits": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "usd": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "usd",
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Credits left (OpenRouter), else null."
+                      },
+                      "windows": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "used_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "percent": {
+                                      "type": "number"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "percent",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "remaining_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "percent": {
+                                      "type": "number"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "percent",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "resets_at": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "at": {
+                                      "type": "string",
+                                      "description": "ISO-8601 UTC."
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "description": "Relative to the read: `in 2h 5m`, `3m ago`."
+                                    }
+                                  },
+                                  "required": [
+                                    "at",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "level": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "warning",
+                                "critical",
+                                "stale",
+                                "unavailable"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "used_percent",
+                            "remaining_percent",
+                            "resets_at",
+                            "level"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "status",
+                      "level",
+                      "message",
+                      "fetched_at",
+                      "credits",
+                      "windows"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "provider",
+                "sources"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quota_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_id",
+        "model",
+        "provider",
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cost",
+        "turns",
+        "context",
+        "quota",
+        "quota_reason"
+      ],
+      "additionalProperties": false
+    }
   }
 }

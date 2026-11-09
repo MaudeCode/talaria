@@ -1,5 +1,15 @@
 # Sidecar RPC (TAL-245)
 
+RPC v96 adds the `harness` toolset's `usage_read` (TAL-1973, `server.usage_read`). It takes no
+argument and reads only the calling session: the tokens, cost and model `/api/session/usage`
+answers, cache-read tokens, turns (the session's user messages), and the session row's context
+figures (`context_used_tokens`, `context_window_tokens`, `threshold_tokens`,
+`context_usage_percent`). `quota` is the session's provider's rows from the last
+`/api/provider/quotas` read, as the sidebar shows them (label, used and remaining percent, reset,
+level, and the source's `fetched_at`); it is null with `quota_reason` before any read or when the
+provider reports no window or credits. It never reads a provider. Each figure carries the text the
+agent quotes (`12,345`, `$1.23`, `42%`, `in 2h 5m`, `3m ago`); `contracts/fixtures/sidecar/usage-read.json`.
+
 RPC v95 adds the `harness` toolset's `report_issue` (TAL-1972, `server.report_issue`). The
 agent files one bug report through the service behind `/api/feedback/submit`: `summary` is
 the title (at most 120 characters) and `detail` the body (at most 4000); a longer one is
