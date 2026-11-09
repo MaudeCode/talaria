@@ -3,13 +3,15 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { arch, platform, homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { FEEDBACK_ATTACHMENT_LIMITS, FeedbackAttachmentResultSchema, FeedbackAttachmentTypeSchema, FeedbackSubmitSchema, type FeedbackAttachmentStagedSchema, type FeedbackOptionsSchema, type FeedbackResultSchema } from '@maudecode/talaria-web-contracts'
+import { FEEDBACK_ATTACHMENT_LIMITS, FeedbackAttachmentResultSchema, FeedbackAttachmentTypeSchema, FeedbackSubmitSchema, REPORT_ISSUE_LIMITS, type FeedbackAttachmentStagedSchema, type FeedbackOptionsSchema, type FeedbackResultSchema, type SidecarServerParams, type SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from './http/context.js'
 import type { ServerConfig } from './config.js'
 import { redactSensitive } from './redact.js'
 import { HttpFailure } from './sessions/service.js'
 import { loadRelayConfig, RelayPairingError } from './sessions/relay.js'
+import type { Session } from './sessions/session.js'
 import { checkImageMagic } from './sessions/shares.js'
+import { SidecarServerError } from './sidecar/server-methods.js'
 import { updateDocument } from './sessions/storage/document.js'
 
 const MAX_DIAGNOSTICS_BYTES = 16 * 1024
@@ -26,7 +28,8 @@ type ManifestEntry = z.infer<typeof ManifestEntry>
 type AttachmentResult = z.infer<typeof FeedbackAttachmentResultSchema>
 // `attachments` is the admitted manifest: a retry resends it unchanged, and it outlives settling so the fingerprint still
 // covers the file hashes. `results` is the settled per-file outcome.
-const Receipt = z.object({ requestId: z.uuid(), fingerprint: z.string().length(64), owner: z.string().length(64), createdAt: z.number(), expiresAt: z.number(), snapshot: Snapshot.optional(), reportId: z.string().min(1).max(256).optional(), attachments: z.array(ManifestEntry).max(MAX_ATTACHMENTS).optional(), results: z.array(FeedbackAttachmentResultSchema).max(MAX_ATTACHMENTS).optional() })
+// `dedupe` keys an agent report by its session and summary (TAL-1972).
+const Receipt = z.object({ requestId: z.uuid(), fingerprint: z.string().length(64), owner: z.string().length(64), dedupe: z.string().length(64).optional(), createdAt: z.number(), expiresAt: z.number(), snapshot: Snapshot.optional(), reportId: z.string().min(1).max(256).optional(), attachments: z.array(ManifestEntry).max(MAX_ATTACHMENTS).optional(), results: z.array(FeedbackAttachmentResultSchema).max(MAX_ATTACHMENTS).optional() })
 const FeedbackState = z.object({ installId: z.uuid(), entries: z.array(Receipt).max(MAX_RECEIPTS) })
 const submissions = new WeakMap<AppDeps, Map<string, Promise<void>>>()
 
@@ -211,18 +214,21 @@ async function settleFeedback(deps: AppDeps, requestId: string, owner: string, s
   else if (expiresAt !== null) await retainAttachments(deps, requestId, expiresAt)
 }
 
+/** TAL-1972: who filed an agent report; the Relay payload carries it as `agent` beside `source: agent`. */
+export interface FeedbackAgent { sessionId: string; agentVersion?: string; model?: string }
+
 /** Like RelayService.pair, serialize each identity through its complete send/settle lifecycle. */
-export function submitFeedback(deps: AppDeps, profileHome: string, input: z.infer<typeof FeedbackSubmitSchema>): ReturnType<typeof submitFeedbackSerial> {
+export function submitFeedback(deps: AppDeps, profileHome: string, input: z.infer<typeof FeedbackSubmitSchema>, agent?: FeedbackAgent): ReturnType<typeof submitFeedbackSerial> {
   let pending = submissions.get(deps)
   if (!pending) { pending = new Map(); submissions.set(deps, pending) }
-  const result = (pending.get(input.requestId) ?? Promise.resolve()).then(() => submitFeedbackSerial(deps, profileHome, input))
+  const result = (pending.get(input.requestId) ?? Promise.resolve()).then(() => submitFeedbackSerial(deps, profileHome, input, agent))
   const settled = result.then(() => undefined, () => undefined)
   pending.set(input.requestId, settled)
   void settled.then(() => { if (pending.get(input.requestId) === settled) pending.delete(input.requestId) })
   return result
 }
 
-async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z.infer<typeof FeedbackSubmitSchema>): Promise<z.infer<typeof FeedbackResultSchema>> {
+async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z.infer<typeof FeedbackSubmitSchema>, agent?: FeedbackAgent): Promise<z.infer<typeof FeedbackResultSchema>> {
   let outcome = 'feedback_unavailable'
   const owner = ownerHash(deps)
   try {
@@ -239,10 +245,14 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
       if (!entry && fresh instanceof Error) throw fresh
       const manifest = entry ? entry.attachments ?? [] : (fresh as { manifest: ManifestEntry[] }).manifest
       const hash = createHash('sha256').update(JSON.stringify(input))
+      if (agent) hash.update(JSON.stringify(agent))
       for (const row of manifest) hash.update(row.sha256)
       const fingerprint = hash.digest('hex')
       if (entry && (entry.owner !== owner || entry.fingerprint !== fingerprint)) throw new HttpFailure(400, 'invalid')
       if (entry?.reportId) return { value: state, result: { sent: { status: 'sent', reportId: entry.reportId, attachments: entry.results ?? [] }, body: '', manifest, expiresAt: entry.expiresAt } }
+      // An agent report repeats one of its session's within the hour while that one was sent or its outcome is unknown.
+      const dedupe = agent ? createHash('sha256').update(`${agent.sessionId}\n${input.title}`).digest('hex') : undefined
+      if (!entry && dedupe && state.entries.some((row) => row.dedupe === dedupe && row.createdAt > now - QUOTA_WINDOW && (row.reportId || row.snapshot))) throw new HttpFailure(409, 'duplicate')
       if (!entry) {
         const recent = state.entries.filter((row) => row.owner === owner && row.createdAt > now - QUOTA_WINDOW)
         if (recent.length >= MAX_REPORTS_PER_OWNER_HOUR || state.entries.length >= MAX_RECEIPTS) {
@@ -253,10 +263,10 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
       const snapshot = entry?.snapshot ?? { server: ServerStamp.parse({ webVersion: deps.version.slice(0, 64), agentVersion: deps.agentVersion().slice(0, 64) }), ...(input.includeDiagnostics ? { diagnostics: (await feedbackDiagnostics(deps, profileHome)).text } : {}) }
       const { requestId, kind, title, body: text, client } = input
       const attachments = manifest.map(({ contentType, bytes, sha256 }) => ({ contentType, bytes, sha256 }))
-      const body = JSON.stringify({ requestId, kind, title, body: text, client, installId: state.installId, ...snapshot, ...(attachments.length ? { attachments } : {}) })
+      const body = JSON.stringify({ requestId, kind, title, body: text, client, installId: state.installId, ...snapshot, ...(attachments.length ? { attachments } : {}), ...(agent ? { source: 'agent', agent } : {}) })
       if (Buffer.byteLength(body) > 32 * 1024) throw new HttpFailure(400, 'invalid')
       if (!entry) {
-        entry = { requestId, fingerprint, owner, createdAt: now, expiresAt: now + RECEIPT_RETENTION }
+        entry = { requestId, fingerprint, owner, ...(dedupe ? { dedupe } : {}), createdAt: now, expiresAt: now + RECEIPT_RETENTION }
         state.entries.push(entry)
       }
       entry.snapshot = snapshot
@@ -282,4 +292,36 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
     if (error instanceof HttpFailure) { outcome = error.message; throw error }
     throw new HttpFailure(503, 'feedback_unavailable')
   } finally { deps.log(`[feedback] ${input.requestId} ${outcome}`) }
+}
+
+/** TAL-1972: what each refusal of the feedback service tells the agent; the route's error name stays the condition. */
+const REPORT_ISSUE_REFUSALS: Record<string, string> = {
+  duplicate: 'This session already reported this summary within the last hour',
+  rate_limited: 'Too many feedback reports were sent from this server recently',
+  feedback_unavailable: 'Feedback is not available on this server',
+  relay_unreachable: 'The Relay could not be reached, so the report may not have arrived',
+  invalid: 'The Relay refused the report as invalid',
+}
+
+/**
+ * TAL-1972: the `harness` toolset's `report_issue`, one bug report through the service behind `/api/feedback/submit`,
+ * with the calling session's provenance and no attachments.
+ */
+export async function reportIssue(deps: AppDeps, caller: Session, params: Omit<SidecarServerParams<'server.report_issue'>, 'caller_session_id'>): Promise<SidecarServerResultInput<'server.report_issue'>> {
+  const fields = { summary: params.summary.trim(), detail: params.detail.trim() }
+  for (const name of ['summary', 'detail'] as const) {
+    if (!fields[name]) throw new SidecarServerError(`${name} is required`, 'invalid_params')
+    if (fields[name].length > REPORT_ISSUE_LIMITS[name]) throw new SidecarServerError(`${name} is ${String(fields[name].length)} characters; report_issue takes at most ${String(REPORT_ISSUE_LIMITS[name])}`, `${name}_too_long`)
+  }
+  const agentVersion = deps.agentVersion().slice(0, 64)
+  const model = (caller.served_model ?? caller.model)?.slice(0, 128)
+  const agent = { sessionId: caller.session_id, ...(agentVersion ? { agentVersion } : {}), ...(model ? { model } : {}) }
+  const input = { requestId: randomUUID(), kind: 'bug' as const, title: fields.summary, body: fields.detail, includeDiagnostics: params.include_diagnostics === true, client: { platform: 'web' as const } }
+  try {
+    return { report_id: (await submitFeedback(deps, deps.profileHome(caller.profile ?? 'default'), input, agent)).reportId }
+  } catch (error) {
+    if (!(error instanceof HttpFailure)) throw error
+    const retry = error.extra.retryAfterSeconds
+    throw new SidecarServerError(REPORT_ISSUE_REFUSALS[error.message] ?? error.message, error.message, typeof retry === 'number' ? { retry_after_seconds: retry } : {})
+  }
 }

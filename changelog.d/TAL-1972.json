@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When Talaria itself misbehaves during a chat, the agent can file a feedback report for it, marked as the agent's and naming the chat, with diagnostics only when it chooses to include them.",
+      "highlight": false,
+      "components": [
+        "web",
+        "relay"
+      ],
+      "announce": false
+    }
+  ]
+}

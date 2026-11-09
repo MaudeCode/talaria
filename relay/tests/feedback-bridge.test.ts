@@ -226,6 +226,19 @@ it("files pending reports with stable request IDs, quarantined text, metadata an
   }
 });
 
+it("marks a report an agent filed with its source, session and model", async () => {
+  const agent = report();
+  const person = report();
+  Object.assign(agent.payload, { source: "agent", agent: { sessionId: "20261109_090000_caller", agentVersion: "7.8.9", model: "claude-opus-5-5" } });
+  const f = await fixture([agent, person]);
+  expect((await f.run()).code).toBe(0);
+  const [filed, reported] = f.creates.map((create) => create.description as string);
+  for (const row of ["| Source | agent |", "| Session ID | 20261109_090000_caller |", "| Model | claude-opus-5-5 |"]) {
+    expect(filed).toContain(row);
+    expect(reported).not.toContain(row);
+  }
+});
+
 it("maps other to research and escapes metadata without requiring diagnostics", async () => {
   const item = report("other", "ios");
   item.payload.client.deviceModel = "x|\n[link](https://evil.example)<script>`";

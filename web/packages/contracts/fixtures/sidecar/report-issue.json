@@ -1,0 +1,25 @@
+{
+  "server.report_issue": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "summary": "deliver answered file_not_found for a file ls lists",
+        "detail": "I wrote report.csv to the workspace root, ls shows it, and deliver({\"path\": \"report.csv\"}) answered file_not_found.",
+        "include_diagnostics": true
+      },
+      "result": {
+        "report_id": "report-1"
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "summary": "The show table lost its last column after a refresh",
+        "detail": "A show table with four columns rendered three after the page reloaded."
+      },
+      "result": {
+        "report_id": "report-2"
+      }
+    }
+  ]
+}

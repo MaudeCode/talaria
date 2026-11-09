@@ -296,6 +296,21 @@ export const ServerTerminalReadParamsSchema = z.object({ caller_session_id: z.st
  */
 export const ServerTerminalReadResultSchema = z.object({ terminal_id: TerminalIdSchema, output: z.string(), lines: z.number().int().nonnegative(), next_event_id: z.number().int().nonnegative(), truncated: z.boolean(), running: z.boolean(), exit_code: z.number().int().nullable() })
 
+/** TAL-1972: the longest `report_issue` summary (the feedback title) and detail it sends; longer ones are refused, never cut. */
+export const REPORT_ISSUE_LIMITS = { summary: 120, detail: 4000 } as const
+/**
+ * TAL-1972: the `harness` toolset's `report_issue`. The server files one feedback report through the service behind
+ * `/api/feedback/submit`, marked `source: agent` with the calling session's id, the Agent version and its model, and the
+ * redacted diagnostics `/api/feedback/diagnostics` previews when `include_diagnostics` is true. A blank summary or detail
+ * is `invalid_params`, a longer one than `REPORT_ISSUE_LIMITS` `summary_too_long` or `detail_too_long`; a second report
+ * with the same summary from the same session within an hour is `duplicate`. The route's refusals keep their name as the
+ * condition: `rate_limited` (with `retry_after_seconds` in the error data), `feedback_unavailable`, `relay_unreachable`
+ * and `invalid`.
+ */
+export const ServerReportIssueParamsSchema = z.object({ caller_session_id: z.string().min(1), summary: z.string(), detail: z.string(), include_diagnostics: z.boolean().optional() })
+/** `report_id` is the Relay's receipt for the report. */
+export const ServerReportIssueResultSchema = z.object({ report_id: z.string().min(1) })
+
 /**
  * TAL-1969: the `harness` toolset's `request_secret`. The server refuses a malformed or reserved `env_name` before any
  * prompt; otherwise it queues an `agent_secret` vault prompt on the calling session and answers once the owner saves or
@@ -378,6 +393,7 @@ export const SIDECAR_SERVER_METHODS = {
   'server.deliver': { params: ServerDeliverParamsSchema, result: ServerDeliverResultSchema },
   'server.terminal_open': { params: ServerTerminalOpenParamsSchema, result: ServerTerminalOpenResultSchema },
   'server.terminal_read': { params: ServerTerminalReadParamsSchema, result: ServerTerminalReadResultSchema },
+  'server.report_issue': { params: ServerReportIssueParamsSchema, result: ServerReportIssueResultSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

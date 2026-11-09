@@ -1,5 +1,18 @@
 # Sidecar RPC (TAL-245)
 
+RPC v95 adds the `harness` toolset's `report_issue` (TAL-1972, `server.report_issue`). The
+agent files one bug report through the service behind `/api/feedback/submit`: `summary` is
+the title (at most 120 characters) and `detail` the body (at most 4000); a longer one is
+`summary_too_long` or `detail_too_long` and a blank one `invalid_params`, sending nothing.
+`include_diagnostics: true` attaches the redacted text `/api/feedback/diagnostics` previews.
+The Relay payload adds `source: "agent"` and `agent` (`sessionId`, `agentVersion`, `model`;
+`contracts/fixtures/feedback-report-agent.json`), and the Inbox ticket shows them as Source,
+Session ID and Model rows. A second report with the same summary from the same session
+within an hour is `duplicate` while the first was sent or its outcome is unknown. Agent
+reports share the route's rate limit and carry no attachments. The result is the Relay's
+`report_id`; a refusal keeps the route's error as its condition (`rate_limited` adds
+`retry_after_seconds` to the error data, which `_ask` returns beside the condition).
+
 RPC v94 adds the `harness` toolset's `terminal_open` and `terminal_read` (TAL-1974,
 `server.terminal_open`, `server.terminal_read`). The sidecar first runs the Agent's own
 pre-exec guard (`tools.approval.check_all_command_guards`, as its terminal tool does) on the

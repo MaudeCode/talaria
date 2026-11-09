@@ -165,6 +165,13 @@ export const feedbackPayloadValidator = v.object({
     bytes: v.number(),
     sha256: v.string(),
   }))),
+  // TAL-1972: a report an agent filed from a Talaria Web session; absent on a person's report.
+  source: v.optional(v.literal("agent")),
+  agent: v.optional(v.object({
+    sessionId: v.string(),
+    agentVersion: v.optional(v.string()),
+    model: v.optional(v.string()),
+  })),
 });
 
 export const feedbackAttachmentRefusalValidator = v.union(v.literal("tier"), v.literal("quota"), v.literal("disabled"));

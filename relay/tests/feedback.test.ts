@@ -11,6 +11,7 @@ import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 const fixtureText = readFileSync(new URL("../../contracts/fixtures/feedback-report.json", import.meta.url), "utf8");
+const agentFixtureText = readFileSync(new URL("../../contracts/fixtures/feedback-report-agent.json", import.meta.url), "utf8");
 // The shared example carries an attachment manifest; text-only tests drop it.
 const { attachments: _fixtureAttachments, ...fixture } = JSON.parse(fixtureText) as Record<string, unknown> & { client: Record<string, unknown> };
 const operatorToken = "synthetic-operator-token";
@@ -99,6 +100,13 @@ describe("feedback intake", () => {
     expect(row?.publisherId).toBeUndefined();
   });
 
+  it("keeps the agent provenance of the shared agent fixture unchanged (TAL-1972)", async () => {
+    const { submit, rows } = await relay();
+    expect((await submit(agentFixtureText)).status).toBe(202);
+    const [row] = await rows();
+    expect(row?.payload).toEqual(JSON.parse(agentFixtureText));
+  });
+
   it("records a signed submission from a registered publisher as verified", async () => {
     const { signedSubmit, rows } = await relay();
     expect((await signedSubmit(report())).status).toBe(202);
@@ -138,6 +146,12 @@ describe("feedback intake", () => {
       report({ installId: "not-a-uuid" }),
       report({ server: {} }),
       report({ requestId: undefined }),
+      report({ source: "agent" }),
+      report({ agent: { sessionId: "20261109_090000_caller" } }),
+      report({ source: "user", agent: { sessionId: "20261109_090000_caller" } }),
+      report({ source: "agent", agent: { sessionId: "20261109_090000_caller", extra: true } }),
+      report({ source: "agent", agent: { sessionId: "s".repeat(129) } }),
+      report({ source: "agent", agent: { sessionId: "20261109_090000_caller", model: "  " } }),
     ]) {
       const response = await submit(invalid);
       expect(response.status).toBe(400);
