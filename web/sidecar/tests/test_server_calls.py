@@ -582,4 +582,3 @@ def test_harness_terminal_tools_forward_their_call_and_return_the_server_result_
 
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(handler(args, session_id="20261109_090000_tip")) == {"error": "This session already has a live terminal", "condition": "limit_reached"}
-
