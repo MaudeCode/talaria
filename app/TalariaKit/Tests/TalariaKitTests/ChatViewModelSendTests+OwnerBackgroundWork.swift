@@ -81,6 +81,41 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.backgroundOwnerWork, .unavailable)
     }
 
+    /// TAL-1531: one fixture answer with `pinned_count` replaced (nil removes it) and a field this build does not know.
+    private static func ownerWorkFixture(_ key: String, pinnedCount: Int?) throws -> String {
+        var answer = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try ownerWorkFixture(key).utf8)) as? [String: Any])
+        answer["pinned_count"] = pinnedCount
+        answer["future_count"] = 9
+        return String(decoding: try JSONSerialization.data(withJSONObject: answer), as: UTF8.self)
+    }
+
+    /// TAL-1531: the Background tasks badge, chip and sheet entry show the server's pinned count, even when it differs
+    /// from the records listed. A failed read keeps the last count; a server older than the count leaves the pinned
+    /// records to count.
+    func testPinnedBackgroundCountIsTheServersCount() async throws {
+        let log = OwnerWorkLog(tasks: try Self.ownerWorkFixture("available"))
+        let viewModel = try ownerWorkViewModel(log)
+        await viewModel.refreshBackgroundTasks()
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 3)
+
+        log.tasks = try Self.ownerWorkFixture("available", pinnedCount: 7)
+        await viewModel.refreshBackgroundTasks()
+        XCTAssertEqual(viewModel.pinnedBackgroundTasks.count, 3)
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 7)
+
+        log.tasks = "{"
+        await viewModel.refreshBackgroundTasks()
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 7, "A failed read is not a zero")
+
+        log.tasks = try Self.ownerWorkFixture("unavailable")
+        await viewModel.refreshBackgroundTasks()
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 0)
+
+        log.tasks = try Self.ownerWorkFixture("available", pinnedCount: nil)
+        await viewModel.refreshBackgroundTasks()
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 3)
+    }
+
     func testStopAndSteerReachOnlyTheListedRowAndEveryAnswerRereadsTheOwnersRoster() async throws {
         let log = OwnerWorkLog(tasks: try Self.ownerWorkFixture("available"))
         let viewModel = try ownerWorkViewModel(log)

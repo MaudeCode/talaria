@@ -59,7 +59,7 @@ extension UITestFixtureURLProtocol {
 
     static func ownerWorkTasksResponse() -> Data {
         if ownerWorkUnavailable.withLock({ $0 }) {
-            return json(["session_id": sessionID, "agent_available": true, "agents_working": false, "owner_work": "unavailable", "tasks": []])
+            return json(["session_id": sessionID, "agent_available": true, "agents_working": false, "owner_work": "unavailable", "tasks": [], "pinned_count": 0])
         }
         let stopped = ownerWorkStopped.withLock { $0 }
         func row(_ id: String, kind: String, title: String, stop: Bool, steer: Bool, result: Bool) -> [String: Any] {
@@ -70,11 +70,13 @@ extension UITestFixtureURLProtocol {
                     "agents": kind == "delegation" ? ["total": 1, "completed": 0, "failed": 0, "running": running ? 1 : 0] : NSNull(),
                     "pinned": running, "dismissible": false, "can_stop": running && stop, "can_steer": running && steer, "active": running]
         }
-        return json(["session_id": sessionID, "agent_available": true, "agents_working": true, "owner_work": "available", "tasks": [
+        let tasks = [
             row("owner-work-rebuilt", kind: "delegation", title: "Check the tests", stop: false, steer: false, result: false),
             row("owner-work-resident", kind: "delegation", title: "Read the logs", stop: true, steer: true, result: true),
             row("owner-work-server", kind: "process", title: "npm run dev", stop: true, steer: false, result: true)
-        ]])
+        ]
+        return json(["session_id": sessionID, "agent_available": true, "agents_working": true, "owner_work": "available", "tasks": tasks,
+                     "pinned_count": tasks.filter { $0["pinned"] as? Bool == true }.count])
     }
 
     static func ownerWorkControlResponse(_ request: URLRequest, path: String) -> Data {
@@ -146,18 +148,18 @@ extension UITestFixtureURLProtocol {
         detail["read_only"] = true
         detail["read_only_reason"] = "This session is owned by the Agent gateway and is display-only in Talaria."
         detail["owner_attachment"] = ["state": "attached", "reason": NSNull(), "can_submit": true, "can_interrupt": false, "can_attach": false,
-                                      "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": []]
+                                      "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": [], "queued_input_count": 0]
         return detail
     }
 
     private static func ownerAttachment() -> [String: Any] {
         if servesNativeNotices {
             return ["state": "attached", "reason": NSNull(), "can_submit": true, "can_interrupt": false, "can_attach": false,
-                    "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": []]
+                    "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": [], "queued_input_count": 0]
         }
         if ProcessInfo.processInfo.arguments.contains(ownerChatBatchArgument) {
             return ["state": "incompatible", "reason": "native_clarify_batch_unavailable", "can_submit": false, "can_interrupt": false,
-                    "can_attach": false, "revision": NSNull(), "execution_generation": NSNull(), "active_admission": NSNull(), "admissions": []]
+                    "can_attach": false, "revision": NSNull(), "execution_generation": NSNull(), "active_admission": NSNull(), "admissions": [], "queued_input_count": 0]
         }
         let settled = ownerSettledAdmissions.withLock { $0 }
         let admissions: [[String: Any]] = [
@@ -168,7 +170,7 @@ extension UITestFixtureURLProtocol {
         ].filter { !settled.contains($0["admission_id"] as? String ?? "") }
         let unknown = admissions.contains { $0["status"] as? String == "unknown" }
         return ["state": "attached", "reason": NSNull(), "can_submit": !unknown, "can_interrupt": false, "can_attach": false,
-                "revision": 2, "execution_generation": 1, "active_admission": NSNull(), "admissions": admissions]
+                "revision": 2, "execution_generation": 1, "active_admission": NSNull(), "admissions": admissions, "queued_input_count": admissions.count]
     }
 }
 #endif

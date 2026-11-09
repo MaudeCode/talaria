@@ -766,7 +766,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/background/result" where servesOwnerWork:
             return json(["task_id": "owner-work-resident", "text": "read_file logs/app.log"])
         case "/api/background/tasks" where UITestFixtureEnvironment.hasBackgroundUpdates:
-            return json(["session_id": sessionID, "agent_available": true, "tasks": Self.backgroundTasks()])
+            let tasks = Self.backgroundTasks()
+            return json(["session_id": sessionID, "agent_available": true, "tasks": tasks, "pinned_count": tasks.filter { $0["pinned"] as? Bool == true }.count])
         case "/api/background/result" where UITestFixtureEnvironment.hasBackgroundUpdates:
             return json(["task_id": "bg-ui", "text": Self.backgroundResultText])
         case "/api/background/dismiss" where UITestFixtureEnvironment.hasBackgroundUpdates:

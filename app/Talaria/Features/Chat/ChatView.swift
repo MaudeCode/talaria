@@ -943,12 +943,12 @@ struct ChatView: View {
                 }
 
                 if #available(iOS 26, *) {
-                    if !viewModel.pinnedBackgroundTasks.isEmpty {
+                    if viewModel.pinnedBackgroundTaskCount > 0 {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: backgroundTasksAction) {
                                 Label("Background tasks", systemImage: "square.3.layers.3d")
                             }
-                            .badge(viewModel.pinnedBackgroundTasks.count)
+                            .badge(viewModel.pinnedBackgroundTaskCount)
                         }
                         .overflowPriority(.chatBackgroundTasks, includesHorizontal: true)
                     }
@@ -1624,8 +1624,7 @@ struct ChatView: View {
 
     private var ownerAdmissions: [OwnerAdmission] { viewModel.ownerAttachment?.admissions ?? [] }
 
-    // shortcut: derive confirmed counts from records until TAL-1519 supplies contract fields.
-    private var queuedMessagesCount: Int { viewModel.queuedMessagePreviews.count + ownerAdmissions.count }
+    private var queuedMessagesCount: Int { viewModel.queuedMessageCount }
 
     private var hasCompactStatusItems: Bool {
         activeRunStatusPresentation != nil || hasReservedCompactStatusItems
@@ -1649,8 +1648,8 @@ struct ChatView: View {
             ForEach(visibleSessionNotices, id: \.self) { notice in
                 NoticeChip(text: notice.text, level: notice.level) { dismissedSessionNotices.insert(notice) }
             }
-            if showsWorkChips, !viewModel.pinnedBackgroundTasks.isEmpty {
-                backgroundTasksChip(viewModel.pinnedBackgroundTasks)
+            if showsWorkChips, viewModel.pinnedBackgroundTaskCount > 0 {
+                backgroundTasksChip(count: viewModel.pinnedBackgroundTaskCount)
             }
             if let ownerWorkNotice {
                 StatusChip(label: ownerWorkNotice, icon: .symbol("info.circle"))
@@ -1693,13 +1692,13 @@ struct ChatView: View {
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private var showsSheetChipRow: Bool {
-        (showsWorkChips && !viewModel.pinnedBackgroundTasks.isEmpty) || ownerWorkNotice != nil || showsQueuedMessagesChip
+        (showsWorkChips && viewModel.pinnedBackgroundTaskCount > 0) || ownerWorkNotice != nil || showsQueuedMessagesChip
     }
 
     /// TAL-1337: an owner chat whose owner cannot show or report its work has no rows to open, so the reason stands on
     /// its own, beside the Duo's bar too.
     private var ownerWorkNotice: String? {
-        viewModel.pinnedBackgroundTasks.isEmpty ? BackgroundWorkSheet.ownerNotice(viewModel.backgroundOwnerWork) : nil
+        viewModel.pinnedBackgroundTaskCount == 0 ? BackgroundWorkSheet.ownerNotice(viewModel.backgroundOwnerWork) : nil
     }
 
     /// The Duo's vertical bar already shows background tasks and queued messages as badged items, so their chips step
@@ -1740,9 +1739,9 @@ struct ChatView: View {
         .accessibilityIdentifier("decision-review-chip")
     }
 
-    private func backgroundTasksChip(_ tasks: [BackgroundWorkTask]) -> some View {
+    private func backgroundTasksChip(count: Int) -> some View {
         Button(action: backgroundTasksAction) {
-            StatusChip(label: String(localized: "Background tasks · \(tasks.count)"), icon: .symbol("square.stack.3d.up"))
+            StatusChip(label: String(localized: "Background tasks · \(count)"), icon: .symbol("square.stack.3d.up"))
                 .frame(minHeight: 44)
                 .contentShape(.rect)
         }

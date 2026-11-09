@@ -1439,6 +1439,7 @@ final class ChatHostedTests: XCTestCase {
             await model.refreshBackgroundTasks()
             await model.dismissBackgroundTask(taskID: "bg-ui")
             XCTAssertEqual(model.pinnedBackgroundTasks.count, 1)
+            XCTAssertEqual(model.pinnedBackgroundTaskCount, 1, "The fixture server's count")
             let window = try hostWindow(fixture.chat(session, viewModel: model), size: size)
             _ = try await requireElement(in: window, label: "Background tasks · 1")
             let started = await model.sendMessage("Run the deterministic fixture")

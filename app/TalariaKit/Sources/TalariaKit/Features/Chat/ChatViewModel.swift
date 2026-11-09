@@ -695,6 +695,17 @@ public final class ChatViewModel {
     private var backgroundReadShown = 0
     /// What the card above the composer shows: the records the server pins.
     public var pinnedBackgroundTasks: [BackgroundWorkTask] { backgroundTasks.filter(\.pinned) }
+    /// TAL-1531: the server's count of `pinnedBackgroundTasks`, kept with the records it came with.
+    private var backgroundPinnedCount: Int?
+    /// What the Background tasks toolbar badge, chip and sheet entry show. The recount covers a server older than
+    /// `pinned_count`; delete it once the minimum supported server sends the field.
+    public var pinnedBackgroundTaskCount: Int { backgroundPinnedCount ?? pinnedBackgroundTasks.count }
+    /// What the Queued messages toolbar badge and chip show: this device's unsent queue plus the owner's inputs as the
+    /// server counts them. An owner chat queues nothing here, so neither side counts the other's rows. The recount
+    /// covers a server older than `queued_input_count`; delete it once the minimum supported server sends the field.
+    public var queuedMessageCount: Int {
+        queuedMessagePreviews.count + (ownerAttachment.map { $0.queuedInputCount ?? $0.admissions.count } ?? 0)
+    }
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
     private var latestServerLoadHadAssistantResponseAfterLatestUser = false
@@ -5940,6 +5951,7 @@ public final class ChatViewModel {
         backgroundPollTask = nil
         if clearTrackedPrompts {
             backgroundTasks = []
+            backgroundPinnedCount = nil
             backgroundOwnerWork = nil
             // A read still in flight belongs to what was just cleared.
             backgroundReadShown = backgroundReadsStarted
@@ -5984,6 +5996,7 @@ public final class ChatViewModel {
         backgroundReadShown = read.sequence
         streamCoordinator.applySessionActivityPhase(response.activityPhase)
         backgroundTasks = response.tasks
+        backgroundPinnedCount = response.pinnedCount
         backgroundOwnerWork = response.ownerWork
         return true
     }
