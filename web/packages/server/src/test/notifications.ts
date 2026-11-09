@@ -73,4 +73,3 @@ export function fakeRelay(): FakeRelay {
   }
   return relay
 }
-
