@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long chats you have opened before reopen and finish replies faster.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

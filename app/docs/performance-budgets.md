@@ -17,6 +17,7 @@ sidebar are checked on a device against the release phone list
 | Dense Kanban load and filter | `TalariaTests/KanbanBoardPerformanceTests` |
 | Large image preview preparation | `TalariaTests/ImagePreviewPerformanceTests` |
 | Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
+| Chat open scaling | `TalariaTests/ChatOpenPerformanceTests` |
 
 ## Fixture data
 
@@ -31,6 +32,11 @@ them.
   code block, ends the reply, then types into the composer. Typing waits for
   the reply to end: a live stream silent for 12 s starts a stale-stream check,
   which would make keystroke counts depend on the host's speed.
+- The chat open budget loads one page of 200 or 600 generated messages:
+  user and assistant alternate, and each carries Markdown with a code span and
+  a link. The load measurement reopens a chat whose transcript is already
+  cached; the hosted measurement opens an uncached `ChatView` and waits for the
+  last row's label.
 - The replay budget streams generated tokens, replays them over a scripted
   reconnect, and checks the resulting transcript on every run so a broken dedup
   cannot pass as a fast one.
@@ -57,13 +63,18 @@ Medians of three iterations.
 | Replay catch-up, 4,000 tokens (peak memory) | 53,447 kB | 16 kB |
 | Chat, 200 stream ticks and 200 keystrokes (clock) | 10.10 s | 0.05 s |
 | Chat, 200 stream ticks and 200 keystrokes (CPU) | 9.54 s | 0.09 s |
+| Chat reopen, 600 cached messages (clock, fastest of 5) | 138 ms | |
+| Hosted chat open, 600 messages (clock, fastest of 3) | 519 ms | |
 
 The chat budget was measured on an iOS simulator inside the local macOS build VM
 rather than the pool above. Ticks took 8.0-8.1 s (~40 ms each) and
 keystrokes 1.5-1.7 s (~8 ms each). GitHub's hosted runner measures about
 four times slower; the work counts match.
 
-The replay and chat budgets assert thresholds; the others record for comparison.
+The chat open budget was also measured in the build VM, on an iPhone 18 Pro
+simulator running iOS 27.2.
+
+The replay, chat and chat open budgets assert thresholds; the others record for comparison.
 
 - Replay catch-up may not cost more than 8x across the curve's 4x span, and
   4,000 tokens may not take more than 80 ms. A linear path measures ~3.9x and
@@ -75,6 +86,11 @@ The replay and chat budgets assert thresholds; the others record for comparison.
   GitHub's hosted runner measured before TAL-852, and ~18x the build VM.
   Its work counts below are the real gate: each count's minimum across runs is
   asserted exactly.
+
+- Chat open may not cost more per message at 600 messages than twice its cost
+  at 200, in both measurements. The reopen of 600 messages may not take more
+  than 1 s and the hosted open more than 5 s: about 7x and 10x the build VM, for
+  a runner about four times slower.
 
 ## Chat stream tick and keystroke work
 
@@ -119,6 +135,31 @@ O(response²) on the main actor.
 `ChatViewModel` now caches the unmatched tail of the received text while an
 armed replay keeps matching in order, keyed on the received UTF-8 length so any
 other rewrite of the streaming message falls back to the exact comparison.
+
+## Chat open: the measured change
+
+A load with a cache merges the server's page with the cached transcript, so a
+reload's own steering and optimistic rows survive and missing activity is
+filled in. The merge looked up each assistant reply's cached copy by scanning
+the whole cache, so reopening a long cached chat, and every reload after a run
+finished, cost O(messages²) on the main actor. It now builds one lookup per
+merge (TAL-1678). `ChatViewModelMergeDedupTests` asserts the merge's growth
+across 1,000 to 4,000 messages, where the scan measured 16.0x and the lookup
+measures 4.0x.
+
+All measured in one session in the build VM on the iPhone 18 Pro simulator,
+iOS 27.2, fastest run per size:
+
+| Commit | Reopen 200 | Reopen 600 | Per message, 200 to 600 | Hosted open 200 | Hosted open 600 |
+| --- | --- | --- | --- | --- | --- |
+| `1bf0c1fd5` | 46.3 ms | 168.0 ms | 1.21x | 514 ms | 876 ms |
+| `547de77cb`, before | 53.0 ms | 188.9 ms | 1.19x | 452 ms | 607 ms |
+| After | 46.9 ms | 138.0 ms | 0.98x | 310 ms | 519 ms |
+
+The hosted open waits for the last row with a 50 ms poll, so its fixed cost
+dominates at these sizes: it costs less per message at 600 than at 200 on every
+commit. The 3.4 s for 600 messages that prompted this budget was measured on an
+iPhone 17 Pro simulator running iOS 27.0 and did not recur in the build VM.
 
 ## Chat open: serial round trips to a ready composer
 

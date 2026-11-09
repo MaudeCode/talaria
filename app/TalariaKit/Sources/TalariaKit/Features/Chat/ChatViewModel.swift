@@ -2380,11 +2380,15 @@ public final class ChatViewModel {
         _ loadedMessages: [ChatMessage],
         withCachedLocalOptimisticMessages cachedMessages: [ChatMessage]
     ) -> [ChatMessage] {
+        // One lookup per loaded reply: scanning the cache for each made every load of a long cached transcript
+        // quadratic (TAL-1678). The latest cached copy of an id wins, as the scan's `last(where:)` did.
+        let cachedAssistants = Dictionary(
+            cachedMessages.lazy.filter { $0.role == "assistant" }.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
         let serverMergedMessages = loadedMessages.map { loadedMessage in
             guard loadedMessage.role == "assistant",
-                  let cachedMessage = cachedMessages.last(where: {
-                      $0.role == "assistant" && $0.id == loadedMessage.id
-                  })
+                  let cachedMessage = cachedAssistants[loadedMessage.id]
             else { return loadedMessage }
 
             var merged = loadedMessage
