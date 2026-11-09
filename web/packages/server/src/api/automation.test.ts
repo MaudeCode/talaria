@@ -14,6 +14,7 @@ import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRe
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
 import { BACKLOG_MAX, CLOSED_RETENTION_MS, TerminalRegistry, type TerminalItem, type TerminalSession } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
+import { TERMINAL_GATE_DENIED } from './automation-router.js'
 
 useJsonStorage()
 
@@ -870,6 +871,54 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(body.running).toBe(true)
     expect(pty.spawned).toHaveLength(spawnedBefore + 2)
   })
+  it('reads a terminal of the session for a read-only view by cursor and cap, restating an open line, and refuses another session\'s, a replaced one and remote callers (TAL-1997)', async () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/terminal-view.json'), 'utf8')) as { reads: { after_event_id: number; result: Json }[] }
+    const newSession = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const sid = await newSession()
+    const other = await newSession()
+    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    let id = String((await json(await post(s, '/api/terminal/start', { session_id: sid }))).terminal_id)
+    const read = async (query: string, session = sid, headers: Record<string, string> = {}): Promise<Response> => s.get(`/api/terminal/read?session_id=${session}&terminal_id=${id}${query}`, { headers })
+    const recorded = async (n: number): Promise<void> => {
+      const { after_event_id, result } = fixture.reads[n]!
+      expect(await json(await read(`&after_event_id=${String(after_event_id)}`))).toEqual({ ...result, terminal_id: id })
+    }
+    const proc = pty.spawned.at(-1)!
+    proc.emit('\x1b[1mnpm test\x1b[0m\r\n> vitest run\r\n')
+    proc.emit(' 40%')
+    await recorded(0)
+    // The cursor stopped inside ` 40%`: the next read starts with that line as it now reads, in its place.
+    proc.emit('\r100% done\r\nPASS\r\n')
+    await recorded(1)
+    expect(await json(await read('&max_lines=2'))).toMatchObject({ output: 'npm test\n> vitest run', lines: 2, next_event_id: 1, truncated: true })
+    proc.exit(0)
+    await recorded(2)
+    expect(await json(await read('&after_event_id=4'))).toMatchObject({ output: '', lines: 0, next_event_id: 4, replaces_last_line: false })
+    const gone = { error: 'terminal_not_found', message: 'This terminal is no longer available.' }
+    let res = await read('', other)
+    expect(res.status).toBe(404)
+    expect(await json(res)).toEqual(gone)
+    const env = s.deps.config.env
+    env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.0/8,::1/128'
+    try {
+      res = await read('', sid, { 'x-forwarded-for': '203.0.113.9' })
+      expect(res.status).toBe(403)
+      expect((await json(res)).error).toBe(TERMINAL_GATE_DENIED)
+    } finally {
+      delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
+      delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+    }
+    const replaced = id
+    id = String((await json(await post(s, '/api/terminal/start', { session_id: sid }))).terminal_id)
+    pty.spawned.at(-1)!.emit(Array.from({ length: 500 }, (_, n) => `line ${String(n)}\n`).join(''))
+    expect(await json(await read('&max_lines=1000'))).toMatchObject({ lines: 400, next_event_id: 1, truncated: true })
+    res = await s.get(`/api/terminal/read?session_id=${sid}&terminal_id=${replaced}`)
+    expect(res.status).toBe(404)
+    expect(await json(res)).toEqual(gone)
+    await post(s, '/api/terminal/close', { session_id: sid })
+  })
+
   it('a remote terminal backend answers the code and the message, and a signal death reports a negative exit code', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     mkdirSync(join(s.state, 'workspace'), { recursive: true })

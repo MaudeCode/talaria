@@ -7,7 +7,7 @@ import { TERMINAL_READ_MAX_LINES, type SidecarServerParams, type SidecarServerRe
 import type { AppDeps } from '../http/context.js'
 import { HttpFailure } from '../sessions/service.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
-import type { TerminalSession } from './terminal.js'
+import type { TerminalSession, TerminalSlice } from './terminal.js'
 
 /** The longest command `/api/terminal/input` takes in one write, and so the longest `terminal_open` types. */
 const COMMAND_MAX = 8192
@@ -96,6 +96,15 @@ export function terminalRead(deps: AppDeps, caller: Caller, params: Omit<Sidecar
     if (error instanceof TerminalRefused) throw refuse(error.status, error.condition, error.message)
     throw error
   }
-  const slice = term.read(params.after_event_id ?? 0, Math.min(params.max_lines ?? TERMINAL_READ_MAX_LINES, TERMINAL_READ_MAX_LINES))
+  const { replaces_last_line: _, ...slice } = terminalSlice(term, params.after_event_id, params.max_lines)
+  return slice
+}
+
+/**
+ * TAL-1974/TAL-1997: one read of a terminal as `terminal_read` and `GET /api/terminal/read` answer it, at most
+ * `TERMINAL_READ_MAX_LINES` lines; the route's view restates the line its cursor stopped inside.
+ */
+export function terminalSlice(term: TerminalSession, afterEventId: number | null | undefined, maxLines: number | null | undefined, restateOpenLine = false): TerminalSlice & { terminal_id: string; running: boolean; exit_code: number | null } {
+  const slice = term.read(afterEventId ?? 0, Math.min(maxLines ?? TERMINAL_READ_MAX_LINES, TERMINAL_READ_MAX_LINES), restateOpenLine)
   return { terminal_id: term.id, ...slice, running: term.isAlive, exit_code: term.closed ? term.exitCode : null }
 }

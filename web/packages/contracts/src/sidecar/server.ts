@@ -6,7 +6,7 @@ import { DecisionItemInputSchema, DecisionOutcomeStateSchema, DecisionProgressSc
 import { ProposalKindSchema, ProposalSchema, ProposalStatusSchema } from '../proposals.js'
 import { ShowBlockIdSchema, ShowKindSchema } from '../show.js'
 import { DisplayMediaSchema } from '../display-media.js'
-import { TerminalIdSchema } from '../terminal.js'
+import { TerminalIdSchema, TerminalSliceSchema } from '../terminal.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -289,12 +289,8 @@ export const ServerTerminalOpenResultSchema = z.object({ terminal_id: TerminalId
  * retired after it closed is `terminal_not_found`.
  */
 export const ServerTerminalReadParamsSchema = z.object({ caller_session_id: z.string().min(1), terminal_id: z.string().min(1), after_event_id: z.number().int().nonnegative().optional(), max_lines: z.number().int().positive().optional() })
-/**
- * At most `max_lines` lines (`TERMINAL_READ_MAX_LINES` by default and at most); `next_event_id` is the cursor for the next
- * read. `truncated` is true when output after the cursor is missing from `output`: still unread past `next_event_id`, cut
- * from one event longer than the cap, or already gone from the backlog. `exit_code` is the shell's once it exited.
- */
-export const ServerTerminalReadResultSchema = z.object({ terminal_id: TerminalIdSchema, output: z.string(), lines: z.number().int().nonnegative(), next_event_id: z.number().int().nonnegative(), truncated: z.boolean(), running: z.boolean(), exit_code: z.number().int().nullable() })
+/** At most `max_lines` lines (`TERMINAL_READ_MAX_LINES` by default and at most), as `TerminalSliceSchema` says. */
+export const ServerTerminalReadResultSchema = TerminalSliceSchema
 
 /**
  * TAL-1969: the `harness` toolset's `request_secret`. The server refuses a malformed or reserved `env_name` before any
