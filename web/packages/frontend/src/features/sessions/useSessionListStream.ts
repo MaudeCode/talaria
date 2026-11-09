@@ -32,6 +32,8 @@ export function useSessionListStream() {
         if (closed || scope !== getStreamContext()) return
         if (ev.event === 'sessions_changed') {
           for (const completion of ev.data.web_audio ?? []) void deliverCompletion(completion, () => !closed && sound && scope === getStreamContext())
+          // TAL-1966: a review that opened or closed changes the Decisions list.
+          if (ev.data.reason === 'decision_review') void qc.invalidateQueries({ queryKey: keys.decisionReviews })
           if (ev.data.session_id) invalidateSidebar(qc, ev.data.session_id, ev.data.reason)
           // No id (a delete, an import, or two sessions' events coalesced): any session may have changed.
           else void qc.invalidateQueries({ queryKey: keys.sessions.all })

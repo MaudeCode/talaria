@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DecisionReviewSchema, SIDECAR_SERVER_METHODS, type DecisionItemInput } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewSchema, DecisionReviewsSchema, SIDECAR_SERVER_METHODS, type DecisionItemInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { Session } from './session.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -330,6 +330,21 @@ describe('decision reviews (TAL-1963)', () => {
     expect(((await http('GET', '/api/decisions')).body.reviews as { review_id: string }[]).map((review) => review.review_id)).toEqual([kept])
   })
 
+  it('lists rows newest first with the session title, and says why the list is empty (TAL-1966)', async () => {
+    const older = created(await ask('server.decision_review_put', { title: 'First choices', items: [item('a')] }))
+    clock += 5
+    await save('20261108_120500_other')
+    const newer = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a'), item('b')] }, '20261108_120500_other'))
+    await answer(newer, 'a', { value: 'keep' })
+    expect(DecisionReviewsSchema.parse((await http('GET', '/api/decisions')).body)).toEqual({ empty: null, reviews: [
+      { review_id: newer, session_id: '20261108_120500_other', session_title: '20261108_120500_other', title: 'Release choices', status: 'open', created_at: clock, progress: { total: 2, answered: 1, deferred: 0, needs_review: 0 } },
+      { review_id: older, session_id: CALLER, session_title: CALLER, title: 'First choices', status: 'open', created_at: clock - 5, progress: { total: 1, answered: 0, deferred: 0, needs_review: 0 } },
+    ] })
+    await http('POST', `/api/decisions/${newer}/cancel`)
+    await http('POST', `/api/decisions/${older}/cancel`)
+    expect((await http('GET', '/api/decisions')).body).toEqual({ reviews: [], empty: 'closed' })
+  })
+
   it('keeps the open index across a restart', async () => {
     await ask('server.decision_review_put', { title: 'Release choices', items: [item('a')] })
     const reloaded = new DecisionReviews(documents, () => s.deps, () => clock)
@@ -343,7 +358,7 @@ describe('decision reviews (TAL-1963)', () => {
     expect((await http('GET', '/api/decisions')).body.reviews).toHaveLength(1)
     const other = { cookie: 'hermes_profile=other' }
     expect((await http('GET', `/api/decisions/${id}`, undefined, other)).status).toBe(404)
-    expect((await http('GET', '/api/decisions', undefined, other)).body).toEqual({ reviews: [] })
+    expect((await http('GET', '/api/decisions', undefined, other)).body).toEqual({ reviews: [], empty: 'none' })
     expect((await answer(id, 'a', { value: 'keep', notes: '', deferred: false, custom: false, expected_version: 0 }, other)).status).toBe(404)
     expect((await http('GET', '/api/decisions/dr_nothere')).status).toBe(404)
   })

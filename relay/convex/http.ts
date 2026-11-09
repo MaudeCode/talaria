@@ -294,6 +294,8 @@ async function authenticatePublisher(
 
 // An opaque publisher digest of the approval at the head of the session's queue; never the approval's content.
 const approvalHeadPattern = /^[A-Za-z0-9_-]{1,64}$/;
+// TAL-1966: a Talaria Web decision review id; its title is the review's own, at most 200 characters.
+const decisionReviewPattern = /^dr_[0-9a-f]{8}$/;
 
 function parseState(
   value: unknown,
@@ -312,9 +314,13 @@ function parseState(
   const deepLink = stringField(value, "deepLink", 512);
   const alertEligible = value.alertEligible;
   const approvalHeadId = value.approvalHeadId;
+  const decisionReviewId = value.decisionReviewId;
+  const decisionReviewTitle = value.decisionReviewTitle;
   if (
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     (approvalHeadId !== undefined && (typeof approvalHeadId !== "string" || !approvalHeadPattern.test(approvalHeadId))) ||
+    (decisionReviewId !== undefined && (typeof decisionReviewId !== "string" || !decisionReviewPattern.test(decisionReviewId))) ||
+    (decisionReviewTitle !== undefined && (typeof decisionReviewTitle !== "string" || decisionReviewTitle.length > 200 || decisionReviewId === undefined)) ||
     !sessionId ||
     streamId === null ||
     !eventId ||
@@ -344,6 +350,7 @@ function parseState(
     deepLink,
     alertEligible,
     ...(approvalHeadId === undefined ? {} : { approvalHeadId }),
+    ...(decisionReviewId === undefined ? {} : { decisionReviewId, decisionReviewTitle: decisionReviewTitle ?? "" }),
   };
 }
 
@@ -556,6 +563,8 @@ http.route({
               deepLink: state.deepLink,
               alertEligible: state.alertEligible,
               approvalHeadId: state.approvalHeadId,
+              decisionReviewId: state.decisionReviewId,
+              decisionReviewTitle: state.decisionReviewTitle,
             }
           : null,
       });

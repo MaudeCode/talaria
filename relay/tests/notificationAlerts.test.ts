@@ -10,8 +10,10 @@ interface Vector {
   previous: SessionPhase | null;
   next: SessionPhase;
   alertEligible: boolean;
+  previousDecisionReviewId?: string | null;
+  decisionReviewId?: string;
   preferences: Record<"notify_on_approval" | "notify_on_input" | "notify_on_completion" | "notify_on_failure", boolean>;
-  expected: "approval" | "input" | "completion" | "failure" | null;
+  expected: "approval" | "input" | "completion" | "failure" | "decision" | null;
 }
 
 const { vectors } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[] };
@@ -23,6 +25,7 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
     publisherId: "publisher-1", publisherLabel: "Home", sessionId: "s1", streamId: "stream-1", eventId: "event-1", revision: 1,
     title: "Session", phase: vector.next, updatedAt: now, deepLink: "/sessions/s1", expiresAt: now + 60_000, terminalExpiresAt: now + 60_000,
     ...(vector.alertEligible ? {} : { alertEligible: false }),
+    ...(vector.decisionReviewId ? { decisionReviewId: vector.decisionReviewId, decisionReviewTitle: "Release choices" } : {}),
   };
   const preferences = {
     ...defaultNotificationPreferences,
@@ -31,8 +34,9 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
     notifyOnCompletion: vector.preferences.notify_on_completion,
     notifyOnFailure: vector.preferences.notify_on_failure,
   };
-  const alert = alertForTransition(vector.previous, next, preferences);
+  const alert = alertForTransition(vector.previous, next, preferences, undefined, vector.previousDecisionReviewId);
   if (vector.expected === null) expect(alert).toBeNull();
+  else if (vector.expected === "decision") expect(alert).toMatchObject({ title: "Decision review ready", body: "Release choices", deepLink: `/decisions/${String(vector.decisionReviewId)}` });
   else if (vector.expected === "approval") expect(alert?.body).toBe(approvalAlertBodyKey);
   else expect(alert?.body.startsWith(`${bodyPrefix[vector.expected]} on `)).toBe(true);
 });

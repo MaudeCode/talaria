@@ -143,11 +143,7 @@ struct ProviderQuotaDetailView: View {
                 HStack(spacing: 8) {
                     if let plan = source.plan, !plan.isEmpty {
                         Text(plan)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Color(.tertiarySystemFill)))
+                            .kindChip(inHeader: true)
                     }
                     if source.isActiveProvider {
                         Label("Active provider", systemImage: "checkmark.circle.fill")

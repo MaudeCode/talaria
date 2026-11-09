@@ -13,7 +13,7 @@ struct SessionListView: View {
     private let hasWaitingSharedImport: Bool
     private let openNextSharedImport: () -> Void
     @Binding private var pendingDeepLinkedSessionID: String?
-    @Binding private var pendingQuotaSourceID: String?
+    @Binding private var pendingDestination: SessionListUtilityDestination?
     @Binding private var opensProviderQuotaWidgetSettings: Bool
     @Binding private var requestedNewChat: NewChatRequest?
 
@@ -178,7 +178,7 @@ struct SessionListView: View {
         hasWaitingSharedImport: Bool = false,
         openNextSharedImport: @escaping () -> Void = {},
         pendingDeepLinkedSessionID: Binding<String?> = .constant(nil),
-        pendingQuotaSourceID: Binding<String?> = .constant(nil),
+        pendingDestination: Binding<SessionListUtilityDestination?> = .constant(nil),
         opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
         requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
         draftStore: ChatDraftStore? = nil,
@@ -193,7 +193,7 @@ struct SessionListView: View {
         self.openNextSharedImport = openNextSharedImport
         self.draftStore = draftStore ?? .shared
         _pendingDeepLinkedSessionID = pendingDeepLinkedSessionID
-        _pendingQuotaSourceID = pendingQuotaSourceID
+        _pendingDestination = pendingDestination
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
         var archiveUndoLifetime = SessionListViewModel.defaultArchiveUndoLifetime
@@ -492,7 +492,7 @@ struct SessionListView: View {
                 viewModel.paintCachedStateIfEmpty(modelContext: modelContext)
                 reloadAppSidebarQuotaSources()
                 openPendingSharedImportIfNeeded()
-                openPendingQuotaSourceIfNeeded()
+                openPendingDestinationIfNeeded()
                 openProviderQuotaWidgetSettingsIfNeeded()
                 openRequestedNewChatIfNeeded()
                 refreshAfterReturningIfNeeded()
@@ -507,8 +507,8 @@ struct SessionListView: View {
             .onChange(of: pendingDeepLinkedSessionID) {
                 Task { await openPendingDeepLinkedSessionIfNeeded() }
             }
-            .onChange(of: pendingQuotaSourceID) {
-                openPendingQuotaSourceIfNeeded()
+            .onChange(of: pendingDestination) {
+                openPendingDestinationIfNeeded()
             }
             .onChange(of: opensProviderQuotaWidgetSettings) {
                 openProviderQuotaWidgetSettingsIfNeeded()
@@ -1308,6 +1308,13 @@ struct SessionListView: View {
                 TasksView(viewModel: sectionViewModels.tasks, selection: sectionSelection, onAPIError: handleAPIError)
             case .kanban:
                 KanbanView(server: server, onAPIError: handleAPIError)
+            case .decisions:
+                DecisionsListView(
+                    server: server,
+                    selection: sectionSelection,
+                    openChat: { sessionID in Task { await openDeepLinkedSession(id: sessionID, in: .decisions) } },
+                    onAPIError: handleAPIError
+                )
             case .insights:
                 InsightsView(
                     server: server,
@@ -1379,6 +1386,8 @@ struct SessionListView: View {
                 } else {
                     ContentUnavailableView("Select a Task", systemImage: "calendar.badge.clock")
                 }
+            case .decisionReview(let id):
+                DecisionReviewView(reviewID: id, server: server, onAPIError: handleAPIError)
             case .quotaSource(let id):
                 if let source = quotaViewModel.quotaSources.first(where: { $0.id == id }) {
                     quotaSourcePage(source)
@@ -2211,15 +2220,16 @@ struct SessionListView: View {
         }
     }
 
-    private func openDeepLinkedSession(id sessionID: String) async {
+    /// `list` is the section that asked: a section-owned list pushes the chat above itself (TAL-1966's Decisions).
+    private func openDeepLinkedSession(id sessionID: String, in list: AppSection = .chats) async {
         if let loadedSession = viewModel.sessions.first(where: { $0.sessionId == sessionID }) {
-            await openSession(loadedSession)
+            await openSession(loadedSession, in: list)
             return
         }
 
         // A deep-linked external session needs the same server-side import a
         // tapped row does before it can be continued.
-        await openSession {
+        await openSession(in: list) {
             let session = await viewModel.loadSessionForDeepLink(id: sessionID, modelContext: modelContext)
             // Re-checked post-await: the view (and this task) may have been torn down —
             // e.g. dismissed, or the active server changed under `.id(server)` — while
@@ -2245,10 +2255,11 @@ struct SessionListView: View {
         )
     }
 
-    private func openPendingQuotaSourceIfNeeded() {
-        guard let sourceID = pendingQuotaSourceID else { return }
-        pendingQuotaSourceID = nil
-        openSection(.providers(sourceID))
+    private func openPendingDestinationIfNeeded() {
+        guard let destination = pendingDestination else { return }
+        pendingDestination = nil
+        openSection(destination)
+        guard case .providers(let sourceID) = destination else { return }
         // A widget's refresh request is consumed with its link, so nothing can replay it.
         let defaults = UserDefaults.standard
         guard defaults.string(forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey) == sourceID else { return }

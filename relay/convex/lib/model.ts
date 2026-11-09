@@ -33,6 +33,8 @@ export interface SessionState {
   terminalExpiresAt?: number;
   alertEligible?: boolean;
   approvalHeadId?: string;
+  decisionReviewId?: string;
+  decisionReviewTitle?: string;
 }
 
 export interface PublishedSessionState {
@@ -48,6 +50,8 @@ export interface PublishedSessionState {
   deepLink: string;
   alertEligible?: boolean;
   approvalHeadId?: string;
+  decisionReviewId?: string;
+  decisionReviewTitle?: string;
 }
 
 export interface AggregateRow {
@@ -89,8 +93,11 @@ export interface ActivityAlert {
   body: string;
   // `title` and `body` are keys in the App's Localizable strings, so the phone shows them in its own language.
   localized?: true;
-  // Time Sensitive alerts break through Focus; they arrive as a standalone notification wherever the device can receive one.
-  interruptionLevel?: "time-sensitive";
+  // Time Sensitive alerts break through Focus. Any alert with a level arrives as a standalone notification wherever the
+  // device can receive one, never only on a Live Activity.
+  interruptionLevel?: "time-sensitive" | "active";
+  // TAL-1966: where the notification opens when it is not the session's own deep link.
+  deepLink?: string;
 }
 
 export const defaultNotificationPreferences: NotificationPreferences = {

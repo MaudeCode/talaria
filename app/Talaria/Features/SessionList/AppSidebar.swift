@@ -114,6 +114,7 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                 if sectionVisibility.insights {
                     destinationRow(icon: "LucideChartColumnIncreasing", destination: .insights)
                 }
+                destinationRow(icon: "LucideScale", destination: .decisions)
             }
             .padding(.horizontal, 12)
             .padding(.top, 8)

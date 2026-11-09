@@ -83,7 +83,22 @@ export const DecisionReviewSchema = z.object({
 })
 export type DecisionReview = z.infer<typeof DecisionReviewSchema>
 
-export const DecisionReviewsSchema = z.object({ reviews: z.array(DecisionReviewSchema) })
+/**
+ * TAL-1966: one row of the Decisions list. `session_title` is the owning session's title, null when it has none or is
+ * gone.
+ */
+export const DecisionReviewRowSchema = z.object({
+  review_id: DecisionReviewIdSchema, session_id: z.string(), session_title: z.string().nullable(), title: z.string(),
+  status: DecisionReviewStatusSchema, created_at: z.number(), progress: DecisionProgressSchema,
+})
+export type DecisionReviewRow = z.infer<typeof DecisionReviewRowSchema>
+
+/**
+ * `GET /api/decisions`: open and submitted reviews, newest first. `empty` (TAL-1966) says why there are none: `none`
+ * when the profile has no review, `closed` when every one is applied or cancelled; null while `reviews` has rows.
+ */
+export const DecisionReviewsSchema = z.object({ reviews: z.array(DecisionReviewRowSchema), empty: z.enum(['none', 'closed']).nullable() })
+export type DecisionReviewList = z.infer<typeof DecisionReviewsSchema>
 
 /**
  * `PUT /api/decisions/{review_id}/answers/{item_id}`: `expected_version` is the item's `answer_version` as loaded;

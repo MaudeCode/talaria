@@ -125863,13 +125863,7 @@
                           "session_id": {
                             "type": "string"
                           },
-                          "profile": {
-                            "type": "string"
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "intro": {
+                          "session_title": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -125878,6 +125872,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "title": {
+                            "type": "string"
                           },
                           "status": {
                             "enum": [
@@ -125890,19 +125887,6 @@
                           },
                           "created_at": {
                             "type": "number"
-                          },
-                          "updated_at": {
-                            "type": "number"
-                          },
-                          "submitted_at": {
-                            "anyOf": [
-                              {
-                                "type": "number"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
                           },
                           "progress": {
                             "type": "object",
@@ -125934,317 +125918,37 @@
                               "deferred",
                               "needs_review"
                             ]
-                          },
-                          "submit": {
-                            "type": "object",
-                            "properties": {
-                              "allowed": {
-                                "type": "boolean"
-                              },
-                              "reason": {
-                                "anyOf": [
-                                  {
-                                    "enum": [
-                                      "nothing_answered",
-                                      "not_open"
-                                    ],
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              }
-                            },
-                            "required": [
-                              "allowed",
-                              "reason"
-                            ]
-                          },
-                          "items": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "id": {
-                                  "type": "string"
-                                },
-                                "title": {
-                                  "type": "string"
-                                },
-                                "question": {
-                                  "type": "string"
-                                },
-                                "explanation": {
-                                  "type": "string"
-                                },
-                                "example": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "current": {
-                                  "type": "string"
-                                },
-                                "recommendation": {
-                                  "type": "string"
-                                },
-                                "recommended_choice": {
-                                  "type": "string"
-                                },
-                                "choices": {
-                                  "type": "array",
-                                  "minItems": 2,
-                                  "maxItems": 4,
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "value": {
-                                        "type": "string"
-                                      },
-                                      "label": {
-                                        "type": "string"
-                                      },
-                                      "effect": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "value",
-                                      "label",
-                                      "effect"
-                                    ]
-                                  }
-                                },
-                                "technical": {
-                                  "type": "object",
-                                  "properties": {
-                                    "detail": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "null"
-                                        }
-                                      ]
-                                    },
-                                    "sources": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "string"
-                                      }
-                                    }
-                                  },
-                                  "required": [
-                                    "detail",
-                                    "sources"
-                                  ]
-                                },
-                                "content_hash": {
-                                  "type": "string"
-                                },
-                                "fresh": {
-                                  "enum": [
-                                    "new",
-                                    "changed",
-                                    "carried"
-                                  ],
-                                  "type": "string"
-                                },
-                                "needs_review": {
-                                  "type": "boolean"
-                                },
-                                "answer": {
-                                  "anyOf": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "value": {
-                                          "anyOf": [
-                                            {
-                                              "type": "string"
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        },
-                                        "label": {
-                                          "anyOf": [
-                                            {
-                                              "type": "string"
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        },
-                                        "effect": {
-                                          "anyOf": [
-                                            {
-                                              "type": "string"
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        },
-                                        "notes": {
-                                          "type": "string"
-                                        },
-                                        "deferred": {
-                                          "type": "boolean"
-                                        },
-                                        "custom": {
-                                          "type": "boolean"
-                                        },
-                                        "version": {
-                                          "type": "integer",
-                                          "minimum": -9007199254740991,
-                                          "maximum": 9007199254740991,
-                                          "exclusiveMinimum": 0
-                                        },
-                                        "updated_at": {
-                                          "type": "number"
-                                        }
-                                      },
-                                      "required": [
-                                        "value",
-                                        "label",
-                                        "effect",
-                                        "notes",
-                                        "deferred",
-                                        "custom",
-                                        "version",
-                                        "updated_at"
-                                      ]
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "answer_version": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 9007199254740991
-                                },
-                                "outcome": {
-                                  "anyOf": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "state": {
-                                          "enum": [
-                                            "applied",
-                                            "kept",
-                                            "blocked",
-                                            "reviewed",
-                                            "planned"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "note": {
-                                          "anyOf": [
-                                            {
-                                              "type": "string"
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      },
-                                      "required": [
-                                        "state",
-                                        "note"
-                                      ]
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "id",
-                                "title",
-                                "question",
-                                "explanation",
-                                "example",
-                                "current",
-                                "recommendation",
-                                "recommended_choice",
-                                "choices",
-                                "technical",
-                                "content_hash",
-                                "fresh",
-                                "needs_review",
-                                "answer",
-                                "answer_version",
-                                "outcome"
-                              ]
-                            }
-                          },
-                          "filters": {
-                            "type": "object",
-                            "properties": {
-                              "new": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "pending": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            },
-                            "required": [
-                              "new",
-                              "pending"
-                            ]
-                          },
-                          "next_item_id": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
                           }
                         },
                         "required": [
                           "review_id",
                           "session_id",
-                          "profile",
+                          "session_title",
                           "title",
-                          "intro",
                           "status",
                           "created_at",
-                          "updated_at",
-                          "submitted_at",
-                          "progress",
-                          "submit",
-                          "items",
-                          "filters",
-                          "next_item_id"
+                          "progress"
                         ]
                       }
+                    },
+                    "empty": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "none",
+                            "closed"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "reviews"
+                    "reviews",
+                    "empty"
                   ]
                 }
               }

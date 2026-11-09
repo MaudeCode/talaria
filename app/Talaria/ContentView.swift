@@ -12,7 +12,8 @@ struct ContentView: View {
     @State private var sharedImports = SharedImportRouter()
     @State private var foregroundReturn = ForegroundReturnDetector()
     @State private var pendingDeepLinkedSessionID: String?
-    @State private var pendingQuotaSourceID: String?
+    /// A widget's quota account or a push's decision review, pushed once above the current screen.
+    @State private var pendingDestination: SessionListUtilityDestination?
     @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
@@ -40,7 +41,7 @@ struct ContentView: View {
         scenePhase == .active
             && authManager.pendingReauthentication == nil
             && sharedImports.pendingImport == nil && !sharedImports.hasWaitingImport
-            && pendingDeepLinkedSessionID == nil && pendingQuotaSourceID == nil
+            && pendingDeepLinkedSessionID == nil && pendingDestination == nil
             && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil
             && intentRouter.pendingDeepLink == nil
             && !appLock.isLocked && appLock.queuedDeepLinks.isEmpty
@@ -178,7 +179,7 @@ struct ContentView: View {
                 hasWaitingSharedImport: sharedImports.hasWaitingImport,
                 openNextSharedImport: { sharedImports.openNext() },
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
-                pendingQuotaSourceID: $pendingQuotaSourceID,
+                pendingDestination: $pendingDestination,
                 opensProviderQuotaWidgetSettings: $opensProviderQuotaWidgetSettings,
                 requestedNewChat: $pendingNewChatRequest,
                 draftStore: draftStore
@@ -232,7 +233,7 @@ struct ContentView: View {
             if TalariaDeepLink.requestsQuotaRefresh(url) {
                 UserDefaults.standard.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
             }
-            pendingQuotaSourceID = sourceID
+            pendingDestination = .providers(sourceID)
             return
         }
 
@@ -267,7 +268,12 @@ struct ContentView: View {
                }) {
                 authManager.switchActiveServer(to: account)
             }
-            pendingDeepLinkedSessionID = sessionID
+            // TAL-1966: a decision review alert opens the review on that server rather than its chat.
+            if let reviewID = TalariaDeepLink.decisionReviewID(from: url) {
+                pendingDestination = .decisionReview(reviewID)
+            } else {
+                pendingDeepLinkedSessionID = sessionID
+            }
             return
         }
 

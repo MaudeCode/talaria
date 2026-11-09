@@ -4,7 +4,7 @@
  */
 import type { WebPushPreferences } from '@maudecode/talaria-web-contracts'
 
-export type AlertKind = 'approval' | 'input' | 'completion' | 'failure'
+export type AlertKind = 'approval' | 'input' | 'completion' | 'failure' | 'decision'
 
 export type AlertPreferences = WebPushPreferences
 
@@ -17,9 +17,15 @@ const KIND_BY_PHASE: Record<string, { kind: AlertKind; pref: keyof AlertPreferen
   failed: { kind: 'failure', pref: 'notify_on_failure' },
 }
 
-/** No alert on a first publication, an unchanged phase, or an ineligible state (a Talaria tab is open). */
-export function alertForTransition(previous: string | null, next: { phase: string; alertEligible: boolean }, preferences: AlertPreferences): AlertKind | null {
-  if (!previous || previous === next.phase || !next.alertEligible) return null
+/**
+ * No alert on a first publication or an ineligible state (a Talaria tab is open). TAL-1966: a decision review the row
+ * did not hold before alerts once under the input preference, whatever the phase did; otherwise an unchanged phase
+ * never alerts.
+ */
+export function alertForTransition(previous: string | null, next: { phase: string; alertEligible: boolean; decisionReviewId?: string | undefined }, preferences: AlertPreferences, previousDecisionReviewId?: string | null): AlertKind | null {
+  if (!previous || !next.alertEligible) return null
+  if (next.decisionReviewId && next.decisionReviewId !== previousDecisionReviewId && preferences.notify_on_input) return 'decision'
+  if (previous === next.phase) return null
   const entry = KIND_BY_PHASE[next.phase]
   return entry && preferences[entry.pref] ? entry.kind : null
 }

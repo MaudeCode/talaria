@@ -107,6 +107,8 @@ export const fetchToolResult = (session_id: string, tool_call_id: string, signal
 export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: string; tool_call_id: string }, signal?: AbortSignal) => orpc().session.outboundDraft(input, signal ? { signal } : {})
 export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)
 /** TAL-1964: a decision review and the user's answers to it; the server owns order, progress, filters and submit. */
+/** TAL-1966: the profile's open and submitted reviews in the server's order, and why the list is empty. */
+export const fetchDecisionReviews = (signal?: AbortSignal) => orpc().decisions.list(undefined, signal ? { signal } : {})
 export const fetchDecisionReview = (review_id: string, signal?: AbortSignal) => orpc().decisions.get({ review_id }, signal ? { signal } : {})
 export const answerDecision = (input: DecisionAnswerInput) => orpc().decisions.answer(input)
 export const submitDecisionReview = (review_id: string) => orpc().decisions.submit({ review_id })

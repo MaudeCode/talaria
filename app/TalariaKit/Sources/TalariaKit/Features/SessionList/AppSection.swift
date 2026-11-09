@@ -12,6 +12,8 @@ public enum AppSection: Hashable, Sendable {
     case tasks
     case kanban
     case insights
+    /// TAL-1966: the profile's decision reviews.
+    case decisions
 
     public var title: String {
         switch self {
@@ -24,12 +26,14 @@ public enum AppSection: Hashable, Sendable {
         case .tasks: String(localized: "Tasks")
         case .kanban: String(localized: "Kanban")
         case .insights: String(localized: "Insights")
+        case .decisions: String(localized: "Decisions")
         }
     }
 
     public init?(_ utility: SessionListUtilityDestination) {
         switch utility {
-        case .settings, .providerQuotaWidgetSettings, .providers: return nil
+        case .settings, .providerQuotaWidgetSettings, .providers, .decisionReview: return nil
+        case .decisions: self = .decisions
         case .insights: self = .insights
         case .tasks: self = .tasks
         case .kanban: self = .kanban
@@ -137,6 +141,8 @@ public enum SectionItem: Hashable, Sendable {
     case task(id: String)
     /// A provider quota account opened from the Insights Quotas tab (TAL-1750).
     case quotaSource(id: String)
+    /// TAL-1966: a decision review opened from the Decisions list or its push alert.
+    case decisionReview(id: String)
 }
 
 /// A row of the Settings root list.

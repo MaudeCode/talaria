@@ -545,7 +545,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
   const presence = new PresenceLeases(now)
-  const activity = new ActivityStates({ registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, profilesMatch, now })
+  const activity = new ActivityStates({ registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, profilesMatch, decisionReview: (sid) => decisions.latestRef(sid), now })
   const relay = new RelayService({
     events,
     registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, activity, profileHome, profilesMatch, fetch: () => lazyFetch, now, log,

@@ -187,6 +187,30 @@ describe('Talaria relay pairing and publishing', () => {
     }
   })
 
+  it('names the session\'s newest decision review by creation and its title (TAL-1966)', async () => {
+    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-decisions' })
+    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Decision session' }))).session as Json).session_id)
+    s.deps.registry.activeRuns.set('stream-decisions', { stream_id: 'stream-decisions', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    const publisher = s.deps.relay.current()!
+    const row = async () => {
+      await publisher.publishSnapshot()
+      const state = (relay.snapshots().at(-1)!.body.states as Json[]).find((candidate) => candidate.sessionId === sid)!
+      return { decisionReviewId: state.decisionReviewId, decisionReviewTitle: state.decisionReviewTitle }
+    }
+    try {
+      expect(await row()).toEqual({ decisionReviewId: undefined, decisionReviewTitle: undefined })
+      const { review_id: id } = await s.deps.decisions.put({ session_id: sid }, { title: 'Release choices', items: [{ id: 'a', title: 'Decision a', question: 'Keep a?', explanation: 'Why.', current: 'As is.', recommendation: 'Keep it.', recommended_choice: 'keep', choices: [{ value: 'keep', label: 'Keep', effect: 'Nothing.' }, { value: 'change', label: 'Change', effect: 'It changes.' }] }] })
+      expect(await row()).toEqual({ decisionReviewId: id, decisionReviewTitle: 'Release choices' })
+      // Closing it keeps the name, so an older open review is never announced again; a newer one replaces it.
+      await s.deps.decisions.cancel(id)
+      expect(await row()).toEqual({ decisionReviewId: id, decisionReviewTitle: 'Release choices' })
+      const { review_id: newer } = await s.deps.decisions.put({ session_id: sid }, { title: 'Storage choices', items: [{ id: 'a', title: 'Decision a', question: 'Keep a?', explanation: 'Why.', current: 'As is.', recommendation: 'Keep it.', recommended_choice: 'keep', choices: [{ value: 'keep', label: 'Keep', effect: 'Nothing.' }, { value: 'change', label: 'Change', effect: 'It changes.' }] }] })
+      expect(await row()).toEqual({ decisionReviewId: newer, decisionReviewTitle: 'Storage choices' })
+    } finally {
+      s.deps.registry.activeRuns.delete('stream-decisions')
+    }
+  })
+
   it('keeps the session activity running after its parent reply completes while a background command runs (TAL-1520)', async () => {
     if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-background' })
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Background liveness' }))).session as Json).session_id)

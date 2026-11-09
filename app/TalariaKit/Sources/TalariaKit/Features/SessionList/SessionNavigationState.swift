@@ -121,12 +121,17 @@ public struct SessionNavigationState: Equatable, Sendable {
     /// Entering a section replaces the root and clears its inner pages. A source route instead pushes its account
     /// above the current root, so Back returns there (TAL-1887).
     public mutating func select(_ utility: SessionListUtilityDestination) {
-        if case .providers(let sourceID) = utility {
+        let pushed: SectionItem? = switch utility {
+        case .providers(let sourceID): .quotaSource(id: sourceID)
+        case .decisionReview(let reviewID): .decisionReview(id: reviewID)
+        default: nil
+        }
+        if let pushed {
             rootRevision += 1
             filesInspectorPresented = false
             chatShowsFilesInspector = false
             selectedSectionSession = nil
-            selectedItem = .quotaSource(id: sourceID)
+            selectedItem = pushed
             return
         }
         guard let root = AppSection(utility) else { return }

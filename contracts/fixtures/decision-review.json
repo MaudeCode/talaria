@@ -108,5 +108,19 @@
     "review_id": "dr_0a1b2c3d",
     "title": "Workspace defaults",
     "progress": { "total": 3, "answered": 2, "deferred": 0, "needs_review": 1 }
-  }
+  },
+  "list": {
+    "reviews": [
+      {
+        "review_id": "dr_0a1b2c3d", "session_id": "synthetic-session", "session_title": "Workspace setup", "title": "Workspace defaults",
+        "status": "open", "created_at": 1893456000, "progress": { "total": 3, "answered": 2, "deferred": 0, "needs_review": 1 }
+      },
+      {
+        "review_id": "dr_0a1b2c3e", "session_id": "synthetic-session-2", "session_title": null, "title": "Retention choices",
+        "status": "submitted", "created_at": 1893455000, "progress": { "total": 2, "answered": 2, "deferred": 0, "needs_review": 0 }
+      }
+    ],
+    "empty": null
+  },
+  "list_empty": { "reviews": [], "empty": "closed" }
 }

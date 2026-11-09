@@ -138,6 +138,40 @@ describe('Web Push channel', () => {
     expect(keys.decrypt(Buffer.from(push.pushes[1]!.init.body as Uint8Array))).toMatchObject({ body: 'Failed', tag: sid })
   })
 
+  it('sends one alert that opens a new decision review, and none while a Talaria tab is open (TAL-1966)', async () => {
+    const before = push.pushes.length
+    const sid = String(((await json(await send(s, 'POST', '/api/session/new', {}))).session as Json).session_id)
+    s.deps.registry.activeRuns.set('stream-decision', { stream_id: 'stream-decision', session_id: sid, started_at: 5, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    const item = { id: 'a', title: 'Decision a', question: 'Keep a?', explanation: 'Why.', current: 'As is.', recommendation: 'Keep it.', recommended_choice: 'keep', choices: [{ value: 'keep', label: 'Keep', effect: 'Nothing.' }, { value: 'change', label: 'Change', effect: 'It changes.' }] }
+    try {
+      await settle()
+      const { review_id: id } = await s.deps.decisions.put({ session_id: sid }, { title: 'Release choices', items: [item] })
+      await settle()
+      expect(push.pushes).toHaveLength(before + 1)
+      expect(keys.decrypt(Buffer.from(push.pushes.at(-1)!.init.body as Uint8Array))).toEqual({ title: 'Decision review ready', body: 'Release choices', tag: `decision:${id}`, url: `/decisions/${id}` })
+      // The same open review never alerts again.
+      await settle()
+      expect(push.pushes).toHaveLength(before + 1)
+
+      // A newer review alerts; closing it leaves the older review open, which never alerts again.
+      const { review_id: newer } = await s.deps.decisions.put({ session_id: sid }, { title: 'Storage choices', items: [item] })
+      await settle()
+      expect(push.pushes).toHaveLength(before + 2)
+      expect(keys.decrypt(Buffer.from(push.pushes.at(-1)!.init.body as Uint8Array))).toMatchObject({ url: `/decisions/${newer}` })
+      await s.deps.decisions.cancel(newer)
+      await settle()
+      expect(push.pushes).toHaveLength(before + 2)
+
+      expect((await send(s, 'POST', '/api/talaria/presence', { tab_id: 'tab_00000002', active: true, seq: 1 })).status).toBe(200)
+      await s.deps.decisions.put({ session_id: sid }, { title: 'Theme choices', items: [item] })
+      await settle()
+      expect(push.pushes).toHaveLength(before + 2)
+    } finally {
+      await send(s, 'POST', '/api/talaria/presence', { tab_id: 'tab_00000002', active: false, seq: 2 })
+      s.deps.registry.activeRuns.delete('stream-decision')
+    }
+  })
+
   it("sends nothing for another profile's session", async () => {
     const before = push.pushes.length
     const sid = String(((await json(await send(s, 'POST', '/api/session/new', { title: 'Other profile' }))).session as Json).session_id)

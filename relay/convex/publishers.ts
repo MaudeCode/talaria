@@ -65,10 +65,10 @@ function expiryForState(
 // until the phase changes. A new stream is a new run and starts from its own value, and so does a new approval head.
 function alertEligibleForState(
   current: Doc<"sessionStates"> | null | undefined,
-  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean; approvalHeadId?: string },
+  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean; approvalHeadId?: string; decisionReviewId?: string },
 ): boolean | undefined {
   return current && !current.deleted && activityPhase(current) === activityPhase(next) && current.streamId === next.streamId
-    && !approvalHeadChanged(current, next) && current.alertEligible === false ? false : next.alertEligible;
+    && !approvalHeadChanged(current, next) && !decisionReviewChanged(current, next) && current.alertEligible === false ? false : next.alertEligible;
 }
 
 function sameRun(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string }): current is Doc<"sessionStates"> {
@@ -83,6 +83,15 @@ function approvalHeadFor(current: Doc<"sessionStates"> | null | undefined, next:
 
 function approvalHeadChanged(current: Doc<"sessionStates"> | null | undefined, next: { approvalHeadId?: string }): boolean {
   return next.approvalHeadId !== undefined && next.approvalHeadId !== current?.approvalHeadId;
+}
+
+// TAL-1966: the decision review a session held, across runs; a review it did not hold is a transition of its own.
+function previousDecisionReviewFor(current: Doc<"sessionStates"> | null | undefined): string | undefined {
+  return current && !current.deleted ? current.decisionReviewId : undefined;
+}
+
+function decisionReviewChanged(current: Doc<"sessionStates"> | null | undefined, next: { decisionReviewId?: string }): boolean {
+  return next.decisionReviewId !== undefined && next.decisionReviewId !== previousDecisionReviewFor(current);
 }
 
 // The phase a delivery transition starts from. A first publication, a re-created session, or a new run that begins in
@@ -125,6 +134,8 @@ function exposedState(state: Doc<"sessionStates">) {
     activityExpiresAt: state.activityExpiresAt,
     alertEligible: state.alertEligible,
     approvalHeadId: state.approvalHeadId,
+    decisionReviewId: state.decisionReviewId,
+    decisionReviewTitle: state.decisionReviewTitle,
     receivedAt: state.receivedAt,
   };
 }
@@ -295,6 +306,7 @@ export const acceptState = internalMutation({
           ? [{
               publisherId: args.publisherId, sessionId: args.sessionId, previousPhase,
               previousApprovalHeadId: sameRun(existing, args.state) ? existing.approvalHeadId : undefined,
+              previousDecisionReviewId: previousDecisionReviewFor(existing),
               state: exposedState(next as Doc<"sessionStates">),
             }]
           : previousPhase === undefined ? [] : [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase }],
@@ -334,6 +346,7 @@ export const acceptSnapshot = internalMutation({
         sessionId: string;
         previousPhase?: SessionPhase;
         previousApprovalHeadId?: string;
+        previousDecisionReviewId?: string;
         state: ReturnType<typeof exposedState>;
       }[] = [];
       for (const state of args.states) {
@@ -364,13 +377,14 @@ export const acceptSnapshot = internalMutation({
         // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
         // record the deferral and revalidate any queued alert for it. A new approval head is a transition of its own.
         if (!current || activityPhase(current) !== activityPhase(state) || current.streamId !== state.streamId
-          || approvalHeadChanged(current, state)
+          || approvalHeadChanged(current, state) || decisionReviewChanged(current, state)
           || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
             previousPhase: previousPhaseFor(current, state),
             previousApprovalHeadId: sameRun(current, state) ? current.approvalHeadId : undefined,
+            previousDecisionReviewId: previousDecisionReviewFor(current),
             state: exposedState(next as Doc<"sessionStates">),
           });
         }

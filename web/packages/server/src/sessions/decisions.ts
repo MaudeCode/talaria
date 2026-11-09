@@ -6,7 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
   DECISION_LIMITS, DecisionReviewIdSchema,
-  type DecisionAnswer, type DecisionAnswerInput, type DecisionItem, type DecisionReviewRef, type DecisionItemInput, type DecisionProgress, type DecisionReview,
+  type DecisionAnswer, type DecisionAnswerInput, type DecisionItem, type DecisionReviewList, type DecisionReviewRef, type DecisionItemInput, type DecisionProgress, type DecisionReview,
   type SidecarServerParams, type SidecarServerResultInput,
 } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
@@ -122,6 +122,11 @@ export function submitMessage(review: Pick<StoredReview, 'review_id' | 'title'>)
 export class DecisionReviews {
   /** Open reviews by id, with their session, for the synchronous sidebar attention summary. */
   private readonly open = new Map<string, string>()
+  /**
+   * TAL-1966: each session's newest review by creation, open or not. Its push alert fires when this changes, so closing
+   * a newer review never re-announces an older one that is still open.
+   */
+  private readonly latest = new Map<string, Pick<StoredReview, 'review_id' | 'title' | 'created_at'>>()
   constructor(private readonly documents: DocumentBackend, private readonly deps: () => AppDeps, private readonly now: () => number) {}
 
   async initialize(): Promise<void> {
@@ -129,6 +134,7 @@ export class DecisionReviews {
       try {
         const review = (await this.documents.get(NAMESPACE, key))?.value as StoredReview | undefined
         if (review?.status === 'open') this.open.set(review.review_id, review.session_id)
+        if (review) this.track(review)
       } catch { /* an unreadable review shows no attention */ }
     }
   }
@@ -138,6 +144,19 @@ export class DecisionReviews {
     let count = 0
     for (const owner of this.open.values()) if (owner === sid) count += 1
     return count
+  }
+
+  private track(review: StoredReview): void {
+    const held = this.latest.get(review.session_id)
+    if (!held || held.review_id === review.review_id || review.created_at > held.created_at) {
+      this.latest.set(review.session_id, { review_id: review.review_id, title: review.title, created_at: review.created_at })
+    }
+  }
+
+  /** TAL-1966: the session's newest review by creation, which its push alert announces once. */
+  latestRef(sid: string): { review_id: string; title: string } | null {
+    const held = this.latest.get(sid)
+    return held ? { review_id: held.review_id, title: held.title } : null
   }
 
   /** TAL-1964: the session's newest open review, for its composer chip. */
@@ -189,6 +208,7 @@ export class DecisionReviews {
     const deps = this.deps()
     if (review.status === 'open') this.open.set(review.review_id, review.session_id)
     else this.open.delete(review.review_id)
+    this.track(review)
     deps.channels.emit(review.session_id, 'decision_review', { session_id: review.session_id, review_id: review.review_id, status: review.status, progress: progressOf(review) }, review.profile)
     if (wasOpen !== (review.status === 'open')) deps.events.publish('decision_review', { profile: review.profile, sessionId: review.session_id })
   }
@@ -207,6 +227,7 @@ export class DecisionReviews {
       await this.documents.delete(NAMESPACE, key)
       this.open.delete(key)
     }
+    this.latest.delete(sid)
   }
 
   // ── agent tools ─────────────────────────────────────────────────────────
@@ -275,15 +296,27 @@ export class DecisionReviews {
 
   // ── routes ──────────────────────────────────────────────────────────────
 
-  /** `GET /api/decisions`: the request profile's open and submitted reviews, newest first. */
+  /** `GET /api/decisions`: the request profile's open and submitted reviews, newest first, and why none are listed. */
   // ponytail: reads every stored review per call; index by profile and status when the Decisions hub lists many.
-  async list(): Promise<{ reviews: DecisionReview[] }> {
+  async list(): Promise<DecisionReviewList> {
     const reviews: StoredReview[] = []
+    let closed = false
     for (const { key } of await this.documents.list(NAMESPACE)) {
       const review = await this.load(key)
-      if (review && (review.status === 'open' || review.status === 'submitted') && await this.visible(review)) reviews.push(review)
+      if (!review || !(await this.visible(review))) continue
+      if (review.status === 'open' || review.status === 'submitted') reviews.push(review)
+      else closed = true
     }
-    return { reviews: reviews.sort((a, b) => b.created_at - a.created_at).map(reviewView) }
+    const rows = await Promise.all(reviews.sort((a, b) => b.created_at - a.created_at).map(async (review) => ({
+      review_id: review.review_id, session_id: review.session_id, session_title: await this.sessionTitle(review.session_id),
+      title: review.title, status: review.status, created_at: review.created_at, progress: progressOf(review),
+    })))
+    return { reviews: rows, empty: rows.length ? null : closed ? 'closed' : 'none' }
+  }
+
+  /** The owning session's title, or null when it has none or cannot be read. */
+  private async sessionTitle(sid: string): Promise<string | null> {
+    try { return (await this.deps().sessionStore.get(sid, { metadataOnly: true, promote: false })).title.trim() || null } catch { return null }
   }
 
   async get(id: string): Promise<DecisionReview> {

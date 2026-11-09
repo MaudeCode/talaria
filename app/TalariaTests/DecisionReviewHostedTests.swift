@@ -88,6 +88,36 @@ final class DecisionReviewHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "decision-transcript-card")
     }
 
+    /// TAL-1966: the Decisions list draws the fixture's rows in the server's order on the phone and both Duo displays,
+    /// and a row opens its review.
+    func testTheDecisionsListRendersTheFixtureRowsAndARowOpensItsReview() throws {
+        let body = try reviewFixture("list")
+        MockURLProtocol.requestHandler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, body)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let client = APIClient(baseURL: URL(string: "https://decisions.test")!, session: URLSession(configuration: configuration))
+        for (name, size) in [("phone", HostedSize.phone), ("duo-outer", HostedSize.duoOuter), ("duo-inner", HostedSize.duoInner)] {
+            var selection: SectionItem?
+            var chats: [String] = []
+            let list = DecisionsListView(
+                model: DecisionsListModel(client: client), selection: Binding(get: { selection }, set: { selection = $0 }),
+                openChat: { chats.append($0) }, onAPIError: { _ in }
+            )
+            let window = try hostWindow(NavigationStack { list }, size: size)
+            XCTAssertTrue(waitUntil { HostedAccessibility.element(in: window, identifier: "decision-review-row-dr_0a1b2c3e") != nil }, name)
+            for text in ["Workspace defaults", "Workspace setup", "2 of 3 answered", "Retention choices", "Submitted", "Untitled"] {
+                XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: text).isEmpty, "\(name): \(text)")
+            }
+            attachHostedScreenshot(window, name: "decisions-list-\(name)")
+            let row = try XCTUnwrap(HostedAccessibility.element(in: window, identifier: "decision-review-row-dr_0a1b2c3d"), name)
+            XCTAssertTrue(HostedAccessibility.activate(row), name)
+            XCTAssertEqual(selection, .decisionReview(id: "dr_0a1b2c3d"), name)
+            XCTAssertEqual(chats, [], name)
+        }
+    }
+
     /// The composer chip's status copy fits one line at the phone's width, Open included.
     func testTheComposerChipFitsOneLineOnThePhone() {
         let chip = StatusChip(label: "Decision review: 12 of 20 answered", icon: .symbol("checklist"), action: "Open")

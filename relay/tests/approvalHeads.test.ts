@@ -49,7 +49,7 @@ async function seed() {
     }
   };
   // Every snapshot is a fresh signed event with a new revision, as Talaria Web's heartbeat publishes them.
-  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean } = {}) => {
+  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string } = {}) => {
     revision += 1;
     const path = `/v1/publishers/${encodeURIComponent(publisherId)}/profiles/${options.profileId ?? "profile-1"}/snapshot`;
     const body = JSON.stringify({
@@ -59,6 +59,7 @@ async function seed() {
         title: "Private session title", phase, updatedAt: now + revision, deepLink: "/sessions/session-1",
         ...(options.alertEligible === undefined ? {} : { alertEligible: options.alertEligible }),
         ...(head === undefined ? {} : { approvalHeadId: head }),
+        ...(options.decision === undefined ? {} : { decisionReviewId: options.decision, decisionReviewTitle: "Release choices" }),
       }],
     });
     const timestamp = String(now / 1000);
@@ -82,6 +83,47 @@ async function seed() {
   };
   return { backend, publish, notifications };
 }
+
+describe("decision reviews (TAL-1966)", () => {
+  it("alerts once for a new review with its title and a link to it, through the run's completion", async () => {
+    const { backend, publish, notifications } = await seed();
+    await publish("running");
+    await publish("running", undefined, { decision: "dr_0a1b2c3d" });
+    await publish("running", undefined, { decision: "dr_0a1b2c3d" });
+    await publish("completed", undefined, { decision: "dr_0a1b2c3d" });
+    const delivered = await notifications();
+    // The run's completion alerts on its own; the review alert stays deliverable while the session holds the review.
+    expect(delivered.map(({ payload }) => payload.deepLink)).toEqual(["/decisions/dr_0a1b2c3d", "/sessions/session-1"]);
+    expect(delivered[0]!.payload.aps).toMatchObject({ alert: { title: "Decision review ready", body: "Release choices" }, "interruption-level": "active" });
+    expect(await backend.mutation(internal.delivery.claimJob, { jobId: delivered[0]!.id, now })).toMatchObject({ status: "ready" });
+
+    // A later review alerts again.
+    await publish("running", undefined, { decision: "dr_0a1b2c3e" });
+    expect((await notifications()).map(({ payload }) => payload.deepLink).at(-1)).toBe("/decisions/dr_0a1b2c3e");
+  });
+
+  it("sends nothing for a review shown while a Talaria tab is open or with input alerts off", async () => {
+    const { backend, publish, notifications } = await seed();
+    await publish("running");
+    await publish("running", undefined, { decision: "dr_0a1b2c3d", alertEligible: false });
+    expect(await notifications()).toHaveLength(0);
+    await backend.run(async (ctx) => {
+      const device = (await ctx.db.query("devices").collect()).find((row) => row.userId === "user-1")!;
+      await ctx.db.patch(device._id, { preferences: { ...device.preferences, notifyOnInput: false } });
+    });
+    await publish("running", undefined, { decision: "dr_0a1b2c3e" });
+    expect(await notifications()).toHaveLength(0);
+  });
+
+  it("drops a queued review alert once the session no longer holds that review", async () => {
+    const { backend, publish, notifications } = await seed();
+    await publish("running");
+    await publish("running", undefined, { decision: "dr_0a1b2c3d" });
+    const [queued] = await notifications();
+    await publish("running");
+    expect(await backend.mutation(internal.delivery.claimJob, { jobId: queued!.id, now })).toEqual({ status: "stale" });
+  });
+});
 
 describe("approval queue heads", () => {
   it("alerts once for each approval that becomes the head while the session keeps waiting", async () => {

@@ -236,7 +236,7 @@ final class InsightsHostedTests: XCTestCase {
         addTeardownBlock { UserDefaults.standard.removeObject(forKey: ProviderQuotaSidebarSettings.firstSourceKey) }
         let fixture = try FixtureApp(for: self)
         // A widget link that opens the app cold.
-        fixture.pendingQuotaSourceID = sourceID
+        fixture.pendingDestination = .providers(sourceID)
         let window = try hostWindow(fixture.sessionList())
         let quotasRoot: (NSObject) -> Bool = Self.identified("provider-quota-row-\(sourceID)")
         let usageRoot: (NSObject) -> Bool = Self.labelled(prefix: "Sessions, ")
@@ -274,7 +274,7 @@ final class InsightsHostedTests: XCTestCase {
         HostedAccessibility.activate(try await requireElement(in: window, label: "Usage"))
         _ = try await requireElement(in: window, "Usage did not load", where: usageRoot)
         defaults.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
-        fixture.pendingQuotaSourceID = sourceID
+        fixture.pendingDestination = .providers(sourceID)
         try await assertOpensThenBackReturns("Widget link from Usage", to: usageRoot)
         let refreshed = await awaitCondition { UITestFixtureURLProtocol.targetedQuotaReads.withLock { $0 == [sourceID] } }
         XCTAssertTrue(refreshed, "The widget link did not refresh its account")
@@ -282,7 +282,7 @@ final class InsightsHostedTests: XCTestCase {
         // The same account again, from the Quotas tab; the refresh never replays.
         HostedAccessibility.activate(try await requireElement(in: window, label: "Quotas"))
         _ = try await requireElement(in: window, "Quotas did not return", where: quotasRoot)
-        fixture.pendingQuotaSourceID = sourceID
+        fixture.pendingDestination = .providers(sourceID)
         try await assertOpensThenBackReturns("Repeated widget link", to: quotasRoot)
         XCTAssertEqual(UITestFixtureURLProtocol.targetedQuotaReads.withLock { $0 }, [sourceID],
                        "The refresh must run once and never replay on Back")
