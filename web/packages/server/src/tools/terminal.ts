@@ -103,8 +103,11 @@ export class TerminalItemQueue {
   }
 }
 
-/** TAL-1974: one `terminal_read` slice of a terminal's output backlog (`server.terminal_read`). */
-export interface TerminalSlice { output: string; lines: number; next_event_id: number; truncated: boolean }
+/**
+ * TAL-1974: one `terminal_read` slice of a terminal's output backlog (`server.terminal_read`). TAL-1997: `replaces_last_line`
+ * when the slice restated the line the cursor stopped inside (`GET /api/terminal/read`).
+ */
+export interface TerminalSlice { output: string; lines: number; next_event_id: number; truncated: boolean; replaces_last_line: boolean }
 
 /**
  * Output as a reader sees the screen, one entry per line: escape sequences removed, text after a carriage return written
@@ -115,6 +118,19 @@ function plainLines(text: string): string[] {
   const lines = stripVTControlCharacters(text).replace(/\r+\n/g, '\n').split('\n').map((line) => line.split('\r').reduce((shown, over) => over + shown.slice(over.length)))
   if (lines.at(-1) === '') lines.pop()
   return lines
+}
+
+/** TAL-1997: the raw text of the line the last of these items left open: everything after its last newline. */
+function openLine(before: TerminalItem[]): string {
+  let open = ''
+  for (const item of before.reverse()) {
+    if (item.event !== 'output') continue
+    const text = str(item.data.text)
+    const newline = text.lastIndexOf('\n')
+    if (newline >= 0) return text.slice(newline + 1) + open
+    open = text + open
+  }
+  return open
 }
 
 export class TerminalSession {
@@ -162,15 +178,19 @@ export class TerminalSession {
   /**
    * TAL-1974: the output events after `afterSeq`, whole events up to `maxLines` lines (the first event cut to the cap when
    * it alone is longer). A read counts as watching, so a terminal the agent follows is not reaped as idle.
+   * TAL-1997: with `restateOpenLine`, new output that continues the line the cursor stopped inside starts from that line's
+   * start, so its first line is the line in full as it now reads (carriage returns included) and replaces the last one read.
    */
-  read(afterSeq: number, maxLines: number): TerminalSlice {
+  read(afterSeq: number, maxLines: number, restateOpenLine = false): TerminalSlice {
     if (this.unwatchedSince !== null) this.unwatchedSince = this.now()
-    const after = [...this.backlog.values()].filter((item) => item.seq > afterSeq)
+    const backlog = [...this.backlog.values()]
+    const after = backlog.filter((item) => item.seq > afterSeq)
     // The backlog dropped output this cursor had not read yet.
     let truncated = (after[0]?.seq ?? this.nextSeq) > afterSeq + 1
-    const chunks: string[] = []
+    const open = restateOpenLine && after.some((item) => item.event === 'output') ? openLine(backlog.filter((item) => item.seq <= afterSeq)) : ''
+    const chunks: string[] = [open]
     let newlines = 0
-    let partial = false
+    let partial = open !== ''
     let next = afterSeq
     for (const item of after) {
       const text = item.event === 'output' ? str(item.data.text) : ''
@@ -188,7 +208,8 @@ export class TerminalSession {
       next = item.seq
     }
     const lines = plainLines(chunks.join('')).slice(0, maxLines)
-    return { output: lines.join('\n'), lines: lines.length, next_event_id: next, truncated }
+    // The last read showed the open line only when it held text once escape sequences and carriage returns were applied.
+    return { output: lines.join('\n'), lines: lines.length, next_event_id: next, truncated, replaces_last_line: plainLines(open).length > 0 }
   }
 
   /** The oldest output is gone, so a replay starts mid-screen. */

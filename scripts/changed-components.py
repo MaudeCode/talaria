@@ -27,7 +27,8 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
 FIXTURE_READERS = {
     "tooling": {"whats-new.json"},
     "app": {"connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json", "proposal.json",
-            "running-subagent.json", "show.json", "speech-prepare.json", "vault-prompts.json", "web-native-work.json"},
+            "running-subagent.json", "show.json", "speech-prepare.json", "terminal-view.json", "vault-prompts.json",
+            "web-native-work.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json",
               "relay-approval-alert.json", "relay-snapshot.json"},

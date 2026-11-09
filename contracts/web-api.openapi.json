@@ -125695,6 +125695,115 @@
         }
       }
     },
+    "/api/terminal/read": {
+      "get": {
+        "operationId": "terminal.read",
+        "summary": "Read the output of a terminal of the session after after_event_id, as the agent's terminal_read does, for a read-only terminal view; another session's or a replaced terminal answers 404 terminal_not_found (TAL-1997).",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "terminal_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "after_event_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "max_lines",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "terminal_id": {
+                      "type": "string",
+                      "pattern": "^term_[0-9a-f]{16}$"
+                    },
+                    "output": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "next_event_id": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "exit_code": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "replaces_last_line": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "terminal_id",
+                    "output",
+                    "lines",
+                    "next_event_id",
+                    "truncated",
+                    "running",
+                    "exit_code",
+                    "replaces_last_line"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/terminal/input": {
       "post": {
         "operationId": "terminal.input",

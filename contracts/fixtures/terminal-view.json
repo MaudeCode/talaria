@@ -1,0 +1,17 @@
+{
+  "ref": { "terminal_id": "term_0a1b2c3d4e5f6071", "title": "Run the tests", "command": "npm test" },
+  "reads": [
+    {
+      "after_event_id": 0,
+      "result": { "terminal_id": "term_0a1b2c3d4e5f6071", "output": "npm test\n> vitest run\n 40%", "lines": 3, "next_event_id": 2, "truncated": false, "running": true, "exit_code": null, "replaces_last_line": false }
+    },
+    {
+      "after_event_id": 2,
+      "result": { "terminal_id": "term_0a1b2c3d4e5f6071", "output": "100% done\nPASS", "lines": 2, "next_event_id": 3, "truncated": false, "running": true, "exit_code": null, "replaces_last_line": true }
+    },
+    {
+      "after_event_id": 3,
+      "result": { "terminal_id": "term_0a1b2c3d4e5f6071", "output": "", "lines": 0, "next_event_id": 4, "truncated": false, "running": false, "exit_code": 0, "replaces_last_line": false }
+    }
+  ]
+}

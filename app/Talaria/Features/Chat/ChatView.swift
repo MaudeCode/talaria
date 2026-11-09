@@ -180,6 +180,8 @@ struct ChatView: View {
     @State private var forkedSession: SessionSummary?
     /// TAL-1965: the decision review pushed over the chat; nil while none is open.
     @State private var openedDecisionReviewID: String?
+    /// TAL-1997: the terminal a `terminal_open` card pushed over the chat; nil while none is open.
+    @State private var openedTerminal: TerminalFollowModel?
     @State private var removedForkedSession: SessionSummary?
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
@@ -1137,6 +1139,14 @@ struct ChatView: View {
                     DecisionReviewView(reviewID: openedDecisionReviewID, server: server, onAPIError: onAPIError)
                 }
             }
+            .navigationDestination(isPresented: Binding(
+                get: { openedTerminal != nil },
+                set: { if !$0 { openedTerminal = nil } }
+            )) {
+                if let openedTerminal {
+                    TerminalOutputView(model: openedTerminal)
+                }
+            }
             .onChange(of: forkedSession) { _, fork in
                 if fork == nil { splitFilesInspector?.reportSession(session) }
             }
@@ -1972,6 +1982,9 @@ struct ChatView: View {
             }
             .chatEnvironmentAction(\.chatOpenDecisionReview) { reviewID in
                 chat.openedDecisionReviewID = reviewID
+            }
+            .chatEnvironmentAction(\.chatOpenTerminal) { reference in
+                chat.openedTerminal = viewModel.terminalFollowModel(reference)
             }
             .chatEnvironmentAction(\.chatProposalModel) { proposalID in
                 ProposalCardModel(proposalID: proposalID, client: viewModel.client)

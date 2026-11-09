@@ -60,6 +60,11 @@ struct ToolCallCardView: View {
                 ShowBlockResultSection(reference: reference)
             }
 
+            // TAL-1997: and a terminal the agent opened, which Open follows read-only.
+            if let reference = toolCall.resultView?.terminal {
+                TerminalResultSection(reference: reference)
+            }
+
             if isExpanded {
                 expandedContent(statusDisplay: statusDisplay)
                     .padding(.leading, 24)

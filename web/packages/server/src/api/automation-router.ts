@@ -13,7 +13,7 @@ import { dashboardScope, isAgentDashboardId } from '../tools/dashboard-plugins.j
 import { ExtensionError } from '../tools/extensions.js'
 import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, withStatsTotals } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
-import { sessionTerminal, startSessionTerminal, TerminalRefused } from '../tools/agent-terminal.js'
+import { sessionTerminal, startSessionTerminal, terminalSlice, TerminalRefused } from '../tools/agent-terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
 import { str } from '../util.js'
@@ -186,6 +186,18 @@ export const automationRouter = os.router({
         // Python: `int()` failures and other ValueErrors → 400 with the text; unexpected errors → 500 sanitised.
         throw new HttpError(/not a directory|required|capacity|invalid literal|cannot convert/.test(message) ? 400 : 500, message.includes('not supported') ? message : sanitizeError(error))
       }
+    })),
+    // TAL-1997: a client's read-only terminal view reads the terminal a `terminal_open` card names, as `terminal_read` does.
+    read: os.terminal.read.handler(({ input, context: { ctx } }) => run(async () => {
+      await terminalGate(ctx)
+      const sid = str(input.session_id).trim()
+      await terminalSession(ctx, sid)
+      let term
+      try { term = sessionTerminal(ctx.deps.terminals, sid, str(input.terminal_id)) } catch (error) {
+        if (error instanceof TerminalRefused) throw new HttpError(error.status, error.condition, { message: error.message })
+        throw error
+      }
+      return terminalSlice(term, intQuery(input.after_event_id, 0, 0), intQuery(input.max_lines, null, 1), true)
     })),
     input: os.terminal.input.handler(({ input, context: { ctx } }) => run(async () => {
       await terminalGate(ctx)

@@ -179,6 +179,9 @@ public enum Endpoint: Sendable {
     case proposalReject(id: String)
     /// TAL-1968: one `show` block.
     case showBlock(id: String)
+    /// TAL-1997: a session terminal's output after a cursor, and the stream that signals new output.
+    case terminalRead(sessionID: String, terminalID: String, afterEventID: Int)
+    case terminalOutput(sessionID: String)
     case feedbackDiagnostics
     case feedbackSubmit
     case feedbackOptions
@@ -520,6 +523,10 @@ public enum Endpoint: Sendable {
             return "/api/proposals/\(id)/reject"
         case let .showBlock(id):
             return "/api/show/\(id)"
+        case .terminalRead:
+            return "/api/terminal/read"
+        case .terminalOutput:
+            return "/api/terminal/output"
         case .feedbackDiagnostics:
             return "/api/feedback/diagnostics"
         case .feedbackSubmit:
@@ -644,8 +651,15 @@ public enum Endpoint: Sendable {
         case let .approvalPending(sessionID),
             let .approvalStream(sessionID),
             let .clarifyPending(sessionID),
-            let .clarifyStream(sessionID):
+            let .clarifyStream(sessionID),
+            let .terminalOutput(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
+        case let .terminalRead(sessionID, terminalID, afterEventID):
+            return [
+                URLQueryItem(name: "session_id", value: sessionID),
+                URLQueryItem(name: "terminal_id", value: terminalID),
+                URLQueryItem(name: "after_event_id", value: "\(afterEventID)")
+            ]
         case let .connectorOperation(_, owner):
             return owner.map { [URLQueryItem(name: "session_id", value: $0.sessionId), URLQueryItem(name: "authority_epoch", value: String($0.authorityEpoch))] } ?? []
         case let .backgroundTasks(sessionID):

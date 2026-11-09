@@ -21,7 +21,10 @@ keeps after `after_event_id`, escape sequences removed, at most `max_lines` (400
 default and at most) with `next_event_id`, `truncated`, `running` and the shell's
 `exit_code` once it exited; a read counts as watching for the idle reaper. Another
 session's, a replaced or a retired terminal is `terminal_not_found`. The agent has no
-input or close tool.
+input or close tool. The App's read-only terminal view (TAL-1997) reads the same slice
+through `GET /api/terminal/read` (terminal gate, session lookup, 404 `terminal_not_found`)
+on each `/api/terminal/output` event; when its cursor stopped inside a line, the read
+restates that line in full first and sets `replaces_last_line`.
 
 RPC v93 adds the `harness` toolset's `deliver` (TAL-1971, `server.deliver`). The agent
 names one file of the session's workspace (`path`, relative or absolute inside it) and
